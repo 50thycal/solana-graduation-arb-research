@@ -17,6 +17,7 @@ const logger = pino({ name: 'graduation-listener' });
 const PUMP_FUN_PROGRAM_ID = new PublicKey(
   process.env.PUMP_FUN_PROGRAM_ID || '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'
 );
+const PUMP_FUN_PROGRAM_STR = PUMP_FUN_PROGRAM_ID.toBase58();
 
 // Bonding curve account data layout offsets
 const BONDING_CURVE_LAYOUT = {
@@ -37,8 +38,8 @@ const MAX_RECONNECT_DELAY_MS = 60_000;
 const RECONNECT_BACKOFF_MULTIPLIER = 2;
 
 // How long silence before we consider the WS dead
-const WS_SILENCE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes — pump.fun has high throughput, silence means dead
-const WS_HEALTH_CHECK_INTERVAL_MS = 30_000; // Check every 30s
+const WS_SILENCE_TIMEOUT_MS = 2 * 60 * 1000;
+const WS_HEALTH_CHECK_INTERVAL_MS = 30_000;
 
 export interface GraduationEvent {
   mint: string;
@@ -65,6 +66,8 @@ export class GraduationListener {
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private totalLogsReceived = 0;
   private totalGraduationsDetected = 0;
+  private totalGraduationsRecorded = 0;
+  private totalMintExtractionFails = 0;
   private reconnecting = false;
 
   constructor(db: Database.Database) {
@@ -90,6 +93,8 @@ export class GraduationListener {
     return {
       totalLogsReceived: this.totalLogsReceived,
       totalGraduationsDetected: this.totalGraduationsDetected,
+      totalGraduationsRecorded: this.totalGraduationsRecorded,
+      totalMintExtractionFails: this.totalMintExtractionFails,
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
       wsConnected: this.subscriptionId !== null,
       reconnecting: this.reconnecting,
@@ -98,13 +103,12 @@ export class GraduationListener {
 
   async start(): Promise<void> {
     logger.info(
-      { programId: PUMP_FUN_PROGRAM_ID.toBase58() },
+      { programId: PUMP_FUN_PROGRAM_STR },
       'Starting graduation listener'
     );
 
     await this.subscribe();
 
-    // Periodically check if the WebSocket is still alive
     this.healthCheckInterval = setInterval(() => {
       const silentMs = Date.now() - this.lastEventTime;
       const silentSec = Math.floor(silentMs / 1000);
@@ -114,6 +118,8 @@ export class GraduationListener {
           silentSeconds: silentSec,
           totalLogs: this.totalLogsReceived,
           totalGraduations: this.totalGraduationsDetected,
+          totalRecorded: this.totalGraduationsRecorded,
+          totalMintFails: this.totalMintExtractionFails,
           subscriptionId: this.subscriptionId,
         },
         'WS health check'
@@ -218,7 +224,6 @@ export class GraduationListener {
       this.reconnect();
     }, this.reconnectDelay);
 
-    // Exponential backoff
     this.reconnectDelay = Math.min(
       this.reconnectDelay * RECONNECT_BACKOFF_MULTIPLIER,
       MAX_RECONNECT_DELAY_MS
@@ -233,7 +238,6 @@ export class GraduationListener {
       logger.info('Reconnecting WebSocket...');
       await this.unsubscribe();
 
-      // Create a fresh connection to get a new WebSocket
       const rpcUrl = process.env.HELIUS_RPC_URL!;
       const wsUrl = process.env.HELIUS_WS_URL!;
       this.connection = new Connection(rpcUrl, {
@@ -241,7 +245,6 @@ export class GraduationListener {
         wsEndpoint: wsUrl,
       });
 
-      // Update pool tracker's connection reference
       this.poolTracker.updateConnection(this.connection);
 
       await this.subscribe();
@@ -258,8 +261,7 @@ export class GraduationListener {
   private async handleLogs(logs: Logs, ctx: Context): Promise<void> {
     if (logs.err) return;
 
-    // Broad match: look for ANY log line that could indicate a graduation/completion
-    // We log raw events above to discover the actual format — this is intentionally broad
+    // Broad match for graduation/completion events
     const graduationLog = logs.logs.find(
       (log) =>
         log.includes('Complete') ||
@@ -292,17 +294,19 @@ export class GraduationListener {
         return;
       }
 
+      this.totalGraduationsRecorded++;
+
       logger.info(
         {
           graduationId,
           mint: event.mint,
           signature: event.signature,
           finalPriceSol: event.finalPriceSol,
+          bondingCurve: event.bondingCurveAddress,
         },
         'Graduation recorded'
       );
 
-      // Start tracking for the new pool
       this.poolTracker.trackGraduation(graduationId, event.mint, event.timestamp);
     }
   }
@@ -311,7 +315,6 @@ export class GraduationListener {
     signature: string,
     slot: number
   ): Promise<GraduationEvent | null> {
-    // Fetch the full transaction to decode accounts
     const tx = await this.connection.getParsedTransaction(signature, {
       commitment: 'confirmed',
       maxSupportedTransactionVersion: 0,
@@ -321,52 +324,129 @@ export class GraduationListener {
 
     const timestamp = tx.blockTime || Math.floor(Date.now() / 1000);
 
-    // Find the pump.fun instruction to extract mint and bonding curve
     let mint: string | null = null;
     let bondingCurveAddress: string | null = null;
 
-    // Extract from pump.fun instruction accounts
-    // pump.fun Complete instruction account layout: [0] = user, [1] = mint, [2] = bonding curve, ...
+    // Strategy 1: Find the pump.fun instruction and extract accounts
     for (const instruction of tx.transaction.message.instructions) {
-      if ('programId' in instruction) {
-        const progId =
-          typeof instruction.programId === 'string'
-            ? instruction.programId
-            : instruction.programId.toBase58();
-        if (progId === PUMP_FUN_PROGRAM_ID.toBase58() && 'accounts' in instruction) {
-          const accounts = (instruction as any).accounts as PublicKey[];
-          if (accounts && accounts.length >= 3) {
-            mint = accounts[1]?.toBase58() || null;
-            bondingCurveAddress = accounts[2]?.toBase58() || null;
+      if (!('programId' in instruction)) continue;
+
+      const progId = typeof instruction.programId === 'string'
+        ? instruction.programId
+        : instruction.programId.toBase58();
+
+      if (progId !== PUMP_FUN_PROGRAM_STR) continue;
+
+      // PartiallyDecodedInstruction has `accounts` as PublicKey[]
+      if ('accounts' in instruction && Array.isArray(instruction.accounts)) {
+        const accts = instruction.accounts;
+        logger.info(
+          {
+            signature,
+            accountCount: accts.length,
+            accounts: accts.slice(0, 6).map((a: any) =>
+              typeof a === 'string' ? a : a?.toBase58?.() ?? String(a)
+            ),
+            hasData: 'data' in instruction,
+          },
+          'pump.fun instruction accounts'
+        );
+
+        if (accts.length >= 3) {
+          // pump.fun Complete: [0] = user, [1] = mint, [2] = bonding curve
+          const acct1 = accts[1];
+          const acct2 = accts[2];
+          mint = typeof acct1 === 'string' ? acct1 : acct1?.toBase58?.() ?? null;
+          bondingCurveAddress = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
+        }
+        break;
+      }
+
+      // ParsedInstruction (unlikely for pump.fun)
+      if ('parsed' in instruction) {
+        logger.info(
+          { signature, parsed: JSON.stringify(instruction.parsed).slice(0, 200) },
+          'pump.fun returned ParsedInstruction'
+        );
+      }
+    }
+
+    // Strategy 2: If the graduation came from a CPI (inner instruction), check those
+    if (!mint && tx.meta.innerInstructions) {
+      for (const inner of tx.meta.innerInstructions) {
+        for (const ix of inner.instructions) {
+          if (!('programId' in ix)) continue;
+          const progId = typeof ix.programId === 'string'
+            ? ix.programId
+            : ix.programId.toBase58();
+          if (progId !== PUMP_FUN_PROGRAM_STR) continue;
+
+          if ('accounts' in ix && Array.isArray(ix.accounts)) {
+            const accts = ix.accounts;
+            logger.info(
+              {
+                signature,
+                innerIndex: inner.index,
+                accountCount: accts.length,
+                accounts: accts.slice(0, 6).map((a: any) =>
+                  typeof a === 'string' ? a : a?.toBase58?.() ?? String(a)
+                ),
+              },
+              'pump.fun inner instruction accounts'
+            );
+
+            if (accts.length >= 3) {
+              const acct1 = accts[1];
+              const acct2 = accts[2];
+              mint = typeof acct1 === 'string' ? acct1 : acct1?.toBase58?.() ?? null;
+              bondingCurveAddress = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
+            }
+            break;
           }
         }
+        if (mint) break;
       }
     }
 
-    // Fallback: try log messages
+    // Strategy 3: Use the transaction's account keys list
+    // The pump.fun program is typically invoked with accounts in the message
     if (!mint) {
-      for (const log of tx.meta.logMessages || []) {
-        const mintMatch = log.match(/mint[:\s]+([A-Za-z0-9]{32,44})/i);
-        if (mintMatch) {
-          mint = mintMatch[1];
-        }
-      }
-    }
+      const allKeys = tx.transaction.message.accountKeys.map((k) =>
+        typeof k === 'string' ? k : k.pubkey.toBase58()
+      );
 
-    if (!mint) {
+      // Log detailed tx structure for debugging
+      this.totalMintExtractionFails++;
       logger.warn(
         {
           signature,
-          accountKeyCount: tx.transaction.message.accountKeys.length,
+          totalMintFails: this.totalMintExtractionFails,
+          accountKeyCount: allKeys.length,
+          accountKeys: allKeys.slice(0, 10),
           instructionCount: tx.transaction.message.instructions.length,
-          logs: tx.meta.logMessages,
+          instructions: tx.transaction.message.instructions.map((ix, i) => {
+            const info: any = { index: i };
+            if ('programId' in ix) {
+              info.programId = typeof ix.programId === 'string'
+                ? ix.programId : ix.programId.toBase58();
+            }
+            if ('parsed' in ix) info.type = 'parsed';
+            if ('accounts' in ix) {
+              info.type = 'partial';
+              info.accountCount = (ix as any).accounts?.length;
+            }
+            if ('program' in ix) info.program = ix.program;
+            return info;
+          }),
+          innerInstructionCount: tx.meta.innerInstructions?.length ?? 0,
+          logs: tx.meta.logMessages?.slice(0, 15),
         },
-        'Could not extract mint from graduation tx'
+        'Could not extract mint — full tx structure dump'
       );
       return null;
     }
 
-    // Fetch bonding curve state if we have the address
+    // Fetch bonding curve state
     let finalPriceSol: number | undefined;
     let finalSolReserves: number | undefined;
     let finalTokenReserves: number | undefined;
@@ -381,7 +461,6 @@ export class GraduationListener {
           virtualTokenReserves = curveState.virtualTokenReserves;
           finalSolReserves = curveState.realSolReserves;
           finalTokenReserves = curveState.realTokenReserves;
-          // Price = virtualSolReserves / virtualTokenReserves
           if (curveState.virtualTokenReserves > 0) {
             finalPriceSol =
               curveState.virtualSolReserves / curveState.virtualTokenReserves;
