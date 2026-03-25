@@ -23,17 +23,23 @@ const DEX_PROGRAM_IDS = new Set([
 // SOL mint for Jupiter quotes
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 
+// Jupiter API endpoints to try (in order)
+const JUPITER_ENDPOINTS = [
+  'https://quote-api.jup.ag/v6/quote',
+  'https://lite-api.jup.ag/v6/quote',
+];
+
 interface TrackedGraduation {
   graduationId: number;
   mint: string;
   graduationTimestamp: number;
   startedAt: number;
   pollCount: number;
-  jupiterAttempted: boolean;
+  jupiterDisabled: boolean;
 }
 
-const POOL_SEARCH_TIMEOUT_MS = 180_000; // 3 minutes — migration can take a bit
-const POLL_INTERVAL_MS = 5_000; // Check every 5s
+const POOL_SEARCH_TIMEOUT_MS = 120_000; // 2 minutes
+const POLL_INTERVAL_MS = 5_000;
 
 export class PoolTracker {
   private db: Database.Database;
@@ -41,6 +47,12 @@ export class PoolTracker {
   private tracked: Map<number, TrackedGraduation> = new Map();
   private pollInterval: NodeJS.Timeout | null = null;
   private polling = false;
+  private jupiterEndpointIndex = 0;
+  private jupiterConsecutiveFailures = 0;
+  private jupiterGloballyDisabled = false;
+  private totalPoolsFound = 0;
+  private totalTimeouts = 0;
+  private totalSkipped = 0;
 
   constructor(db: Database.Database, connection: Connection) {
     this.db = db;
@@ -51,21 +63,36 @@ export class PoolTracker {
     this.connection = connection;
   }
 
+  getStats() {
+    return {
+      tracking: this.tracked.size,
+      totalPoolsFound: this.totalPoolsFound,
+      totalTimeouts: this.totalTimeouts,
+      totalSkipped: this.totalSkipped,
+      jupiterDisabled: this.jupiterGloballyDisabled,
+      jupiterEndpoint: JUPITER_ENDPOINTS[this.jupiterEndpointIndex],
+    };
+  }
+
   trackGraduation(
     graduationId: number,
     mint: string,
     graduationTimestamp: number
   ): void {
     const maxConcurrent = parseInt(
-      process.env.MAX_CONCURRENT_OBSERVATIONS || '5',
+      process.env.MAX_CONCURRENT_OBSERVATIONS || '20',
       10
     );
 
     if (this.tracked.size >= maxConcurrent) {
-      logger.warn(
-        { graduationId, mint, currentlyTracking: this.tracked.size },
-        'Max concurrent observations reached, skipping'
-      );
+      this.totalSkipped++;
+      // Only log every 50th skip to avoid spam
+      if (this.totalSkipped % 50 === 1) {
+        logger.warn(
+          { graduationId, tracking: this.tracked.size, totalSkipped: this.totalSkipped },
+          'Max concurrent observations reached'
+        );
+      }
       return;
     }
 
@@ -75,7 +102,7 @@ export class PoolTracker {
       graduationTimestamp,
       startedAt: Date.now(),
       pollCount: 0,
-      jupiterAttempted: false,
+      jupiterDisabled: false,
     });
 
     logger.info(
@@ -102,15 +129,19 @@ export class PoolTracker {
 
     try {
       const now = Date.now();
-      const expiredIds: number[] = [];
+      const doneIds: number[] = [];
 
       for (const [id, graduation] of this.tracked) {
         if (now - graduation.startedAt > POOL_SEARCH_TIMEOUT_MS) {
-          logger.warn(
-            { graduationId: id, mint: graduation.mint, pollCount: graduation.pollCount },
-            'Pool search timed out'
-          );
-          expiredIds.push(id);
+          this.totalTimeouts++;
+          // Only log every 20th timeout
+          if (this.totalTimeouts % 20 === 1) {
+            logger.info(
+              { graduationId: id, mint: graduation.mint, totalTimeouts: this.totalTimeouts },
+              'Pool search timed out'
+            );
+          }
+          doneIds.push(id);
           continue;
         }
 
@@ -129,6 +160,8 @@ export class PoolTracker {
               pool.timestamp
             );
 
+            this.totalPoolsFound++;
+
             logger.info(
               {
                 graduationId: id,
@@ -137,23 +170,23 @@ export class PoolTracker {
                 dex: pool.dex,
                 pollCount: graduation.pollCount,
                 searchTimeMs: now - graduation.startedAt,
+                totalFound: this.totalPoolsFound,
               },
               'Pool found and recorded'
             );
 
-            expiredIds.push(id);
+            doneIds.push(id);
           }
         } catch (err) {
           logger.error(
-            'Error searching for pool (grad %d, mint %s): %s',
+            'Error searching for pool (grad %d): %s',
             id,
-            graduation.mint,
             err instanceof Error ? err.message : String(err)
           );
         }
       }
 
-      for (const id of expiredIds) {
+      for (const id of doneIds) {
         this.tracked.delete(id);
       }
 
@@ -175,13 +208,13 @@ export class PoolTracker {
     slot?: number;
     timestamp?: number;
   } | null> {
-    // Strategy 1: Use Jupiter API to find the pool (most reliable)
-    // Jupiter discovers new pools quickly — if it returns a route, the pool exists
-    const jupiterResult = await this.findPoolViaJupiter(graduation);
-    if (jupiterResult) return jupiterResult;
+    // Strategy 1: Jupiter API (if not globally disabled due to auth issues)
+    if (!this.jupiterGloballyDisabled) {
+      const jupiterResult = await this.findPoolViaJupiter(graduation);
+      if (jupiterResult) return jupiterResult;
+    }
 
-    // Strategy 2: Look for PumpSwap migration transaction via the mint's recent txs
-    // The migration tx references both the mint and PumpSwap program
+    // Strategy 2: Look for migration tx via RPC
     const migrationResult = await this.findPoolViaMigrationTx(graduation);
     if (migrationResult) return migrationResult;
 
@@ -197,19 +230,21 @@ export class PoolTracker {
     slot?: number;
     timestamp?: number;
   } | null> {
-    // Try after 10s, then every 3rd poll (~15s intervals)
+    if (graduation.jupiterDisabled) return null;
+
+    // Try after 10s, then every 3rd poll
     const elapsed = Date.now() - graduation.startedAt;
     if (elapsed < 10_000) return null;
-    if (graduation.jupiterAttempted && graduation.pollCount % 3 !== 0) return null;
-    graduation.jupiterAttempted = true;
+    if (graduation.pollCount > 3 && graduation.pollCount % 3 !== 0) return null;
+
+    const endpoint = JUPITER_ENDPOINTS[this.jupiterEndpointIndex];
 
     try {
-      // Query Jupiter for a quote: SOL -> token mint
-      const response = await axios.get('https://api.jup.ag/quote', {
+      const response = await axios.get(endpoint, {
         params: {
           inputMint: SOL_MINT,
           outputMint: graduation.mint,
-          amount: '100000000', // 0.1 SOL in lamports
+          amount: '100000000', // 0.1 SOL
           slippageBps: '500',
         },
         timeout: 5_000,
@@ -217,21 +252,19 @@ export class PoolTracker {
 
       const data = response.data;
 
-      // Log first few Jupiter responses per graduation for debugging
-      if (graduation.pollCount <= 6) {
+      // Reset failure counter on success
+      this.jupiterConsecutiveFailures = 0;
+
+      // Log first response to verify structure
+      if (this.totalPoolsFound === 0 && graduation.pollCount <= 4) {
         logger.info(
           {
             mint: graduation.mint,
-            pollCount: graduation.pollCount,
+            responseKeys: data ? Object.keys(data) : [],
             hasRoutePlan: !!data?.routePlan,
             routePlanLength: data?.routePlan?.length,
-            responseKeys: data ? Object.keys(data) : [],
-            firstRoute: data?.routePlan?.[0] ? {
-              label: data.routePlan[0]?.swapInfo?.label,
-              ammKey: data.routePlan[0]?.swapInfo?.ammKey,
-            } : null,
           },
-          'Jupiter quote response'
+          'Jupiter quote response structure'
         );
       }
 
@@ -239,9 +272,7 @@ export class PoolTracker {
         return null;
       }
 
-      const routePlan = data.routePlan;
-      const firstSwap = routePlan[0]?.swapInfo;
-
+      const firstSwap = data.routePlan[0]?.swapInfo;
       if (!firstSwap || !firstSwap.ammKey) return null;
 
       const label = (firstSwap.label || '').toLowerCase();
@@ -262,38 +293,66 @@ export class PoolTracker {
           ammKey: firstSwap.ammKey,
           label: firstSwap.label,
           dex,
-          pollCount: graduation.pollCount,
         },
         'Pool found via Jupiter'
       );
 
-      return {
-        address: firstSwap.ammKey,
-        dex,
-      };
+      return { address: firstSwap.ammKey, dex };
     } catch (err) {
       if (axios.isAxiosError(err)) {
         const status = err.response?.status;
-        // Log non-400 errors and first few 400s for debugging
-        if (status !== 400 || graduation.pollCount <= 3) {
+
+        if (status === 401 || status === 403) {
+          this.jupiterConsecutiveFailures++;
+
+          // Try next endpoint after 3 failures
+          if (this.jupiterConsecutiveFailures === 3) {
+            const nextIndex = this.jupiterEndpointIndex + 1;
+            if (nextIndex < JUPITER_ENDPOINTS.length) {
+              this.jupiterEndpointIndex = nextIndex;
+              this.jupiterConsecutiveFailures = 0;
+              logger.info(
+                { newEndpoint: JUPITER_ENDPOINTS[nextIndex] },
+                'Switching Jupiter endpoint after auth failures'
+              );
+            } else {
+              // All endpoints failed — disable Jupiter globally
+              this.jupiterGloballyDisabled = true;
+              logger.warn(
+                'All Jupiter endpoints returned auth errors — disabling Jupiter. Will rely on migration tx only.'
+              );
+            }
+          } else if (this.jupiterConsecutiveFailures === 1) {
+            // Log only the first failure
+            logger.warn(
+              { status, endpoint, message: err.response?.data?.error || err.message },
+              'Jupiter auth error'
+            );
+          }
+          return null;
+        }
+
+        // 400 = no route found — expected, don't log
+        if (status === 400) return null;
+
+        // Other errors — log once
+        if (graduation.pollCount <= 2) {
           logger.info(
-            {
-              mint: graduation.mint,
-              status,
-              pollCount: graduation.pollCount,
-              message: err.response?.data?.error || err.message,
-            },
-            'Jupiter quote error'
+            { status, mint: graduation.mint, message: err.message },
+            'Jupiter error'
           );
         }
         return null;
       }
-      logger.info(
-        'Jupiter quote failed for %s (poll %d): %s',
-        graduation.mint,
-        graduation.pollCount,
-        err instanceof Error ? err.message : String(err)
-      );
+
+      // Non-axios error
+      if (graduation.pollCount <= 2) {
+        logger.info(
+          'Jupiter failed for %s: %s',
+          graduation.mint,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
       return null;
     }
   }
@@ -307,28 +366,14 @@ export class PoolTracker {
     slot?: number;
     timestamp?: number;
   } | null> {
-    // Only check via RPC every other poll to save credits
-    if (graduation.pollCount % 2 !== 0) return null;
-
+    // Check every poll since this is our primary strategy now
     try {
       const signatures = await this.connection.getSignaturesForAddress(
         new PublicKey(graduation.mint),
-        { limit: 10 }
+        { limit: 15 }
       );
 
       if (signatures.length === 0) return null;
-
-      // Log what we're seeing for first few polls
-      if (graduation.pollCount <= 4) {
-        logger.info(
-          {
-            mint: graduation.mint,
-            pollCount: graduation.pollCount,
-            signatureCount: signatures.length,
-          },
-          'Migration tx search: found signatures'
-        );
-      }
 
       for (const sigInfo of signatures) {
         const tx = await this.fetchParsedTransaction(sigInfo.signature);
@@ -338,32 +383,27 @@ export class PoolTracker {
           typeof k === 'string' ? k : k.pubkey.toBase58()
         );
 
-        // Check if any DEX program is in the transaction
-        const matchedDex = accountKeys.find((key) => DEX_PROGRAM_IDS.has(key));
-        if (!matchedDex) {
-          // Log first miss per graduation to see what programs ARE involved
-          if (graduation.pollCount <= 2) {
-            // Find all program IDs in the tx
-            const programs = accountKeys.filter(key =>
-              tx.transaction.message.instructions.some((ix: any) => {
-                const pid = 'programId' in ix
-                  ? (typeof ix.programId === 'string' ? ix.programId : ix.programId.toBase58())
-                  : null;
-                return pid === key;
-              })
-            );
-            logger.debug(
-              {
-                mint: graduation.mint,
-                signature: sigInfo.signature,
-                programs,
-                logs: tx.meta.logMessages?.slice(0, 5),
-              },
-              'Migration tx search: no DEX program in tx'
-            );
+        // Check top-level account keys for DEX programs
+        let matchedDex = accountKeys.find((key) => DEX_PROGRAM_IDS.has(key));
+
+        // Also check inner instructions for DEX programs (CPI-based migration)
+        if (!matchedDex && tx.meta.innerInstructions) {
+          for (const inner of tx.meta.innerInstructions) {
+            for (const ix of inner.instructions) {
+              if (!('programId' in ix)) continue;
+              const progId = typeof ix.programId === 'string'
+                ? ix.programId
+                : ix.programId.toBase58();
+              if (DEX_PROGRAM_IDS.has(progId)) {
+                matchedDex = progId;
+                break;
+              }
+            }
+            if (matchedDex) break;
           }
-          continue;
         }
+
+        if (!matchedDex) continue;
 
         let dex: string;
         if (matchedDex === PUMPSWAP_PROGRAM_ID) {
@@ -374,21 +414,9 @@ export class PoolTracker {
           dex = 'raydium-amm';
         }
 
-        // Extract pool address from the DEX instruction
-        // Check both top-level and inner instructions
         const poolAddress = this.extractPoolAddress(tx, matchedDex);
 
         if (poolAddress) {
-          logger.info(
-            {
-              mint: graduation.mint,
-              poolAddress,
-              dex,
-              signature: sigInfo.signature,
-            },
-            'Pool found via migration tx'
-          );
-
           return {
             address: poolAddress,
             dex,
@@ -399,11 +427,13 @@ export class PoolTracker {
         }
       }
     } catch (err) {
-      logger.debug(
-        'Migration tx search failed for %s: %s',
-        graduation.mint,
-        err instanceof Error ? err.message : String(err)
-      );
+      if (graduation.pollCount <= 2) {
+        logger.debug(
+          'Migration tx search failed for %s: %s',
+          graduation.mint,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
     }
 
     return null;
@@ -426,7 +456,7 @@ export class PoolTracker {
       }
     }
 
-    // Check inner instructions (migration often happens via CPI)
+    // Check inner instructions
     if (tx.meta.innerInstructions) {
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {
@@ -449,7 +479,6 @@ export class PoolTracker {
     return null;
   }
 
-  /** Fetch a parsed transaction with a single retry on failure. */
   private async fetchParsedTransaction(signature: string, retries = 1) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
@@ -461,11 +490,6 @@ export class PoolTracker {
         if (attempt < retries) {
           await new Promise((r) => setTimeout(r, 500));
         } else {
-          logger.debug(
-            'Failed to fetch tx %s: %s',
-            signature,
-            err instanceof Error ? err.message : String(err)
-          );
           return null;
         }
       }

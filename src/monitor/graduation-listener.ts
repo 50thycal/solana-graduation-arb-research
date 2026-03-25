@@ -116,6 +116,7 @@ export class GraduationListener {
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
       wsConnected: this.subscriptionId !== null,
       reconnecting: this.reconnecting,
+      poolTracker: this.poolTracker.getStats(),
     };
   }
 
