@@ -1,17 +1,18 @@
 import { Connection, PublicKey } from '@solana/web3.js';
+import axios from 'axios';
 import Database from 'better-sqlite3';
 import pino from 'pino';
 import { updateGraduationPool } from '../db/queries';
 
 const logger = pino({ name: 'pool-tracker' });
 
-// Known DEX program IDs
-const RAYDIUM_AMM_PROGRAM = '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8';
-const RAYDIUM_CPMM_PROGRAM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
-
-// PumpSwap program ID — configurable via env
+// PumpSwap program ID
 const PUMPSWAP_PROGRAM_ID =
   process.env.PUMPSWAP_PROGRAM_ID || 'PSwapMdSai8tjrEXcxFeQth87xC4rRsa4VA5mhGhXkP';
+
+// Known DEX program IDs for identification
+const RAYDIUM_AMM_PROGRAM = '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8';
+const RAYDIUM_CPMM_PROGRAM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
 
 const DEX_PROGRAM_IDS = new Set([
   RAYDIUM_AMM_PROGRAM,
@@ -19,16 +20,20 @@ const DEX_PROGRAM_IDS = new Set([
   PUMPSWAP_PROGRAM_ID,
 ]);
 
+// SOL mint for Jupiter quotes
+const SOL_MINT = 'So11111111111111111111111111111111111111112';
+
 interface TrackedGraduation {
   graduationId: number;
   mint: string;
   graduationTimestamp: number;
   startedAt: number;
-  checkedSignatures: Set<string>;
+  pollCount: number;
+  jupiterAttempted: boolean;
 }
 
-const POOL_SEARCH_TIMEOUT_MS = 120_000; // Stop looking after 2 minutes
-const POLL_INTERVAL_MS = 3_000; // Check every 3s (reduced from 2s to lower RPC load)
+const POOL_SEARCH_TIMEOUT_MS = 180_000; // 3 minutes — migration can take a bit
+const POLL_INTERVAL_MS = 5_000; // Check every 5s
 
 export class PoolTracker {
   private db: Database.Database;
@@ -69,7 +74,8 @@ export class PoolTracker {
       mint,
       graduationTimestamp,
       startedAt: Date.now(),
-      checkedSignatures: new Set(),
+      pollCount: 0,
+      jupiterAttempted: false,
     });
 
     logger.info(
@@ -77,7 +83,6 @@ export class PoolTracker {
       'Tracking graduation for pool creation'
     );
 
-    // Start polling if not already running
     if (!this.pollInterval) {
       this.pollInterval = setInterval(() => this.pollForPools(), POLL_INTERVAL_MS);
     }
@@ -92,7 +97,6 @@ export class PoolTracker {
   }
 
   private async pollForPools(): Promise<void> {
-    // Prevent overlapping polls
     if (this.polling) return;
     this.polling = true;
 
@@ -101,15 +105,16 @@ export class PoolTracker {
       const expiredIds: number[] = [];
 
       for (const [id, graduation] of this.tracked) {
-        // Check timeout
         if (now - graduation.startedAt > POOL_SEARCH_TIMEOUT_MS) {
-          logger.info(
-            { graduationId: id, mint: graduation.mint },
+          logger.warn(
+            { graduationId: id, mint: graduation.mint, pollCount: graduation.pollCount },
             'Pool search timed out'
           );
           expiredIds.push(id);
           continue;
         }
+
+        graduation.pollCount++;
 
         try {
           const pool = await this.findPool(graduation);
@@ -130,6 +135,8 @@ export class PoolTracker {
                 mint: graduation.mint,
                 poolAddress: pool.address,
                 dex: pool.dex,
+                pollCount: graduation.pollCount,
+                searchTimeMs: now - graduation.startedAt,
               },
               'Pool found and recorded'
             );
@@ -138,18 +145,18 @@ export class PoolTracker {
           }
         } catch (err) {
           logger.error(
-            { err, graduationId: id, mint: graduation.mint },
-            'Error searching for pool'
+            'Error searching for pool (grad %d, mint %s): %s',
+            id,
+            graduation.mint,
+            err instanceof Error ? err.message : String(err)
           );
         }
       }
 
-      // Clean up expired/found entries
       for (const id of expiredIds) {
         this.tracked.delete(id);
       }
 
-      // Stop polling if nothing left to track
       if (this.tracked.size === 0 && this.pollInterval) {
         clearInterval(this.pollInterval);
         this.pollInterval = null;
@@ -168,60 +175,204 @@ export class PoolTracker {
     slot?: number;
     timestamp?: number;
   } | null> {
-    // Fetch recent signatures for this mint — single RPC call
-    const signatures = await this.connection.getSignaturesForAddress(
-      new PublicKey(graduation.mint),
-      { limit: 10 }
-    );
+    // Strategy 1: Use Jupiter API to find the pool (most reliable)
+    // Jupiter discovers new pools quickly — if it returns a route, the pool exists
+    const jupiterResult = await this.findPoolViaJupiter(graduation);
+    if (jupiterResult) return jupiterResult;
 
-    if (signatures.length === 0) return null;
+    // Strategy 2: Look for PumpSwap migration transaction via the mint's recent txs
+    // The migration tx references both the mint and PumpSwap program
+    const migrationResult = await this.findPoolViaMigrationTx(graduation);
+    if (migrationResult) return migrationResult;
 
-    // Only check signatures we haven't seen before
-    const newSignatures = signatures.filter(
-      (s) => !graduation.checkedSignatures.has(s.signature)
-    );
+    return null;
+  }
 
-    for (const sigInfo of newSignatures) {
-      graduation.checkedSignatures.add(sigInfo.signature);
+  private async findPoolViaJupiter(
+    graduation: TrackedGraduation
+  ): Promise<{
+    address: string;
+    dex: string;
+    signature?: string;
+    slot?: number;
+    timestamp?: number;
+  } | null> {
+    // Don't spam Jupiter on every poll — try after 5s, then every 15s
+    const elapsed = Date.now() - graduation.startedAt;
+    if (elapsed < 5_000) return null;
+    if (graduation.jupiterAttempted && graduation.pollCount % 3 !== 0) return null;
+    graduation.jupiterAttempted = true;
 
-      const tx = await this.fetchParsedTransaction(sigInfo.signature);
-      if (!tx || !tx.meta || tx.meta.err) continue;
+    try {
+      // Query Jupiter for a quote: SOL -> token mint
+      const response = await axios.get('https://quote-api.jup.ag/v6/quote', {
+        params: {
+          inputMint: SOL_MINT,
+          outputMint: graduation.mint,
+          amount: '100000000', // 0.1 SOL in lamports
+          slippageBps: '500',
+        },
+        timeout: 5_000,
+      });
 
-      const accountKeys = tx.transaction.message.accountKeys.map((k) =>
-        typeof k === 'string' ? k : k.pubkey.toBase58()
-      );
-
-      // Check if any DEX program is involved
-      const matchedDex = accountKeys.find((key) => DEX_PROGRAM_IDS.has(key));
-      if (!matchedDex) continue;
-
-      // Determine which DEX
-      let dex: string;
-      if (matchedDex === PUMPSWAP_PROGRAM_ID) {
-        dex = 'pumpswap';
-      } else if (matchedDex === RAYDIUM_CPMM_PROGRAM) {
-        dex = 'raydium-cpmm';
-      } else {
-        dex = 'raydium-amm';
+      if (!response.data || !response.data.routePlan || response.data.routePlan.length === 0) {
+        return null;
       }
 
-      // Find the pool address from the DEX instruction accounts
-      for (const ix of tx.transaction.message.instructions) {
-        if ('programId' in ix) {
-          const progId =
-            typeof ix.programId === 'string'
-              ? ix.programId
-              : ix.programId.toBase58();
-          if (DEX_PROGRAM_IDS.has(progId)) {
-            const accounts = (ix as any).accounts as PublicKey[];
-            if (accounts && accounts.length > 0) {
-              return {
-                address: accounts[0].toBase58(),
-                dex,
-                signature: sigInfo.signature,
-                slot: sigInfo.slot,
-                timestamp: tx.blockTime || undefined,
-              };
+      // Extract pool info from the route
+      const routePlan = response.data.routePlan;
+      const firstSwap = routePlan[0]?.swapInfo;
+
+      if (!firstSwap || !firstSwap.ammKey) return null;
+
+      // Determine DEX from the route label
+      const label = (firstSwap.label || '').toLowerCase();
+      let dex = 'unknown';
+      if (label.includes('pumpswap') || label.includes('pump')) {
+        dex = 'pumpswap';
+      } else if (label.includes('raydium')) {
+        dex = label.includes('cpmm') ? 'raydium-cpmm' : 'raydium-amm';
+      } else if (label.includes('orca')) {
+        dex = 'orca';
+      } else {
+        dex = label || 'unknown';
+      }
+
+      logger.info(
+        {
+          mint: graduation.mint,
+          ammKey: firstSwap.ammKey,
+          label: firstSwap.label,
+          dex,
+        },
+        'Pool found via Jupiter'
+      );
+
+      return {
+        address: firstSwap.ammKey,
+        dex,
+      };
+    } catch (err) {
+      // Jupiter returns 400 if no route exists — that's expected early on
+      if (axios.isAxiosError(err) && err.response?.status === 400) {
+        return null;
+      }
+      logger.debug(
+        'Jupiter quote failed for %s: %s',
+        graduation.mint,
+        err instanceof Error ? err.message : String(err)
+      );
+      return null;
+    }
+  }
+
+  private async findPoolViaMigrationTx(
+    graduation: TrackedGraduation
+  ): Promise<{
+    address: string;
+    dex: string;
+    signature?: string;
+    slot?: number;
+    timestamp?: number;
+  } | null> {
+    // Only check via RPC every other poll to save credits
+    if (graduation.pollCount % 2 !== 0) return null;
+
+    try {
+      const signatures = await this.connection.getSignaturesForAddress(
+        new PublicKey(graduation.mint),
+        { limit: 10 }
+      );
+
+      if (signatures.length === 0) return null;
+
+      for (const sigInfo of signatures) {
+        const tx = await this.fetchParsedTransaction(sigInfo.signature);
+        if (!tx || !tx.meta || tx.meta.err) continue;
+
+        const accountKeys = tx.transaction.message.accountKeys.map((k) =>
+          typeof k === 'string' ? k : k.pubkey.toBase58()
+        );
+
+        // Check if any DEX program is in the transaction
+        const matchedDex = accountKeys.find((key) => DEX_PROGRAM_IDS.has(key));
+        if (!matchedDex) continue;
+
+        let dex: string;
+        if (matchedDex === PUMPSWAP_PROGRAM_ID) {
+          dex = 'pumpswap';
+        } else if (matchedDex === RAYDIUM_CPMM_PROGRAM) {
+          dex = 'raydium-cpmm';
+        } else {
+          dex = 'raydium-amm';
+        }
+
+        // Extract pool address from the DEX instruction
+        // Check both top-level and inner instructions
+        const poolAddress = this.extractPoolAddress(tx, matchedDex);
+
+        if (poolAddress) {
+          logger.info(
+            {
+              mint: graduation.mint,
+              poolAddress,
+              dex,
+              signature: sigInfo.signature,
+            },
+            'Pool found via migration tx'
+          );
+
+          return {
+            address: poolAddress,
+            dex,
+            signature: sigInfo.signature,
+            slot: sigInfo.slot,
+            timestamp: tx.blockTime || undefined,
+          };
+        }
+      }
+    } catch (err) {
+      logger.debug(
+        'Migration tx search failed for %s: %s',
+        graduation.mint,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+
+    return null;
+  }
+
+  private extractPoolAddress(tx: any, dexProgramId: string): string | null {
+    // Check top-level instructions
+    for (const ix of tx.transaction.message.instructions) {
+      if (!('programId' in ix)) continue;
+      const progId = typeof ix.programId === 'string'
+        ? ix.programId
+        : ix.programId.toBase58();
+
+      if (progId === dexProgramId && 'accounts' in ix && Array.isArray(ix.accounts)) {
+        const accts = ix.accounts;
+        if (accts.length > 0) {
+          const addr = typeof accts[0] === 'string' ? accts[0] : accts[0]?.toBase58?.();
+          if (addr) return addr;
+        }
+      }
+    }
+
+    // Check inner instructions (migration often happens via CPI)
+    if (tx.meta.innerInstructions) {
+      for (const inner of tx.meta.innerInstructions) {
+        for (const ix of inner.instructions) {
+          if (!('programId' in ix)) continue;
+          const progId = typeof ix.programId === 'string'
+            ? ix.programId
+            : ix.programId.toBase58();
+
+          if (progId === dexProgramId && 'accounts' in ix && Array.isArray(ix.accounts)) {
+            const accts = ix.accounts;
+            if (accts.length > 0) {
+              const addr = typeof accts[0] === 'string' ? accts[0] : accts[0]?.toBase58?.();
+              if (addr) return addr;
             }
           }
         }
@@ -241,10 +392,13 @@ export class PoolTracker {
         });
       } catch (err) {
         if (attempt < retries) {
-          logger.debug({ err, signature, attempt }, 'Retrying getParsedTransaction');
           await new Promise((r) => setTimeout(r, 500));
         } else {
-          logger.debug({ err, signature }, 'Failed to fetch parsed transaction');
+          logger.debug(
+            'Failed to fetch tx %s: %s',
+            signature,
+            err instanceof Error ? err.message : String(err)
+          );
           return null;
         }
       }

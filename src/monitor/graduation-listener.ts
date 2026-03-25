@@ -32,6 +32,12 @@ const BONDING_CURVE_LAYOUT = {
 const LAMPORTS_PER_SOL = new BN(1_000_000_000);
 const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);
 
+// Graduation verification thresholds
+// A completed bonding curve typically has ~79-85 SOL in real reserves
+// and near-zero real token reserves
+const MIN_SOL_RESERVES_FOR_GRADUATION = 70; // SOL — curve is complete around 79-85
+const MAX_TOKEN_RESERVES_FOR_GRADUATION = 1_000_000; // tokens — should be near 0 when complete
+
 // Reconnection settings
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
@@ -54,6 +60,14 @@ export interface GraduationEvent {
   virtualTokenReserves?: number;
 }
 
+interface BondingCurveState {
+  virtualTokenReserves: number;
+  virtualSolReserves: number;
+  realTokenReserves: number;
+  realSolReserves: number;
+  isComplete: boolean;
+}
+
 export class GraduationListener {
   private connection: Connection;
   private db: Database.Database;
@@ -65,8 +79,10 @@ export class GraduationListener {
   private lastEventTime = Date.now();
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private totalLogsReceived = 0;
-  private totalGraduationsDetected = 0;
+  private totalCandidatesDetected = 0;
+  private totalVerifiedGraduations = 0;
   private totalGraduationsRecorded = 0;
+  private totalFalsePositives = 0;
   private totalMintExtractionFails = 0;
   private reconnecting = false;
 
@@ -92,8 +108,10 @@ export class GraduationListener {
   getStats() {
     return {
       totalLogsReceived: this.totalLogsReceived,
-      totalGraduationsDetected: this.totalGraduationsDetected,
+      totalCandidatesDetected: this.totalCandidatesDetected,
+      totalVerifiedGraduations: this.totalVerifiedGraduations,
       totalGraduationsRecorded: this.totalGraduationsRecorded,
+      totalFalsePositives: this.totalFalsePositives,
       totalMintExtractionFails: this.totalMintExtractionFails,
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
       wsConnected: this.subscriptionId !== null,
@@ -117,9 +135,11 @@ export class GraduationListener {
         {
           silentSeconds: silentSec,
           totalLogs: this.totalLogsReceived,
-          totalGraduations: this.totalGraduationsDetected,
-          totalRecorded: this.totalGraduationsRecorded,
-          totalMintFails: this.totalMintExtractionFails,
+          candidates: this.totalCandidatesDetected,
+          verified: this.totalVerifiedGraduations,
+          recorded: this.totalGraduationsRecorded,
+          falsePositives: this.totalFalsePositives,
+          mintFails: this.totalMintExtractionFails,
           subscriptionId: this.subscriptionId,
         },
         'WS health check'
@@ -161,15 +181,14 @@ export class GraduationListener {
           this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
           this.totalLogsReceived++;
 
-          // Log first 20 events and then every 100th to understand log format
-          if (this.totalLogsReceived <= 20 || this.totalLogsReceived % 100 === 0) {
+          // Log first 10 events and then every 200th
+          if (this.totalLogsReceived <= 10 || this.totalLogsReceived % 200 === 0) {
             logger.info(
               {
                 signature: logs.signature,
                 slot: ctx.slot,
                 logCount: logs.logs.length,
                 logs: logs.logs,
-                hasErr: !!logs.err,
                 totalReceived: this.totalLogsReceived,
               },
               'Raw pump.fun log event'
@@ -261,7 +280,7 @@ export class GraduationListener {
   private async handleLogs(logs: Logs, ctx: Context): Promise<void> {
     if (logs.err) return;
 
-    // Broad match for graduation/completion events
+    // Broad match for graduation/completion candidates
     const graduationLog = logs.logs.find(
       (log) =>
         log.includes('Complete') ||
@@ -273,47 +292,40 @@ export class GraduationListener {
 
     if (!graduationLog) return;
 
-    this.totalGraduationsDetected++;
+    this.totalCandidatesDetected++;
+
+    // Process: extract mint + bonding curve, then VERIFY before recording
+    const event = await this.processAndVerifyGraduation(logs.signature, ctx.slot, graduationLog);
+    if (!event) return;
+
+    const graduationId = this.saveGraduation(event);
+    if (graduationId === null) {
+      logger.debug({ signature: event.signature }, 'Duplicate graduation, skipping');
+      return;
+    }
+
+    this.totalGraduationsRecorded++;
 
     logger.info(
       {
-        signature: logs.signature,
-        slot: ctx.slot,
-        matchedLog: graduationLog,
-        allLogs: logs.logs,
-        detectionCount: this.totalGraduationsDetected,
+        graduationId,
+        mint: event.mint,
+        signature: event.signature,
+        finalPriceSol: event.finalPriceSol,
+        finalSolReserves: event.finalSolReserves,
+        finalTokenReserves: event.finalTokenReserves,
+        bondingCurve: event.bondingCurveAddress,
       },
-      'Graduation event detected'
+      'Graduation verified and recorded'
     );
 
-    const event = await this.processGraduation(logs.signature, ctx.slot);
-    if (event) {
-      const graduationId = this.saveGraduation(event);
-      if (graduationId === null) {
-        logger.debug({ signature: event.signature }, 'Duplicate graduation event, skipping');
-        return;
-      }
-
-      this.totalGraduationsRecorded++;
-
-      logger.info(
-        {
-          graduationId,
-          mint: event.mint,
-          signature: event.signature,
-          finalPriceSol: event.finalPriceSol,
-          bondingCurve: event.bondingCurveAddress,
-        },
-        'Graduation recorded'
-      );
-
-      this.poolTracker.trackGraduation(graduationId, event.mint, event.timestamp);
-    }
+    this.poolTracker.trackGraduation(graduationId, event.mint, event.timestamp);
   }
 
-  private async processGraduation(
+  private async processAndVerifyGraduation(
     signature: string,
-    slot: number
+    slot: number,
+    matchedLog: string
   ): Promise<GraduationEvent | null> {
     const tx = await this.connection.getParsedTransaction(signature, {
       commitment: 'confirmed',
@@ -327,7 +339,7 @@ export class GraduationListener {
     let mint: string | null = null;
     let bondingCurveAddress: string | null = null;
 
-    // Strategy 1: Find the pump.fun instruction and extract accounts
+    // Strategy 1: Top-level pump.fun instruction accounts
     for (const instruction of tx.transaction.message.instructions) {
       if (!('programId' in instruction)) continue;
 
@@ -337,23 +349,9 @@ export class GraduationListener {
 
       if (progId !== PUMP_FUN_PROGRAM_STR) continue;
 
-      // PartiallyDecodedInstruction has `accounts` as PublicKey[]
       if ('accounts' in instruction && Array.isArray(instruction.accounts)) {
         const accts = instruction.accounts;
-        logger.info(
-          {
-            signature,
-            accountCount: accts.length,
-            accounts: accts.slice(0, 6).map((a: any) =>
-              typeof a === 'string' ? a : a?.toBase58?.() ?? String(a)
-            ),
-            hasData: 'data' in instruction,
-          },
-          'pump.fun instruction accounts'
-        );
-
         if (accts.length >= 3) {
-          // pump.fun Complete: [0] = user, [1] = mint, [2] = bonding curve
           const acct1 = accts[1];
           const acct2 = accts[2];
           mint = typeof acct1 === 'string' ? acct1 : acct1?.toBase58?.() ?? null;
@@ -361,17 +359,9 @@ export class GraduationListener {
         }
         break;
       }
-
-      // ParsedInstruction (unlikely for pump.fun)
-      if ('parsed' in instruction) {
-        logger.info(
-          { signature, parsed: JSON.stringify(instruction.parsed).slice(0, 200) },
-          'pump.fun returned ParsedInstruction'
-        );
-      }
     }
 
-    // Strategy 2: If the graduation came from a CPI (inner instruction), check those
+    // Strategy 2: CPI inner instructions
     if (!mint && tx.meta.innerInstructions) {
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {
@@ -383,18 +373,6 @@ export class GraduationListener {
 
           if ('accounts' in ix && Array.isArray(ix.accounts)) {
             const accts = ix.accounts;
-            logger.info(
-              {
-                signature,
-                innerIndex: inner.index,
-                accountCount: accts.length,
-                accounts: accts.slice(0, 6).map((a: any) =>
-                  typeof a === 'string' ? a : a?.toBase58?.() ?? String(a)
-                ),
-              },
-              'pump.fun inner instruction accounts'
-            );
-
             if (accts.length >= 3) {
               const acct1 = accts[1];
               const acct2 = accts[2];
@@ -408,95 +386,93 @@ export class GraduationListener {
       }
     }
 
-    // Strategy 3: Use the transaction's account keys list
-    // The pump.fun program is typically invoked with accounts in the message
     if (!mint) {
-      const allKeys = tx.transaction.message.accountKeys.map((k) =>
-        typeof k === 'string' ? k : k.pubkey.toBase58()
-      );
-
-      // Log detailed tx structure for debugging
       this.totalMintExtractionFails++;
-      logger.warn(
-        {
-          signature,
-          totalMintFails: this.totalMintExtractionFails,
-          accountKeyCount: allKeys.length,
-          accountKeys: allKeys.slice(0, 10),
-          instructionCount: tx.transaction.message.instructions.length,
-          instructions: tx.transaction.message.instructions.map((ix, i) => {
-            const info: any = { index: i };
-            if ('programId' in ix) {
-              info.programId = typeof ix.programId === 'string'
-                ? ix.programId : ix.programId.toBase58();
-            }
-            if ('parsed' in ix) info.type = 'parsed';
-            if ('accounts' in ix) {
-              info.type = 'partial';
-              info.accountCount = (ix as any).accounts?.length;
-            }
-            if ('program' in ix) info.program = ix.program;
-            return info;
-          }),
-          innerInstructionCount: tx.meta.innerInstructions?.length ?? 0,
-          logs: tx.meta.logMessages?.slice(0, 15),
-        },
-        'Could not extract mint — full tx structure dump'
-      );
+      // Only log occasionally to avoid spam
+      if (this.totalMintExtractionFails <= 5 || this.totalMintExtractionFails % 20 === 0) {
+        logger.warn(
+          {
+            signature,
+            totalMintFails: this.totalMintExtractionFails,
+            matchedLog,
+            logs: tx.meta.logMessages?.slice(0, 10),
+          },
+          'Could not extract mint from candidate tx'
+        );
+      }
       return null;
     }
 
-    // Fetch bonding curve state
-    let finalPriceSol: number | undefined;
-    let finalSolReserves: number | undefined;
-    let finalTokenReserves: number | undefined;
-    let virtualSolReserves: number | undefined;
-    let virtualTokenReserves: number | undefined;
+    // VERIFICATION: Fetch bonding curve state and confirm this is actually a graduation
+    if (!bondingCurveAddress) {
+      this.totalFalsePositives++;
+      logger.debug({ signature, mint }, 'No bonding curve address — cannot verify, skipping');
+      return null;
+    }
 
-    if (bondingCurveAddress) {
-      try {
-        const curveState = await this.fetchBondingCurveState(bondingCurveAddress);
-        if (curveState) {
-          virtualSolReserves = curveState.virtualSolReserves;
-          virtualTokenReserves = curveState.virtualTokenReserves;
-          finalSolReserves = curveState.realSolReserves;
-          finalTokenReserves = curveState.realTokenReserves;
-          if (curveState.virtualTokenReserves > 0) {
-            finalPriceSol =
-              curveState.virtualSolReserves / curveState.virtualTokenReserves;
-          }
-        }
-      } catch (err) {
-        logger.warn(
-          'Failed to fetch bonding curve state for %s: %s',
-          bondingCurveAddress,
-          err instanceof Error ? err.message : String(err)
+    let curveState: BondingCurveState | null = null;
+    try {
+      curveState = await this.fetchBondingCurveState(bondingCurveAddress);
+    } catch (err) {
+      logger.warn(
+        'Failed to fetch bonding curve %s: %s',
+        bondingCurveAddress,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+
+    if (!curveState) {
+      // Curve account might already be closed after graduation — treat as likely valid
+      logger.info(
+        { signature, mint, bondingCurve: bondingCurveAddress },
+        'Bonding curve account not found (likely closed post-graduation), accepting'
+      );
+    } else if (!curveState.isComplete) {
+      // Check reserve thresholds as additional verification
+      const reservesLookGraduated =
+        curveState.realSolReserves >= MIN_SOL_RESERVES_FOR_GRADUATION ||
+        curveState.realTokenReserves <= MAX_TOKEN_RESERVES_FOR_GRADUATION;
+
+      if (!reservesLookGraduated) {
+        this.totalFalsePositives++;
+        logger.info(
+          {
+            signature,
+            mint,
+            isComplete: curveState.isComplete,
+            realSolReserves: curveState.realSolReserves,
+            realTokenReserves: curveState.realTokenReserves,
+            matchedLog,
+          },
+          'False positive: bonding curve not graduated'
         );
+        return null;
       }
+    }
+
+    this.totalVerifiedGraduations++;
+
+    // Compute final price
+    let finalPriceSol: number | undefined;
+    if (curveState && curveState.virtualTokenReserves > 0) {
+      finalPriceSol = curveState.virtualSolReserves / curveState.virtualTokenReserves;
     }
 
     return {
       mint,
-      bondingCurveAddress: bondingCurveAddress || '',
+      bondingCurveAddress,
       signature,
       slot,
       timestamp,
       finalPriceSol,
-      finalSolReserves,
-      finalTokenReserves,
-      virtualSolReserves,
-      virtualTokenReserves,
+      finalSolReserves: curveState?.realSolReserves,
+      finalTokenReserves: curveState?.realTokenReserves,
+      virtualSolReserves: curveState?.virtualSolReserves,
+      virtualTokenReserves: curveState?.virtualTokenReserves,
     };
   }
 
-  private async fetchBondingCurveState(
-    address: string
-  ): Promise<{
-    virtualTokenReserves: number;
-    virtualSolReserves: number;
-    realTokenReserves: number;
-    realSolReserves: number;
-  } | null> {
+  private async fetchBondingCurveState(address: string): Promise<BondingCurveState | null> {
     const pubkey = new PublicKey(address);
     const accountInfo: AccountInfo<Buffer> | null =
       await this.connection.getAccountInfo(pubkey);
@@ -535,11 +511,15 @@ export class GraduationListener {
       'le'
     );
 
+    // The `complete` field is a bool at offset 48
+    const isComplete = data[BONDING_CURVE_LAYOUT.COMPLETE] === 1;
+
     return {
       virtualTokenReserves: bnToNumber(virtualTokenReserves, TOKEN_DECIMAL_FACTOR),
       virtualSolReserves: bnToNumber(virtualSolReserves, LAMPORTS_PER_SOL),
       realTokenReserves: bnToNumber(realTokenReserves, TOKEN_DECIMAL_FACTOR),
       realSolReserves: bnToNumber(realSolReserves, LAMPORTS_PER_SOL),
+      isComplete,
     };
   }
 
