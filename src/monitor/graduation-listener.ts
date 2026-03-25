@@ -18,11 +18,6 @@ const PUMP_FUN_PROGRAM_ID = new PublicKey(
   process.env.PUMP_FUN_PROGRAM_ID || '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'
 );
 
-// CompleteEvent discriminator (first 8 bytes of sha256("event:CompleteEvent"))
-const COMPLETE_EVENT_DISCRIMINATOR = Buffer.from([
-  0x5f, 0x8d, 0xa1, 0x2e, 0x6d, 0x01, 0xf3, 0x7a,
-]);
-
 // Bonding curve account data layout offsets
 const BONDING_CURVE_LAYOUT = {
   VIRTUAL_TOKEN_RESERVES: 8,   // u64 at offset 8
@@ -33,9 +28,13 @@ const BONDING_CURVE_LAYOUT = {
   COMPLETE: 48,                // bool at offset 48
 };
 
-const LAMPORTS_PER_SOL = 1_000_000_000;
-const TOKEN_DECIMALS = 6;
-const TOKEN_DECIMAL_FACTOR = 10 ** TOKEN_DECIMALS;
+const LAMPORTS_PER_SOL = new BN(1_000_000_000);
+const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);
+
+// Reconnection settings
+const INITIAL_RECONNECT_DELAY_MS = 1_000;
+const MAX_RECONNECT_DELAY_MS = 60_000;
+const RECONNECT_BACKOFF_MULTIPLIER = 2;
 
 export interface GraduationEvent {
   mint: string;
@@ -55,7 +54,11 @@ export class GraduationListener {
   private db: Database.Database;
   private poolTracker: PoolTracker;
   private subscriptionId: number | null = null;
-  private wsConnection: Connection;
+  private stopped = false;
+  private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private lastEventTime = Date.now();
+  private healthCheckInterval: NodeJS.Timeout | null = null;
 
   constructor(db: Database.Database) {
     const rpcUrl = process.env.HELIUS_RPC_URL;
@@ -72,7 +75,6 @@ export class GraduationListener {
       commitment: 'confirmed',
       wsEndpoint: wsUrl,
     });
-    this.wsConnection = this.connection;
     this.db = db;
     this.poolTracker = new PoolTracker(db, this.connection);
   }
@@ -83,28 +85,107 @@ export class GraduationListener {
       'Starting graduation listener'
     );
 
-    this.subscriptionId = this.connection.onLogs(
-      PUMP_FUN_PROGRAM_ID,
-      async (logs: Logs, ctx: Context) => {
-        try {
-          await this.handleLogs(logs, ctx);
-        } catch (err) {
-          logger.error({ err, signature: logs.signature }, 'Error handling logs');
-        }
-      },
-      'confirmed'
-    );
+    await this.subscribe();
 
-    logger.info({ subscriptionId: this.subscriptionId }, 'Subscribed to pump.fun logs');
+    // Periodically check if the WebSocket is still alive
+    // If no events received in 5 minutes, force reconnect
+    this.healthCheckInterval = setInterval(() => {
+      const silentMs = Date.now() - this.lastEventTime;
+      if (silentMs > 5 * 60 * 1000) {
+        logger.warn(
+          { silentSeconds: Math.floor(silentMs / 1000) },
+          'No events received recently, forcing reconnect'
+        );
+        this.reconnect();
+      }
+    }, 60_000);
   }
 
   async stop(): Promise<void> {
-    if (this.subscriptionId !== null) {
-      await this.connection.removeOnLogsListener(this.subscriptionId);
-      this.subscriptionId = null;
-      logger.info('Graduation listener stopped');
+    this.stopped = true;
+
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+    }
+
+    await this.unsubscribe();
     this.poolTracker.stop();
+    logger.info('Graduation listener stopped');
+  }
+
+  private async subscribe(): Promise<void> {
+    try {
+      this.subscriptionId = this.connection.onLogs(
+        PUMP_FUN_PROGRAM_ID,
+        async (logs: Logs, ctx: Context) => {
+          this.lastEventTime = Date.now();
+          this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS; // Reset backoff on success
+          try {
+            await this.handleLogs(logs, ctx);
+          } catch (err) {
+            logger.error({ err, signature: logs.signature }, 'Error handling logs');
+          }
+        },
+        'confirmed'
+      );
+
+      logger.info({ subscriptionId: this.subscriptionId }, 'Subscribed to pump.fun logs');
+    } catch (err) {
+      logger.error({ err }, 'Failed to subscribe to logs');
+      this.scheduleReconnect();
+    }
+  }
+
+  private async unsubscribe(): Promise<void> {
+    if (this.subscriptionId !== null) {
+      try {
+        await this.connection.removeOnLogsListener(this.subscriptionId);
+      } catch (err) {
+        logger.warn({ err }, 'Error removing logs listener');
+      }
+      this.subscriptionId = null;
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.stopped) return;
+
+    logger.info(
+      { delayMs: this.reconnectDelay },
+      'Scheduling WebSocket reconnect'
+    );
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnect();
+    }, this.reconnectDelay);
+
+    // Exponential backoff
+    this.reconnectDelay = Math.min(
+      this.reconnectDelay * RECONNECT_BACKOFF_MULTIPLIER,
+      MAX_RECONNECT_DELAY_MS
+    );
+  }
+
+  private async reconnect(): Promise<void> {
+    if (this.stopped) return;
+
+    logger.info('Reconnecting WebSocket...');
+    await this.unsubscribe();
+
+    // Create a fresh connection to get a new WebSocket
+    const rpcUrl = process.env.HELIUS_RPC_URL!;
+    const wsUrl = process.env.HELIUS_WS_URL!;
+    this.connection = new Connection(rpcUrl, {
+      commitment: 'confirmed',
+      wsEndpoint: wsUrl,
+    });
+
+    await this.subscribe();
   }
 
   private async handleLogs(logs: Logs, ctx: Context): Promise<void> {
@@ -125,25 +206,27 @@ export class GraduationListener {
       'Potential graduation event detected'
     );
 
-    try {
-      const event = await this.processGraduation(logs.signature, ctx.slot);
-      if (event) {
-        const graduationId = this.saveGraduation(event);
-        logger.info(
-          {
-            graduationId,
-            mint: event.mint,
-            signature: event.signature,
-            finalPriceSol: event.finalPriceSol,
-          },
-          'Graduation recorded'
-        );
-
-        // Start tracking for the new pool
-        this.poolTracker.trackGraduation(graduationId, event.mint, event.timestamp);
+    const event = await this.processGraduation(logs.signature, ctx.slot);
+    if (event) {
+      const graduationId = this.saveGraduation(event);
+      if (graduationId === null) {
+        // Duplicate — already recorded
+        logger.debug({ signature: event.signature }, 'Duplicate graduation event, skipping');
+        return;
       }
-    } catch (err) {
-      logger.error({ err, signature: logs.signature }, 'Failed to process graduation');
+
+      logger.info(
+        {
+          graduationId,
+          mint: event.mint,
+          signature: event.signature,
+          finalPriceSol: event.finalPriceSol,
+        },
+        'Graduation recorded'
+      );
+
+      // Start tracking for the new pool
+      this.poolTracker.trackGraduation(graduationId, event.mint, event.timestamp);
     }
   }
 
@@ -165,39 +248,17 @@ export class GraduationListener {
     let mint: string | null = null;
     let bondingCurveAddress: string | null = null;
 
-    // Check inner instructions and account keys for the graduation
-    const accountKeys = tx.transaction.message.accountKeys.map((k) =>
-      typeof k === 'string' ? k : k.pubkey.toBase58()
-    );
-
-    // The pump.fun Complete instruction typically has specific account ordering:
-    // The mint is usually one of the first few accounts after the program
-    // Look through log messages for more specific data
+    // Try to extract from log messages first
     for (const log of tx.meta.logMessages || []) {
-      // Try to extract mint from log messages
       const mintMatch = log.match(/mint[:\s]+([A-Za-z0-9]{32,44})/i);
       if (mintMatch) {
         mint = mintMatch[1];
       }
     }
 
-    // If we couldn't find mint from logs, try to find it from inner instructions
-    if (!mint && tx.meta.innerInstructions) {
-      for (const inner of tx.meta.innerInstructions) {
-        for (const ix of inner.instructions) {
-          if ('parsed' in ix && ix.parsed?.type === 'transfer') {
-            // Token transfers can help identify the mint
-          }
-        }
-      }
-    }
-
-    // Fallback: scan account keys for token mint patterns
-    // In pump.fun transactions, the mint is typically the 3rd account
-    if (!mint && accountKeys.length > 2) {
-      // Heuristic: look for accounts that could be mints
-      // The pump.fun Complete instruction account layout:
-      // [0] = user, [1] = mint, [2] = bonding curve, ...
+    // Fallback: extract from pump.fun instruction accounts
+    // pump.fun Complete instruction account layout: [0] = user, [1] = mint, [2] = bonding curve, ...
+    if (!mint) {
       for (const instruction of tx.transaction.message.instructions) {
         if ('programId' in instruction) {
           const progId =
@@ -309,16 +370,18 @@ export class GraduationListener {
       'le'
     );
 
+    // Use BN division to avoid overflow, then convert the quotient to Number
+    // For SOL values: divide by 1e9 (lamports). For token values: divide by 1e6 (decimals).
+    // Remainder is converted to fractional part for precision.
     return {
-      virtualTokenReserves:
-        virtualTokenReserves.toNumber() / TOKEN_DECIMAL_FACTOR,
-      virtualSolReserves: virtualSolReserves.toNumber() / LAMPORTS_PER_SOL,
-      realTokenReserves: realTokenReserves.toNumber() / TOKEN_DECIMAL_FACTOR,
-      realSolReserves: realSolReserves.toNumber() / LAMPORTS_PER_SOL,
+      virtualTokenReserves: bnToNumber(virtualTokenReserves, TOKEN_DECIMAL_FACTOR),
+      virtualSolReserves: bnToNumber(virtualSolReserves, LAMPORTS_PER_SOL),
+      realTokenReserves: bnToNumber(realTokenReserves, TOKEN_DECIMAL_FACTOR),
+      realSolReserves: bnToNumber(realSolReserves, LAMPORTS_PER_SOL),
     };
   }
 
-  private saveGraduation(event: GraduationEvent): number {
+  private saveGraduation(event: GraduationEvent): number | null {
     return insertGraduation(this.db, {
       mint: event.mint,
       signature: event.signature,
@@ -332,4 +395,13 @@ export class GraduationListener {
       virtual_token_reserves: event.virtualTokenReserves,
     });
   }
+}
+
+/** Safely convert a large BN to a JS number by dividing by a BN divisor.
+ *  Returns whole + fractional parts to avoid BN.toNumber() overflow on raw u64 values. */
+function bnToNumber(value: BN, divisor: BN): number {
+  const whole = value.div(divisor);
+  const remainder = value.mod(divisor);
+  // whole part is safe (SOL reserves < 2^53 / 1e9, token reserves < 2^53 / 1e6)
+  return whole.toNumber() + remainder.toNumber() / divisor.toNumber();
 }

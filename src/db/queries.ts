@@ -13,9 +13,10 @@ export interface GraduationInsert {
   virtual_token_reserves?: number;
 }
 
-export function insertGraduation(db: Database.Database, data: GraduationInsert): number {
+/** Insert a graduation event. Returns the row ID, or null if it was a duplicate signature. */
+export function insertGraduation(db: Database.Database, data: GraduationInsert): number | null {
   const stmt = db.prepare(`
-    INSERT INTO graduations (
+    INSERT OR IGNORE INTO graduations (
       mint, signature, slot, timestamp,
       bonding_curve_address, final_price_sol,
       final_sol_reserves, final_token_reserves,
@@ -41,6 +42,8 @@ export function insertGraduation(db: Database.Database, data: GraduationInsert):
     virtual_token_reserves: data.virtual_token_reserves ?? null,
   });
 
+  // INSERT OR IGNORE sets changes to 0 when the row already exists
+  if (result.changes === 0) return null;
   return result.lastInsertRowid as number;
 }
 
