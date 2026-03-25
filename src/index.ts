@@ -33,6 +33,7 @@ async function main() {
     const uptimeMs = Date.now() - startTime;
     const uptimeSeconds = Math.floor(uptimeMs / 1000);
     const graduationCount = getGraduationCount(db);
+    const listenerStats = listener ? listener.getStats() : null;
 
     res.json({
       status: listenerStatus === 'running' ? 'ok' : 'degraded',
@@ -40,6 +41,7 @@ async function main() {
       listener_error: listenerError,
       uptime_seconds: uptimeSeconds,
       graduation_count: graduationCount,
+      listener_stats: listenerStats,
       timestamp: new Date().toISOString(),
     });
   });

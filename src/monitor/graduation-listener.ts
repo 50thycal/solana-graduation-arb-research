@@ -36,6 +36,10 @@ const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const RECONNECT_BACKOFF_MULTIPLIER = 2;
 
+// How long silence before we consider the WS dead
+const WS_SILENCE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutes — pump.fun has high throughput, silence means dead
+const WS_HEALTH_CHECK_INTERVAL_MS = 30_000; // Check every 30s
+
 export interface GraduationEvent {
   mint: string;
   bondingCurveAddress: string;
@@ -59,6 +63,9 @@ export class GraduationListener {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private lastEventTime = Date.now();
   private healthCheckInterval: NodeJS.Timeout | null = null;
+  private totalLogsReceived = 0;
+  private totalGraduationsDetected = 0;
+  private reconnecting = false;
 
   constructor(db: Database.Database) {
     const rpcUrl = process.env.HELIUS_RPC_URL;
@@ -79,6 +86,16 @@ export class GraduationListener {
     this.poolTracker = new PoolTracker(db, this.connection);
   }
 
+  getStats() {
+    return {
+      totalLogsReceived: this.totalLogsReceived,
+      totalGraduationsDetected: this.totalGraduationsDetected,
+      lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
+      wsConnected: this.subscriptionId !== null,
+      reconnecting: this.reconnecting,
+    };
+  }
+
   async start(): Promise<void> {
     logger.info(
       { programId: PUMP_FUN_PROGRAM_ID.toBase58() },
@@ -88,17 +105,28 @@ export class GraduationListener {
     await this.subscribe();
 
     // Periodically check if the WebSocket is still alive
-    // If no events received in 5 minutes, force reconnect
     this.healthCheckInterval = setInterval(() => {
       const silentMs = Date.now() - this.lastEventTime;
-      if (silentMs > 5 * 60 * 1000) {
+      const silentSec = Math.floor(silentMs / 1000);
+
+      logger.info(
+        {
+          silentSeconds: silentSec,
+          totalLogs: this.totalLogsReceived,
+          totalGraduations: this.totalGraduationsDetected,
+          subscriptionId: this.subscriptionId,
+        },
+        'WS health check'
+      );
+
+      if (silentMs > WS_SILENCE_TIMEOUT_MS) {
         logger.warn(
-          { silentSeconds: Math.floor(silentMs / 1000) },
-          'No events received recently, forcing reconnect'
+          { silentSeconds: silentSec },
+          'WS appears dead (no events received), forcing reconnect'
         );
         this.reconnect();
       }
-    }, 60_000);
+    }, WS_HEALTH_CHECK_INTERVAL_MS);
   }
 
   async stop(): Promise<void> {
@@ -124,19 +152,42 @@ export class GraduationListener {
         PUMP_FUN_PROGRAM_ID,
         async (logs: Logs, ctx: Context) => {
           this.lastEventTime = Date.now();
-          this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS; // Reset backoff on success
+          this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+          this.totalLogsReceived++;
+
+          // Log first 20 events and then every 100th to understand log format
+          if (this.totalLogsReceived <= 20 || this.totalLogsReceived % 100 === 0) {
+            logger.info(
+              {
+                signature: logs.signature,
+                slot: ctx.slot,
+                logCount: logs.logs.length,
+                logs: logs.logs,
+                hasErr: !!logs.err,
+                totalReceived: this.totalLogsReceived,
+              },
+              'Raw pump.fun log event'
+            );
+          }
+
           try {
             await this.handleLogs(logs, ctx);
           } catch (err) {
-            logger.error({ err, signature: logs.signature }, 'Error handling logs');
+            logger.error(
+              'Error handling logs for %s: %s',
+              logs.signature,
+              err instanceof Error ? err.message : String(err)
+            );
           }
         },
         'confirmed'
       );
 
+      this.lastEventTime = Date.now();
       logger.info({ subscriptionId: this.subscriptionId }, 'Subscribed to pump.fun logs');
     } catch (err) {
-      logger.error({ err }, 'Failed to subscribe to logs');
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error('Failed to subscribe to logs: %s', message);
       this.scheduleReconnect();
     }
   }
@@ -146,14 +197,17 @@ export class GraduationListener {
       try {
         await this.connection.removeOnLogsListener(this.subscriptionId);
       } catch (err) {
-        logger.warn({ err }, 'Error removing logs listener');
+        logger.warn(
+          'Error removing logs listener: %s',
+          err instanceof Error ? err.message : String(err)
+        );
       }
       this.subscriptionId = null;
     }
   }
 
   private scheduleReconnect(): void {
-    if (this.stopped) return;
+    if (this.stopped || this.reconnecting) return;
 
     logger.info(
       { delayMs: this.reconnectDelay },
@@ -172,45 +226,68 @@ export class GraduationListener {
   }
 
   private async reconnect(): Promise<void> {
-    if (this.stopped) return;
+    if (this.stopped || this.reconnecting) return;
+    this.reconnecting = true;
 
-    logger.info('Reconnecting WebSocket...');
-    await this.unsubscribe();
+    try {
+      logger.info('Reconnecting WebSocket...');
+      await this.unsubscribe();
 
-    // Create a fresh connection to get a new WebSocket
-    const rpcUrl = process.env.HELIUS_RPC_URL!;
-    const wsUrl = process.env.HELIUS_WS_URL!;
-    this.connection = new Connection(rpcUrl, {
-      commitment: 'confirmed',
-      wsEndpoint: wsUrl,
-    });
+      // Create a fresh connection to get a new WebSocket
+      const rpcUrl = process.env.HELIUS_RPC_URL!;
+      const wsUrl = process.env.HELIUS_WS_URL!;
+      this.connection = new Connection(rpcUrl, {
+        commitment: 'confirmed',
+        wsEndpoint: wsUrl,
+      });
 
-    await this.subscribe();
+      // Update pool tracker's connection reference
+      this.poolTracker.updateConnection(this.connection);
+
+      await this.subscribe();
+      logger.info('WebSocket reconnected successfully');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.error('Reconnection failed: %s', message);
+      this.scheduleReconnect();
+    } finally {
+      this.reconnecting = false;
+    }
   }
 
   private async handleLogs(logs: Logs, ctx: Context): Promise<void> {
     if (logs.err) return;
 
-    // Look for graduation-related log messages
-    const isGraduation = logs.logs.some(
+    // Broad match: look for ANY log line that could indicate a graduation/completion
+    // We log raw events above to discover the actual format — this is intentionally broad
+    const graduationLog = logs.logs.find(
       (log) =>
-        log.includes('CompleteEvent') ||
-        log.includes('Program log: complete') ||
-        log.includes('Program log: Instruction: Complete')
+        log.includes('Complete') ||
+        log.includes('complete') ||
+        log.includes('Migrate') ||
+        log.includes('migrate') ||
+        log.includes('graduation')
     );
 
-    if (!isGraduation) return;
+    if (!graduationLog) return;
+
+    this.totalGraduationsDetected++;
 
     logger.info(
-      { signature: logs.signature, slot: ctx.slot },
-      'Potential graduation event detected'
+      {
+        signature: logs.signature,
+        slot: ctx.slot,
+        matchedLog: graduationLog,
+        allLogs: logs.logs,
+        detectionCount: this.totalGraduationsDetected,
+      },
+      'Graduation event detected'
     );
 
     const event = await this.processGraduation(logs.signature, ctx.slot);
     if (event) {
       const graduationId = this.saveGraduation(event);
       if (graduationId === null) {
-        // Duplicate — already recorded
         logger.debug({ signature: event.signature }, 'Duplicate graduation event, skipping');
         return;
       }
@@ -248,36 +325,44 @@ export class GraduationListener {
     let mint: string | null = null;
     let bondingCurveAddress: string | null = null;
 
-    // Try to extract from log messages first
-    for (const log of tx.meta.logMessages || []) {
-      const mintMatch = log.match(/mint[:\s]+([A-Za-z0-9]{32,44})/i);
-      if (mintMatch) {
-        mint = mintMatch[1];
-      }
-    }
-
-    // Fallback: extract from pump.fun instruction accounts
+    // Extract from pump.fun instruction accounts
     // pump.fun Complete instruction account layout: [0] = user, [1] = mint, [2] = bonding curve, ...
-    if (!mint) {
-      for (const instruction of tx.transaction.message.instructions) {
-        if ('programId' in instruction) {
-          const progId =
-            typeof instruction.programId === 'string'
-              ? instruction.programId
-              : instruction.programId.toBase58();
-          if (progId === PUMP_FUN_PROGRAM_ID.toBase58() && 'accounts' in instruction) {
-            const accounts = (instruction as any).accounts as PublicKey[];
-            if (accounts && accounts.length >= 3) {
-              mint = accounts[1]?.toBase58() || null;
-              bondingCurveAddress = accounts[2]?.toBase58() || null;
-            }
+    for (const instruction of tx.transaction.message.instructions) {
+      if ('programId' in instruction) {
+        const progId =
+          typeof instruction.programId === 'string'
+            ? instruction.programId
+            : instruction.programId.toBase58();
+        if (progId === PUMP_FUN_PROGRAM_ID.toBase58() && 'accounts' in instruction) {
+          const accounts = (instruction as any).accounts as PublicKey[];
+          if (accounts && accounts.length >= 3) {
+            mint = accounts[1]?.toBase58() || null;
+            bondingCurveAddress = accounts[2]?.toBase58() || null;
           }
         }
       }
     }
 
+    // Fallback: try log messages
     if (!mint) {
-      logger.warn({ signature }, 'Could not extract mint from graduation tx');
+      for (const log of tx.meta.logMessages || []) {
+        const mintMatch = log.match(/mint[:\s]+([A-Za-z0-9]{32,44})/i);
+        if (mintMatch) {
+          mint = mintMatch[1];
+        }
+      }
+    }
+
+    if (!mint) {
+      logger.warn(
+        {
+          signature,
+          accountKeyCount: tx.transaction.message.accountKeys.length,
+          instructionCount: tx.transaction.message.instructions.length,
+          logs: tx.meta.logMessages,
+        },
+        'Could not extract mint from graduation tx'
+      );
       return null;
     }
 
@@ -304,8 +389,9 @@ export class GraduationListener {
         }
       } catch (err) {
         logger.warn(
-          { err, bondingCurveAddress },
-          'Failed to fetch bonding curve state'
+          'Failed to fetch bonding curve state for %s: %s',
+          bondingCurveAddress,
+          err instanceof Error ? err.message : String(err)
         );
       }
     }
@@ -370,9 +456,6 @@ export class GraduationListener {
       'le'
     );
 
-    // Use BN division to avoid overflow, then convert the quotient to Number
-    // For SOL values: divide by 1e9 (lamports). For token values: divide by 1e6 (decimals).
-    // Remainder is converted to fractional part for precision.
     return {
       virtualTokenReserves: bnToNumber(virtualTokenReserves, TOKEN_DECIMAL_FACTOR),
       virtualSolReserves: bnToNumber(virtualSolReserves, LAMPORTS_PER_SOL),
@@ -397,11 +480,9 @@ export class GraduationListener {
   }
 }
 
-/** Safely convert a large BN to a JS number by dividing by a BN divisor.
- *  Returns whole + fractional parts to avoid BN.toNumber() overflow on raw u64 values. */
+/** Safely convert a large BN to a JS number by dividing by a BN divisor. */
 function bnToNumber(value: BN, divisor: BN): number {
   const whole = value.div(divisor);
   const remainder = value.mod(divisor);
-  // whole part is safe (SOL reserves < 2^53 / 1e9, token reserves < 2^53 / 1e6)
   return whole.toNumber() + remainder.toNumber() / divisor.toNumber();
 }
