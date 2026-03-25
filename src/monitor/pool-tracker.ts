@@ -197,15 +197,15 @@ export class PoolTracker {
     slot?: number;
     timestamp?: number;
   } | null> {
-    // Don't spam Jupiter on every poll — try after 5s, then every 15s
+    // Try after 10s, then every 3rd poll (~15s intervals)
     const elapsed = Date.now() - graduation.startedAt;
-    if (elapsed < 5_000) return null;
+    if (elapsed < 10_000) return null;
     if (graduation.jupiterAttempted && graduation.pollCount % 3 !== 0) return null;
     graduation.jupiterAttempted = true;
 
     try {
       // Query Jupiter for a quote: SOL -> token mint
-      const response = await axios.get('https://quote-api.jup.ag/v6/quote', {
+      const response = await axios.get('https://api.jup.ag/quote', {
         params: {
           inputMint: SOL_MINT,
           outputMint: graduation.mint,
@@ -215,17 +215,35 @@ export class PoolTracker {
         timeout: 5_000,
       });
 
-      if (!response.data || !response.data.routePlan || response.data.routePlan.length === 0) {
+      const data = response.data;
+
+      // Log first few Jupiter responses per graduation for debugging
+      if (graduation.pollCount <= 6) {
+        logger.info(
+          {
+            mint: graduation.mint,
+            pollCount: graduation.pollCount,
+            hasRoutePlan: !!data?.routePlan,
+            routePlanLength: data?.routePlan?.length,
+            responseKeys: data ? Object.keys(data) : [],
+            firstRoute: data?.routePlan?.[0] ? {
+              label: data.routePlan[0]?.swapInfo?.label,
+              ammKey: data.routePlan[0]?.swapInfo?.ammKey,
+            } : null,
+          },
+          'Jupiter quote response'
+        );
+      }
+
+      if (!data || !data.routePlan || data.routePlan.length === 0) {
         return null;
       }
 
-      // Extract pool info from the route
-      const routePlan = response.data.routePlan;
+      const routePlan = data.routePlan;
       const firstSwap = routePlan[0]?.swapInfo;
 
       if (!firstSwap || !firstSwap.ammKey) return null;
 
-      // Determine DEX from the route label
       const label = (firstSwap.label || '').toLowerCase();
       let dex = 'unknown';
       if (label.includes('pumpswap') || label.includes('pump')) {
@@ -244,6 +262,7 @@ export class PoolTracker {
           ammKey: firstSwap.ammKey,
           label: firstSwap.label,
           dex,
+          pollCount: graduation.pollCount,
         },
         'Pool found via Jupiter'
       );
@@ -253,13 +272,26 @@ export class PoolTracker {
         dex,
       };
     } catch (err) {
-      // Jupiter returns 400 if no route exists — that's expected early on
-      if (axios.isAxiosError(err) && err.response?.status === 400) {
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+        // Log non-400 errors and first few 400s for debugging
+        if (status !== 400 || graduation.pollCount <= 3) {
+          logger.info(
+            {
+              mint: graduation.mint,
+              status,
+              pollCount: graduation.pollCount,
+              message: err.response?.data?.error || err.message,
+            },
+            'Jupiter quote error'
+          );
+        }
         return null;
       }
-      logger.debug(
-        'Jupiter quote failed for %s: %s',
+      logger.info(
+        'Jupiter quote failed for %s (poll %d): %s',
         graduation.mint,
+        graduation.pollCount,
         err instanceof Error ? err.message : String(err)
       );
       return null;
@@ -286,6 +318,18 @@ export class PoolTracker {
 
       if (signatures.length === 0) return null;
 
+      // Log what we're seeing for first few polls
+      if (graduation.pollCount <= 4) {
+        logger.info(
+          {
+            mint: graduation.mint,
+            pollCount: graduation.pollCount,
+            signatureCount: signatures.length,
+          },
+          'Migration tx search: found signatures'
+        );
+      }
+
       for (const sigInfo of signatures) {
         const tx = await this.fetchParsedTransaction(sigInfo.signature);
         if (!tx || !tx.meta || tx.meta.err) continue;
@@ -296,7 +340,30 @@ export class PoolTracker {
 
         // Check if any DEX program is in the transaction
         const matchedDex = accountKeys.find((key) => DEX_PROGRAM_IDS.has(key));
-        if (!matchedDex) continue;
+        if (!matchedDex) {
+          // Log first miss per graduation to see what programs ARE involved
+          if (graduation.pollCount <= 2) {
+            // Find all program IDs in the tx
+            const programs = accountKeys.filter(key =>
+              tx.transaction.message.instructions.some((ix: any) => {
+                const pid = 'programId' in ix
+                  ? (typeof ix.programId === 'string' ? ix.programId : ix.programId.toBase58())
+                  : null;
+                return pid === key;
+              })
+            );
+            logger.debug(
+              {
+                mint: graduation.mint,
+                signature: sigInfo.signature,
+                programs,
+                logs: tx.meta.logMessages?.slice(0, 5),
+              },
+              'Migration tx search: no DEX program in tx'
+            );
+          }
+          continue;
+        }
 
         let dex: string;
         if (matchedDex === PUMPSWAP_PROGRAM_ID) {
