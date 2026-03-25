@@ -24,7 +24,7 @@ interface TrackedGraduation {
   mint: string;
   graduationTimestamp: number;
   startedAt: number;
-  lastCheckedSignature?: string;
+  checkedSignatures: Set<string>;
 }
 
 const POOL_SEARCH_TIMEOUT_MS = 120_000; // Stop looking after 2 minutes
@@ -65,6 +65,7 @@ export class PoolTracker {
       mint,
       graduationTimestamp,
       startedAt: Date.now(),
+      checkedSignatures: new Set(),
     });
 
     logger.info(
@@ -163,80 +164,87 @@ export class PoolTracker {
     slot?: number;
     timestamp?: number;
   } | null> {
-    // Fetch only recent signatures for this mint (single RPC call instead of 20+ getParsedTransaction calls)
+    // Fetch recent signatures for this mint — single RPC call
     const signatures = await this.connection.getSignaturesForAddress(
       new PublicKey(graduation.mint),
-      {
-        limit: 10,
-        ...(graduation.lastCheckedSignature
-          ? { until: graduation.lastCheckedSignature }
-          : {}),
-      }
+      { limit: 10 }
     );
 
     if (signatures.length === 0) return null;
 
-    // Remember the newest signature so next poll only checks new txs
-    graduation.lastCheckedSignature = signatures[0].signature;
+    // Only check signatures we haven't seen before
+    const newSignatures = signatures.filter(
+      (s) => !graduation.checkedSignatures.has(s.signature)
+    );
 
-    // Check each signature for DEX pool creation
-    for (const sigInfo of signatures) {
-      try {
-        const tx = await this.connection.getParsedTransaction(
-          sigInfo.signature,
-          {
-            commitment: 'confirmed',
-            maxSupportedTransactionVersion: 0,
-          }
-        );
+    for (const sigInfo of newSignatures) {
+      graduation.checkedSignatures.add(sigInfo.signature);
 
-        if (!tx || !tx.meta || tx.meta.err) continue;
+      const tx = await this.fetchParsedTransaction(sigInfo.signature);
+      if (!tx || !tx.meta || tx.meta.err) continue;
 
-        const accountKeys = tx.transaction.message.accountKeys.map((k) =>
-          typeof k === 'string' ? k : k.pubkey.toBase58()
-        );
+      const accountKeys = tx.transaction.message.accountKeys.map((k) =>
+        typeof k === 'string' ? k : k.pubkey.toBase58()
+      );
 
-        // Check if any DEX program is involved
-        const matchedDex = accountKeys.find((key) => DEX_PROGRAM_IDS.has(key));
-        if (!matchedDex) continue;
+      // Check if any DEX program is involved
+      const matchedDex = accountKeys.find((key) => DEX_PROGRAM_IDS.has(key));
+      if (!matchedDex) continue;
 
-        // Determine which DEX
-        let dex: string;
-        if (matchedDex === PUMPSWAP_PROGRAM_ID) {
-          dex = 'pumpswap';
-        } else if (matchedDex === RAYDIUM_CPMM_PROGRAM) {
-          dex = 'raydium-cpmm';
-        } else {
-          dex = 'raydium-amm';
-        }
+      // Determine which DEX
+      let dex: string;
+      if (matchedDex === PUMPSWAP_PROGRAM_ID) {
+        dex = 'pumpswap';
+      } else if (matchedDex === RAYDIUM_CPMM_PROGRAM) {
+        dex = 'raydium-cpmm';
+      } else {
+        dex = 'raydium-amm';
+      }
 
-        // Find the pool address from the DEX instruction accounts
-        for (const ix of tx.transaction.message.instructions) {
-          if ('programId' in ix) {
-            const progId =
-              typeof ix.programId === 'string'
-                ? ix.programId
-                : ix.programId.toBase58();
-            if (DEX_PROGRAM_IDS.has(progId)) {
-              const accounts = (ix as any).accounts as PublicKey[];
-              if (accounts && accounts.length > 0) {
-                return {
-                  address: accounts[0].toBase58(),
-                  dex,
-                  signature: sigInfo.signature,
-                  slot: sigInfo.slot,
-                  timestamp: tx.blockTime || undefined,
-                };
-              }
+      // Find the pool address from the DEX instruction accounts
+      for (const ix of tx.transaction.message.instructions) {
+        if ('programId' in ix) {
+          const progId =
+            typeof ix.programId === 'string'
+              ? ix.programId
+              : ix.programId.toBase58();
+          if (DEX_PROGRAM_IDS.has(progId)) {
+            const accounts = (ix as any).accounts as PublicKey[];
+            if (accounts && accounts.length > 0) {
+              return {
+                address: accounts[0].toBase58(),
+                dex,
+                signature: sigInfo.signature,
+                slot: sigInfo.slot,
+                timestamp: tx.blockTime || undefined,
+              };
             }
           }
         }
-      } catch (err) {
-        logger.debug({ err, signature: sigInfo.signature }, 'Failed to parse tx');
-        continue;
       }
     }
 
+    return null;
+  }
+
+  /** Fetch a parsed transaction with a single retry on failure. */
+  private async fetchParsedTransaction(signature: string, retries = 1) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await this.connection.getParsedTransaction(signature, {
+          commitment: 'confirmed',
+          maxSupportedTransactionVersion: 0,
+        });
+      } catch (err) {
+        if (attempt < retries) {
+          logger.debug({ err, signature, attempt }, 'Retrying getParsedTransaction');
+          await new Promise((r) => setTimeout(r, 500));
+        } else {
+          logger.debug({ err, signature }, 'Failed to fetch parsed transaction');
+          return null;
+        }
+      }
+    }
     return null;
   }
 }
