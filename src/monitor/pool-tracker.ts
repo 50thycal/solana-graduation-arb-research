@@ -42,6 +42,10 @@ export class PoolTracker {
     this.connection = connection;
   }
 
+  updateConnection(connection: Connection): void {
+    this.connection = connection;
+  }
+
   trackGraduation(
     graduationId: number,
     mint: string,
