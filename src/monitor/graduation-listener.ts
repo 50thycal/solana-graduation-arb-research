@@ -10,6 +10,7 @@ import Database from 'better-sqlite3';
 import pino from 'pino';
 import { insertGraduation } from '../db/queries';
 import { PoolTracker } from './pool-tracker';
+import { globalRpcLimiter } from '../utils/rpc-limiter';
 
 const logger = pino({ name: 'graduation-listener' });
 
@@ -335,6 +336,7 @@ export class GraduationListener {
     slot: number,
     matchedLog: string
   ): Promise<GraduationEvent | null> {
+    await globalRpcLimiter.throttle();
     const tx = await this.connection.getParsedTransaction(signature, {
       commitment: 'confirmed',
       maxSupportedTransactionVersion: 0,
@@ -482,6 +484,7 @@ export class GraduationListener {
 
   private async fetchBondingCurveState(address: string): Promise<BondingCurveState | null> {
     const pubkey = new PublicKey(address);
+    await globalRpcLimiter.throttle();
     const accountInfo: AccountInfo<Buffer> | null =
       await this.connection.getAccountInfo(pubkey);
 

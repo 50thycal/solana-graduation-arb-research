@@ -9,6 +9,7 @@ import {
 } from '../db/queries';
 import { OpportunityScorer } from '../analysis/opportunity-scorer';
 import { CompetitionDetector } from './competition-detector';
+import { globalRpcLimiter } from '../utils/rpc-limiter';
 
 const logger = pino({ name: 'price-collector' });
 
@@ -253,6 +254,7 @@ export class PriceCollector {
       // Approach: fetch the pool account and decode its token vault balances
 
       const poolPubkey = new PublicKey(poolAddress);
+      await globalRpcLimiter.throttle();
       const poolInfo = await this.connection.getAccountInfo(poolPubkey);
 
       if (!poolInfo || !poolInfo.data) return null;
@@ -347,9 +349,11 @@ export class PriceCollector {
       const poolPubkey = new PublicKey(poolAddress);
 
       // Fetch SOL balance of the pool
+      await globalRpcLimiter.throttle();
       const solBalance = await this.connection.getBalance(poolPubkey);
 
       // Fetch token accounts for this mint owned by the pool
+      await globalRpcLimiter.throttle();
       const tokenAccounts = await this.connection.getTokenAccountsByOwner(poolPubkey, {
         mint: new PublicKey(mint),
       });

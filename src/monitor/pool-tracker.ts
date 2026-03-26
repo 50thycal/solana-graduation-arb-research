@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import pino from 'pino';
 import { updateGraduationPool } from '../db/queries';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
+import { globalRpcLimiter } from '../utils/rpc-limiter';
 
 const logger = pino({ name: 'pool-tracker' });
 
@@ -357,6 +358,7 @@ export class PoolTracker {
   private async fetchParsedTransaction(signature: string, retries = 1) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
+        await globalRpcLimiter.throttle();
         return await this.connection.getParsedTransaction(signature, {
           commitment: 'confirmed',
           maxSupportedTransactionVersion: 0,
