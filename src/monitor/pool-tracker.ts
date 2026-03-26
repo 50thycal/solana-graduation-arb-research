@@ -36,6 +36,7 @@ export class PoolTracker {
   private totalExpired = 0;
   private totalSkipped = 0;
   private totalPumpSwapEvents = 0;
+  private totalPoolCreationEvents = 0;
   private totalMatched = 0;
 
   constructor(db: Database.Database, connection: Connection) {
@@ -57,6 +58,7 @@ export class PoolTracker {
       totalExpired: this.totalExpired,
       totalSkipped: this.totalSkipped,
       totalPumpSwapEvents: this.totalPumpSwapEvents,
+      totalPoolCreationEvents: this.totalPoolCreationEvents,
       totalMatched: this.totalMatched,
       pumpSwapSubscribed: this.pumpSwapSubId !== null,
       priceCollector: this.priceCollector.getStats(),
@@ -130,20 +132,40 @@ export class PoolTracker {
         async (logs: Logs, ctx: Context) => {
           this.totalPumpSwapEvents++;
 
-          if (this.totalPumpSwapEvents <= 5) {
+          if (logs.err) return;
+          if (this.pendingByMint.size === 0) return;
+
+          // CRITICAL: PumpSwap handles thousands of swap events per minute.
+          // Only fetch the full transaction for pool creation events, not swaps.
+          // Pool creation logs contain "create_pool" or "Initialize" or similar.
+          // Also check for the pump.fun program ID in logs (migration CPI).
+          const isPoolCreation = logs.logs.some(
+            (log) =>
+              log.includes('create_pool') ||
+              log.includes('Create') ||
+              log.includes('Initialize') ||
+              log.includes('initialize') ||
+              log.includes('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P') // pump.fun program in CPI
+          );
+
+          if (!isPoolCreation) return;
+
+          this.totalPoolCreationEvents++;
+
+          // Log first few pool creation events for debugging
+          if (this.totalPoolCreationEvents <= 10) {
             logger.info(
               {
                 signature: logs.signature,
                 slot: ctx.slot,
                 logCount: logs.logs.length,
-                totalEvents: this.totalPumpSwapEvents,
+                logs: logs.logs.slice(0, 8),
+                totalCreationEvents: this.totalPoolCreationEvents,
+                totalSwapEvents: this.totalPumpSwapEvents,
               },
-              'PumpSwap log event'
+              'PumpSwap pool creation event'
             );
           }
-
-          if (logs.err) return;
-          if (this.pendingByMint.size === 0) return;
 
           try {
             await this.handlePumpSwapEvent(logs.signature, ctx.slot);
