@@ -2,6 +2,7 @@ import { Connection, PublicKey, Logs, Context } from '@solana/web3.js';
 import Database from 'better-sqlite3';
 import pino from 'pino';
 import { updateGraduationPool } from '../db/queries';
+import { PriceCollector, ObservationContext } from '../collector/price-collector';
 
 const logger = pino({ name: 'pool-tracker' });
 
@@ -11,30 +12,24 @@ const PUMPSWAP_PROGRAM_ID = new PublicKey(
 );
 const PUMPSWAP_PROGRAM_STR = PUMPSWAP_PROGRAM_ID.toBase58();
 
-// Known DEX program IDs
-const RAYDIUM_AMM_PROGRAM = '675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8';
-const RAYDIUM_CPMM_PROGRAM = 'CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C';
-
 interface PendingGraduation {
   graduationId: number;
   mint: string;
   bondingCurveAddress: string;
+  bondingCurvePrice: number;
   graduationTimestamp: number;
   addedAt: number;
 }
 
-// How long to keep a graduation in the pending map waiting for a migration
 const PENDING_TTL_MS = 300_000; // 5 minutes
-// How often to clean up expired entries
 const CLEANUP_INTERVAL_MS = 30_000;
 
 export class PoolTracker {
   private db: Database.Database;
   private connection: Connection;
+  private priceCollector: PriceCollector;
   private pumpSwapSubId: number | null = null;
-  // Map from mint -> pending graduation (for fast lookup when PumpSwap event arrives)
   private pendingByMint: Map<string, PendingGraduation> = new Map();
-  // Also index by bonding curve address
   private pendingByCurve: Map<string, PendingGraduation> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
   private totalPoolsFound = 0;
@@ -46,11 +41,12 @@ export class PoolTracker {
   constructor(db: Database.Database, connection: Connection) {
     this.db = db;
     this.connection = connection;
+    this.priceCollector = new PriceCollector(db, connection);
   }
 
   updateConnection(connection: Connection): void {
     this.connection = connection;
-    // Re-subscribe with new connection
+    this.priceCollector.updateConnection(connection);
     this.resubscribe();
   }
 
@@ -63,14 +59,13 @@ export class PoolTracker {
       totalPumpSwapEvents: this.totalPumpSwapEvents,
       totalMatched: this.totalMatched,
       pumpSwapSubscribed: this.pumpSwapSubId !== null,
+      priceCollector: this.priceCollector.getStats(),
     };
   }
 
   async start(): Promise<void> {
     await this.subscribeToPumpSwap();
-
     this.cleanupInterval = setInterval(() => this.cleanupExpired(), CLEANUP_INTERVAL_MS);
-
     logger.info('Pool tracker started with PumpSwap log subscription');
   }
 
@@ -78,6 +73,7 @@ export class PoolTracker {
     graduationId: number,
     mint: string,
     bondingCurveAddress: string,
+    bondingCurvePrice: number,
     graduationTimestamp: number
   ): void {
     const maxPending = parseInt(process.env.MAX_CONCURRENT_OBSERVATIONS || '100', 10);
@@ -97,6 +93,7 @@ export class PoolTracker {
       graduationId,
       mint,
       bondingCurveAddress,
+      bondingCurvePrice,
       graduationTimestamp,
       addedAt: Date.now(),
     };
@@ -121,6 +118,7 @@ export class PoolTracker {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
+    this.priceCollector.stop();
     this.pendingByMint.clear();
     this.pendingByCurve.clear();
   }
@@ -132,14 +130,12 @@ export class PoolTracker {
         async (logs: Logs, ctx: Context) => {
           this.totalPumpSwapEvents++;
 
-          // Log first few events for debugging
           if (this.totalPumpSwapEvents <= 5) {
             logger.info(
               {
                 signature: logs.signature,
                 slot: ctx.slot,
                 logCount: logs.logs.length,
-                logs: logs.logs.slice(0, 5),
                 totalEvents: this.totalPumpSwapEvents,
               },
               'PumpSwap log event'
@@ -185,16 +181,13 @@ export class PoolTracker {
   }
 
   private async handlePumpSwapEvent(signature: string, slot: number): Promise<void> {
-    // Fetch the transaction to see which accounts it references
     const tx = await this.fetchParsedTransaction(signature);
     if (!tx || !tx.meta || tx.meta.err) return;
 
-    // Get all account keys in this transaction
     const accountKeys = tx.transaction.message.accountKeys.map((k) =>
       typeof k === 'string' ? k : k.pubkey.toBase58()
     );
 
-    // Check if any account matches a pending graduation's mint or bonding curve
     let matched: PendingGraduation | undefined;
     let matchedBy = '';
 
@@ -215,23 +208,19 @@ export class PoolTracker {
 
     this.totalMatched++;
 
-    // Extract pool address from PumpSwap instruction
     const poolAddress = this.extractPoolAddress(tx, PUMPSWAP_PROGRAM_STR);
 
     if (!poolAddress) {
       logger.warn(
-        {
-          signature,
-          mint: matched.mint,
-          matchedBy,
-          accountCount: accountKeys.length,
-        },
-        'PumpSwap tx matched graduation but could not extract pool address'
+        { signature, mint: matched.mint, matchedBy },
+        'PumpSwap tx matched but could not extract pool address'
       );
       return;
     }
 
-    // Record the pool
+    const migrationTimestamp = tx.blockTime || Math.floor(Date.now() / 1000);
+
+    // Record the pool in the graduations table
     updateGraduationPool(
       this.db,
       matched.graduationId,
@@ -239,7 +228,7 @@ export class PoolTracker {
       'pumpswap',
       signature,
       slot,
-      tx.blockTime || undefined
+      migrationTimestamp
     );
 
     this.totalPoolsFound++;
@@ -251,7 +240,6 @@ export class PoolTracker {
         graduationId: matched.graduationId,
         mint: matched.mint,
         poolAddress,
-        dex: 'pumpswap',
         matchedBy,
         searchTimeMs,
         totalFound: this.totalPoolsFound,
@@ -264,10 +252,22 @@ export class PoolTracker {
     if (matched.bondingCurveAddress) {
       this.pendingByCurve.delete(matched.bondingCurveAddress);
     }
+
+    // START PRICE OBSERVATION (Phase 2)
+    const obsCtx: ObservationContext = {
+      graduationId: matched.graduationId,
+      mint: matched.mint,
+      poolAddress,
+      poolDex: 'pumpswap',
+      bondingCurvePrice: matched.bondingCurvePrice,
+      graduationTimestamp: matched.graduationTimestamp,
+      migrationTimestamp,
+    };
+
+    this.priceCollector.startObservation(obsCtx);
   }
 
   private extractPoolAddress(tx: any, dexProgramId: string): string | null {
-    // Check top-level instructions
     for (const ix of tx.transaction.message.instructions) {
       if (!('programId' in ix)) continue;
       const progId = typeof ix.programId === 'string'
@@ -283,7 +283,6 @@ export class PoolTracker {
       }
     }
 
-    // Check inner instructions
     if (tx.meta.innerInstructions) {
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {

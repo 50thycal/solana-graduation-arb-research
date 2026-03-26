@@ -321,7 +321,13 @@ export class GraduationListener {
       'Graduation verified and recorded'
     );
 
-    this.poolTracker.trackGraduation(graduationId, event.mint, event.bondingCurveAddress, event.timestamp);
+    this.poolTracker.trackGraduation(
+      graduationId,
+      event.mint,
+      event.bondingCurveAddress,
+      event.finalPriceSol || 0,
+      event.timestamp
+    );
   }
 
   private async processAndVerifyGraduation(
