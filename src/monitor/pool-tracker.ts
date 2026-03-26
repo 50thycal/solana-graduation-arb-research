@@ -8,7 +8,7 @@ const logger = pino({ name: 'pool-tracker' });
 
 // PumpSwap program ID
 const PUMPSWAP_PROGRAM_ID = new PublicKey(
-  process.env.PUMPSWAP_PROGRAM_ID || 'PSwapMdSai8tjrEXcxFeQth87xC4rRsa4VA5mhGhXkP'
+  process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA'
 );
 const PUMPSWAP_PROGRAM_STR = PUMPSWAP_PROGRAM_ID.toBase58();
 
