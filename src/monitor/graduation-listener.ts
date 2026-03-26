@@ -127,6 +127,7 @@ export class GraduationListener {
     );
 
     await this.subscribe();
+    await this.poolTracker.start();
 
     this.healthCheckInterval = setInterval(() => {
       const silentMs = Date.now() - this.lastEventTime;
@@ -320,7 +321,13 @@ export class GraduationListener {
       'Graduation verified and recorded'
     );
 
-    this.poolTracker.trackGraduation(graduationId, event.mint, event.bondingCurveAddress, event.timestamp);
+    this.poolTracker.trackGraduation(
+      graduationId,
+      event.mint,
+      event.bondingCurveAddress,
+      event.finalPriceSol || 0,
+      event.timestamp
+    );
   }
 
   private async processAndVerifyGraduation(
