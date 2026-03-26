@@ -198,7 +198,7 @@ export class PriceCollector {
         pool_price_sol: poolState.price,
         pool_sol_reserves: poolState.solReserves,
         pool_token_reserves: poolState.tokenReserves,
-        pool_liquidity_usd: null, // Would need SOL/USD price
+        pool_liquidity_usd: undefined, // Would need SOL/USD price
       });
 
       // Calculate spread and insert price comparison
