@@ -22,6 +22,21 @@ interface PendingGraduation {
   addedAt: number;
 }
 
+// Lightweight entry added immediately after tx parse — before bonding curve verification.
+// Lets us catch PumpSwap pool creation that fires during the verification window.
+interface SpeculativeEntry {
+  mint: string;
+  bondingCurveAddress: string;
+  addedAt: number;
+  // Populated if PumpSwap match arrives before graduation is confirmed
+  foundPool?: {
+    address: string;
+    signature: string;
+    slot: number;
+    migrationTimestamp: number;
+  };
+}
+
 const PENDING_TTL_MS = 300_000; // 5 minutes
 const CLEANUP_INTERVAL_MS = 30_000;
 
@@ -32,6 +47,8 @@ export class PoolTracker {
   private pumpSwapSubId: number | null = null;
   private pendingByMint: Map<string, PendingGraduation> = new Map();
   private pendingByCurve: Map<string, PendingGraduation> = new Map();
+  private speculativeByMint: Map<string, SpeculativeEntry> = new Map();
+  private speculativeByCurve: Map<string, SpeculativeEntry> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
   private totalPoolsFound = 0;
   private totalExpired = 0;
@@ -39,6 +56,7 @@ export class PoolTracker {
   private totalPumpSwapEvents = 0;
   private totalPoolCreationEvents = 0;
   private totalMatched = 0;
+  private totalSpeculativeHits = 0;
 
   constructor(db: Database.Database, connection: Connection) {
     this.db = db;
@@ -55,12 +73,14 @@ export class PoolTracker {
   getStats() {
     return {
       pending: this.pendingByMint.size,
+      speculative: this.speculativeByMint.size,
       totalPoolsFound: this.totalPoolsFound,
       totalExpired: this.totalExpired,
       totalSkipped: this.totalSkipped,
       totalPumpSwapEvents: this.totalPumpSwapEvents,
       totalPoolCreationEvents: this.totalPoolCreationEvents,
       totalMatched: this.totalMatched,
+      totalSpeculativeHits: this.totalSpeculativeHits,
       pumpSwapSubscribed: this.pumpSwapSubId !== null,
       priceCollector: this.priceCollector.getStats(),
     };
@@ -72,6 +92,29 @@ export class PoolTracker {
     logger.info('Pool tracker started with PumpSwap log subscription');
   }
 
+  /**
+   * Called immediately after the graduation tx is parsed — before bonding curve verification.
+   * Ensures the mint is visible to PumpSwap matching during the ~300ms verification window.
+   */
+  speculativeTrack(mint: string, bondingCurveAddress: string): void {
+    if (this.pendingByMint.has(mint) || this.speculativeByMint.has(mint)) return;
+    const entry: SpeculativeEntry = { mint, bondingCurveAddress, addedAt: Date.now() };
+    this.speculativeByMint.set(mint, entry);
+    if (bondingCurveAddress) {
+      this.speculativeByCurve.set(bondingCurveAddress, entry);
+    }
+  }
+
+  /** Called when graduation verification fails — remove from speculative. */
+  cancelSpeculative(mint: string): void {
+    const entry = this.speculativeByMint.get(mint);
+    if (!entry) return;
+    this.speculativeByMint.delete(mint);
+    if (entry.bondingCurveAddress) {
+      this.speculativeByCurve.delete(entry.bondingCurveAddress);
+    }
+  }
+
   trackGraduation(
     graduationId: number,
     mint: string,
@@ -79,6 +122,41 @@ export class PoolTracker {
     bondingCurvePrice: number,
     graduationTimestamp: number
   ): void {
+    // Promote out of speculative now that graduation is confirmed
+    const speculative = this.speculativeByMint.get(mint);
+    if (speculative) {
+      this.speculativeByMint.delete(mint);
+      if (speculative.bondingCurveAddress) {
+        this.speculativeByCurve.delete(speculative.bondingCurveAddress);
+      }
+
+      // If PumpSwap already matched during the speculative window, fire immediately
+      if (speculative.foundPool) {
+        const { address: poolAddress, signature, slot, migrationTimestamp } = speculative.foundPool;
+        this.totalMatched++;
+        this.totalPoolsFound++;
+        this.totalSpeculativeHits++;
+
+        updateGraduationPool(this.db, graduationId, poolAddress, 'pumpswap', signature, slot, migrationTimestamp);
+
+        logger.info(
+          { graduationId, mint, poolAddress, searchTimeMs: Date.now() - speculative.addedAt },
+          'Pool matched via speculative pre-track (pool found before graduation confirmed)'
+        );
+
+        this.priceCollector.startObservation({
+          graduationId,
+          mint,
+          poolAddress,
+          poolDex: 'pumpswap',
+          bondingCurvePrice,
+          graduationTimestamp,
+          migrationTimestamp,
+        });
+        return;
+      }
+    }
+
     const maxPending = parseInt(process.env.MAX_CONCURRENT_OBSERVATIONS || '100', 10);
 
     if (this.pendingByMint.size >= maxPending) {
@@ -124,6 +202,8 @@ export class PoolTracker {
     this.priceCollector.stop();
     this.pendingByMint.clear();
     this.pendingByCurve.clear();
+    this.speculativeByMint.clear();
+    this.speculativeByCurve.clear();
   }
 
   private async subscribeToPumpSwap(): Promise<void> {
@@ -134,7 +214,7 @@ export class PoolTracker {
           this.totalPumpSwapEvents++;
 
           if (logs.err) return;
-          if (this.pendingByMint.size === 0) return;
+          if (this.pendingByMint.size === 0 && this.speculativeByMint.size === 0) return;
 
           // CRITICAL: PumpSwap handles thousands of swap events per minute.
           // Only fetch the full transaction for pool creation events, not swaps.
@@ -213,6 +293,7 @@ export class PoolTracker {
 
     let matched: PendingGraduation | undefined;
     let matchedBy = '';
+    let speculativeMatch: SpeculativeEntry | undefined;
 
     for (const key of accountKeys) {
       if (this.pendingByMint.has(key)) {
@@ -225,6 +306,34 @@ export class PoolTracker {
         matchedBy = 'bonding-curve';
         break;
       }
+      if (this.speculativeByMint.has(key)) {
+        speculativeMatch = this.speculativeByMint.get(key)!;
+        matchedBy = 'mint-speculative';
+        break;
+      }
+      if (this.speculativeByCurve.has(key)) {
+        speculativeMatch = this.speculativeByCurve.get(key)!;
+        matchedBy = 'curve-speculative';
+        break;
+      }
+    }
+
+    // Speculative match: store pool address and wait for graduation to be confirmed
+    if (!matched && speculativeMatch) {
+      const poolAddress = this.extractPoolAddress(tx, PUMPSWAP_PROGRAM_STR);
+      if (poolAddress) {
+        speculativeMatch.foundPool = {
+          address: poolAddress,
+          signature,
+          slot,
+          migrationTimestamp: tx.blockTime || Math.floor(Date.now() / 1000),
+        };
+        logger.info(
+          { mint: speculativeMatch.mint, poolAddress, matchedBy },
+          'Pool found speculatively — waiting for graduation confirmation'
+        );
+      }
+      return;
     }
 
     if (!matched) return;
@@ -347,6 +456,17 @@ export class PoolTracker {
       this.totalExpired++;
     }
 
+    // Speculative entries shouldn't linger — 30s TTL (much shorter than pending)
+    const SPECULATIVE_TTL_MS = 30_000;
+    for (const [mint, entry] of this.speculativeByMint) {
+      if (now - entry.addedAt > SPECULATIVE_TTL_MS) {
+        this.speculativeByMint.delete(mint);
+        if (entry.bondingCurveAddress) {
+          this.speculativeByCurve.delete(entry.bondingCurveAddress);
+        }
+      }
+    }
+
     if (expiredMints.length > 0 && this.totalExpired % 20 === 0) {
       logger.info(
         { expired: expiredMints.length, totalExpired: this.totalExpired, pending: this.pendingByMint.size },
@@ -358,7 +478,7 @@ export class PoolTracker {
   private async fetchParsedTransaction(signature: string, retries = 1) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        await globalRpcLimiter.throttle();
+        await globalRpcLimiter.throttlePriority();
         return await this.connection.getParsedTransaction(signature, {
           commitment: 'confirmed',
           maxSupportedTransactionVersion: 0,

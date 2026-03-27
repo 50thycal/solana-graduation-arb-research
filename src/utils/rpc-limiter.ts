@@ -57,6 +57,26 @@ export class RpcLimiter {
   }
 
   /**
+   * High-priority version of throttle — jumps to the front of the queue.
+   * Use for graduation detection and pool matching where latency matters.
+   */
+  async throttlePriority(): Promise<void> {
+    this.refill();
+    if (this.tokens >= 1) {
+      this.tokens--;
+      return;
+    }
+
+    this.totalThrottled++;
+    return new Promise<void>((resolve) => {
+      this.queue.unshift(resolve); // front of queue
+      if (!this.processingQueue) {
+        this.processQueue();
+      }
+    });
+  }
+
+  /**
    * For non-critical requests (e.g. price snapshots, competition detection).
    * Returns false immediately if the queue already has more than maxQueue entries,
    * signalling the caller to skip the request rather than pile onto the backlog.
