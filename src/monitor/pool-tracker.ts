@@ -415,36 +415,52 @@ export class PoolTracker {
     });
   }
 
-  // PumpSwap create_pool instruction account layout:
-  //   [0] pool (PDA)          ← pool address
-  //   [8] pool_base_token_account  ← base vault (graduated token)
-  //   [9] pool_quote_token_account ← quote vault (wSOL)
+  // PumpSwap create_pool instruction account layout (confirmed from IDL):
+  //   [0] pool (PDA), [9] pool_base_token_account, [10] pool_quote_token_account
   private extractPoolInfo(
     tx: any,
     dexProgramId: string
   ): { poolAddress: string; baseVault?: string; quoteVault?: string } | null {
+    // Full account key list from the tx — needed to resolve raw compiled instruction indices
+    const txAccountKeys: string[] = tx.transaction.message.accountKeys.map((k: any) =>
+      typeof k === 'string' ? k : k.pubkey?.toBase58?.() ?? String(k)
+    );
+
     const toStr = (acct: any): string | null => {
       if (typeof acct === 'string') return acct;
       return acct?.toBase58?.() ?? null;
     };
 
-    const parseIx = (ix: any) => {
-      if (!('programId' in ix)) return null;
-      const progId = typeof ix.programId === 'string' ? ix.programId : ix.programId.toBase58();
-      if (progId !== dexProgramId) return null;
-      if (!('accounts' in ix) || !Array.isArray(ix.accounts)) return null;
+    // Handles both getParsedTransaction formats:
+    //   PartiallyDecodedInstruction: { programId: PublicKey, accounts: PublicKey[] }
+    //   Raw compiled:                { programIdIndex: number, accountKeyIndexes: number[] }
+    const parseIx = (ix: any): { poolAddress: string; baseVault?: string; quoteVault?: string } | null => {
+      let progId: string | undefined;
+      let accts: string[];
 
-      const accts = ix.accounts;
-      const poolAddress = toStr(accts[0]);
+      if ('programId' in ix) {
+        // PartiallyDecodedInstruction
+        progId = typeof ix.programId === 'string' ? ix.programId : ix.programId?.toBase58?.();
+        if (progId !== dexProgramId) return null;
+        if (!Array.isArray(ix.accounts)) return null;
+        accts = ix.accounts.map(toStr).filter(Boolean) as string[];
+      } else if ('programIdIndex' in ix) {
+        // Raw compiled instruction
+        progId = txAccountKeys[ix.programIdIndex];
+        if (progId !== dexProgramId) return null;
+        const indices: number[] = ix.accountKeyIndexes ?? ix.accounts ?? [];
+        accts = indices.map((i: number) => txAccountKeys[i]).filter(Boolean) as string[];
+      } else {
+        return null;
+      }
+
+      const poolAddress = accts[0];
       if (!poolAddress) return null;
 
-      // create_pool account layout (PumpSwap IDL):
-      // [0] pool, [6] user_base, [7] user_quote, [8] user_pool_lp,
-      // [9] pool_base_token_account (base vault), [10] pool_quote_token_account (quote vault)
       return {
         poolAddress,
-        baseVault: accts.length > 9 ? toStr(accts[9]) ?? undefined : undefined,
-        quoteVault: accts.length > 10 ? toStr(accts[10]) ?? undefined : undefined,
+        baseVault: accts.length > 9 ? accts[9] : undefined,
+        quoteVault: accts.length > 10 ? accts[10] : undefined,
       };
     };
 
