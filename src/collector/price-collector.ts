@@ -20,10 +20,6 @@ const SNAPSHOT_SCHEDULE = [0, 5, 10, 30, 60, 120, 300];
 const LAMPORTS_PER_SOL = new BN(1_000_000_000);
 const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);
 
-// Used for ATA derivation of pool vaults
-const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
-const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv');
-const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 
 
 export interface ObservationContext {
@@ -273,35 +269,38 @@ export class PriceCollector {
   ): Promise<{ price: number; solReserves: number; tokenReserves: number } | null> {
     const ctx = observation.ctx;
     try {
-      // Derive pool vault addresses as ATAs owned by the pool PDA.
-      // PumpSwap uses standard ATAs for its token vaults — no RPC needed.
-      // The ctx.baseVault from the creation tx is NOT used here because those
-      // indices point to the user's source accounts (drained to 0 after pool creation).
+      // Resolve vault addresses from the pool account (confirmed correct per IDL:
+      // pool_base_token_account at offset 139, pool_quote_token_account at offset 171).
+      // Cached after first successful fetch so subsequent snapshots skip this RPC call.
       if (!observation.baseVault || !observation.quoteVault) {
-        try {
-          const poolPk = new PublicKey(ctx.poolAddress);
-          const baseMintPk = new PublicKey(ctx.mint);
-          const [baseVaultPk] = PublicKey.findProgramAddressSync(
-            [poolPk.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), baseMintPk.toBuffer()],
-            ASSOCIATED_TOKEN_PROGRAM_ID
-          );
-          const [quoteVaultPk] = PublicKey.findProgramAddressSync(
-            [poolPk.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
-            ASSOCIATED_TOKEN_PROGRAM_ID
-          );
-          observation.baseVault = baseVaultPk.toBase58();
-          observation.quoteVault = quoteVaultPk.toBase58();
-          logger.info(
-            { graduationId: ctx.graduationId, baseVault: observation.baseVault, quoteVault: observation.quoteVault },
-            'Pool vault addresses derived as ATAs of pool PDA'
-          );
-        } catch (err) {
+        if (!await globalRpcLimiter.throttleOrDrop(15)) {
+          logger.warn({ graduationId: ctx.graduationId }, 'Pool account fetch dropped — RPC queue full');
+          return null;
+        }
+        // Retry once after 400ms — pool account may not yet be available at T+0
+        let poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
+        if (!poolInfo?.data) {
+          await new Promise(r => setTimeout(r, 400));
+          poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
+        }
+        if (!poolInfo?.data) {
+          logger.warn({ graduationId: ctx.graduationId, pool: ctx.poolAddress }, 'Pool account not found');
+          return null;
+        }
+        const vaults = this.parseVaultAddresses(poolInfo.data as Buffer);
+        if (!vaults) {
           logger.warn(
-            { graduationId: ctx.graduationId, pool: ctx.poolAddress, err: err instanceof Error ? err.message : String(err) },
-            'ATA derivation failed'
+            { graduationId: ctx.graduationId, pool: ctx.poolAddress, dataLen: (poolInfo.data as Buffer).length },
+            'Could not parse vault addresses from pool account'
           );
           return null;
         }
+        observation.baseVault = vaults.baseVault;
+        observation.quoteVault = vaults.quoteVault;
+        logger.info(
+          { graduationId: ctx.graduationId, baseVault: vaults.baseVault, quoteVault: vaults.quoteVault },
+          'Pool vault addresses decoded from pool account'
+        );
       }
 
       // Fetch both vault balances in a single RPC call

@@ -431,10 +431,13 @@ export class PoolTracker {
       const poolAddress = toStr(accts[0]);
       if (!poolAddress) return null;
 
+      // create_pool account layout (PumpSwap IDL):
+      // [0] pool, [6] user_base, [7] user_quote, [8] user_pool_lp,
+      // [9] pool_base_token_account (base vault), [10] pool_quote_token_account (quote vault)
       return {
         poolAddress,
-        baseVault: accts.length > 8 ? toStr(accts[8]) ?? undefined : undefined,
-        quoteVault: accts.length > 9 ? toStr(accts[9]) ?? undefined : undefined,
+        baseVault: accts.length > 9 ? toStr(accts[9]) ?? undefined : undefined,
+        quoteVault: accts.length > 10 ? toStr(accts[10]) ?? undefined : undefined,
       };
     };
 
