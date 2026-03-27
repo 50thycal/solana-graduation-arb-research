@@ -28,13 +28,14 @@ interface SpeculativeEntry {
   mint: string;
   bondingCurveAddress: string;
   addedAt: number;
-  // Populated if PumpSwap match arrives before graduation is confirmed
-  foundPool?: {
-    address: string;
-    signature: string;
-    slot: number;
-    migrationTimestamp: number;
-  };
+}
+
+interface PreFoundPool {
+  address: string;
+  signature: string;
+  slot: number;
+  migrationTimestamp: number;
+  addedAt: number;
 }
 
 const PENDING_TTL_MS = 300_000; // 5 minutes
@@ -49,6 +50,8 @@ export class PoolTracker {
   private pendingByCurve: Map<string, PendingGraduation> = new Map();
   private speculativeByMint: Map<string, SpeculativeEntry> = new Map();
   private speculativeByCurve: Map<string, SpeculativeEntry> = new Map();
+  // Pool found during speculative window — waiting for graduation confirmation
+  private preFoundByMint: Map<string, PreFoundPool> = new Map();
   private cleanupInterval: NodeJS.Timeout | null = null;
   private totalPoolsFound = 0;
   private totalExpired = 0;
@@ -74,6 +77,7 @@ export class PoolTracker {
     return {
       pending: this.pendingByMint.size,
       speculative: this.speculativeByMint.size,
+      preFound: this.preFoundByMint.size,
       totalPoolsFound: this.totalPoolsFound,
       totalExpired: this.totalExpired,
       totalSkipped: this.totalSkipped,
@@ -105,14 +109,16 @@ export class PoolTracker {
     }
   }
 
-  /** Called when graduation verification fails — remove from speculative. */
+  /** Called when graduation verification fails — remove from speculative and preFound. */
   cancelSpeculative(mint: string): void {
     const entry = this.speculativeByMint.get(mint);
-    if (!entry) return;
-    this.speculativeByMint.delete(mint);
-    if (entry.bondingCurveAddress) {
-      this.speculativeByCurve.delete(entry.bondingCurveAddress);
+    if (entry) {
+      this.speculativeByMint.delete(mint);
+      if (entry.bondingCurveAddress) {
+        this.speculativeByCurve.delete(entry.bondingCurveAddress);
+      }
     }
+    this.preFoundByMint.delete(mint);
   }
 
   trackGraduation(
@@ -122,39 +128,40 @@ export class PoolTracker {
     bondingCurvePrice: number,
     graduationTimestamp: number
   ): void {
-    // Promote out of speculative now that graduation is confirmed
+    // Remove from speculative maps now that graduation is confirmed
     const speculative = this.speculativeByMint.get(mint);
     if (speculative) {
       this.speculativeByMint.delete(mint);
       if (speculative.bondingCurveAddress) {
         this.speculativeByCurve.delete(speculative.bondingCurveAddress);
       }
+    }
 
-      // If PumpSwap already matched during the speculative window, fire immediately
-      if (speculative.foundPool) {
-        const { address: poolAddress, signature, slot, migrationTimestamp } = speculative.foundPool;
-        this.totalMatched++;
-        this.totalPoolsFound++;
-        this.totalSpeculativeHits++;
+    // If PumpSwap already found the pool during the speculative window, fire immediately
+    const preFound = this.preFoundByMint.get(mint);
+    if (preFound) {
+      this.preFoundByMint.delete(mint);
+      this.totalMatched++;
+      this.totalPoolsFound++;
+      this.totalSpeculativeHits++;
 
-        updateGraduationPool(this.db, graduationId, poolAddress, 'pumpswap', signature, slot, migrationTimestamp);
+      updateGraduationPool(this.db, graduationId, preFound.address, 'pumpswap', preFound.signature, preFound.slot, preFound.migrationTimestamp);
 
-        logger.info(
-          { graduationId, mint, poolAddress, searchTimeMs: Date.now() - speculative.addedAt },
-          'Pool matched via speculative pre-track (pool found before graduation confirmed)'
-        );
+      logger.info(
+        { graduationId, mint, poolAddress: preFound.address, searchTimeMs: Date.now() - preFound.addedAt },
+        'Pool matched via speculative pre-track (pool found before graduation confirmed)'
+      );
 
-        this.priceCollector.startObservation({
-          graduationId,
-          mint,
-          poolAddress,
-          poolDex: 'pumpswap',
-          bondingCurvePrice,
-          graduationTimestamp,
-          migrationTimestamp,
-        });
-        return;
-      }
+      this.priceCollector.startObservation({
+        graduationId,
+        mint,
+        poolAddress: preFound.address,
+        poolDex: 'pumpswap',
+        bondingCurvePrice,
+        graduationTimestamp,
+        migrationTimestamp: preFound.migrationTimestamp,
+      });
+      return;
     }
 
     const maxPending = parseInt(process.env.MAX_CONCURRENT_OBSERVATIONS || '100', 10);
@@ -204,6 +211,7 @@ export class PoolTracker {
     this.pendingByCurve.clear();
     this.speculativeByMint.clear();
     this.speculativeByCurve.clear();
+    this.preFoundByMint.clear();
   }
 
   private async subscribeToPumpSwap(): Promise<void> {
@@ -218,15 +226,13 @@ export class PoolTracker {
 
           // CRITICAL: PumpSwap handles thousands of swap events per minute.
           // Only fetch the full transaction for pool creation events, not swaps.
-          // Pool creation logs contain "create_pool" or "Initialize" or similar.
-          // Also check for the pump.fun program ID in logs (migration CPI).
+          // Use narrow signals: the pump.fun migration CPI is the most reliable,
+          // plus the explicit "create_pool" instruction name. Avoid broad matches
+          // like "Create"/"Initialize" which fire on every swap that creates an ATA.
           const isPoolCreation = logs.logs.some(
             (log) =>
               log.includes('create_pool') ||
-              log.includes('Create') ||
-              log.includes('Initialize') ||
-              log.includes('initialize') ||
-              log.includes('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P') // pump.fun program in CPI
+              log.includes('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P') // pump.fun program in migration CPI
           );
 
           if (!isPoolCreation) return;
@@ -318,16 +324,23 @@ export class PoolTracker {
       }
     }
 
-    // Speculative match: store pool address and wait for graduation to be confirmed
+    // Speculative match: remove from matchable maps immediately to prevent re-matching
+    // on subsequent swap events, then store pool in preFoundByMint for trackGraduation to pick up
     if (!matched && speculativeMatch) {
       const poolAddress = this.extractPoolAddress(tx, PUMPSWAP_PROGRAM_STR);
       if (poolAddress) {
-        speculativeMatch.foundPool = {
+        // Remove from speculative maps so this entry won't match again
+        this.speculativeByMint.delete(speculativeMatch.mint);
+        if (speculativeMatch.bondingCurveAddress) {
+          this.speculativeByCurve.delete(speculativeMatch.bondingCurveAddress);
+        }
+        this.preFoundByMint.set(speculativeMatch.mint, {
           address: poolAddress,
           signature,
           slot,
           migrationTimestamp: tx.blockTime || Math.floor(Date.now() / 1000),
-        };
+          addedAt: speculativeMatch.addedAt,
+        });
         logger.info(
           { mint: speculativeMatch.mint, poolAddress, matchedBy },
           'Pool found speculatively — waiting for graduation confirmation'
@@ -456,7 +469,7 @@ export class PoolTracker {
       this.totalExpired++;
     }
 
-    // Speculative entries shouldn't linger — 30s TTL (much shorter than pending)
+    // Speculative and preFound entries expire after 30s
     const SPECULATIVE_TTL_MS = 30_000;
     for (const [mint, entry] of this.speculativeByMint) {
       if (now - entry.addedAt > SPECULATIVE_TTL_MS) {
@@ -464,6 +477,11 @@ export class PoolTracker {
         if (entry.bondingCurveAddress) {
           this.speculativeByCurve.delete(entry.bondingCurveAddress);
         }
+      }
+    }
+    for (const [mint, entry] of this.preFoundByMint) {
+      if (now - entry.addedAt > SPECULATIVE_TTL_MS) {
+        this.preFoundByMint.delete(mint);
       }
     }
 
