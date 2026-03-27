@@ -287,11 +287,20 @@ export class PriceCollector {
           logger.warn({ graduationId: ctx.graduationId, pool: ctx.poolAddress }, 'Pool account not found');
           return null;
         }
-        const vaults = this.parseVaultAddresses(poolInfo.data as Buffer);
+        // Ensure data is a Buffer — Helius may return it as a string or array in some configurations
+        const rawData = Array.isArray(poolInfo.data)
+          ? Buffer.from(poolInfo.data[0] as string, 'base64')
+          : Buffer.isBuffer(poolInfo.data)
+            ? poolInfo.data
+            : Buffer.from(poolInfo.data as unknown as Uint8Array);
+        const vaults = this.parseVaultAddresses(rawData);
         if (!vaults) {
+          const hexSample = rawData.length >= 145
+            ? rawData.subarray(139, 145).toString('hex')
+            : 'short';
           logger.warn(
-            { graduationId: ctx.graduationId, pool: ctx.poolAddress, dataLen: (poolInfo.data as Buffer).length },
-            'Could not parse vault addresses from pool account'
+            { graduationId: ctx.graduationId },
+            `Could not parse vault addresses: dataLen=${rawData.length} bytes@139=${hexSample} pool=${ctx.poolAddress.slice(0, 8)}`
           );
           return null;
         }
