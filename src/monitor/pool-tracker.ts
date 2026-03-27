@@ -36,6 +36,8 @@ interface PreFoundPool {
   slot: number;
   migrationTimestamp: number;
   addedAt: number;
+  baseVault?: string;
+  quoteVault?: string;
 }
 
 const PENDING_TTL_MS = 300_000; // 5 minutes
@@ -160,6 +162,8 @@ export class PoolTracker {
         bondingCurvePrice,
         graduationTimestamp,
         migrationTimestamp: preFound.migrationTimestamp,
+        baseVault: preFound.baseVault,
+        quoteVault: preFound.quoteVault,
       });
       return;
     }
@@ -329,22 +333,23 @@ export class PoolTracker {
     // Speculative match: remove from matchable maps immediately to prevent re-matching
     // on subsequent swap events, then store pool in preFoundByMint for trackGraduation to pick up
     if (!matched && speculativeMatch) {
-      const poolAddress = this.extractPoolAddress(tx, PUMPSWAP_PROGRAM_STR);
-      if (poolAddress) {
-        // Remove from speculative maps so this entry won't match again
+      const poolInfo = this.extractPoolInfo(tx, PUMPSWAP_PROGRAM_STR);
+      if (poolInfo) {
         this.speculativeByMint.delete(speculativeMatch.mint);
         if (speculativeMatch.bondingCurveAddress) {
           this.speculativeByCurve.delete(speculativeMatch.bondingCurveAddress);
         }
         this.preFoundByMint.set(speculativeMatch.mint, {
-          address: poolAddress,
+          address: poolInfo.poolAddress,
           signature,
           slot,
           migrationTimestamp: tx.blockTime || Math.floor(Date.now() / 1000),
           addedAt: speculativeMatch.addedAt,
+          baseVault: poolInfo.baseVault,
+          quoteVault: poolInfo.quoteVault,
         });
         logger.info(
-          { mint: speculativeMatch.mint, poolAddress, matchedBy },
+          { mint: speculativeMatch.mint, poolAddress: poolInfo.poolAddress, baseVault: poolInfo.baseVault, matchedBy },
           'Pool found speculatively — waiting for graduation confirmation'
         );
       }
@@ -355,9 +360,9 @@ export class PoolTracker {
 
     this.totalMatched++;
 
-    const poolAddress = this.extractPoolAddress(tx, PUMPSWAP_PROGRAM_STR);
+    const poolInfo = this.extractPoolInfo(tx, PUMPSWAP_PROGRAM_STR);
 
-    if (!poolAddress) {
+    if (!poolInfo) {
       logger.warn(
         { signature, mint: matched.mint, matchedBy },
         'PumpSwap tx matched but could not extract pool address'
@@ -365,43 +370,32 @@ export class PoolTracker {
       return;
     }
 
+    const { poolAddress, baseVault, quoteVault } = poolInfo;
     const migrationTimestamp = tx.blockTime || Math.floor(Date.now() / 1000);
 
-    // Record the pool in the graduations table
-    updateGraduationPool(
-      this.db,
-      matched.graduationId,
-      poolAddress,
-      'pumpswap',
-      signature,
-      slot,
-      migrationTimestamp
-    );
+    updateGraduationPool(this.db, matched.graduationId, poolAddress, 'pumpswap', signature, slot, migrationTimestamp);
 
     this.totalPoolsFound++;
-
-    const searchTimeMs = Date.now() - matched.addedAt;
 
     logger.info(
       {
         graduationId: matched.graduationId,
         mint: matched.mint,
         poolAddress,
+        baseVault,
         matchedBy,
-        searchTimeMs,
+        searchTimeMs: Date.now() - matched.addedAt,
         totalFound: this.totalPoolsFound,
       },
       'Pool found via PumpSwap subscription'
     );
 
-    // Remove from pending maps
     this.pendingByMint.delete(matched.mint);
     if (matched.bondingCurveAddress) {
       this.pendingByCurve.delete(matched.bondingCurveAddress);
     }
 
-    // START PRICE OBSERVATION (Phase 2)
-    const obsCtx: ObservationContext = {
+    this.priceCollector.startObservation({
       graduationId: matched.graduationId,
       mint: matched.mint,
       poolAddress,
@@ -409,42 +403,51 @@ export class PoolTracker {
       bondingCurvePrice: matched.bondingCurvePrice,
       graduationTimestamp: matched.graduationTimestamp,
       migrationTimestamp,
-    };
-
-    this.priceCollector.startObservation(obsCtx);
+      baseVault,
+      quoteVault,
+    });
   }
 
-  private extractPoolAddress(tx: any, dexProgramId: string): string | null {
-    for (const ix of tx.transaction.message.instructions) {
-      if (!('programId' in ix)) continue;
-      const progId = typeof ix.programId === 'string'
-        ? ix.programId
-        : ix.programId.toBase58();
+  // PumpSwap create_pool instruction account layout:
+  //   [0] pool (PDA)          ← pool address
+  //   [8] pool_base_token_account  ← base vault (graduated token)
+  //   [9] pool_quote_token_account ← quote vault (wSOL)
+  private extractPoolInfo(
+    tx: any,
+    dexProgramId: string
+  ): { poolAddress: string; baseVault?: string; quoteVault?: string } | null {
+    const toStr = (acct: any): string | null => {
+      if (typeof acct === 'string') return acct;
+      return acct?.toBase58?.() ?? null;
+    };
 
-      if (progId === dexProgramId && 'accounts' in ix && Array.isArray(ix.accounts)) {
-        const accts = ix.accounts;
-        if (accts.length > 0) {
-          const addr = typeof accts[0] === 'string' ? accts[0] : accts[0]?.toBase58?.();
-          if (addr) return addr;
-        }
-      }
+    const parseIx = (ix: any) => {
+      if (!('programId' in ix)) return null;
+      const progId = typeof ix.programId === 'string' ? ix.programId : ix.programId.toBase58();
+      if (progId !== dexProgramId) return null;
+      if (!('accounts' in ix) || !Array.isArray(ix.accounts)) return null;
+
+      const accts = ix.accounts;
+      const poolAddress = toStr(accts[0]);
+      if (!poolAddress) return null;
+
+      return {
+        poolAddress,
+        baseVault: accts.length > 8 ? toStr(accts[8]) ?? undefined : undefined,
+        quoteVault: accts.length > 9 ? toStr(accts[9]) ?? undefined : undefined,
+      };
+    };
+
+    for (const ix of tx.transaction.message.instructions) {
+      const result = parseIx(ix);
+      if (result) return result;
     }
 
     if (tx.meta.innerInstructions) {
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {
-          if (!('programId' in ix)) continue;
-          const progId = typeof ix.programId === 'string'
-            ? ix.programId
-            : ix.programId.toBase58();
-
-          if (progId === dexProgramId && 'accounts' in ix && Array.isArray(ix.accounts)) {
-            const accts = ix.accounts;
-            if (accts.length > 0) {
-              const addr = typeof accts[0] === 'string' ? accts[0] : accts[0]?.toBase58?.();
-              if (addr) return addr;
-            }
-          }
+          const result = parseIx(ix);
+          if (result) return result;
         }
       }
     }
