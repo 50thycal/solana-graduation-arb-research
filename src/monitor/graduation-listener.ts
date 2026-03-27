@@ -413,6 +413,13 @@ export class GraduationListener {
       return null;
     }
 
+    // Derive bonding curve PDA from mint — more reliable than reading accounts[2]
+    // from the tx, which gives the system program for some migration wrapper txs.
+    bondingCurveAddress = PublicKey.findProgramAddressSync(
+      [Buffer.from('bonding-curve'), new PublicKey(mint).toBuffer()],
+      PUMP_FUN_PROGRAM_ID
+    )[0].toBase58();
+
     // Register mint with pool-tracker NOW — before the bonding curve RPC call.
     // This eliminates the race where PumpSwap pool creation fires while we're
     // still waiting for getAccountInfo to complete.

@@ -106,9 +106,16 @@ export class PoolTracker {
     if (this.pendingByMint.has(mint) || this.speculativeByMint.has(mint)) return;
     const entry: SpeculativeEntry = { mint, bondingCurveAddress, addedAt: Date.now() };
     this.speculativeByMint.set(mint, entry);
-    if (bondingCurveAddress) {
+    if (bondingCurveAddress && !PoolTracker.isWellKnownAddress(bondingCurveAddress)) {
       this.speculativeByCurve.set(bondingCurveAddress, entry);
     }
+  }
+
+  // Addresses that must never be used as curve-match keys — they appear in every tx
+  private static isWellKnownAddress(addr: string): boolean {
+    return addr === '11111111111111111111111111111111' || // system program
+      addr === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' || // token program
+      addr === 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv'; // associated token program
   }
 
   /** Called when graduation verification fails — remove from speculative and preFound. */
@@ -193,7 +200,7 @@ export class PoolTracker {
     };
 
     this.pendingByMint.set(mint, entry);
-    if (bondingCurveAddress) {
+    if (bondingCurveAddress && !PoolTracker.isWellKnownAddress(bondingCurveAddress)) {
       this.pendingByCurve.set(bondingCurveAddress, entry);
     }
 
