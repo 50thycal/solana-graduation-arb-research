@@ -33,6 +33,11 @@ const BONDING_CURVE_LAYOUT = {
 const LAMPORTS_PER_SOL = new BN(1_000_000_000);
 const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);
 
+// pump.fun virtual reserve constants (used in tx-based price extraction)
+// virtualSol = realSol + 30 SOL;  virtualToken = realToken + 279_900_191 tokens (6 dec)
+const PUMP_VIRTUAL_SOL_OFFSET_LAMPORTS = 30_000_000_000; // 30 SOL in lamports
+const PUMP_VIRTUAL_TOKEN_OFFSET_RAW = 279_900_191_000_000; // raw token units (6 dec)
+
 // Graduation verification thresholds
 // A completed bonding curve typically has ~79-85 SOL in real reserves
 // and near-zero real token reserves
@@ -433,15 +438,24 @@ export class GraduationListener {
       return null;
     }
 
-    let curveState: BondingCurveState | null = null;
-    try {
-      curveState = await this.fetchBondingCurveState(bondingCurveAddress);
-    } catch (err) {
-      logger.warn(
-        'Failed to fetch bonding curve %s: %s',
-        bondingCurveAddress,
-        err instanceof Error ? err.message : String(err)
-      );
+    // PRIMARY: Extract bonding curve reserves from tx pre-balances.
+    // By the time we fetch the account live, migration has already closed it.
+    // The tx pre-balances capture the state just BEFORE migration ran.
+    const txCurveState = this.extractBondingCurveFromTx(tx, mint, bondingCurveAddress);
+
+    let curveState: BondingCurveState | null = txCurveState;
+
+    // FALLBACK: Live fetch (only if tx extraction failed — e.g. very old tx re-processed)
+    if (!curveState) {
+      try {
+        curveState = await this.fetchBondingCurveState(bondingCurveAddress);
+      } catch (err) {
+        logger.warn(
+          'Failed to fetch bonding curve %s: %s',
+          bondingCurveAddress,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
     }
 
     if (!curveState) {
@@ -476,10 +490,17 @@ export class GraduationListener {
 
     this.totalVerifiedGraduations++;
 
-    // Compute final price
+    // Compute final price from virtual reserves
     let finalPriceSol: number | undefined;
     if (curveState && curveState.virtualTokenReserves > 0) {
       finalPriceSol = curveState.virtualSolReserves / curveState.virtualTokenReserves;
+    }
+
+    if (txCurveState) {
+      logger.debug(
+        { mint, realSolReserves: txCurveState.realSolReserves, finalPriceSol },
+        'Bonding curve price extracted from tx pre-balances'
+      );
     }
 
     return {
@@ -493,6 +514,74 @@ export class GraduationListener {
       finalTokenReserves: curveState?.realTokenReserves,
       virtualSolReserves: curveState?.virtualSolReserves,
       virtualTokenReserves: curveState?.virtualTokenReserves,
+    };
+  }
+
+  /**
+   * Extract bonding curve state from the graduation transaction's pre-balances.
+   * By the time we call getAccountInfo the migration has already closed the account,
+   * so we read the reserves from what they were just before the tx ran.
+   *
+   * - realSolReserves  → tx.meta.preBalances[bondingCurveIndex] (in lamports)
+   * - realTokenReserves → tx.meta.preTokenBalances entry for the bonding curve + token mint
+   * - virtualSolReserves = realSol + 30 SOL
+   * - virtualTokenReserves = realToken + 279_900_191 tokens
+   * - isComplete = true (we wouldn't be here otherwise)
+   */
+  private extractBondingCurveFromTx(
+    tx: Awaited<ReturnType<Connection['getParsedTransaction']>>,
+    mint: string,
+    bondingCurveAddress: string
+  ): BondingCurveState | null {
+    if (!tx || !tx.meta) return null;
+
+    // Build an account-key index. getParsedTransaction returns account keys as
+    // ParsedMessageAccount objects with a .pubkey property.
+    const accountKeys: string[] = tx.transaction.message.accountKeys.map((k: any) => {
+      if (typeof k === 'string') return k;
+      if (k?.pubkey) return typeof k.pubkey === 'string' ? k.pubkey : k.pubkey.toBase58();
+      return k?.toBase58?.() ?? '';
+    });
+
+    const bcIndex = accountKeys.findIndex((k) => k === bondingCurveAddress);
+    if (bcIndex === -1) {
+      logger.debug({ mint, bondingCurveAddress }, 'Bonding curve not in tx account keys — cannot extract from pre-balances');
+      return null;
+    }
+
+    // realSolReserves: lamports held by the bonding curve before migration
+    const preBalanceLamports: number | undefined = tx.meta.preBalances?.[bcIndex];
+    if (preBalanceLamports === undefined || preBalanceLamports === 0) {
+      logger.debug({ mint, bcIndex, preBalanceLamports }, 'Pre-balance missing or zero for bonding curve');
+      return null;
+    }
+
+    // realTokenReserves: token balance held by the bonding curve's associated token account
+    // preTokenBalances entries: { accountIndex, mint, uiTokenAmount }
+    const preTokenEntry = tx.meta.preTokenBalances?.find(
+      (tb: any) => tb.mint === mint && accountKeys[tb.accountIndex] !== undefined
+    );
+
+    let realTokenRaw = 0;
+    if (preTokenEntry?.uiTokenAmount?.amount) {
+      realTokenRaw = parseInt(preTokenEntry.uiTokenAmount.amount, 10) || 0;
+    }
+
+    const realSolLamports = preBalanceLamports;
+    const virtualSolLamports = realSolLamports + PUMP_VIRTUAL_SOL_OFFSET_LAMPORTS;
+    const virtualTokenRaw = realTokenRaw + PUMP_VIRTUAL_TOKEN_OFFSET_RAW;
+
+    const realSolReserves = realSolLamports / 1_000_000_000;
+    const virtualSolReserves = virtualSolLamports / 1_000_000_000;
+    const realTokenReserves = realTokenRaw / 1_000_000;
+    const virtualTokenReserves = virtualTokenRaw / 1_000_000;
+
+    return {
+      virtualTokenReserves,
+      virtualSolReserves,
+      realTokenReserves,
+      realSolReserves,
+      isComplete: true,
     };
   }
 
