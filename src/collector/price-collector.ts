@@ -20,6 +20,11 @@ const SNAPSHOT_SCHEDULE = [0, 5, 10, 30, 60, 120, 300];
 const LAMPORTS_PER_SOL = new BN(1_000_000_000);
 const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);
 
+// Used for ATA derivation of pool vaults
+const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv');
+const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
+
 
 export interface ObservationContext {
   graduationId: number;
@@ -268,37 +273,35 @@ export class PriceCollector {
   ): Promise<{ price: number; solReserves: number; tokenReserves: number } | null> {
     const ctx = observation.ctx;
     try {
-      // Seed vault cache from the observation context if populated (extracted from pool creation tx)
-      if (!observation.baseVault && ctx.baseVault) {
-        observation.baseVault = ctx.baseVault;
-        observation.quoteVault = ctx.quoteVault;
-        logger.info(
-          { graduationId: ctx.graduationId, baseVault: ctx.baseVault, quoteVault: ctx.quoteVault },
-          'Pool vault addresses seeded from creation tx'
-        );
-      }
-
-      // Fallback: fetch pool account and parse vault addresses from account data
+      // Derive pool vault addresses as ATAs owned by the pool PDA.
+      // PumpSwap uses standard ATAs for its token vaults — no RPC needed.
+      // The ctx.baseVault from the creation tx is NOT used here because those
+      // indices point to the user's source accounts (drained to 0 after pool creation).
       if (!observation.baseVault || !observation.quoteVault) {
-        if (!await globalRpcLimiter.throttleOrDrop(15)) return null;
-        const poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress));
-        if (!poolInfo?.data) return null;
-
-        const vaults = this.parseVaultAddresses(poolInfo.data);
-        if (!vaults) {
+        try {
+          const poolPk = new PublicKey(ctx.poolAddress);
+          const baseMintPk = new PublicKey(ctx.mint);
+          const [baseVaultPk] = PublicKey.findProgramAddressSync(
+            [poolPk.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), baseMintPk.toBuffer()],
+            ASSOCIATED_TOKEN_PROGRAM_ID
+          );
+          const [quoteVaultPk] = PublicKey.findProgramAddressSync(
+            [poolPk.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), WSOL_MINT.toBuffer()],
+            ASSOCIATED_TOKEN_PROGRAM_ID
+          );
+          observation.baseVault = baseVaultPk.toBase58();
+          observation.quoteVault = quoteVaultPk.toBase58();
+          logger.info(
+            { graduationId: ctx.graduationId, baseVault: observation.baseVault, quoteVault: observation.quoteVault },
+            'Pool vault addresses derived as ATAs of pool PDA'
+          );
+        } catch (err) {
           logger.warn(
-            { pool: ctx.poolAddress, dataLen: poolInfo.data.length },
-            'Could not parse vault addresses from pool account'
+            { graduationId: ctx.graduationId, pool: ctx.poolAddress, err: err instanceof Error ? err.message : String(err) },
+            'ATA derivation failed'
           );
           return null;
         }
-
-        observation.baseVault = vaults.baseVault;
-        observation.quoteVault = vaults.quoteVault;
-        logger.info(
-          { graduationId: ctx.graduationId, baseVault: vaults.baseVault, quoteVault: vaults.quoteVault },
-          'Pool vault addresses decoded from account data'
-        );
       }
 
       // Fetch both vault balances in a single RPC call
@@ -324,7 +327,14 @@ export class PriceCollector {
 
       if (baseAmount === null || quoteAmount === null || baseAmount === 0 || quoteAmount === 0) {
         logger.warn(
-          { graduationId: ctx.graduationId, baseAmount, quoteAmount },
+          {
+            graduationId: ctx.graduationId,
+            baseAmount, quoteAmount,
+            baseDataLen: (vaultAccounts[0]!.data as Buffer).length,
+            quoteDataLen: (vaultAccounts[1]!.data as Buffer).length,
+            baseVault: observation.baseVault,
+            quoteVault: observation.quoteVault,
+          },
           'Vault amounts zero or unreadable'
         );
         return null;
