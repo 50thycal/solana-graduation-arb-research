@@ -1,4 +1,4 @@
-import { Connection, PublicKey, AccountInfo } from '@solana/web3.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import Database from 'better-sqlite3';
 import pino from 'pino';
@@ -20,10 +20,6 @@ const SNAPSHOT_SCHEDULE = [0, 5, 10, 30, 60, 120, 300];
 const LAMPORTS_PER_SOL = new BN(1_000_000_000);
 const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);
 
-// PumpSwap pool account layout (AMM pool)
-// Standard constant-product pool: token_a_reserves, token_b_reserves
-// Layout varies by DEX — we read the token accounts directly
-const SOL_MINT = 'So11111111111111111111111111111111111111112';
 
 export interface ObservationContext {
   graduationId: number;
@@ -41,6 +37,9 @@ interface ActiveObservation {
   scheduledSnapshots: number[];
   completedSnapshots: number[];
   timers: NodeJS.Timeout[];
+  // Cached after first successful pool decode — avoids re-fetching pool account on every snapshot
+  baseVault?: string;
+  quoteVault?: string;
 }
 
 export class PriceCollector {
@@ -182,7 +181,7 @@ export class PriceCollector {
 
     try {
       // Fetch pool state to get current price
-      const poolState = await this.fetchPoolPrice(ctx.poolAddress, ctx.mint);
+      const poolState = await this.fetchPoolPrice(observation);
 
       if (!poolState) {
         logger.debug(
@@ -248,140 +247,95 @@ export class PriceCollector {
     }
   }
 
+  // PumpSwap pool account layout (Anchor IDL):
+  // [8]  discriminator
+  // [1]  pool_bump
+  // [2]  index (u16 LE)
+  // [32] creator
+  // [32] base_mint       (graduated token)
+  // [32] quote_mint      (wSOL: So11111111111111111111111111111111111111112)
+  // [32] lp_mint
+  // [32] pool_base_token_account  ← base vault (token)
+  // [32] pool_quote_token_account ← quote vault (wSOL)
+  private static readonly POOL_BASE_VAULT_OFFSET = 8 + 1 + 2 + 32 + 32 + 32 + 32; // 139
+  private static readonly POOL_QUOTE_VAULT_OFFSET = PriceCollector.POOL_BASE_VAULT_OFFSET + 32; // 171
+
   private async fetchPoolPrice(
-    poolAddress: string,
-    mint: string
+    observation: ActiveObservation
   ): Promise<{ price: number; solReserves: number; tokenReserves: number } | null> {
+    const ctx = observation.ctx;
     try {
-      // For PumpSwap/Raydium pools, we need to read the pool's token accounts
-      // The pool account itself holds references to token vaults
-      // Approach: fetch the pool account and decode its token vault balances
+      // First snapshot: parse vault addresses from pool account data and cache them
+      if (!observation.baseVault || !observation.quoteVault) {
+        if (!await globalRpcLimiter.throttleOrDrop(15)) return null;
+        const poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress));
+        if (!poolInfo?.data) return null;
 
-      const poolPubkey = new PublicKey(poolAddress);
-      const acquired = await globalRpcLimiter.throttleOrDrop(15);
-      if (!acquired) return null;
-      const poolInfo = await this.connection.getAccountInfo(poolPubkey);
+        const vaults = this.parseVaultAddresses(poolInfo.data);
+        if (!vaults) {
+          logger.warn(
+            { pool: ctx.poolAddress, dataLen: poolInfo.data.length },
+            'Could not parse vault addresses from pool account — check POOL_BASE_VAULT_OFFSET'
+          );
+          return null;
+        }
 
-      if (!poolInfo || !poolInfo.data) return null;
+        observation.baseVault = vaults.baseVault;
+        observation.quoteVault = vaults.quoteVault;
+        logger.info(
+          { graduationId: ctx.graduationId, pool: ctx.poolAddress, baseVault: vaults.baseVault, quoteVault: vaults.quoteVault },
+          'Pool vault addresses decoded and cached'
+        );
+      }
 
-      // Try to decode the pool's reserves from account data
-      // PumpSwap pools store reserves in the account data
-      const reserves = this.decodePoolReserves(poolInfo, mint);
-      if (reserves) return reserves;
+      // Fetch both vault balances in a single RPC call
+      if (!await globalRpcLimiter.throttleOrDrop(15)) return null;
+      const vaultAccounts = await this.connection.getMultipleAccountsInfo([
+        new PublicKey(observation.baseVault),
+        new PublicKey(observation.quoteVault),
+      ]);
 
-      // Fallback: find the pool's token accounts and read their balances
-      return await this.fetchPoolReservesFromTokenAccounts(poolAddress, mint);
+      if (!vaultAccounts[0]?.data || !vaultAccounts[1]?.data) return null;
+
+      const baseAmount = this.readTokenAccountAmount(vaultAccounts[0].data as Buffer);
+      const quoteAmount = this.readTokenAccountAmount(vaultAccounts[1].data as Buffer);
+
+      if (baseAmount === null || quoteAmount === null || baseAmount === 0 || quoteAmount === 0) return null;
+
+      // base = graduated token (6 decimals), quote = wSOL (9 decimals)
+      const tokenReserves = baseAmount / 1_000_000;
+      const solReserves = quoteAmount / 1_000_000_000;
+
+      if (tokenReserves <= 0 || solReserves <= 0) return null;
+
+      return { price: solReserves / tokenReserves, solReserves, tokenReserves };
     } catch (err) {
       logger.debug(
         'Failed to fetch pool price for %s: %s',
-        poolAddress.slice(0, 8),
+        ctx.poolAddress.slice(0, 8),
         err instanceof Error ? err.message : String(err)
       );
       return null;
     }
   }
 
-  private decodePoolReserves(
-    poolInfo: AccountInfo<Buffer>,
-    mint: string
-  ): { price: number; solReserves: number; tokenReserves: number } | null {
-    const data = poolInfo.data;
-
-    // PumpSwap pool layout (estimated based on common AMM patterns):
-    // Various headers/discriminators, then two u64 reserve fields
-    // Try several common offsets for reserve data
-
-    if (data.length < 200) return null;
-
-    // Try common AMM layouts — two consecutive u64 values representing reserves
-    // We try multiple offsets because different pool versions may differ
-    const offsets = [72, 80, 88, 96, 104, 112, 128, 136, 144, 152, 160, 168];
-
-    for (let i = 0; i < offsets.length - 1; i++) {
-      const offset1 = offsets[i];
-      const offset2 = offset1 + 8;
-
-      if (offset2 + 8 > data.length) continue;
-
-      const val1 = new BN(data.subarray(offset1, offset1 + 8), 'le');
-      const val2 = new BN(data.subarray(offset2, offset2 + 8), 'le');
-
-      // Sanity check: both values should be reasonable
-      // SOL reserves: typically 10-200 SOL (10e9 to 200e9 lamports)
-      // Token reserves: typically > 0 and < total supply
-      const v1Num = val1.toNumber();
-      const v2Num = val2.toNumber();
-
-      const MIN_SOL_LAMPORTS = 1_000_000_000; // 1 SOL
-      const MAX_SOL_LAMPORTS = 500_000_000_000; // 500 SOL
-
-      // Check if val1 looks like SOL and val2 looks like tokens
-      if (v1Num >= MIN_SOL_LAMPORTS && v1Num <= MAX_SOL_LAMPORTS && v2Num > 0) {
-        const solReserves = bnToNumber(val1, LAMPORTS_PER_SOL);
-        const tokenReserves = bnToNumber(val2, TOKEN_DECIMAL_FACTOR);
-        if (tokenReserves > 0) {
-          return {
-            price: solReserves / tokenReserves,
-            solReserves,
-            tokenReserves,
-          };
-        }
-      }
-
-      // Check reverse: val1 = tokens, val2 = SOL
-      if (v2Num >= MIN_SOL_LAMPORTS && v2Num <= MAX_SOL_LAMPORTS && v1Num > 0) {
-        const solReserves = bnToNumber(val2, LAMPORTS_PER_SOL);
-        const tokenReserves = bnToNumber(val1, TOKEN_DECIMAL_FACTOR);
-        if (tokenReserves > 0) {
-          return {
-            price: solReserves / tokenReserves,
-            solReserves,
-            tokenReserves,
-          };
-        }
-      }
+  private parseVaultAddresses(data: Buffer): { baseVault: string; quoteVault: string } | null {
+    if (data.length < PriceCollector.POOL_QUOTE_VAULT_OFFSET + 32) return null;
+    try {
+      const baseVaultKey = new PublicKey(data.subarray(PriceCollector.POOL_BASE_VAULT_OFFSET, PriceCollector.POOL_BASE_VAULT_OFFSET + 32));
+      const quoteVaultKey = new PublicKey(data.subarray(PriceCollector.POOL_QUOTE_VAULT_OFFSET, PriceCollector.POOL_QUOTE_VAULT_OFFSET + 32));
+      if (baseVaultKey.equals(PublicKey.default) || quoteVaultKey.equals(PublicKey.default)) return null;
+      return { baseVault: baseVaultKey.toBase58(), quoteVault: quoteVaultKey.toBase58() };
+    } catch {
+      return null;
     }
-
-    return null;
   }
 
-  private async fetchPoolReservesFromTokenAccounts(
-    poolAddress: string,
-    mint: string
-  ): Promise<{ price: number; solReserves: number; tokenReserves: number } | null> {
+  // SPL token account layout: [32] mint, [32] owner, [8] amount (u64 LE) at offset 64
+  private readTokenAccountAmount(data: Buffer): number | null {
+    if (data.length < 72) return null;
     try {
-      // Get token accounts owned by the pool
-      const poolPubkey = new PublicKey(poolAddress);
-
-      // Fetch SOL balance of the pool
-      if (!await globalRpcLimiter.throttleOrDrop(15)) return null;
-      const solBalance = await this.connection.getBalance(poolPubkey);
-
-      // Fetch token accounts for this mint owned by the pool
-      if (!await globalRpcLimiter.throttleOrDrop(15)) return null;
-      const tokenAccounts = await this.connection.getTokenAccountsByOwner(poolPubkey, {
-        mint: new PublicKey(mint),
-      });
-
-      if (tokenAccounts.value.length === 0) return null;
-
-      // Parse token balance from the first token account
-      const tokenAccountData = tokenAccounts.value[0].account.data;
-      // SPL token account layout: mint (32) + owner (32) + amount (u64 at offset 64)
-      if (tokenAccountData.length < 72) return null;
-
-      const tokenAmount = new BN(tokenAccountData.subarray(64, 72), 'le');
-
-      const solReserves = solBalance / 1_000_000_000;
-      const tokenReserves = bnToNumber(tokenAmount, TOKEN_DECIMAL_FACTOR);
-
-      if (solReserves <= 0 || tokenReserves <= 0) return null;
-
-      return {
-        price: solReserves / tokenReserves,
-        solReserves,
-        tokenReserves,
-      };
+      return new BN(data.subarray(64, 72), 'le').toNumber();
     } catch {
       return null;
     }
