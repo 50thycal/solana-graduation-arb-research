@@ -29,6 +29,9 @@ export interface ObservationContext {
   bondingCurvePrice: number;
   graduationTimestamp: number;
   migrationTimestamp: number;
+  // Vault addresses extracted from the pool creation tx — skips pool account decode
+  baseVault?: string;
+  quoteVault?: string;
 }
 
 interface ActiveObservation {
@@ -265,7 +268,17 @@ export class PriceCollector {
   ): Promise<{ price: number; solReserves: number; tokenReserves: number } | null> {
     const ctx = observation.ctx;
     try {
-      // First snapshot: parse vault addresses from pool account data and cache them
+      // Seed vault cache from the observation context if populated (extracted from pool creation tx)
+      if (!observation.baseVault && ctx.baseVault) {
+        observation.baseVault = ctx.baseVault;
+        observation.quoteVault = ctx.quoteVault;
+        logger.info(
+          { graduationId: ctx.graduationId, baseVault: ctx.baseVault, quoteVault: ctx.quoteVault },
+          'Pool vault addresses seeded from creation tx'
+        );
+      }
+
+      // Fallback: fetch pool account and parse vault addresses from account data
       if (!observation.baseVault || !observation.quoteVault) {
         if (!await globalRpcLimiter.throttleOrDrop(15)) return null;
         const poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress));
@@ -275,7 +288,7 @@ export class PriceCollector {
         if (!vaults) {
           logger.warn(
             { pool: ctx.poolAddress, dataLen: poolInfo.data.length },
-            'Could not parse vault addresses from pool account — check POOL_BASE_VAULT_OFFSET'
+            'Could not parse vault addresses from pool account'
           );
           return null;
         }
@@ -283,8 +296,8 @@ export class PriceCollector {
         observation.baseVault = vaults.baseVault;
         observation.quoteVault = vaults.quoteVault;
         logger.info(
-          { graduationId: ctx.graduationId, pool: ctx.poolAddress, baseVault: vaults.baseVault, quoteVault: vaults.quoteVault },
-          'Pool vault addresses decoded and cached'
+          { graduationId: ctx.graduationId, baseVault: vaults.baseVault, quoteVault: vaults.quoteVault },
+          'Pool vault addresses decoded from account data'
         );
       }
 
