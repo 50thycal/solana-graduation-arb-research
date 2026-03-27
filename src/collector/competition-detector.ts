@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import pino from 'pino';
 import { insertCompetitionSignal } from '../db/queries';
 import { ObservationContext } from './price-collector';
+import { globalRpcLimiter } from '../utils/rpc-limiter';
 
 const logger = pino({ name: 'competition-detector' });
 
@@ -31,16 +32,19 @@ export class CompetitionDetector {
 
   async detectCompetition(ctx: ObservationContext): Promise<void> {
     try {
-      // Get recent transactions for the pool
+      // Get recent transactions for the pool — limit to 20 to reduce RPC usage
+      await globalRpcLimiter.throttle();
       const signatures = await this.connection.getSignaturesForAddress(
         new PublicKey(ctx.poolAddress),
-        { limit: 50 }
+        { limit: 20 }
       );
 
       if (signatures.length === 0) return;
 
       const now = Math.floor(Date.now() / 1000);
       let txCount = 0;
+      let txFetched = 0;
+      const MAX_TX_FETCHES = 10; // cap individual getParsedTransaction calls per detection run
 
       for (const sigInfo of signatures) {
         // Only look at transactions within the first ~30 seconds
@@ -50,8 +54,11 @@ export class CompetitionDetector {
         if (secSinceGrad < 0 || secSinceGrad > 30) continue;
 
         txCount++;
+        if (txFetched >= MAX_TX_FETCHES) continue;
+        txFetched++;
 
         try {
+          await globalRpcLimiter.throttle();
           const tx = await this.connection.getParsedTransaction(sigInfo.signature, {
             commitment: 'confirmed',
             maxSupportedTransactionVersion: 0,
