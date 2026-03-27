@@ -80,6 +80,9 @@ export class PriceCollector {
       return;
     }
 
+    // MAX_CONCURRENT_OBSERVATIONS limits active price observation sessions.
+    // Each active session fires RPC calls on a schedule (T+0, T+5, T+10, T+30, T+60, T+120, T+300).
+    // At 8 RPS budget, 20 concurrent = ~0.5 RPS from snapshots alone — well within limits.
     const maxActive = parseInt(process.env.MAX_CONCURRENT_OBSERVATIONS || '20', 10);
     if (this.active.size >= maxActive) {
       logger.debug({ graduationId: ctx.graduationId, active: this.active.size }, 'Max active observations');

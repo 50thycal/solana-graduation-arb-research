@@ -164,7 +164,9 @@ export class PoolTracker {
       return;
     }
 
-    const maxPending = parseInt(process.env.MAX_CONCURRENT_OBSERVATIONS || '100', 10);
+    // MAX_PENDING_GRADUATIONS caps the in-memory pending map (just mint strings, zero RPC cost).
+    // This is separate from MAX_CONCURRENT_OBSERVATIONS which limits active price observation sessions.
+    const maxPending = parseInt(process.env.MAX_PENDING_GRADUATIONS || '200', 10);
 
     if (this.pendingByMint.size >= maxPending) {
       this.totalSkipped++;
