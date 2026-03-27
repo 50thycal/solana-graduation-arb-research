@@ -32,8 +32,11 @@ export class CompetitionDetector {
 
   async detectCompetition(ctx: ObservationContext): Promise<void> {
     try {
-      // Get recent transactions for the pool — limit to 20 to reduce RPC usage
-      await globalRpcLimiter.throttle();
+      // Get recent transactions for the pool — drop if queue already backed up
+      if (!await globalRpcLimiter.throttleOrDrop(10)) {
+        logger.info({ graduationId: ctx.graduationId }, 'Skipping competition detection: RPC queue full');
+        return;
+      }
       const signatures = await this.connection.getSignaturesForAddress(
         new PublicKey(ctx.poolAddress),
         { limit: 20 }
@@ -58,7 +61,7 @@ export class CompetitionDetector {
         txFetched++;
 
         try {
-          await globalRpcLimiter.throttle();
+          if (!await globalRpcLimiter.throttleOrDrop(10)) continue;
           const tx = await this.connection.getParsedTransaction(sigInfo.signature, {
             commitment: 'confirmed',
             maxSupportedTransactionVersion: 0,
