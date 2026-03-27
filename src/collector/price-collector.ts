@@ -14,7 +14,8 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 const logger = pino({ name: 'price-collector' });
 
 // Snapshot schedule: seconds after graduation
-const SNAPSHOT_SCHEDULE = [0, 1, 2, 5, 10, 30, 60, 120, 300];
+// Removed T+1 and T+2 — they create RPC bursts with minimal research value
+const SNAPSHOT_SCHEDULE = [0, 5, 10, 30, 60, 120, 300];
 
 const LAMPORTS_PER_SOL = new BN(1_000_000_000);
 const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);
@@ -254,7 +255,8 @@ export class PriceCollector {
       // Approach: fetch the pool account and decode its token vault balances
 
       const poolPubkey = new PublicKey(poolAddress);
-      await globalRpcLimiter.throttle();
+      const acquired = await globalRpcLimiter.throttleOrDrop(15);
+      if (!acquired) return null;
       const poolInfo = await this.connection.getAccountInfo(poolPubkey);
 
       if (!poolInfo || !poolInfo.data) return null;
@@ -349,11 +351,11 @@ export class PriceCollector {
       const poolPubkey = new PublicKey(poolAddress);
 
       // Fetch SOL balance of the pool
-      await globalRpcLimiter.throttle();
+      if (!await globalRpcLimiter.throttleOrDrop(15)) return null;
       const solBalance = await this.connection.getBalance(poolPubkey);
 
       // Fetch token accounts for this mint owned by the pool
-      await globalRpcLimiter.throttle();
+      if (!await globalRpcLimiter.throttleOrDrop(15)) return null;
       const tokenAccounts = await this.connection.getTokenAccountsByOwner(poolPubkey, {
         mint: new PublicKey(mint),
       });

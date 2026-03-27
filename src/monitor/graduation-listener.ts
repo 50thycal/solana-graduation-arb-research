@@ -336,7 +336,7 @@ export class GraduationListener {
     slot: number,
     matchedLog: string
   ): Promise<GraduationEvent | null> {
-    await globalRpcLimiter.throttle();
+    await globalRpcLimiter.throttlePriority();
     const tx = await this.connection.getParsedTransaction(signature, {
       commitment: 'confirmed',
       maxSupportedTransactionVersion: 0,
@@ -413,9 +413,15 @@ export class GraduationListener {
       return null;
     }
 
+    // Register mint with pool-tracker NOW — before the bonding curve RPC call.
+    // This eliminates the race where PumpSwap pool creation fires while we're
+    // still waiting for getAccountInfo to complete.
+    this.poolTracker.speculativeTrack(mint, bondingCurveAddress ?? '');
+
     // VERIFICATION: Fetch bonding curve state and confirm this is actually a graduation
     if (!bondingCurveAddress) {
       this.totalFalsePositives++;
+      this.poolTracker.cancelSpeculative(mint);
       logger.debug({ signature, mint }, 'No bonding curve address — cannot verify, skipping');
       return null;
     }
@@ -445,6 +451,7 @@ export class GraduationListener {
 
       if (!reservesLookGraduated) {
         this.totalFalsePositives++;
+        this.poolTracker.cancelSpeculative(mint);
         logger.info(
           {
             signature,
@@ -484,7 +491,7 @@ export class GraduationListener {
 
   private async fetchBondingCurveState(address: string): Promise<BondingCurveState | null> {
     const pubkey = new PublicKey(address);
-    await globalRpcLimiter.throttle();
+    await globalRpcLimiter.throttlePriority();
     const accountInfo: AccountInfo<Buffer> | null =
       await this.connection.getAccountInfo(pubkey);
 
