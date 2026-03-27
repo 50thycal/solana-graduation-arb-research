@@ -497,8 +497,8 @@ export class GraduationListener {
     }
 
     if (txCurveState) {
-      logger.debug(
-        { mint, realSolReserves: txCurveState.realSolReserves, finalPriceSol },
+      logger.info(
+        { mint, realSolReserves: txCurveState.realSolReserves, virtualSolReserves: txCurveState.virtualSolReserves, finalPriceSol },
         'Bonding curve price extracted from tx pre-balances'
       );
     }
@@ -515,6 +515,26 @@ export class GraduationListener {
       virtualSolReserves: curveState?.virtualSolReserves,
       virtualTokenReserves: curveState?.virtualTokenReserves,
     };
+  }
+
+  /**
+   * Build the full account key array for a tx including ALT-resolved accounts.
+   * For v0 transactions, compiled instruction indices span:
+   *   [...static keys, ...ALT writable, ...ALT readonly]
+   * This is also the array that tx.meta.preBalances is parallel to.
+   */
+  private static buildFullAccountKeys(tx: any): string[] {
+    const toStr = (k: any): string => {
+      if (typeof k === 'string') return k;
+      if (k?.pubkey) return typeof k.pubkey === 'string' ? k.pubkey : k.pubkey.toBase58?.() ?? '';
+      return k?.toBase58?.() ?? '';
+    };
+    const static_ = (tx.transaction.message.accountKeys as any[]).map(toStr);
+    const loaded = tx.meta?.loadedAddresses;
+    if (!loaded) return static_;
+    const writable = (loaded.writable as any[] | undefined ?? []).map(toStr);
+    const readonly = (loaded.readonly as any[] | undefined ?? []).map(toStr);
+    return [...static_, ...writable, ...readonly];
   }
 
   /**
@@ -535,24 +555,23 @@ export class GraduationListener {
   ): BondingCurveState | null {
     if (!tx || !tx.meta) return null;
 
-    // Build an account-key index. getParsedTransaction returns account keys as
-    // ParsedMessageAccount objects with a .pubkey property.
-    const accountKeys: string[] = tx.transaction.message.accountKeys.map((k: any) => {
-      if (typeof k === 'string') return k;
-      if (k?.pubkey) return typeof k.pubkey === 'string' ? k.pubkey : k.pubkey.toBase58();
-      return k?.toBase58?.() ?? '';
-    });
+    // Build full account key list including ALT-resolved accounts.
+    // tx.meta.preBalances is parallel to this full list.
+    const accountKeys = GraduationListener.buildFullAccountKeys(tx);
 
     const bcIndex = accountKeys.findIndex((k) => k === bondingCurveAddress);
     if (bcIndex === -1) {
-      logger.debug({ mint, bondingCurveAddress }, 'Bonding curve not in tx account keys — cannot extract from pre-balances');
+      logger.info(
+        { mint, bondingCurveAddress, staticKeys: tx.transaction.message.accountKeys.length, fullKeys: accountKeys.length },
+        'Bonding curve not in tx account keys (after ALT expansion) — cannot extract from pre-balances'
+      );
       return null;
     }
 
     // realSolReserves: lamports held by the bonding curve before migration
     const preBalanceLamports: number | undefined = tx.meta.preBalances?.[bcIndex];
     if (preBalanceLamports === undefined || preBalanceLamports === 0) {
-      logger.debug({ mint, bcIndex, preBalanceLamports }, 'Pre-balance missing or zero for bonding curve');
+      logger.info({ mint, bcIndex, preBalanceLamports, fullKeys: accountKeys.length }, 'Pre-balance missing or zero for bonding curve');
       return null;
     }
 

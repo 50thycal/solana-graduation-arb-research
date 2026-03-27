@@ -302,13 +302,32 @@ export class PoolTracker {
     await this.subscribeToPumpSwap();
   }
 
+  /**
+   * Build the full account key array for a tx, including ALT-resolved accounts.
+   * For v0 transactions, compiled instruction account indices span:
+   *   [static keys] + [ALT writable] + [ALT readonly]
+   * tx.transaction.message.accountKeys only has the static keys, so indices into
+   * the ALT range will be out of bounds unless we append them.
+   */
+  private static buildFullAccountKeys(tx: any): string[] {
+    const toStr = (k: any): string =>
+      typeof k === 'string' ? k : k?.pubkey?.toBase58?.() ?? k?.toBase58?.() ?? '';
+
+    const static_ = (tx.transaction.message.accountKeys as any[]).map(toStr);
+    const loaded = tx.meta?.loadedAddresses;
+    if (!loaded) return static_;
+
+    const writable = (loaded.writable as any[] | undefined ?? []).map(toStr);
+    const readonly = (loaded.readonly as any[] | undefined ?? []).map(toStr);
+    return [...static_, ...writable, ...readonly];
+  }
+
   private async handlePumpSwapEvent(signature: string, slot: number): Promise<void> {
     const tx = await this.fetchParsedTransaction(signature);
     if (!tx || !tx.meta || tx.meta.err) return;
 
-    const accountKeys = tx.transaction.message.accountKeys.map((k) =>
-      typeof k === 'string' ? k : k.pubkey.toBase58()
-    );
+    // Use full account key list (static + ALT) for matching and instruction decoding
+    const accountKeys = PoolTracker.buildFullAccountKeys(tx);
 
     let matched: PendingGraduation | undefined;
     let matchedBy = '';
@@ -417,14 +436,16 @@ export class PoolTracker {
 
   // PumpSwap create_pool instruction account layout (confirmed from IDL):
   //   [0] pool (PDA), [9] pool_base_token_account, [10] pool_quote_token_account
+  // create_pool has 11 accounts minimum.
+  private static readonly WSOL_MINT = 'So11111111111111111111111111111111111111112';
+  private static readonly PUMPSWAP_CREATE_POOL_MIN_ACCOUNTS = 11;
+
   private extractPoolInfo(
     tx: any,
     dexProgramId: string
   ): { poolAddress: string; baseVault?: string; quoteVault?: string } | null {
-    // Full account key list from the tx — needed to resolve raw compiled instruction indices
-    const txAccountKeys: string[] = tx.transaction.message.accountKeys.map((k: any) =>
-      typeof k === 'string' ? k : k.pubkey?.toBase58?.() ?? String(k)
-    );
+    // Full account key list (static + ALT-resolved) — compiled instruction indices span this whole array
+    const txAccountKeys: string[] = PoolTracker.buildFullAccountKeys(tx);
 
     const toStr = (acct: any): string | null => {
       if (typeof acct === 'string') return acct;
@@ -454,8 +475,13 @@ export class PoolTracker {
         return null;
       }
 
+      // create_pool needs at least 11 accounts. Reject if fewer — likely a different instruction.
+      if (accts.length < PoolTracker.PUMPSWAP_CREATE_POOL_MIN_ACCOUNTS) return null;
+
       const poolAddress = accts[0];
       if (!poolAddress) return null;
+      // Pool PDA is never a well-known mint or program address
+      if (PoolTracker.isWellKnownAddress(poolAddress) || poolAddress === PoolTracker.WSOL_MINT) return null;
 
       return {
         poolAddress,
