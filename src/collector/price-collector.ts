@@ -187,7 +187,7 @@ export class PriceCollector {
       const poolState = await this.fetchPoolPrice(observation);
 
       if (!poolState) {
-        logger.debug(
+        logger.warn(
           { graduationId, targetSec, pool: ctx.poolAddress },
           'Could not fetch pool state for snapshot'
         );
@@ -302,18 +302,33 @@ export class PriceCollector {
       }
 
       // Fetch both vault balances in a single RPC call
-      if (!await globalRpcLimiter.throttleOrDrop(15)) return null;
+      if (!await globalRpcLimiter.throttleOrDrop(15)) {
+        logger.warn({ graduationId: ctx.graduationId, targetVault: observation.baseVault?.slice(0, 8) }, 'Snapshot dropped — RPC queue full');
+        return null;
+      }
       const vaultAccounts = await this.connection.getMultipleAccountsInfo([
         new PublicKey(observation.baseVault),
         new PublicKey(observation.quoteVault),
       ]);
 
-      if (!vaultAccounts[0]?.data || !vaultAccounts[1]?.data) return null;
+      if (!vaultAccounts[0]?.data || !vaultAccounts[1]?.data) {
+        logger.warn(
+          { graduationId: ctx.graduationId, baseVault: observation.baseVault?.slice(0, 8), quoteVault: observation.quoteVault?.slice(0, 8), hasBase: !!vaultAccounts[0]?.data, hasQuote: !!vaultAccounts[1]?.data },
+          'Vault account data missing'
+        );
+        return null;
+      }
 
       const baseAmount = this.readTokenAccountAmount(vaultAccounts[0].data as Buffer);
       const quoteAmount = this.readTokenAccountAmount(vaultAccounts[1].data as Buffer);
 
-      if (baseAmount === null || quoteAmount === null || baseAmount === 0 || quoteAmount === 0) return null;
+      if (baseAmount === null || quoteAmount === null || baseAmount === 0 || quoteAmount === 0) {
+        logger.warn(
+          { graduationId: ctx.graduationId, baseAmount, quoteAmount },
+          'Vault amounts zero or unreadable'
+        );
+        return null;
+      }
 
       // base = graduated token (6 decimals), quote = wSOL (9 decimals)
       const tokenReserves = baseAmount / 1_000_000;
