@@ -481,6 +481,15 @@ export class PoolTracker {
     const tryMigrateIx = (ix: any): { poolAddress: string; baseVault?: string; quoteVault?: string } | null => {
       if (progIdOf(ix) !== PUMP_FUN_PROGRAM_STR) return null;
       const accts = resolveAccts(ix);
+      // DIAGNOSTIC: log every pump.fun instruction we find so we can verify account ordering
+      logger.info(
+        {
+          acctCount: accts?.length ?? 0,
+          accts: accts ?? [],
+          ixType: 'programId' in ix ? 'PartiallyDecoded' : 'programIdIndex' in ix ? 'Compiled' : 'Unknown',
+        },
+        '[DIAG] Found pump.fun instruction — dumping all accounts'
+      );
       if (!accts || accts.length < 10) return null;
       const poolAddress = accts[9];
       if (!poolAddress || PoolTracker.isWellKnownAddress(poolAddress) || poolAddress === PoolTracker.WSOL_MINT) return null;
