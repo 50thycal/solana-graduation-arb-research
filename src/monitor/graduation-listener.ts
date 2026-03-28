@@ -365,6 +365,11 @@ export class GraduationListener {
 
       if ('accounts' in instruction && Array.isArray(instruction.accounts)) {
         const accts = instruction.accounts;
+        // DIAGNOSTIC: log all accounts to verify ordering matches IDL
+        logger.info(
+          { acctCount: accts.length, accts },
+          '[DIAG] Found pump.fun top-level instruction — dumping all accounts'
+        );
         // pump.fun instruction account layout (migrate AND buy/sell):
         //   [0] global, [1] withdraw_authority/fee_recipient, [2] mint, [3] bonding_curve
         if (accts.length >= 3) {
@@ -560,7 +565,14 @@ export class GraduationListener {
     const bcIndex = accountKeys.findIndex((k) => k === bondingCurveAddress);
     if (bcIndex === -1) {
       logger.info(
-        { mint, bondingCurveAddress, staticKeys: tx.transaction.message.accountKeys.length, fullKeys: accountKeys.length },
+        {
+          mint,
+          bondingCurveAddress,
+          staticKeys: tx.transaction.message.accountKeys.length,
+          fullKeys: accountKeys.length,
+          // DIAGNOSTIC: dump all account keys so we can see if bonding curve is present under a different address
+          allAccountKeys: accountKeys,
+        },
         'Bonding curve not in tx account keys (after ALT expansion) — cannot extract from pre-balances'
       );
       return null;
