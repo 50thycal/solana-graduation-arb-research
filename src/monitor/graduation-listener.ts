@@ -365,17 +365,12 @@ export class GraduationListener {
 
       if ('accounts' in instruction && Array.isArray(instruction.accounts)) {
         const accts = instruction.accounts;
-        // DIAGNOSTIC: log all accounts to verify ordering matches IDL
-        logger.info(
-          { acctCount: accts.length, accts },
-          '[DIAG] Found pump.fun top-level instruction — dumping all accounts'
-        );
-        // pump.fun instruction account layout (migrate AND buy/sell):
-        //   [0] global, [1] withdraw_authority/fee_recipient, [2] mint, [3] bonding_curve
-        if (accts.length >= 3) {
-          const acct2 = accts[2]; // mint is at index 2, NOT index 1
-          mint = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
-        }
+        // The migrate instruction has 15+ accounts.
+        // Small instructions (buy/sell/collect_fee etc.) have <15 — skip them.
+        if (accts.length < 15) continue;
+        // pump.fun migrate account layout: [0]=global [1]=withdraw_authority [2]=mint [3]=bonding_curve
+        const acct2 = accts[2];
+        mint = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
         break;
       }
     }
@@ -390,13 +385,11 @@ export class GraduationListener {
             : ix.programId.toBase58();
           if (progId !== PUMP_FUN_PROGRAM_STR) continue;
 
-          if ('accounts' in ix && Array.isArray(ix.accounts)) {
+          if ('accounts' in ix && Array.isArray(ix.accounts) && ix.accounts.length >= 15) {
             const accts = ix.accounts;
-            // Same layout: [2] = mint
-            if (accts.length >= 3) {
-              const acct2 = accts[2];
-              mint = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
-            }
+            // migrate layout: [2] = mint
+            const acct2 = accts[2];
+            mint = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
             break;
           }
         }
@@ -565,14 +558,7 @@ export class GraduationListener {
     const bcIndex = accountKeys.findIndex((k) => k === bondingCurveAddress);
     if (bcIndex === -1) {
       logger.info(
-        {
-          mint,
-          bondingCurveAddress,
-          staticKeys: tx.transaction.message.accountKeys.length,
-          fullKeys: accountKeys.length,
-          // DIAGNOSTIC: dump all account keys so we can see if bonding curve is present under a different address
-          allAccountKeys: accountKeys,
-        },
+        { mint, bondingCurveAddress, staticKeys: tx.transaction.message.accountKeys.length, fullKeys: accountKeys.length },
         'Bonding curve not in tx account keys (after ALT expansion) — cannot extract from pre-balances'
       );
       return null;

@@ -478,26 +478,32 @@ export class PoolTracker {
     // Reading from the migrate instruction (always PartiallyDecodedInstruction as top-level)
     // is more reliable than parsing the inner PumpSwap CPI, which Helius may return as
     // ParsedInstruction (no accounts array).
+    // Token program addresses — never a valid pool address
+    const isTokenProgram = (addr: string) =>
+      addr === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' ||
+      addr === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
+
     const tryMigrateIx = (ix: any): { poolAddress: string; baseVault?: string; quoteVault?: string } | null => {
       if (progIdOf(ix) !== PUMP_FUN_PROGRAM_STR) return null;
       const accts = resolveAccts(ix);
-      // DIAGNOSTIC: log every pump.fun instruction we find so we can verify account ordering
-      logger.info(
-        {
-          acctCount: accts?.length ?? 0,
-          accts: accts ?? [],
-          ixType: 'programId' in ix ? 'PartiallyDecoded' : 'programIdIndex' in ix ? 'Compiled' : 'Unknown',
-        },
-        '[DIAG] Found pump.fun instruction — dumping all accounts'
-      );
-      if (!accts || accts.length < 10) return null;
-      const poolAddress = accts[9];
-      if (!poolAddress || PoolTracker.isWellKnownAddress(poolAddress) || poolAddress === PoolTracker.WSOL_MINT) return null;
-      return {
-        poolAddress,
-        baseVault: accts.length > 17 ? accts[17] : undefined,
-        quoteVault: accts.length > 18 ? accts[18] : undefined,
-      };
+      // Migrate instruction has 15+ accounts. Small instructions (buy/sell/etc.) have <15.
+      if (!accts || accts.length < 15) return null;
+
+      // Pool is at [8] or [9] depending on token type:
+      //   Layout A (token_program mints):  [8]=pool  [9]=token_program
+      //   Layout B (token-2022 mints):     [8]=token_2022  [9]=pool
+      // Strategy: try [8] first; if it's a token program, fall back to [9].
+      const isInvalidPool = (addr: string) =>
+        !addr ||
+        isTokenProgram(addr) ||
+        PoolTracker.isWellKnownAddress(addr) ||
+        addr === PoolTracker.WSOL_MINT;
+
+      let poolAddress = accts[8];
+      if (isInvalidPool(poolAddress)) poolAddress = accts[9];
+      if (isInvalidPool(poolAddress)) return null;
+
+      return { poolAddress };
     };
 
     // Check top-level instructions first
