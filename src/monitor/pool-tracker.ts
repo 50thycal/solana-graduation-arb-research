@@ -489,15 +489,16 @@ export class PoolTracker {
       // Migrate instruction has 15+ accounts. Small instructions (buy/sell/etc.) have <15.
       if (!accts || accts.length < 15) return null;
 
-      // Pool is at [8] or [9] depending on token type:
-      //   Layout A (token_program mints):  [8]=pool  [9]=token_program
-      //   Layout B (token-2022 mints):     [8]=token_2022  [9]=pool
-      // Strategy: try [8] first; if it's a token program, fall back to [9].
+      // Official IDL: [8]=pump_amm (program), [9]=pool (PDA).
+      // Alternate IDL (26-acct variant): [8]=metadata_account, [9]=creator, ..., [11]=pool.
+      // Strategy: scan [8] then [9] — skip any known program or system address.
       const isInvalidPool = (addr: string) =>
         !addr ||
         isTokenProgram(addr) ||
         PoolTracker.isWellKnownAddress(addr) ||
-        addr === PoolTracker.WSOL_MINT;
+        addr === PoolTracker.WSOL_MINT ||
+        addr === PUMPSWAP_PROGRAM_STR ||
+        addr === PUMP_FUN_PROGRAM_STR;
 
       let poolAddress = accts[8];
       if (isInvalidPool(poolAddress)) poolAddress = accts[9];
