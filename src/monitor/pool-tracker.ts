@@ -13,6 +13,9 @@ const PUMPSWAP_PROGRAM_ID = new PublicKey(
 );
 const PUMPSWAP_PROGRAM_STR = PUMPSWAP_PROGRAM_ID.toBase58();
 
+// pump.fun program ID — used to extract pool address from migrate instruction accounts
+const PUMP_FUN_PROGRAM_STR = process.env.PUMP_FUN_PROGRAM_ID || '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
+
 interface PendingGraduation {
   graduationId: number;
   mint: string;
@@ -434,17 +437,12 @@ export class PoolTracker {
     });
   }
 
-  // PumpSwap create_pool instruction account layout (confirmed from IDL):
-  //   [0] pool (PDA), [9] pool_base_token_account, [10] pool_quote_token_account
-  // create_pool has 11 accounts minimum.
   private static readonly WSOL_MINT = 'So11111111111111111111111111111111111111112';
-  private static readonly PUMPSWAP_CREATE_POOL_MIN_ACCOUNTS = 11;
 
   private extractPoolInfo(
     tx: any,
-    dexProgramId: string
+    _dexProgramId: string
   ): { poolAddress: string; baseVault?: string; quoteVault?: string } | null {
-    // Full account key list (static + ALT-resolved) — compiled instruction indices span this whole array
     const txAccountKeys: string[] = PoolTracker.buildFullAccountKeys(tx);
 
     const toStr = (acct: any): string | null => {
@@ -452,53 +450,58 @@ export class PoolTracker {
       return acct?.toBase58?.() ?? null;
     };
 
-    // Handles both getParsedTransaction formats:
-    //   PartiallyDecodedInstruction: { programId: PublicKey, accounts: PublicKey[] }
-    //   Raw compiled:                { programIdIndex: number, accountKeyIndexes: number[] }
-    const parseIx = (ix: any): { poolAddress: string; baseVault?: string; quoteVault?: string } | null => {
-      let progId: string | undefined;
-      let accts: string[];
-
+    const resolveAccts = (ix: any): string[] | null => {
       if ('programId' in ix) {
-        // PartiallyDecodedInstruction
-        progId = typeof ix.programId === 'string' ? ix.programId : ix.programId?.toBase58?.();
-        if (progId !== dexProgramId) return null;
         if (!Array.isArray(ix.accounts)) return null;
-        accts = ix.accounts.map(toStr).filter(Boolean) as string[];
+        return ix.accounts.map(toStr).filter(Boolean) as string[];
       } else if ('programIdIndex' in ix) {
-        // Raw compiled instruction
-        progId = txAccountKeys[ix.programIdIndex];
-        if (progId !== dexProgramId) return null;
         const indices: number[] = ix.accountKeyIndexes ?? ix.accounts ?? [];
-        accts = indices.map((i: number) => txAccountKeys[i]).filter(Boolean) as string[];
-      } else {
-        return null;
+        return indices.map((i: number) => txAccountKeys[i]).filter(Boolean) as string[];
       }
+      return null;
+    };
 
-      // create_pool needs at least 11 accounts. Reject if fewer — likely a different instruction.
-      if (accts.length < PoolTracker.PUMPSWAP_CREATE_POOL_MIN_ACCOUNTS) return null;
+    const progIdOf = (ix: any): string | undefined => {
+      if ('programId' in ix) return typeof ix.programId === 'string' ? ix.programId : ix.programId?.toBase58?.();
+      if ('programIdIndex' in ix) return txAccountKeys[ix.programIdIndex];
+      return undefined;
+    };
 
-      const poolAddress = accts[0];
-      if (!poolAddress) return null;
-      // Pool PDA is never a well-known mint or program address
-      if (PoolTracker.isWellKnownAddress(poolAddress) || poolAddress === PoolTracker.WSOL_MINT) return null;
-
+    // PRIMARY: Read pool and vaults directly from the pump.fun migrate instruction.
+    // migrate account layout (from official IDL):
+    //   [0]=global  [1]=withdraw_authority  [2]=mint  [3]=bonding_curve
+    //   [4]=associated_bonding_curve  [5]=user  [6]=system_program  [7]=token_program
+    //   [8]=pump_amm  [9]=pool  [10]=pool_authority  [11]=pool_authority_mint_account
+    //   [12]=pool_authority_wsol_account  [13]=amm_global_config  [14]=wsol_mint
+    //   [15]=lp_mint  [16]=user_pool_token_account  [17]=pool_base_token_account
+    //   [18]=pool_quote_token_account  ...
+    // Reading from the migrate instruction (always PartiallyDecodedInstruction as top-level)
+    // is more reliable than parsing the inner PumpSwap CPI, which Helius may return as
+    // ParsedInstruction (no accounts array).
+    const tryMigrateIx = (ix: any): { poolAddress: string; baseVault?: string; quoteVault?: string } | null => {
+      if (progIdOf(ix) !== PUMP_FUN_PROGRAM_STR) return null;
+      const accts = resolveAccts(ix);
+      if (!accts || accts.length < 10) return null;
+      const poolAddress = accts[9];
+      if (!poolAddress || PoolTracker.isWellKnownAddress(poolAddress) || poolAddress === PoolTracker.WSOL_MINT) return null;
       return {
         poolAddress,
-        baseVault: accts.length > 9 ? accts[9] : undefined,
-        quoteVault: accts.length > 10 ? accts[10] : undefined,
+        baseVault: accts.length > 17 ? accts[17] : undefined,
+        quoteVault: accts.length > 18 ? accts[18] : undefined,
       };
     };
 
+    // Check top-level instructions first
     for (const ix of tx.transaction.message.instructions) {
-      const result = parseIx(ix);
+      const result = tryMigrateIx(ix);
       if (result) return result;
     }
 
+    // Check inner instructions (in case migrate is wrapped by another program)
     if (tx.meta.innerInstructions) {
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {
-          const result = parseIx(ix);
+          const result = tryMigrateIx(ix);
           if (result) return result;
         }
       }

@@ -288,14 +288,13 @@ export class GraduationListener {
   private async handleLogs(logs: Logs, ctx: Context): Promise<void> {
     if (logs.err) return;
 
-    // Broad match for graduation/completion candidates
+    // Anchor programs emit "Program log: Instruction: <Name>" for every instruction.
+    // Only the pump.fun migrate instruction signals a real graduation — it atomically
+    // drains the bonding curve and creates the PumpSwap pool in one tx.
+    // The final buy that sets complete=true has no special log and fires separately;
+    // we detect it via the migration tx instead, which is the authoritative event.
     const graduationLog = logs.logs.find(
-      (log) =>
-        log.includes('Complete') ||
-        log.includes('complete') ||
-        log.includes('Migrate') ||
-        log.includes('migrate') ||
-        log.includes('graduation')
+      (log) => log.includes('Instruction: Migrate')
     );
 
     if (!graduationLog) return;
