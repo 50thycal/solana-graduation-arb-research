@@ -29,6 +29,30 @@ async function main() {
   const healthPort = parseInt(process.env.HEALTH_PORT || '8080', 10);
   const app = express();
 
+  // Reset research data — wipes all rows but keeps tables/schema intact
+  app.post('/reset', (req, res) => {
+    try {
+      const tables = [
+        'competition_signals',
+        'opportunities',
+        'price_comparisons',
+        'pool_observations',
+        'graduations',
+      ];
+      // Delete in dependency order (children first due to foreign keys)
+      for (const table of tables) {
+        db.prepare(`DELETE FROM ${table}`).run();
+      }
+      res.json({
+        status: 'ok',
+        message: 'All research data cleared. Schema and tables preserved. Bot will continue collecting fresh data.',
+        tables_cleared: tables,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // Condensed thesis verification — small enough to read on a phone
   app.get('/thesis', (_req, res) => {
     try {
