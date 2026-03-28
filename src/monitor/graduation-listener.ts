@@ -366,11 +366,11 @@ export class GraduationListener {
 
       if ('accounts' in instruction && Array.isArray(instruction.accounts)) {
         const accts = instruction.accounts;
+        // pump.fun instruction account layout (migrate AND buy/sell):
+        //   [0] global, [1] withdraw_authority/fee_recipient, [2] mint, [3] bonding_curve
         if (accts.length >= 3) {
-          const acct1 = accts[1];
-          const acct2 = accts[2];
-          mint = typeof acct1 === 'string' ? acct1 : acct1?.toBase58?.() ?? null;
-          bondingCurveAddress = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
+          const acct2 = accts[2]; // mint is at index 2, NOT index 1
+          mint = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
         }
         break;
       }
@@ -388,11 +388,10 @@ export class GraduationListener {
 
           if ('accounts' in ix && Array.isArray(ix.accounts)) {
             const accts = ix.accounts;
+            // Same layout: [2] = mint
             if (accts.length >= 3) {
-              const acct1 = accts[1];
               const acct2 = accts[2];
-              mint = typeof acct1 === 'string' ? acct1 : acct1?.toBase58?.() ?? null;
-              bondingCurveAddress = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
+              mint = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
             }
             break;
           }
