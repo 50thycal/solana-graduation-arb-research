@@ -375,18 +375,20 @@ export class GraduationListener {
       });
     });
 
-    // If we extracted the pool address directly from the graduation tx,
-    // start price observation immediately — no need to wait for PumpSwap subscription
-    if (event.poolAddress) {
+    // If we extracted vault addresses from the graduation tx,
+    // start price observation immediately — no need to wait for PumpSwap subscription.
+    // Vault addresses are the critical piece; pool address is nice-to-have for DB.
+    if (event.poolBaseVault && event.poolQuoteVault) {
+      const poolAddr = event.poolAddress || `vaults:${event.poolBaseVault.slice(0, 8)}`;
       updateGraduationPool(
-        this.db, graduationId, event.poolAddress, 'pumpswap',
+        this.db, graduationId, poolAddr, 'pumpswap',
         event.signature, 0, event.migrationTimestamp || event.timestamp
       );
 
       this.priceCollector.startObservation({
         graduationId,
         mint: event.mint,
-        poolAddress: event.poolAddress,
+        poolAddress: poolAddr,
         poolDex: 'pumpswap',
         bondingCurvePrice: event.finalPriceSol || 0,
         graduationTimestamp: event.timestamp,
@@ -396,8 +398,8 @@ export class GraduationListener {
       });
 
       logger.info(
-        { graduationId, mint: event.mint, pool: event.poolAddress },
-        'Direct pool observation started from graduation tx'
+        { graduationId, mint: event.mint, pool: poolAddr, baseVault: event.poolBaseVault, quoteVault: event.poolQuoteVault },
+        'Direct pool observation started from graduation tx vaults'
       );
     } else {
       // Fallback: use pool tracker subscription matching
@@ -435,45 +437,52 @@ export class GraduationListener {
       return acct?.toBase58?.() ?? null;
     };
 
+    const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+
+    // Well-known addresses that should NEVER be a mint
+    const isWellKnown = (addr: string | null): boolean =>
+      !addr ||
+      addr === '11111111111111111111111111111111' ||
+      addr === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' ||
+      addr === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ||
+      addr === 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv' ||
+      addr === WSOL_MINT ||
+      addr === PUMP_FUN_PROGRAM_STR ||
+      addr === (process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
+
     // Strategy 1: Top-level pump.fun instruction accounts
-    // The migrate instruction has accts[2]=mint. Recent pump.fun versions
-    // may have as few as 5 top-level accounts (rest via CPI). We require
-    // >= 3 to get [0]=global, [1]=authority, [2]=mint.
-    // Since we already know this tx has "Instruction: Migrate" in logs,
-    // we can use a lower threshold than before.
+    // migrate layout: [2]=mint. Validate the result isn't a system address.
     for (const instruction of tx.transaction.message.instructions) {
       if (!('programId' in instruction)) continue;
-
       const progId = typeof instruction.programId === 'string'
-        ? instruction.programId
-        : instruction.programId.toBase58();
-
+        ? instruction.programId : instruction.programId.toBase58();
       if (progId !== PUMP_FUN_PROGRAM_STR) continue;
 
       if ('accounts' in instruction && Array.isArray(instruction.accounts)) {
         const accts = instruction.accounts;
         if (accts.length < 3) continue;
-        const acct2 = accts[2];
-        mint = toStr(acct2);
-        break;
+        const candidate = toStr(accts[2]);
+        if (candidate && !isWellKnown(candidate)) {
+          mint = candidate;
+          break;
+        }
       }
     }
 
-    // Strategy 2: CPI inner instructions (same lower threshold)
+    // Strategy 2: Inner instructions (same approach)
     if (!mint && tx.meta.innerInstructions) {
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {
           if (!('programId' in ix)) continue;
           const progId = typeof ix.programId === 'string'
-            ? ix.programId
-            : ix.programId.toBase58();
+            ? ix.programId : ix.programId.toBase58();
           if (progId !== PUMP_FUN_PROGRAM_STR) continue;
-
           if ('accounts' in ix && Array.isArray(ix.accounts) && ix.accounts.length >= 3) {
-            const accts = ix.accounts;
-            const acct2 = accts[2];
-            mint = toStr(acct2);
-            break;
+            const candidate = toStr(ix.accounts[2]);
+            if (candidate && !isWellKnown(candidate)) {
+              mint = candidate;
+              break;
+            }
           }
         }
         if (mint) break;
@@ -481,40 +490,19 @@ export class GraduationListener {
     }
 
     // Strategy 3: Extract mint from token balances — most robust fallback.
-    // Every migration tx transfers the graduated token, so preTokenBalances
-    // will contain exactly one non-wSOL mint. This works regardless of
-    // instruction format, ALTs, or wrapper programs.
-    if (!mint && tx.meta.preTokenBalances && tx.meta.preTokenBalances.length > 0) {
-      const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+    if (!mint) {
       const uniqueMints = new Set<string>();
-      for (const tb of tx.meta.preTokenBalances) {
-        if (tb.mint && tb.mint !== WSOL_MINT) {
-          uniqueMints.add(tb.mint);
-        }
+      for (const tb of (tx.meta.preTokenBalances || [])) {
+        if (tb.mint && !isWellKnown(tb.mint)) uniqueMints.add(tb.mint);
       }
-      // Also check postTokenBalances
-      if (tx.meta.postTokenBalances) {
-        for (const tb of tx.meta.postTokenBalances) {
-          if (tb.mint && tb.mint !== WSOL_MINT) {
-            uniqueMints.add(tb.mint);
-          }
-        }
+      for (const tb of (tx.meta.postTokenBalances || [])) {
+        if (tb.mint && !isWellKnown(tb.mint)) uniqueMints.add(tb.mint);
       }
-      if (uniqueMints.size === 1) {
+      if (uniqueMints.size >= 1) {
         mint = [...uniqueMints][0];
         this.totalStrategy3Extractions++;
-        logger.info({ signature, mint }, 'Mint extracted via token balance fallback (Strategy 3)');
-      } else if (uniqueMints.size > 1) {
-        // Multiple non-wSOL mints — pick the first one (most common in balance entries)
-        // In a migration tx, both the graduated token and LP mint may appear
-        mint = [...uniqueMints][0];
-        this.totalStrategy3Extractions++;
-        logger.info(
-          { signature, mint, allMints: [...uniqueMints] },
-          'Multiple non-wSOL mints — using first (Strategy 3)'
-        );
+        logger.info({ signature, mint, totalMints: uniqueMints.size }, 'Mint extracted via token balance fallback (Strategy 3)');
       } else {
-        // Zero non-wSOL mints found
         const reason = `s3_no_mints preTokenBal=${tx.meta.preTokenBalances?.length ?? 0} postTokenBal=${tx.meta.postTokenBalances?.length ?? 0}`;
         this.lastMintFailReasons.push(reason);
         if (this.lastMintFailReasons.length > 20) this.lastMintFailReasons = this.lastMintFailReasons.slice(-20);
@@ -635,72 +623,80 @@ export class GraduationListener {
       );
     }
 
-    // Extract pool address + vaults from PumpSwap create_pool CPI in this same tx.
-    // The migration and pool creation happen atomically, so the pool address is
-    // available right here — no need to wait for the PumpSwap subscription.
-    const PUMPSWAP_PROGRAM = process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
-    const WSOL_MINT_ADDR = 'So11111111111111111111111111111111111111112';
+    // Extract pool vaults from postTokenBalances.
+    // Instead of parsing instruction layouts (which vary), find the vault accounts
+    // by looking at token balance changes:
+    // - Base vault: token account with graduated mint, large post-balance (~207M tokens)
+    // - Quote vault: wSOL token account with large post-balance (~85 SOL)
+    const accountKeys = GraduationListener.buildFullAccountKeys(tx);
     let poolAddress: string | undefined;
     let poolBaseVault: string | undefined;
     let poolQuoteVault: string | undefined;
 
-    const accountKeys = GraduationListener.buildFullAccountKeys(tx);
+    if (mint && tx.meta.postTokenBalances) {
+      // Find base vault: graduated token with large balance (>100M raw = >100 * 10^12)
+      const BASE_VAULT_THRESHOLD = 100_000_000_000_000; // 100M tokens raw (6 dec)
+      const QUOTE_VAULT_THRESHOLD = 50_000_000_000; // 50 SOL in lamports
 
-    // Helper to resolve instruction accounts to strings
-    const resolveIxAccts = (ix: any): string[] | null => {
-      if ('accounts' in ix && Array.isArray(ix.accounts)) {
-        return ix.accounts.map((a: any) => typeof a === 'string' ? a : a?.toBase58?.() ?? '').filter(Boolean);
+      for (const tb of tx.meta.postTokenBalances) {
+        const addr = accountKeys[tb.accountIndex];
+        if (!addr) continue;
+
+        if (tb.mint === mint) {
+          const amt = parseInt(tb.uiTokenAmount?.amount || '0', 10);
+          if (amt >= BASE_VAULT_THRESHOLD) {
+            poolBaseVault = addr;
+            // The owner of this token account is the pool authority PDA
+          }
+        } else if (tb.mint === WSOL_MINT) {
+          const amt = parseInt(tb.uiTokenAmount?.amount || '0', 10);
+          if (amt >= QUOTE_VAULT_THRESHOLD) {
+            poolQuoteVault = addr;
+          }
+        }
       }
-      if ('programIdIndex' in ix) {
-        const indices: number[] = (ix as any).accountKeyIndexes ?? (ix as any).accounts ?? [];
-        return indices.map((i: number) => accountKeys[i]).filter(Boolean);
-      }
-      return null;
-    };
 
-    const ixProgId = (ix: any): string | undefined => {
-      if ('programId' in ix) return typeof ix.programId === 'string' ? ix.programId : ix.programId?.toBase58?.();
-      if ('programIdIndex' in ix) return accountKeys[(ix as any).programIdIndex];
-      return undefined;
-    };
+      // If we found both vaults, try to find the pool address by scanning
+      // newly created accounts (preBalance=0, postBalance>0) that aren't vaults or programs
+      if (poolBaseVault && poolQuoteVault && tx.meta.preBalances && tx.meta.postBalances) {
+        const knownAddrs = new Set([
+          poolBaseVault, poolQuoteVault, mint, WSOL_MINT,
+          '11111111111111111111111111111111',
+          PUMP_FUN_PROGRAM_STR,
+          process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
+          'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+          'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv',
+        ]);
 
-    // Scan all instructions (top-level + inner) for PumpSwap create_pool
-    const allIxs: any[] = [...tx.transaction.message.instructions];
-    if (tx.meta.innerInstructions) {
-      for (const inner of tx.meta.innerInstructions) {
-        allIxs.push(...inner.instructions);
-      }
-    }
+        // New accounts: preBalance=0, postBalance > 0, not a known address
+        // The pool account stores ~300 bytes of data, rent ~2.4M lamports
+        // Sort by postBalance to find the pool (smaller than vaults but larger than LP mint)
+        const newAccounts: Array<{addr: string; balance: number}> = [];
+        for (let i = 0; i < accountKeys.length; i++) {
+          const pre = tx.meta.preBalances[i] || 0;
+          const post = tx.meta.postBalances[i] || 0;
+          if (pre === 0 && post > 0 && !knownAddrs.has(accountKeys[i])) {
+            newAccounts.push({ addr: accountKeys[i], balance: post });
+          }
+        }
 
-    for (const ix of allIxs) {
-      if (ixProgId(ix) !== PUMPSWAP_PROGRAM) continue;
-      const accts = resolveIxAccts(ix);
-      if (!accts || accts.length < 3) continue;
-
-      // PumpSwap create_pool layout: [0]=pool, [1]=pool_authority, ...
-      // Also check all accounts — find one that's NOT a known program/system
-      const isKnown = (addr: string) =>
-        !addr ||
-        addr === PUMPSWAP_PROGRAM ||
-        addr === PUMP_FUN_PROGRAM_STR ||
-        addr === WSOL_MINT_ADDR ||
-        addr === '11111111111111111111111111111111' ||
-        addr === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' ||
-        addr === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ||
-        addr === 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv';
-
-      // Pool is typically accts[0] for create_pool
-      const candidate = accts[0];
-      if (candidate && !isKnown(candidate)) {
-        poolAddress = candidate;
-        // Try to find vault accounts (higher indices)
-        // In some layouts: base vault and quote vault are among the accounts
-        // For now, we'll let the price collector resolve them from the pool account
-        logger.info(
-          { mint, poolAddress, pumpswapAcctCount: accts.length, signature },
-          'Pool address extracted from graduation tx'
+        // Pool account rent is ~2.4M lamports, LP mint rent is ~1.5M, token accounts ~2M
+        // The pool has a distinctive balance range. Just pick the first new account
+        // that isn't a token balance entry (vault).
+        const tokenBalanceAddrs = new Set(
+          tx.meta.postTokenBalances.map((tb: any) => accountKeys[tb.accountIndex])
         );
-        break;
+        const poolCandidates = newAccounts.filter(a => !tokenBalanceAddrs.has(a.addr));
+        if (poolCandidates.length > 0) {
+          poolAddress = poolCandidates[0].addr;
+        }
+      }
+
+      if (poolBaseVault && poolQuoteVault) {
+        logger.info(
+          { mint, poolAddress: poolAddress || 'unknown', baseVault: poolBaseVault, quoteVault: poolQuoteVault, signature },
+          'Pool vaults extracted from tx token balances'
+        );
       }
     }
 
