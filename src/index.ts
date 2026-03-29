@@ -221,10 +221,10 @@ async function main() {
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v5',
-        last_change: 'Add PumpSwap create_pool extraction as top-level instruction (new migration format). Both graduation-listener and pool-tracker now try pAMMBay6.accounts[0] as pool PDA when pump.fun migrate extraction fails. Program ID logging extended to 16 chars.',
-        bug_fixed: 'New pump.fun migration format splits operations: pump.fun gets 5-account bonding curve completion, PumpSwap create_pool is a separate top-level instruction. Old code only looked for pump.fun migrate (15+ accounts) and found nothing. Pool extracted from pAMMBay6.accounts[0] instead.',
-        watch_for: 'totalVaultExtractions should now cover ~50%+ of grads. poolTracker.priceCollector.totalSnapshotFailures should drop (pool_fetch_null was wrong address from old extraction). Check lastVaultFailReasons for 16-char pfeeUxB6 program ID to identify unknown wrapper.',
+        version: 'momentum-v6',
+        last_change: 'Remove isPumpSwapMigration gate from postTokenBalances vault extraction. Remove broken PumpSwap instruction fallback from pool-tracker. postTokenBalances is now the primary vault source for all migration formats.',
+        bug_fixed: 'v5 PumpSwap instruction fallback read accounts[0] as pool PDA but for v0 txs pool PDA lives in ALT and is NOT in ix.accounts — wrong static account caused 58 snapshot failures. postTokenBalances always has correct vault addrs because buildFullAccountKeys resolves ALT accounts.',
+        watch_for: 'totalVaultExtractions should jump significantly. poolTracker.totalSnapshotFailures should drop to near 0. lastVaultFailReasons should show only pfeeUxB6 wrapper cases if any remain unparsed.',
       };
 
       res.json({
