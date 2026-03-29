@@ -93,6 +93,7 @@ export class GraduationListener {
   private totalFalsePositives = 0;
   private totalMintExtractionFails = 0;
   private totalStrategy3Extractions = 0;
+  private lastMintFailReasons: string[] = [];
   private reconnecting = false;
 
   constructor(db: Database.Database) {
@@ -124,6 +125,7 @@ export class GraduationListener {
       totalFalsePositives: this.totalFalsePositives,
       totalMintExtractionFails: this.totalMintExtractionFails,
       totalStrategy3Extractions: this.totalStrategy3Extractions,
+      lastMintFailReasons: this.lastMintFailReasons.slice(-5),
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
       wsConnected: this.subscriptionId !== null,
       reconnecting: this.reconnecting,
@@ -462,27 +464,46 @@ export class GraduationListener {
         this.totalStrategy3Extractions++;
         logger.info({ signature, mint }, 'Mint extracted via token balance fallback (Strategy 3)');
       } else if (uniqueMints.size > 1) {
-        // Multiple non-wSOL mints — unusual but pick the one with highest balance change
-        // For now log and skip
+        // Multiple non-wSOL mints — pick the first one (most common in balance entries)
+        // In a migration tx, both the graduated token and LP mint may appear
+        mint = [...uniqueMints][0];
+        this.totalStrategy3Extractions++;
         logger.info(
-          { signature, mints: [...uniqueMints], count: uniqueMints.size },
-          'Multiple non-wSOL mints in migration tx — Strategy 3 ambiguous'
+          { signature, mint, allMints: [...uniqueMints] },
+          'Multiple non-wSOL mints — using first (Strategy 3)'
         );
+      } else {
+        // Zero non-wSOL mints found
+        const reason = `s3_no_mints preTokenBal=${tx.meta.preTokenBalances?.length ?? 0} postTokenBal=${tx.meta.postTokenBalances?.length ?? 0}`;
+        this.lastMintFailReasons.push(reason);
+        if (this.lastMintFailReasons.length > 20) this.lastMintFailReasons = this.lastMintFailReasons.slice(-20);
       }
     }
 
     if (!mint) {
       this.totalMintExtractionFails++;
-      // Only log occasionally to avoid spam
+
+      // Capture diagnostic info about WHY all 3 strategies failed
+      const ixSummary = tx.transaction.message.instructions.map((ix: any) => {
+        const pid = typeof ix.programId === 'string' ? ix.programId : ix.programId?.toBase58?.() ?? '?';
+        const acctLen = Array.isArray(ix.accounts) ? ix.accounts.length : (ix.data ? 'parsed' : 'no-accts');
+        return `${pid.slice(0, 8)}:${acctLen}`;
+      });
+      const reason = `s1s2_no_match(${ixSummary.join(',')})`;
+      this.lastMintFailReasons.push(reason);
+      if (this.lastMintFailReasons.length > 20) this.lastMintFailReasons = this.lastMintFailReasons.slice(-20);
+
       if (this.totalMintExtractionFails <= 5 || this.totalMintExtractionFails % 20 === 0) {
         logger.warn(
           {
             signature,
             totalMintFails: this.totalMintExtractionFails,
             matchedLog,
+            ixSummary,
+            preTokenBalances: tx.meta.preTokenBalances?.length ?? 0,
             logs: tx.meta.logMessages?.slice(0, 10),
           },
-          'Could not extract mint from candidate tx'
+          'Could not extract mint from candidate tx (all 3 strategies failed)'
         );
       }
       return null;

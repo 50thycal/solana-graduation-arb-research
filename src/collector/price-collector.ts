@@ -64,6 +64,8 @@ export class PriceCollector {
   private totalObservationsStarted = 0;
   private totalObservationsCompleted = 0;
   private totalSnapshots = 0;
+  private totalSnapshotFailures = 0;
+  private lastSnapshotFailures: Array<{ graduationId: number; targetSec: number; reason: string; time: string }> = [];
 
   constructor(db: Database.Database, connection: Connection) {
     this.db = db;
@@ -83,7 +85,23 @@ export class PriceCollector {
       totalStarted: this.totalObservationsStarted,
       totalCompleted: this.totalObservationsCompleted,
       totalSnapshots: this.totalSnapshots,
+      totalSnapshotFailures: this.totalSnapshotFailures,
+      lastSnapshotFailures: this.lastSnapshotFailures.slice(-5),
     };
+  }
+
+  private recordSnapshotFailure(graduationId: number, targetSec: number, reason: string): void {
+    this.totalSnapshotFailures++;
+    this.lastSnapshotFailures.push({
+      graduationId,
+      targetSec,
+      reason,
+      time: new Date().toISOString(),
+    });
+    // Keep only last 20
+    if (this.lastSnapshotFailures.length > 20) {
+      this.lastSnapshotFailures = this.lastSnapshotFailures.slice(-20);
+    }
   }
 
   startObservation(ctx: ObservationContext): void {
@@ -197,6 +215,7 @@ export class PriceCollector {
       const poolState = await this.fetchPoolPrice(observation);
 
       if (!poolState) {
+        this.recordSnapshotFailure(graduationId, targetSec, `pool_fetch_null pool=${ctx.poolAddress.slice(0, 8)}`);
         logger.warn(
           { graduationId, targetSec, pool: ctx.poolAddress },
           'Could not fetch pool state for snapshot'
@@ -294,7 +313,17 @@ export class PriceCollector {
       // pool_base_token_account at offset 139, pool_quote_token_account at offset 171).
       // Cached after first successful fetch so subsequent snapshots skip this RPC call.
       if (!observation.baseVault || !observation.quoteVault) {
+        // Use pre-extracted vaults from migration tx if available
+        if (ctx.baseVault && ctx.quoteVault) {
+          observation.baseVault = ctx.baseVault;
+          observation.quoteVault = ctx.quoteVault;
+          logger.info(
+            { graduationId: ctx.graduationId, baseVault: ctx.baseVault, quoteVault: ctx.quoteVault },
+            'Using vault addresses from migration tx'
+          );
+        } else {
         if (!await globalRpcLimiter.throttleOrDrop(15)) {
+          this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_pool_decode');
           logger.warn({ graduationId: ctx.graduationId }, 'Pool account fetch dropped — RPC queue full');
           return null;
         }
@@ -305,6 +334,7 @@ export class PriceCollector {
           poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
         }
         if (!poolInfo?.data) {
+          this.recordSnapshotFailure(ctx.graduationId, -1, `pool_not_found pool=${ctx.poolAddress}`);
           logger.warn({ graduationId: ctx.graduationId, pool: ctx.poolAddress }, 'Pool account not found');
           return null;
         }
@@ -319,6 +349,7 @@ export class PriceCollector {
           const hexSample = rawData.length >= 145
             ? rawData.subarray(139, 145).toString('hex')
             : 'short';
+          this.recordSnapshotFailure(ctx.graduationId, -1, `vault_parse_fail dataLen=${rawData.length}`);
           logger.warn(
             { graduationId: ctx.graduationId },
             `Could not parse vault addresses: dataLen=${rawData.length} bytes@139=${hexSample} pool=${ctx.poolAddress.slice(0, 8)}`
@@ -331,10 +362,12 @@ export class PriceCollector {
           { graduationId: ctx.graduationId, baseVault: vaults.baseVault, quoteVault: vaults.quoteVault },
           'Pool vault addresses decoded from pool account'
         );
+        } // end else (no pre-extracted vaults)
       }
 
       // Fetch both vault balances in a single RPC call
       if (!await globalRpcLimiter.throttleOrDrop(15)) {
+        this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_vault_fetch');
         logger.warn({ graduationId: ctx.graduationId, targetVault: observation.baseVault?.slice(0, 8) }, 'Snapshot dropped — RPC queue full');
         return null;
       }
@@ -348,6 +381,7 @@ export class PriceCollector {
           { graduationId: ctx.graduationId, baseVault: observation.baseVault?.slice(0, 8), quoteVault: observation.quoteVault?.slice(0, 8), hasBase: !!vaultAccounts[0]?.data, hasQuote: !!vaultAccounts[1]?.data },
           'Vault account data missing'
         );
+        this.recordSnapshotFailure(ctx.graduationId, -1, `vault_data_missing base=${!!vaultAccounts[0]?.data} quote=${!!vaultAccounts[1]?.data}`);
         return null;
       }
 
@@ -355,6 +389,7 @@ export class PriceCollector {
       const quoteAmount = this.readTokenAccountAmount(vaultAccounts[1].data as Buffer);
 
       if (baseAmount === null || quoteAmount === null || baseAmount === 0 || quoteAmount === 0) {
+        this.recordSnapshotFailure(ctx.graduationId, -1, `vault_amounts_bad base=${baseAmount} quote=${quoteAmount}`);
         logger.warn(
           {
             graduationId: ctx.graduationId,
