@@ -381,9 +381,11 @@ export class GraduationListener {
       });
     });
 
-    // If we extracted vault addresses from the graduation tx,
-    // start price observation immediately — no need to wait for PumpSwap subscription.
-    // Vault addresses are the critical piece; pool address is nice-to-have for DB.
+    // Start price observation if we have pool info from the graduation tx.
+    // Path 1: Vaults extracted from postTokenBalances → skip pool decode entirely
+    // Path 2: Pool address only (vaults empty due to Helius postTokenBalances bug)
+    //         → price-collector will decode vaults from pool account on first snapshot
+    // Path 3: Nothing found → fallback to pool tracker subscription
     if (event.poolBaseVault && event.poolQuoteVault) {
       const poolAddr = event.poolAddress || `vaults:${event.poolBaseVault.slice(0, 8)}`;
       updateGraduationPool(
@@ -405,7 +407,28 @@ export class GraduationListener {
 
       logger.info(
         { graduationId, mint: event.mint, pool: poolAddr, baseVault: event.poolBaseVault, quoteVault: event.poolQuoteVault },
-        'Direct pool observation started from graduation tx vaults'
+        'Direct pool observation started with pre-extracted vaults'
+      );
+    } else if (event.poolAddress) {
+      // Pool address found but no vaults — price-collector will decode from pool account
+      updateGraduationPool(
+        this.db, graduationId, event.poolAddress, 'pumpswap',
+        event.signature, 0, event.migrationTimestamp || event.timestamp
+      );
+
+      this.priceCollector.startObservation({
+        graduationId,
+        mint: event.mint,
+        poolAddress: event.poolAddress,
+        poolDex: 'pumpswap',
+        bondingCurvePrice: event.finalPriceSol || 0,
+        graduationTimestamp: event.timestamp,
+        migrationTimestamp: event.migrationTimestamp || event.timestamp,
+      });
+
+      logger.info(
+        { graduationId, mint: event.mint, pool: event.poolAddress },
+        'Pool observation started — vaults will be decoded from pool account'
       );
     } else {
       // Fallback: use pool tracker subscription matching
@@ -629,100 +652,101 @@ export class GraduationListener {
       );
     }
 
-    // Extract pool vaults from postTokenBalances.
-    // Instead of parsing instruction layouts (which vary), find the vault accounts
-    // by looking at token balance changes:
-    // - Base vault: token account with graduated mint, large post-balance (~207M tokens)
-    // - Quote vault: wSOL token account with large post-balance (~85 SOL)
+    // Extract pool address and vault addresses from the graduation tx.
     const accountKeys = GraduationListener.buildFullAccountKeys(tx);
     let poolAddress: string | undefined;
     let poolBaseVault: string | undefined;
     let poolQuoteVault: string | undefined;
 
-    if (mint && tx.meta.postTokenBalances) {
-      // Collect ALL token balance entries for the graduated mint and wSOL.
-      // Use the LARGEST post-balance for each as the vault.
-      // No hardcoded threshold — just find the biggest one.
+    // --- POOL ADDRESS DETECTION ---
+    // Find the PumpSwap pool account from newly-created accounts in the tx.
+    // This works even when postTokenBalances is empty (Helius issue).
+    // Heuristic: newly created account (pre=0, post>0) that isn't a known program,
+    // the mint, or a standard-sized token/mint account (rent-exempt amounts).
+    const TOKEN_ACCOUNT_RENT = 2039280;  // rent-exempt for 165-byte SPL token account
+    const MINT_ACCOUNT_RENT = 1461600;   // rent-exempt for 82-byte SPL mint account
+    const knownNonPoolAddrs = new Set([
+      mint, bondingCurveAddress, WSOL_MINT,
+      '11111111111111111111111111111111',
+      PUMP_FUN_PROGRAM_STR,
+      process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
+      'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
+      'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
+      'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv',
+      'SysvarRent111111111111111111111111111111111',
+      'ComputeBudget111111111111111111111111111111',
+    ]);
+
+    if (tx.meta.preBalances && tx.meta.postBalances) {
+      const newlyCreated: Array<{ addr: string; lamports: number; isKnown: boolean; isTokenRent: boolean; isMintRent: boolean }> = [];
+
+      for (let i = 0; i < accountKeys.length; i++) {
+        const pre = tx.meta.preBalances[i] || 0;
+        const post = tx.meta.postBalances[i] || 0;
+        if (pre === 0 && post > 0) {
+          const addr = accountKeys[i];
+          const isKnown = knownNonPoolAddrs.has(addr);
+          const isTokenRent = post === TOKEN_ACCOUNT_RENT;
+          const isMintRent = post === MINT_ACCOUNT_RENT;
+          newlyCreated.push({ addr: addr.slice(0, 12), lamports: post, isKnown, isTokenRent, isMintRent });
+
+          if (!isKnown && !isTokenRent && !isMintRent && !poolAddress) {
+            poolAddress = addr;
+          }
+        }
+      }
+
+      // Log ALL newly-created accounts for diagnostics (first 10 graduations + every 50th)
+      if (this.totalVerifiedGraduations <= 10 || this.totalVerifiedGraduations % 50 === 0) {
+        logger.info(
+          { mint: mint.slice(0, 8), newlyCreated, selectedPool: poolAddress?.slice(0, 12), signature },
+          'Newly-created accounts in migration tx'
+        );
+      }
+    }
+
+    // --- VAULT EXTRACTION FROM postTokenBalances (works when Helius provides them) ---
+    if (mint && tx.meta.postTokenBalances && tx.meta.postTokenBalances.length > 0) {
       let bestBaseBal = 0;
       let bestQuoteBal = 0;
-      const mintEntries: Array<{addr: string; amt: number}> = [];
-      const wsolEntries: Array<{addr: string; amt: number}> = [];
 
       for (const tb of tx.meta.postTokenBalances) {
         const addr = accountKeys[tb.accountIndex];
         if (!addr) continue;
         const amt = parseInt(tb.uiTokenAmount?.amount || '0', 10);
 
-        if (tb.mint === mint && amt > 0) {
-          mintEntries.push({ addr, amt });
-          if (amt > bestBaseBal) {
-            bestBaseBal = amt;
-            poolBaseVault = addr;
-          }
-        } else if (tb.mint === WSOL_MINT && amt > 0) {
-          wsolEntries.push({ addr, amt });
-          if (amt > bestQuoteBal) {
-            bestQuoteBal = amt;
-            poolQuoteVault = addr;
-          }
-        }
-      }
-
-      // Find pool address from newly created accounts
-      if (poolBaseVault && poolQuoteVault && tx.meta.preBalances && tx.meta.postBalances) {
-        const knownAddrs = new Set([
-          poolBaseVault, poolQuoteVault, mint, WSOL_MINT,
-          '11111111111111111111111111111111',
-          PUMP_FUN_PROGRAM_STR,
-          process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
-          'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-          'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv',
-        ]);
-
-        const tokenBalanceAddrs = new Set(
-          tx.meta.postTokenBalances.map((tb: any) => accountKeys[tb.accountIndex])
-        );
-
-        for (let i = 0; i < accountKeys.length; i++) {
-          const pre = tx.meta.preBalances[i] || 0;
-          const post = tx.meta.postBalances[i] || 0;
-          if (pre === 0 && post > 0 &&
-              !knownAddrs.has(accountKeys[i]) &&
-              !tokenBalanceAddrs.has(accountKeys[i])) {
-            poolAddress = accountKeys[i];
-            break;
-          }
+        if (tb.mint === mint && amt > 0 && amt > bestBaseBal) {
+          bestBaseBal = amt;
+          poolBaseVault = addr;
+        } else if (tb.mint === WSOL_MINT && amt > 0 && amt > bestQuoteBal) {
+          bestQuoteBal = amt;
+          poolQuoteVault = addr;
         }
       }
 
       if (poolBaseVault && poolQuoteVault) {
         this.totalVaultExtractions++;
         logger.info(
-          { mint, poolAddress: poolAddress || 'unknown', baseVault: poolBaseVault, quoteVault: poolQuoteVault,
-            baseBal: bestBaseBal, quoteBal: bestQuoteBal, signature },
+          { mint, poolAddress: poolAddress || 'unknown', baseVault: poolBaseVault, quoteVault: poolQuoteVault, signature },
           'Pool vaults extracted from tx token balances'
         );
-      } else {
-        this.totalVaultExtractionFails++;
-        // Diagnostic: what token balances exist?
-        const balanceSummary = (tx.meta.postTokenBalances || []).map((tb: any) => {
-          const isGradMint = tb.mint === mint;
-          const isWsol = tb.mint === WSOL_MINT;
-          return `${isGradMint ? 'GRAD' : isWsol ? 'WSOL' : 'OTHER'}:${tb.uiTokenAmount?.amount || '0'}@idx${tb.accountIndex}`;
-        });
-        const reason = `no_vaults mint=${mint.slice(0, 8)} baseEntries=${mintEntries.length} wsolEntries=${wsolEntries.length} postBals=[${balanceSummary.join(',')}]`;
-        this.lastVaultFailReasons.push(reason);
-        if (this.lastVaultFailReasons.length > 20) this.lastVaultFailReasons = this.lastVaultFailReasons.slice(-20);
-        logger.info(
-          { mint, signature, mintEntries: mintEntries.length, wsolEntries: wsolEntries.length, totalPostBals: (tx.meta.postTokenBalances || []).length },
-          'Vault extraction failed — no matching token balance entries'
-        );
       }
+    }
+
+    // Log extraction results
+    if (poolAddress) {
+      logger.info(
+        { mint, poolAddress, hasVaults: !!(poolBaseVault && poolQuoteVault), signature },
+        'Pool address extracted from newly-created accounts'
+      );
     } else {
       this.totalVaultExtractionFails++;
-      const reason = `no_postTokenBals mint=${mint?.slice(0, 8) || 'null'} postBals=${tx.meta.postTokenBalances?.length ?? 'null'}`;
+      const reason = `no_pool_addr mint=${mint.slice(0, 8)} postBals=${tx.meta.postTokenBalances?.length ?? 0} newAccts=${
+        tx.meta.preBalances ? tx.meta.preBalances.filter((b: number, i: number) => b === 0 && (tx.meta!.postBalances![i] || 0) > 0).length : 0
+      }`;
       this.lastVaultFailReasons.push(reason);
       if (this.lastVaultFailReasons.length > 20) this.lastVaultFailReasons = this.lastVaultFailReasons.slice(-20);
+      logger.info({ mint, signature, reason }, 'Pool address extraction failed');
     }
 
     return {
