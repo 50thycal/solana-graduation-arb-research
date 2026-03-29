@@ -745,6 +745,40 @@ export class GraduationListener {
     if (isInvalidAddr(poolBaseVault)) poolBaseVault = undefined;
     if (isInvalidAddr(poolQuoteVault)) poolQuoteVault = undefined;
 
+    // FALLBACK: New pump.fun migration format has PumpSwap create_pool as a separate top-level
+    // instruction (not a CPI). Extract pool from accounts[0] of the PumpSwap instruction.
+    // PumpSwap create_pool layout: [0]=pool, [1]=global_config, [2]=creator, [3]=base_mint,
+    //   [4]=quote_mint, [5]=lp_mint, [6]=user_base_token_account, [7]=user_quote_token_account,
+    //   [8]=user_pool_token_account, [9]=pool_base_token_account, [10]=pool_quote_token_account
+    if (!poolAddress && !isPumpSwapMigration) {
+      for (const ix of tx.transaction.message.instructions) {
+        const progId = toStrAcct((ix as any).programId ?? '');
+        if (progId !== PUMPSWAP_PROGRAM) continue;
+        const ixAccounts = (ix as any).accounts;
+        if (!Array.isArray(ixAccounts) || ixAccounts.length < 1) continue;
+        const accts = (ixAccounts as any[]).map(toStrAcct);
+        const candidate = accts[0];  // pool PDA
+        if (!isInvalidAddr(candidate)) {
+          poolAddress = candidate;
+          isPumpSwapMigration = true;
+          // Vaults at [9] and [10] if visible
+          if (accts.length >= 11) {
+            const bv = accts[9];
+            const qv = accts[10];
+            if (!isInvalidAddr(bv) && !isInvalidAddr(qv)) {
+              poolBaseVault = bv;
+              poolQuoteVault = qv;
+            }
+          }
+          logger.info(
+            { mint: mint.slice(0, 8), poolAddress, acctCount: accts.length, signature },
+            'Pool extracted from top-level PumpSwap create_pool instruction (new migration format)'
+          );
+          break;
+        }
+      }
+    }
+
     // SUPPLEMENTAL: Fill in missing vaults from postTokenBalances when Helius provides them
     if (isPumpSwapMigration && (!poolBaseVault || !poolQuoteVault) && mint &&
         tx.meta.postTokenBalances && tx.meta.postTokenBalances.length > 0) {
@@ -777,7 +811,7 @@ export class GraduationListener {
         const pid = toStrAcct((ix as any).programId ?? '');
         const hasParsed = 'parsed' in ix ? 'parsed' : '';
         const acctLen = Array.isArray((ix as any).accounts) ? (ix as any).accounts.length : hasParsed || '?';
-        return `${pid.slice(0, 8)}:${acctLen}`;
+        return `${pid.slice(0, 16)}:${acctLen}`;  // 16 chars to identify unknown programs
       }).join(',');
       const reason = `no_pool mint=${mint.slice(0, 8)} isPumpSwap=${isPumpSwapMigration} topIx=[${topIxSummary}]`;
       this.lastVaultFailReasons.push(reason);
