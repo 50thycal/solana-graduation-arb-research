@@ -54,18 +54,40 @@ async function main() {
     }
   });
 
-  // Momentum research analysis — compact enough for phone
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // MOMENTUM RESEARCH DASHBOARD
+  // See CLAUDE.md for full dashboard spec
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   app.get('/thesis', (_req, res) => {
     try {
-      const stats = db.prepare(`
+      const uptimeMs = Date.now() - startTime;
+      const uptimeSec = Math.floor(uptimeMs / 1000);
+      const uptimeMin = Math.floor(uptimeSec / 60);
+      const uptimeHrs = Math.floor(uptimeMin / 60);
+
+      // ── HEADER ──
+      const pipeline = db.prepare(`
         SELECT
           COUNT(*) as total_graduations,
           COUNT(new_pool_address) as with_pool,
-          SUM(observation_complete) as observations_done
+          SUM(observation_complete) as observations_done,
+          MAX(timestamp) as last_graduation_ts
         FROM graduations
       `).get() as any;
 
-      // Label distribution
+      const lastGradSecondsAgo = pipeline.last_graduation_ts
+        ? Math.floor(Date.now() / 1000) - pipeline.last_graduation_ts
+        : null;
+
+      const completedWithT300 = db.prepare(
+        'SELECT COUNT(*) as count FROM graduation_momentum WHERE pct_t300 IS NOT NULL'
+      ).get() as any;
+
+      const botStatus = listenerStatus === 'running'
+        ? (lastGradSecondsAgo !== null && lastGradSecondsAgo > 300 ? 'STALLED' : 'RUNNING')
+        : 'ERROR';
+
+      // ── THESIS SCORECARD ──
       const labels = db.prepare(`
         SELECT
           label,
@@ -87,8 +109,40 @@ async function main() {
       const unlabeled = db.prepare(
         'SELECT COUNT(*) as count FROM graduation_momentum WHERE label IS NULL'
       ).get() as any;
+      const rawWinRate = totalLabeled > 0 ? +(pumpCount / totalLabeled * 100).toFixed(1) : null;
+      const samplesRemaining = Math.max(0, 30 - totalLabeled);
 
-      // Average price change by checkpoint (all graduations)
+      // ── BEST FILTER (simple: try each filter, pick highest win rate) ──
+      let bestFilter: { name: string; rule: string; win_rate: number; sample_size: number } | null = null;
+      if (totalLabeled >= 5) {
+        const filterTests = [
+          { name: 'top5_wallet_pct < 30', sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 30" },
+          { name: 'top5_wallet_pct < 20', sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 20" },
+          { name: 'dev_wallet_pct < 10', sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 10" },
+          { name: 'dev_wallet_pct < 5', sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5" },
+          { name: 'holder_count >= 10', sql: "holder_count IS NOT NULL AND holder_count >= 10" },
+          { name: 'holder_count >= 15', sql: "holder_count IS NOT NULL AND holder_count >= 15" },
+          { name: 'total_sol_raised >= 80', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 80" },
+          { name: 'total_sol_raised >= 85', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 85" },
+        ];
+        for (const ft of filterTests) {
+          const r = db.prepare(`
+            SELECT
+              COUNT(*) as total,
+              SUM(CASE WHEN label = 'PUMP' THEN 1 ELSE 0 END) as pumps
+            FROM graduation_momentum
+            WHERE label IS NOT NULL AND ${ft.sql}
+          `).get() as any;
+          if (r.total >= 3) {
+            const wr = +(r.pumps / r.total * 100).toFixed(1);
+            if (!bestFilter || wr > bestFilter.win_rate) {
+              bestFilter = { name: ft.name, rule: ft.sql, win_rate: wr, sample_size: r.total };
+            }
+          }
+        }
+      }
+
+      // ── AVG PRICE CHANGE BY CHECKPOINT ──
       const avgByCheckpoint = db.prepare(`
         SELECT
           ROUND(AVG(pct_t30), 2) as avg_t30,
@@ -104,10 +158,11 @@ async function main() {
         FROM graduation_momentum
       `).get() as any;
 
-      // Filter signal: do holder/dev metrics predict outcome?
+      // ── FILTER SIGNALS BY LABEL ──
       const filterSignals = db.prepare(`
         SELECT
           label,
+          COUNT(*) as n,
           ROUND(AVG(holder_count), 0) as avg_holders,
           ROUND(AVG(top5_wallet_pct), 1) as avg_top5_pct,
           ROUND(AVG(dev_wallet_pct), 1) as avg_dev_pct,
@@ -117,47 +172,100 @@ async function main() {
         GROUP BY label
       `).all();
 
-      // Per-graduation detail (most recent, compact)
-      const perGrad = db.prepare(`
+      // ── LAST 10 GRADUATIONS ──
+      const last10 = db.prepare(`
         SELECT
           m.graduation_id as id,
           SUBSTR(g.mint, 1, 8) || '...' as mint,
           ROUND(m.open_price_sol, 10) as open_price,
-          ROUND(m.pct_t30, 1) as t30,
           ROUND(m.pct_t60, 1) as t60,
-          ROUND(m.pct_t120, 1) as t120,
           ROUND(m.pct_t300, 1) as t300,
-          ROUND(m.pct_t600, 1) as t600,
+          m.label,
           m.holder_count as holders,
-          ROUND(m.top5_wallet_pct, 1) as top5,
-          ROUND(m.dev_wallet_pct, 1) as dev,
-          m.label
+          ROUND(m.top5_wallet_pct, 1) as top5_pct,
+          ROUND(m.dev_wallet_pct, 1) as dev_pct,
+          ROUND(m.total_sol_raised, 2) as sol_raised,
+          g.new_pool_address IS NOT NULL as has_pool
         FROM graduation_momentum m
         JOIN graduations g ON g.id = m.graduation_id
         ORDER BY m.graduation_id DESC
-        LIMIT 30
-      `).all();
+        LIMIT 10
+      `).all() as any[];
 
-      const verdict = totalLabeled < 10 ? 'INSUFFICIENT DATA — need 30+ labeled events' :
-        pumpCount / totalLabeled > 0.51 ? `PROMISING — ${(pumpCount / totalLabeled * 100).toFixed(0)}% pump rate (${pumpCount}/${totalLabeled})` :
-        pumpCount / totalLabeled > 0.4 ? `MARGINAL — ${(pumpCount / totalLabeled * 100).toFixed(0)}% pump rate, filters may help` :
-        `WEAK — only ${(pumpCount / totalLabeled * 100).toFixed(0)}% pump rate`;
+      // ── DATA QUALITY FLAGS ──
+      const nullsInLast10 = last10.reduce((acc: string[], row: any, i: number) => {
+        const nullFields: string[] = [];
+        if (row.open_price === null) nullFields.push('open_price');
+        if (row.t300 === null) nullFields.push('t300');
+        if (row.holders === null) nullFields.push('holders');
+        if (row.top5_pct === null) nullFields.push('top5_pct');
+        if (row.dev_pct === null) nullFields.push('dev_pct');
+        if (nullFields.length > 0) acc.push(`#${row.id}: ${nullFields.join(',')}`);
+        return acc;
+      }, []);
+
+      const allHavePumpswapPool = last10.every((r: any) => r.has_pool);
+      const listenerStats = listener ? listener.getStats() : null;
+
+      // ── VERDICT ──
+      const verdict = totalLabeled < 10 ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)` :
+        totalLabeled < 30 ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%` :
+        (rawWinRate !== null && rawWinRate > 60) ? `THESIS VALID — ${rawWinRate}% raw win rate (${pumpCount}/${totalLabeled})` :
+        (bestFilter && bestFilter.win_rate > 51) ? `PROMISING — raw ${rawWinRate}%, filtered ${bestFilter.win_rate}% with ${bestFilter.name} (n=${bestFilter.sample_size})` :
+        (rawWinRate !== null && rawWinRate > 40) ? `MARGINAL — ${rawWinRate}% raw, filters may help` :
+        `WEAK — ${rawWinRate}% raw win rate`;
+
+      // ── CODE VERSION ──
+      const codeVersion = {
+        version: 'momentum-v1',
+        last_change: 'Pivot from arb spread tracking to momentum research. New schedule [0,30,60,120,300,600], holder enrichment, PUMP/DUMP/STABLE labeling.',
+        bug_fixed: 'Removed broken arb spread logic (bonding curve closes at graduation). Now tracking post-graduation pool price momentum.',
+        watch_for: 'Verify: (1) graduations detected, (2) T+300 checkpoints populated, (3) labels appearing, (4) holder enrichment not all null',
+      };
 
       res.json({
-        thesis_verdict: verdict,
-        pipeline: stats,
-        label_distribution: {
+        // ── HEADER ──
+        bot_status: botStatus,
+        uptime: `${uptimeHrs}h ${uptimeMin % 60}m`,
+        total_graduations: pipeline.total_graduations,
+        with_complete_t300: completedWithT300.count,
+        last_graduation_seconds_ago: lastGradSecondsAgo,
+
+        // ── THESIS SCORECARD ──
+        scorecard: {
           total_labeled: totalLabeled,
           unlabeled: unlabeled.count,
           PUMP: pumpCount,
           DUMP: dumpCount,
           STABLE: stableCount,
-          pump_rate_pct: totalLabeled > 0 ? +(pumpCount / totalLabeled * 100).toFixed(1) : null,
+          raw_win_rate_pct: rawWinRate,
+          best_filter: bestFilter,
+          samples_remaining: samplesRemaining,
         },
+
+        // ── THESIS VERDICT ──
+        thesis_verdict: verdict,
+
+        // ── AVG BY CHECKPOINT ──
         avg_pct_by_checkpoint: avgByCheckpoint,
-        labels_detail: labels,
+
+        // ── FILTER SIGNALS ──
         filter_signals: filterSignals,
-        recent_graduations: perGrad,
+        labels_detail: labels,
+
+        // ── LAST 10 GRADUATIONS ──
+        last_10: last10,
+
+        // ── DATA QUALITY ──
+        data_quality: {
+          price_source_pumpswap: allHavePumpswapPool,
+          null_fields_in_last_10: nullsInLast10.length > 0 ? nullsInLast10 : 'CLEAN',
+          last_grad_stale: lastGradSecondsAgo !== null && lastGradSecondsAgo > 300,
+          listener_connected: listenerStats?.wsConnected ?? false,
+        },
+
+        // ── CODE VERSION ──
+        code_version: codeVersion,
       });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
