@@ -504,7 +504,20 @@ export class PoolTracker {
       if (isInvalidPool(poolAddress)) poolAddress = accts[9];
       if (isInvalidPool(poolAddress)) return null;
 
-      return { poolAddress };
+      // Official IDL: [17]=pool_base_token_account (base vault), [18]=pool_quote_token_account (quote vault)
+      // Extract these so price-collector can skip pool account decode
+      let baseVault: string | undefined;
+      let quoteVault: string | undefined;
+      if (accts.length >= 19) {
+        const bv = accts[17];
+        const qv = accts[18];
+        if (bv && !isInvalidPool(bv) && qv && !isInvalidPool(qv)) {
+          baseVault = bv;
+          quoteVault = qv;
+        }
+      }
+
+      return { poolAddress, baseVault, quoteVault };
     };
 
     // Check top-level instructions first
