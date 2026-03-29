@@ -779,8 +779,11 @@ export class GraduationListener {
       }
     }
 
-    // SUPPLEMENTAL: Fill in missing vaults from postTokenBalances when Helius provides them
-    if (isPumpSwapMigration && (!poolBaseVault || !poolQuoteVault) && mint &&
+    // SUPPLEMENTAL: Fill in missing vaults from postTokenBalances when Helius provides them.
+    // NOT gated on isPumpSwapMigration — postTokenBalances always contains vault balances for any
+    // PumpSwap pool creation, and buildFullAccountKeys resolves ALT accounts so vault addresses
+    // are always available here even when instruction parsing fails due to ALT ordering.
+    if ((!poolBaseVault || !poolQuoteVault) && mint &&
         tx.meta.postTokenBalances && tx.meta.postTokenBalances.length > 0) {
       const accountKeys = GraduationListener.buildFullAccountKeys(tx);
       let bestBaseBal = 0;
@@ -798,6 +801,15 @@ export class GraduationListener {
           bestQuoteBal = amt;
           poolQuoteVault = addr;
         }
+      }
+
+      // If we found vaults here and hadn't already confirmed PumpSwap, mark it now
+      if (poolBaseVault && poolQuoteVault && !isPumpSwapMigration) {
+        isPumpSwapMigration = true;
+        logger.info(
+          { mint: mint.slice(0, 8), baseVault: poolBaseVault, quoteVault: poolQuoteVault, signature },
+          'Vault addresses resolved from postTokenBalances (ALT-safe) — PumpSwap migration confirmed'
+        );
       }
     }
 
