@@ -53,6 +53,8 @@ interface ActiveObservation {
   // Cached after first successful pool decode — avoids re-fetching pool account on every snapshot
   baseVault?: string;
   quoteVault?: string;
+  // T+0 pool price — used as reference for pct change calculations
+  openPoolPrice?: number;
 }
 
 export class PriceCollector {
@@ -236,21 +238,20 @@ export class PriceCollector {
         pool_token_reserves: poolState.tokenReserves,
       });
 
-      // T+0 snapshot: set open price in graduation_momentum
-      if (targetSec === 0 || observation.completedSnapshots.length === 1) {
+      // T+0 snapshot: set open price from first successful pool price read
+      if (!observation.openPoolPrice) {
+        observation.openPoolPrice = poolState.price;
         updateMomentumOpenPrice(this.db, graduationId, poolState.price);
         logger.info(
           { graduationId, mint: ctx.mint, openPrice: poolState.price.toFixed(12) },
-          'Open price set'
+          'Open pool price set'
         );
       }
 
-      // Momentum checkpoint: find the closest matching checkpoint for this snapshot
+      // Momentum checkpoint: compute pct change relative to T+0 POOL price (not BC price)
       const checkpoint = this.findCheckpoint(targetSec);
-      if (checkpoint && ctx.bondingCurvePrice > 0) {
-        // Use bonding curve price as the "open" reference for pct change
-        // (more reliable than the T+0 pool price which may not be available)
-        const openRef = ctx.bondingCurvePrice;
+      if (checkpoint && observation.openPoolPrice > 0) {
+        const openRef = observation.openPoolPrice;
         const pctChange = ((poolState.price - openRef) / openRef) * 100;
         updateMomentumPrice(this.db, graduationId, checkpoint, poolState.price, pctChange);
         logger.info(
@@ -259,6 +260,7 @@ export class PriceCollector {
             mint: ctx.mint,
             checkpoint,
             price: poolState.price.toFixed(12),
+            openRef: openRef.toFixed(12),
             pctChange: pctChange.toFixed(1),
           },
           'Momentum checkpoint recorded'
