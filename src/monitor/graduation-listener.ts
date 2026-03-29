@@ -98,6 +98,9 @@ export class GraduationListener {
   private totalGraduationsRecorded = 0;
   private totalFalsePositives = 0;
   private totalMintExtractionFails = 0;
+  private totalVaultExtractions = 0;
+  private totalVaultExtractionFails = 0;
+  private lastVaultFailReasons: string[] = [];
   private totalStrategy3Extractions = 0;
   private lastMintFailReasons: string[] = [];
   private reconnecting = false;
@@ -132,6 +135,9 @@ export class GraduationListener {
       totalFalsePositives: this.totalFalsePositives,
       totalMintExtractionFails: this.totalMintExtractionFails,
       totalStrategy3Extractions: this.totalStrategy3Extractions,
+      totalVaultExtractions: this.totalVaultExtractions,
+      totalVaultExtractionFails: this.totalVaultExtractionFails,
+      lastVaultFailReasons: this.lastVaultFailReasons.slice(-5),
       lastMintFailReasons: this.lastMintFailReasons.slice(-5),
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
       wsConnected: this.subscriptionId !== null,
@@ -634,30 +640,35 @@ export class GraduationListener {
     let poolQuoteVault: string | undefined;
 
     if (mint && tx.meta.postTokenBalances) {
-      // Find base vault: graduated token with large balance (>100M raw = >100 * 10^12)
-      const BASE_VAULT_THRESHOLD = 100_000_000_000_000; // 100M tokens raw (6 dec)
-      const QUOTE_VAULT_THRESHOLD = 50_000_000_000; // 50 SOL in lamports
+      // Collect ALL token balance entries for the graduated mint and wSOL.
+      // Use the LARGEST post-balance for each as the vault.
+      // No hardcoded threshold — just find the biggest one.
+      let bestBaseBal = 0;
+      let bestQuoteBal = 0;
+      const mintEntries: Array<{addr: string; amt: number}> = [];
+      const wsolEntries: Array<{addr: string; amt: number}> = [];
 
       for (const tb of tx.meta.postTokenBalances) {
         const addr = accountKeys[tb.accountIndex];
         if (!addr) continue;
+        const amt = parseInt(tb.uiTokenAmount?.amount || '0', 10);
 
-        if (tb.mint === mint) {
-          const amt = parseInt(tb.uiTokenAmount?.amount || '0', 10);
-          if (amt >= BASE_VAULT_THRESHOLD) {
+        if (tb.mint === mint && amt > 0) {
+          mintEntries.push({ addr, amt });
+          if (amt > bestBaseBal) {
+            bestBaseBal = amt;
             poolBaseVault = addr;
-            // The owner of this token account is the pool authority PDA
           }
-        } else if (tb.mint === WSOL_MINT) {
-          const amt = parseInt(tb.uiTokenAmount?.amount || '0', 10);
-          if (amt >= QUOTE_VAULT_THRESHOLD) {
+        } else if (tb.mint === WSOL_MINT && amt > 0) {
+          wsolEntries.push({ addr, amt });
+          if (amt > bestQuoteBal) {
+            bestQuoteBal = amt;
             poolQuoteVault = addr;
           }
         }
       }
 
-      // If we found both vaults, try to find the pool address by scanning
-      // newly created accounts (preBalance=0, postBalance>0) that aren't vaults or programs
+      // Find pool address from newly created accounts
       if (poolBaseVault && poolQuoteVault && tx.meta.preBalances && tx.meta.postBalances) {
         const knownAddrs = new Set([
           poolBaseVault, poolQuoteVault, mint, WSOL_MINT,
@@ -668,36 +679,50 @@ export class GraduationListener {
           'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv',
         ]);
 
-        // New accounts: preBalance=0, postBalance > 0, not a known address
-        // The pool account stores ~300 bytes of data, rent ~2.4M lamports
-        // Sort by postBalance to find the pool (smaller than vaults but larger than LP mint)
-        const newAccounts: Array<{addr: string; balance: number}> = [];
-        for (let i = 0; i < accountKeys.length; i++) {
-          const pre = tx.meta.preBalances[i] || 0;
-          const post = tx.meta.postBalances[i] || 0;
-          if (pre === 0 && post > 0 && !knownAddrs.has(accountKeys[i])) {
-            newAccounts.push({ addr: accountKeys[i], balance: post });
-          }
-        }
-
-        // Pool account rent is ~2.4M lamports, LP mint rent is ~1.5M, token accounts ~2M
-        // The pool has a distinctive balance range. Just pick the first new account
-        // that isn't a token balance entry (vault).
         const tokenBalanceAddrs = new Set(
           tx.meta.postTokenBalances.map((tb: any) => accountKeys[tb.accountIndex])
         );
-        const poolCandidates = newAccounts.filter(a => !tokenBalanceAddrs.has(a.addr));
-        if (poolCandidates.length > 0) {
-          poolAddress = poolCandidates[0].addr;
+
+        for (let i = 0; i < accountKeys.length; i++) {
+          const pre = tx.meta.preBalances[i] || 0;
+          const post = tx.meta.postBalances[i] || 0;
+          if (pre === 0 && post > 0 &&
+              !knownAddrs.has(accountKeys[i]) &&
+              !tokenBalanceAddrs.has(accountKeys[i])) {
+            poolAddress = accountKeys[i];
+            break;
+          }
         }
       }
 
       if (poolBaseVault && poolQuoteVault) {
+        this.totalVaultExtractions++;
         logger.info(
-          { mint, poolAddress: poolAddress || 'unknown', baseVault: poolBaseVault, quoteVault: poolQuoteVault, signature },
+          { mint, poolAddress: poolAddress || 'unknown', baseVault: poolBaseVault, quoteVault: poolQuoteVault,
+            baseBal: bestBaseBal, quoteBal: bestQuoteBal, signature },
           'Pool vaults extracted from tx token balances'
         );
+      } else {
+        this.totalVaultExtractionFails++;
+        // Diagnostic: what token balances exist?
+        const balanceSummary = (tx.meta.postTokenBalances || []).map((tb: any) => {
+          const isGradMint = tb.mint === mint;
+          const isWsol = tb.mint === WSOL_MINT;
+          return `${isGradMint ? 'GRAD' : isWsol ? 'WSOL' : 'OTHER'}:${tb.uiTokenAmount?.amount || '0'}@idx${tb.accountIndex}`;
+        });
+        const reason = `no_vaults mint=${mint.slice(0, 8)} baseEntries=${mintEntries.length} wsolEntries=${wsolEntries.length} postBals=[${balanceSummary.join(',')}]`;
+        this.lastVaultFailReasons.push(reason);
+        if (this.lastVaultFailReasons.length > 20) this.lastVaultFailReasons = this.lastVaultFailReasons.slice(-20);
+        logger.info(
+          { mint, signature, mintEntries: mintEntries.length, wsolEntries: wsolEntries.length, totalPostBals: (tx.meta.postTokenBalances || []).length },
+          'Vault extraction failed — no matching token balance entries'
+        );
       }
+    } else {
+      this.totalVaultExtractionFails++;
+      const reason = `no_postTokenBals mint=${mint?.slice(0, 8) || 'null'} postBals=${tx.meta.postTokenBalances?.length ?? 'null'}`;
+      this.lastVaultFailReasons.push(reason);
+      if (this.lastVaultFailReasons.length > 20) this.lastVaultFailReasons = this.lastVaultFailReasons.slice(-20);
     }
 
     return {
