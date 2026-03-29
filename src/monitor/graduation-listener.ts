@@ -70,6 +70,7 @@ export interface GraduationEvent {
   poolBaseVault?: string;
   poolQuoteVault?: string;
   migrationTimestamp?: number;
+  isPumpSwapMigration?: boolean;
 }
 
 interface BondingCurveState {
@@ -430,14 +431,22 @@ export class GraduationListener {
         { graduationId, mint: event.mint, pool: event.poolAddress },
         'Pool observation started — vaults will be decoded from pool account'
       );
-    } else {
-      // Fallback: use pool tracker subscription matching
+    } else if (event.isPumpSwapMigration) {
+      // PumpSwap migration but pool not found inline — fall back to pool tracker subscription
       this.poolTracker.trackGraduation(
         graduationId,
         event.mint,
         event.bondingCurveAddress,
         event.finalPriceSol || 0,
         event.timestamp
+      );
+    } else {
+      // Non-PumpSwap migration (Raydium or other DEX) — no PumpSwap pool will ever appear,
+      // so cancel the speculative track and skip price collection entirely.
+      this.poolTracker.cancelSpeculative(event.mint);
+      logger.info(
+        { graduationId, mint: event.mint },
+        'Raydium/other DEX migration — graduation recorded, price tracking skipped'
       );
     }
   }
@@ -653,88 +662,80 @@ export class GraduationListener {
     }
 
     // Extract pool address and vault addresses from the graduation tx.
-    const accountKeys = GraduationListener.buildFullAccountKeys(tx);
+    // PRIMARY STRATEGY: Read from the top-level pump.fun migrate instruction.
+    // The migrate instruction is always a PartiallyDecodedInstruction with a full accounts array.
+    // This is more reliable than parsing the inner PumpSwap CPI, which Helius returns as
+    // ParsedInstruction (no accounts array visible).
+    //
+    // pump.fun migrate instruction account layout (official IDL):
+    //   [0]=global  [1]=withdraw_authority  [2]=mint  [3]=bonding_curve
+    //   [4]=associated_bonding_curve  [5]=user  [6]=system_program  [7]=token_program
+    //   [8]=pump_amm (PumpSwap program ID — detects migration target)
+    //   [9]=pool  [10]=pool_authority  [11]=pool_authority_mint_account
+    //   [12]=pool_authority_wsol_account  [13]=amm_global_config  [14]=wsol_mint
+    //   [15]=lp_mint  [16]=user_pool_token_account
+    //   [17]=pool_base_token_account (base vault)
+    //   [18]=pool_quote_token_account (quote vault)
     let poolAddress: string | undefined;
     let poolBaseVault: string | undefined;
     let poolQuoteVault: string | undefined;
+    let isPumpSwapMigration = false;
 
     const PUMPSWAP_PROGRAM = process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
+    const toStrAcct = (a: any): string => typeof a === 'string' ? a : a?.toBase58?.() ?? '';
 
-    // --- POOL ADDRESS DETECTION ---
-    // Strategy A: Find PumpSwap CPI in inner instructions.
-    // The migration tx CPIs into PumpSwap create_pool. The pool PDA is the first account.
-    // PumpSwap create_pool layout:
-    //   [0] pool, [1] creator, [2] base_mint, [3] quote_mint, [4] lp_mint,
-    //   [5] pool_base_token_account (base vault), [6] pool_quote_token_account (quote vault), ...
-    if (tx.meta.innerInstructions) {
-      for (const inner of tx.meta.innerInstructions) {
-        for (const ix of inner.instructions) {
-          if (!('programId' in ix)) continue;
-          const progId = typeof ix.programId === 'string'
-            ? ix.programId : ix.programId.toBase58();
-          if (progId !== PUMPSWAP_PROGRAM) continue;
+    for (const ix of tx.transaction.message.instructions) {
+      const progId = toStrAcct((ix as any).programId ?? '');
+      if (progId !== PUMP_FUN_PROGRAM_STR) continue;
+      const ixAccounts = (ix as any).accounts;
+      if (!Array.isArray(ixAccounts) || ixAccounts.length < 15) continue;
 
-          if ('accounts' in ix && Array.isArray(ix.accounts) && ix.accounts.length >= 7) {
-            const toStr = (acct: any): string | null => {
-              if (typeof acct === 'string') return acct;
-              return acct?.toBase58?.() ?? null;
-            };
-            poolAddress = toStr(ix.accounts[0]) || undefined;
-            poolBaseVault = toStr(ix.accounts[5]) || undefined;
-            poolQuoteVault = toStr(ix.accounts[6]) || undefined;
+      const accts = (ixAccounts as any[]).map(toStrAcct);
 
-            logger.info(
-              { mint: mint.slice(0, 8), poolAddress, baseVault: poolBaseVault, quoteVault: poolQuoteVault,
-                pumpswapAcctCount: ix.accounts.length, signature },
-              'Pool + vaults extracted from PumpSwap CPI inner instruction'
-            );
-            break;
-          }
-        }
-        if (poolAddress) break;
-      }
-    }
-
-    // Strategy B (fallback): Find pool from newly-created accounts if CPI extraction failed
-    if (!poolAddress && tx.meta.preBalances && tx.meta.postBalances) {
-      const knownNonPoolAddrs = new Set([
-        mint, bondingCurveAddress, WSOL_MINT,
-        '11111111111111111111111111111111',
-        PUMP_FUN_PROGRAM_STR,
-        PUMPSWAP_PROGRAM,
-        'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA',
-        'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
-        'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv',
-        'SysvarRent111111111111111111111111111111111',
-        'ComputeBudget111111111111111111111111111111',
-      ]);
-
-      // Pick the newly-created account with the LARGEST lamport balance (pool > token accts)
-      let bestLamports = 0;
-      const newlyCreated: Array<{ addr: string; lamports: number }> = [];
-
-      for (let i = 0; i < accountKeys.length; i++) {
-        const pre = tx.meta.preBalances[i] || 0;
-        const post = tx.meta.postBalances[i] || 0;
-        if (pre === 0 && post > 0 && !knownNonPoolAddrs.has(accountKeys[i])) {
-          newlyCreated.push({ addr: accountKeys[i].slice(0, 12), lamports: post });
-          if (post > bestLamports) {
-            bestLamports = post;
-            poolAddress = accountKeys[i];
-          }
-        }
-      }
-
-      if (poolAddress) {
+      // accounts[8] is pump_amm — equals PumpSwap program ID for PumpSwap migrations,
+      // a different program for Raydium or other DEX migrations.
+      if (accts[8] !== PUMPSWAP_PROGRAM) {
         logger.info(
-          { mint: mint.slice(0, 8), poolAddress, lamports: bestLamports, candidates: newlyCreated, signature },
-          'Pool address from newly-created accounts (fallback B)'
+          { mint: mint.slice(0, 8), accounts8: accts[8]?.slice(0, 8), acctCount: accts.length, signature },
+          'Non-PumpSwap migration detected (Raydium or other DEX) — skipping price tracking'
         );
+        break;
       }
+
+      isPumpSwapMigration = true;
+      poolAddress = accts[9];  // pool PDA
+
+      if (accts.length >= 19) {
+        poolBaseVault = accts[17];   // pool_base_token_account
+        poolQuoteVault = accts[18];  // pool_quote_token_account
+      }
+
+      logger.info(
+        { mint: mint.slice(0, 8), poolAddress, baseVault: poolBaseVault, quoteVault: poolQuoteVault,
+          acctCount: accts.length, signature },
+        'Pool + vaults extracted from pump.fun migrate instruction'
+      );
+      break;
     }
 
-    // --- VAULT EXTRACTION FROM postTokenBalances (works when Helius provides them) ---
-    if (!poolBaseVault && !poolQuoteVault && mint && tx.meta.postTokenBalances && tx.meta.postTokenBalances.length > 0) {
+    // Validate: reject well-known program addresses that are never valid pool addresses
+    const isInvalidAddr = (addr: string | undefined): boolean =>
+      !addr ||
+      addr === '11111111111111111111111111111111' ||
+      addr === PUMP_FUN_PROGRAM_STR ||
+      addr === PUMPSWAP_PROGRAM ||
+      addr === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' ||
+      addr === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ||
+      addr === WSOL_MINT;
+
+    if (isInvalidAddr(poolAddress)) poolAddress = undefined;
+    if (isInvalidAddr(poolBaseVault)) poolBaseVault = undefined;
+    if (isInvalidAddr(poolQuoteVault)) poolQuoteVault = undefined;
+
+    // SUPPLEMENTAL: Fill in missing vaults from postTokenBalances when Helius provides them
+    if (isPumpSwapMigration && (!poolBaseVault || !poolQuoteVault) && mint &&
+        tx.meta.postTokenBalances && tx.meta.postTokenBalances.length > 0) {
+      const accountKeys = GraduationListener.buildFullAccountKeys(tx);
       let bestBaseBal = 0;
       let bestQuoteBal = 0;
 
@@ -753,22 +754,22 @@ export class GraduationListener {
       }
     }
 
-    // Log extraction results
-    if (poolAddress || (poolBaseVault && poolQuoteVault)) {
-      this.totalVaultExtractions++;
-    } else {
-      this.totalVaultExtractionFails++;
-      const innerIxSummary = (tx.meta.innerInstructions || []).flatMap((inner: any) =>
-        inner.instructions.map((ix: any) => {
-          const pid = typeof ix.programId === 'string' ? ix.programId : ix.programId?.toBase58?.() ?? '?';
-          const acctLen = Array.isArray(ix.accounts) ? ix.accounts.length : ('parsed' in ix ? 'parsed' : 0);
+    // Track extraction metrics (only count PumpSwap migrations as success/fail)
+    if (isPumpSwapMigration) {
+      if (poolAddress || (poolBaseVault && poolQuoteVault)) {
+        this.totalVaultExtractions++;
+      } else {
+        this.totalVaultExtractionFails++;
+        const topIxSummary = tx.transaction.message.instructions.map((ix: any) => {
+          const pid = toStrAcct((ix as any).programId ?? '');
+          const acctLen = Array.isArray((ix as any).accounts) ? (ix as any).accounts.length : 'parsed';
           return `${pid.slice(0, 8)}:${acctLen}`;
-        })
-      ).slice(0, 15);
-      const reason = `no_pool mint=${mint.slice(0, 8)} innerIx=[${innerIxSummary.join(',')}]`;
-      this.lastVaultFailReasons.push(reason);
-      if (this.lastVaultFailReasons.length > 20) this.lastVaultFailReasons = this.lastVaultFailReasons.slice(-20);
-      logger.info({ mint, signature, reason }, 'Pool extraction failed');
+        }).join(',');
+        const reason = `no_pool mint=${mint.slice(0, 8)} topIx=[${topIxSummary}]`;
+        this.lastVaultFailReasons.push(reason);
+        if (this.lastVaultFailReasons.length > 20) this.lastVaultFailReasons = this.lastVaultFailReasons.slice(-20);
+        logger.info({ mint, signature, reason }, 'PumpSwap migration but pool extraction failed');
+      }
     }
 
     return {
@@ -786,6 +787,7 @@ export class GraduationListener {
       poolBaseVault,
       poolQuoteVault,
       migrationTimestamp: timestamp,
+      isPumpSwapMigration,
     };
   }
 
