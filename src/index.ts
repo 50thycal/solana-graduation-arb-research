@@ -30,7 +30,11 @@ async function main() {
   const app = express();
 
   // Reset research data — wipes all rows but keeps tables/schema intact
-  app.post('/reset', (req, res) => {
+  // Support both GET and POST so it works from a phone browser
+  app.get('/reset', (req, res) => resetHandler(req, res));
+  app.post('/reset', (req, res) => resetHandler(req, res));
+
+  function resetHandler(_req: any, res: any) {
     try {
       const tables = [
         'competition_signals',
@@ -52,7 +56,7 @@ async function main() {
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
-  });
+  }
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // MOMENTUM RESEARCH DASHBOARD
