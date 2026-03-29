@@ -221,10 +221,10 @@ async function main() {
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v2',
-        last_change: 'Extract pool+vaults from PumpSwap CPI inner instruction (accts[0]=pool, [5]=baseVault, [6]=quoteVault). Bypasses empty postTokenBalances.',
-        bug_fixed: 'postTokenBalances empty for all migration txs — old heuristic picked wrong accounts (dataLen=75). Now parsing PumpSwap create_pool CPI directly.',
-        watch_for: 'Verify: (1) totalVaultExtractions matching verified grads, (2) directPriceCollector snapshots flowing, (3) T+300 data populating, (4) labels appearing',
+        version: 'momentum-v3',
+        last_change: 'Read pool+vaults from TOP-LEVEL pump.fun migrate instruction ([9]=pool, [17]=baseVault, [18]=quoteVault). Detect migration target via accounts[8]: PumpSwap vs Raydium/other.',
+        bug_fixed: 'Strategy A searched inner instructions for PumpSwap CPI with wrong vault indices ([5],[6] should be [17],[18]), and those CPIs are often absent. Strategy B newly-created-account heuristic gave wrong addresses. Both replaced with pool-tracker\'s proven approach.',
+        watch_for: 'totalVaultExtractions should now approach totalVerifiedGraduations for PumpSwap migrations. directPriceCollector pool_fetch_null errors should drop. T+300 data should populate. Non-PumpSwap migrations logged separately.',
       };
 
       res.json({
