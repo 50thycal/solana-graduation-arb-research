@@ -6,6 +6,41 @@ import { GraduationListener } from './monitor/graduation-listener';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'main' });
 
+// Send JSON as a browser-friendly HTML page (with copy button) when Accept: text/html,
+// otherwise return plain JSON for API/curl clients.
+function sendJsonOrHtml(req: express.Request, res: express.Response, data: object): void {
+  const wantHtml = (req.headers.accept || '').includes('text/html');
+  if (!wantHtml) { res.json(data); return; }
+  const json = JSON.stringify(data, null, 2);
+  const escaped = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${req.path}</title>
+<style>
+  body{margin:0;background:#111;color:#e0e0e0;font-family:monospace;font-size:13px}
+  #bar{position:sticky;top:0;background:#222;padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #444}
+  #bar span{flex:1;color:#aaa;font-size:12px}
+  button{background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:13px}
+  button:active{background:#1d4ed8}
+  #copied{color:#4ade80;font-size:12px;display:none}
+  pre{margin:0;padding:12px;white-space:pre-wrap;word-break:break-all}
+</style></head><body>
+<div id="bar">
+  <span>${req.path} — ${new Date().toISOString()}</span>
+  <button onclick="copy()">Copy All</button>
+  <span id="copied">Copied!</span>
+</div>
+<pre id="json">${escaped}</pre>
+<script>
+function copy(){
+  navigator.clipboard.writeText(document.getElementById('json').textContent)
+    .then(()=>{var c=document.getElementById('copied');c.style.display='inline';setTimeout(()=>c.style.display='none',1500)});
+}
+</script>
+</body></html>`);
+}
+
 const startTime = Date.now();
 let listenerStatus: 'running' | 'stopped' | 'error' = 'stopped';
 let listenerError: string | null = null;
@@ -62,7 +97,7 @@ async function main() {
   // MOMENTUM RESEARCH DASHBOARD
   // See CLAUDE.md for full dashboard spec
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  app.get('/thesis', (_req, res) => {
+  app.get('/thesis', (req, res) => {
     try {
       const uptimeMs = Date.now() - startTime;
       const uptimeSec = Math.floor(uptimeMs / 1000);
@@ -227,7 +262,7 @@ async function main() {
         watch_for: 'totalVaultExtractions should jump significantly. poolTracker.totalSnapshotFailures should drop to near 0. lastVaultFailReasons should show only pfeeUxB6 wrapper cases if any remain unparsed.',
       };
 
-      res.json({
+      sendJsonOrHtml(req, res, {
         // ── HEADER ──
         bot_status: botStatus,
         uptime: `${uptimeHrs}h ${uptimeMin % 60}m`,
@@ -277,7 +312,7 @@ async function main() {
   });
 
   // Research data export — dump all collected spread/opportunity data
-  app.get('/data', (_req, res) => {
+  app.get('/data', (req, res) => {
     try {
       const graduations = db.prepare(`
         SELECT id, mint, final_price_sol, virtual_sol_reserves, virtual_token_reserves,
@@ -326,7 +361,7 @@ async function main() {
         LIMIT 200
       `).all();
 
-      res.json({
+      sendJsonOrHtml(req, res, {
         summary: {
           total_graduations: graduations.length,
           with_pool: graduations.filter((g: any) => g.new_pool_address).length,
@@ -345,13 +380,13 @@ async function main() {
     }
   });
 
-  app.get('/health', (_req, res) => {
+  app.get('/health', (req, res) => {
     const uptimeMs = Date.now() - startTime;
     const uptimeSeconds = Math.floor(uptimeMs / 1000);
     const graduationCount = getGraduationCount(db);
     const listenerStats = listener ? listener.getStats() : null;
 
-    res.json({
+    sendJsonOrHtml(req, res, {
       status: listenerStatus === 'running' ? 'ok' : 'degraded',
       listener_status: listenerStatus,
       listener_error: listenerError,
