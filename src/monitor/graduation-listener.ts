@@ -431,22 +431,19 @@ export class GraduationListener {
         { graduationId, mint: event.mint, pool: event.poolAddress },
         'Pool observation started — vaults will be decoded from pool account'
       );
-    } else if (event.isPumpSwapMigration) {
-      // PumpSwap migration but pool not found inline — fall back to pool tracker subscription
+    } else {
+      // No pool info extracted inline — fall back to pool tracker subscription.
+      // We do NOT call cancelSpeculative here: we cannot reliably distinguish a
+      // Raydium migration from a failed extraction (Helius may return pump.fun
+      // migrate as ParsedInstruction with no accounts array, or as PartiallyDecoded
+      // with fewer accounts than expected for v0 ALT transactions).
+      // Pool tracker will time out naturally after 5 min if no PumpSwap pool appears.
       this.poolTracker.trackGraduation(
         graduationId,
         event.mint,
         event.bondingCurveAddress,
         event.finalPriceSol || 0,
         event.timestamp
-      );
-    } else {
-      // Non-PumpSwap migration (Raydium or other DEX) — no PumpSwap pool will ever appear,
-      // so cancel the speculative track and skip price collection entirely.
-      this.poolTracker.cancelSpeculative(event.mint);
-      logger.info(
-        { graduationId, mint: event.mint },
-        'Raydium/other DEX migration — graduation recorded, price tracking skipped'
       );
     }
   }
@@ -687,23 +684,39 @@ export class GraduationListener {
     for (const ix of tx.transaction.message.instructions) {
       const progId = toStrAcct((ix as any).programId ?? '');
       if (progId !== PUMP_FUN_PROGRAM_STR) continue;
+
+      // Diagnostic: log the format of every top-level pump.fun instruction.
+      // This tells us whether Helius returns it as ParsedInstruction (no accounts array)
+      // or PartiallyDecodedInstruction (with accounts array).
+      const hasParsed = 'parsed' in (ix as any);
       const ixAccounts = (ix as any).accounts;
-      if (!Array.isArray(ixAccounts) || ixAccounts.length < 15) continue;
+      const acctArrayLen = Array.isArray(ixAccounts) ? ixAccounts.length : -1;
+      logger.info(
+        { mint: mint.slice(0, 8), hasParsed, acctArrayLen, signature },
+        'DEBUG pump.fun top-level instruction format'
+      );
+
+      // Need at least 9 accounts to check accounts[8] (pump_amm program).
+      // Use 9 as threshold (not 15) to handle v0 transactions where some accounts
+      // may not be present in ix.accounts due to ALT resolution behavior.
+      if (acctArrayLen < 9) continue;
 
       const accts = (ixAccounts as any[]).map(toStrAcct);
 
-      // accounts[8] is pump_amm — equals PumpSwap program ID for PumpSwap migrations,
-      // a different program for Raydium or other DEX migrations.
+      // accounts[8] is pump_amm — equals PumpSwap program ID for PumpSwap migrations.
+      // Only skip if it's a KNOWN non-PumpSwap program (not just missing/truncated).
       if (accts[8] !== PUMPSWAP_PROGRAM) {
         logger.info(
           { mint: mint.slice(0, 8), accounts8: accts[8]?.slice(0, 8), acctCount: accts.length, signature },
-          'Non-PumpSwap migration detected (Raydium or other DEX) — skipping price tracking'
+          'accounts[8] is not PumpSwap — Raydium or other DEX migration, or accounts truncated'
         );
-        break;
+        // Do NOT break — let it fall through to pool-tracker.
+        // We can't reliably confirm Raydium vs truncated account list.
+        continue;
       }
 
       isPumpSwapMigration = true;
-      poolAddress = accts[9];  // pool PDA
+      poolAddress = accts[9];  // pool PDA (may be undefined if accts.length == 9)
 
       if (accts.length >= 19) {
         poolBaseVault = accts[17];   // pool_base_token_account
@@ -754,22 +767,21 @@ export class GraduationListener {
       }
     }
 
-    // Track extraction metrics (only count PumpSwap migrations as success/fail)
-    if (isPumpSwapMigration) {
-      if (poolAddress || (poolBaseVault && poolQuoteVault)) {
-        this.totalVaultExtractions++;
-      } else {
-        this.totalVaultExtractionFails++;
-        const topIxSummary = tx.transaction.message.instructions.map((ix: any) => {
-          const pid = toStrAcct((ix as any).programId ?? '');
-          const acctLen = Array.isArray((ix as any).accounts) ? (ix as any).accounts.length : 'parsed';
-          return `${pid.slice(0, 8)}:${acctLen}`;
-        }).join(',');
-        const reason = `no_pool mint=${mint.slice(0, 8)} topIx=[${topIxSummary}]`;
-        this.lastVaultFailReasons.push(reason);
-        if (this.lastVaultFailReasons.length > 20) this.lastVaultFailReasons = this.lastVaultFailReasons.slice(-20);
-        logger.info({ mint, signature, reason }, 'PumpSwap migration but pool extraction failed');
-      }
+    // Track extraction metrics
+    if (poolAddress || (poolBaseVault && poolQuoteVault)) {
+      this.totalVaultExtractions++;
+    } else {
+      this.totalVaultExtractionFails++;
+      // Log top-level instruction summary to help diagnose format issues
+      const topIxSummary = tx.transaction.message.instructions.map((ix: any) => {
+        const pid = toStrAcct((ix as any).programId ?? '');
+        const hasParsed = 'parsed' in ix ? 'parsed' : '';
+        const acctLen = Array.isArray((ix as any).accounts) ? (ix as any).accounts.length : hasParsed || '?';
+        return `${pid.slice(0, 8)}:${acctLen}`;
+      }).join(',');
+      const reason = `no_pool mint=${mint.slice(0, 8)} isPumpSwap=${isPumpSwapMigration} topIx=[${topIxSummary}]`;
+      this.lastVaultFailReasons.push(reason);
+      if (this.lastVaultFailReasons.length > 20) this.lastVaultFailReasons = this.lastVaultFailReasons.slice(-20);
     }
 
     return {

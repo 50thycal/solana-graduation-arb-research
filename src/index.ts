@@ -221,10 +221,10 @@ async function main() {
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v3',
-        last_change: 'Read pool+vaults from TOP-LEVEL pump.fun migrate instruction ([9]=pool, [17]=baseVault, [18]=quoteVault). Detect migration target via accounts[8]: PumpSwap vs Raydium/other.',
-        bug_fixed: 'Strategy A searched inner instructions for PumpSwap CPI with wrong vault indices ([5],[6] should be [17],[18]), and those CPIs are often absent. Strategy B newly-created-account heuristic gave wrong addresses. Both replaced with pool-tracker\'s proven approach.',
-        watch_for: 'totalVaultExtractions should now approach totalVerifiedGraduations for PumpSwap migrations. directPriceCollector pool_fetch_null errors should drop. T+300 data should populate. Non-PumpSwap migrations logged separately.',
+        version: 'momentum-v4',
+        last_change: 'Fix: removed cancelSpeculative fallback — all non-extracted grads now forward to pool-tracker. Added DEBUG log for every pump.fun top-level instruction (hasParsed/acctArrayLen). Lowered extraction threshold from 15 to 9 accounts.',
+        bug_fixed: 'v3 incorrectly called cancelSpeculative for 27/29 grads (extraction failure ≠ Raydium migration). Pool-tracker pending map was empty because we were canceling speculative entries before pool-tracker could match them.',
+        watch_for: 'Check lastVaultFailReasons for "DEBUG pump.fun top-level instruction" log. Watch hasParsed and acctArrayLen to understand why accounts[8] check fails. poolTracker.pending should now be non-zero. totalMatched should climb.',
       };
 
       res.json({
