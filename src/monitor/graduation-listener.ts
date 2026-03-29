@@ -92,6 +92,7 @@ export class GraduationListener {
   private totalGraduationsRecorded = 0;
   private totalFalsePositives = 0;
   private totalMintExtractionFails = 0;
+  private totalStrategy3Extractions = 0;
   private reconnecting = false;
 
   constructor(db: Database.Database) {
@@ -122,6 +123,7 @@ export class GraduationListener {
       totalGraduationsRecorded: this.totalGraduationsRecorded,
       totalFalsePositives: this.totalFalsePositives,
       totalMintExtractionFails: this.totalMintExtractionFails,
+      totalStrategy3Extractions: this.totalStrategy3Extractions,
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
       wsConnected: this.subscriptionId !== null,
       reconnecting: this.reconnecting,
@@ -432,6 +434,40 @@ export class GraduationListener {
           }
         }
         if (mint) break;
+      }
+    }
+
+    // Strategy 3: Extract mint from token balances — most robust fallback.
+    // Every migration tx transfers the graduated token, so preTokenBalances
+    // will contain exactly one non-wSOL mint. This works regardless of
+    // instruction format, ALTs, or wrapper programs.
+    if (!mint && tx.meta.preTokenBalances && tx.meta.preTokenBalances.length > 0) {
+      const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+      const uniqueMints = new Set<string>();
+      for (const tb of tx.meta.preTokenBalances) {
+        if (tb.mint && tb.mint !== WSOL_MINT) {
+          uniqueMints.add(tb.mint);
+        }
+      }
+      // Also check postTokenBalances
+      if (tx.meta.postTokenBalances) {
+        for (const tb of tx.meta.postTokenBalances) {
+          if (tb.mint && tb.mint !== WSOL_MINT) {
+            uniqueMints.add(tb.mint);
+          }
+        }
+      }
+      if (uniqueMints.size === 1) {
+        mint = [...uniqueMints][0];
+        this.totalStrategy3Extractions++;
+        logger.info({ signature, mint }, 'Mint extracted via token balance fallback (Strategy 3)');
+      } else if (uniqueMints.size > 1) {
+        // Multiple non-wSOL mints — unusual but pick the one with highest balance change
+        // For now log and skip
+        logger.info(
+          { signature, mints: [...uniqueMints], count: uniqueMints.size },
+          'Multiple non-wSOL mints in migration tx — Strategy 3 ambiguous'
+        );
       }
     }
 
