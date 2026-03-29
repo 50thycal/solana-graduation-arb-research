@@ -8,10 +8,11 @@ import {
 import BN from 'bn.js';
 import Database from 'better-sqlite3';
 import pino from 'pino';
-import { insertGraduation, insertMomentum, updateGraduationEnrichment } from '../db/queries';
+import { insertGraduation, insertMomentum, updateGraduationEnrichment, updateGraduationPool } from '../db/queries';
 import { PoolTracker } from './pool-tracker';
 import { HolderEnrichment } from '../collector/holder-enrichment';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { PriceCollector } from '../collector/price-collector';
 
 const logger = pino({ name: 'graduation-listener' });
 
@@ -65,6 +66,10 @@ export interface GraduationEvent {
   finalTokenReserves?: number;
   virtualSolReserves?: number;
   virtualTokenReserves?: number;
+  poolAddress?: string;
+  poolBaseVault?: string;
+  poolQuoteVault?: string;
+  migrationTimestamp?: number;
 }
 
 interface BondingCurveState {
@@ -79,6 +84,7 @@ export class GraduationListener {
   private connection: Connection;
   private db: Database.Database;
   private poolTracker: PoolTracker;
+  private priceCollector: PriceCollector;
   private holderEnrichment: HolderEnrichment;
   private subscriptionId: number | null = null;
   private stopped = false;
@@ -113,6 +119,7 @@ export class GraduationListener {
     });
     this.db = db;
     this.poolTracker = new PoolTracker(db, this.connection);
+    this.priceCollector = new PriceCollector(db, this.connection);
     this.holderEnrichment = new HolderEnrichment(this.connection);
   }
 
@@ -130,6 +137,7 @@ export class GraduationListener {
       wsConnected: this.subscriptionId !== null,
       reconnecting: this.reconnecting,
       poolTracker: this.poolTracker.getStats(),
+      directPriceCollector: this.priceCollector.getStats(),
     };
   }
 
@@ -184,6 +192,7 @@ export class GraduationListener {
 
     await this.unsubscribe();
     this.poolTracker.stop();
+    this.priceCollector.stop();
     logger.info('Graduation listener stopped');
   }
 
@@ -280,6 +289,7 @@ export class GraduationListener {
       });
 
       this.poolTracker.updateConnection(this.connection);
+      this.priceCollector.updateConnection(this.connection);
       this.holderEnrichment.updateConnection(this.connection);
 
       await this.subscribe();
@@ -328,15 +338,14 @@ export class GraduationListener {
         signature: event.signature,
         finalPriceSol: event.finalPriceSol,
         finalSolReserves: event.finalSolReserves,
-        finalTokenReserves: event.finalTokenReserves,
         bondingCurve: event.bondingCurveAddress,
+        poolAddress: event.poolAddress || 'NOT_FOUND',
       },
       'Graduation verified and recorded'
     );
 
     // Holder enrichment (fire-and-forget — don't block pool tracking)
     this.holderEnrichment.enrich(event.mint, event.bondingCurveAddress).then((enrichment) => {
-      // Save enrichment to graduations table
       updateGraduationEnrichment(this.db, graduationId, {
         holder_count: enrichment.holderCount,
         top5_wallet_pct: enrichment.top5WalletPct,
@@ -344,7 +353,6 @@ export class GraduationListener {
         token_age_seconds: enrichment.tokenAgeSeconds,
       });
 
-      // Create graduation_momentum row with T+0 context
       insertMomentum(this.db, {
         graduation_id: graduationId,
         open_price_sol: event.finalPriceSol,
@@ -360,7 +368,6 @@ export class GraduationListener {
         graduationId,
         err instanceof Error ? err.message : String(err)
       );
-      // Still create momentum row without enrichment data
       insertMomentum(this.db, {
         graduation_id: graduationId,
         open_price_sol: event.finalPriceSol,
@@ -368,13 +375,40 @@ export class GraduationListener {
       });
     });
 
-    this.poolTracker.trackGraduation(
-      graduationId,
-      event.mint,
-      event.bondingCurveAddress,
-      event.finalPriceSol || 0,
-      event.timestamp
-    );
+    // If we extracted the pool address directly from the graduation tx,
+    // start price observation immediately — no need to wait for PumpSwap subscription
+    if (event.poolAddress) {
+      updateGraduationPool(
+        this.db, graduationId, event.poolAddress, 'pumpswap',
+        event.signature, 0, event.migrationTimestamp || event.timestamp
+      );
+
+      this.priceCollector.startObservation({
+        graduationId,
+        mint: event.mint,
+        poolAddress: event.poolAddress,
+        poolDex: 'pumpswap',
+        bondingCurvePrice: event.finalPriceSol || 0,
+        graduationTimestamp: event.timestamp,
+        migrationTimestamp: event.migrationTimestamp || event.timestamp,
+        baseVault: event.poolBaseVault,
+        quoteVault: event.poolQuoteVault,
+      });
+
+      logger.info(
+        { graduationId, mint: event.mint, pool: event.poolAddress },
+        'Direct pool observation started from graduation tx'
+      );
+    } else {
+      // Fallback: use pool tracker subscription matching
+      this.poolTracker.trackGraduation(
+        graduationId,
+        event.mint,
+        event.bondingCurveAddress,
+        event.finalPriceSol || 0,
+        event.timestamp
+      );
+    }
   }
 
   private async processAndVerifyGraduation(
@@ -395,7 +429,18 @@ export class GraduationListener {
     let mint: string | null = null;
     let bondingCurveAddress: string | null = null;
 
+    // Helper: convert account ref to string
+    const toStr = (acct: any): string | null => {
+      if (typeof acct === 'string') return acct;
+      return acct?.toBase58?.() ?? null;
+    };
+
     // Strategy 1: Top-level pump.fun instruction accounts
+    // The migrate instruction has accts[2]=mint. Recent pump.fun versions
+    // may have as few as 5 top-level accounts (rest via CPI). We require
+    // >= 3 to get [0]=global, [1]=authority, [2]=mint.
+    // Since we already know this tx has "Instruction: Migrate" in logs,
+    // we can use a lower threshold than before.
     for (const instruction of tx.transaction.message.instructions) {
       if (!('programId' in instruction)) continue;
 
@@ -407,17 +452,14 @@ export class GraduationListener {
 
       if ('accounts' in instruction && Array.isArray(instruction.accounts)) {
         const accts = instruction.accounts;
-        // The migrate instruction has 15+ accounts.
-        // Small instructions (buy/sell/collect_fee etc.) have <15 — skip them.
-        if (accts.length < 15) continue;
-        // pump.fun migrate account layout: [0]=global [1]=withdraw_authority [2]=mint [3]=bonding_curve
+        if (accts.length < 3) continue;
         const acct2 = accts[2];
-        mint = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
+        mint = toStr(acct2);
         break;
       }
     }
 
-    // Strategy 2: CPI inner instructions
+    // Strategy 2: CPI inner instructions (same lower threshold)
     if (!mint && tx.meta.innerInstructions) {
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {
@@ -427,11 +469,10 @@ export class GraduationListener {
             : ix.programId.toBase58();
           if (progId !== PUMP_FUN_PROGRAM_STR) continue;
 
-          if ('accounts' in ix && Array.isArray(ix.accounts) && ix.accounts.length >= 15) {
+          if ('accounts' in ix && Array.isArray(ix.accounts) && ix.accounts.length >= 3) {
             const accts = ix.accounts;
-            // migrate layout: [2] = mint
             const acct2 = accts[2];
-            mint = typeof acct2 === 'string' ? acct2 : acct2?.toBase58?.() ?? null;
+            mint = toStr(acct2);
             break;
           }
         }
@@ -594,6 +635,75 @@ export class GraduationListener {
       );
     }
 
+    // Extract pool address + vaults from PumpSwap create_pool CPI in this same tx.
+    // The migration and pool creation happen atomically, so the pool address is
+    // available right here — no need to wait for the PumpSwap subscription.
+    const PUMPSWAP_PROGRAM = process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
+    const WSOL_MINT_ADDR = 'So11111111111111111111111111111111111111112';
+    let poolAddress: string | undefined;
+    let poolBaseVault: string | undefined;
+    let poolQuoteVault: string | undefined;
+
+    const accountKeys = GraduationListener.buildFullAccountKeys(tx);
+
+    // Helper to resolve instruction accounts to strings
+    const resolveIxAccts = (ix: any): string[] | null => {
+      if ('accounts' in ix && Array.isArray(ix.accounts)) {
+        return ix.accounts.map((a: any) => typeof a === 'string' ? a : a?.toBase58?.() ?? '').filter(Boolean);
+      }
+      if ('programIdIndex' in ix) {
+        const indices: number[] = (ix as any).accountKeyIndexes ?? (ix as any).accounts ?? [];
+        return indices.map((i: number) => accountKeys[i]).filter(Boolean);
+      }
+      return null;
+    };
+
+    const ixProgId = (ix: any): string | undefined => {
+      if ('programId' in ix) return typeof ix.programId === 'string' ? ix.programId : ix.programId?.toBase58?.();
+      if ('programIdIndex' in ix) return accountKeys[(ix as any).programIdIndex];
+      return undefined;
+    };
+
+    // Scan all instructions (top-level + inner) for PumpSwap create_pool
+    const allIxs: any[] = [...tx.transaction.message.instructions];
+    if (tx.meta.innerInstructions) {
+      for (const inner of tx.meta.innerInstructions) {
+        allIxs.push(...inner.instructions);
+      }
+    }
+
+    for (const ix of allIxs) {
+      if (ixProgId(ix) !== PUMPSWAP_PROGRAM) continue;
+      const accts = resolveIxAccts(ix);
+      if (!accts || accts.length < 3) continue;
+
+      // PumpSwap create_pool layout: [0]=pool, [1]=pool_authority, ...
+      // Also check all accounts — find one that's NOT a known program/system
+      const isKnown = (addr: string) =>
+        !addr ||
+        addr === PUMPSWAP_PROGRAM ||
+        addr === PUMP_FUN_PROGRAM_STR ||
+        addr === WSOL_MINT_ADDR ||
+        addr === '11111111111111111111111111111111' ||
+        addr === 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA' ||
+        addr === 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb' ||
+        addr === 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJe8bv';
+
+      // Pool is typically accts[0] for create_pool
+      const candidate = accts[0];
+      if (candidate && !isKnown(candidate)) {
+        poolAddress = candidate;
+        // Try to find vault accounts (higher indices)
+        // In some layouts: base vault and quote vault are among the accounts
+        // For now, we'll let the price collector resolve them from the pool account
+        logger.info(
+          { mint, poolAddress, pumpswapAcctCount: accts.length, signature },
+          'Pool address extracted from graduation tx'
+        );
+        break;
+      }
+    }
+
     return {
       mint,
       bondingCurveAddress,
@@ -605,6 +715,10 @@ export class GraduationListener {
       finalTokenReserves: curveState?.realTokenReserves,
       virtualSolReserves: curveState?.virtualSolReserves,
       virtualTokenReserves: curveState?.virtualTokenReserves,
+      poolAddress,
+      poolBaseVault,
+      poolQuoteVault,
+      migrationTimestamp: timestamp,
     };
   }
 

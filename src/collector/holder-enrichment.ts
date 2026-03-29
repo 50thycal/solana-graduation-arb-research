@@ -67,7 +67,6 @@ export class HolderEnrichment {
       // on the fact that at graduation the bonding curve is near-empty.
 
       const accounts = largestAccounts.value;
-      result.holderCount = accounts.length; // Up to 20 from this RPC call
 
       // Sort by amount descending (should already be sorted, but ensure)
       const sorted = [...accounts].sort((a, b) => {
@@ -76,18 +75,26 @@ export class HolderEnrichment {
         return bAmt - aAmt;
       });
 
-      // Top 5 holder concentration
-      const top5Amount = sorted.slice(0, 5).reduce((sum, acc) => {
+      // Filter out the pool vault — it holds ~207M tokens (20.7% of supply)
+      // and the bonding curve ATA (near-zero at graduation but may still appear).
+      // Heuristic: any account holding >15% of supply is likely infrastructure.
+      const INFRA_THRESHOLD = PUMP_TOTAL_SUPPLY_RAW * 0.15;
+      const realHolders = sorted.filter((acc) => {
+        const amt = parseInt(acc.amount, 10) || 0;
+        return amt > 0 && amt < INFRA_THRESHOLD;
+      });
+
+      result.holderCount = realHolders.length;
+
+      // Top 5 holder concentration (excluding infrastructure)
+      const top5Amount = realHolders.slice(0, 5).reduce((sum, acc) => {
         return sum + (parseInt(acc.amount, 10) || 0);
       }, 0);
       result.top5WalletPct = (top5Amount / PUMP_TOTAL_SUPPLY_RAW) * 100;
 
-      // Dev wallet heuristic: largest non-pool holder
-      // At graduation, the pool vault typically holds ~207M tokens (~20.7% of supply)
-      // The largest holder outside the pool is likely the dev or an early whale
-      // For simplicity, take the largest holder's percentage as a dev proxy
-      if (sorted.length > 0) {
-        const largestAmt = parseInt(sorted[0].amount, 10) || 0;
+      // Dev wallet heuristic: largest non-infrastructure holder
+      if (realHolders.length > 0) {
+        const largestAmt = parseInt(realHolders[0].amount, 10) || 0;
         result.devWalletPct = (largestAmt / PUMP_TOTAL_SUPPLY_RAW) * 100;
       }
 
