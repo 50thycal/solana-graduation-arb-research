@@ -29,127 +29,247 @@ async function main() {
   const healthPort = parseInt(process.env.HEALTH_PORT || '8080', 10);
   const app = express();
 
-  // Condensed thesis verification — small enough to read on a phone
+  // Reset research data — wipes all rows but keeps tables/schema intact
+  // Support both GET and POST so it works from a phone browser
+  app.get('/reset', (req, res) => resetHandler(req, res));
+  app.post('/reset', (req, res) => resetHandler(req, res));
+
+  function resetHandler(_req: any, res: any) {
+    try {
+      const tables = [
+        'competition_signals',
+        'opportunities',
+        'price_comparisons',
+        'pool_observations',
+        'graduation_momentum',
+        'graduations',
+      ];
+      // Delete in dependency order (children first due to foreign keys)
+      for (const table of tables) {
+        db.prepare(`DELETE FROM ${table}`).run();
+      }
+      res.json({
+        status: 'ok',
+        message: 'All research data cleared. Schema and tables preserved. Bot will continue collecting fresh data.',
+        tables_cleared: tables,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // MOMENTUM RESEARCH DASHBOARD
+  // See CLAUDE.md for full dashboard spec
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   app.get('/thesis', (_req, res) => {
     try {
-      const stats = db.prepare(`
+      const uptimeMs = Date.now() - startTime;
+      const uptimeSec = Math.floor(uptimeMs / 1000);
+      const uptimeMin = Math.floor(uptimeSec / 60);
+      const uptimeHrs = Math.floor(uptimeMin / 60);
+
+      // ── HEADER ──
+      const pipeline = db.prepare(`
         SELECT
           COUNT(*) as total_graduations,
           COUNT(new_pool_address) as with_pool,
-          SUM(observation_complete) as observations_done
+          SUM(observation_complete) as observations_done,
+          MAX(timestamp) as last_graduation_ts
         FROM graduations
       `).get() as any;
 
-      // Spread distribution across all snapshots
-      const spreads = db.prepare(`
+      const lastGradSecondsAgo = pipeline.last_graduation_ts
+        ? Math.floor(Date.now() / 1000) - pipeline.last_graduation_ts
+        : null;
+
+      const completedWithT300 = db.prepare(
+        'SELECT COUNT(*) as count FROM graduation_momentum WHERE pct_t300 IS NOT NULL'
+      ).get() as any;
+
+      const botStatus = listenerStatus === 'running'
+        ? (lastGradSecondsAgo !== null && lastGradSecondsAgo > 300 ? 'STALLED' : 'RUNNING')
+        : 'ERROR';
+
+      // ── THESIS SCORECARD ──
+      const labels = db.prepare(`
         SELECT
-          COUNT(*) as total_snapshots,
-          ROUND(AVG(bc_to_dex_spread_pct), 4) as avg_spread_pct,
-          ROUND(MIN(bc_to_dex_spread_pct), 4) as min_spread_pct,
-          ROUND(MAX(bc_to_dex_spread_pct), 4) as max_spread_pct,
-          SUM(CASE WHEN ABS(bc_to_dex_spread_pct) > 0.5 THEN 1 ELSE 0 END) as above_05_pct,
-          SUM(CASE WHEN ABS(bc_to_dex_spread_pct) > 1.0 THEN 1 ELSE 0 END) as above_1_pct,
-          SUM(CASE WHEN ABS(bc_to_dex_spread_pct) > 2.0 THEN 1 ELSE 0 END) as above_2_pct,
-          SUM(CASE WHEN ABS(bc_to_dex_spread_pct) > 5.0 THEN 1 ELSE 0 END) as above_5_pct
-        FROM price_comparisons
-        WHERE bc_to_dex_spread_pct IS NOT NULL
+          label,
+          COUNT(*) as count,
+          ROUND(AVG(pct_t30), 1) as avg_pct_t30,
+          ROUND(AVG(pct_t60), 1) as avg_pct_t60,
+          ROUND(AVG(pct_t120), 1) as avg_pct_t120,
+          ROUND(AVG(pct_t300), 1) as avg_pct_t300,
+          ROUND(AVG(pct_t600), 1) as avg_pct_t600
+        FROM graduation_momentum
+        WHERE label IS NOT NULL
+        GROUP BY label
+      `).all() as any[];
+
+      const totalLabeled = labels.reduce((s: number, l: any) => s + l.count, 0);
+      const pumpCount = labels.find((l: any) => l.label === 'PUMP')?.count || 0;
+      const dumpCount = labels.find((l: any) => l.label === 'DUMP')?.count || 0;
+      const stableCount = labels.find((l: any) => l.label === 'STABLE')?.count || 0;
+      const unlabeled = db.prepare(
+        'SELECT COUNT(*) as count FROM graduation_momentum WHERE label IS NULL'
+      ).get() as any;
+      const rawWinRate = totalLabeled > 0 ? +(pumpCount / totalLabeled * 100).toFixed(1) : null;
+      const samplesRemaining = Math.max(0, 30 - totalLabeled);
+
+      // ── BEST FILTER (simple: try each filter, pick highest win rate) ──
+      let bestFilter: { name: string; rule: string; win_rate: number; sample_size: number } | null = null;
+      if (totalLabeled >= 5) {
+        const filterTests = [
+          { name: 'top5_wallet_pct < 30', sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 30" },
+          { name: 'top5_wallet_pct < 20', sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 20" },
+          { name: 'dev_wallet_pct < 10', sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 10" },
+          { name: 'dev_wallet_pct < 5', sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5" },
+          { name: 'holder_count >= 10', sql: "holder_count IS NOT NULL AND holder_count >= 10" },
+          { name: 'holder_count >= 15', sql: "holder_count IS NOT NULL AND holder_count >= 15" },
+          { name: 'total_sol_raised >= 80', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 80" },
+          { name: 'total_sol_raised >= 85', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 85" },
+        ];
+        for (const ft of filterTests) {
+          const r = db.prepare(`
+            SELECT
+              COUNT(*) as total,
+              SUM(CASE WHEN label = 'PUMP' THEN 1 ELSE 0 END) as pumps
+            FROM graduation_momentum
+            WHERE label IS NOT NULL AND ${ft.sql}
+          `).get() as any;
+          if (r.total >= 3) {
+            const wr = +(r.pumps / r.total * 100).toFixed(1);
+            if (!bestFilter || wr > bestFilter.win_rate) {
+              bestFilter = { name: ft.name, rule: ft.sql, win_rate: wr, sample_size: r.total };
+            }
+          }
+        }
+      }
+
+      // ── AVG PRICE CHANGE BY CHECKPOINT ──
+      const avgByCheckpoint = db.prepare(`
+        SELECT
+          ROUND(AVG(pct_t30), 2) as avg_t30,
+          ROUND(AVG(pct_t60), 2) as avg_t60,
+          ROUND(AVG(pct_t120), 2) as avg_t120,
+          ROUND(AVG(pct_t300), 2) as avg_t300,
+          ROUND(AVG(pct_t600), 2) as avg_t600,
+          COUNT(pct_t30) as n_t30,
+          COUNT(pct_t60) as n_t60,
+          COUNT(pct_t120) as n_t120,
+          COUNT(pct_t300) as n_t300,
+          COUNT(pct_t600) as n_t600
+        FROM graduation_momentum
       `).get() as any;
 
-      // Spread by time bucket
-      const spreadByTime = db.prepare(`
+      // ── FILTER SIGNALS BY LABEL ──
+      const filterSignals = db.prepare(`
         SELECT
-          CASE
-            WHEN seconds_since_graduation <= 5 THEN '0-5s'
-            WHEN seconds_since_graduation <= 10 THEN '5-10s'
-            WHEN seconds_since_graduation <= 30 THEN '10-30s'
-            WHEN seconds_since_graduation <= 60 THEN '30-60s'
-            WHEN seconds_since_graduation <= 120 THEN '60-120s'
-            ELSE '120s+'
-          END as time_bucket,
+          label,
           COUNT(*) as n,
-          ROUND(AVG(bc_to_dex_spread_pct), 4) as avg_spread,
-          ROUND(MIN(bc_to_dex_spread_pct), 4) as min_spread,
-          ROUND(MAX(bc_to_dex_spread_pct), 4) as max_spread
-        FROM price_comparisons
-        WHERE bc_to_dex_spread_pct IS NOT NULL
-        GROUP BY time_bucket
-        ORDER BY MIN(seconds_since_graduation)
+          ROUND(AVG(holder_count), 0) as avg_holders,
+          ROUND(AVG(top5_wallet_pct), 1) as avg_top5_pct,
+          ROUND(AVG(dev_wallet_pct), 1) as avg_dev_pct,
+          ROUND(AVG(total_sol_raised), 2) as avg_sol_raised
+        FROM graduation_momentum
+        WHERE label IS NOT NULL
+        GROUP BY label
       `).all();
 
-      // Per-graduation summary
-      const perGrad = db.prepare(`
+      // ── LAST 10 GRADUATIONS ──
+      const last10 = db.prepare(`
         SELECT
-          g.id,
-          SUBSTR(g.mint, 1, 8) || '...' as mint_short,
-          ROUND(g.final_price_sol, 10) as bc_price,
-          COUNT(pc.id) as snapshots,
-          ROUND(MIN(pc.bc_to_dex_spread_pct), 4) as min_spread,
-          ROUND(MAX(pc.bc_to_dex_spread_pct), 4) as max_spread,
-          ROUND(AVG(pc.bc_to_dex_spread_pct), 4) as avg_spread
-        FROM graduations g
-        JOIN price_comparisons pc ON pc.graduation_id = g.id
-        WHERE pc.bc_to_dex_spread_pct IS NOT NULL
-        GROUP BY g.id
-        ORDER BY MAX(ABS(pc.bc_to_dex_spread_pct)) DESC
-      `).all();
-
-      // Opportunity scores
-      const opps = db.prepare(`
-        SELECT
-          o.graduation_id as grad_id,
+          m.graduation_id as id,
           SUBSTR(g.mint, 1, 8) || '...' as mint,
-          ROUND(o.max_spread_pct, 4) as max_spread,
-          o.duration_above_05_pct as dur_05,
-          o.duration_above_1_pct as dur_1,
-          o.duration_above_2_pct as dur_2,
-          ROUND(o.estimated_profit_sol, 6) as est_profit,
-          ROUND(o.net_profit_sol, 6) as net_profit,
-          ROUND(o.viability_score, 1) as score,
-          o.classification
-        FROM opportunities o
-        JOIN graduations g ON g.id = o.graduation_id
-        ORDER BY o.viability_score DESC
-      `).all();
+          ROUND(m.open_price_sol, 10) as open_price,
+          ROUND(m.pct_t60, 1) as t60,
+          ROUND(m.pct_t300, 1) as t300,
+          m.label,
+          m.holder_count as holders,
+          ROUND(m.top5_wallet_pct, 1) as top5_pct,
+          ROUND(m.dev_wallet_pct, 1) as dev_pct,
+          ROUND(m.total_sol_raised, 2) as sol_raised,
+          g.new_pool_address IS NOT NULL as has_pool
+        FROM graduation_momentum m
+        JOIN graduations g ON g.id = m.graduation_id
+        ORDER BY m.graduation_id DESC
+        LIMIT 10
+      `).all() as any[];
 
-      // Competition
-      const competition = db.prepare(`
-        SELECT
-          graduation_id,
-          COUNT(*) as total_signals,
-          SUM(CASE WHEN is_likely_bot = 1 THEN 1 ELSE 0 END) as bot_signals,
-          SUM(CASE WHEN seconds_since_graduation <= 10 THEN 1 ELSE 0 END) as within_10s
-        FROM competition_signals
-        GROUP BY graduation_id
-      `).all();
+      // ── DATA QUALITY FLAGS ──
+      const nullsInLast10 = last10.reduce((acc: string[], row: any, i: number) => {
+        const nullFields: string[] = [];
+        if (row.open_price === null) nullFields.push('open_price');
+        if (row.t300 === null) nullFields.push('t300');
+        if (row.holders === null) nullFields.push('holders');
+        if (row.top5_pct === null) nullFields.push('top5_pct');
+        if (row.dev_pct === null) nullFields.push('dev_pct');
+        if (nullFields.length > 0) acc.push(`#${row.id}: ${nullFields.join(',')}`);
+        return acc;
+      }, []);
 
-      // Pool price snapshots (compact)
-      const poolPrices = db.prepare(`
-        SELECT
-          graduation_id as grad_id,
-          ROUND(seconds_since_graduation, 1) as t,
-          ROUND(pool_price_sol, 10) as price,
-          ROUND(pool_sol_reserves, 4) as sol,
-          ROUND(pool_token_reserves, 0) as tokens
-        FROM pool_observations
-        WHERE pool_price_sol IS NOT NULL
-        ORDER BY graduation_id, seconds_since_graduation
-      `).all();
+      const allHavePumpswapPool = last10.every((r: any) => r.has_pool);
+      const listenerStats = listener ? listener.getStats() : null;
 
-      const verdict = !spreads.total_snapshots ? 'INSUFFICIENT DATA' :
-        spreads.above_1_pct > spreads.total_snapshots * 0.3 ? 'STRONG SIGNAL — frequent >1% spreads' :
-        spreads.above_05_pct > spreads.total_snapshots * 0.3 ? 'MODERATE SIGNAL — frequent >0.5% spreads' :
-        spreads.above_05_pct > 0 ? 'WEAK SIGNAL — occasional >0.5% spreads' :
-        'NO SIGNAL — spreads too tight';
+      // ── VERDICT ──
+      const verdict = totalLabeled < 10 ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)` :
+        totalLabeled < 30 ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%` :
+        (rawWinRate !== null && rawWinRate > 60) ? `THESIS VALID — ${rawWinRate}% raw win rate (${pumpCount}/${totalLabeled})` :
+        (bestFilter && bestFilter.win_rate > 51) ? `PROMISING — raw ${rawWinRate}%, filtered ${bestFilter.win_rate}% with ${bestFilter.name} (n=${bestFilter.sample_size})` :
+        (rawWinRate !== null && rawWinRate > 40) ? `MARGINAL — ${rawWinRate}% raw, filters may help` :
+        `WEAK — ${rawWinRate}% raw win rate`;
+
+      // ── CODE VERSION ──
+      const codeVersion = {
+        version: 'momentum-v1',
+        last_change: 'Pivot from arb spread tracking to momentum research. New schedule [0,30,60,120,300,600], holder enrichment, PUMP/DUMP/STABLE labeling.',
+        bug_fixed: 'Removed broken arb spread logic (bonding curve closes at graduation). Now tracking post-graduation pool price momentum.',
+        watch_for: 'Verify: (1) graduations detected, (2) T+300 checkpoints populated, (3) labels appearing, (4) holder enrichment not all null',
+      };
 
       res.json({
+        // ── HEADER ──
+        bot_status: botStatus,
+        uptime: `${uptimeHrs}h ${uptimeMin % 60}m`,
+        total_graduations: pipeline.total_graduations,
+        with_complete_t300: completedWithT300.count,
+        last_graduation_seconds_ago: lastGradSecondsAgo,
+
+        // ── THESIS SCORECARD ──
+        scorecard: {
+          total_labeled: totalLabeled,
+          unlabeled: unlabeled.count,
+          PUMP: pumpCount,
+          DUMP: dumpCount,
+          STABLE: stableCount,
+          raw_win_rate_pct: rawWinRate,
+          best_filter: bestFilter,
+          samples_remaining: samplesRemaining,
+        },
+
+        // ── THESIS VERDICT ──
         thesis_verdict: verdict,
-        pipeline: stats,
-        spread_overview: spreads,
-        spread_by_time_bucket: spreadByTime,
-        per_graduation: perGrad,
-        opportunities: opps,
-        competition,
-        pool_prices: poolPrices,
+
+        // ── AVG BY CHECKPOINT ──
+        avg_pct_by_checkpoint: avgByCheckpoint,
+
+        // ── FILTER SIGNALS ──
+        filter_signals: filterSignals,
+        labels_detail: labels,
+
+        // ── LAST 10 GRADUATIONS ──
+        last_10: last10,
+
+        // ── DATA QUALITY ──
+        data_quality: {
+          price_source_pumpswap: allHavePumpswapPool,
+          null_fields_in_last_10: nullsInLast10.length > 0 ? nullsInLast10 : 'CLEAN',
+          last_grad_stale: lastGradSecondsAgo !== null && lastGradSecondsAgo > 300,
+          listener_connected: listenerStats?.wsConnected ?? false,
+        },
+
+        // ── CODE VERSION ──
+        code_version: codeVersion,
       });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

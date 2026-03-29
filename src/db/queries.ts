@@ -299,3 +299,91 @@ export function getCompetitionCount10s(db: Database.Database, graduationId: numb
   ).get(graduationId) as { count: number };
   return row.count;
 }
+
+// ==================== Graduation momentum ====================
+
+export interface MomentumInsert {
+  graduation_id: number;
+  open_price_sol?: number;
+  holder_count?: number;
+  top5_wallet_pct?: number;
+  dev_wallet_pct?: number;
+  token_age_seconds?: number;
+  total_sol_raised?: number;
+}
+
+export function insertMomentum(db: Database.Database, data: MomentumInsert): number {
+  const result = db.prepare(`
+    INSERT OR IGNORE INTO graduation_momentum (
+      graduation_id, open_price_sol, holder_count, top5_wallet_pct,
+      dev_wallet_pct, token_age_seconds, total_sol_raised
+    ) VALUES (
+      @graduation_id, @open_price_sol, @holder_count, @top5_wallet_pct,
+      @dev_wallet_pct, @token_age_seconds, @total_sol_raised
+    )
+  `).run({
+    graduation_id: data.graduation_id,
+    open_price_sol: data.open_price_sol ?? null,
+    holder_count: data.holder_count ?? null,
+    top5_wallet_pct: data.top5_wallet_pct ?? null,
+    dev_wallet_pct: data.dev_wallet_pct ?? null,
+    token_age_seconds: data.token_age_seconds ?? null,
+    total_sol_raised: data.total_sol_raised ?? null,
+  });
+  return result.lastInsertRowid as number;
+}
+
+export function updateMomentumPrice(
+  db: Database.Database,
+  graduationId: number,
+  checkpoint: 't30' | 't60' | 't120' | 't300' | 't600',
+  price: number,
+  pctChange: number
+): void {
+  db.prepare(
+    `UPDATE graduation_momentum SET price_${checkpoint} = ?, pct_${checkpoint} = ? WHERE graduation_id = ?`
+  ).run(price, pctChange, graduationId);
+}
+
+export function updateMomentumOpenPrice(
+  db: Database.Database,
+  graduationId: number,
+  openPrice: number
+): void {
+  db.prepare(
+    'UPDATE graduation_momentum SET open_price_sol = ? WHERE graduation_id = ? AND open_price_sol IS NULL'
+  ).run(openPrice, graduationId);
+}
+
+export function labelMomentum(
+  db: Database.Database,
+  graduationId: number,
+  label: 'PUMP' | 'DUMP' | 'STABLE'
+): void {
+  db.prepare('UPDATE graduation_momentum SET label = ? WHERE graduation_id = ?').run(label, graduationId);
+}
+
+export function getMomentumRow(db: Database.Database, graduationId: number) {
+  return db.prepare('SELECT * FROM graduation_momentum WHERE graduation_id = ?').get(graduationId) as any;
+}
+
+export function updateGraduationEnrichment(
+  db: Database.Database,
+  graduationId: number,
+  data: { holder_count?: number; top5_wallet_pct?: number; dev_wallet_pct?: number; token_age_seconds?: number }
+): void {
+  db.prepare(`
+    UPDATE graduations SET
+      holder_count = @holder_count,
+      top5_wallet_pct = @top5_wallet_pct,
+      dev_wallet_pct = @dev_wallet_pct,
+      token_age_seconds = @token_age_seconds
+    WHERE id = @id
+  `).run({
+    id: graduationId,
+    holder_count: data.holder_count ?? null,
+    top5_wallet_pct: data.top5_wallet_pct ?? null,
+    dev_wallet_pct: data.dev_wallet_pct ?? null,
+    token_age_seconds: data.token_age_seconds ?? null,
+  });
+}
