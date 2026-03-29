@@ -221,10 +221,10 @@ async function main() {
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v1',
-        last_change: 'Pivot from arb spread tracking to momentum research. New schedule [0,30,60,120,300,600], holder enrichment, PUMP/DUMP/STABLE labeling.',
-        bug_fixed: 'Removed broken arb spread logic (bonding curve closes at graduation). Now tracking post-graduation pool price momentum.',
-        watch_for: 'Verify: (1) graduations detected, (2) T+300 checkpoints populated, (3) labels appearing, (4) holder enrichment not all null',
+        version: 'momentum-v2',
+        last_change: 'Extract pool+vaults from PumpSwap CPI inner instruction (accts[0]=pool, [5]=baseVault, [6]=quoteVault). Bypasses empty postTokenBalances.',
+        bug_fixed: 'postTokenBalances empty for all migration txs — old heuristic picked wrong accounts (dataLen=75). Now parsing PumpSwap create_pool CPI directly.',
+        watch_for: 'Verify: (1) totalVaultExtractions matching verified grads, (2) directPriceCollector snapshots flowing, (3) T+300 data populating, (4) labels appearing',
       };
 
       res.json({
