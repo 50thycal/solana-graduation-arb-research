@@ -134,7 +134,51 @@ function runMigrations(db: Database.Database): void {
       amount_sol REAL,
       is_likely_bot INTEGER
     );
+
+    -- Momentum research: one row per graduation with T+0 context and price checkpoints
+    CREATE TABLE IF NOT EXISTS graduation_momentum (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      graduation_id INTEGER NOT NULL UNIQUE REFERENCES graduations(id),
+      -- T+0 context
+      open_price_sol REAL,
+      holder_count INTEGER,
+      top5_wallet_pct REAL,
+      dev_wallet_pct REAL,
+      token_age_seconds INTEGER,
+      total_sol_raised REAL,
+      -- Price checkpoints (filled as snapshots arrive)
+      price_t30 REAL,
+      price_t60 REAL,
+      price_t120 REAL,
+      price_t300 REAL,
+      price_t600 REAL,
+      pct_t30 REAL,
+      pct_t60 REAL,
+      pct_t120 REAL,
+      pct_t300 REAL,
+      pct_t600 REAL,
+      -- Label
+      label TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_grad_momentum_label ON graduation_momentum(label);
   `);
+
+  // Add columns to graduations if they don't exist yet (safe migration)
+  const cols = db.prepare("PRAGMA table_info(graduations)").all() as Array<{ name: string }>;
+  const existing = new Set(cols.map(c => c.name));
+  const newCols: Array<[string, string]> = [
+    ['holder_count', 'INTEGER'],
+    ['top5_wallet_pct', 'REAL'],
+    ['dev_wallet_pct', 'REAL'],
+    ['token_age_seconds', 'INTEGER'],
+  ];
+  for (const [col, type] of newCols) {
+    if (!existing.has(col)) {
+      db.exec(`ALTER TABLE graduations ADD COLUMN ${col} ${type}`);
+    }
+  }
 
   logger.info('Database migrations complete');
 }

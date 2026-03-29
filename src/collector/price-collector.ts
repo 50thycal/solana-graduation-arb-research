@@ -4,18 +4,27 @@ import Database from 'better-sqlite3';
 import pino from 'pino';
 import {
   insertPoolObservation,
-  insertPriceComparison,
   markObservationComplete,
+  updateMomentumPrice,
+  updateMomentumOpenPrice,
 } from '../db/queries';
-import { OpportunityScorer } from '../analysis/opportunity-scorer';
+import { MomentumLabeler } from '../analysis/momentum-labeler';
 import { CompetitionDetector } from './competition-detector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 
 const logger = pino({ name: 'price-collector' });
 
-// Snapshot schedule: seconds after graduation
-// Removed T+1 and T+2 — they create RPC bursts with minimal research value
-const SNAPSHOT_SCHEDULE = [0, 5, 10, 30, 60, 120, 300];
+// Momentum research schedule: T+0 for open price, then checkpoints for price tracking
+const SNAPSHOT_SCHEDULE = [0, 30, 60, 120, 300, 600];
+
+// Map snapshot seconds to momentum checkpoint column names
+const CHECKPOINT_MAP: Record<number, 't30' | 't60' | 't120' | 't300' | 't600'> = {
+  30: 't30',
+  60: 't60',
+  120: 't120',
+  300: 't300',
+  600: 't600',
+};
 
 const LAMPORTS_PER_SOL = new BN(1_000_000_000);
 const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);
@@ -50,7 +59,7 @@ export class PriceCollector {
   private db: Database.Database;
   private connection: Connection;
   private active: Map<number, ActiveObservation> = new Map();
-  private opportunityScorer: OpportunityScorer;
+  private momentumLabeler: MomentumLabeler;
   private competitionDetector: CompetitionDetector;
   private totalObservationsStarted = 0;
   private totalObservationsCompleted = 0;
@@ -59,7 +68,7 @@ export class PriceCollector {
   constructor(db: Database.Database, connection: Connection) {
     this.db = db;
     this.connection = connection;
-    this.opportunityScorer = new OpportunityScorer(db);
+    this.momentumLabeler = new MomentumLabeler(db);
     this.competitionDetector = new CompetitionDetector(db, connection);
   }
 
@@ -198,7 +207,7 @@ export class PriceCollector {
       this.totalSnapshots++;
       observation.completedSnapshots.push(targetSec);
 
-      // Insert pool observation
+      // Insert pool observation (raw data for debugging)
       insertPoolObservation(this.db, {
         graduation_id: graduationId,
         timestamp: now,
@@ -206,39 +215,34 @@ export class PriceCollector {
         pool_price_sol: poolState.price,
         pool_sol_reserves: poolState.solReserves,
         pool_token_reserves: poolState.tokenReserves,
-        pool_liquidity_usd: undefined, // Would need SOL/USD price
       });
 
-      // Calculate spread and insert price comparison
-      const bcPrice = ctx.bondingCurvePrice;
-      const dexPrice = poolState.price;
-
-      let bcToDexSpread: number | undefined;
-      if (bcPrice > 0 && dexPrice > 0) {
-        bcToDexSpread = ((dexPrice - bcPrice) / bcPrice) * 100;
+      // T+0 snapshot: set open price in graduation_momentum
+      if (targetSec === 0 || observation.completedSnapshots.length === 1) {
+        updateMomentumOpenPrice(this.db, graduationId, poolState.price);
+        logger.info(
+          { graduationId, mint: ctx.mint, openPrice: poolState.price.toFixed(12) },
+          'Open price set'
+        );
       }
 
-      insertPriceComparison(this.db, {
-        graduation_id: graduationId,
-        timestamp: now,
-        seconds_since_graduation: actualSecSinceGraduation,
-        bonding_curve_price: bcPrice,
-        dex_pool_price: dexPrice,
-        bc_to_dex_spread_pct: bcToDexSpread,
-      });
-
-      // Log notable spreads
-      if (bcToDexSpread !== undefined && Math.abs(bcToDexSpread) > 1) {
+      // Momentum checkpoint: find the closest matching checkpoint for this snapshot
+      const checkpoint = this.findCheckpoint(targetSec);
+      if (checkpoint && ctx.bondingCurvePrice > 0) {
+        // Use bonding curve price as the "open" reference for pct change
+        // (more reliable than the T+0 pool price which may not be available)
+        const openRef = ctx.bondingCurvePrice;
+        const pctChange = ((poolState.price - openRef) / openRef) * 100;
+        updateMomentumPrice(this.db, graduationId, checkpoint, poolState.price, pctChange);
         logger.info(
           {
             graduationId,
             mint: ctx.mint,
-            secondsSinceGrad: actualSecSinceGraduation,
-            bcPrice: bcPrice.toFixed(12),
-            dexPrice: dexPrice.toFixed(12),
-            spreadPct: bcToDexSpread.toFixed(2),
+            checkpoint,
+            price: poolState.price.toFixed(12),
+            pctChange: pctChange.toFixed(1),
           },
-          'Notable price spread detected'
+          'Momentum checkpoint recorded'
         );
       }
     } catch (err) {
@@ -249,6 +253,23 @@ export class PriceCollector {
         err instanceof Error ? err.message : String(err)
       );
     }
+  }
+
+  /**
+   * Map actual snapshot time to the nearest momentum checkpoint.
+   * Returns null for T+0 (handled separately as open price).
+   */
+  private findCheckpoint(targetSec: number): 't30' | 't60' | 't120' | 't300' | 't600' | null {
+    // Direct match
+    if (CHECKPOINT_MAP[targetSec]) return CHECKPOINT_MAP[targetSec];
+    // For the immediate/T+0 snapshot, no checkpoint
+    if (targetSec < 15) return null;
+    // Find closest checkpoint within 50% tolerance
+    for (const [sec, name] of Object.entries(CHECKPOINT_MAP)) {
+      const s = parseInt(sec, 10);
+      if (Math.abs(targetSec - s) <= s * 0.5) return name as any;
+    }
+    return null;
   }
 
   // PumpSwap pool account layout (Anchor IDL):
@@ -402,12 +423,12 @@ export class PriceCollector {
     // Mark observation complete in DB
     markObservationComplete(this.db, graduationId);
 
-    // Score the opportunity
+    // Label momentum (PUMP/DUMP/STABLE)
     try {
-      this.opportunityScorer.scoreOpportunity(graduationId);
+      this.momentumLabeler.label(graduationId);
     } catch (err) {
       logger.error(
-        'Opportunity scoring failed for grad %d: %s',
+        'Momentum labeling failed for grad %d: %s',
         graduationId,
         err instanceof Error ? err.message : String(err)
       );
@@ -423,10 +444,4 @@ export class PriceCollector {
       'Observation complete'
     );
   }
-}
-
-function bnToNumber(value: BN, divisor: BN): number {
-  const whole = value.div(divisor);
-  const remainder = value.mod(divisor);
-  return whole.toNumber() + remainder.toNumber() / divisor.toNumber();
 }

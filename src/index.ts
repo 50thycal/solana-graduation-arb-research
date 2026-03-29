@@ -37,6 +37,7 @@ async function main() {
         'opportunities',
         'price_comparisons',
         'pool_observations',
+        'graduation_momentum',
         'graduations',
       ];
       // Delete in dependency order (children first due to foreign keys)
@@ -53,7 +54,7 @@ async function main() {
     }
   });
 
-  // Condensed thesis verification — small enough to read on a phone
+  // Momentum research analysis — compact enough for phone
   app.get('/thesis', (_req, res) => {
     try {
       const stats = db.prepare(`
@@ -64,116 +65,99 @@ async function main() {
         FROM graduations
       `).get() as any;
 
-      // Spread distribution across all snapshots
-      const spreads = db.prepare(`
+      // Label distribution
+      const labels = db.prepare(`
         SELECT
-          COUNT(*) as total_snapshots,
-          ROUND(AVG(bc_to_dex_spread_pct), 4) as avg_spread_pct,
-          ROUND(MIN(bc_to_dex_spread_pct), 4) as min_spread_pct,
-          ROUND(MAX(bc_to_dex_spread_pct), 4) as max_spread_pct,
-          SUM(CASE WHEN ABS(bc_to_dex_spread_pct) > 0.5 THEN 1 ELSE 0 END) as above_05_pct,
-          SUM(CASE WHEN ABS(bc_to_dex_spread_pct) > 1.0 THEN 1 ELSE 0 END) as above_1_pct,
-          SUM(CASE WHEN ABS(bc_to_dex_spread_pct) > 2.0 THEN 1 ELSE 0 END) as above_2_pct,
-          SUM(CASE WHEN ABS(bc_to_dex_spread_pct) > 5.0 THEN 1 ELSE 0 END) as above_5_pct
-        FROM price_comparisons
-        WHERE bc_to_dex_spread_pct IS NOT NULL
+          label,
+          COUNT(*) as count,
+          ROUND(AVG(pct_t30), 1) as avg_pct_t30,
+          ROUND(AVG(pct_t60), 1) as avg_pct_t60,
+          ROUND(AVG(pct_t120), 1) as avg_pct_t120,
+          ROUND(AVG(pct_t300), 1) as avg_pct_t300,
+          ROUND(AVG(pct_t600), 1) as avg_pct_t600
+        FROM graduation_momentum
+        WHERE label IS NOT NULL
+        GROUP BY label
+      `).all() as any[];
+
+      const totalLabeled = labels.reduce((s: number, l: any) => s + l.count, 0);
+      const pumpCount = labels.find((l: any) => l.label === 'PUMP')?.count || 0;
+      const dumpCount = labels.find((l: any) => l.label === 'DUMP')?.count || 0;
+      const stableCount = labels.find((l: any) => l.label === 'STABLE')?.count || 0;
+      const unlabeled = db.prepare(
+        'SELECT COUNT(*) as count FROM graduation_momentum WHERE label IS NULL'
+      ).get() as any;
+
+      // Average price change by checkpoint (all graduations)
+      const avgByCheckpoint = db.prepare(`
+        SELECT
+          ROUND(AVG(pct_t30), 2) as avg_t30,
+          ROUND(AVG(pct_t60), 2) as avg_t60,
+          ROUND(AVG(pct_t120), 2) as avg_t120,
+          ROUND(AVG(pct_t300), 2) as avg_t300,
+          ROUND(AVG(pct_t600), 2) as avg_t600,
+          COUNT(pct_t30) as n_t30,
+          COUNT(pct_t60) as n_t60,
+          COUNT(pct_t120) as n_t120,
+          COUNT(pct_t300) as n_t300,
+          COUNT(pct_t600) as n_t600
+        FROM graduation_momentum
       `).get() as any;
 
-      // Spread by time bucket
-      const spreadByTime = db.prepare(`
+      // Filter signal: do holder/dev metrics predict outcome?
+      const filterSignals = db.prepare(`
         SELECT
-          CASE
-            WHEN seconds_since_graduation <= 5 THEN '0-5s'
-            WHEN seconds_since_graduation <= 10 THEN '5-10s'
-            WHEN seconds_since_graduation <= 30 THEN '10-30s'
-            WHEN seconds_since_graduation <= 60 THEN '30-60s'
-            WHEN seconds_since_graduation <= 120 THEN '60-120s'
-            ELSE '120s+'
-          END as time_bucket,
-          COUNT(*) as n,
-          ROUND(AVG(bc_to_dex_spread_pct), 4) as avg_spread,
-          ROUND(MIN(bc_to_dex_spread_pct), 4) as min_spread,
-          ROUND(MAX(bc_to_dex_spread_pct), 4) as max_spread
-        FROM price_comparisons
-        WHERE bc_to_dex_spread_pct IS NOT NULL
-        GROUP BY time_bucket
-        ORDER BY MIN(seconds_since_graduation)
+          label,
+          ROUND(AVG(holder_count), 0) as avg_holders,
+          ROUND(AVG(top5_wallet_pct), 1) as avg_top5_pct,
+          ROUND(AVG(dev_wallet_pct), 1) as avg_dev_pct,
+          ROUND(AVG(total_sol_raised), 2) as avg_sol_raised
+        FROM graduation_momentum
+        WHERE label IS NOT NULL
+        GROUP BY label
       `).all();
 
-      // Per-graduation summary
+      // Per-graduation detail (most recent, compact)
       const perGrad = db.prepare(`
         SELECT
-          g.id,
-          SUBSTR(g.mint, 1, 8) || '...' as mint_short,
-          ROUND(g.final_price_sol, 10) as bc_price,
-          COUNT(pc.id) as snapshots,
-          ROUND(MIN(pc.bc_to_dex_spread_pct), 4) as min_spread,
-          ROUND(MAX(pc.bc_to_dex_spread_pct), 4) as max_spread,
-          ROUND(AVG(pc.bc_to_dex_spread_pct), 4) as avg_spread
-        FROM graduations g
-        JOIN price_comparisons pc ON pc.graduation_id = g.id
-        WHERE pc.bc_to_dex_spread_pct IS NOT NULL
-        GROUP BY g.id
-        ORDER BY MAX(ABS(pc.bc_to_dex_spread_pct)) DESC
-      `).all();
-
-      // Opportunity scores
-      const opps = db.prepare(`
-        SELECT
-          o.graduation_id as grad_id,
+          m.graduation_id as id,
           SUBSTR(g.mint, 1, 8) || '...' as mint,
-          ROUND(o.max_spread_pct, 4) as max_spread,
-          o.duration_above_05_pct as dur_05,
-          o.duration_above_1_pct as dur_1,
-          o.duration_above_2_pct as dur_2,
-          ROUND(o.estimated_profit_sol, 6) as est_profit,
-          ROUND(o.net_profit_sol, 6) as net_profit,
-          ROUND(o.viability_score, 1) as score,
-          o.classification
-        FROM opportunities o
-        JOIN graduations g ON g.id = o.graduation_id
-        ORDER BY o.viability_score DESC
+          ROUND(m.open_price_sol, 10) as open_price,
+          ROUND(m.pct_t30, 1) as t30,
+          ROUND(m.pct_t60, 1) as t60,
+          ROUND(m.pct_t120, 1) as t120,
+          ROUND(m.pct_t300, 1) as t300,
+          ROUND(m.pct_t600, 1) as t600,
+          m.holder_count as holders,
+          ROUND(m.top5_wallet_pct, 1) as top5,
+          ROUND(m.dev_wallet_pct, 1) as dev,
+          m.label
+        FROM graduation_momentum m
+        JOIN graduations g ON g.id = m.graduation_id
+        ORDER BY m.graduation_id DESC
+        LIMIT 30
       `).all();
 
-      // Competition
-      const competition = db.prepare(`
-        SELECT
-          graduation_id,
-          COUNT(*) as total_signals,
-          SUM(CASE WHEN is_likely_bot = 1 THEN 1 ELSE 0 END) as bot_signals,
-          SUM(CASE WHEN seconds_since_graduation <= 10 THEN 1 ELSE 0 END) as within_10s
-        FROM competition_signals
-        GROUP BY graduation_id
-      `).all();
-
-      // Pool price snapshots (compact)
-      const poolPrices = db.prepare(`
-        SELECT
-          graduation_id as grad_id,
-          ROUND(seconds_since_graduation, 1) as t,
-          ROUND(pool_price_sol, 10) as price,
-          ROUND(pool_sol_reserves, 4) as sol,
-          ROUND(pool_token_reserves, 0) as tokens
-        FROM pool_observations
-        WHERE pool_price_sol IS NOT NULL
-        ORDER BY graduation_id, seconds_since_graduation
-      `).all();
-
-      const verdict = !spreads.total_snapshots ? 'INSUFFICIENT DATA' :
-        spreads.above_1_pct > spreads.total_snapshots * 0.3 ? 'STRONG SIGNAL — frequent >1% spreads' :
-        spreads.above_05_pct > spreads.total_snapshots * 0.3 ? 'MODERATE SIGNAL — frequent >0.5% spreads' :
-        spreads.above_05_pct > 0 ? 'WEAK SIGNAL — occasional >0.5% spreads' :
-        'NO SIGNAL — spreads too tight';
+      const verdict = totalLabeled < 10 ? 'INSUFFICIENT DATA — need 30+ labeled events' :
+        pumpCount / totalLabeled > 0.51 ? `PROMISING — ${(pumpCount / totalLabeled * 100).toFixed(0)}% pump rate (${pumpCount}/${totalLabeled})` :
+        pumpCount / totalLabeled > 0.4 ? `MARGINAL — ${(pumpCount / totalLabeled * 100).toFixed(0)}% pump rate, filters may help` :
+        `WEAK — only ${(pumpCount / totalLabeled * 100).toFixed(0)}% pump rate`;
 
       res.json({
         thesis_verdict: verdict,
         pipeline: stats,
-        spread_overview: spreads,
-        spread_by_time_bucket: spreadByTime,
-        per_graduation: perGrad,
-        opportunities: opps,
-        competition,
-        pool_prices: poolPrices,
+        label_distribution: {
+          total_labeled: totalLabeled,
+          unlabeled: unlabeled.count,
+          PUMP: pumpCount,
+          DUMP: dumpCount,
+          STABLE: stableCount,
+          pump_rate_pct: totalLabeled > 0 ? +(pumpCount / totalLabeled * 100).toFixed(1) : null,
+        },
+        avg_pct_by_checkpoint: avgByCheckpoint,
+        labels_detail: labels,
+        filter_signals: filterSignals,
+        recent_graduations: perGrad,
       });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

@@ -8,8 +8,9 @@ import {
 import BN from 'bn.js';
 import Database from 'better-sqlite3';
 import pino from 'pino';
-import { insertGraduation } from '../db/queries';
+import { insertGraduation, insertMomentum, updateGraduationEnrichment } from '../db/queries';
 import { PoolTracker } from './pool-tracker';
+import { HolderEnrichment } from '../collector/holder-enrichment';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 
 const logger = pino({ name: 'graduation-listener' });
@@ -78,6 +79,7 @@ export class GraduationListener {
   private connection: Connection;
   private db: Database.Database;
   private poolTracker: PoolTracker;
+  private holderEnrichment: HolderEnrichment;
   private subscriptionId: number | null = null;
   private stopped = false;
   private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
@@ -109,6 +111,7 @@ export class GraduationListener {
     });
     this.db = db;
     this.poolTracker = new PoolTracker(db, this.connection);
+    this.holderEnrichment = new HolderEnrichment(this.connection);
   }
 
   getStats() {
@@ -273,6 +276,7 @@ export class GraduationListener {
       });
 
       this.poolTracker.updateConnection(this.connection);
+      this.holderEnrichment.updateConnection(this.connection);
 
       await this.subscribe();
       logger.info('WebSocket reconnected successfully');
@@ -325,6 +329,40 @@ export class GraduationListener {
       },
       'Graduation verified and recorded'
     );
+
+    // Holder enrichment (fire-and-forget — don't block pool tracking)
+    this.holderEnrichment.enrich(event.mint, event.bondingCurveAddress).then((enrichment) => {
+      // Save enrichment to graduations table
+      updateGraduationEnrichment(this.db, graduationId, {
+        holder_count: enrichment.holderCount,
+        top5_wallet_pct: enrichment.top5WalletPct,
+        dev_wallet_pct: enrichment.devWalletPct,
+        token_age_seconds: enrichment.tokenAgeSeconds,
+      });
+
+      // Create graduation_momentum row with T+0 context
+      insertMomentum(this.db, {
+        graduation_id: graduationId,
+        open_price_sol: event.finalPriceSol,
+        holder_count: enrichment.holderCount,
+        top5_wallet_pct: enrichment.top5WalletPct,
+        dev_wallet_pct: enrichment.devWalletPct,
+        token_age_seconds: enrichment.tokenAgeSeconds,
+        total_sol_raised: event.finalSolReserves,
+      });
+    }).catch((err) => {
+      logger.warn(
+        'Holder enrichment failed for grad %d: %s',
+        graduationId,
+        err instanceof Error ? err.message : String(err)
+      );
+      // Still create momentum row without enrichment data
+      insertMomentum(this.db, {
+        graduation_id: graduationId,
+        open_price_sol: event.finalPriceSol,
+        total_sol_raised: event.finalSolReserves,
+      });
+    });
 
     this.poolTracker.trackGraduation(
       graduationId,
