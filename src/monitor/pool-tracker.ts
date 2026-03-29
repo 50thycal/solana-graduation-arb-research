@@ -399,42 +399,35 @@ export class PoolTracker {
       return;
     }
 
-    const { poolAddress, baseVault, quoteVault } = poolInfo;
+    const { poolAddress } = poolInfo;
     const migrationTimestamp = tx.blockTime || Math.floor(Date.now() / 1000);
 
     updateGraduationPool(this.db, matched.graduationId, poolAddress, 'pumpswap', signature, slot, migrationTimestamp);
 
     this.totalPoolsFound++;
 
+    // NOTE: Pool-tracker's extractPoolInfo returns unreliable vault addresses for the
+    // pfeeUxB6 migration format (wrong pool PDA → vault_parse_fail dataLen=0 on every session).
+    // directPriceCollector in graduation-listener handles all cases where vaults can be
+    // extracted reliably. Pool-tracker's role is now limited to recording the pool address in
+    // the DB for completeness — it does NOT start price collection.
+
     logger.info(
       {
         graduationId: matched.graduationId,
         mint: matched.mint,
         poolAddress,
-        baseVault,
         matchedBy,
         searchTimeMs: Date.now() - matched.addedAt,
         totalFound: this.totalPoolsFound,
       },
-      'Pool found via PumpSwap subscription'
+      'Pool found via PumpSwap subscription — pool address recorded, price collection skipped (directPriceCollector handles this)'
     );
 
     this.pendingByMint.delete(matched.mint);
     if (matched.bondingCurveAddress) {
       this.pendingByCurve.delete(matched.bondingCurveAddress);
     }
-
-    this.priceCollector.startObservation({
-      graduationId: matched.graduationId,
-      mint: matched.mint,
-      poolAddress,
-      poolDex: 'pumpswap',
-      bondingCurvePrice: matched.bondingCurvePrice,
-      graduationTimestamp: matched.graduationTimestamp,
-      migrationTimestamp,
-      baseVault,
-      quoteVault,
-    });
   }
 
   private static readonly WSOL_MINT = 'So11111111111111111111111111111111111111112';

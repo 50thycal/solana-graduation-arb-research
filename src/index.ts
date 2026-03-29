@@ -141,6 +141,15 @@ async function main() {
         GROUP BY label
       `).all() as any[];
 
+      // Quality-filtered labels — exclude self-graduated scam tokens (sol_raised < 50)
+      // Real pump.fun graduations need ~85 SOL; tiny-liquidity tokens distort price stats
+      const labelsFiltered = db.prepare(`
+        SELECT label, COUNT(*) as count
+        FROM graduation_momentum
+        WHERE label IS NOT NULL AND total_sol_raised >= 50
+        GROUP BY label
+      `).all() as any[];
+
       const totalLabeled = labels.reduce((s: number, l: any) => s + l.count, 0);
       const pumpCount = labels.find((l: any) => l.label === 'PUMP')?.count || 0;
       const dumpCount = labels.find((l: any) => l.label === 'DUMP')?.count || 0;
@@ -150,6 +159,10 @@ async function main() {
       ).get() as any;
       const rawWinRate = totalLabeled > 0 ? +(pumpCount / totalLabeled * 100).toFixed(1) : null;
       const samplesRemaining = Math.max(0, 30 - totalLabeled);
+
+      const totalLabeledFiltered = labelsFiltered.reduce((s: number, l: any) => s + l.count, 0);
+      const pumpFiltered = labelsFiltered.find((l: any) => l.label === 'PUMP')?.count || 0;
+      const filteredWinRate = totalLabeledFiltered > 0 ? +(pumpFiltered / totalLabeledFiltered * 100).toFixed(1) : null;
 
       // ── BEST FILTER (simple: try each filter, pick highest win rate) ──
       let bestFilter: { name: string; rule: string; win_rate: number; sample_size: number } | null = null;
@@ -256,10 +269,10 @@ async function main() {
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v6',
-        last_change: 'Remove isPumpSwapMigration gate from postTokenBalances vault extraction. Remove broken PumpSwap instruction fallback from pool-tracker. postTokenBalances is now the primary vault source for all migration formats.',
-        bug_fixed: 'v5 PumpSwap instruction fallback read accounts[0] as pool PDA but for v0 txs pool PDA lives in ALT and is NOT in ix.accounts — wrong static account caused 58 snapshot failures. postTokenBalances always has correct vault addrs because buildFullAccountKeys resolves ALT accounts.',
-        watch_for: 'totalVaultExtractions should jump significantly. poolTracker.totalSnapshotFailures should drop to near 0. lastVaultFailReasons should show only pfeeUxB6 wrapper cases if any remain unparsed.',
+        version: 'momentum-v7',
+        last_change: 'Disable poolTracker.priceCollector (was producing 0 snapshots with wrong addresses). Add sol_raised >= 50 quality filter to scorecard. pfeeUxB6 confirmed as Raydium migration — thesis scope narrowed to PumpSwap-only graduations.',
+        bug_fixed: 'poolTracker.priceCollector.startObservation was called with wrong pool addresses from extractPoolInfo (vault_parse_fail dataLen=0 on all 7 sessions, 76 wasted failures). totalExpired: 97 confirmed pfeeUxB6 goes to Raydium not PumpSwap — pool-tracker subscription never fired for those.',
+        watch_for: 'poolTracker.priceCollector.totalStarted should be 0. directPriceCollector continues collecting clean data. scorecard.quality_filtered shows win rate without scam tokens.',
       };
 
       sendJsonOrHtml(req, res, {
@@ -280,6 +293,14 @@ async function main() {
           raw_win_rate_pct: rawWinRate,
           best_filter: bestFilter,
           samples_remaining: samplesRemaining,
+          // Quality filter: excludes self-graduated scam tokens (sol_raised < 50 SOL)
+          quality_filtered: {
+            note: 'sol_raised >= 50 SOL only',
+            total_labeled: totalLabeledFiltered,
+            PUMP: pumpFiltered,
+            DUMP: labelsFiltered.find((l: any) => l.label === 'DUMP')?.count || 0,
+            win_rate_pct: filteredWinRate,
+          },
         },
 
         // ── THESIS VERDICT ──
