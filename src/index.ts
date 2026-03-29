@@ -221,10 +221,10 @@ async function main() {
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v4',
-        last_change: 'Fix: removed cancelSpeculative fallback — all non-extracted grads now forward to pool-tracker. Added DEBUG log for every pump.fun top-level instruction (hasParsed/acctArrayLen). Lowered extraction threshold from 15 to 9 accounts.',
-        bug_fixed: 'v3 incorrectly called cancelSpeculative for 27/29 grads (extraction failure ≠ Raydium migration). Pool-tracker pending map was empty because we were canceling speculative entries before pool-tracker could match them.',
-        watch_for: 'Check lastVaultFailReasons for "DEBUG pump.fun top-level instruction" log. Watch hasParsed and acctArrayLen to understand why accounts[8] check fails. poolTracker.pending should now be non-zero. totalMatched should climb.',
+        version: 'momentum-v5',
+        last_change: 'Add PumpSwap create_pool extraction as top-level instruction (new migration format). Both graduation-listener and pool-tracker now try pAMMBay6.accounts[0] as pool PDA when pump.fun migrate extraction fails. Program ID logging extended to 16 chars.',
+        bug_fixed: 'New pump.fun migration format splits operations: pump.fun gets 5-account bonding curve completion, PumpSwap create_pool is a separate top-level instruction. Old code only looked for pump.fun migrate (15+ accounts) and found nothing. Pool extracted from pAMMBay6.accounts[0] instead.',
+        watch_for: 'totalVaultExtractions should now cover ~50%+ of grads. poolTracker.priceCollector.totalSnapshotFailures should drop (pool_fetch_null was wrong address from old extraction). Check lastVaultFailReasons for 16-char pfeeUxB6 program ID to identify unknown wrapper.',
       };
 
       res.json({

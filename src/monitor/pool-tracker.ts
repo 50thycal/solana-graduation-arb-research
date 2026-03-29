@@ -536,6 +536,43 @@ export class PoolTracker {
       }
     }
 
+    // FALLBACK: New pump.fun migration format splits the operations into separate top-level
+    // instructions. The pump.fun instruction only has 5 accounts (bonding curve completion),
+    // while PumpSwap create_pool is a separate top-level instruction.
+    // PumpSwap create_pool account layout:
+    //   [0]=pool (PDA)  [1]=global_config  [2]=creator  [3]=base_mint  [4]=quote_mint
+    //   [5]=lp_mint  [6]=user_base_token_account  [7]=user_quote_token_account
+    //   [8]=user_pool_token_account  [9]=pool_base_token_account  [10]=pool_quote_token_account
+    const isInvalidPool = (addr: string) =>
+      !addr ||
+      isTokenProgram(addr) ||
+      PoolTracker.isWellKnownAddress(addr) ||
+      addr === PoolTracker.WSOL_MINT ||
+      addr === PUMPSWAP_PROGRAM_STR ||
+      addr === PUMP_FUN_PROGRAM_STR;
+
+    for (const ix of tx.transaction.message.instructions) {
+      if (progIdOf(ix) !== PUMPSWAP_PROGRAM_STR) continue;
+      const accts = resolveAccts(ix);
+      if (!accts || accts.length < 1) continue;
+      const pool = accts[0];
+      if (isInvalidPool(pool)) continue;
+
+      // Vaults at [9] and [10] (may not be visible if v0 ALT accounts)
+      let baseVault: string | undefined;
+      let quoteVault: string | undefined;
+      if (accts.length >= 11) {
+        const bv = accts[9];
+        const qv = accts[10];
+        if (bv && !isInvalidPool(bv) && qv && !isInvalidPool(qv)) {
+          baseVault = bv;
+          quoteVault = qv;
+        }
+      }
+
+      return { poolAddress: pool, baseVault, quoteVault };
+    }
+
     return null;
   }
 
