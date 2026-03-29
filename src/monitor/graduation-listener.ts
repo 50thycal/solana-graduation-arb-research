@@ -828,6 +828,43 @@ export class GraduationListener {
       const reason = `no_pool mint=${mint.slice(0, 8)} isPumpSwap=${isPumpSwapMigration} topIx=[${topIxSummary}]`;
       this.lastVaultFailReasons.push(reason);
       if (this.lastVaultFailReasons.length > 20) this.lastVaultFailReasons = this.lastVaultFailReasons.slice(-20);
+
+      // DIAGNOSTIC: Log inner instructions + postTokenBalances to identify pfeeUxB6 structure.
+      // Only log first 5 failures to avoid noise — remove once format is understood.
+      if (this.totalVaultExtractionFails <= 5) {
+        // Inner instructions summary
+        const innerSummary = (tx.meta.innerInstructions || []).flatMap((ii: any) =>
+          (ii.instructions || []).map((ix: any) => {
+            const keys = GraduationListener.buildFullAccountKeys(tx);
+            const pid = 'programId' in ix
+              ? toStrAcct((ix as any).programId ?? '')
+              : (keys['programIdIndex' in ix ? (ix as any).programIdIndex : -1] ?? '?');
+            const acctLen = 'programId' in ix
+              ? (Array.isArray((ix as any).accounts) ? (ix as any).accounts.length : '?')
+              : ((ix as any).accountKeyIndexes?.length ?? '?');
+            return `${pid.slice(0, 16)}:${acctLen}`;
+          })
+        ).join(',');
+
+        // postTokenBalances summary — show ALL mints + amounts
+        const ptbSummary = (tx.meta.postTokenBalances || []).map((tb: any) => {
+          const keys = GraduationListener.buildFullAccountKeys(tx);
+          const addr = keys[tb.accountIndex]?.slice(0, 8) ?? `idx${tb.accountIndex}`;
+          const mintShort = (tb.mint as string)?.slice(0, 8) ?? '?';
+          const amt = tb.uiTokenAmount?.uiAmountString ?? '0';
+          return `${addr}:${mintShort}=${amt}`;
+        }).join(', ');
+
+        const loadedAddressCount = (tx.meta?.loadedAddresses?.writable?.length ?? 0)
+          + (tx.meta?.loadedAddresses?.readonly?.length ?? 0);
+
+        logger.info(
+          { mint: mint.slice(0, 8), signature, loadedAddressCount,
+            innerIx: innerSummary || 'none',
+            ptb: ptbSummary || 'none' },
+          'DIAG vault-fail: inner instructions + postTokenBalances'
+        );
+      }
     }
 
     return {
