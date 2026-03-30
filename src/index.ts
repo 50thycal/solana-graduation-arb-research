@@ -485,6 +485,47 @@ async function main() {
         `SELECT mint, COUNT(*) as cnt FROM graduations GROUP BY mint HAVING cnt > 1`
       ).all() as any[];
 
+      // T+30 entry economics: what is the actual return if you enter at T+30 price?
+      // Formula: ((1 + pct_t300/100) / (1 + pct_t30/100) - 1) * 100
+      const t30EconRows = db.prepare(`
+        SELECT
+          label,
+          COUNT(*) as n,
+          ROUND(AVG((1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) * 100.0 - 100.0), 1) as avg_return_from_t30,
+          SUM(CASE WHEN (1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) > 1.0 THEN 1 ELSE 0 END) as profitable_from_t30,
+          ROUND(AVG(pct_t30),  1) as avg_t30_gain,
+          ROUND(AVG(pct_t300), 1) as avg_t300_gain
+        FROM graduation_momentum
+        WHERE pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+          AND pct_t30 >= 5 AND pct_t30 <= 50
+        GROUP BY label
+      `).all() as any[];
+
+      const t30EconAll = db.prepare(`
+        SELECT
+          COUNT(*) as n,
+          ROUND(AVG((1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) * 100.0 - 100.0), 1) as avg_return_from_t30,
+          SUM(CASE WHEN (1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) > 1.0 THEN 1 ELSE 0 END) as profitable_from_t30,
+          ROUND(AVG(pct_t30),  1) as avg_t30_gain,
+          ROUND(AVG(pct_t300), 1) as avg_t300_gain
+        FROM graduation_momentum
+        WHERE pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+          AND pct_t30 >= 5 AND pct_t30 <= 50
+      `).get() as any;
+
+      const t30EconHq = db.prepare(`
+        SELECT
+          COUNT(*) as n,
+          ROUND(AVG((1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) * 100.0 - 100.0), 1) as avg_return_from_t30,
+          SUM(CASE WHEN (1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) > 1.0 THEN 1 ELSE 0 END) as profitable_from_t30,
+          ROUND(AVG(pct_t30),  1) as avg_t30_gain,
+          ROUND(AVG(pct_t300), 1) as avg_t300_gain
+        FROM graduation_momentum
+        WHERE pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+          AND pct_t30 >= 5 AND pct_t30 <= 50
+          AND total_sol_raised >= 80
+      `).get() as any;
+
       sendJsonOrHtml(req, res, {
         generated_at: new Date().toISOString(),
 
@@ -556,6 +597,35 @@ async function main() {
           note: 'Does price at T+300 exceed price at T+30? (delayed entry thesis)',
           all_samples: { continued: contRow.continued, total: contRow.total, rate_pct: winRate(contRow.continued, contRow.total) },
           sol_gte_80:  { continued: contRow.cont_hq,   total: contRow.total_hq, rate_pct: winRate(contRow.cont_hq, contRow.total_hq) },
+        },
+
+        t30_entry_economics: {
+          note: 'Filter: t30 between +5% and +50%. Shows actual return if you ENTER at T+30 price (not T+0 open). avg_return_from_t30 is what the trade actually makes.',
+          all_cohort: {
+            n: t30EconAll.n,
+            avg_t30_gain_pct:        t30EconAll.avg_t30_gain,
+            avg_t300_gain_pct:       t30EconAll.avg_t300_gain,
+            avg_return_from_t30_pct: t30EconAll.avg_return_from_t30,
+            profitable_from_t30:     t30EconAll.profitable_from_t30,
+            profitable_rate_pct:     t30EconAll.n > 0 ? +(t30EconAll.profitable_from_t30 / t30EconAll.n * 100).toFixed(1) : null,
+          },
+          sol_gte_80_cohort: {
+            n: t30EconHq.n,
+            avg_t30_gain_pct:        t30EconHq.avg_t30_gain,
+            avg_t300_gain_pct:       t30EconHq.avg_t300_gain,
+            avg_return_from_t30_pct: t30EconHq.avg_return_from_t30,
+            profitable_from_t30:     t30EconHq.profitable_from_t30,
+            profitable_rate_pct:     t30EconHq.n > 0 ? +(t30EconHq.profitable_from_t30 / t30EconHq.n * 100).toFixed(1) : null,
+          },
+          by_label: t30EconRows.map((r: any) => ({
+            label: r.label,
+            n: r.n,
+            avg_t30_gain_pct:        r.avg_t30_gain,
+            avg_t300_gain_pct:       r.avg_t300_gain,
+            avg_return_from_t30_pct: r.avg_return_from_t30,
+            profitable_from_t30:     r.profitable_from_t30,
+            profitable_rate_pct:     r.n > 0 ? +(r.profitable_from_t30 / r.n * 100).toFixed(1) : null,
+          })),
         },
 
         sol_raised_distribution: solBuckets.map((b: any) => ({
