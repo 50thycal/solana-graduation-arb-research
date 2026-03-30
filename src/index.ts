@@ -576,6 +576,8 @@ async function main() {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   });
+
+  app.get('/health', (req, res) => {
     const uptimeMs = Date.now() - startTime;
     const uptimeSeconds = Math.floor(uptimeMs / 1000);
     const graduationCount = getGraduationCount(db);
