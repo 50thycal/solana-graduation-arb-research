@@ -352,7 +352,7 @@ export class GraduationListener {
     );
 
     // Holder enrichment (fire-and-forget — don't block pool tracking)
-    this.holderEnrichment.enrich(event.mint, event.bondingCurveAddress).then((enrichment) => {
+    this.holderEnrichment.enrich(event.mint, event.bondingCurveAddress, event.timestamp).then((enrichment) => {
       updateGraduationEnrichment(this.db, graduationId, {
         holder_count: enrichment.holderCount,
         top5_wallet_pct: enrichment.top5WalletPct,

@@ -180,5 +180,41 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Migration: unique constraint on mint in graduations table.
+  // First deduplicate existing rows (keep lowest id per mint), cleaning up
+  // all child tables that reference the dropped graduation ids.
+  const mintUniqueExists = (db.prepare(
+    `SELECT name FROM sqlite_master WHERE type='index' AND name='idx_graduations_mint_unique'`
+  ).get() as any);
+
+  if (!mintUniqueExists) {
+    logger.info('Adding unique mint constraint — deduplicating graduations first');
+    db.exec(`
+      DELETE FROM graduation_momentum WHERE graduation_id NOT IN (
+        SELECT MIN(id) FROM graduations GROUP BY mint
+      );
+      DELETE FROM pool_observations WHERE graduation_id NOT IN (
+        SELECT MIN(id) FROM graduations GROUP BY mint
+      );
+      DELETE FROM price_comparisons WHERE graduation_id NOT IN (
+        SELECT MIN(id) FROM graduations GROUP BY mint
+      );
+      DELETE FROM opportunities WHERE graduation_id NOT IN (
+        SELECT MIN(id) FROM graduations GROUP BY mint
+      );
+      DELETE FROM paper_trades WHERE graduation_id NOT IN (
+        SELECT MIN(id) FROM graduations GROUP BY mint
+      );
+      DELETE FROM competition_signals WHERE graduation_id NOT IN (
+        SELECT MIN(id) FROM graduations GROUP BY mint
+      );
+      DELETE FROM graduations WHERE id NOT IN (
+        SELECT MIN(id) FROM graduations GROUP BY mint
+      );
+    `);
+    db.exec(`CREATE UNIQUE INDEX idx_graduations_mint_unique ON graduations(mint)`);
+    logger.info('Unique mint index created');
+  }
+
   logger.info('Database migrations complete');
 }
