@@ -643,6 +643,101 @@ async function main() {
     }
   });
 
+  // ── RAYDIUM CO-LISTING CHECK ─────────────────────────────────────────────
+  // Reads last N mints from DB, checks Raydium API for CPMM/any pool.
+  // ?sample=50 to control how many mints to check (default 50, max 100).
+  // Takes ~15-30s. Hit from browser to get HTML with Copy All button.
+  app.get('/raydium-check', async (req, res) => {
+    const sample = Math.min(100, Math.max(1, parseInt((req.query.sample as string) || '50', 10)));
+
+    const mints = (db.prepare(`
+      SELECT mint, final_sol_reserves
+      FROM graduations
+      ORDER BY id DESC
+      LIMIT ?
+    `).all(sample) as Array<{ mint: string; final_sol_reserves: number | null }>);
+
+    const fetchJson = (url: string): Promise<any> =>
+      new Promise((resolve) => {
+        const https = require('https');
+        https.get(url, { headers: { Accept: 'application/json' } }, (r: any) => {
+          let d = '';
+          r.on('data', (c: any) => d += c);
+          r.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
+        }).on('error', () => resolve(null));
+      });
+
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
+    const results: Array<{
+      mint: string; sol: number | null;
+      hasCpmm: boolean; hasAnyPool: boolean; poolType?: string; poolId?: string;
+    }> = [];
+
+    for (const { mint, final_sol_reserves } of mints) {
+      // CPMM check
+      const cpmmRes = await fetchJson(
+        `https://api-v3.raydium.io/pools/info/mint?mint1=${mint}&poolType=cpmm&poolSortField=default&sortType=desc&pageSize=1&page=1`
+      );
+      if (cpmmRes?.data?.count > 0) {
+        const pool = cpmmRes.data.data?.[0];
+        results.push({ mint, sol: final_sol_reserves, hasCpmm: true, hasAnyPool: true, poolType: 'cpmm', poolId: pool?.id });
+        await sleep(250); continue;
+      }
+      // Any pool check
+      const allRes = await fetchJson(
+        `https://api-v3.raydium.io/pools/info/mint?mint1=${mint}&poolType=all&poolSortField=default&sortType=desc&pageSize=1&page=1`
+      );
+      if (allRes?.data?.count > 0) {
+        const pool = allRes.data.data?.[0];
+        results.push({ mint, sol: final_sol_reserves, hasCpmm: false, hasAnyPool: true, poolType: pool?.type, poolId: pool?.id });
+      } else {
+        results.push({ mint, sol: final_sol_reserves, hasCpmm: false, hasAnyPool: false });
+      }
+      await sleep(250);
+    }
+
+    const total      = results.length;
+    const cpmmCount  = results.filter(r => r.hasCpmm).length;
+    const anyCount   = results.filter(r => r.hasAnyPool).length;
+    const noneCount  = total - anyCount;
+    const hq         = results.filter(r => r.sol !== null && r.sol >= 80);
+    const hqCpmm     = hq.filter(r => r.hasCpmm).length;
+    const hqAny      = hq.filter(r => r.hasAnyPool).length;
+
+    const poolTypeCounts: Record<string, number> = {};
+    for (const r of results) {
+      if (r.poolType) poolTypeCounts[r.poolType] = (poolTypeCounts[r.poolType] || 0) + 1;
+    }
+
+    sendJsonOrHtml(req, res, {
+      generated_at: new Date().toISOString(),
+      sample_size: total,
+      summary: {
+        cpmm_pools:       { count: cpmmCount,  pct: +(cpmmCount  / total * 100).toFixed(1) },
+        any_raydium_pool: { count: anyCount,   pct: +(anyCount   / total * 100).toFixed(1) },
+        no_raydium_pool:  { count: noneCount,  pct: +(noneCount  / total * 100).toFixed(1) },
+      },
+      high_quality_sol_gte_80: hq.length > 0 ? {
+        n: hq.length,
+        cpmm_pools:       { count: hqCpmm, pct: +(hqCpmm / hq.length * 100).toFixed(1) },
+        any_raydium_pool: { count: hqAny,  pct: +(hqAny  / hq.length * 100).toFixed(1) },
+      } : null,
+      pool_type_breakdown: poolTypeCounts,
+      verdict: cpmmCount / total >= 0.10
+        ? `VIABLE — ${(cpmmCount / total * 100).toFixed(1)}% CPMM co-listing rate, worth building collector`
+        : `LOW — ${(cpmmCount / total * 100).toFixed(1)}% CPMM co-listing rate, below 10% threshold`,
+      per_mint: results.map(r => ({
+        mint: r.mint.slice(0, 12) + '...',
+        sol: r.sol,
+        hasCpmm: r.hasCpmm,
+        hasAnyPool: r.hasAnyPool,
+        poolType: r.poolType || null,
+        poolId: r.poolId ? r.poolId.slice(0, 12) + '...' : null,
+      })),
+    });
+  });
+
   app.get('/health', (req, res) => {
     const uptimeMs = Date.now() - startTime;
     const uptimeSeconds = Math.floor(uptimeMs / 1000);
