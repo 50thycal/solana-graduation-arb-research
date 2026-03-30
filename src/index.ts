@@ -643,12 +643,12 @@ async function main() {
     }
   });
 
-  // ── RAYDIUM CO-LISTING CHECK ─────────────────────────────────────────────
-  // Reads last N mints from DB, checks Raydium API for CPMM/any pool.
-  // ?sample=50 to control how many mints to check (default 50, max 100).
-  // Takes ~15-30s. Hit from browser to get HTML with Copy All button.
+  // ── DEX LISTING CHECK ────────────────────────────────────────────────────
+  // Checks where graduated tokens actually land using both Raydium API and
+  // DexScreener (which indexes all DEXes). Answers "where do pfeeUxB6 tokens go?"
+  // ?sample=N (default 20, max 50) — DexScreener supports up to 30 mints per call.
   app.get('/raydium-check', async (req, res) => {
-    const sample = Math.min(100, Math.max(1, parseInt((req.query.sample as string) || '50', 10)));
+    const sample = Math.min(50, Math.max(1, parseInt((req.query.sample as string) || '20', 10)));
 
     const mints = (db.prepare(`
       SELECT mint, final_sol_reserves
@@ -660,7 +660,7 @@ async function main() {
     const fetchJson = (url: string): Promise<any> =>
       new Promise((resolve) => {
         const https = require('https');
-        https.get(url, { headers: { Accept: 'application/json' } }, (r: any) => {
+        https.get(url, { headers: { Accept: 'application/json', 'User-Agent': 'research-bot/1.0' } }, (r: any) => {
           let d = '';
           r.on('data', (c: any) => d += c);
           r.on('end', () => { try { resolve(JSON.parse(d)); } catch { resolve(null); } });
@@ -669,71 +669,95 @@ async function main() {
 
     const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-    const results: Array<{
-      mint: string; sol: number | null;
-      hasCpmm: boolean; hasAnyPool: boolean; poolType?: string; poolId?: string;
-    }> = [];
-
-    for (const { mint, final_sol_reserves } of mints) {
-      // CPMM check
-      const cpmmRes = await fetchJson(
-        `https://api-v3.raydium.io/pools/info/mint?mint1=${mint}&poolType=cpmm&poolSortField=default&sortType=desc&pageSize=1&page=1`
+    // ── Step 1: DexScreener batch lookup (up to 30 per call) ──────────────
+    // Returns all DEX pairs for each mint — tells us exactly where tokens land
+    const dexByMint: Record<string, { dexes: string[]; pairs: number }> = {};
+    const batchSize = 30;
+    for (let i = 0; i < mints.length; i += batchSize) {
+      const batch = mints.slice(i, i + batchSize).map(m => m.mint);
+      const dexRes = await fetchJson(
+        `https://api.dexscreener.com/latest/dex/tokens/${batch.join(',')}`
       );
-      if (cpmmRes?.data?.count > 0) {
-        const pool = cpmmRes.data.data?.[0];
-        results.push({ mint, sol: final_sol_reserves, hasCpmm: true, hasAnyPool: true, poolType: 'cpmm', poolId: pool?.id });
-        await sleep(250); continue;
+      if (dexRes?.pairs) {
+        for (const pair of dexRes.pairs) {
+          const mint = pair.baseToken?.address;
+          if (!mint) continue;
+          if (!dexByMint[mint]) dexByMint[mint] = { dexes: [], pairs: 0 };
+          dexByMint[mint].pairs++;
+          if (!dexByMint[mint].dexes.includes(pair.dexId)) {
+            dexByMint[mint].dexes.push(pair.dexId);
+          }
+        }
       }
-      // Any pool check
+      if (i + batchSize < mints.length) await sleep(400);
+    }
+
+    // ── Step 2: Raydium API check (fixed: poolType=standard-cpmm for CPMM) ─
+    const raydiumByMint: Record<string, { hasCpmm: boolean; hasAny: boolean; poolType?: string }> = {};
+    for (const { mint } of mints) {
       const allRes = await fetchJson(
         `https://api-v3.raydium.io/pools/info/mint?mint1=${mint}&poolType=all&poolSortField=default&sortType=desc&pageSize=1&page=1`
       );
       if (allRes?.data?.count > 0) {
         const pool = allRes.data.data?.[0];
-        results.push({ mint, sol: final_sol_reserves, hasCpmm: false, hasAnyPool: true, poolType: pool?.type, poolId: pool?.id });
+        const isCpmm = pool?.type === 'Standard' || pool?.type === 'standard-cpmm';
+        raydiumByMint[mint] = { hasCpmm: isCpmm, hasAny: true, poolType: pool?.type };
       } else {
-        results.push({ mint, sol: final_sol_reserves, hasCpmm: false, hasAnyPool: false });
+        raydiumByMint[mint] = { hasCpmm: false, hasAny: false };
       }
       await sleep(250);
     }
 
-    const total      = results.length;
-    const cpmmCount  = results.filter(r => r.hasCpmm).length;
-    const anyCount   = results.filter(r => r.hasAnyPool).length;
-    const noneCount  = total - anyCount;
-    const hq         = results.filter(r => r.sol !== null && r.sol >= 80);
-    const hqCpmm     = hq.filter(r => r.hasCpmm).length;
-    const hqAny      = hq.filter(r => r.hasAnyPool).length;
+    // ── Aggregate results ─────────────────────────────────────────────────
+    const results = mints.map(({ mint, final_sol_reserves }) => ({
+      mint,
+      sol: final_sol_reserves,
+      dex_pairs: dexByMint[mint]?.pairs || 0,
+      dexes_found: dexByMint[mint]?.dexes || [],
+      raydium_any_pool: raydiumByMint[mint]?.hasAny || false,
+      raydium_pool_type: raydiumByMint[mint]?.poolType || null,
+    }));
 
-    const poolTypeCounts: Record<string, number> = {};
+    const total         = results.length;
+    const onAnyDex      = results.filter(r => r.dex_pairs > 0).length;
+    const onRaydium     = results.filter(r => r.dexes_found.includes('raydium')).length;
+    const onPumpswap    = results.filter(r => r.dexes_found.includes('pump_amm') || r.dexes_found.includes('pumpfun') || r.dexes_found.includes('pump')).length;
+    const notListed     = results.filter(r => r.dex_pairs === 0).length;
+    const raydiumApiHit = results.filter(r => r.raydium_any_pool).length;
+
+    // Count all unique dex names seen
+    const dexCounts: Record<string, number> = {};
     for (const r of results) {
-      if (r.poolType) poolTypeCounts[r.poolType] = (poolTypeCounts[r.poolType] || 0) + 1;
+      for (const dex of r.dexes_found) {
+        dexCounts[dex] = (dexCounts[dex] || 0) + 1;
+      }
     }
 
     sendJsonOrHtml(req, res, {
       generated_at: new Date().toISOString(),
       sample_size: total,
-      summary: {
-        cpmm_pools:       { count: cpmmCount,  pct: +(cpmmCount  / total * 100).toFixed(1) },
-        any_raydium_pool: { count: anyCount,   pct: +(anyCount   / total * 100).toFixed(1) },
-        no_raydium_pool:  { count: noneCount,  pct: +(noneCount  / total * 100).toFixed(1) },
+      note: 'DexScreener shows all DEX pairs. Raydium API cross-checks CPMM directly.',
+      dexscreener_summary: {
+        listed_on_any_dex:  { count: onAnyDex,   pct: +(onAnyDex   / total * 100).toFixed(1) },
+        listed_on_raydium:  { count: onRaydium,  pct: +(onRaydium  / total * 100).toFixed(1) },
+        listed_on_pumpswap: { count: onPumpswap, pct: +(onPumpswap / total * 100).toFixed(1) },
+        not_listed_anywhere:{ count: notListed,  pct: +(notListed  / total * 100).toFixed(1) },
+        dex_breakdown: dexCounts,
       },
-      high_quality_sol_gte_80: hq.length > 0 ? {
-        n: hq.length,
-        cpmm_pools:       { count: hqCpmm, pct: +(hqCpmm / hq.length * 100).toFixed(1) },
-        any_raydium_pool: { count: hqAny,  pct: +(hqAny  / hq.length * 100).toFixed(1) },
-      } : null,
-      pool_type_breakdown: poolTypeCounts,
-      verdict: cpmmCount / total >= 0.10
-        ? `VIABLE — ${(cpmmCount / total * 100).toFixed(1)}% CPMM co-listing rate, worth building collector`
-        : `LOW — ${(cpmmCount / total * 100).toFixed(1)}% CPMM co-listing rate, below 10% threshold`,
+      raydium_api_summary: {
+        found_via_raydium_api: { count: raydiumApiHit, pct: +(raydiumApiHit / total * 100).toFixed(1) },
+      },
+      verdict: onRaydium > 0
+        ? `RAYDIUM CONFIRMED — ${onRaydium}/${total} tokens (${(onRaydium/total*100).toFixed(0)}%) found on Raydium via DexScreener`
+        : onAnyDex > 0
+          ? `NOT RAYDIUM — tokens land on: ${Object.keys(dexCounts).join(', ')}`
+          : `UNLISTED — ${notListed}/${total} tokens not found on any indexed DEX (too new, or going to non-indexed venue)`,
       per_mint: results.map(r => ({
         mint: r.mint.slice(0, 12) + '...',
         sol: r.sol,
-        hasCpmm: r.hasCpmm,
-        hasAnyPool: r.hasAnyPool,
-        poolType: r.poolType || null,
-        poolId: r.poolId ? r.poolId.slice(0, 12) + '...' : null,
+        dex_pairs: r.dex_pairs,
+        dexes: r.dexes_found,
+        raydium_api: r.raydium_any_pool,
       })),
     });
   });
