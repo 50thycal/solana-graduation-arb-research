@@ -733,7 +733,7 @@ async function main() {
     const total         = results.length;
     const onAnyDex      = results.filter(r => r.dex_pairs > 0).length;
     const onRaydium     = results.filter(r => r.dexes_found.includes('raydium')).length;
-    const onPumpswap    = results.filter(r => r.dexes_found.includes('pump_amm') || r.dexes_found.includes('pumpfun') || r.dexes_found.includes('pump')).length;
+    const onPumpswap    = results.filter(r => r.dexes_found.some(d => d === 'pumpswap' || d === 'pump_amm' || d === 'pumpfun' || d === 'pump')).length;
     const notListed     = results.filter(r => r.dex_pairs === 0).length;
     const raydiumApiHit = results.filter(r => r.raydium_any_pool).length;
 
