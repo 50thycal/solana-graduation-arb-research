@@ -14,6 +14,8 @@ export interface EnrichmentResult {
   tokenAgeSeconds?: number;
 }
 
+const MAX_AGE_PAGES = 5; // max pages of 1000 sigs to walk back (covers ~5000 txns)
+
 export class HolderEnrichment {
   private connection: Connection;
 
@@ -30,9 +32,39 @@ export class HolderEnrichment {
    * Uses getTokenLargestAccounts (1 RPC call) to get top 20 holders.
    * Excludes known infrastructure addresses (bonding curve, pool vaults).
    */
+  /**
+   * Walk back through signatures on the mint address to find its creation blockTime.
+   * Paginates oldest-first by following `before` pointers. Capped at MAX_AGE_PAGES.
+   */
+  private async getMintCreationTime(mintPubkey: PublicKey): Promise<number | null> {
+    let before: string | undefined = undefined;
+    let oldestBlockTime: number | null = null;
+
+    for (let page = 0; page < MAX_AGE_PAGES; page++) {
+      if (!await globalRpcLimiter.throttleOrDrop(5)) break;
+
+      const sigs: Array<{ signature: string; blockTime?: number | null }> =
+        await this.connection.getSignaturesForAddress(mintPubkey, {
+          limit: 1000,
+          before,
+        });
+
+      if (sigs.length === 0) break;
+
+      const last = sigs[sigs.length - 1] as { signature: string; blockTime?: number | null };
+      if (last.blockTime) oldestBlockTime = last.blockTime;
+
+      if (sigs.length < 1000) break; // reached the beginning
+      before = last.signature;
+    }
+
+    return oldestBlockTime;
+  }
+
   async enrich(
     mint: string,
     bondingCurveAddress: string,
+    graduationBlockTime?: number,
     poolAddress?: string
   ): Promise<EnrichmentResult> {
     const result: EnrichmentResult = {
@@ -98,12 +130,25 @@ export class HolderEnrichment {
         result.devWalletPct = (largestAmt / PUMP_TOTAL_SUPPLY_RAW) * 100;
       }
 
+      // Token age: walk back signatures to find creation blockTime
+      if (graduationBlockTime) {
+        try {
+          const creationTime = await this.getMintCreationTime(new PublicKey(mint));
+          if (creationTime !== null) {
+            result.tokenAgeSeconds = Math.max(0, graduationBlockTime - creationTime);
+          }
+        } catch (ageErr) {
+          logger.debug({ mint: mint.slice(0, 8) }, 'Could not determine token age');
+        }
+      }
+
       logger.debug(
         {
           mint: mint.slice(0, 8),
           holderCount: result.holderCount,
           top5Pct: result.top5WalletPct.toFixed(1),
           devPct: result.devWalletPct.toFixed(1),
+          ageSecs: result.tokenAgeSeconds ?? 'unknown',
         },
         'Holder enrichment complete'
       );
