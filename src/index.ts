@@ -649,13 +649,25 @@ async function main() {
   // ?sample=N (default 20, max 50) — DexScreener supports up to 30 mints per call.
   app.get('/raydium-check', async (req, res) => {
     const sample = Math.min(50, Math.max(1, parseInt((req.query.sample as string) || '20', 10)));
+    const quality = (req.query.quality as string) || 'recent';
 
-    const mints = (db.prepare(`
-      SELECT mint, final_sol_reserves
-      FROM graduations
-      ORDER BY id DESC
-      LIMIT ?
-    `).all(sample) as Array<{ mint: string; final_sol_reserves: number | null }>);
+    // 'pump' = PUMP-labeled tokens (confirmed high quality, price data verified)
+    // 'recent' = last N mints regardless of label
+    const mints = quality === 'pump'
+      ? (db.prepare(`
+          SELECT g.mint, g.final_sol_reserves
+          FROM graduation_momentum gm
+          JOIN graduations g ON g.id = gm.graduation_id
+          WHERE gm.label = 'PUMP'
+          ORDER BY gm.id DESC
+          LIMIT ?
+        `).all(sample) as Array<{ mint: string; final_sol_reserves: number | null }>)
+      : (db.prepare(`
+          SELECT mint, final_sol_reserves
+          FROM graduations
+          ORDER BY id DESC
+          LIMIT ?
+        `).all(sample) as Array<{ mint: string; final_sol_reserves: number | null }>);
 
     const fetchJson = (url: string): Promise<any> =>
       new Promise((resolve) => {
@@ -736,7 +748,7 @@ async function main() {
     sendJsonOrHtml(req, res, {
       generated_at: new Date().toISOString(),
       sample_size: total,
-      note: 'DexScreener shows all DEX pairs. Raydium API cross-checks CPMM directly.',
+      note: `DexScreener shows all DEX pairs. Raydium API cross-checks CPMM directly. mode=${quality} (?quality=pump for PUMP-labeled only, ?quality=recent for latest mints)`,
       dexscreener_summary: {
         listed_on_any_dex:  { count: onAnyDex,   pct: +(onAnyDex   / total * 100).toFixed(1) },
         listed_on_raydium:  { count: onRaydium,  pct: +(onRaydium  / total * 100).toFixed(1) },
