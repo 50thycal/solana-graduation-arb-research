@@ -263,15 +263,6 @@ async function main() {
       const allHavePumpswapPool = last10.every((r: any) => r.has_pool);
       const listenerStats = listener ? listener.getStats() : null;
 
-      // ── VERDICT ──
-      const verdict = totalLabeled < 10 ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)` :
-        totalLabeled < 30 ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%, T+30 signal ${t30WinRate ?? '?'}% (n=${t30Signal.n})` :
-        (rawWinRate !== null && rawWinRate > 60) ? `THESIS VALID — ${rawWinRate}% raw win rate (${pumpCount}/${totalLabeled})` :
-        (bestFilter && bestFilter.win_rate > 51) ? `SIGNAL FOUND — raw ${rawWinRate}%, filtered ${bestFilter.win_rate}% with [${bestFilter.name}] (n=${bestFilter.sample_size})` :
-        (t30WinRate !== null && t30WinRate >= 40) ? `MOMENTUM EDGE — T+30 signal lifts win rate to ${t30WinRate}% (n=${t30Signal.n}) vs ${rawWinRate}% baseline — below 51% target, testing stop-loss to flip EV` :
-        (rawWinRate !== null && rawWinRate > 40) ? `MARGINAL — ${rawWinRate}% raw, filters may help` :
-        `WEAK — ${rawWinRate}% raw win rate, T+30 signal ${t30WinRate ?? '?'}% (n=${t30Signal.n})`;
-
       // ── T+30 MOMENTUM SIGNAL SUMMARY (v2 thesis) ──
       const t30Signal = db.prepare(`
         SELECT
@@ -285,6 +276,15 @@ async function main() {
           AND holder_count >= 10
       `).get() as any;
       const t30WinRate = t30Signal.n > 0 ? +(t30Signal.pump / t30Signal.n * 100).toFixed(1) : null;
+
+      // ── VERDICT ──
+      const verdict = totalLabeled < 10 ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)` :
+        totalLabeled < 30 ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%, T+30 signal ${t30WinRate ?? '?'}% (n=${t30Signal.n})` :
+        (rawWinRate !== null && rawWinRate > 60) ? `THESIS VALID — ${rawWinRate}% raw win rate (${pumpCount}/${totalLabeled})` :
+        (bestFilter && bestFilter.win_rate > 51) ? `SIGNAL FOUND — raw ${rawWinRate}%, filtered ${bestFilter.win_rate}% with [${bestFilter.name}] (n=${bestFilter.sample_size})` :
+        (t30WinRate !== null && t30WinRate >= 40) ? `MOMENTUM EDGE — T+30 signal lifts win rate to ${t30WinRate}% (n=${t30Signal.n}) vs ${rawWinRate}% baseline — below 51% target, testing stop-loss to flip EV` :
+        (rawWinRate !== null && rawWinRate > 40) ? `MARGINAL — ${rawWinRate}% raw, filters may help` :
+        `WEAK — ${rawWinRate}% raw win rate, T+30 signal ${t30WinRate ?? '?'}% (n=${t30Signal.n})`;
 
       // ── CODE VERSION ──
       const codeVersion = {
