@@ -15,13 +15,23 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 const logger = pino({ name: 'price-collector' });
 
 // Momentum research schedule: T+0 for open price, then checkpoints for price tracking
-const SNAPSHOT_SCHEDULE = [0, 30, 60, 120, 300, 600];
+// Granular in the first 60s (every 10s) for stop-loss analysis,
+// then every 30s until T+300, then T+600 for final state.
+const SNAPSHOT_SCHEDULE = [0, 10, 20, 30, 40, 50, 60, 90, 120, 150, 180, 240, 300, 600];
 
 // Map snapshot seconds to momentum checkpoint column names
-const CHECKPOINT_MAP: Record<number, 't30' | 't60' | 't120' | 't300' | 't600'> = {
+const CHECKPOINT_MAP: Record<number, string> = {
+  10: 't10',
+  20: 't20',
   30: 't30',
+  40: 't40',
+  50: 't50',
   60: 't60',
+  90: 't90',
   120: 't120',
+  150: 't150',
+  180: 't180',
+  240: 't240',
   300: 't300',
   600: 't600',
 };
@@ -55,6 +65,11 @@ interface ActiveObservation {
   quoteVault?: string;
   // T+0 pool price — used as reference for pct change calculations
   openPoolPrice?: number;
+  // Peak/drawdown tracking for max drawdown analysis
+  peakPricePct: number;    // highest pct change seen so far
+  peakPriceSec: number;    // when peak occurred (seconds since graduation)
+  maxDrawdownPct: number;  // worst drop from peak (negative number)
+  maxDrawdownSec: number;  // when max drawdown occurred
 }
 
 export class PriceCollector {
@@ -136,6 +151,10 @@ export class PriceCollector {
       scheduledSnapshots: remaining,
       completedSnapshots: [],
       timers: [],
+      peakPricePct: 0,
+      peakPriceSec: 0,
+      maxDrawdownPct: 0,
+      maxDrawdownSec: 0,
     };
 
     this.active.set(ctx.graduationId, observation);
@@ -254,6 +273,18 @@ export class PriceCollector {
         const openRef = observation.openPoolPrice;
         const pctChange = ((poolState.price - openRef) / openRef) * 100;
         updateMomentumPrice(this.db, graduationId, checkpoint, poolState.price, pctChange);
+
+        // Track peak and max drawdown
+        if (pctChange > observation.peakPricePct) {
+          observation.peakPricePct = pctChange;
+          observation.peakPriceSec = targetSec;
+        }
+        const drawdownFromPeak = pctChange - observation.peakPricePct;
+        if (drawdownFromPeak < observation.maxDrawdownPct) {
+          observation.maxDrawdownPct = drawdownFromPeak;
+          observation.maxDrawdownSec = targetSec;
+        }
+
         logger.info(
           {
             graduationId,
@@ -280,7 +311,7 @@ export class PriceCollector {
    * Map actual snapshot time to the nearest momentum checkpoint.
    * Returns null for T+0 (handled separately as open price).
    */
-  private findCheckpoint(targetSec: number): 't30' | 't60' | 't120' | 't300' | 't600' | null {
+  private findCheckpoint(targetSec: number): string | null {
     // Direct match
     if (CHECKPOINT_MAP[targetSec]) return CHECKPOINT_MAP[targetSec];
     // For the immediate/T+0 snapshot, no checkpoint
@@ -460,6 +491,29 @@ export class PriceCollector {
     // Mark observation complete in DB
     markObservationComplete(this.db, graduationId);
 
+    // Write peak/drawdown metrics
+    if (observation.openPoolPrice && observation.openPoolPrice > 0) {
+      try {
+        this.db.prepare(`
+          UPDATE graduation_momentum
+          SET max_peak_pct = ?, max_peak_sec = ?, max_drawdown_pct = ?, max_drawdown_sec = ?
+          WHERE graduation_id = ?
+        `).run(
+          observation.peakPricePct,
+          observation.peakPriceSec,
+          observation.maxDrawdownPct,
+          observation.maxDrawdownSec,
+          graduationId
+        );
+      } catch (err) {
+        logger.error(
+          'Failed to write drawdown metrics for grad %d: %s',
+          graduationId,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+    }
+
     // Label momentum (PUMP/DUMP/STABLE)
     try {
       this.momentumLabeler.label(graduationId);
@@ -477,6 +531,9 @@ export class PriceCollector {
         mint: observation.ctx.mint,
         completedSnapshots: observation.completedSnapshots.length,
         totalCompleted: this.totalObservationsCompleted,
+        maxPeakPct: observation.peakPricePct.toFixed(1),
+        maxDrawdownPct: observation.maxDrawdownPct.toFixed(1),
+        maxDrawdownSec: observation.maxDrawdownSec,
       },
       'Observation complete'
     );

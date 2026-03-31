@@ -684,33 +684,41 @@ async function main() {
         // Limitation: intra-checkpoint dips are invisible → slightly optimistic.
         stop_loss_simulation: (() => {
           // simulate(minPct, maxPct, stopPct) — enter at T+30, stop out at stopPct loss
+          // Uses granular checkpoints T+40/T+50/T+60/T+90/T+120/T+150/T+180/T+240 for accurate stop detection
+          const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
           const simulate = (minPct: number, maxPct: number, stopPct: number) => {
             const rows = db.prepare(`
-              SELECT label, pct_t30, pct_t60, pct_t120, pct_t300
+              SELECT label, pct_t30, ${stopCheckpoints.join(', ')}, pct_t300
               FROM graduation_momentum
               WHERE pct_t30 >= ${minPct} AND pct_t30 <= ${maxPct}
                 AND pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
-            `).all() as Array<{ label: string | null; pct_t30: number; pct_t60: number | null; pct_t120: number | null; pct_t300: number }>;
+            `).all() as any[];
 
             if (rows.length === 0) return null;
 
             let totalReturn = 0, stopped = 0, profitable = 0;
             for (const r of rows) {
-              // Stop level expressed as a % from T+0 (same basis as pct_t60/t120)
-              // stopLevel = (1 + t30/100) * (1 - stop/100) - 1 (as decimal pct)
+              // Stop level expressed as a % from T+0 (same basis as pct_tXX)
               const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - stopPct / 100) - 1) * 100;
               let exitReturn: number;
+              let wasStoppedOut = false;
 
-              if (r.pct_t60 != null && r.pct_t60 <= stopLevelPct) {
-                exitReturn = -stopPct; stopped++;
-              } else if (r.pct_t120 != null && r.pct_t120 <= stopLevelPct) {
-                exitReturn = -stopPct; stopped++;
-              } else {
+              // Check each granular checkpoint for stop trigger
+              for (const cp of stopCheckpoints) {
+                if (r[cp] != null && r[cp] <= stopLevelPct) {
+                  exitReturn = -stopPct;
+                  stopped++;
+                  wasStoppedOut = true;
+                  break;
+                }
+              }
+
+              if (!wasStoppedOut) {
                 // No stop triggered — exit at T+300
                 exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
               }
-              totalReturn += exitReturn;
-              if (exitReturn > 0) profitable++;
+              totalReturn += exitReturn!;
+              if (exitReturn! > 0) profitable++;
             }
 
             const n = rows.length;
@@ -728,7 +736,7 @@ async function main() {
           };
 
           return {
-            note: 'Enter at T+30, apply stop-loss. Checkpoints T+60/T+120 used to detect stop triggers. Intra-checkpoint dips not visible — results slightly optimistic.',
+            note: 'Enter at T+30, apply stop-loss. Granular checkpoints T+40/T+50/T+60/T+90/T+120/T+150/T+180/T+240 used for accurate stop detection.',
             results: [
               simulate(5,  100, 10),
               simulate(5,  100, 15),
@@ -754,6 +762,57 @@ async function main() {
           bucket: b.bucket, total: b.total, pump: b.pump, dump: b.dump,
           win_rate_pct: winRate(b.pump, b.total),
         })),
+
+        // Max drawdown analysis — how deep do tokens dip before recovering?
+        drawdown_analysis: (() => {
+          const rows = db.prepare(`
+            SELECT label, max_peak_pct, max_peak_sec, max_drawdown_pct, max_drawdown_sec,
+                   pct_t300, pct_t30
+            FROM graduation_momentum
+            WHERE label IS NOT NULL AND max_drawdown_pct IS NOT NULL
+          `).all() as any[];
+
+          if (rows.length === 0) return { note: 'No drawdown data yet — waiting for new graduations with granular snapshots', samples: 0 };
+
+          const byLabel = (lbl: string) => {
+            const subset = rows.filter((r: any) => r.label === lbl);
+            if (subset.length === 0) return null;
+            return {
+              label: lbl,
+              n: subset.length,
+              avg_max_peak_pct: +(subset.reduce((s: number, r: any) => s + r.max_peak_pct, 0) / subset.length).toFixed(1),
+              avg_max_drawdown_pct: +(subset.reduce((s: number, r: any) => s + r.max_drawdown_pct, 0) / subset.length).toFixed(1),
+              avg_drawdown_sec: +(subset.reduce((s: number, r: any) => s + r.max_drawdown_sec, 0) / subset.length).toFixed(0),
+              avg_peak_sec: +(subset.reduce((s: number, r: any) => s + r.max_peak_sec, 0) / subset.length).toFixed(0),
+            };
+          };
+
+          // Optimal stop-loss: find the stop level that maximizes separation
+          // between PUMPs that survive and DUMPs that get stopped out
+          const pumps = rows.filter((r: any) => r.label === 'PUMP');
+          const dumps = rows.filter((r: any) => r.label === 'DUMP');
+          const stopLevels = [5, 10, 15, 20, 25, 30, 40, 50];
+          const stopAnalysis = stopLevels.map((stopPct) => {
+            const pumpsStopped = pumps.filter((r: any) => r.max_drawdown_pct <= -stopPct).length;
+            const dumpsStopped = dumps.filter((r: any) => r.max_drawdown_pct <= -stopPct).length;
+            return {
+              stop_level_pct: stopPct,
+              pumps_stopped: pumpsStopped,
+              pumps_total: pumps.length,
+              pumps_survived_pct: pumps.length > 0 ? +((1 - pumpsStopped / pumps.length) * 100).toFixed(1) : null,
+              dumps_stopped: dumpsStopped,
+              dumps_total: dumps.length,
+              dumps_caught_pct: dumps.length > 0 ? +((dumpsStopped / dumps.length) * 100).toFixed(1) : null,
+            };
+          });
+
+          return {
+            note: 'Max drawdown = worst peak-to-trough drop during the observation window. Optimal stop avoids stopping PUMPs while catching DUMPs.',
+            samples: rows.length,
+            by_label: [byLabel('PUMP'), byLabel('DUMP'), byLabel('STABLE')].filter(Boolean),
+            optimal_stop_loss: stopAnalysis,
+          };
+        })(),
 
         duplicate_mints: dupes.length === 0
           ? 'none'

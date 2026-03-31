@@ -165,6 +165,32 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_grad_momentum_label ON graduation_momentum(label);
   `);
 
+  // Add granular momentum checkpoint columns (safe migration)
+  {
+    const momCols = db.prepare("PRAGMA table_info(graduation_momentum)").all() as Array<{ name: string }>;
+    const momExisting = new Set(momCols.map(c => c.name));
+    const newMomCols: Array<[string, string]> = [
+      ['price_t10', 'REAL'], ['pct_t10', 'REAL'],
+      ['price_t20', 'REAL'], ['pct_t20', 'REAL'],
+      ['price_t40', 'REAL'], ['pct_t40', 'REAL'],
+      ['price_t50', 'REAL'], ['pct_t50', 'REAL'],
+      ['price_t90', 'REAL'], ['pct_t90', 'REAL'],
+      ['price_t150', 'REAL'], ['pct_t150', 'REAL'],
+      ['price_t180', 'REAL'], ['pct_t180', 'REAL'],
+      ['price_t240', 'REAL'], ['pct_t240', 'REAL'],
+      // Peak/drawdown metrics
+      ['max_peak_pct', 'REAL'],       // highest pct change from open during observation
+      ['max_peak_sec', 'INTEGER'],    // seconds since graduation when peak occurred
+      ['max_drawdown_pct', 'REAL'],   // worst drop from peak (negative)
+      ['max_drawdown_sec', 'INTEGER'],// seconds since graduation when max drawdown occurred
+    ];
+    for (const [col, type] of newMomCols) {
+      if (!momExisting.has(col)) {
+        db.exec(`ALTER TABLE graduation_momentum ADD COLUMN ${col} ${type}`);
+      }
+    }
+  }
+
   // Add columns to graduations if they don't exist yet (safe migration)
   const cols = db.prepare("PRAGMA table_info(graduations)").all() as Array<{ name: string }>;
   const existing = new Set(cols.map(c => c.name));

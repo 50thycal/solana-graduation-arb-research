@@ -336,7 +336,7 @@ export function insertMomentum(db: Database.Database, data: MomentumInsert): num
 export function updateMomentumPrice(
   db: Database.Database,
   graduationId: number,
-  checkpoint: 't30' | 't60' | 't120' | 't300' | 't600',
+  checkpoint: string,
   price: number,
   pctChange: number
 ): void {
