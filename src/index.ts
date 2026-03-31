@@ -774,6 +774,185 @@ async function main() {
     });
   });
 
+  // ── TOKEN BROWSER ────────────────────────────────────────────────────────
+  // Browse graduated token addresses with filters. Useful for manual spot-checks
+  // on DexScreener/Solscan.
+  //
+  // Filters (all optional, combinable):
+  //   ?label=PUMP|DUMP|STABLE|unlabeled   — filter by momentum label
+  //   ?min_sol=N                           — minimum final_sol_reserves
+  //   ?max_sol=N                           — maximum final_sol_reserves
+  //   ?min_holders=N                       — minimum holder count at graduation
+  //   ?limit=N                             — rows to return (default 50, max 200)
+  //   ?sort=sol|holders|pct_t300|recent    — sort order (default: recent)
+  app.get('/tokens', (req, res) => {
+    const label    = (req.query.label    as string) || '';
+    const minSol   = parseFloat((req.query.min_sol   as string) || '0')  || 0;
+    const maxSol   = parseFloat((req.query.max_sol   as string) || '0')  || 0;
+    const minHold  = parseInt  ((req.query.min_holders as string) || '0', 10) || 0;
+    const limit    = Math.min(200, Math.max(1, parseInt((req.query.limit as string) || '50', 10)));
+    const sort     = (req.query.sort as string) || 'recent';
+
+    const sortCol: Record<string, string> = {
+      sol:      'g.final_sol_reserves DESC',
+      holders:  'gm.holder_count DESC',
+      pct_t300: 'ABS(gm.pct_t300) DESC',
+      recent:   'g.id DESC',
+    };
+    const orderBy = sortCol[sort] || 'g.id DESC';
+
+    const conditions: string[] = [];
+    if (label === 'unlabeled') {
+      conditions.push('gm.label IS NULL');
+    } else if (label) {
+      conditions.push(`gm.label = '${label.toUpperCase()}'`);
+    }
+    if (minSol > 0) conditions.push(`g.final_sol_reserves >= ${minSol}`);
+    if (maxSol > 0) conditions.push(`g.final_sol_reserves <= ${maxSol}`);
+    if (minHold > 0) conditions.push(`gm.holder_count >= ${minHold}`);
+
+    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+
+    const rows = db.prepare(`
+      SELECT
+        g.mint,
+        g.timestamp,
+        g.final_sol_reserves           AS sol,
+        gm.label,
+        gm.holder_count,
+        gm.top5_wallet_pct,
+        gm.dev_wallet_pct,
+        gm.token_age_seconds,
+        gm.open_price_sol,
+        gm.pct_t30,
+        gm.pct_t60,
+        gm.pct_t300,
+        gm.total_sol_raised
+      FROM graduations g
+      LEFT JOIN graduation_momentum gm ON gm.graduation_id = g.id
+      ${where}
+      ORDER BY ${orderBy}
+      LIMIT ${limit}
+    `).all() as Array<{
+      mint: string; timestamp: number; sol: number | null; label: string | null;
+      holder_count: number | null; top5_wallet_pct: number | null; dev_wallet_pct: number | null;
+      token_age_seconds: number | null; open_price_sol: number | null;
+      pct_t30: number | null; pct_t60: number | null; pct_t300: number | null;
+      total_sol_raised: number | null;
+    }>;
+
+    const fmt = (n: number | null, dec = 1) => n == null ? '—' : n.toFixed(dec);
+    const fmtPct = (n: number | null) => n == null ? '—' : (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+    const fmtAge = (s: number | null) => {
+      if (s == null) return '—';
+      if (s < 3600) return Math.round(s / 60) + 'm';
+      if (s < 86400) return (s / 3600).toFixed(1) + 'h';
+      return (s / 86400).toFixed(1) + 'd';
+    };
+    const labelBadge = (l: string | null) => {
+      if (!l) return '<span style="color:#888">—</span>';
+      const c = l === 'PUMP' ? '#00cc66' : l === 'DUMP' ? '#ff4444' : '#aaa';
+      return `<span style="color:${c};font-weight:bold">${l}</span>`;
+    };
+
+    // Build active filter description
+    const filterDesc = [
+      label ? `label=${label.toUpperCase()}` : '',
+      minSol  ? `sol≥${minSol}` : '',
+      maxSol  ? `sol≤${maxSol}` : '',
+      minHold ? `holders≥${minHold}` : '',
+      `sort=${sort}`,
+      `limit=${limit}`,
+    ].filter(Boolean).join('  ·  ');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Token Browser</title>
+<style>
+  body { font-family: monospace; background: #0d0d0d; color: #e0e0e0; padding: 16px; font-size: 13px; }
+  h2 { color: #fff; margin: 0 0 4px; }
+  .filters { color: #888; margin-bottom: 12px; font-size: 12px; }
+  .filters a { color: #4af; text-decoration: none; margin-right: 12px; }
+  .filters a:hover { text-decoration: underline; }
+  table { border-collapse: collapse; width: 100%; }
+  th { background: #1a1a1a; color: #aaa; padding: 6px 10px; text-align: left; font-weight: normal; border-bottom: 1px solid #333; }
+  td { padding: 5px 10px; border-bottom: 1px solid #1e1e1e; vertical-align: middle; }
+  tr:hover td { background: #161616; }
+  .mint { font-size: 11px; color: #ccc; }
+  .mint a { color: #4af; text-decoration: none; }
+  .mint a:hover { text-decoration: underline; }
+  .copy-btn { cursor: pointer; background: #222; border: 1px solid #444; color: #aaa; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 4px; }
+  .copy-btn:hover { background: #333; color: #fff; }
+  .pos { color: #0f0; } .neg { color: #f44; }
+  .filter-links { margin-bottom: 14px; }
+  .filter-links span { color: #666; margin-right: 6px; font-size: 11px; }
+</style>
+<script>
+function copyMint(mint) {
+  navigator.clipboard.writeText(mint).then(() => {
+    event.target.textContent = 'copied!';
+    setTimeout(() => event.target.textContent = 'copy', 1200);
+  });
+}
+</script>
+</head><body>
+<h2>Token Browser</h2>
+<div class="filters">Active filters: ${filterDesc || 'none (showing all)'} &nbsp;&nbsp; ${rows.length} rows</div>
+
+<div class="filter-links">
+  <span>Quick filters:</span>
+  <a href="/tokens?label=PUMP&sort=recent">PUMP only</a>
+  <a href="/tokens?label=DUMP&sort=recent">DUMP only</a>
+  <a href="/tokens?label=PUMP&min_sol=80">PUMP + sol≥80</a>
+  <a href="/tokens?sort=sol">Top SOL</a>
+  <a href="/tokens?sort=pct_t300">Biggest movers</a>
+  <a href="/tokens?label=unlabeled">Unlabeled</a>
+  <a href="/tokens">All recent</a>
+</div>
+
+<table>
+<tr>
+  <th>Mint</th>
+  <th>Label</th>
+  <th>SOL raised</th>
+  <th>Holders</th>
+  <th>Top5%</th>
+  <th>Dev%</th>
+  <th>BC Age</th>
+  <th>T+30</th>
+  <th>T+60</th>
+  <th>T+300</th>
+  <th>Graduated</th>
+</tr>
+${rows.map(r => {
+  const ts = r.timestamp ? new Date(r.timestamp * 1000).toISOString().replace('T', ' ').slice(0, 16) + 'Z' : '—';
+  const dsLink = `https://dexscreener.com/solana/${r.mint}`;
+  const solLink = `https://solscan.io/token/${r.mint}`;
+  const pctClass = (n: number | null) => n == null ? '' : n > 0 ? 'pos' : n < 0 ? 'neg' : '';
+  return `<tr>
+    <td class="mint">
+      <a href="${dsLink}" target="_blank">${r.mint.slice(0, 16)}…</a>
+      <button class="copy-btn" onclick="copyMint('${r.mint}')">copy</button>
+      <a href="${solLink}" target="_blank" style="font-size:10px;color:#888;margin-left:4px">solscan</a>
+    </td>
+    <td>${labelBadge(r.label)}</td>
+    <td>${fmt(r.sol, 1)}</td>
+    <td>${r.holder_count ?? '—'}</td>
+    <td>${fmt(r.top5_wallet_pct, 1)}${r.top5_wallet_pct != null ? '%' : ''}</td>
+    <td>${fmt(r.dev_wallet_pct, 1)}${r.dev_wallet_pct != null ? '%' : ''}</td>
+    <td>${fmtAge(r.token_age_seconds)}</td>
+    <td class="${pctClass(r.pct_t30)}">${fmtPct(r.pct_t30)}</td>
+    <td class="${pctClass(r.pct_t60)}">${fmtPct(r.pct_t60)}</td>
+    <td class="${pctClass(r.pct_t300)}">${fmtPct(r.pct_t300)}</td>
+    <td style="color:#666;font-size:11px">${ts}</td>
+  </tr>`;
+}).join('\n')}
+</table>
+</body></html>`;
+
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  });
+
   app.get('/health', (req, res) => {
     const uptimeMs = Date.now() - startTime;
     const uptimeSeconds = Math.floor(uptimeMs / 1000);
