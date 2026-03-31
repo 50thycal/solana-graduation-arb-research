@@ -562,30 +562,52 @@ export class GraduationListener {
     }
 
     // STRATEGY 3 (LAST RESORT): Inner instructions — find the MIGRATE instruction specifically.
-    // Bundled txs may have create+buy+migrate; each has different account layouts.
-    // The migrate instruction has 19+ accounts. buy/sell have ~12. create has ~10.
-    // Prefer the instruction with the most accounts (most likely migrate).
+    // Bundled/MEV transactions use wrapper programs that CPI into pump.fun. These inner
+    // instructions may appear in TWO formats from getParsedTransaction:
+    //   A) Parsed: has `programId` (PublicKey/string) and `accounts` (PublicKey[])
+    //   B) Compiled: has `programIdIndex` (number) and `accounts` (number[]) — indices into
+    //      the full account key list (static + ALT-resolved)
+    // We must handle BOTH formats. The migrate instruction has 19+ accounts.
     if (!mint && tx.meta.innerInstructions) {
+      const fullAccountKeys = GraduationListener.buildFullAccountKeys(tx);
       let bestCandidate: string | null = null;
       let bestAcctCount = 0;
       let totalPumpIxFound = 0;
+      let usedCompiledFormat = false;
 
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {
-          if (!('programId' in ix)) continue;
-          const progId = typeof ix.programId === 'string'
-            ? ix.programId : ix.programId.toBase58();
-          if (progId !== PUMP_FUN_PROGRAM_STR) continue;
-          if (!('accounts' in ix) || !Array.isArray(ix.accounts) || ix.accounts.length < 3) continue;
+          let progId: string | null = null;
+          let resolvedAccounts: string[] = [];
+
+          if ('programId' in ix) {
+            // Format A: Parsed — programId is a PublicKey or string
+            progId = typeof (ix as any).programId === 'string'
+              ? (ix as any).programId : (ix as any).programId?.toBase58?.() ?? null;
+            if ('accounts' in ix && Array.isArray((ix as any).accounts)) {
+              resolvedAccounts = ((ix as any).accounts as any[]).map((a: any) =>
+                typeof a === 'string' ? a : a?.toBase58?.() ?? ''
+              );
+            }
+          } else if ('programIdIndex' in ix) {
+            // Format B: Compiled — resolve indices through full account key list
+            const pidIdx = (ix as any).programIdIndex as number;
+            progId = fullAccountKeys[pidIdx] ?? null;
+            const acctIdxs: number[] = (ix as any).accounts ?? (ix as any).accountKeyIndexes ?? [];
+            resolvedAccounts = acctIdxs.map((idx: number) => fullAccountKeys[idx] ?? '');
+          }
+
+          if (!progId || progId !== PUMP_FUN_PROGRAM_STR) continue;
+          if (resolvedAccounts.length < 3) continue;
 
           totalPumpIxFound++;
-          const accts = ix.accounts;
-          const candidate = toStr(accts[2]);
+          const candidate = resolvedAccounts[2];
 
           // Prefer the instruction with the most accounts (migrate has 19+, buy/sell ~12, create ~10)
-          if (candidate && !isWellKnown(candidate) && accts.length > bestAcctCount) {
+          if (candidate && !isWellKnown(candidate) && resolvedAccounts.length > bestAcctCount) {
             bestCandidate = candidate;
-            bestAcctCount = accts.length;
+            bestAcctCount = resolvedAccounts.length;
+            usedCompiledFormat = !('programId' in ix);
           }
         }
       }
@@ -593,7 +615,7 @@ export class GraduationListener {
       if (bestCandidate) {
         mint = bestCandidate;
         logger.info(
-          { signature, mint, acctCount: bestAcctCount, totalPumpIxFound },
+          { signature, mint, acctCount: bestAcctCount, totalPumpIxFound, compiled: usedCompiledFormat },
           'Mint extracted from inner instruction (Strategy 3 — inner ix, largest pump.fun ix)'
         );
       } else if (totalPumpIxFound > 0) {
