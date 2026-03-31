@@ -176,6 +176,10 @@ async function main() {
           { name: 'holder_count >= 15', sql: "holder_count IS NOT NULL AND holder_count >= 15" },
           { name: 'total_sol_raised >= 80', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 80" },
           { name: 'total_sol_raised >= 85', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 85" },
+          // T+30 momentum signal — the v2 thesis signal
+          { name: 't30 +5% to +100%', sql: "pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
+          { name: 'holders>=10 AND t30 +5% to +100%', sql: "holder_count >= 10 AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
+          { name: 'bc_age>10m AND t30 +5% to +100%', sql: "token_age_seconds > 600 AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
         ];
         for (const ft of filterTests) {
           const r = db.prepare(`
@@ -261,18 +265,33 @@ async function main() {
 
       // ── VERDICT ──
       const verdict = totalLabeled < 10 ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)` :
-        totalLabeled < 30 ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%` :
+        totalLabeled < 30 ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%, T+30 signal ${t30WinRate ?? '?'}% (n=${t30Signal.n})` :
         (rawWinRate !== null && rawWinRate > 60) ? `THESIS VALID — ${rawWinRate}% raw win rate (${pumpCount}/${totalLabeled})` :
-        (bestFilter && bestFilter.win_rate > 51) ? `PROMISING — raw ${rawWinRate}%, filtered ${bestFilter.win_rate}% with ${bestFilter.name} (n=${bestFilter.sample_size})` :
+        (bestFilter && bestFilter.win_rate > 51) ? `SIGNAL FOUND — raw ${rawWinRate}%, filtered ${bestFilter.win_rate}% with [${bestFilter.name}] (n=${bestFilter.sample_size})` :
+        (t30WinRate !== null && t30WinRate >= 40) ? `MOMENTUM EDGE — T+30 signal lifts win rate to ${t30WinRate}% (n=${t30Signal.n}) vs ${rawWinRate}% baseline — below 51% target, testing stop-loss to flip EV` :
         (rawWinRate !== null && rawWinRate > 40) ? `MARGINAL — ${rawWinRate}% raw, filters may help` :
-        `WEAK — ${rawWinRate}% raw win rate`;
+        `WEAK — ${rawWinRate}% raw win rate, T+30 signal ${t30WinRate ?? '?'}% (n=${t30Signal.n})`;
+
+      // ── T+30 MOMENTUM SIGNAL SUMMARY (v2 thesis) ──
+      const t30Signal = db.prepare(`
+        SELECT
+          COUNT(*) as n,
+          SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pump,
+          SUM(CASE WHEN label='DUMP' THEN 1 ELSE 0 END) as dump,
+          ROUND(AVG(pct_t300), 1) as avg_t300
+        FROM graduation_momentum
+        WHERE label IS NOT NULL
+          AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100
+          AND holder_count >= 10
+      `).get() as any;
+      const t30WinRate = t30Signal.n > 0 ? +(t30Signal.pump / t30Signal.n * 100).toFixed(1) : null;
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v7',
-        last_change: 'Disable poolTracker.priceCollector (was producing 0 snapshots with wrong addresses). Add sol_raised >= 50 quality filter to scorecard. pfeeUxB6 confirmed as Raydium migration — thesis scope narrowed to PumpSwap-only graduations.',
-        bug_fixed: 'poolTracker.priceCollector.startObservation was called with wrong pool addresses from extractPoolInfo (vault_parse_fail dataLen=0 on all 7 sessions, 76 wasted failures). totalExpired: 97 confirmed pfeeUxB6 goes to Raydium not PumpSwap — pool-tracker subscription never fired for those.',
-        watch_for: 'poolTracker.priceCollector.totalStarted should be 0. directPriceCollector continues collecting clean data. scorecard.quality_filtered shows win rate without scam tokens.',
+        version: 'momentum-v2',
+        thesis: 'T+30 momentum signal: tokens up +5-100% at T+30 with holders>=10 show 44-46% win rate vs 23% baseline. PUMP-labeled subset returns +52% from T+30. Exploring stop-loss to flip expected value positive.',
+        last_change: 'Added T+30 momentum signal to scorecard, bc_age+t30 combo filters, stop-loss simulation in /filter-analysis, /tokens browser endpoint.',
+        watch_for: 't30_momentum_signal win rate trend, stop_loss_simulation EV sign, bc_age null rate decreasing.',
       };
 
       sendJsonOrHtml(req, res, {
@@ -301,6 +320,17 @@ async function main() {
             DUMP: labelsFiltered.find((l: any) => l.label === 'DUMP')?.count || 0,
             win_rate_pct: filteredWinRate,
           },
+        },
+
+        // ── V2 MOMENTUM SIGNAL ──
+        t30_momentum_signal: {
+          filter: 'holders>=10 AND t30 +5% to +100%',
+          n: t30Signal.n,
+          pump: t30Signal.pump,
+          dump: t30Signal.dump,
+          win_rate_pct: t30WinRate,
+          avg_t300_pct: t30Signal.avg_t300,
+          note: 'Key signal for v2 thesis. Win rate from T+0 entry when T+30 is up +5-100% and holders>=10.',
         },
 
         // ── THESIS VERDICT ──
@@ -598,10 +628,16 @@ async function main() {
           runFilter('sol>=80 AND holders>=15 AND top5>10%',     'total_sol_raised>=80 AND holder_count>=15 AND top5_wallet_pct>10'),
           runFilter('sol>=80 AND holders>=10 AND dev<5%',       'total_sol_raised>=80 AND holder_count>=10 AND dev_wallet_pct<5'),
           runFilter('sol>=80 AND holders>=10 AND t30<200%',     'total_sol_raised>=80 AND holder_count>=10 AND pct_t30<200'),
-          runFilter('sol>=80 AND t30 between +5% and +100%',    'total_sol_raised>=80 AND pct_t30>=5 AND pct_t30<=100'),
-          runFilter('holders>=10 AND t30 between +5% and +100%','holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
-          runFilter('sol>=70 AND holders>=10 AND t30<200%',     'total_sol_raised>=70 AND holder_count>=10 AND pct_t30<200'),
-          runFilter('sol>=84 AND holders>=15 AND top5>10%',     'total_sol_raised>=84 AND holder_count>=15 AND top5_wallet_pct>10'),
+          runFilter('sol>=80 AND t30 between +5% and +100%',                  'total_sol_raised>=80 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('holders>=10 AND t30 between +5% and +100%',               'holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('sol>=70 AND holders>=10 AND t30<200%',                    'total_sol_raised>=70 AND holder_count>=10 AND pct_t30<200'),
+          runFilter('sol>=84 AND holders>=15 AND top5>10%',                    'total_sol_raised>=84 AND holder_count>=15 AND top5_wallet_pct>10'),
+          // bc_age + t30 combos — testing if older BCs + early momentum is best combo
+          runFilter('bc_age>10min AND t30 +5% to +100%',                      'token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('bc_age>10min AND holders>=10 AND t30 +5% to +100%',      'token_age_seconds>600 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('bc_age>10min AND sol>=80 AND t30 +5% to +100%',          'token_age_seconds>600 AND total_sol_raised>=80 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('bc_age>30min AND t30 +5% to +100%',                      'token_age_seconds>1800 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('bc_age>30min AND holders>=10 AND t30 +5% to +100%',      'token_age_seconds>1800 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
         ],
 
         momentum_continuation: {
@@ -623,6 +659,73 @@ async function main() {
             runT30Econ(15, 100),
           ],
         },
+
+        // ── STOP-LOSS SIMULATION ──────────────────────────────────────────────
+        // If you enter at T+30 price and apply a stop-loss, does EV turn positive?
+        // Uses T+60 and T+120 checkpoints to approximate stop triggers.
+        // Limitation: intra-checkpoint dips are invisible → slightly optimistic.
+        stop_loss_simulation: (() => {
+          // simulate(minPct, maxPct, stopPct) — enter at T+30, stop out at stopPct loss
+          const simulate = (minPct: number, maxPct: number, stopPct: number) => {
+            const rows = db.prepare(`
+              SELECT label, pct_t30, pct_t60, pct_t120, pct_t300
+              FROM graduation_momentum
+              WHERE pct_t30 >= ${minPct} AND pct_t30 <= ${maxPct}
+                AND pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+            `).all() as Array<{ label: string | null; pct_t30: number; pct_t60: number | null; pct_t120: number | null; pct_t300: number }>;
+
+            if (rows.length === 0) return null;
+
+            let totalReturn = 0, stopped = 0, profitable = 0;
+            for (const r of rows) {
+              // Stop level expressed as a % from T+0 (same basis as pct_t60/t120)
+              // stopLevel = (1 + t30/100) * (1 - stop/100) - 1 (as decimal pct)
+              const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - stopPct / 100) - 1) * 100;
+              let exitReturn: number;
+
+              if (r.pct_t60 != null && r.pct_t60 <= stopLevelPct) {
+                exitReturn = -stopPct; stopped++;
+              } else if (r.pct_t120 != null && r.pct_t120 <= stopLevelPct) {
+                exitReturn = -stopPct; stopped++;
+              } else {
+                // No stop triggered — exit at T+300
+                exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
+              }
+              totalReturn += exitReturn;
+              if (exitReturn > 0) profitable++;
+            }
+
+            const n = rows.length;
+            return {
+              t30_filter: `+${minPct}% to +${maxPct}%`,
+              stop_loss_pct: stopPct,
+              n,
+              stopped_count: stopped,
+              stopped_pct: +(stopped / n * 100).toFixed(1),
+              profitable_count: profitable,
+              profitable_rate_pct: +(profitable / n * 100).toFixed(1),
+              avg_return_pct: +(totalReturn / n).toFixed(1),
+              ev_positive: totalReturn / n > 0,
+            };
+          };
+
+          return {
+            note: 'Enter at T+30, apply stop-loss. Checkpoints T+60/T+120 used to detect stop triggers. Intra-checkpoint dips not visible — results slightly optimistic.',
+            results: [
+              simulate(5,  100, 10),
+              simulate(5,  100, 15),
+              simulate(5,  100, 20),
+              simulate(5,  100, 25),
+              simulate(5,  100, 30),
+              simulate(5,   50, 15),
+              simulate(5,   50, 20),
+              simulate(5,   50, 25),
+              simulate(10, 100, 15),
+              simulate(10, 100, 20),
+              simulate(10, 100, 25),
+            ].filter(Boolean),
+          };
+        })(),
 
         sol_raised_distribution: solBuckets.map((b: any) => ({
           bucket: b.bucket, total: b.total, pump: b.pump, dump: b.dump,
