@@ -65,6 +65,11 @@ interface ActiveObservation {
   quoteVault?: string;
   // T+0 pool price — used as reference for pct change calculations
   openPoolPrice?: number;
+  // Peak/drawdown tracking for max drawdown analysis
+  peakPricePct: number;    // highest pct change seen so far
+  peakPriceSec: number;    // when peak occurred (seconds since graduation)
+  maxDrawdownPct: number;  // worst drop from peak (negative number)
+  maxDrawdownSec: number;  // when max drawdown occurred
 }
 
 export class PriceCollector {
@@ -146,6 +151,10 @@ export class PriceCollector {
       scheduledSnapshots: remaining,
       completedSnapshots: [],
       timers: [],
+      peakPricePct: 0,
+      peakPriceSec: 0,
+      maxDrawdownPct: 0,
+      maxDrawdownSec: 0,
     };
 
     this.active.set(ctx.graduationId, observation);
@@ -264,6 +273,18 @@ export class PriceCollector {
         const openRef = observation.openPoolPrice;
         const pctChange = ((poolState.price - openRef) / openRef) * 100;
         updateMomentumPrice(this.db, graduationId, checkpoint, poolState.price, pctChange);
+
+        // Track peak and max drawdown
+        if (pctChange > observation.peakPricePct) {
+          observation.peakPricePct = pctChange;
+          observation.peakPriceSec = targetSec;
+        }
+        const drawdownFromPeak = pctChange - observation.peakPricePct;
+        if (drawdownFromPeak < observation.maxDrawdownPct) {
+          observation.maxDrawdownPct = drawdownFromPeak;
+          observation.maxDrawdownSec = targetSec;
+        }
+
         logger.info(
           {
             graduationId,
@@ -470,6 +491,29 @@ export class PriceCollector {
     // Mark observation complete in DB
     markObservationComplete(this.db, graduationId);
 
+    // Write peak/drawdown metrics
+    if (observation.openPoolPrice && observation.openPoolPrice > 0) {
+      try {
+        this.db.prepare(`
+          UPDATE graduation_momentum
+          SET max_peak_pct = ?, max_peak_sec = ?, max_drawdown_pct = ?, max_drawdown_sec = ?
+          WHERE graduation_id = ?
+        `).run(
+          observation.peakPricePct,
+          observation.peakPriceSec,
+          observation.maxDrawdownPct,
+          observation.maxDrawdownSec,
+          graduationId
+        );
+      } catch (err) {
+        logger.error(
+          'Failed to write drawdown metrics for grad %d: %s',
+          graduationId,
+          err instanceof Error ? err.message : String(err)
+        );
+      }
+    }
+
     // Label momentum (PUMP/DUMP/STABLE)
     try {
       this.momentumLabeler.label(graduationId);
@@ -487,6 +531,9 @@ export class PriceCollector {
         mint: observation.ctx.mint,
         completedSnapshots: observation.completedSnapshots.length,
         totalCompleted: this.totalObservationsCompleted,
+        maxPeakPct: observation.peakPricePct.toFixed(1),
+        maxDrawdownPct: observation.maxDrawdownPct.toFixed(1),
+        maxDrawdownSec: observation.maxDrawdownSec,
       },
       'Observation complete'
     );

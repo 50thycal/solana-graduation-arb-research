@@ -178,6 +178,11 @@ function runMigrations(db: Database.Database): void {
       ['price_t150', 'REAL'], ['pct_t150', 'REAL'],
       ['price_t180', 'REAL'], ['pct_t180', 'REAL'],
       ['price_t240', 'REAL'], ['pct_t240', 'REAL'],
+      // Peak/drawdown metrics
+      ['max_peak_pct', 'REAL'],       // highest pct change from open during observation
+      ['max_peak_sec', 'INTEGER'],    // seconds since graduation when peak occurred
+      ['max_drawdown_pct', 'REAL'],   // worst drop from peak (negative)
+      ['max_drawdown_sec', 'INTEGER'],// seconds since graduation when max drawdown occurred
     ];
     for (const [col, type] of newMomCols) {
       if (!momExisting.has(col)) {

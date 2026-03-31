@@ -763,6 +763,57 @@ async function main() {
           win_rate_pct: winRate(b.pump, b.total),
         })),
 
+        // Max drawdown analysis — how deep do tokens dip before recovering?
+        drawdown_analysis: (() => {
+          const rows = db.prepare(`
+            SELECT label, max_peak_pct, max_peak_sec, max_drawdown_pct, max_drawdown_sec,
+                   pct_t300, pct_t30
+            FROM graduation_momentum
+            WHERE label IS NOT NULL AND max_drawdown_pct IS NOT NULL
+          `).all() as any[];
+
+          if (rows.length === 0) return { note: 'No drawdown data yet — waiting for new graduations with granular snapshots', samples: 0 };
+
+          const byLabel = (lbl: string) => {
+            const subset = rows.filter((r: any) => r.label === lbl);
+            if (subset.length === 0) return null;
+            return {
+              label: lbl,
+              n: subset.length,
+              avg_max_peak_pct: +(subset.reduce((s: number, r: any) => s + r.max_peak_pct, 0) / subset.length).toFixed(1),
+              avg_max_drawdown_pct: +(subset.reduce((s: number, r: any) => s + r.max_drawdown_pct, 0) / subset.length).toFixed(1),
+              avg_drawdown_sec: +(subset.reduce((s: number, r: any) => s + r.max_drawdown_sec, 0) / subset.length).toFixed(0),
+              avg_peak_sec: +(subset.reduce((s: number, r: any) => s + r.max_peak_sec, 0) / subset.length).toFixed(0),
+            };
+          };
+
+          // Optimal stop-loss: find the stop level that maximizes separation
+          // between PUMPs that survive and DUMPs that get stopped out
+          const pumps = rows.filter((r: any) => r.label === 'PUMP');
+          const dumps = rows.filter((r: any) => r.label === 'DUMP');
+          const stopLevels = [5, 10, 15, 20, 25, 30, 40, 50];
+          const stopAnalysis = stopLevels.map((stopPct) => {
+            const pumpsStopped = pumps.filter((r: any) => r.max_drawdown_pct <= -stopPct).length;
+            const dumpsStopped = dumps.filter((r: any) => r.max_drawdown_pct <= -stopPct).length;
+            return {
+              stop_level_pct: stopPct,
+              pumps_stopped: pumpsStopped,
+              pumps_total: pumps.length,
+              pumps_survived_pct: pumps.length > 0 ? +((1 - pumpsStopped / pumps.length) * 100).toFixed(1) : null,
+              dumps_stopped: dumpsStopped,
+              dumps_total: dumps.length,
+              dumps_caught_pct: dumps.length > 0 ? +((dumpsStopped / dumps.length) * 100).toFixed(1) : null,
+            };
+          });
+
+          return {
+            note: 'Max drawdown = worst peak-to-trough drop during the observation window. Optimal stop avoids stopping PUMPs while catching DUMPs.',
+            samples: rows.length,
+            by_label: [byLabel('PUMP'), byLabel('DUMP'), byLabel('STABLE')].filter(Boolean),
+            optimal_stop_loss: stopAnalysis,
+          };
+        })(),
+
         duplicate_mints: dupes.length === 0
           ? 'none'
           : dupes.map((d: any) => ({ mint: d.mint, count: d.cnt })),
