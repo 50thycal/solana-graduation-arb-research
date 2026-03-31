@@ -288,11 +288,26 @@ async function main() {
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v2',
+        version: 'momentum-v3-fix',
         thesis: 'T+30 momentum signal: tokens up +5-100% at T+30 with holders>=10 show 44-46% win rate vs 23% baseline. PUMP-labeled subset returns +52% from T+30. Exploring stop-loss to flip expected value positive.',
-        last_change: 'Added T+30 momentum signal to scorecard, bc_age+t30 combo filters, stop-loss simulation in /filter-analysis, /tokens browser endpoint.',
-        watch_for: 't30_momentum_signal win rate trend, stop_loss_simulation EV sign, bc_age null rate decreasing.',
+        last_change: 'Fixed data parsing bug: ~85% of detected events were false positives from bundler/MEV txs (wrapper programs logging "Instruction: Migrate"). Added bonding curve correlation for mint extraction + AND verification (SOL reserves >= 70 AND token reserves near-zero). Real graduations ~15% of raw events.',
+        watch_for: 'false_positive_rate dropping to near-zero, total_graduations growing at real rate (~1-2/min), all graduations getting pool+vault extraction.',
       };
+
+      // Detection pipeline stats (shows how many raw events → real graduations)
+      const detectionStats = listenerStats ? {
+        raw_log_events: listenerStats.totalLogsReceived,
+        candidates_detected: listenerStats.totalCandidatesDetected,
+        verified_graduations: listenerStats.totalVerifiedGraduations,
+        false_positives: listenerStats.totalFalsePositives,
+        bundler_false_positives: listenerStats.totalBundlerFalsePositives,
+        false_positive_rate_pct: listenerStats.totalCandidatesDetected > 0
+          ? +((listenerStats.totalFalsePositives / listenerStats.totalCandidatesDetected) * 100).toFixed(1)
+          : 0,
+        mint_extraction_fails: listenerStats.totalMintExtractionFails,
+        vault_extractions: listenerStats.totalVaultExtractions,
+        vault_extraction_fails: listenerStats.totalVaultExtractionFails,
+      } : null;
 
       sendJsonOrHtml(req, res, {
         // ── HEADER ──
@@ -301,6 +316,9 @@ async function main() {
         total_graduations: pipeline.total_graduations,
         with_complete_t300: completedWithT300.count,
         last_graduation_seconds_ago: lastGradSecondsAgo,
+
+        // ── DETECTION PIPELINE ──
+        detection_pipeline: detectionStats,
 
         // ── THESIS SCORECARD ──
         scorecard: {
