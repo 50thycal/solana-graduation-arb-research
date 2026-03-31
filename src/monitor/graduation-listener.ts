@@ -495,26 +495,61 @@ export class GraduationListener {
       addr === PUMP_FUN_PROGRAM_STR ||
       addr === (process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
 
-    // Strategy 1: Top-level pump.fun instruction accounts
-    // migrate layout: [2]=mint. Validate the result isn't a system address.
-    for (const instruction of tx.transaction.message.instructions) {
-      if (!('programId' in instruction)) continue;
-      const progId = typeof instruction.programId === 'string'
-        ? instruction.programId : instruction.programId.toBase58();
-      if (progId !== PUMP_FUN_PROGRAM_STR) continue;
+    // STRATEGY 1 (PRIMARY): Extract mint from token balances.
+    // preTokenBalances/postTokenBalances contain RPC-guaranteed accurate mint addresses.
+    // Prefer mints in preTokenBalances — the LP mint only appears in postTokenBalances
+    // (created during migration), so preTokenBalances isolates the real token mint.
+    {
+      const preMints = new Set<string>();
+      const postOnlyMints = new Set<string>();
+      for (const tb of (tx.meta.preTokenBalances || [])) {
+        if (tb.mint && !isWellKnown(tb.mint)) preMints.add(tb.mint);
+      }
+      for (const tb of (tx.meta.postTokenBalances || [])) {
+        if (tb.mint && !isWellKnown(tb.mint) && !preMints.has(tb.mint)) {
+          postOnlyMints.add(tb.mint);
+        }
+      }
 
-      if ('accounts' in instruction && Array.isArray(instruction.accounts)) {
-        const accts = instruction.accounts;
-        if (accts.length < 3) continue;
-        const candidate = toStr(accts[2]);
-        if (candidate && !isWellKnown(candidate)) {
-          mint = candidate;
-          break;
+      // Prefer pre-balance mints (real token), fall back to post-only mints (LP mint edge case)
+      if (preMints.size >= 1) {
+        mint = [...preMints][0];
+        logger.info(
+          { signature, mint, preMintCount: preMints.size, postOnlyCount: postOnlyMints.size },
+          'Mint extracted from preTokenBalances (Strategy 1 — token balances)'
+        );
+      } else if (postOnlyMints.size >= 1) {
+        mint = [...postOnlyMints][0];
+        logger.info(
+          { signature, mint, postOnlyCount: postOnlyMints.size },
+          'Mint extracted from postTokenBalances only (Strategy 1 — token balances, post-only)'
+        );
+      }
+    }
+
+    // STRATEGY 2 (FALLBACK): Top-level pump.fun instruction accounts
+    // migrate layout: [2]=mint. Only used if token balances were empty.
+    if (!mint) {
+      for (const instruction of tx.transaction.message.instructions) {
+        if (!('programId' in instruction)) continue;
+        const progId = typeof instruction.programId === 'string'
+          ? instruction.programId : instruction.programId.toBase58();
+        if (progId !== PUMP_FUN_PROGRAM_STR) continue;
+
+        if ('accounts' in instruction && Array.isArray(instruction.accounts)) {
+          const accts = instruction.accounts;
+          if (accts.length < 3) continue;
+          const candidate = toStr(accts[2]);
+          if (candidate && !isWellKnown(candidate)) {
+            mint = candidate;
+            logger.info({ signature, mint }, 'Mint extracted from instruction accounts[2] (Strategy 2 — ix fallback)');
+            break;
+          }
         }
       }
     }
 
-    // Strategy 2: Inner instructions (same approach)
+    // STRATEGY 3 (LAST RESORT): Inner instructions
     if (!mint && tx.meta.innerInstructions) {
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {
@@ -526,31 +561,12 @@ export class GraduationListener {
             const candidate = toStr(ix.accounts[2]);
             if (candidate && !isWellKnown(candidate)) {
               mint = candidate;
+              logger.info({ signature, mint }, 'Mint extracted from inner instruction accounts[2] (Strategy 3 — inner ix)');
               break;
             }
           }
         }
         if (mint) break;
-      }
-    }
-
-    // Strategy 3: Extract mint from token balances — most robust fallback.
-    if (!mint) {
-      const uniqueMints = new Set<string>();
-      for (const tb of (tx.meta.preTokenBalances || [])) {
-        if (tb.mint && !isWellKnown(tb.mint)) uniqueMints.add(tb.mint);
-      }
-      for (const tb of (tx.meta.postTokenBalances || [])) {
-        if (tb.mint && !isWellKnown(tb.mint)) uniqueMints.add(tb.mint);
-      }
-      if (uniqueMints.size >= 1) {
-        mint = [...uniqueMints][0];
-        this.totalStrategy3Extractions++;
-        logger.info({ signature, mint, totalMints: uniqueMints.size }, 'Mint extracted via token balance fallback (Strategy 3)');
-      } else {
-        const reason = `s3_no_mints preTokenBal=${tx.meta.preTokenBalances?.length ?? 0} postTokenBal=${tx.meta.postTokenBalances?.length ?? 0}`;
-        this.lastMintFailReasons.push(reason);
-        if (this.lastMintFailReasons.length > 20) this.lastMintFailReasons = this.lastMintFailReasons.slice(-20);
       }
     }
 
@@ -563,7 +579,7 @@ export class GraduationListener {
         const acctLen = Array.isArray(ix.accounts) ? ix.accounts.length : (ix.data ? 'parsed' : 'no-accts');
         return `${pid.slice(0, 8)}:${acctLen}`;
       });
-      const reason = `s1s2_no_match(${ixSummary.join(',')})`;
+      const reason = `all_strategies_failed(${ixSummary.join(',')})`;
       this.lastMintFailReasons.push(reason);
       if (this.lastMintFailReasons.length > 20) this.lastMintFailReasons = this.lastMintFailReasons.slice(-20);
 
