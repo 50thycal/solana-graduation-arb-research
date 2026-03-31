@@ -719,21 +719,15 @@ export class GraduationListener {
         { signature, mint, bondingCurve: bondingCurveAddress },
         'Bonding curve account not found (likely closed post-graduation), accepting'
       );
-    } else if (!curveState.isComplete) {
-      // Check reserve thresholds as additional verification.
-      // A graduated bonding curve has BOTH high SOL reserves (~79-85 SOL)
-      // AND near-zero token reserves. Use AND to reject bundler/MEV txs
-      // that trigger "Instruction: Migrate" from wrapper programs but
-      // haven't actually graduated (low SOL reserves, empty token balances).
-      const reservesLookGraduated =
-        curveState.realSolReserves >= MIN_SOL_RESERVES_FOR_GRADUATION &&
-        curveState.realTokenReserves <= MAX_TOKEN_RESERVES_FOR_GRADUATION;
-
-      if (!reservesLookGraduated) {
+    } else {
+      // Always check SOL reserves regardless of isComplete flag.
+      // Bundler/MEV txs log "Instruction: Migrate" from wrapper programs but the
+      // bonding curve has only 1-13 SOL (real graduations have ~79-85 SOL).
+      // extractBondingCurveFromTx sets isComplete=true optimistically, so we
+      // can't rely on isComplete alone to filter these out.
+      if (curveState.realSolReserves < MIN_SOL_RESERVES_FOR_GRADUATION) {
         this.totalFalsePositives++;
-        if (curveState.realSolReserves < MIN_SOL_RESERVES_FOR_GRADUATION) {
-          this.totalBundlerFalsePositives++;
-        }
+        this.totalBundlerFalsePositives++;
         this.poolTracker.cancelSpeculative(mint);
         logger.info(
           {
@@ -742,7 +736,7 @@ export class GraduationListener {
             realSolReserves: curveState.realSolReserves,
             realTokenReserves: curveState.realTokenReserves,
           },
-          'False positive: bonding curve not graduated (likely bundler/MEV tx, SOL reserves too low)'
+          'False positive rejected: SOL reserves too low for graduation (likely bundler/MEV tx)'
         );
         return null;
       }
