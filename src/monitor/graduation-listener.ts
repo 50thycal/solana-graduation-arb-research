@@ -856,9 +856,20 @@ export class GraduationListener {
 
         const derivedPoolAddr = derivedPoolKey.toBase58();
 
+        // Wait briefly for pool account to be indexed by RPC — the pool is created
+        // in the same transaction we're processing, so it may not be queryable yet.
+        await new Promise(r => setTimeout(r, 2000));
+
         // Fetch pool account to verify it exists and decode vault addresses
         await globalRpcLimiter.throttlePriority();
-        const poolAccountInfo = await this.connection.getAccountInfo(derivedPoolKey);
+        let poolAccountInfo = await this.connection.getAccountInfo(derivedPoolKey);
+
+        // Retry once after another 2s if not found — RPC indexing can lag
+        if (!poolAccountInfo?.data) {
+          await new Promise(r => setTimeout(r, 2000));
+          await globalRpcLimiter.throttlePriority();
+          poolAccountInfo = await this.connection.getAccountInfo(derivedPoolKey);
+        }
 
         if (poolAccountInfo?.data) {
           const rawData = Buffer.isBuffer(poolAccountInfo.data)
@@ -882,9 +893,9 @@ export class GraduationListener {
             }
           }
         } else {
-          logger.debug(
+          logger.info(
             { mint: mint.slice(0, 8), derivedPool: derivedPoolAddr, signature },
-            'PDA-derived pool account not found on-chain (pool may not exist yet)'
+            'Strategy 4: PDA-derived pool account not found on-chain after 2 retries'
           );
         }
       } catch (err) {
