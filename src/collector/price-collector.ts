@@ -15,13 +15,23 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 const logger = pino({ name: 'price-collector' });
 
 // Momentum research schedule: T+0 for open price, then checkpoints for price tracking
-const SNAPSHOT_SCHEDULE = [0, 30, 60, 120, 300, 600];
+// Granular in the first 60s (every 10s) for stop-loss analysis,
+// then every 30s until T+300, then T+600 for final state.
+const SNAPSHOT_SCHEDULE = [0, 10, 20, 30, 40, 50, 60, 90, 120, 150, 180, 240, 300, 600];
 
 // Map snapshot seconds to momentum checkpoint column names
-const CHECKPOINT_MAP: Record<number, 't30' | 't60' | 't120' | 't300' | 't600'> = {
+const CHECKPOINT_MAP: Record<number, string> = {
+  10: 't10',
+  20: 't20',
   30: 't30',
+  40: 't40',
+  50: 't50',
   60: 't60',
+  90: 't90',
   120: 't120',
+  150: 't150',
+  180: 't180',
+  240: 't240',
   300: 't300',
   600: 't600',
 };
@@ -280,7 +290,7 @@ export class PriceCollector {
    * Map actual snapshot time to the nearest momentum checkpoint.
    * Returns null for T+0 (handled separately as open price).
    */
-  private findCheckpoint(targetSec: number): 't30' | 't60' | 't120' | 't300' | 't600' | null {
+  private findCheckpoint(targetSec: number): string | null {
     // Direct match
     if (CHECKPOINT_MAP[targetSec]) return CHECKPOINT_MAP[targetSec];
     // For the immediate/T+0 snapshot, no checkpoint
