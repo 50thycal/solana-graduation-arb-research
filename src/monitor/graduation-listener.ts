@@ -46,6 +46,16 @@ const PUMP_VIRTUAL_TOKEN_OFFSET_RAW = 279_900_191_000_000; // raw token units (6
 const MIN_SOL_RESERVES_FOR_GRADUATION = 70; // SOL — curve is complete around 79-85
 const MAX_TOKEN_RESERVES_FOR_GRADUATION = 1_000_000; // tokens — should be near 0 when complete
 
+// PumpSwap AMM program ID (for PDA derivation)
+const PUMPSWAP_AMM_PROGRAM_ID = new PublicKey(
+  process.env.PUMPSWAP_PROGRAM_ID || 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA'
+);
+const WSOL_MINT_PUBKEY = new PublicKey('So11111111111111111111111111111111111111112');
+
+// Pool account layout offsets for vault extraction (matches PriceCollector)
+const POOL_BASE_VAULT_OFFSET = 8 + 1 + 2 + 32 + 32 + 32 + 32; // 139
+const POOL_QUOTE_VAULT_OFFSET = POOL_BASE_VAULT_OFFSET + 32;   // 171
+
 // Reconnection settings
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
@@ -809,6 +819,78 @@ export class GraduationListener {
         logger.info(
           { mint: mint.slice(0, 8), baseVault: poolBaseVault, quoteVault: poolQuoteVault, signature },
           'Vault addresses resolved from postTokenBalances (ALT-safe) — PumpSwap migration confirmed'
+        );
+      }
+    }
+
+    // STRATEGY 4: PDA Derivation — deterministically derive pool address from mint.
+    // This completely bypasses ALT parsing issues. For canonical pump.fun graduated
+    // tokens, the pool PDA is derived from:
+    //   Step 1: creator = PDA(["pool-authority", baseMint], PUMP_PROGRAM)
+    //   Step 2: pool = PDA(["pool", u16(0), creator, baseMint, WSOL], PUMPSWAP_AMM)
+    // Then fetch pool account to decode vault addresses at known offsets.
+    if (!poolAddress && !poolBaseVault && !poolQuoteVault && mint) {
+      try {
+        const baseMintKey = new PublicKey(mint);
+
+        // Step 1: Derive the canonical pool creator (pool-authority under Pump program)
+        const [poolAuthority] = PublicKey.findProgramAddressSync(
+          [Buffer.from('pool-authority'), baseMintKey.toBuffer()],
+          PUMP_FUN_PROGRAM_ID
+        );
+
+        // Step 2: Derive pool PDA under PumpSwap AMM (index=0 for canonical graduated pools)
+        const indexBuffer = Buffer.alloc(2);
+        indexBuffer.writeUInt16LE(0);
+
+        const [derivedPoolKey] = PublicKey.findProgramAddressSync(
+          [
+            Buffer.from('pool'),
+            indexBuffer,
+            poolAuthority.toBuffer(),
+            baseMintKey.toBuffer(),
+            WSOL_MINT_PUBKEY.toBuffer(),
+          ],
+          PUMPSWAP_AMM_PROGRAM_ID
+        );
+
+        const derivedPoolAddr = derivedPoolKey.toBase58();
+
+        // Fetch pool account to verify it exists and decode vault addresses
+        await globalRpcLimiter.throttlePriority();
+        const poolAccountInfo = await this.connection.getAccountInfo(derivedPoolKey);
+
+        if (poolAccountInfo?.data) {
+          const rawData = Buffer.isBuffer(poolAccountInfo.data)
+            ? poolAccountInfo.data
+            : Buffer.from(poolAccountInfo.data as unknown as Uint8Array);
+
+          if (rawData.length >= POOL_QUOTE_VAULT_OFFSET + 32) {
+            const baseVaultKey = new PublicKey(rawData.subarray(POOL_BASE_VAULT_OFFSET, POOL_BASE_VAULT_OFFSET + 32));
+            const quoteVaultKey = new PublicKey(rawData.subarray(POOL_QUOTE_VAULT_OFFSET, POOL_QUOTE_VAULT_OFFSET + 32));
+
+            if (!baseVaultKey.equals(PublicKey.default) && !quoteVaultKey.equals(PublicKey.default)) {
+              poolAddress = derivedPoolAddr;
+              poolBaseVault = baseVaultKey.toBase58();
+              poolQuoteVault = quoteVaultKey.toBase58();
+              isPumpSwapMigration = true;
+
+              logger.info(
+                { mint: mint.slice(0, 8), poolAddress, baseVault: poolBaseVault, quoteVault: poolQuoteVault, signature },
+                'Pool + vaults resolved via PDA derivation (Strategy 4) — ALT parsing bypassed'
+              );
+            }
+          }
+        } else {
+          logger.debug(
+            { mint: mint.slice(0, 8), derivedPool: derivedPoolAddr, signature },
+            'PDA-derived pool account not found on-chain (pool may not exist yet)'
+          );
+        }
+      } catch (err) {
+        logger.warn(
+          { mint: mint.slice(0, 8), err: (err as Error).message, signature },
+          'Strategy 4 PDA derivation failed'
         );
       }
     }
