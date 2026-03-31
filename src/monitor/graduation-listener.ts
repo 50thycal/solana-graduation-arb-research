@@ -561,77 +561,11 @@ export class GraduationListener {
       }
     }
 
-    // STRATEGY 3 (LAST RESORT): Inner instructions — find the MIGRATE instruction specifically.
-    // Bundled/MEV transactions use wrapper programs that CPI into pump.fun. These inner
-    // instructions may appear in TWO formats from getParsedTransaction:
-    //   A) Parsed: has `programId` (PublicKey/string) and `accounts` (PublicKey[])
-    //   B) Compiled: has `programIdIndex` (number) and `accounts` (number[]) — indices into
-    //      the full account key list (static + ALT-resolved)
-    // We must handle BOTH formats. The migrate instruction has 19+ accounts.
-    if (!mint && tx.meta.innerInstructions) {
-      const fullAccountKeys = GraduationListener.buildFullAccountKeys(tx);
-      let bestCandidate: string | null = null;
-      let bestAcctCount = 0;
-      let totalPumpIxFound = 0;
-      let usedCompiledFormat = false;
-
-      for (const inner of tx.meta.innerInstructions) {
-        for (const ix of inner.instructions) {
-          let progId: string | null = null;
-          let resolvedAccounts: string[] = [];
-
-          if ('programId' in ix) {
-            // Format A: Parsed — programId is a PublicKey or string
-            progId = typeof (ix as any).programId === 'string'
-              ? (ix as any).programId : (ix as any).programId?.toBase58?.() ?? null;
-            if ('accounts' in ix && Array.isArray((ix as any).accounts)) {
-              resolvedAccounts = ((ix as any).accounts as any[]).map((a: any) =>
-                typeof a === 'string' ? a : a?.toBase58?.() ?? ''
-              );
-            }
-          } else if ('programIdIndex' in ix) {
-            // Format B: Compiled — resolve indices through full account key list
-            const pidIdx = (ix as any).programIdIndex as number;
-            progId = fullAccountKeys[pidIdx] ?? null;
-            const acctIdxs: number[] = (ix as any).accounts ?? (ix as any).accountKeyIndexes ?? [];
-            resolvedAccounts = acctIdxs.map((idx: number) => fullAccountKeys[idx] ?? '');
-          }
-
-          if (!progId || progId !== PUMP_FUN_PROGRAM_STR) continue;
-          if (resolvedAccounts.length < 3) continue;
-
-          totalPumpIxFound++;
-          const candidate = resolvedAccounts[2];
-
-          // Prefer the instruction with the most accounts (migrate has 19+, buy/sell ~12, create ~10)
-          if (candidate && !isWellKnown(candidate) && resolvedAccounts.length > bestAcctCount) {
-            bestCandidate = candidate;
-            bestAcctCount = resolvedAccounts.length;
-            usedCompiledFormat = !('programId' in ix);
-          }
-        }
-      }
-
-      if (bestCandidate) {
-        mint = bestCandidate;
-        logger.info(
-          { signature, mint, acctCount: bestAcctCount, totalPumpIxFound, compiled: usedCompiledFormat },
-          'Mint extracted from inner instruction (Strategy 3 — inner ix, largest pump.fun ix)'
-        );
-      } else if (totalPumpIxFound > 0) {
-        logger.info(
-          { signature, totalPumpIxFound },
-          'Strategy 3: found pump.fun inner ix but all accounts[2] were well-known addresses'
-        );
-      }
-    }
-
-    // STRATEGY 4 (MINT): Bonding curve correlation — derive mint from account keys.
-    // For bundled/MEV txs where token balances are empty and the migrate instruction
-    // isn't visible in inner instructions, we can find the mint by checking which
-    // account in the transaction has a matching bonding curve PDA also in the tx.
+    // STRATEGY 3 (MINT): Bonding curve correlation — derive mint from account keys.
+    // For bundled/MEV txs where token balances are empty, we find the mint by checking
+    // which account in the transaction has a matching bonding curve PDA also present.
     // Both mint and its bonding curve PDA (["bonding-curve", mint], PUMP_PROGRAM)
-    // are always present in a migration transaction's account keys.
+    // are always in a migration transaction's account keys. Pure math, no RPC calls.
     if (!mint) {
       const fullAccountKeys = GraduationListener.buildFullAccountKeys(tx);
       const accountKeySet = new Set(fullAccountKeys);
@@ -648,13 +582,63 @@ export class GraduationListener {
             mint = key;
             logger.info(
               { signature, mint, bondingCurve: derivedBC.toBase58(), totalKeys: fullAccountKeys.length },
-              'Mint found via bonding curve correlation (Strategy 4 — account key scan)'
+              'Mint found via bonding curve correlation (Strategy 3 — account key scan)'
             );
             break;
           }
         } catch {
           // Invalid public key, skip
         }
+      }
+    }
+
+    // STRATEGY 4 (MINT LAST RESORT): Inner instructions — find the largest pump.fun ix.
+    // Only used if bonding curve correlation found nothing.
+    if (!mint && tx.meta.innerInstructions) {
+      const fullAccountKeys = GraduationListener.buildFullAccountKeys(tx);
+      let bestCandidate: string | null = null;
+      let bestAcctCount = 0;
+      let totalPumpIxFound = 0;
+
+      for (const inner of tx.meta.innerInstructions) {
+        for (const ix of inner.instructions) {
+          let progId: string | null = null;
+          let resolvedAccounts: string[] = [];
+
+          if ('programId' in ix) {
+            progId = typeof (ix as any).programId === 'string'
+              ? (ix as any).programId : (ix as any).programId?.toBase58?.() ?? null;
+            if ('accounts' in ix && Array.isArray((ix as any).accounts)) {
+              resolvedAccounts = ((ix as any).accounts as any[]).map((a: any) =>
+                typeof a === 'string' ? a : a?.toBase58?.() ?? ''
+              );
+            }
+          } else if ('programIdIndex' in ix) {
+            const pidIdx = (ix as any).programIdIndex as number;
+            progId = fullAccountKeys[pidIdx] ?? null;
+            const acctIdxs: number[] = (ix as any).accounts ?? (ix as any).accountKeyIndexes ?? [];
+            resolvedAccounts = acctIdxs.map((idx: number) => fullAccountKeys[idx] ?? '');
+          }
+
+          if (!progId || progId !== PUMP_FUN_PROGRAM_STR) continue;
+          if (resolvedAccounts.length < 3) continue;
+
+          totalPumpIxFound++;
+          const candidate = resolvedAccounts[2];
+
+          if (candidate && !isWellKnown(candidate) && resolvedAccounts.length > bestAcctCount) {
+            bestCandidate = candidate;
+            bestAcctCount = resolvedAccounts.length;
+          }
+        }
+      }
+
+      if (bestCandidate) {
+        mint = bestCandidate;
+        logger.info(
+          { signature, mint, acctCount: bestAcctCount, totalPumpIxFound },
+          'Mint extracted from inner instruction (Strategy 4 — inner ix fallback)'
+        );
       }
     }
 
