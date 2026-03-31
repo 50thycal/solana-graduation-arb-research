@@ -524,6 +524,18 @@ export class GraduationListener {
           { signature, mint, postOnlyCount: postOnlyMints.size },
           'Mint extracted from postTokenBalances only (Strategy 1 — token balances, post-only)'
         );
+      } else {
+        // DIAGNOSTIC: Log why token balances yielded no mint
+        const preCount = tx.meta.preTokenBalances?.length ?? -1;
+        const postCount = tx.meta.postTokenBalances?.length ?? -1;
+        const allPreMints = (tx.meta.preTokenBalances || []).map((tb: any) => tb.mint?.slice(0, 8) || '?');
+        const allPostMints = (tx.meta.postTokenBalances || []).map((tb: any) => tb.mint?.slice(0, 8) || '?');
+        logger.info(
+          { signature, preCount, postCount,
+            preMints: allPreMints.join(',') || 'empty',
+            postMints: allPostMints.join(',') || 'empty' },
+          'Strategy 1 MISS: no non-well-known mints in token balances'
+        );
       }
     }
 
@@ -549,24 +561,46 @@ export class GraduationListener {
       }
     }
 
-    // STRATEGY 3 (LAST RESORT): Inner instructions
+    // STRATEGY 3 (LAST RESORT): Inner instructions — find the MIGRATE instruction specifically.
+    // Bundled txs may have create+buy+migrate; each has different account layouts.
+    // The migrate instruction has 19+ accounts. buy/sell have ~12. create has ~10.
+    // Prefer the instruction with the most accounts (most likely migrate).
     if (!mint && tx.meta.innerInstructions) {
+      let bestCandidate: string | null = null;
+      let bestAcctCount = 0;
+      let totalPumpIxFound = 0;
+
       for (const inner of tx.meta.innerInstructions) {
         for (const ix of inner.instructions) {
           if (!('programId' in ix)) continue;
           const progId = typeof ix.programId === 'string'
             ? ix.programId : ix.programId.toBase58();
           if (progId !== PUMP_FUN_PROGRAM_STR) continue;
-          if ('accounts' in ix && Array.isArray(ix.accounts) && ix.accounts.length >= 3) {
-            const candidate = toStr(ix.accounts[2]);
-            if (candidate && !isWellKnown(candidate)) {
-              mint = candidate;
-              logger.info({ signature, mint }, 'Mint extracted from inner instruction accounts[2] (Strategy 3 — inner ix)');
-              break;
-            }
+          if (!('accounts' in ix) || !Array.isArray(ix.accounts) || ix.accounts.length < 3) continue;
+
+          totalPumpIxFound++;
+          const accts = ix.accounts;
+          const candidate = toStr(accts[2]);
+
+          // Prefer the instruction with the most accounts (migrate has 19+, buy/sell ~12, create ~10)
+          if (candidate && !isWellKnown(candidate) && accts.length > bestAcctCount) {
+            bestCandidate = candidate;
+            bestAcctCount = accts.length;
           }
         }
-        if (mint) break;
+      }
+
+      if (bestCandidate) {
+        mint = bestCandidate;
+        logger.info(
+          { signature, mint, acctCount: bestAcctCount, totalPumpIxFound },
+          'Mint extracted from inner instruction (Strategy 3 — inner ix, largest pump.fun ix)'
+        );
+      } else if (totalPumpIxFound > 0) {
+        logger.info(
+          { signature, totalPumpIxFound },
+          'Strategy 3: found pump.fun inner ix but all accounts[2] were well-known addresses'
+        );
       }
     }
 
