@@ -626,6 +626,38 @@ export class GraduationListener {
       }
     }
 
+    // STRATEGY 4 (MINT): Bonding curve correlation — derive mint from account keys.
+    // For bundled/MEV txs where token balances are empty and the migrate instruction
+    // isn't visible in inner instructions, we can find the mint by checking which
+    // account in the transaction has a matching bonding curve PDA also in the tx.
+    // Both mint and its bonding curve PDA (["bonding-curve", mint], PUMP_PROGRAM)
+    // are always present in a migration transaction's account keys.
+    if (!mint) {
+      const fullAccountKeys = GraduationListener.buildFullAccountKeys(tx);
+      const accountKeySet = new Set(fullAccountKeys);
+
+      for (const key of fullAccountKeys) {
+        if (!key || isWellKnown(key)) continue;
+        try {
+          const candidateMint = new PublicKey(key);
+          const [derivedBC] = PublicKey.findProgramAddressSync(
+            [Buffer.from('bonding-curve'), candidateMint.toBuffer()],
+            PUMP_FUN_PROGRAM_ID
+          );
+          if (accountKeySet.has(derivedBC.toBase58())) {
+            mint = key;
+            logger.info(
+              { signature, mint, bondingCurve: derivedBC.toBase58(), totalKeys: fullAccountKeys.length },
+              'Mint found via bonding curve correlation (Strategy 4 — account key scan)'
+            );
+            break;
+          }
+        } catch {
+          // Invalid public key, skip
+        }
+      }
+    }
+
     if (!mint) {
       this.totalMintExtractionFails++;
 
