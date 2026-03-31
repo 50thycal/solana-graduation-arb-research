@@ -108,6 +108,7 @@ export class GraduationListener {
   private totalVerifiedGraduations = 0;
   private totalGraduationsRecorded = 0;
   private totalFalsePositives = 0;
+  private totalBundlerFalsePositives = 0;
   private totalMintExtractionFails = 0;
   private totalVaultExtractions = 0;
   private totalVaultExtractionFails = 0;
@@ -144,6 +145,7 @@ export class GraduationListener {
       totalVerifiedGraduations: this.totalVerifiedGraduations,
       totalGraduationsRecorded: this.totalGraduationsRecorded,
       totalFalsePositives: this.totalFalsePositives,
+      totalBundlerFalsePositives: this.totalBundlerFalsePositives,
       totalMintExtractionFails: this.totalMintExtractionFails,
       totalStrategy3Extractions: this.totalStrategy3Extractions,
       totalVaultExtractions: this.totalVaultExtractions,
@@ -718,24 +720,29 @@ export class GraduationListener {
         'Bonding curve account not found (likely closed post-graduation), accepting'
       );
     } else if (!curveState.isComplete) {
-      // Check reserve thresholds as additional verification
+      // Check reserve thresholds as additional verification.
+      // A graduated bonding curve has BOTH high SOL reserves (~79-85 SOL)
+      // AND near-zero token reserves. Use AND to reject bundler/MEV txs
+      // that trigger "Instruction: Migrate" from wrapper programs but
+      // haven't actually graduated (low SOL reserves, empty token balances).
       const reservesLookGraduated =
-        curveState.realSolReserves >= MIN_SOL_RESERVES_FOR_GRADUATION ||
+        curveState.realSolReserves >= MIN_SOL_RESERVES_FOR_GRADUATION &&
         curveState.realTokenReserves <= MAX_TOKEN_RESERVES_FOR_GRADUATION;
 
       if (!reservesLookGraduated) {
         this.totalFalsePositives++;
+        if (curveState.realSolReserves < MIN_SOL_RESERVES_FOR_GRADUATION) {
+          this.totalBundlerFalsePositives++;
+        }
         this.poolTracker.cancelSpeculative(mint);
         logger.info(
           {
             signature,
             mint,
-            isComplete: curveState.isComplete,
             realSolReserves: curveState.realSolReserves,
             realTokenReserves: curveState.realTokenReserves,
-            matchedLog,
           },
-          'False positive: bonding curve not graduated'
+          'False positive: bonding curve not graduated (likely bundler/MEV tx, SOL reserves too low)'
         );
         return null;
       }
