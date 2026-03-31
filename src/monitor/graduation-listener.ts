@@ -714,11 +714,18 @@ export class GraduationListener {
     }
 
     if (!curveState) {
-      // Curve account might already be closed after graduation — treat as likely valid
+      // curveState is null when: (a) bonding curve not in tx account keys, or
+      // (b) preBalance is 0 (account created in this same tx — bundler/MEV pattern).
+      // Real graduations always have ~85 SOL in preBalances — if we can't verify
+      // reserves, this is likely a false positive. Reject it.
+      this.totalFalsePositives++;
+      this.totalBundlerFalsePositives++;
+      this.poolTracker.cancelSpeculative(mint);
       logger.info(
         { signature, mint, bondingCurve: bondingCurveAddress },
-        'Bonding curve account not found (likely closed post-graduation), accepting'
+        'False positive rejected: could not verify bonding curve reserves (likely bundler/MEV tx)'
       );
+      return null;
     } else {
       // Always check SOL reserves regardless of isComplete flag.
       // Bundler/MEV txs log "Instruction: Migrate" from wrapper programs but the
