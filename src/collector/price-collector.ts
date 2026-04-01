@@ -269,10 +269,16 @@ export class PriceCollector {
           const maxPrice = Math.max(...prices);
           const volatility = ((maxPrice - minPrice) / observation.openPoolPrice) * 100;
 
-          // Slippage estimate for a 0.5 SOL buy using constant product formula:
-          // For AMM: price_impact = trade_size / (pool_sol + trade_size)
+          // Realistic slippage estimate for a 0.5 SOL buy:
+          // AMM price impact = trade_size / (pool_sol + trade_size)
+          // + PumpSwap fee (~0.25%)
+          // + estimated execution overhead (~1.5% for priority fees, MEV, confirmation delay)
+          // This gives a conservative estimate closer to real-world execution.
           const tradeSizeSol = 0.5;
-          const slippagePct = (tradeSizeSol / (poolState.solReserves + tradeSizeSol)) * 100;
+          const ammImpact = (tradeSizeSol / (poolState.solReserves + tradeSizeSol)) * 100;
+          const swapFee = 0.25;
+          const executionOverhead = 1.5;
+          const slippagePct = ammImpact + swapFee + executionOverhead;
 
           try {
             this.db.prepare(`
