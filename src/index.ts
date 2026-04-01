@@ -8,27 +8,54 @@ const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'main' });
 
 // Send JSON as a browser-friendly HTML page (with copy button) when Accept: text/html,
 // otherwise return plain JSON for API/curl clients.
+// Navigation links for the dashboard (excludes reset for safety)
+const NAV_LINKS = [
+  { path: '/dashboard', label: 'Dashboard' },
+  { path: '/thesis', label: 'Thesis' },
+  { path: '/filter-analysis', label: 'Filters' },
+  { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
+  { path: '/health', label: 'Health' },
+  { path: '/data', label: 'Raw Data' },
+  { path: '/raydium-check', label: 'DEX Check' },
+];
+
 function sendJsonOrHtml(req: express.Request, res: express.Response, data: object): void {
   const wantHtml = (req.headers.accept || '').includes('text/html');
   if (!wantHtml) { res.json(data); return; }
   const json = JSON.stringify(data, null, 2);
   const escaped = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const navHtml = NAV_LINKS.map(l =>
+    l.path === req.path || (req.path === '/' && l.path === '/dashboard')
+      ? `<a class="nav-active">${l.label}</a>`
+      : `<a href="${l.path}">${l.label}</a>`
+  ).join('');
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${req.path}</title>
+<title>Graduation Research — ${req.path}</title>
 <style>
   body{margin:0;background:#111;color:#e0e0e0;font-family:monospace;font-size:13px}
-  #bar{position:sticky;top:0;background:#222;padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #444}
+  nav{position:sticky;top:0;z-index:10;background:#1a1a2e;padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #333}
+  nav a{color:#94a3b8;text-decoration:none;padding:5px 12px;border-radius:4px;font-size:12px;cursor:pointer;transition:background .15s}
+  nav a:hover{background:#334155;color:#e2e8f0}
+  nav .nav-active{background:#2563eb;color:#fff;pointer-events:none}
+  nav .title{color:#60a5fa;font-weight:bold;font-size:13px;margin-right:8px}
+  #bar{background:#222;padding:8px 12px;display:flex;gap:8px;align-items:center;border-bottom:1px solid #444}
   #bar span{flex:1;color:#aaa;font-size:12px}
   button{background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:13px}
   button:active{background:#1d4ed8}
   #copied{color:#4ade80;font-size:12px;display:none}
   pre{margin:0;padding:12px;white-space:pre-wrap;word-break:break-all}
+  .refresh{background:#334155;font-size:11px;padding:4px 10px}
 </style></head><body>
+<nav>
+  <span class="title">Graduation Arb Research</span>
+  ${navHtml}
+</nav>
 <div id="bar">
   <span>${req.path} — ${new Date().toISOString()}</span>
-  <button onclick="copy()">Copy All</button>
+  <button onclick="copy()">Copy JSON</button>
+  <button class="refresh" onclick="location.reload()">Refresh</button>
   <span id="copied">Copied!</span>
 </div>
 <pre id="json">${escaped}</pre>
@@ -137,6 +164,124 @@ async function main() {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // DASHBOARD LANDING PAGE
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  app.get('/dashboard', (req, res) => {
+    try {
+      const stats = listener ? listener.getStats() : null;
+      const uptimeMs = Date.now() - startTime;
+      const uptimeMin = Math.floor(uptimeMs / 60000);
+
+      const pipeline = db.prepare(`
+        SELECT COUNT(*) as total, COUNT(new_pool_address) as with_pool,
+               SUM(observation_complete) as complete, MAX(timestamp) as last_ts
+        FROM graduations
+      `).get() as any;
+
+      const labels = db.prepare(`
+        SELECT label, COUNT(*) as count FROM graduation_momentum
+        WHERE label IS NOT NULL GROUP BY label
+      `).all() as any[];
+
+      const totalLabeled = labels.reduce((s: number, l: any) => s + l.count, 0);
+      const pumpCount = labels.find((l: any) => l.label === 'PUMP')?.count || 0;
+      const winRate = totalLabeled > 0 ? (pumpCount / totalLabeled * 100).toFixed(1) : '—';
+
+      const bestFilter = db.prepare(`
+        SELECT COUNT(*) as total,
+               SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pumps
+        FROM graduation_momentum
+        WHERE label IS NOT NULL AND token_age_seconds > 600 AND pct_t30 >= 5 AND pct_t30 <= 100
+      `).get() as any;
+      const bestWr = bestFilter.total > 0 ? (bestFilter.pumps / bestFilter.total * 100).toFixed(1) : '—';
+
+      const lastGradAgo = pipeline.last_ts ? Math.floor(Date.now() / 1000) - pipeline.last_ts : null;
+      const status = listenerStatus === 'running'
+        ? (lastGradAgo && lastGradAgo > 300 ? 'STALLED' : 'RUNNING')
+        : 'ERROR';
+      const statusColor = status === 'RUNNING' ? '#4ade80' : status === 'STALLED' ? '#facc15' : '#ef4444';
+
+      const navHtml = NAV_LINKS.map(l =>
+        l.path === '/dashboard' ? `<a class="nav-active">${l.label}</a>` : `<a href="${l.path}">${l.label}</a>`
+      ).join('');
+
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Graduation Research Dashboard</title>
+<style>
+  body{margin:0;background:#111;color:#e0e0e0;font-family:monospace;font-size:13px}
+  nav{position:sticky;top:0;z-index:10;background:#1a1a2e;padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #333}
+  nav a{color:#94a3b8;text-decoration:none;padding:5px 12px;border-radius:4px;font-size:12px;cursor:pointer;transition:background .15s}
+  nav a:hover{background:#334155;color:#e2e8f0}
+  nav .nav-active{background:#2563eb;color:#fff;pointer-events:none}
+  nav .title{color:#60a5fa;font-weight:bold;font-size:13px;margin-right:8px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;padding:16px}
+  .card{background:#1e1e2e;border:1px solid #333;border-radius:8px;padding:16px}
+  .card h3{margin:0 0 12px;color:#60a5fa;font-size:14px;font-weight:600}
+  .stat{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #222}
+  .stat .label{color:#94a3b8}.stat .value{color:#e2e8f0;font-weight:600}
+  .stat .value.green{color:#4ade80}.stat .value.red{color:#ef4444}.stat .value.yellow{color:#facc15}
+  .links{display:flex;flex-direction:column;gap:8px}
+  .links a{display:flex;justify-content:space-between;align-items:center;background:#262640;border:1px solid #333;border-radius:6px;padding:10px 14px;color:#e2e8f0;text-decoration:none;transition:background .15s}
+  .links a:hover{background:#334155}
+  .links a .desc{color:#94a3b8;font-size:11px}
+  .links a .arrow{color:#60a5fa}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+</style></head><body>
+<nav><span class="title">Graduation Arb Research</span>${navHtml}</nav>
+<div class="grid">
+  <div class="card">
+    <h3>Bot Status</h3>
+    <div class="stat"><span class="label">Status</span><span class="value" style="color:${statusColor}">${status}</span></div>
+    <div class="stat"><span class="label">Uptime</span><span class="value">${Math.floor(uptimeMin / 60)}h ${uptimeMin % 60}m</span></div>
+    <div class="stat"><span class="label">Last Graduation</span><span class="value">${lastGradAgo ? lastGradAgo + 's ago' : '—'}</span></div>
+    <div class="stat"><span class="label">WS Connected</span><span class="value ${stats?.wsConnected ? 'green' : 'red'}">${stats?.wsConnected ? 'YES' : 'NO'}</span></div>
+  </div>
+  <div class="card">
+    <h3>Detection Pipeline</h3>
+    <div class="stat"><span class="label">Candidates</span><span class="value">${stats?.totalCandidatesDetected ?? '—'}</span></div>
+    <div class="stat"><span class="label">Verified</span><span class="value green">${stats?.totalVerifiedGraduations ?? '—'}</span></div>
+    <div class="stat"><span class="label">False Positives</span><span class="value red">${stats?.totalFalsePositives ?? '—'}</span></div>
+    <div class="stat"><span class="label">Vault Extractions</span><span class="value">${stats?.totalVaultExtractions ?? '—'} / ${stats?.totalVerifiedGraduations ?? '—'}</span></div>
+  </div>
+  <div class="card">
+    <h3>Thesis Scorecard</h3>
+    <div class="stat"><span class="label">Total Labeled</span><span class="value">${totalLabeled}</span></div>
+    <div class="stat"><span class="label">PUMP / DUMP</span><span class="value">${pumpCount} / ${labels.find((l: any) => l.label === 'DUMP')?.count || 0}</span></div>
+    <div class="stat"><span class="label">Raw Win Rate</span><span class="value ${+winRate > 50 ? 'green' : 'yellow'}">${winRate}%</span></div>
+    <div class="stat"><span class="label">Best Filter WR</span><span class="value ${+bestWr > 50 ? 'green' : 'yellow'}">${bestWr}% (n=${bestFilter.total})</span></div>
+  </div>
+  <div class="card">
+    <h3>Data Collection</h3>
+    <div class="stat"><span class="label">Total Graduations</span><span class="value">${pipeline.total}</span></div>
+    <div class="stat"><span class="label">With Pool</span><span class="value">${pipeline.with_pool}</span></div>
+    <div class="stat"><span class="label">Observations Done</span><span class="value">${pipeline.complete}</span></div>
+    <div class="stat"><span class="label">Unlabeled</span><span class="value">${pipeline.total - totalLabeled - (labels.find((l: any) => l.label === 'STABLE')?.count || 0)}</span></div>
+  </div>
+  <div class="card" style="grid-column:1/-1">
+    <h3>Quick Links</h3>
+    <div class="links">
+      <a href="/thesis"><div><div>Thesis & Scorecard</div><div class="desc">Win rates, best filters, momentum signals, last 10 graduations</div></div><span class="arrow">&rarr;</span></a>
+      <a href="/filter-analysis"><div><div>Filter Analysis</div><div class="desc">All filter combos, stop-loss simulation, drawdown analysis, trading readiness</div></div><span class="arrow">&rarr;</span></a>
+      <a href="/tokens?label=PUMP&min_sol=80"><div><div>Token Browser</div><div class="desc">Browse individual tokens with links to Solscan and DexScreener</div></div><span class="arrow">&rarr;</span></a>
+      <a href="/health"><div><div>Health & Diagnostics</div><div class="desc">Listener stats, RPC metrics, vault extraction details</div></div><span class="arrow">&rarr;</span></a>
+      <a href="/data"><div><div>Raw Research Data</div><div class="desc">All graduations, pool observations, price comparisons, opportunities</div></div><span class="arrow">&rarr;</span></a>
+      <a href="/raydium-check"><div><div>DEX Listing Check</div><div class="desc">Where tokens land — PumpSwap, Raydium, Meteora via DexScreener</div></div><span class="arrow">&rarr;</span></a>
+      <a href="/cleanup-false-positives"><div><div>Cleanup False Positives</div><div class="desc">Remove legacy low-SOL entries from database (safe, one-time)</div></div><span class="arrow">&rarr;</span></a>
+    </div>
+  </div>
+</div>
+</body></html>`);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Redirect root to dashboard
+  app.get('/', (_req, res) => res.redirect('/dashboard'));
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // MOMENTUM RESEARCH DASHBOARD
