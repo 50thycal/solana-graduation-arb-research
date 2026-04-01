@@ -225,6 +225,8 @@ async function main() {
           { name: 't30 +5% to +100%', sql: "pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
           { name: 'holders>=10 AND t30 +5% to +100%', sql: "holder_count >= 10 AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
           { name: 'bc_age>10m AND t30 +5% to +100%', sql: "token_age_seconds > 600 AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
+          { name: 'bc_velocity<20 AND t30 +5% to +100%', sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20 AND pct_t30 >= 5 AND pct_t30 <= 100" },
+          { name: 'liquidity>100 AND t30 +5% to +100%', sql: "liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30 > 100 AND pct_t30 >= 5 AND pct_t30 <= 100" },
         ];
         for (const ft of filterTests) {
           const r = db.prepare(`
@@ -701,6 +703,14 @@ async function main() {
           runFilter('bc_age>10min AND sol>=80 AND t30 +5% to +100%',          'token_age_seconds>600 AND total_sol_raised>=80 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_age>30min AND t30 +5% to +100%',                      'token_age_seconds>1800 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_age>30min AND holders>=10 AND t30 +5% to +100%',      'token_age_seconds>1800 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
+          // Velocity filters — slow-fill curves may indicate more organic demand
+          runFilter('bc_velocity<10 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<10 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('bc_velocity<20 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('bc_velocity<50 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<50 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('bc_velocity<10 AND holders>=10 AND t30 +5% to +100%',   'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<10 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
+          // Liquidity filter — deeper pools = better execution
+          runFilter('liquidity>100 SOL AND t30 +5% to +100%',               'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30>100 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('liquidity>150 SOL AND t30 +5% to +100%',               'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30>150 AND pct_t30>=5 AND pct_t30<=100'),
         ],
 
         momentum_continuation: {
@@ -802,6 +812,29 @@ async function main() {
           bucket: b.bucket, total: b.total, pump: b.pump, dump: b.dump,
           win_rate_pct: winRate(b.pump, b.total),
         })),
+
+        bc_velocity_distribution: (() => {
+          const velBuckets = db.prepare(`
+            SELECT
+              CASE
+                WHEN bc_velocity_sol_per_min IS NULL   THEN 'null'
+                WHEN bc_velocity_sol_per_min < 5       THEN '<5 sol/min'
+                WHEN bc_velocity_sol_per_min < 10      THEN '5-10 sol/min'
+                WHEN bc_velocity_sol_per_min < 20      THEN '10-20 sol/min'
+                WHEN bc_velocity_sol_per_min < 50      THEN '20-50 sol/min'
+                ELSE '50+ sol/min'
+              END as bucket,
+              COUNT(*) as total,
+              SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pump,
+              SUM(CASE WHEN label='DUMP' THEN 1 ELSE 0 END) as dump
+            FROM graduation_momentum WHERE label IS NOT NULL
+            GROUP BY bucket ORDER BY MIN(COALESCE(bc_velocity_sol_per_min, -1))
+          `).all() as any[];
+          return velBuckets.map((b: any) => ({
+            bucket: b.bucket, total: b.total, pump: b.pump, dump: b.dump,
+            win_rate_pct: b.total > 0 ? +((b.pump / b.total) * 100).toFixed(1) : null,
+          }));
+        })(),
 
         bc_age_distribution: ageBuckets.map((b: any) => ({
           bucket: b.bucket, total: b.total, pump: b.pump, dump: b.dump,
