@@ -70,6 +70,10 @@ interface ActiveObservation {
   peakPriceSec: number;    // when peak occurred (seconds since graduation)
   maxDrawdownPct: number;  // worst drop from peak (negative number)
   maxDrawdownSec: number;  // when max drawdown occurred
+  // Price history for volatility/liquidity tracking (first 30s)
+  earlyPrices: number[];         // all prices seen T+0 to T+30
+  earlySolReserves: number[];    // SOL reserves at each early snapshot
+  liquiditySolT30?: number;      // SOL reserves at T+30
 }
 
 export class PriceCollector {
@@ -155,6 +159,8 @@ export class PriceCollector {
       peakPriceSec: 0,
       maxDrawdownPct: 0,
       maxDrawdownSec: 0,
+      earlyPrices: [],
+      earlySolReserves: [],
     };
 
     this.active.set(ctx.graduationId, observation);
@@ -246,6 +252,45 @@ export class PriceCollector {
 
       this.totalSnapshots++;
       observation.completedSnapshots.push(targetSec);
+
+      // Track early prices/liquidity for volatility and slippage estimation
+      if (targetSec <= 30) {
+        observation.earlyPrices.push(poolState.price);
+        observation.earlySolReserves.push(poolState.solReserves);
+      }
+
+      // At T+30: compute volatility, liquidity, and slippage estimates
+      if (targetSec === 30 && observation.openPoolPrice && observation.openPoolPrice > 0) {
+        observation.liquiditySolT30 = poolState.solReserves;
+
+        const prices = observation.earlyPrices;
+        if (prices.length >= 2) {
+          const minPrice = Math.min(...prices);
+          const maxPrice = Math.max(...prices);
+          const volatility = ((maxPrice - minPrice) / observation.openPoolPrice) * 100;
+
+          // Slippage estimate for a 0.5 SOL buy using constant product formula:
+          // For AMM: price_impact = trade_size / (pool_sol + trade_size)
+          const tradeSizeSol = 0.5;
+          const slippagePct = (tradeSizeSol / (poolState.solReserves + tradeSizeSol)) * 100;
+
+          try {
+            this.db.prepare(`
+              UPDATE graduation_momentum
+              SET volatility_0_30 = ?, liquidity_sol_t30 = ?, slippage_est_05sol = ?
+              WHERE graduation_id = ?
+            `).run(
+              +volatility.toFixed(2),
+              +poolState.solReserves.toFixed(4),
+              +slippagePct.toFixed(3),
+              graduationId
+            );
+          } catch (err) {
+            logger.warn('Failed to write T+30 liquidity metrics for grad %d: %s',
+              graduationId, err instanceof Error ? err.message : String(err));
+          }
+        }
+      }
 
       // Insert pool observation (raw data for debugging)
       insertPoolObservation(this.db, {
@@ -512,6 +557,21 @@ export class PriceCollector {
           err instanceof Error ? err.message : String(err)
         );
       }
+    }
+
+    // Compute and store bonding curve velocity (sol_raised / age_minutes)
+    try {
+      const row = this.db.prepare(
+        'SELECT total_sol_raised, token_age_seconds FROM graduation_momentum WHERE graduation_id = ?'
+      ).get(graduationId) as any;
+      if (row?.total_sol_raised > 0 && row?.token_age_seconds > 0) {
+        const velocity = (row.total_sol_raised / row.token_age_seconds) * 60;
+        this.db.prepare(
+          'UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?'
+        ).run(+velocity.toFixed(2), graduationId);
+      }
+    } catch (err) {
+      logger.debug('Failed to compute bc_velocity for grad %d', graduationId);
     }
 
     // Label momentum (PUMP/DUMP/STABLE)
