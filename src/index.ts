@@ -703,14 +703,37 @@ async function main() {
           runFilter('bc_age>10min AND sol>=80 AND t30 +5% to +100%',          'token_age_seconds>600 AND total_sol_raised>=80 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_age>30min AND t30 +5% to +100%',                      'token_age_seconds>1800 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_age>30min AND holders>=10 AND t30 +5% to +100%',      'token_age_seconds>1800 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
-          // Velocity filters — slow-fill curves may indicate more organic demand
+          // ── VELOCITY FILTERS ─────────────────────────────────────────
+          // Hypothesis: slow-fill curves = organic demand = more likely PUMP
           runFilter('bc_velocity<10 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<10 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_velocity<20 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_velocity<50 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<50 AND pct_t30>=5 AND pct_t30<=100'),
-          runFilter('bc_velocity<10 AND holders>=10 AND t30 +5% to +100%',   'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<10 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
-          // Liquidity filter — deeper pools = better execution
+          // ── LIQUIDITY FILTERS ─────────────────────────────────────────
+          // Hypothesis: deeper pools = better execution + more real interest
           runFilter('liquidity>100 SOL AND t30 +5% to +100%',               'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30>100 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('liquidity>150 SOL AND t30 +5% to +100%',               'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30>150 AND pct_t30>=5 AND pct_t30<=100'),
+          // ── FULL STACK COMBOS ─────────────────────────────────────────
+          // These are the "trading bot candidate" filters — stack all proven signals
+          runFilter('velocity<20 AND holders>=10 AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity<20 AND bc_age>10m AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity<20 AND liquidity>100 AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity<20 AND holders>=10 AND bc_age>10m AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND holder_count>=10 AND token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity<20 AND liquidity>100 AND bc_age>10m AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100 AND token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
+          // The "kitchen sink" — every signal stacked
+          runFilter('velocity<20 AND liquidity>100 AND holders>=10 AND bc_age>10m AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100 AND holder_count>=10 AND token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
+          // Looser velocity threshold combos
+          runFilter('velocity<50 AND holders>=10 AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<50 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity<50 AND liquidity>100 AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<50 AND liquidity_sol_t30>100 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity<50 AND bc_age>10m AND holders>=10 AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<50 AND token_age_seconds>600 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
         ],
 
         momentum_continuation: {
