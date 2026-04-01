@@ -69,6 +69,51 @@ async function main() {
   app.get('/reset', (req, res) => resetHandler(req, res));
   app.post('/reset', (req, res) => resetHandler(req, res));
 
+  // Targeted cleanup: remove false positive graduations (low SOL reserves from bundler txs)
+  app.get('/cleanup-false-positives', (req, res) => cleanupHandler(req, res));
+  app.post('/cleanup-false-positives', (req, res) => cleanupHandler(req, res));
+
+  function cleanupHandler(_req: any, res: any) {
+    try {
+      // Find graduation IDs where sol_raised < 50 (false positives from bundler txs)
+      // Real graduations have ~85 SOL. Anything below 50 is either a false positive
+      // or a self-graduated scam token with no real liquidity.
+      const threshold = 50;
+      const falsePositiveIds = db.prepare(`
+        SELECT g.id FROM graduations g
+        LEFT JOIN graduation_momentum gm ON g.id = gm.graduation_id
+        WHERE COALESCE(gm.total_sol_raised, g.final_sol_reserves, 0) < ?
+      `).all(threshold) as Array<{ id: number }>;
+
+      const ids = falsePositiveIds.map((r) => r.id);
+      if (ids.length === 0) {
+        res.json({ status: 'ok', message: 'No false positives found to clean up', removed: 0 });
+        return;
+      }
+
+      // Delete in dependency order (children first)
+      const placeholders = ids.map(() => '?').join(',');
+      const tables = ['competition_signals', 'opportunities', 'price_comparisons', 'pool_observations', 'graduation_momentum'];
+      let totalDeleted = 0;
+      for (const table of tables) {
+        const result = db.prepare(`DELETE FROM ${table} WHERE graduation_id IN (${placeholders})`).run(...ids);
+        totalDeleted += result.changes;
+      }
+      const gradResult = db.prepare(`DELETE FROM graduations WHERE id IN (${placeholders})`).run(...ids);
+      totalDeleted += gradResult.changes;
+
+      res.json({
+        status: 'ok',
+        message: `Removed ${ids.length} false positive graduations (sol_raised < ${threshold}) and ${totalDeleted} related records`,
+        graduations_removed: ids.length,
+        total_records_removed: totalDeleted,
+        threshold_sol: threshold,
+      });
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
   function resetHandler(_req: any, res: any) {
     try {
       const tables = [
