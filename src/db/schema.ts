@@ -183,6 +183,11 @@ function runMigrations(db: Database.Database): void {
       ['max_peak_sec', 'INTEGER'],    // seconds since graduation when peak occurred
       ['max_drawdown_pct', 'REAL'],   // worst drop from peak (negative)
       ['max_drawdown_sec', 'INTEGER'],// seconds since graduation when max drawdown occurred
+      // Trading readiness metrics (computed at T+30)
+      ['volatility_0_30', 'REAL'],       // price range (max-min)/open as % in first 30s
+      ['liquidity_sol_t30', 'REAL'],     // SOL reserves in pool at T+30
+      ['slippage_est_05sol', 'REAL'],    // estimated slippage % for 0.5 SOL buy at T+30
+      ['bc_velocity_sol_per_min', 'REAL'], // bonding curve fill rate (sol_raised / age in minutes)
     ];
     for (const [col, type] of newMomCols) {
       if (!momExisting.has(col)) {
