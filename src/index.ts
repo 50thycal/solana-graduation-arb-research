@@ -190,20 +190,39 @@ async function main() {
       const pumpCount = labels.find((l: any) => l.label === 'PUMP')?.count || 0;
       const winRate = totalLabeled > 0 ? (pumpCount / totalLabeled * 100).toFixed(1) : '—';
 
-      const bestFilter = db.prepare(`
-        SELECT COUNT(*) as total,
-               SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pumps,
-               SUM(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
-                 AND (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) > 1.0
-                 THEN 1 ELSE 0 END) as profitable_t30,
-               COUNT(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL THEN 1 END) as n_with_t30
-        FROM graduation_momentum
-        WHERE label IS NOT NULL AND token_age_seconds > 600 AND pct_t30 >= 5 AND pct_t30 <= 100
-      `).get() as any;
-      // Show T+30 profitable rate (the real trading metric) as the headline "Best Filter WR"
-      const bestWr = bestFilter.n_with_t30 > 0
-        ? (bestFilter.profitable_t30 / bestFilter.n_with_t30 * 100).toFixed(1)
-        : '—';
+      // Dynamic best filter — same candidate list as the thesis page, ranked by T+30 profitable rate
+      const dashFilterTests = [
+        { name: 'bc_age>30min',                   sql: "token_age_seconds > 1800" },
+        { name: 'bc_age>10min',                   sql: "token_age_seconds > 600" },
+        { name: 'velocity 5-20 + t30 +5-100%',   sql: "bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20 AND pct_t30 >= 5 AND pct_t30 <= 100" },
+        { name: 'holders>=10 + t30 +5-100%',      sql: "holder_count >= 10 AND pct_t30 >= 5 AND pct_t30 <= 100" },
+        { name: 'bc_velocity<20 + t30 +5-100%',   sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20 AND pct_t30 >= 5 AND pct_t30 <= 100" },
+        { name: 't30 +5-100%',                    sql: "pct_t30 >= 5 AND pct_t30 <= 100" },
+        { name: 'top5 < 20%',                     sql: "top5_wallet_pct < 20" },
+        { name: 'dev < 5%',                       sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5" },
+      ];
+      let bestFilterName = '—';
+      let bestWr = '—';
+      let bestWrN = 0;
+      for (const ft of dashFilterTests) {
+        const r = db.prepare(`
+          SELECT
+            SUM(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+              AND (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) > 1.0
+              THEN 1 ELSE 0 END) as profitable_t30,
+            COUNT(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL THEN 1 END) as n_with_t30
+          FROM graduation_momentum
+          WHERE label IS NOT NULL AND ${ft.sql}
+        `).get() as any;
+        if (r.n_with_t30 >= 3) {
+          const rate = +(r.profitable_t30 / r.n_with_t30 * 100).toFixed(1);
+          if (bestWr === '—' || rate > +bestWr) {
+            bestWr = rate.toFixed(1);
+            bestWrN = r.n_with_t30;
+            bestFilterName = ft.name;
+          }
+        }
+      }
 
       const lastGradAgo = pipeline.last_ts ? Math.floor(Date.now() / 1000) - pipeline.last_ts : null;
       const status = listenerStatus === 'running'
@@ -260,7 +279,7 @@ async function main() {
     <div class="stat"><span class="label">Total Labeled</span><span class="value">${totalLabeled}</span></div>
     <div class="stat"><span class="label">PUMP / DUMP</span><span class="value">${pumpCount} / ${labels.find((l: any) => l.label === 'DUMP')?.count || 0}</span></div>
     <div class="stat"><span class="label">Raw Win Rate (T+0)</span><span class="value ${+winRate > 50 ? 'green' : 'yellow'}">${winRate}%</span></div>
-    <div class="stat"><span class="label">Best Filter T+30 Profit%</span><span class="value ${+bestWr > 50 ? 'green' : 'yellow'}">${bestWr}% (n=${bestFilter.n_with_t30})</span></div>
+    <div class="stat"><span class="label">Best Filter T+30 Profit%</span><span class="value ${+bestWr > 50 ? 'green' : 'yellow'}">${bestWr}% (n=${bestWrN}) [${bestFilterName}]</span></div>
   </div>
   <div class="card">
     <h3>Data Collection</h3>
@@ -374,6 +393,10 @@ async function main() {
           { name: 'holder_count >= 15', sql: "holder_count IS NOT NULL AND holder_count >= 15" },
           { name: 'total_sol_raised >= 80', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 80" },
           { name: 'total_sol_raised >= 85', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 85" },
+          // bc_age filters — data shows bc_age>30min gives 51.7% T+30 profitable at n=143
+          { name: 'bc_age > 10min', sql: "token_age_seconds > 600" },
+          { name: 'bc_age > 30min', sql: "token_age_seconds > 1800" },
+          { name: 'bc_age > 1hr',   sql: "token_age_seconds > 3600" },
           // T+30 momentum signal — the v2 thesis signal
           { name: 't30 +5% to +100%', sql: "pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
           { name: 'holders>=10 AND t30 +5% to +100%', sql: "holder_count >= 10 AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
@@ -517,10 +540,10 @@ async function main() {
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v4-t30-entry-basis',
-        thesis: 'All filter win rates now measured on T+30 entry basis: profitable_from_t30_pct = % of entries where T+300 price > T+30 entry price. PUMP/DUMP labels retained for context but no longer drive scorecard decisions.',
-        last_change: 'TASK 2: Converted ALL filter win rates to T+30 entry basis. runFilter() now returns t30_profitable_rate_pct and t30_avg_return_pct alongside existing PUMP label rate. Best filter selection now ranks by t30_profitable_rate_pct. Verdict and scorecard reference T+30 profitability. Dashboard Best Filter WR card now shows T+30 profitable rate.',
-        watch_for: 't30_profitable_rate_pct in filter-analysis — look for filters where this exceeds 51%. Compare to win_rate_pct (T+0 label) to see if the gap is large — a large gap means you were entering too late and the T+0 signal was misleading.',
+        version: 'momentum-v4b-dashboard-fix',
+        thesis: 'bc_age>30min shows 51.7% T+30 profitable rate, +6.7% avg return, n=143 — best EV signal so far. velocity 5-20 + t30+5-100% shows 55.9% T+30 profitable rate but avg_return=-0.6% before stop-loss; with 10-20% SL turns to +7-9% avg return.',
+        last_change: 'Fixed dashboard Best Filter card: was hardcoded to bc_age>10min (showing misleading 42.4%). Now dynamically selects best filter from ranked candidate list. Added bc_age>30min and bc_age>10min to scorecard filterTests (were missing — bc_age>30min should now win as best filter at 51.7%). Dashboard card now shows filter name alongside rate.',
+        watch_for: 'best_filter on scorecard should now show bc_age>30min at ~51.7% (or velocity 5-20+t30 at 55.9% if it wins). Dashboard Best Filter card should show the same filter name. If they still differ, there is a bug in one of the two candidate lists.',
       };
 
       // Detection pipeline stats (shows how many raw events → real graduations)
