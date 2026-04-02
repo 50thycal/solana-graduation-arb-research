@@ -152,7 +152,7 @@ export function renderThesisHtml(data: any): string {
       </div>
       <div>
         <div class="stat"><span class="label">Best Filter</span><span class="value blue">${sc.best_filter?.name || '—'}</span></div>
-        <div class="stat"><span class="label">Best Filter WR</span><span class="value">${wr(sc.best_filter?.win_rate)}</span></div>
+        <div class="stat"><span class="label">Best Filter T+30 Profit%</span><span class="value">${wr(sc.best_filter?.t30_profitable_rate ?? sc.best_filter?.win_rate)}</span></div>
         <div class="stat"><span class="label">Sample Size</span><span class="value">${sc.best_filter?.sample_size || '—'}</span></div>
         <div class="stat"><span class="label">Unlabeled</span><span class="value">${sc.unlabeled}</span></div>
         <div class="stat"><span class="label">Samples to 30</span><span class="value">${sc.samples_remaining}</span></div>
@@ -176,11 +176,13 @@ export function renderThesisHtml(data: any): string {
     <div class="grid">
       <div>
         <div class="stat"><span class="label">Filter</span><span class="value">${t30.filter}</span></div>
-        <div class="stat"><span class="label">Win Rate</span><span class="value">${wr(t30.win_rate_pct)}</span></div>
+        <div class="stat"><span class="label">Win Rate</span><span class="value">${wr(t30.win_rate_from_t0_pct ?? t30.win_rate_pct)}</span></div>
+        <div class="stat"><span class="label">T+30 Profitable Rate</span><span class="value ${(t30.t30_profitable_rate_pct ?? 0) > 51 ? 'green' : 'yellow'}">${wr(t30.t30_profitable_rate_pct)}</span></div>
+        <div class="stat"><span class="label">T+30 Avg Return</span><span class="value">${pct(t30.t30_avg_return_pct)}</span></div>
       </div>
       <div>
         <div class="stat"><span class="label">Sample (n)</span><span class="value">${t30.n}</span></div>
-        <div class="stat"><span class="label">PUMP / DUMP</span><span class="value"><span class="green">${t30.pump}</span> / <span class="red">${t30.dump}</span></span></div>
+        <div class="stat"><span class="label">PUMP / DUMP</span><span class="value"><span class="green">${t30.pump_label_count ?? t30.pump ?? '—'}</span> / <span class="red">${t30.dump_label_count ?? t30.dump ?? '—'}</span></span></div>
         <div class="stat"><span class="label">Avg T+300</span><span class="value">${pct(t30.avg_t300_pct)}</span></div>
       </div>
     </div>
@@ -250,7 +252,7 @@ function filterTable(title: string, desc: string, rows: any[], showAvgT300 = tru
     const t300Cell = showAvgT300 ? `<td>${pct(r.avg_t300_pct)}</td>` : '';
     return `<tr>
       <td>${r.filter || r.strategy || r.bucket || '—'}</td>
-      <td>${r.n}</td><td class="green">${r.pump ?? '—'}</td><td class="red">${r.dump ?? '—'}</td>
+      <td>${r.n ?? r.total ?? '—'}</td><td class="green">${r.pump ?? '—'}</td><td class="red">${r.dump ?? '—'}</td>
       <td>${wr(r.win_rate_pct)}</td>${t300Cell}
     </tr>`;
   }).join('');
