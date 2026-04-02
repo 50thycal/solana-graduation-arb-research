@@ -192,11 +192,18 @@ async function main() {
 
       const bestFilter = db.prepare(`
         SELECT COUNT(*) as total,
-               SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pumps
+               SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pumps,
+               SUM(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+                 AND (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) > 1.0
+                 THEN 1 ELSE 0 END) as profitable_t30,
+               COUNT(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL THEN 1 END) as n_with_t30
         FROM graduation_momentum
         WHERE label IS NOT NULL AND token_age_seconds > 600 AND pct_t30 >= 5 AND pct_t30 <= 100
       `).get() as any;
-      const bestWr = bestFilter.total > 0 ? (bestFilter.pumps / bestFilter.total * 100).toFixed(1) : '—';
+      // Show T+30 profitable rate (the real trading metric) as the headline "Best Filter WR"
+      const bestWr = bestFilter.n_with_t30 > 0
+        ? (bestFilter.profitable_t30 / bestFilter.n_with_t30 * 100).toFixed(1)
+        : '—';
 
       const lastGradAgo = pipeline.last_ts ? Math.floor(Date.now() / 1000) - pipeline.last_ts : null;
       const status = listenerStatus === 'running'
@@ -252,8 +259,8 @@ async function main() {
     <h3>Thesis Scorecard</h3>
     <div class="stat"><span class="label">Total Labeled</span><span class="value">${totalLabeled}</span></div>
     <div class="stat"><span class="label">PUMP / DUMP</span><span class="value">${pumpCount} / ${labels.find((l: any) => l.label === 'DUMP')?.count || 0}</span></div>
-    <div class="stat"><span class="label">Raw Win Rate</span><span class="value ${+winRate > 50 ? 'green' : 'yellow'}">${winRate}%</span></div>
-    <div class="stat"><span class="label">Best Filter WR</span><span class="value ${+bestWr > 50 ? 'green' : 'yellow'}">${bestWr}% (n=${bestFilter.total})</span></div>
+    <div class="stat"><span class="label">Raw Win Rate (T+0)</span><span class="value ${+winRate > 50 ? 'green' : 'yellow'}">${winRate}%</span></div>
+    <div class="stat"><span class="label">Best Filter T+30 Profit%</span><span class="value ${+bestWr > 50 ? 'green' : 'yellow'}">${bestWr}% (n=${bestFilter.n_with_t30})</span></div>
   </div>
   <div class="card">
     <h3>Data Collection</h3>
@@ -355,8 +362,8 @@ async function main() {
       const pumpFiltered = labelsFiltered.find((l: any) => l.label === 'PUMP')?.count || 0;
       const filteredWinRate = totalLabeledFiltered > 0 ? +(pumpFiltered / totalLabeledFiltered * 100).toFixed(1) : null;
 
-      // ── BEST FILTER (simple: try each filter, pick highest win rate) ──
-      let bestFilter: { name: string; rule: string; win_rate: number; sample_size: number } | null = null;
+      // ── BEST FILTER (pick highest T+30 profitable rate) ──
+      let bestFilter: { name: string; rule: string; win_rate: number; t30_profitable_rate: number | null; t30_avg_return: number | null; sample_size: number } | null = null;
       if (totalLabeled >= 5) {
         const filterTests = [
           { name: 'top5_wallet_pct < 30', sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 30" },
@@ -379,14 +386,28 @@ async function main() {
           const r = db.prepare(`
             SELECT
               COUNT(*) as total,
-              SUM(CASE WHEN label = 'PUMP' THEN 1 ELSE 0 END) as pumps
+              SUM(CASE WHEN label = 'PUMP' THEN 1 ELSE 0 END) as pumps,
+              ROUND(AVG(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+                THEN (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) * 100.0 - 100.0
+                END), 1) as avg_return_t30,
+              SUM(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+                AND (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) > 1.0
+                THEN 1 ELSE 0 END) as profitable_t30,
+              COUNT(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL THEN 1 END) as n_with_t30
             FROM graduation_momentum
             WHERE label IS NOT NULL AND ${ft.sql}
           `).get() as any;
           if (r.total >= 3) {
             const wr = +(r.pumps / r.total * 100).toFixed(1);
-            if (!bestFilter || wr > bestFilter.win_rate) {
-              bestFilter = { name: ft.name, rule: ft.sql, win_rate: wr, sample_size: r.total };
+            const t30ProfRate = r.n_with_t30 > 0 ? +(r.profitable_t30 / r.n_with_t30 * 100).toFixed(1) : null;
+            const t30AvgReturn = r.avg_return_t30;
+            // Rank by T+30 profitable rate (the real trading metric); fall back to win_rate
+            const rankScore = t30ProfRate ?? wr;
+            const bestScore = bestFilter
+              ? (bestFilter.t30_profitable_rate ?? bestFilter.win_rate)
+              : -Infinity;
+            if (rankScore > bestScore) {
+              bestFilter = { name: ft.name, rule: ft.sql, win_rate: wr, t30_profitable_rate: t30ProfRate, t30_avg_return: t30AvgReturn, sample_size: r.total };
             }
           }
         }
@@ -458,34 +479,48 @@ async function main() {
       const listenerStats = listener ? listener.getStats() : null;
 
       // ── T+30 MOMENTUM SIGNAL SUMMARY (v2 thesis) ──
+      // Reports T+30-entry profitability: "if I enter at T+30, does price exceed my entry by T+300?"
       const t30Signal = db.prepare(`
         SELECT
           COUNT(*) as n,
           SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pump,
           SUM(CASE WHEN label='DUMP' THEN 1 ELSE 0 END) as dump,
-          ROUND(AVG(pct_t300), 1) as avg_t300
+          ROUND(AVG(pct_t300), 1) as avg_t300,
+          ROUND(AVG(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+            THEN (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) * 100.0 - 100.0
+            END), 1) as avg_return_from_t30,
+          SUM(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+            AND (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) > 1.0
+            THEN 1 ELSE 0 END) as profitable_from_t30,
+          COUNT(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL THEN 1 END) as n_with_t30
         FROM graduation_momentum
         WHERE label IS NOT NULL
           AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100
           AND holder_count >= 10
       `).get() as any;
+      // t30ProfitableRate: % of trades profitable when entering at T+30 (the real trading question)
+      const t30ProfitableRate = t30Signal.n_with_t30 > 0
+        ? +(t30Signal.profitable_from_t30 / t30Signal.n_with_t30 * 100).toFixed(1)
+        : null;
+      // Keep backward-compat label-based win rate for context
       const t30WinRate = t30Signal.n > 0 ? +(t30Signal.pump / t30Signal.n * 100).toFixed(1) : null;
 
-      // ── VERDICT ──
+      // ── VERDICT (T+30 entry basis) ──
+      const bestT30Rate = bestFilter?.t30_profitable_rate ?? null;
       const verdict = totalLabeled < 10 ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)` :
-        totalLabeled < 30 ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%, T+30 signal ${t30WinRate ?? '?'}% (n=${t30Signal.n})` :
-        (rawWinRate !== null && rawWinRate > 60) ? `THESIS VALID — ${rawWinRate}% raw win rate (${pumpCount}/${totalLabeled})` :
-        (bestFilter && bestFilter.win_rate > 51) ? `SIGNAL FOUND — raw ${rawWinRate}%, filtered ${bestFilter.win_rate}% with [${bestFilter.name}] (n=${bestFilter.sample_size})` :
-        (t30WinRate !== null && t30WinRate >= 40) ? `MOMENTUM EDGE — T+30 signal lifts win rate to ${t30WinRate}% (n=${t30Signal.n}) vs ${rawWinRate}% baseline — below 51% target, testing stop-loss to flip EV` :
-        (rawWinRate !== null && rawWinRate > 40) ? `MARGINAL — ${rawWinRate}% raw, filters may help` :
-        `WEAK — ${rawWinRate}% raw win rate, T+30 signal ${t30WinRate ?? '?'}% (n=${t30Signal.n})`;
+        totalLabeled < 30 ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%, T+30 profitable rate ${t30ProfitableRate ?? '?'}% (n=${t30Signal.n_with_t30})` :
+        (t30ProfitableRate !== null && t30ProfitableRate > 60) ? `THESIS VALID — ${t30ProfitableRate}% profitable from T+30 entry (n=${t30Signal.n_with_t30}), avg return ${t30Signal.avg_return_from_t30}%` :
+        (bestT30Rate !== null && bestT30Rate > 51) ? `SIGNAL FOUND — best filter [${bestFilter!.name}] shows ${bestT30Rate}% T+30 profitable rate, avg return ${bestFilter!.t30_avg_return}% (n=${bestFilter!.sample_size})` :
+        (t30ProfitableRate !== null && t30ProfitableRate >= 40) ? `MOMENTUM EDGE — T+30 profitable rate ${t30ProfitableRate}% (n=${t30Signal.n_with_t30}), avg return ${t30Signal.avg_return_from_t30}% — below 51% target, testing stop-loss to flip EV` :
+        (rawWinRate !== null && rawWinRate > 40) ? `MARGINAL — ${rawWinRate}% raw PUMP label rate, T+30 profitable ${t30ProfitableRate ?? '?'}% — filters may help` :
+        `WEAK — ${rawWinRate}% raw win rate, T+30 profitable rate ${t30ProfitableRate ?? '?'}% (n=${t30Signal.n_with_t30})`;
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v3-fix',
-        thesis: 'T+30 momentum signal: tokens up +5-100% at T+30 with holders>=10 show 44-46% win rate vs 23% baseline. PUMP-labeled subset returns +52% from T+30. Exploring stop-loss to flip expected value positive.',
-        last_change: 'Fixed data parsing bug: ~85% of detected events were false positives from bundler/MEV txs (wrapper programs logging "Instruction: Migrate"). Added bonding curve correlation for mint extraction + AND verification (SOL reserves >= 70 AND token reserves near-zero). Real graduations ~15% of raw events.',
-        watch_for: 'false_positive_rate dropping to near-zero, total_graduations growing at real rate (~1-2/min), all graduations getting pool+vault extraction.',
+        version: 'momentum-v4-t30-entry-basis',
+        thesis: 'All filter win rates now measured on T+30 entry basis: profitable_from_t30_pct = % of entries where T+300 price > T+30 entry price. PUMP/DUMP labels retained for context but no longer drive scorecard decisions.',
+        last_change: 'TASK 2: Converted ALL filter win rates to T+30 entry basis. runFilter() now returns t30_profitable_rate_pct and t30_avg_return_pct alongside existing PUMP label rate. Best filter selection now ranks by t30_profitable_rate_pct. Verdict and scorecard reference T+30 profitability. Dashboard Best Filter WR card now shows T+30 profitable rate.',
+        watch_for: 't30_profitable_rate_pct in filter-analysis — look for filters where this exceeds 51%. Compare to win_rate_pct (T+0 label) to see if the gap is large — a large gap means you were entering too late and the T+0 signal was misleading.',
       };
 
       // Detection pipeline stats (shows how many raw events → real graduations)
@@ -538,11 +573,16 @@ async function main() {
         t30_momentum_signal: {
           filter: 'holders>=10 AND t30 +5% to +100%',
           n: t30Signal.n,
-          pump: t30Signal.pump,
-          dump: t30Signal.dump,
-          win_rate_pct: t30WinRate,
+          n_with_t30_data: t30Signal.n_with_t30,
+          pump_label_count: t30Signal.pump,
+          dump_label_count: t30Signal.dump,
+          // T+0 label-based win rate (kept for historical context — NOT the trading metric)
+          win_rate_from_t0_pct: t30WinRate,
+          // T+30 entry metrics — the real trading question
+          t30_profitable_rate_pct: t30ProfitableRate,
+          t30_avg_return_pct: t30Signal.avg_return_from_t30,
           avg_t300_pct: t30Signal.avg_t300,
-          note: 'Key signal for v2 thesis. Win rate from T+0 entry when T+30 is up +5-100% and holders>=10.',
+          note: 'Key signal for v2 thesis. t30_profitable_rate_pct = % of entries profitable when buying at T+30 price and holding to T+300.',
         },
 
         // ── THESIS VERDICT ──
@@ -670,9 +710,18 @@ async function main() {
             ROUND(AVG(total_sol_raised), 1) as avg_sol,
             ROUND(AVG(holder_count), 1)     as avg_holders,
             ROUND(AVG(top5_wallet_pct), 1)  as avg_top5,
-            ROUND(AVG(pct_t300), 1)         as avg_t300
+            ROUND(AVG(pct_t300), 1)         as avg_t300,
+            ROUND(AVG(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+              THEN (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) * 100.0 - 100.0
+              END), 1) as avg_return_t30,
+            SUM(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+              AND (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) > 1.0
+              THEN 1 ELSE 0 END) as profitable_t30,
+            COUNT(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+              THEN 1 END) as n_with_t30
           FROM graduation_momentum WHERE ${where}
         `).get() as any;
+        const t30ProfRate = row.n_with_t30 > 0 ? +(row.profitable_t30 / row.n_with_t30 * 100).toFixed(1) : null;
         return {
           filter: label,
           n: row.total,
@@ -680,6 +729,9 @@ async function main() {
           dump: row.dump,
           stable: row.stable,
           win_rate_pct: winRate(row.pump, row.total),
+          t30_profitable_rate_pct: t30ProfRate,
+          t30_avg_return_pct: row.avg_return_t30,
+          n_with_t30: row.n_with_t30,
           avg_sol: row.avg_sol,
           avg_holders: row.avg_holders,
           avg_top5_pct: row.avg_top5,
