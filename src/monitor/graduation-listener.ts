@@ -387,11 +387,35 @@ export class GraduationListener {
         graduationId,
         err instanceof Error ? err.message : String(err)
       );
-      insertMomentum(this.db, {
-        graduation_id: graduationId,
-        open_price_sol: event.finalPriceSol,
-        total_sol_raised: event.finalSolReserves,
-      });
+      // Fetch token_age_seconds independently — it's required for velocity calculation
+      // and doesn't depend on holder data. Use a nested promise chain to keep this
+      // fire-and-forget without blocking pool tracking.
+      this.holderEnrichment.getMintCreationTime(new PublicKey(event.mint))
+        .then((creationTime) => {
+          const tokenAgeSeconds = (creationTime !== null && event.timestamp)
+            ? Math.max(0, event.timestamp - creationTime)
+            : undefined;
+          insertMomentum(this.db, {
+            graduation_id: graduationId,
+            open_price_sol: event.finalPriceSol,
+            total_sol_raised: event.finalSolReserves,
+            token_age_seconds: tokenAgeSeconds,
+          });
+          if (tokenAgeSeconds !== undefined) {
+            logger.info(
+              { graduationId, tokenAgeSeconds },
+              'token_age_seconds recovered after holder enrichment failure'
+            );
+          }
+        })
+        .catch(() => {
+          // Age fetch also failed — insert without it
+          insertMomentum(this.db, {
+            graduation_id: graduationId,
+            open_price_sol: event.finalPriceSol,
+            total_sol_raised: event.finalSolReserves,
+          });
+        });
     });
 
     // Start price observation if we have pool info from the graduation tx.
