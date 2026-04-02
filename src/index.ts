@@ -3,6 +3,7 @@ import pino from 'pino';
 import { initDatabase } from './db/schema';
 import { getGraduationCount } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
+import { renderThesisHtml, renderFilterHtml } from './utils/html-renderer';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'main' });
 
@@ -502,7 +503,7 @@ async function main() {
         vault_extraction_fails: listenerStats.totalVaultExtractionFails,
       } : null;
 
-      sendJsonOrHtml(req, res, {
+      const thesisData = {
         // ── HEADER ──
         bot_status: botStatus,
         uptime: `${uptimeHrs}h ${uptimeMin % 60}m`,
@@ -567,7 +568,15 @@ async function main() {
 
         // ── CODE VERSION ──
         code_version: codeVersion,
-      });
+      };
+
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderThesisHtml(thesisData));
+      } else {
+        res.json(thesisData);
+      }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -778,7 +787,7 @@ async function main() {
         };
       };
 
-      sendJsonOrHtml(req, res, {
+      const filterData = {
         generated_at: new Date().toISOString(),
 
         sol_raised_filters: [
@@ -1150,7 +1159,15 @@ async function main() {
         duplicate_mints: dupes.length === 0
           ? 'none'
           : dupes.map((d: any) => ({ mint: d.mint, count: d.cnt })),
-      });
+      };
+
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderFilterHtml(filterData));
+      } else {
+        res.json(filterData);
+      }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
