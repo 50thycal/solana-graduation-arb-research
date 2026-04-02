@@ -36,7 +36,7 @@ export class HolderEnrichment {
    * Walk back through signatures on the mint address to find its creation blockTime.
    * Paginates oldest-first by following `before` pointers. Capped at MAX_AGE_PAGES.
    */
-  private async getMintCreationTime(mintPubkey: PublicKey): Promise<number | null> {
+  async getMintCreationTime(mintPubkey: PublicKey): Promise<number | null> {
     let before: string | undefined = undefined;
     let oldestBlockTime: number | null = null;
 
