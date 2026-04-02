@@ -5,7 +5,7 @@ import { updateGraduationPool } from '../db/queries';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 
-const logger = pino({ name: 'pool-tracker' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'pool-tracker' });
 
 // PumpSwap program ID
 const PUMPSWAP_PROGRAM_ID = new PublicKey(

@@ -2,7 +2,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import pino from 'pino';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 
-const logger = pino({ name: 'holder-enrichment' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'holder-enrichment' });
 
 // pump.fun tokens have 1 billion total supply with 6 decimals
 const PUMP_TOTAL_SUPPLY_RAW = 1_000_000_000_000_000; // 10^15

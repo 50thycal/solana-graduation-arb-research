@@ -3,7 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import pino from 'pino';
 
-const logger = pino({ name: 'db-schema' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'db-schema' });
 
 export function initDatabase(dataDir: string): Database.Database {
   if (!fs.existsSync(dataDir)) {

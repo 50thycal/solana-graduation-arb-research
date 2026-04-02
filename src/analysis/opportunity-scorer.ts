@@ -6,7 +6,7 @@ import {
   insertOpportunity,
 } from '../db/queries';
 
-const logger = pino({ name: 'opportunity-scorer' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'opportunity-scorer' });
 
 // Cost estimates for Solana transactions
 const ESTIMATED_GAS_SOL = 0.000005; // ~5000 lamports base fee

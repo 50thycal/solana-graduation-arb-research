@@ -14,7 +14,7 @@ import { HolderEnrichment } from '../collector/holder-enrichment';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { PriceCollector } from '../collector/price-collector';
 
-const logger = pino({ name: 'graduation-listener' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'graduation-listener' });
 
 // pump.fun program ID
 const PUMP_FUN_PROGRAM_ID = new PublicKey(

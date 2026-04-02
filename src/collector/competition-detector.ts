@@ -5,7 +5,7 @@ import { insertCompetitionSignal } from '../db/queries';
 import { ObservationContext } from './price-collector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 
-const logger = pino({ name: 'competition-detector' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'competition-detector' });
 
 // Known program IDs that aren't user wallets
 const SYSTEM_PROGRAMS = new Set([

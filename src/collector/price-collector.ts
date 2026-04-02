@@ -12,7 +12,7 @@ import { MomentumLabeler } from '../analysis/momentum-labeler';
 import { CompetitionDetector } from './competition-detector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 
-const logger = pino({ name: 'price-collector' });
+const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'price-collector' });
 
 // Momentum research schedule: T+0 for open price, then checkpoints for price tracking
 // Granular in the first 60s (every 10s) for stop-loss analysis,
