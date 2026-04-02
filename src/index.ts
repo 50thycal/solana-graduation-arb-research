@@ -3,6 +3,7 @@ import pino from 'pino';
 import { initDatabase } from './db/schema';
 import { getGraduationCount } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
+import { renderThesisHtml, renderFilterHtml } from './utils/html-renderer';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'main' });
 
@@ -502,7 +503,7 @@ async function main() {
         vault_extraction_fails: listenerStats.totalVaultExtractionFails,
       } : null;
 
-      sendJsonOrHtml(req, res, {
+      const thesisData = {
         // ── HEADER ──
         bot_status: botStatus,
         uptime: `${uptimeHrs}h ${uptimeMin % 60}m`,
@@ -567,7 +568,15 @@ async function main() {
 
         // ── CODE VERSION ──
         code_version: codeVersion,
-      });
+      };
+
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderThesisHtml(thesisData));
+      } else {
+        res.json(thesisData);
+      }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -778,7 +787,7 @@ async function main() {
         };
       };
 
-      sendJsonOrHtml(req, res, {
+      const filterData = {
         generated_at: new Date().toISOString(),
 
         sol_raised_filters: [
@@ -921,27 +930,26 @@ async function main() {
         // Uses T+60 and T+120 checkpoints to approximate stop triggers.
         // Limitation: intra-checkpoint dips are invisible → slightly optimistic.
         stop_loss_simulation: (() => {
-          // simulate(minPct, maxPct, stopPct) — enter at T+30, stop out at stopPct loss
+          // simulate(minPct, maxPct, stopPct, extraWhere?, label?) — enter at T+30, stop out at stopPct loss
           // Uses granular checkpoints T+40/T+50/T+60/T+90/T+120/T+150/T+180/T+240 for accurate stop detection
           const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
-          const simulate = (minPct: number, maxPct: number, stopPct: number) => {
+          const simulate = (minPct: number, maxPct: number, stopPct: number, extraWhere?: string, label?: string) => {
+            const whereExtra = extraWhere ? ` AND ${extraWhere}` : '';
             const rows = db.prepare(`
               SELECT label, pct_t30, ${stopCheckpoints.join(', ')}, pct_t300
               FROM graduation_momentum
               WHERE pct_t30 >= ${minPct} AND pct_t30 <= ${maxPct}
-                AND pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+                AND pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL${whereExtra}
             `).all() as any[];
 
             if (rows.length === 0) return null;
 
             let totalReturn = 0, stopped = 0, profitable = 0;
             for (const r of rows) {
-              // Stop level expressed as a % from T+0 (same basis as pct_tXX)
               const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - stopPct / 100) - 1) * 100;
               let exitReturn: number;
               let wasStoppedOut = false;
 
-              // Check each granular checkpoint for stop trigger
               for (const cp of stopCheckpoints) {
                 if (r[cp] != null && r[cp] <= stopLevelPct) {
                   exitReturn = -stopPct;
@@ -952,7 +960,6 @@ async function main() {
               }
 
               if (!wasStoppedOut) {
-                // No stop triggered — exit at T+300
                 exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
               }
               totalReturn += exitReturn!;
@@ -961,7 +968,7 @@ async function main() {
 
             const n = rows.length;
             return {
-              t30_filter: `+${minPct}% to +${maxPct}%`,
+              strategy: label || `t30 +${minPct}% to +${maxPct}%`,
               stop_loss_pct: stopPct,
               n,
               stopped_count: stopped,
@@ -974,19 +981,42 @@ async function main() {
           };
 
           return {
-            note: 'Enter at T+30, apply stop-loss. Granular checkpoints T+40/T+50/T+60/T+90/T+120/T+150/T+180/T+240 used for accurate stop detection.',
-            results: [
+            note: 'Enter at T+30, apply stop-loss. Granular checkpoints T+40 through T+240 for stop detection. Combo filters test the top-performing strategies.',
+            // Basic t30 range filters
+            basic: [
               simulate(5,  100, 10),
               simulate(5,  100, 15),
               simulate(5,  100, 20),
-              simulate(5,  100, 25),
-              simulate(5,  100, 30),
               simulate(5,   50, 15),
               simulate(5,   50, 20),
-              simulate(5,   50, 25),
+              simulate(10, 100, 10),
               simulate(10, 100, 15),
               simulate(10, 100, 20),
-              simulate(10, 100, 25),
+            ].filter(Boolean),
+            // Velocity sweet spot combos — the top performers
+            velocity_combos: [
+              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20',  'vel 5-20 + t30 +5-100% @ 10% SL'),
+              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20',  'vel 5-20 + t30 +5-100% @ 15% SL'),
+              simulate(5, 100, 20, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20',  'vel 5-20 + t30 +5-100% @ 20% SL'),
+              simulate(5, 100, 25, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20',  'vel 5-20 + t30 +5-100% @ 25% SL'),
+              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50',  'vel 5-50 + t30 +5-100% @ 10% SL'),
+              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50',  'vel 5-50 + t30 +5-100% @ 15% SL'),
+              simulate(5, 100, 20, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50',  'vel 5-50 + t30 +5-100% @ 20% SL'),
+              simulate(5, 100, 10, 'bc_velocity_sol_per_min<20',                                  'vel <20 + t30 +5-100% @ 10% SL'),
+              simulate(5, 100, 15, 'bc_velocity_sol_per_min<20',                                  'vel <20 + t30 +5-100% @ 15% SL'),
+              simulate(5, 100, 20, 'bc_velocity_sol_per_min<20',                                  'vel <20 + t30 +5-100% @ 20% SL'),
+            ].filter(Boolean),
+            // Multi-signal stacks
+            stacked_combos: [
+              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND holder_count>=10', 'vel 5-20 + holders>=10 + t30 @ 10% SL'),
+              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND holder_count>=10', 'vel 5-20 + holders>=10 + t30 @ 15% SL'),
+              simulate(5, 100, 20, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND holder_count>=10', 'vel 5-20 + holders>=10 + t30 @ 20% SL'),
+              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100', 'vel 5-20 + liq>100 + t30 @ 10% SL'),
+              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100', 'vel 5-20 + liq>100 + t30 @ 15% SL'),
+              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50 AND holder_count>=10', 'vel 5-50 + holders>=10 + t30 @ 10% SL'),
+              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50 AND holder_count>=10', 'vel 5-50 + holders>=10 + t30 @ 15% SL'),
+              simulate(5, 100, 10, 'bc_velocity_sol_per_min<20 AND token_age_seconds>600',       'vel <20 + bc_age>10m + t30 @ 10% SL'),
+              simulate(5, 100, 15, 'bc_velocity_sol_per_min<20 AND token_age_seconds>600',       'vel <20 + bc_age>10m + t30 @ 15% SL'),
             ].filter(Boolean),
           };
         })(),
@@ -1129,7 +1159,15 @@ async function main() {
         duplicate_mints: dupes.length === 0
           ? 'none'
           : dupes.map((d: any) => ({ mint: d.mint, count: d.cnt })),
-      });
+      };
+
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderFilterHtml(filterData));
+      } else {
+        res.json(filterData);
+      }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
