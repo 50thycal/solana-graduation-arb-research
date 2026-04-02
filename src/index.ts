@@ -371,6 +371,7 @@ async function main() {
           { name: 'holders>=10 AND t30 +5% to +100%', sql: "holder_count >= 10 AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
           { name: 'bc_age>10m AND t30 +5% to +100%', sql: "token_age_seconds > 600 AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
           { name: 'bc_velocity<20 AND t30 +5% to +100%', sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20 AND pct_t30 >= 5 AND pct_t30 <= 100" },
+          { name: 'velocity 5-20 AND t30 +5% to +100%', sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20 AND pct_t30 >= 5 AND pct_t30 <= 100" },
           { name: 'liquidity>100 AND t30 +5% to +100%', sql: "liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30 > 100 AND pct_t30 >= 5 AND pct_t30 <= 100" },
         ];
         for (const ft of filterTests) {
@@ -849,10 +850,24 @@ async function main() {
           runFilter('bc_age>30min AND t30 +5% to +100%',                      'token_age_seconds>1800 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_age>30min AND holders>=10 AND t30 +5% to +100%',      'token_age_seconds>1800 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
           // ── VELOCITY FILTERS ─────────────────────────────────────────
-          // Hypothesis: slow-fill curves = organic demand = more likely PUMP
+          // Data shows non-linear sweet spot: <5 sol/min = 20.7%, 10-20 = 65%, 50+ = 20%
           runFilter('bc_velocity<10 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<10 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_velocity<20 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_velocity<50 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<50 AND pct_t30>=5 AND pct_t30<=100'),
+          // Sweet spot filters — the 10-20 sol/min range shows 65% win rate
+          runFilter('velocity 5-20 sol/min AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity 5-50 sol/min AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity 10-50 sol/min AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min>=10 AND bc_velocity_sol_per_min<50 AND pct_t30>=5 AND pct_t30<=100'),
+          // Sweet spot + other signals
+          runFilter('velocity 5-20 AND holders>=10 AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity 5-20 AND bc_age>10m AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
+          runFilter('velocity 5-20 AND liquidity>100 AND t30 +5% to +100%',
+            'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100 AND pct_t30>=5 AND pct_t30<=100'),
           // ── LIQUIDITY FILTERS ─────────────────────────────────────────
           // Hypothesis: deeper pools = better execution + more real interest
           runFilter('liquidity>100 SOL AND t30 +5% to +100%',               'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30>100 AND pct_t30>=5 AND pct_t30<=100'),
