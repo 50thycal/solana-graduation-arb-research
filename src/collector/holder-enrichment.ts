@@ -73,85 +73,61 @@ export class HolderEnrichment {
       devWalletPct: 0,
     };
 
+    // Holder count / concentration — may fail due to RPC errors or invalid mint address.
+    // Isolated in its own try/catch so failures don't block the token age fetch below.
     try {
       if (!await globalRpcLimiter.throttleOrDrop(10)) {
         logger.debug({ mint: mint.slice(0, 8) }, 'Holder enrichment dropped — RPC queue full');
-        return result;
-      }
+      } else {
+        const largestAccounts = await this.connection.getTokenLargestAccounts(
+          new PublicKey(mint),
+          'confirmed'
+        );
 
-      const largestAccounts = await this.connection.getTokenLargestAccounts(
-        new PublicKey(mint),
-        'confirmed'
-      );
+        if (largestAccounts.value && largestAccounts.value.length > 0) {
+          // Filter out infrastructure accounts (bonding curve ATA, pool vault)
+          // These aren't real "holders" — they're program-controlled accounts
+          const infraAddresses = new Set<string>();
 
-      if (!largestAccounts.value || largestAccounts.value.length === 0) {
-        return result;
-      }
+          // We don't have the exact ATA addresses, but we can identify them by
+          // their large balances. At graduation, bonding curve has ~0 tokens,
+          // pool vault has ~207M tokens. We filter by checking if the owner
+          // is a known program. For now, we use all accounts as-is and rely
+          // on the fact that at graduation the bonding curve is near-empty.
 
-      // Filter out infrastructure accounts (bonding curve ATA, pool vault)
-      // These aren't real "holders" — they're program-controlled accounts
-      const infraAddresses = new Set<string>();
+          const accounts = largestAccounts.value;
 
-      // We don't have the exact ATA addresses, but we can identify them by
-      // their large balances. At graduation, bonding curve has ~0 tokens,
-      // pool vault has ~207M tokens. We filter by checking if the owner
-      // is a known program. For now, we use all accounts as-is and rely
-      // on the fact that at graduation the bonding curve is near-empty.
+          // Sort by amount descending (should already be sorted, but ensure)
+          const sorted = [...accounts].sort((a, b) => {
+            const aAmt = parseInt(a.amount, 10) || 0;
+            const bAmt = parseInt(b.amount, 10) || 0;
+            return bAmt - aAmt;
+          });
 
-      const accounts = largestAccounts.value;
+          // Filter out the pool vault — it holds ~207M tokens (20.7% of supply)
+          // and the bonding curve ATA (near-zero at graduation but may still appear).
+          // Heuristic: any account holding >15% of supply is likely infrastructure.
+          const INFRA_THRESHOLD = PUMP_TOTAL_SUPPLY_RAW * 0.15;
+          const realHolders = sorted.filter((acc) => {
+            const amt = parseInt(acc.amount, 10) || 0;
+            return amt > 0 && amt < INFRA_THRESHOLD;
+          });
 
-      // Sort by amount descending (should already be sorted, but ensure)
-      const sorted = [...accounts].sort((a, b) => {
-        const aAmt = parseInt(a.amount, 10) || 0;
-        const bAmt = parseInt(b.amount, 10) || 0;
-        return bAmt - aAmt;
-      });
+          result.holderCount = realHolders.length;
 
-      // Filter out the pool vault — it holds ~207M tokens (20.7% of supply)
-      // and the bonding curve ATA (near-zero at graduation but may still appear).
-      // Heuristic: any account holding >15% of supply is likely infrastructure.
-      const INFRA_THRESHOLD = PUMP_TOTAL_SUPPLY_RAW * 0.15;
-      const realHolders = sorted.filter((acc) => {
-        const amt = parseInt(acc.amount, 10) || 0;
-        return amt > 0 && amt < INFRA_THRESHOLD;
-      });
+          // Top 5 holder concentration (excluding infrastructure)
+          const top5Amount = realHolders.slice(0, 5).reduce((sum, acc) => {
+            return sum + (parseInt(acc.amount, 10) || 0);
+          }, 0);
+          result.top5WalletPct = (top5Amount / PUMP_TOTAL_SUPPLY_RAW) * 100;
 
-      result.holderCount = realHolders.length;
-
-      // Top 5 holder concentration (excluding infrastructure)
-      const top5Amount = realHolders.slice(0, 5).reduce((sum, acc) => {
-        return sum + (parseInt(acc.amount, 10) || 0);
-      }, 0);
-      result.top5WalletPct = (top5Amount / PUMP_TOTAL_SUPPLY_RAW) * 100;
-
-      // Dev wallet heuristic: largest non-infrastructure holder
-      if (realHolders.length > 0) {
-        const largestAmt = parseInt(realHolders[0].amount, 10) || 0;
-        result.devWalletPct = (largestAmt / PUMP_TOTAL_SUPPLY_RAW) * 100;
-      }
-
-      // Token age: walk back signatures to find creation blockTime
-      if (graduationBlockTime) {
-        try {
-          const creationTime = await this.getMintCreationTime(new PublicKey(mint));
-          if (creationTime !== null) {
-            result.tokenAgeSeconds = Math.max(0, graduationBlockTime - creationTime);
+          // Dev wallet heuristic: largest non-infrastructure holder
+          if (realHolders.length > 0) {
+            const largestAmt = parseInt(realHolders[0].amount, 10) || 0;
+            result.devWalletPct = (largestAmt / PUMP_TOTAL_SUPPLY_RAW) * 100;
           }
-        } catch (ageErr) {
-          logger.debug({ mint: mint.slice(0, 8) }, 'Could not determine token age');
         }
       }
-
-      logger.debug(
-        {
-          mint: mint.slice(0, 8),
-          holderCount: result.holderCount,
-          top5Pct: result.top5WalletPct.toFixed(1),
-          devPct: result.devWalletPct.toFixed(1),
-          ageSecs: result.tokenAgeSeconds ?? 'unknown',
-        },
-        'Holder enrichment complete'
-      );
     } catch (err) {
       logger.warn(
         'Holder enrichment failed for %s: %s',
@@ -159,6 +135,31 @@ export class HolderEnrichment {
         err instanceof Error ? err.message : String(err)
       );
     }
+
+    // Token age: always attempt independently of holder enrichment success/failure.
+    // This is required for the velocity filter (bc_velocity_sol_per_min) and must
+    // not be gated on getTokenLargestAccounts succeeding.
+    if (graduationBlockTime) {
+      try {
+        const creationTime = await this.getMintCreationTime(new PublicKey(mint));
+        if (creationTime !== null) {
+          result.tokenAgeSeconds = Math.max(0, graduationBlockTime - creationTime);
+        }
+      } catch (ageErr) {
+        logger.debug({ mint: mint.slice(0, 8) }, 'Could not determine token age');
+      }
+    }
+
+    logger.debug(
+      {
+        mint: mint.slice(0, 8),
+        holderCount: result.holderCount,
+        top5Pct: result.top5WalletPct.toFixed(1),
+        devPct: result.devWalletPct.toFixed(1),
+        ageSecs: result.tokenAgeSeconds ?? 'unknown',
+      },
+      'Holder enrichment complete'
+    );
 
     return result;
   }
