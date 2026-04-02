@@ -1039,7 +1039,7 @@ async function main() {
             let totalReturn = 0, stopped = 0, profitable = 0;
             for (const r of rows) {
               const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - stopPct / 100) - 1) * 100;
-              let exitReturn: number;
+              let exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
               let wasStoppedOut = false;
 
               for (const cp of stopCheckpoints) {
@@ -1056,8 +1056,8 @@ async function main() {
               }
               // Subtract round-trip costs from every trade
               exitReturn -= ROUND_TRIP_COST_PCT;
-              totalReturn += exitReturn!;
-              if (exitReturn! > 0) profitable++;
+              totalReturn += exitReturn;
+              if (exitReturn > 0) profitable++;
             }
 
             const n = rows.length;
