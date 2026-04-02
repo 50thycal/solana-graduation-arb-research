@@ -815,6 +815,15 @@ async function main() {
       const ECON_EXPR = `(1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) * 100.0 - 100.0`;
       const PROF_EXPR = `(1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) > 1.0`;
 
+      // Round-trip trading cost: ~1-2% entry slippage (0.5 SOL into ~79 SOL pool),
+      // ~0.3% PumpSwap fee, ~0.005-0.01 SOL Jito tip, ~1% exit slippage
+      const ROUND_TRIP_COST_PCT = 3.0;
+      const COST_SCENARIOS = [
+        { label: 'optimistic',  cost: 2.0 },
+        { label: 'realistic',   cost: 3.5 },
+        { label: 'pessimistic', cost: 5.0 },
+      ];
+
       const runT30Econ = (minPct: number, maxPct: number) => {
         const base = `pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL AND pct_t30 >= ${minPct} AND pct_t30 <= ${maxPct}`;
 
@@ -847,11 +856,19 @@ async function main() {
 
         const fmt = (r: any) => ({
           n: r.n,
-          avg_t30_gain_pct:        r.avg_t30_gain,
-          avg_t300_gain_pct:       r.avg_t300_gain,
-          avg_return_from_t30_pct: r.avg_return_from_t30,
-          profitable_from_t30:     r.profitable_from_t30,
-          profitable_rate_pct:     r.n > 0 ? +(r.profitable_from_t30 / r.n * 100).toFixed(1) : null,
+          avg_t30_gain_pct:            r.avg_t30_gain,
+          avg_t300_gain_pct:           r.avg_t300_gain,
+          avg_return_from_t30_pct:     r.avg_return_from_t30,
+          profitable_from_t30:         r.profitable_from_t30,
+          profitable_rate_pct:         r.n > 0 ? +(r.profitable_from_t30 / r.n * 100).toFixed(1) : null,
+          cost_adjusted_return_pct:    r.avg_return_from_t30 != null ? +(r.avg_return_from_t30 - ROUND_TRIP_COST_PCT).toFixed(1) : null,
+          cost_adjusted_ev_positive:   r.avg_return_from_t30 != null ? (r.avg_return_from_t30 - ROUND_TRIP_COST_PCT) > 0 : null,
+          cost_scenarios:              COST_SCENARIOS.map(s => ({
+            label:          s.label,
+            cost_pct:       s.cost,
+            net_return_pct: r.avg_return_from_t30 != null ? +(r.avg_return_from_t30 - s.cost).toFixed(1) : null,
+            ev_positive:    r.avg_return_from_t30 != null ? (r.avg_return_from_t30 - s.cost) > 0 : null,
+          })),
         });
 
         return {
@@ -1037,11 +1054,14 @@ async function main() {
               if (!wasStoppedOut) {
                 exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
               }
+              // Subtract round-trip costs from every trade
+              exitReturn -= ROUND_TRIP_COST_PCT;
               totalReturn += exitReturn!;
               if (exitReturn! > 0) profitable++;
             }
 
             const n = rows.length;
+            const avgReturn = totalReturn / n; // already cost-adjusted
             return {
               strategy: label || `t30 +${minPct}% to +${maxPct}%`,
               stop_loss_pct: stopPct,
@@ -1050,8 +1070,10 @@ async function main() {
               stopped_pct: +(stopped / n * 100).toFixed(1),
               profitable_count: profitable,
               profitable_rate_pct: +(profitable / n * 100).toFixed(1),
-              avg_return_pct: +(totalReturn / n).toFixed(1),
-              ev_positive: totalReturn / n > 0,
+              avg_return_pct: +avgReturn.toFixed(1),
+              ev_positive: avgReturn > 0,
+              cost_per_trade_pct: ROUND_TRIP_COST_PCT,
+              costs_included: true,
             };
           };
 
