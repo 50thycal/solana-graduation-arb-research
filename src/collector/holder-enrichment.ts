@@ -142,11 +142,12 @@ export class HolderEnrichment {
     // making the count useless as a filter. This call enumerates ALL SPL token
     // accounts for the mint to get the real number.
     //
-    // NOTE: Many RPC providers block getProgramAccounts for TOKEN_PROGRAM_ID
-    // because it scans all token accounts. If this fails, step 1's count is used.
-    // dataSize: 165 = SPL token account size (filters out mints/multisigs)
-    // memcmp offset 0 = mint address is first 32 bytes of SPL account layout
-    // dataSlice {0,0} = return no data, only keys (minimises response size)
+    // NOTE: Some RPC providers block getProgramAccounts for TOKEN_PROGRAM_ID.
+    // NOTE: dataSlice is intentionally omitted — combining it with dataSize can
+    //       cause some RPC nodes to evaluate dataSize against the sliced (0) length
+    //       and return 0 results. We accept the 165-byte-per-account payload since
+    //       graduation tokens typically have <500 holders (~80KB max).
+    // Only overwrites step 1's count if rawCount > 0 (protects against empty result bug).
     try {
       if (!await globalRpcLimiter.throttleOrDrop(15)) {
         logger.debug({ mint: mint.slice(0, 8) }, 'getProgramAccounts holder count dropped — RPC queue full');
@@ -156,7 +157,7 @@ export class HolderEnrichment {
           TOKEN_PROGRAM_ID,
           {
             commitment: 'confirmed',
-            dataSlice: { offset: 0, length: 0 },
+            // No dataSlice — avoids dataSize+dataSlice interaction bug on some RPCs
             filters: [
               { dataSize: SPL_ACCOUNT_SIZE },
               { memcmp: { offset: 0, bytes: mintPubkey.toBase58() } },
@@ -165,13 +166,20 @@ export class HolderEnrichment {
         );
 
         const rawCount = allTokenAccounts.length;
-        result.holderCount = Math.min(rawCount, HOLDER_COUNT_CAP);
-        result.holderCountCapped = rawCount >= HOLDER_COUNT_CAP;
-
-        logger.debug(
-          { mint: mint.slice(0, 8), rawCount, capped: result.holderCountCapped },
-          'True holder count from getProgramAccounts'
-        );
+        if (rawCount > 0) {
+          // Only upgrade if we got a real result — never overwrite step 1 with 0
+          result.holderCount = Math.min(rawCount, HOLDER_COUNT_CAP);
+          result.holderCountCapped = rawCount >= HOLDER_COUNT_CAP;
+          logger.info(
+            { mint: mint.slice(0, 8), rawCount, capped: result.holderCountCapped },
+            'True holder count from getProgramAccounts'
+          );
+        } else {
+          logger.warn(
+            { mint: mint.slice(0, 8) },
+            'getProgramAccounts returned 0 accounts — keeping getTokenLargestAccounts count'
+          );
+        }
       }
     } catch (err) {
       // getProgramAccounts is often blocked by RPC providers for TOKEN_PROGRAM_ID.
