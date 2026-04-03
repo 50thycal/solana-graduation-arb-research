@@ -273,12 +273,15 @@ async function main() {
             continue;
           }
 
-          const tokenAgeSeconds = Math.max(0, row.grad_timestamp - oldestBlockTime);
-          if (tokenAgeSeconds <= 0) {
+          // Use minimum 1 second — tokens sniped in the same block as creation have
+          // diff=0 (all txns share the same blockTime). They are genuine instant-graduation
+          // tokens and get a very high velocity, correctly placing them in the 50+ bucket.
+          const tokenAgeSeconds = Math.max(1, row.grad_timestamp - oldestBlockTime);
+          if (row.grad_timestamp - oldestBlockTime < 0) {
             failed++;
             logger.warn(
               { graduationId: row.graduation_id, grad_timestamp: row.grad_timestamp, oldestBlockTime, diff: row.grad_timestamp - oldestBlockTime, usingBC, totalSigsScanned },
-              'Backfill skip: tokenAgeSeconds <= 0 (oldest sig is at or after graduation — hit page cap before reaching creation tx?)'
+              'Backfill skip: oldestBlockTime is after graduation timestamp — BC address may be wrong for this token'
             );
             continue;
           }
