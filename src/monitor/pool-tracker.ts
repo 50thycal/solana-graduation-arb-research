@@ -174,6 +174,7 @@ export class PoolTracker {
         migrationTimestamp: preFound.migrationTimestamp,
         baseVault: preFound.baseVault,
         quoteVault: preFound.quoteVault,
+        bondingCurveAddress,
       });
       return;
     }

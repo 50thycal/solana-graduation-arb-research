@@ -440,6 +440,7 @@ export class GraduationListener {
         migrationTimestamp: event.migrationTimestamp || event.timestamp,
         baseVault: event.poolBaseVault,
         quoteVault: event.poolQuoteVault,
+        bondingCurveAddress: event.bondingCurveAddress,
       });
 
       logger.info(
@@ -461,6 +462,7 @@ export class GraduationListener {
         bondingCurvePrice: event.finalPriceSol || 0,
         graduationTimestamp: event.timestamp,
         migrationTimestamp: event.migrationTimestamp || event.timestamp,
+        bondingCurveAddress: event.bondingCurveAddress,
       });
 
       logger.info(
