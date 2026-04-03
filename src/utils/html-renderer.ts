@@ -399,7 +399,7 @@ export function renderFilterHtml(data: any): string {
       <tr>
         <td>${labelBadge(l.label)}</td><td>${l.n}</td>
         <td>${l.avg_volatility_0_30}%</td><td>${l.avg_liquidity_sol_t30} SOL</td>
-        <td>${l.avg_slippage_05sol}%</td><td>${l.avg_bc_velocity ?? '—'} sol/min</td>
+        <td>${l.avg_slippage_05sol}%</td><td>${l.avg_round_trip_slippage_pct != null ? l.avg_round_trip_slippage_pct + '%' : '—'}</td><td>${l.avg_bc_velocity ?? '—'} sol/min</td>
       </tr>`).join('');
 
     const volRows = (tr.win_rate_by_volatility || []).map((r: any) => `
@@ -412,7 +412,7 @@ export function renderFilterHtml(data: any): string {
       <div class="desc">${tr.note}</div>
       <h3>Metrics by Label at T+30</h3>
       <table>
-        <tr><th>Label</th><th>n</th><th>Volatility</th><th>Liquidity</th><th>Slippage (0.5 SOL)</th><th>BC Velocity</th></tr>
+        <tr><th>Label</th><th>n</th><th>Volatility</th><th>Liquidity</th><th>Slippage (0.5 SOL)</th><th>Round-Trip Slippage</th><th>BC Velocity</th></tr>
         ${trRows}
       </table>
       <h3>Win Rate by Volatility</h3>
