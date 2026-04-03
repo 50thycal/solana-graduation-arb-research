@@ -195,6 +195,13 @@ function runMigrations(db: Database.Database): void {
         db.exec(`ALTER TABLE graduation_momentum ADD COLUMN ${col} ${type}`);
       }
     }
+    // Backfill round_trip_slippage_pct for rows that have slippage_est_05sol but no round_trip value.
+    // round_trip = 2 * entry slippage (conservative: assumes exit cost equals entry cost).
+    db.exec(`
+      UPDATE graduation_momentum
+      SET round_trip_slippage_pct = ROUND(slippage_est_05sol * 2, 3)
+      WHERE slippage_est_05sol IS NOT NULL AND round_trip_slippage_pct IS NULL
+    `);
   }
 
   // Add columns to graduations if they don't exist yet (safe migration)
