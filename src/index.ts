@@ -980,8 +980,8 @@ async function main() {
       const ECON_EXPR = `(1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) * 100.0 - 100.0`;
       const PROF_EXPR = `(1.0 + pct_t300 / 100.0) / (1.0 + pct_t30 / 100.0) > 1.0`;
 
-      // Round-trip trading cost: ~1-2% entry slippage (0.5 SOL into ~79 SOL pool),
-      // ~0.3% PumpSwap fee, ~0.005-0.01 SOL Jito tip, ~1% exit slippage
+      // Round-trip trading cost fallback (used for rows that pre-date slippage measurement).
+      // Per-token round_trip_slippage_pct is used where available (2x entry slippage from actual pool data).
       const ROUND_TRIP_COST_PCT = 3.0;
       const COST_SCENARIOS = [
         { label: 'optimistic',  cost: 2.0 },
@@ -992,12 +992,15 @@ async function main() {
       const runT30Econ = (minPct: number, maxPct: number) => {
         const base = `pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL AND pct_t30 >= ${minPct} AND pct_t30 <= ${maxPct}`;
 
+        const SLIPPAGE_EXPR = `COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT})`;
+
         const allRow = db.prepare(`
           SELECT COUNT(*) as n,
             ROUND(AVG(${ECON_EXPR}), 1) as avg_return_from_t30,
             SUM(CASE WHEN ${PROF_EXPR} THEN 1 ELSE 0 END) as profitable_from_t30,
             ROUND(AVG(pct_t30),  1) as avg_t30_gain,
-            ROUND(AVG(pct_t300), 1) as avg_t300_gain
+            ROUND(AVG(pct_t300), 1) as avg_t300_gain,
+            ROUND(AVG(${SLIPPAGE_EXPR}), 2) as avg_round_trip_cost
           FROM graduation_momentum WHERE ${base}
         `).get() as any;
 
@@ -1006,7 +1009,8 @@ async function main() {
             ROUND(AVG(${ECON_EXPR}), 1) as avg_return_from_t30,
             SUM(CASE WHEN ${PROF_EXPR} THEN 1 ELSE 0 END) as profitable_from_t30,
             ROUND(AVG(pct_t30),  1) as avg_t30_gain,
-            ROUND(AVG(pct_t300), 1) as avg_t300_gain
+            ROUND(AVG(pct_t300), 1) as avg_t300_gain,
+            ROUND(AVG(${SLIPPAGE_EXPR}), 2) as avg_round_trip_cost
           FROM graduation_momentum WHERE ${base} AND total_sol_raised >= 80
         `).get() as any;
 
@@ -1015,26 +1019,32 @@ async function main() {
             ROUND(AVG(${ECON_EXPR}), 1) as avg_return_from_t30,
             SUM(CASE WHEN ${PROF_EXPR} THEN 1 ELSE 0 END) as profitable_from_t30,
             ROUND(AVG(pct_t30),  1) as avg_t30_gain,
-            ROUND(AVG(pct_t300), 1) as avg_t300_gain
+            ROUND(AVG(pct_t300), 1) as avg_t300_gain,
+            ROUND(AVG(${SLIPPAGE_EXPR}), 2) as avg_round_trip_cost
           FROM graduation_momentum WHERE ${base} GROUP BY label
         `).all() as any[];
 
-        const fmt = (r: any) => ({
-          n: r.n,
-          avg_t30_gain_pct:            r.avg_t30_gain,
-          avg_t300_gain_pct:           r.avg_t300_gain,
-          avg_return_from_t30_pct:     r.avg_return_from_t30,
-          profitable_from_t30:         r.profitable_from_t30,
-          profitable_rate_pct:         r.n > 0 ? +(r.profitable_from_t30 / r.n * 100).toFixed(1) : null,
-          cost_adjusted_return_pct:    r.avg_return_from_t30 != null ? +(r.avg_return_from_t30 - ROUND_TRIP_COST_PCT).toFixed(1) : null,
-          cost_adjusted_ev_positive:   r.avg_return_from_t30 != null ? (r.avg_return_from_t30 - ROUND_TRIP_COST_PCT) > 0 : null,
-          cost_scenarios:              COST_SCENARIOS.map(s => ({
-            label:          s.label,
-            cost_pct:       s.cost,
-            net_return_pct: r.avg_return_from_t30 != null ? +(r.avg_return_from_t30 - s.cost).toFixed(1) : null,
-            ev_positive:    r.avg_return_from_t30 != null ? (r.avg_return_from_t30 - s.cost) > 0 : null,
-          })),
-        });
+        const fmt = (r: any) => {
+          // Use measured avg round-trip cost for this cohort; fall back to constant for old data
+          const costPct: number = r.avg_round_trip_cost ?? ROUND_TRIP_COST_PCT;
+          return {
+            n: r.n,
+            avg_t30_gain_pct:            r.avg_t30_gain,
+            avg_t300_gain_pct:           r.avg_t300_gain,
+            avg_return_from_t30_pct:     r.avg_return_from_t30,
+            profitable_from_t30:         r.profitable_from_t30,
+            profitable_rate_pct:         r.n > 0 ? +(r.profitable_from_t30 / r.n * 100).toFixed(1) : null,
+            avg_round_trip_cost_pct:     +costPct.toFixed(2),
+            cost_adjusted_return_pct:    r.avg_return_from_t30 != null ? +(r.avg_return_from_t30 - costPct).toFixed(1) : null,
+            cost_adjusted_ev_positive:   r.avg_return_from_t30 != null ? (r.avg_return_from_t30 - costPct) > 0 : null,
+            cost_scenarios:              COST_SCENARIOS.map(s => ({
+              label:          s.label,
+              cost_pct:       s.cost,
+              net_return_pct: r.avg_return_from_t30 != null ? +(r.avg_return_from_t30 - s.cost).toFixed(1) : null,
+              ev_positive:    r.avg_return_from_t30 != null ? (r.avg_return_from_t30 - s.cost) > 0 : null,
+            })),
+          };
+        };
 
         return {
           threshold: `t30 between +${minPct}% and +${maxPct}%`,
@@ -1193,7 +1203,8 @@ async function main() {
           const simulate = (minPct: number, maxPct: number, stopPct: number, extraWhere?: string, label?: string) => {
             const whereExtra = extraWhere ? ` AND ${extraWhere}` : '';
             const rows = db.prepare(`
-              SELECT label, pct_t30, ${stopCheckpoints.join(', ')}, pct_t300
+              SELECT label, pct_t30, ${stopCheckpoints.join(', ')}, pct_t300,
+                     COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT}) as cost_pct
               FROM graduation_momentum
               WHERE pct_t30 >= ${minPct} AND pct_t30 <= ${maxPct}
                 AND pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL${whereExtra}
@@ -1201,10 +1212,10 @@ async function main() {
 
             if (rows.length === 0) return null;
 
-            let totalReturn = 0, stopped = 0, profitable = 0;
+            let totalReturn = 0, stopped = 0, profitable = 0, totalCost = 0;
             for (const r of rows) {
               const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - stopPct / 100) - 1) * 100;
-              let exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
+              let exitReturn: number;
               let wasStoppedOut = false;
 
               for (const cp of stopCheckpoints) {
@@ -1219,14 +1230,16 @@ async function main() {
               if (!wasStoppedOut) {
                 exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
               }
-              // Subtract round-trip costs from every trade
-              exitReturn -= ROUND_TRIP_COST_PCT;
-              totalReturn += exitReturn;
-              if (exitReturn > 0) profitable++;
+              // Subtract per-token measured round-trip slippage (falls back to constant for old rows)
+              exitReturn! -= r.cost_pct;
+              totalCost += r.cost_pct;
+              totalReturn += exitReturn!;
+              if (exitReturn! > 0) profitable++;
             }
 
             const n = rows.length;
             const avgReturn = totalReturn / n; // already cost-adjusted
+            const avgCostUsed = totalCost / n;
             return {
               strategy: label || `t30 +${minPct}% to +${maxPct}%`,
               stop_loss_pct: stopPct,
@@ -1237,7 +1250,7 @@ async function main() {
               profitable_rate_pct: +(profitable / n * 100).toFixed(1),
               avg_return_pct: +avgReturn.toFixed(1),
               ev_positive: avgReturn > 0,
-              cost_per_trade_pct: ROUND_TRIP_COST_PCT,
+              avg_cost_per_trade_pct: +avgCostUsed.toFixed(2),
               costs_included: true,
             };
           };
