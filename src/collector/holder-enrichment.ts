@@ -149,7 +149,8 @@ export class HolderEnrichment {
       try {
         const creationTime = await this.getBondingCurveCreationTime(new PublicKey(bondingCurveAddress));
         if (creationTime !== null) {
-          result.tokenAgeSeconds = Math.max(0, graduationBlockTime - creationTime);
+          // Minimum 1s: tokens sniped in the same block as creation have diff=0.
+          result.tokenAgeSeconds = Math.max(1, graduationBlockTime - creationTime);
           logger.info(
             { mint: mint.slice(0, 8), tokenAgeSeconds: result.tokenAgeSeconds },
             'Token age resolved from bonding curve history'

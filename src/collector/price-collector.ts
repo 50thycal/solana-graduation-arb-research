@@ -674,11 +674,13 @@ export class PriceCollector {
         return;
       }
 
-      const tokenAgeSeconds = Math.max(0, graduationTimestamp - oldestBlockTime);
-      if (tokenAgeSeconds <= 0) {
-        logger.warn({ graduationId }, 'bc_velocity fallback: token_age_seconds <= 0');
+      const rawAge = graduationTimestamp - oldestBlockTime;
+      if (rawAge < 0) {
+        logger.warn({ graduationId, graduationTimestamp, oldestBlockTime }, 'bc_velocity fallback: oldestBlockTime is after graduation — skipping');
         return;
       }
+      // Minimum 1s: instant-graduation (sniped in same block) has rawAge=0, still valid.
+      const tokenAgeSeconds = Math.max(1, rawAge);
 
       this.db.prepare(
         'UPDATE graduation_momentum SET token_age_seconds = ? WHERE graduation_id = ? AND token_age_seconds IS NULL'
@@ -783,14 +785,16 @@ export class PriceCollector {
             continue;
           }
 
-          const tokenAgeSeconds = Math.max(0, row.grad_timestamp - oldestBlockTime);
-          if (tokenAgeSeconds <= 0) {
+          const rawAge = row.grad_timestamp - oldestBlockTime;
+          if (rawAge < 0) {
             logger.warn(
               { graduationId: row.graduation_id, grad_timestamp: row.grad_timestamp, oldestBlockTime, totalSigsScanned },
-              'Velocity recovery skip: tokenAgeSeconds <= 0 (hit page cap before reaching creation tx?)'
+              'Velocity recovery skip: oldestBlockTime is after graduation — BC address may be wrong for this token'
             );
             continue;
           }
+          // Minimum 1s: instant-graduation tokens sniped in same block have rawAge=0.
+          const tokenAgeSeconds = Math.max(1, rawAge);
 
           const velocity = (solRaised / tokenAgeSeconds) * 60;
 
