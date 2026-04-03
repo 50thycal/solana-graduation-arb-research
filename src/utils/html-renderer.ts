@@ -111,7 +111,7 @@ function copyJson(){
 
 export function renderThesisHtml(data: any): string {
   const d = data;
-  const statusColor = d.bot_status === 'RUNNING' ? 'green' : d.bot_status === 'STALLED' ? 'yellow' : 'red';
+  const statusColor = d.bot_status === 'RUNNING' ? 'green' : 'red';
 
   // Header cards
   const header = `

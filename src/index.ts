@@ -369,10 +369,8 @@ async function main() {
       }
 
       const lastGradAgo = pipeline.last_ts ? Math.floor(Date.now() / 1000) - pipeline.last_ts : null;
-      const status = listenerStatus === 'running'
-        ? (lastGradAgo && lastGradAgo > 600 ? 'STALLED' : 'RUNNING')
-        : 'ERROR';
-      const statusColor = status === 'RUNNING' ? '#4ade80' : status === 'STALLED' ? '#facc15' : '#ef4444';
+      const status = listenerStatus === 'running' ? 'RUNNING' : 'ERROR';
+      const statusColor = status === 'RUNNING' ? '#4ade80' : '#ef4444';
 
       const navHtml = NAV_LINKS.map(l =>
         l.path === '/dashboard' ? `<a class="nav-active">${l.label}</a>` : `<a href="${l.path}">${l.label}</a>`
@@ -483,9 +481,7 @@ async function main() {
         'SELECT COUNT(*) as count FROM graduation_momentum WHERE pct_t300 IS NOT NULL'
       ).get() as any;
 
-      const botStatus = listenerStatus === 'running'
-        ? (lastGradSecondsAgo !== null && lastGradSecondsAgo > 600 ? 'STALLED' : 'RUNNING')
-        : 'ERROR';
+      const botStatus = listenerStatus === 'running' ? 'RUNNING' : 'ERROR';
 
       // ── THESIS SCORECARD ──
       const labels = db.prepare(`
@@ -769,7 +765,7 @@ async function main() {
         data_quality: {
           price_source_pumpswap: allHavePumpswapPool,
           null_fields_in_last_10: nullsInLast10.length > 0 ? nullsInLast10 : 'CLEAN',
-          last_grad_stale: lastGradSecondsAgo !== null && lastGradSecondsAgo > 300,
+          last_grad_seconds_ago: lastGradSecondsAgo,
           listener_connected: listenerStats?.wsConnected ?? false,
         },
 
