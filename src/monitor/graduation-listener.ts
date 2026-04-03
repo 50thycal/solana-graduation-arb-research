@@ -390,8 +390,8 @@ export class GraduationListener {
       // Fetch token_age_seconds independently — it's required for velocity calculation
       // and doesn't depend on holder data. Use a nested promise chain to keep this
       // fire-and-forget without blocking pool tracking.
-      this.holderEnrichment.getMintCreationTime(new PublicKey(event.mint))
-        .then((creationTime) => {
+      this.holderEnrichment.getBondingCurveCreationTime(new PublicKey(event.bondingCurveAddress))
+        .then((creationTime: number | null) => {
           const tokenAgeSeconds = (creationTime !== null && event.timestamp)
             ? Math.max(0, event.timestamp - creationTime)
             : undefined;
