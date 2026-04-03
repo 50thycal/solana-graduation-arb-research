@@ -183,16 +183,19 @@ async function main() {
       return;
     }
 
-    // Find all rows that need backfill: velocity is null but total_sol_raised exists
+    // Find all rows that need backfill: velocity is null but total_sol_raised exists.
+    // Also pull bonding_curve_address — querying the BC (not the mint) reaches the
+    // creation tx faster since the BC has far fewer transactions than the mint.
     const candidates = db.prepare(`
-      SELECT gm.graduation_id, g.mint, g.timestamp as grad_timestamp, gm.total_sol_raised, gm.token_age_seconds
+      SELECT gm.graduation_id, g.mint, g.bonding_curve_address,
+             g.timestamp as grad_timestamp, gm.total_sol_raised, gm.token_age_seconds
       FROM graduation_momentum gm
       JOIN graduations g ON g.id = gm.graduation_id
       WHERE gm.bc_velocity_sol_per_min IS NULL
         AND gm.total_sol_raised > 0
     `).all() as Array<{
-      graduation_id: number; mint: string; grad_timestamp: number;
-      total_sol_raised: number; token_age_seconds: number | null;
+      graduation_id: number; mint: string; bonding_curve_address: string | null;
+      grad_timestamp: number; total_sol_raised: number; token_age_seconds: number | null;
     }>;
 
     // Split: rows that already have token_age_seconds can be fixed immediately
@@ -233,13 +236,17 @@ async function main() {
     (async () => {
       for (const row of needsAgeFetch) {
         try {
-          const mintPubkey = new PublicKey(row.mint);
+          // Prefer bonding curve address — it has far fewer transactions than the mint
+          // (only BC buys/sells + graduation tx), making it faster to walk to the creation tx.
+          // Fall back to mint if BC address is not stored (older records).
+          const lookupAddress = row.bonding_curve_address || row.mint;
+          const lookupPubkey = new PublicKey(lookupAddress);
           let oldestBlockTime: number | null = null;
           let before: string | undefined = undefined;
 
           for (let page = 0; page < 5; page++) {
             const sigs: Array<{ signature: string; blockTime?: number | null }> =
-              await conn.getSignaturesForAddress(mintPubkey, { limit: 1000, before });
+              await conn.getSignaturesForAddress(lookupPubkey, { limit: 1000, before });
             if (sigs.length === 0) break;
             const last: { signature: string; blockTime?: number | null } = sigs[sigs.length - 1];
             if (last.blockTime) oldestBlockTime = last.blockTime;
