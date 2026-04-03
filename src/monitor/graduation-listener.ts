@@ -41,10 +41,9 @@ const PUMP_VIRTUAL_SOL_OFFSET_LAMPORTS = 30_000_000_000; // 30 SOL in lamports
 const PUMP_VIRTUAL_TOKEN_OFFSET_RAW = 279_900_191_000_000; // raw token units (6 dec)
 
 // Graduation verification thresholds
-// A completed bonding curve typically has ~79-85 SOL in real reserves (original pump.fun)
-// but PumpSwap-era graduations may occur at lower amounts (~30-50 SOL).
-// Bundler/MEV false positives typically have 1-13 SOL — 30 SOL threshold blocks those safely.
-const MIN_SOL_RESERVES_FOR_GRADUATION = 30; // SOL — lowered from 70 to catch changed pump.fun graduation amount
+// A completed bonding curve has ~84.985 SOL in real reserves at graduation (~85 SOL).
+// Bundler/MEV false positives typically show 1-13 SOL — 70 SOL threshold blocks those safely.
+const MIN_SOL_RESERVES_FOR_GRADUATION = 70; // SOL — real graduations ~85 SOL, bundlers ~1-13 SOL
 const MAX_TOKEN_RESERVES_FOR_GRADUATION = 1_000_000; // tokens — should be near 0 when complete
 
 // PumpSwap AMM program ID (for PDA derivation)
