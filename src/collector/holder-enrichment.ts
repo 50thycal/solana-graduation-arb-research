@@ -14,7 +14,6 @@ export interface EnrichmentResult {
   tokenAgeSeconds?: number;
 }
 
-const MAX_AGE_PAGES = 5; // max pages of 1000 sigs to walk back (covers ~5000 txns)
 
 export class HolderEnrichment {
   private connection: Connection;
@@ -33,18 +32,24 @@ export class HolderEnrichment {
    * Excludes known infrastructure addresses (bonding curve, pool vaults).
    */
   /**
-   * Walk back through signatures on the mint address to find its creation blockTime.
-   * Paginates oldest-first by following `before` pointers. Capped at MAX_AGE_PAGES.
+   * Get the creation blockTime of the bonding curve PDA.
+   *
+   * The BC is a deterministic PDA (derived from the mint) that is created when the
+   * token launches and closed at graduation — so its signature list is finite and
+   * much smaller than the mint's (which appears in every token transfer).
+   *
+   * We walk to the oldest signature without throttleOrDrop: this is a critical
+   * data point and is called after the busy graduation window, so a direct await
+   * is fine.
    */
-  async getMintCreationTime(mintPubkey: PublicKey): Promise<number | null> {
+  async getBondingCurveCreationTime(bcPubkey: PublicKey): Promise<number | null> {
     let before: string | undefined = undefined;
     let oldestBlockTime: number | null = null;
+    const MAX_PAGES = 3; // 3 000 txns — covers all but the most actively-traded tokens
 
-    for (let page = 0; page < MAX_AGE_PAGES; page++) {
-      if (!await globalRpcLimiter.throttleOrDrop(15)) break;
-
+    for (let page = 0; page < MAX_PAGES; page++) {
       const sigs: Array<{ signature: string; blockTime?: number | null }> =
-        await this.connection.getSignaturesForAddress(mintPubkey, {
+        await this.connection.getSignaturesForAddress(bcPubkey, {
           limit: 1000,
           before,
         });
@@ -137,16 +142,27 @@ export class HolderEnrichment {
     }
 
     // Token age: always attempt independently of holder enrichment success/failure.
-    // This is required for the velocity filter (bc_velocity_sol_per_min) and must
-    // not be gated on getTokenLargestAccounts succeeding.
-    if (graduationBlockTime) {
+    // This is required for the velocity filter (bc_velocity_sol_per_min).
+    // We query the bonding curve address (not the mint) — the BC is closed at
+    // graduation so its signature list is finite and much smaller than the mint's.
+    if (graduationBlockTime && bondingCurveAddress) {
       try {
-        const creationTime = await this.getMintCreationTime(new PublicKey(mint));
+        const creationTime = await this.getBondingCurveCreationTime(new PublicKey(bondingCurveAddress));
         if (creationTime !== null) {
           result.tokenAgeSeconds = Math.max(0, graduationBlockTime - creationTime);
+          logger.info(
+            { mint: mint.slice(0, 8), tokenAgeSeconds: result.tokenAgeSeconds },
+            'Token age resolved from bonding curve history'
+          );
+        } else {
+          logger.warn({ mint: mint.slice(0, 8) }, 'Could not determine bonding curve creation time');
         }
       } catch (ageErr) {
-        logger.debug({ mint: mint.slice(0, 8) }, 'Could not determine token age');
+        logger.warn(
+          { mint: mint.slice(0, 8) },
+          'Token age lookup failed: %s',
+          ageErr instanceof Error ? ageErr.message : String(ageErr)
+        );
       }
     }
 
