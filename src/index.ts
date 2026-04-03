@@ -1207,12 +1207,12 @@ async function main() {
                      COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT}) as cost_pct
               FROM graduation_momentum
               WHERE pct_t30 >= ${minPct} AND pct_t30 <= ${maxPct}
-                AND pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL${whereExtra}
+                AND pct_t30 IS NOT NULL${whereExtra}
             `).all() as any[];
 
             if (rows.length === 0) return null;
 
-            let totalReturn = 0, stopped = 0, profitable = 0, totalCost = 0;
+            let totalReturn = 0, stopped = 0, profitable = 0, rugged = 0, totalCost = 0;
             for (const r of rows) {
               const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - stopPct / 100) - 1) * 100;
               let exitReturn: number;
@@ -1220,7 +1220,7 @@ async function main() {
 
               for (const cp of stopCheckpoints) {
                 if (r[cp] != null && r[cp] <= stopLevelPct) {
-                  exitReturn = -stopPct;
+                  exitReturn = -(stopPct * 1.2); // 20% gap-through penalty on stop execution
                   stopped++;
                   wasStoppedOut = true;
                   break;
@@ -1228,7 +1228,13 @@ async function main() {
               }
 
               if (!wasStoppedOut) {
-                exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
+                // null pct_t300 = pool drained / token rugged before T+300 — worst case -100%
+                if (r.pct_t300 != null) {
+                  exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
+                } else {
+                  exitReturn = -100;
+                  rugged++;
+                }
               }
               // Subtract per-token measured round-trip slippage (falls back to constant for old rows)
               exitReturn! -= r.cost_pct;
@@ -1246,12 +1252,16 @@ async function main() {
               n,
               stopped_count: stopped,
               stopped_pct: +(stopped / n * 100).toFixed(1),
+              rugged_count: rugged,
+              rugged_pct: +(rugged / n * 100).toFixed(1),
               profitable_count: profitable,
               profitable_rate_pct: +(profitable / n * 100).toFixed(1),
               avg_return_pct: +avgReturn.toFixed(1),
               ev_positive: avgReturn > 0,
               avg_cost_per_trade_pct: +avgCostUsed.toFixed(2),
               costs_included: true,
+              stop_gap_penalty: '20% (modeled gap-through on stop execution)',
+              null_t300_treatment: 'worst-case -100% (pool drained / rug)',
             };
           };
 
