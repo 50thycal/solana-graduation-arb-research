@@ -1,5 +1,6 @@
 import express from 'express';
 import pino from 'pino';
+import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { getGraduationCount } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
@@ -165,6 +166,149 @@ async function main() {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
   }
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // BACKFILL: Recover null bc_velocity_sol_per_min for historical data
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  let backfillRunning = false;
+  app.get('/backfill-velocity', async (req, res) => {
+    if (backfillRunning) {
+      sendJsonOrHtml(req, res, { status: 'already_running', message: 'Backfill is already in progress. Check logs.' });
+      return;
+    }
+
+    const rpcUrl = process.env.HELIUS_RPC_URL;
+    if (!rpcUrl) {
+      res.status(500).json({ error: 'HELIUS_RPC_URL not configured' });
+      return;
+    }
+
+    // Find all rows that need backfill: velocity is null but total_sol_raised exists
+    const candidates = db.prepare(`
+      SELECT gm.graduation_id, g.mint, g.timestamp as grad_timestamp, gm.total_sol_raised, gm.token_age_seconds
+      FROM graduation_momentum gm
+      JOIN graduations g ON g.id = gm.graduation_id
+      WHERE gm.bc_velocity_sol_per_min IS NULL
+        AND gm.total_sol_raised > 0
+    `).all() as Array<{
+      graduation_id: number; mint: string; grad_timestamp: number;
+      total_sol_raised: number; token_age_seconds: number | null;
+    }>;
+
+    // Split: rows that already have token_age_seconds can be fixed immediately
+    const needsAgeFetch: typeof candidates = [];
+    let fixedImmediately = 0;
+
+    for (const row of candidates) {
+      if (row.token_age_seconds && row.token_age_seconds > 0) {
+        // token_age exists but velocity was never computed — fix it now
+        const velocity = (row.total_sol_raised / row.token_age_seconds) * 60;
+        db.prepare('UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?')
+          .run(+velocity.toFixed(2), row.graduation_id);
+        fixedImmediately++;
+      } else {
+        needsAgeFetch.push(row);
+      }
+    }
+
+    // Return immediately with status, do RPC work in background
+    const summary = {
+      status: 'started',
+      total_null_velocity: candidates.length,
+      fixed_immediately: fixedImmediately,
+      needs_rpc_fetch: needsAgeFetch.length,
+      message: `Fixed ${fixedImmediately} rows instantly. Fetching age for ${needsAgeFetch.length} rows via RPC in background...`,
+    };
+
+    sendJsonOrHtml(req, res, summary);
+
+    if (needsAgeFetch.length === 0) return;
+
+    // Background RPC work — fetch mint creation times
+    backfillRunning = true;
+    const conn = new Connection(rpcUrl, { commitment: 'confirmed' });
+    let recovered = 0;
+    let failed = 0;
+
+    (async () => {
+      for (const row of needsAgeFetch) {
+        try {
+          const mintPubkey = new PublicKey(row.mint);
+          let oldestBlockTime: number | null = null;
+          let before: string | undefined = undefined;
+
+          for (let page = 0; page < 5; page++) {
+            const sigs: Array<{ signature: string; blockTime?: number | null }> =
+              await conn.getSignaturesForAddress(mintPubkey, { limit: 1000, before });
+            if (sigs.length === 0) break;
+            const last: { signature: string; blockTime?: number | null } = sigs[sigs.length - 1];
+            if (last.blockTime) oldestBlockTime = last.blockTime;
+            if (sigs.length < 1000) break;
+            before = last.signature;
+
+            // Rate limit: 100ms between pages
+            await new Promise(r => setTimeout(r, 100));
+          }
+
+          if (oldestBlockTime === null || !row.grad_timestamp) {
+            failed++;
+            continue;
+          }
+
+          const tokenAgeSeconds = Math.max(0, row.grad_timestamp - oldestBlockTime);
+          if (tokenAgeSeconds <= 0) {
+            failed++;
+            continue;
+          }
+
+          const velocity = (row.total_sol_raised / tokenAgeSeconds) * 60;
+
+          db.prepare(
+            'UPDATE graduation_momentum SET token_age_seconds = ?, bc_velocity_sol_per_min = ? WHERE graduation_id = ? AND bc_velocity_sol_per_min IS NULL'
+          ).run(tokenAgeSeconds, +velocity.toFixed(2), row.graduation_id);
+          db.prepare(
+            'UPDATE graduations SET token_age_seconds = ? WHERE id = ? AND token_age_seconds IS NULL'
+          ).run(tokenAgeSeconds, row.graduation_id);
+
+          recovered++;
+
+          // Rate limit: 200ms between mints to avoid hammering RPC
+          await new Promise(r => setTimeout(r, 200));
+        } catch (err) {
+          failed++;
+          logger.warn('Backfill failed for grad %d: %s', row.graduation_id,
+            err instanceof Error ? err.message : String(err));
+        }
+      }
+
+      backfillRunning = false;
+      logger.info({ recovered, failed, total: needsAgeFetch.length }, 'Velocity backfill complete');
+    })().catch((err) => {
+      backfillRunning = false;
+      logger.error('Velocity backfill crashed: %s', err instanceof Error ? err.message : String(err));
+    });
+  });
+
+  // Check backfill status
+  app.get('/backfill-velocity/status', (req, res) => {
+    const nullCount = (db.prepare(
+      'SELECT COUNT(*) as n FROM graduation_momentum WHERE bc_velocity_sol_per_min IS NULL AND total_sol_raised > 0'
+    ).get() as any).n;
+    const totalWithVelocity = (db.prepare(
+      'SELECT COUNT(*) as n FROM graduation_momentum WHERE bc_velocity_sol_per_min IS NOT NULL'
+    ).get() as any).n;
+    const total = (db.prepare(
+      'SELECT COUNT(*) as n FROM graduation_momentum WHERE label IS NOT NULL'
+    ).get() as any).n;
+
+    sendJsonOrHtml(req, res, {
+      backfill_running: backfillRunning,
+      remaining_null_velocity: nullCount,
+      has_velocity: totalWithVelocity,
+      total_labeled: total,
+      velocity_coverage_pct: total > 0 ? +((totalWithVelocity / total) * 100).toFixed(1) : 0,
+    });
+  });
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // DASHBOARD LANDING PAGE
