@@ -1265,6 +1265,76 @@ async function main() {
             };
           };
 
+          // simulateWithTP: same as simulate but exits early when price hits take-profit level.
+          // At each checkpoint, stop-loss is checked first (conservative), then take-profit.
+          // TP exit return = exactly tpPct (no gap-through penalty assumed on the upside).
+          const simulateWithTP = (minPct: number, maxPct: number, stopPct: number, tpPct: number, extraWhere?: string, label?: string) => {
+            const whereExtra = extraWhere ? ` AND ${extraWhere}` : '';
+            const rows = db.prepare(`
+              SELECT label, pct_t30, ${stopCheckpoints.join(', ')}, pct_t300,
+                     COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT}) as cost_pct
+              FROM graduation_momentum
+              WHERE pct_t30 >= ${minPct} AND pct_t30 <= ${maxPct}
+                AND pct_t30 IS NOT NULL${whereExtra}
+            `).all() as any[];
+
+            if (rows.length === 0) return null;
+
+            let totalReturn = 0, stopped = 0, tpHit = 0, profitable = 0, rugged = 0, totalCost = 0;
+            for (const r of rows) {
+              // Absolute price levels from open (same basis as checkpoint values)
+              const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - stopPct / 100) - 1) * 100;
+              const tpLevelPct   = ((1 + r.pct_t30 / 100) * (1 + tpPct  / 100) - 1) * 100;
+              let exitReturn: number | undefined;
+              let wasStoppedOut = false;
+              let wasTpHit = false;
+
+              for (const cp of stopCheckpoints) {
+                if (r[cp] == null) continue;
+                if (r[cp] <= stopLevelPct) {
+                  exitReturn = -(stopPct * 1.2); // 20% gap-through penalty on stop
+                  stopped++;
+                  wasStoppedOut = true;
+                  break;
+                }
+                if (r[cp] >= tpLevelPct) {
+                  exitReturn = tpPct; // exit at TP target (clean fill assumed)
+                  tpHit++;
+                  wasTpHit = true;
+                  break;
+                }
+              }
+
+              if (!wasStoppedOut && !wasTpHit) {
+                if (r.pct_t300 != null) {
+                  exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
+                } else {
+                  exitReturn = -100;
+                  rugged++;
+                }
+              }
+
+              exitReturn! -= r.cost_pct;
+              totalCost += r.cost_pct;
+              totalReturn += exitReturn!;
+              if (exitReturn! > 0) profitable++;
+            }
+
+            const n = rows.length;
+            const avgReturn = totalReturn / n;
+            return {
+              strategy: label || `t30 +${minPct}% to +${maxPct}%`,
+              stop_loss_pct: stopPct,
+              take_profit_pct: tpPct,
+              n,
+              stopped_pct: +(stopped / n * 100).toFixed(1),
+              tp_hit_pct: +(tpHit / n * 100).toFixed(1),
+              profitable_rate_pct: +(profitable / n * 100).toFixed(1),
+              avg_return_pct: +avgReturn.toFixed(1),
+              ev_positive: avgReturn > 0,
+            };
+          };
+
           return {
             note: 'Enter at T+30, apply stop-loss. Granular checkpoints T+40 through T+240 for stop detection. Combo filters test the top-performing strategies.',
             // Basic t30 range filters
@@ -1303,6 +1373,78 @@ async function main() {
               simulate(5, 100, 10, 'bc_velocity_sol_per_min<20 AND token_age_seconds>600',       'vel <20 + bc_age>10m + t30 @ 10% SL'),
               simulate(5, 100, 15, 'bc_velocity_sol_per_min<20 AND token_age_seconds>600',       'vel <20 + bc_age>10m + t30 @ 15% SL'),
             ].filter(Boolean),
+            // Take-profit + stop-loss combos — tests whether locking gains early improves EV.
+            // TP is checked at the same granular checkpoints as SL (T+40 through T+240).
+            // SL checked first (conservative). TP exit assumes clean fill at target price.
+            tp_sl_combos: (() => {
+              const tpLevels = [20, 30, 50, 75, 100];
+              const results: any[] = [];
+              // Basic: no velocity filter
+              for (const sl of [10, 15, 20]) {
+                for (const tp of tpLevels) {
+                  results.push(simulateWithTP(5, 100, sl, tp, undefined, `t30 +5-100% @ ${sl}% SL / ${tp}% TP`));
+                }
+              }
+              // Velocity sweet spot: vel 5-20
+              const velWhere = 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20';
+              for (const sl of [10, 15]) {
+                for (const tp of tpLevels) {
+                  results.push(simulateWithTP(5, 100, sl, tp, velWhere, `vel 5-20 + t30 @ ${sl}% SL / ${tp}% TP`));
+                }
+              }
+              return results.filter(Boolean);
+            })(),
+          };
+        })(),
+
+        // ── SIGNAL FREQUENCY ─────────────────────────────────────────────────
+        // How often does each filter fire? Derived from actual data timestamps.
+        // Useful for sizing position frequency and daily trade volume estimates.
+        signal_frequency: (() => {
+          const span = db.prepare(`
+            SELECT MIN(created_at) as first_ts, MAX(created_at) as last_ts, COUNT(*) as total
+            FROM graduation_momentum WHERE pct_t30 IS NOT NULL
+          `).get() as any;
+
+          if (!span || !span.first_ts || span.last_ts === span.first_ts || span.total < 2) {
+            return { note: 'Insufficient data for frequency calculation', samples: span?.total ?? 0 };
+          }
+
+          const spanHours = (span.last_ts - span.first_ts) / 3600;
+          if (spanHours < 0.1) return { note: 'Data span too short for reliable frequency estimate', samples: span.total };
+
+          const graduationsPerHour = +(span.total / spanHours).toFixed(2);
+
+          const velRow = db.prepare(`
+            SELECT COUNT(*) as with_vel FROM graduation_momentum
+            WHERE pct_t30 IS NOT NULL AND bc_velocity_sol_per_min IS NOT NULL
+          `).get() as any;
+          const velocityDataAvailPct = span.total > 0 ? +((velRow.with_vel / span.total) * 100).toFixed(1) : 0;
+
+          const keyFilters = [
+            { name: 't30 +5-100% (baseline)',              where: `pct_t30 >= 5  AND pct_t30 <= 100` },
+            { name: 't30 +10-100%',                        where: `pct_t30 >= 10 AND pct_t30 <= 100` },
+            { name: 'vel 5-20 + t30 +5-100%',             where: `pct_t30 >= 5 AND pct_t30 <= 100 AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20` },
+            { name: 'vel 5-50 + t30 +5-100%',             where: `pct_t30 >= 5 AND pct_t30 <= 100 AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 50` },
+            { name: 'vel 5-20 + holders>=10 + t30 +5-100%', where: `pct_t30 >= 5 AND pct_t30 <= 100 AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20 AND holder_count >= 10` },
+            { name: 'vel 5-20 + liq>100 + t30 +5-100%',  where: `pct_t30 >= 5 AND pct_t30 <= 100 AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20 AND liquidity_sol_t30 > 100` },
+          ];
+
+          const signalsPerDay = keyFilters.map(f => {
+            const hitRow = db.prepare(`SELECT COUNT(*) as hits FROM graduation_momentum WHERE ${f.where}`).get() as any;
+            const hitRatePct = span.total > 0 ? +((hitRow.hits / span.total) * 100).toFixed(1) : 0;
+            const estSignalsPerDay = +(hitRatePct / 100 * graduationsPerHour * 24).toFixed(1);
+            return { filter: f.name, hits: hitRow.hits, hit_rate_pct: hitRatePct, est_signals_per_day: estSignalsPerDay };
+          });
+
+          return {
+            note: `Based on ${span.total} graduations with T+30 data over ${spanHours.toFixed(1)}h of collection`,
+            data_span_hours: +spanHours.toFixed(1),
+            total_with_t30_data: span.total,
+            graduations_per_hour: graduationsPerHour,
+            graduations_per_day_est: +(graduationsPerHour * 24).toFixed(0),
+            velocity_data_available_pct: velocityDataAvailPct,
+            signals_per_day_by_filter: signalsPerDay,
           };
         })(),
 

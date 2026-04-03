@@ -288,6 +288,56 @@ function slTable(title: string, desc: string, rows: any[]): string {
   </div>`;
 }
 
+function slTpTable(title: string, desc: string, rows: any[]): string {
+  if (!rows || rows.length === 0) return '';
+  const tableRows = rows.map((r: any) => `
+    <tr>
+      <td>${r.strategy || '—'}</td>
+      <td>${r.stop_loss_pct}%</td><td>${r.take_profit_pct}%</td><td>${r.n}</td>
+      <td>${r.stopped_pct}%</td><td class="green">${r.tp_hit_pct}%</td>
+      <td>${r.profitable_rate_pct}%</td>
+      <td class="${r.ev_positive ? 'ev-pos' : 'ev-neg'}">${r.avg_return_pct > 0 ? '+' : ''}${r.avg_return_pct}%</td>
+      <td>${r.ev_positive ? '<span class="green">YES</span>' : '<span class="red">NO</span>'}</td>
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>${title}</h2>
+    <div class="desc">${desc}</div>
+    <table>
+      <tr><th>Strategy</th><th>SL%</th><th>TP%</th><th>n</th><th>Stopped%</th><th>TP Hit%</th><th>Profit%</th><th>Avg Return</th><th>EV+</th></tr>
+      ${tableRows}
+    </table>
+  </div>`;
+}
+
+function signalFrequencySection(sf: any): string {
+  if (!sf || sf.samples === 0 || !sf.graduations_per_hour) return '';
+  const filterRows = (sf.signals_per_day_by_filter || []).map((f: any) => `
+    <tr>
+      <td>${f.filter}</td><td>${f.hits}</td>
+      <td>${f.hit_rate_pct}%</td>
+      <td class="blue">${f.est_signals_per_day}</td>
+    </tr>`).join('');
+  return `
+  <div class="card">
+    <h2>Signal Frequency</h2>
+    <div class="desc">${sf.note}</div>
+    <div class="grid">
+      <div>
+        <div class="stat"><span class="label">Data Span</span><span class="value">${sf.data_span_hours}h</span></div>
+        <div class="stat"><span class="label">Graduations / Hour</span><span class="value blue">${sf.graduations_per_hour}</span></div>
+        <div class="stat"><span class="label">Est. Graduations / Day</span><span class="value">${sf.graduations_per_day_est}</span></div>
+        <div class="stat"><span class="label">Velocity Data Available</span><span class="value ${sf.velocity_data_available_pct >= 80 ? 'green' : 'yellow'}">${sf.velocity_data_available_pct}%</span></div>
+      </div>
+    </div>
+    <h3>Est. Signals Per Day by Filter</h3>
+    <table>
+      <tr><th>Filter</th><th>Matches (historical)</th><th>Hit Rate</th><th>Est. Signals/Day</th></tr>
+      ${filterRows}
+    </table>
+  </div>`;
+}
+
 export function renderFilterHtml(data: any): string {
   const d = data;
 
@@ -353,6 +403,10 @@ export function renderFilterHtml(data: any): string {
     slTable('Stop-Loss: Stacked Combos',
       'Multi-signal filters with stop-losses. These represent the most refined trading bot strategies.',
       d.stop_loss_simulation?.stacked_combos),
+
+    slTpTable('Take-Profit + Stop-Loss Combos',
+      'Tests TP levels of 20/30/50/75/100% against SL levels. TP is checked at same granular checkpoints (T+40–T+240) as SL — SL checked first (conservative). TP exit assumes clean fill. Remaining trades exit at T+300 as usual.',
+      d.stop_loss_simulation?.tp_sl_combos),
   ];
 
   // Drawdown
@@ -452,6 +506,7 @@ export function renderFilterHtml(data: any): string {
   const body = sections.join('') + '<hr class="section-sep">' +
     distSections.join('') + '<hr class="section-sep">' +
     slSections.join('') + '<hr class="section-sep">' +
+    signalFrequencySection(d.signal_frequency) + '<hr class="section-sep">' +
     drawdownSection + tradingSection + econSection;
 
   return shell('Filter Analysis — Graduation Arb Research', '/filter-analysis', body, data);
