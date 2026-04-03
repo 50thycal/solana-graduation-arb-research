@@ -631,11 +631,14 @@ export class PriceCollector {
       const solRaised = (row.total_sol_raised > 0) ? row.total_sol_raised : PUMP_GRADUATION_SOL;
 
       if (row.token_age_seconds > 0) {
-        const velocity = (solRaised / row.token_age_seconds) * 60;
+        const rawVelocity = (solRaised / row.token_age_seconds) * 60;
+        // Cap at 500 sol/min (≈ graduation in <10s = bot rush / instant fill).
+        // Uncapped values (e.g. 5000+ sol/min) destroy moving averages and filter UX.
+        const velocity = Math.min(rawVelocity, 500);
         this.db.prepare(
           'UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?'
         ).run(+velocity.toFixed(2), graduationId);
-        logger.info({ graduationId, velocity: +velocity.toFixed(2) }, 'bc_velocity computed');
+        logger.info({ graduationId, velocity: +velocity.toFixed(2), rawVelocity: +rawVelocity.toFixed(2) }, 'bc_velocity computed');
         return;
       }
 
@@ -694,7 +697,7 @@ export class PriceCollector {
         'UPDATE graduations SET token_age_seconds = ? WHERE id = ? AND token_age_seconds IS NULL'
       ).run(tokenAgeSeconds, graduationId);
 
-      const velocity = (solRaised / tokenAgeSeconds) * 60;
+      const velocity = Math.min((solRaised / tokenAgeSeconds) * 60, 500);
       this.db.prepare(
         'UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?'
       ).run(+velocity.toFixed(2), graduationId);
@@ -747,7 +750,7 @@ export class PriceCollector {
 
         // Age already stored — compute velocity instantly, no RPC needed
         if (row.token_age_seconds && row.token_age_seconds > 0) {
-          const velocity = (solRaised / row.token_age_seconds) * 60;
+          const velocity = Math.min((solRaised / row.token_age_seconds) * 60, 500);
           this.db.prepare(
             'UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?'
           ).run(+velocity.toFixed(2), row.graduation_id);
@@ -801,7 +804,7 @@ export class PriceCollector {
           // Minimum 1s: instant-graduation tokens sniped in same block have rawAge=0.
           const tokenAgeSeconds = Math.max(1, rawAge);
 
-          const velocity = (solRaised / tokenAgeSeconds) * 60;
+          const velocity = Math.min((solRaised / tokenAgeSeconds) * 60, 500);
 
           this.db.prepare(
             'UPDATE graduation_momentum SET token_age_seconds = ?, bc_velocity_sol_per_min = ? WHERE graduation_id = ? AND bc_velocity_sol_per_min IS NULL'
