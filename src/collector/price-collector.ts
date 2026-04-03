@@ -285,16 +285,21 @@ export class PriceCollector {
           const swapFee = 0.25;
           const executionOverhead = 1.5;
           const slippagePct = ammImpact + swapFee + executionOverhead;
+          // Conservative round-trip: exit slippage ≈ entry slippage (pool liquidity may be
+          // lower at T+300, so this is not an overestimate). For a more precise estimate
+          // we'd need to capture pool reserves at T+300 (liquidity_sol_t300).
+          const roundTripSlippagePct = slippagePct * 2;
 
           try {
             this.db.prepare(`
               UPDATE graduation_momentum
-              SET volatility_0_30 = ?, liquidity_sol_t30 = ?, slippage_est_05sol = ?
+              SET volatility_0_30 = ?, liquidity_sol_t30 = ?, slippage_est_05sol = ?, round_trip_slippage_pct = ?
               WHERE graduation_id = ?
             `).run(
               +volatility.toFixed(2),
               +poolState.solReserves.toFixed(4),
               +slippagePct.toFixed(3),
+              +roundTripSlippagePct.toFixed(3),
               graduationId
             );
           } catch (err) {

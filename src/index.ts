@@ -1371,7 +1371,7 @@ async function main() {
         trading_readiness: (() => {
           const rows = db.prepare(`
             SELECT label, volatility_0_30, liquidity_sol_t30, slippage_est_05sol,
-                   bc_velocity_sol_per_min, pct_t300
+                   round_trip_slippage_pct, bc_velocity_sol_per_min, pct_t300
             FROM graduation_momentum
             WHERE label IS NOT NULL AND volatility_0_30 IS NOT NULL
           `).all() as any[];
@@ -1388,6 +1388,7 @@ async function main() {
               avg_volatility_0_30: avg(subset.map((r: any) => r.volatility_0_30)),
               avg_liquidity_sol_t30: avg(subset.map((r: any) => r.liquidity_sol_t30)),
               avg_slippage_05sol: avg(subset.map((r: any) => r.slippage_est_05sol)),
+              avg_round_trip_slippage_pct: avg(subset.filter((r: any) => r.round_trip_slippage_pct != null).map((r: any) => r.round_trip_slippage_pct)),
               avg_bc_velocity: avg(subset.filter((r: any) => r.bc_velocity_sol_per_min != null).map((r: any) => r.bc_velocity_sol_per_min)),
             };
           };
@@ -1411,7 +1412,7 @@ async function main() {
           });
 
           return {
-            note: 'Metrics at T+30 decision point. volatility = price range in first 30s. slippage = estimated cost for 0.5 SOL buy. bc_velocity = how fast the bonding curve filled.',
+            note: 'Metrics at T+30 decision point. volatility = price range in first 30s. slippage = estimated cost for 0.5 SOL buy. round_trip_slippage = entry + exit (conservative: 2x entry). bc_velocity = how fast the bonding curve filled.',
             samples: rows.length,
             by_label: [byLabel('PUMP'), byLabel('DUMP'), byLabel('STABLE')].filter(Boolean),
             win_rate_by_volatility: volBuckets,
