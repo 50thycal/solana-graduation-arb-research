@@ -585,6 +585,10 @@ export class PriceCollector {
       );
     }
 
+    // After each labeled graduation, sweep for any completed tokens that still
+    // have null velocity (covers restarts, missed observations, etc.)
+    this.runVelocityRecoverySweep().catch(() => {});
+
     logger.info(
       {
         graduationId,
@@ -698,104 +702,104 @@ export class PriceCollector {
     }
   }
 
+  private velocityRecoveryRunning = false;
+
   /**
-   * Start a background interval that automatically recovers null velocity on any
-   * completed observation. Catches tokens that slipped through because:
-   *   - The bot restarted mid-observation (completeObservation never called)
-   *   - No pool was found (observation never started)
-   *   - Both the enrichment and T+300s fallback failed
-   *
-   * Runs every 10 minutes. Silently skips truly unrecoverable tokens (pruned RPC).
+   * Scan for completed observations (labeled OR price_t300 captured) that still have
+   * null velocity and fix them. Called automatically after each graduation is labeled.
+   * A guard flag prevents overlapping runs if graduations complete close together.
+   * Also called once at startup to recover anything missed during the previous session.
    */
-  startAutoVelocityRecovery(): void {
-    const INTERVAL_MS = 10 * 60 * 1000;
+  private async runVelocityRecoverySweep(): Promise<void> {
+    if (this.velocityRecoveryRunning) return;
+    this.velocityRecoveryRunning = true;
 
-    const run = async () => {
-      try {
-        // Only target completed observations: labeled OR price_t300 captured
-        const candidates = this.db.prepare(`
-          SELECT gm.graduation_id, g.bonding_curve_address, g.timestamp AS grad_timestamp,
-                 gm.total_sol_raised, gm.token_age_seconds
-          FROM graduation_momentum gm
-          JOIN graduations g ON g.id = gm.graduation_id
-          WHERE gm.bc_velocity_sol_per_min IS NULL
-            AND (gm.label IS NOT NULL OR gm.price_t300 IS NOT NULL)
-            AND gm.total_sol_raised > 0
-        `).all() as Array<{
-          graduation_id: number;
-          bonding_curve_address: string | null;
-          grad_timestamp: number;
-          total_sol_raised: number;
-          token_age_seconds: number | null;
-        }>;
+    try {
+      const candidates = this.db.prepare(`
+        SELECT gm.graduation_id, g.bonding_curve_address, g.timestamp AS grad_timestamp,
+               gm.total_sol_raised, gm.token_age_seconds
+        FROM graduation_momentum gm
+        JOIN graduations g ON g.id = gm.graduation_id
+        WHERE gm.bc_velocity_sol_per_min IS NULL
+          AND (gm.label IS NOT NULL OR gm.price_t300 IS NOT NULL)
+          AND gm.total_sol_raised > 0
+      `).all() as Array<{
+        graduation_id: number;
+        bonding_curve_address: string | null;
+        grad_timestamp: number;
+        total_sol_raised: number;
+        token_age_seconds: number | null;
+      }>;
 
-        if (candidates.length === 0) return;
+      if (candidates.length === 0) return;
 
-        logger.info({ count: candidates.length }, 'Auto-velocity-recovery: fixing null velocity on completed observations');
+      logger.info({ count: candidates.length }, 'Velocity recovery sweep: fixing null velocity on completed observations');
 
-        for (const row of candidates) {
-          const solRaised = row.total_sol_raised || PUMP_GRADUATION_SOL;
+      for (const row of candidates) {
+        const solRaised = row.total_sol_raised || PUMP_GRADUATION_SOL;
 
-          // If age already stored, compute velocity immediately — no RPC needed
-          if (row.token_age_seconds && row.token_age_seconds > 0) {
-            const velocity = (solRaised / row.token_age_seconds) * 60;
-            this.db.prepare(
-              'UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?'
-            ).run(+velocity.toFixed(2), row.graduation_id);
-            logger.info({ graduationId: row.graduation_id, velocity: +velocity.toFixed(2) }, 'Auto-recovery: velocity computed from stored age');
-            continue;
-          }
-
-          // Need BC creation time — skip if no address stored (very old records)
-          if (!row.bonding_curve_address || !row.grad_timestamp) continue;
-
-          try {
-            const bcPubkey = new PublicKey(row.bonding_curve_address);
-            let oldestBlockTime: number | null = null;
-            let before: string | undefined = undefined;
-
-            for (let page = 0; page < 3; page++) {
-              const sigs = await this.connection.getSignaturesForAddress(bcPubkey, { limit: 1000, before });
-              if (sigs.length === 0) break;
-              const last = sigs[sigs.length - 1];
-              if (last.blockTime) oldestBlockTime = last.blockTime;
-              if (sigs.length < 1000) break;
-              before = last.signature;
-              await new Promise(r => setTimeout(r, 200));
-            }
-
-            if (!oldestBlockTime) continue;
-
-            const tokenAgeSeconds = Math.max(0, row.grad_timestamp - oldestBlockTime);
-            if (tokenAgeSeconds <= 0) continue;
-
-            const velocity = (solRaised / tokenAgeSeconds) * 60;
-
-            this.db.prepare(
-              'UPDATE graduation_momentum SET token_age_seconds = ?, bc_velocity_sol_per_min = ? WHERE graduation_id = ? AND bc_velocity_sol_per_min IS NULL'
-            ).run(tokenAgeSeconds, +velocity.toFixed(2), row.graduation_id);
-            this.db.prepare(
-              'UPDATE graduations SET token_age_seconds = ? WHERE id = ? AND token_age_seconds IS NULL'
-            ).run(tokenAgeSeconds, row.graduation_id);
-
-            logger.info(
-              { graduationId: row.graduation_id, tokenAgeSeconds, velocity: +velocity.toFixed(2) },
-              'Auto-recovery: velocity recovered via BC lookup'
-            );
-
-            await new Promise(r => setTimeout(r, 300));
-          } catch {
-            // Silently skip — will retry next interval
-          }
+        // Age already stored — compute velocity instantly, no RPC needed
+        if (row.token_age_seconds && row.token_age_seconds > 0) {
+          const velocity = (solRaised / row.token_age_seconds) * 60;
+          this.db.prepare(
+            'UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?'
+          ).run(+velocity.toFixed(2), row.graduation_id);
+          logger.info({ graduationId: row.graduation_id, velocity: +velocity.toFixed(2) }, 'Velocity recovery: computed from stored age');
+          continue;
         }
-      } catch (err) {
-        logger.warn('Auto-velocity-recovery error: %s', err instanceof Error ? err.message : String(err));
-      }
-    };
 
-    // Run once shortly after startup to catch anything missed during the previous session
-    setTimeout(run, 60_000);
-    setInterval(run, INTERVAL_MS);
-    logger.info({ intervalMin: INTERVAL_MS / 60_000 }, 'Auto-velocity-recovery started');
+        // Need BC creation time — skip if no address stored (very old records, truly unrecoverable)
+        if (!row.bonding_curve_address || !row.grad_timestamp) continue;
+
+        try {
+          const bcPubkey = new PublicKey(row.bonding_curve_address);
+          let oldestBlockTime: number | null = null;
+          let before: string | undefined = undefined;
+
+          for (let page = 0; page < 3; page++) {
+            const sigs = await this.connection.getSignaturesForAddress(bcPubkey, { limit: 1000, before });
+            if (sigs.length === 0) break;
+            const last = sigs[sigs.length - 1];
+            if (last.blockTime) oldestBlockTime = last.blockTime;
+            if (sigs.length < 1000) break;
+            before = last.signature;
+            await new Promise(r => setTimeout(r, 200));
+          }
+
+          if (!oldestBlockTime) continue;
+
+          const tokenAgeSeconds = Math.max(0, row.grad_timestamp - oldestBlockTime);
+          if (tokenAgeSeconds <= 0) continue;
+
+          const velocity = (solRaised / tokenAgeSeconds) * 60;
+
+          this.db.prepare(
+            'UPDATE graduation_momentum SET token_age_seconds = ?, bc_velocity_sol_per_min = ? WHERE graduation_id = ? AND bc_velocity_sol_per_min IS NULL'
+          ).run(tokenAgeSeconds, +velocity.toFixed(2), row.graduation_id);
+          this.db.prepare(
+            'UPDATE graduations SET token_age_seconds = ? WHERE id = ? AND token_age_seconds IS NULL'
+          ).run(tokenAgeSeconds, row.graduation_id);
+
+          logger.info(
+            { graduationId: row.graduation_id, tokenAgeSeconds, velocity: +velocity.toFixed(2) },
+            'Velocity recovery: recovered via BC lookup'
+          );
+
+          await new Promise(r => setTimeout(r, 300));
+        } catch {
+          // Silently skip — will retry on next graduation label
+        }
+      }
+    } catch (err) {
+      logger.warn('Velocity recovery sweep error: %s', err instanceof Error ? err.message : String(err));
+    } finally {
+      this.velocityRecoveryRunning = false;
+    }
+  }
+
+  startAutoVelocityRecovery(): void {
+    // Run once 60s after startup to catch anything missed during the previous session
+    setTimeout(() => this.runVelocityRecoverySweep(), 60_000);
+    logger.info('Velocity recovery: will run after each labeled graduation and once at startup');
   }
 }
