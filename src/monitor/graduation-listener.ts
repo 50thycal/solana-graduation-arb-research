@@ -168,6 +168,7 @@ export class GraduationListener {
 
     await this.subscribe();
     await this.poolTracker.start();
+    this.priceCollector.startAutoVelocityRecovery();
 
     this.healthCheckInterval = setInterval(() => {
       const silentMs = Date.now() - this.lastEventTime;
