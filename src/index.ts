@@ -236,17 +236,19 @@ async function main() {
     (async () => {
       for (const row of needsAgeFetch) {
         try {
-          // Prefer bonding curve address — it has far fewer transactions than the mint
-          // (only BC buys/sells + graduation tx), making it faster to walk to the creation tx.
+          // Prefer bonding curve address — it has far fewer transactions than the mint.
           // Fall back to mint if BC address is not stored (older records).
+          const usingBC = !!row.bonding_curve_address;
           const lookupAddress = row.bonding_curve_address || row.mint;
           const lookupPubkey = new PublicKey(lookupAddress);
           let oldestBlockTime: number | null = null;
           let before: string | undefined = undefined;
+          let totalSigsScanned = 0;
 
           for (let page = 0; page < 5; page++) {
             const sigs: Array<{ signature: string; blockTime?: number | null }> =
               await conn.getSignaturesForAddress(lookupPubkey, { limit: 1000, before });
+            totalSigsScanned += sigs.length;
             if (sigs.length === 0) break;
             const last: { signature: string; blockTime?: number | null } = sigs[sigs.length - 1];
             if (last.blockTime) oldestBlockTime = last.blockTime;
@@ -257,14 +259,27 @@ async function main() {
             await new Promise(r => setTimeout(r, 100));
           }
 
-          if (oldestBlockTime === null || !row.grad_timestamp) {
+          if (oldestBlockTime === null) {
             failed++;
+            logger.warn(
+              { graduationId: row.graduation_id, lookupAddress: lookupAddress.slice(0, 8), usingBC, totalSigsScanned },
+              'Backfill skip: getSignaturesForAddress returned no blockTime (0 sigs or all null blockTimes)'
+            );
+            continue;
+          }
+          if (!row.grad_timestamp) {
+            failed++;
+            logger.warn({ graduationId: row.graduation_id }, 'Backfill skip: missing grad_timestamp');
             continue;
           }
 
           const tokenAgeSeconds = Math.max(0, row.grad_timestamp - oldestBlockTime);
           if (tokenAgeSeconds <= 0) {
             failed++;
+            logger.warn(
+              { graduationId: row.graduation_id, grad_timestamp: row.grad_timestamp, oldestBlockTime, diff: row.grad_timestamp - oldestBlockTime, usingBC, totalSigsScanned },
+              'Backfill skip: tokenAgeSeconds <= 0 (oldest sig is at or after graduation — hit page cap before reaching creation tx?)'
+            );
             continue;
           }
 

@@ -748,16 +748,25 @@ export class PriceCollector {
           continue;
         }
 
-        // Need BC creation time — skip if no address stored (very old records, truly unrecoverable)
-        if (!row.bonding_curve_address || !row.grad_timestamp) continue;
+        // Need BC creation time — skip if no address stored
+        if (!row.bonding_curve_address) {
+          logger.warn({ graduationId: row.graduation_id }, 'Velocity recovery skip: no bonding_curve_address stored');
+          continue;
+        }
+        if (!row.grad_timestamp) {
+          logger.warn({ graduationId: row.graduation_id }, 'Velocity recovery skip: no grad_timestamp');
+          continue;
+        }
 
         try {
           const bcPubkey = new PublicKey(row.bonding_curve_address);
           let oldestBlockTime: number | null = null;
           let before: string | undefined = undefined;
+          let totalSigsScanned = 0;
 
-          for (let page = 0; page < 3; page++) {
+          for (let page = 0; page < 5; page++) {
             const sigs = await this.connection.getSignaturesForAddress(bcPubkey, { limit: 1000, before });
+            totalSigsScanned += sigs.length;
             if (sigs.length === 0) break;
             const last = sigs[sigs.length - 1];
             if (last.blockTime) oldestBlockTime = last.blockTime;
@@ -766,10 +775,22 @@ export class PriceCollector {
             await new Promise(r => setTimeout(r, 200));
           }
 
-          if (!oldestBlockTime) continue;
+          if (!oldestBlockTime) {
+            logger.warn(
+              { graduationId: row.graduation_id, bc: row.bonding_curve_address.slice(0, 8), totalSigsScanned },
+              'Velocity recovery skip: no blockTime found in BC signature history'
+            );
+            continue;
+          }
 
           const tokenAgeSeconds = Math.max(0, row.grad_timestamp - oldestBlockTime);
-          if (tokenAgeSeconds <= 0) continue;
+          if (tokenAgeSeconds <= 0) {
+            logger.warn(
+              { graduationId: row.graduation_id, grad_timestamp: row.grad_timestamp, oldestBlockTime, totalSigsScanned },
+              'Velocity recovery skip: tokenAgeSeconds <= 0 (hit page cap before reaching creation tx?)'
+            );
+            continue;
+          }
 
           const velocity = (solRaised / tokenAgeSeconds) * 60;
 
