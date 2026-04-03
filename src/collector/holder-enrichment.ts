@@ -41,7 +41,7 @@ export class HolderEnrichment {
     let oldestBlockTime: number | null = null;
 
     for (let page = 0; page < MAX_AGE_PAGES; page++) {
-      if (!await globalRpcLimiter.throttleOrDrop(5)) break;
+      if (!await globalRpcLimiter.throttleOrDrop(15)) break;
 
       const sigs: Array<{ signature: string; blockTime?: number | null }> =
         await this.connection.getSignaturesForAddress(mintPubkey, {

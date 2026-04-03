@@ -566,19 +566,7 @@ export class PriceCollector {
     }
 
     // Compute and store bonding curve velocity (sol_raised / age_minutes)
-    try {
-      const row = this.db.prepare(
-        'SELECT total_sol_raised, token_age_seconds FROM graduation_momentum WHERE graduation_id = ?'
-      ).get(graduationId) as any;
-      if (row?.total_sol_raised > 0 && row?.token_age_seconds > 0) {
-        const velocity = (row.total_sol_raised / row.token_age_seconds) * 60;
-        this.db.prepare(
-          'UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?'
-        ).run(+velocity.toFixed(2), graduationId);
-      }
-    } catch (err) {
-      logger.debug('Failed to compute bc_velocity for grad %d', graduationId);
-    }
+    this.computeAndStoreVelocity(graduationId, observation.ctx.mint, observation.ctx.graduationTimestamp);
 
     // Label momentum (PUMP/DUMP/STABLE)
     try {
@@ -603,5 +591,117 @@ export class PriceCollector {
       },
       'Observation complete'
     );
+  }
+
+  /**
+   * Compute bc_velocity_sol_per_min from total_sol_raised and token_age_seconds.
+   * If token_age_seconds is missing (RPC rate-limit drop during enrichment),
+   * retries the age lookup once before giving up.
+   */
+  private computeAndStoreVelocity(graduationId: number, mint: string, graduationTimestamp: number): void {
+    try {
+      const row = this.db.prepare(
+        'SELECT total_sol_raised, token_age_seconds FROM graduation_momentum WHERE graduation_id = ?'
+      ).get(graduationId) as any;
+
+      if (row?.total_sol_raised > 0 && row?.token_age_seconds > 0) {
+        const velocity = (row.total_sol_raised / row.token_age_seconds) * 60;
+        this.db.prepare(
+          'UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?'
+        ).run(+velocity.toFixed(2), graduationId);
+        return; // success
+      }
+
+      // Log which field is missing so we can track null causes
+      if (!row) {
+        logger.warn({ graduationId }, 'bc_velocity: no momentum row found');
+        return;
+      }
+      if (!(row.total_sol_raised > 0)) {
+        logger.warn({ graduationId, total_sol_raised: row.total_sol_raised }, 'bc_velocity: missing total_sol_raised');
+        return;
+      }
+
+      // token_age_seconds is null — retry the age lookup asynchronously
+      logger.info({ graduationId, mint: mint.slice(0, 8) }, 'bc_velocity: token_age_seconds null, retrying age lookup');
+      this.retryAgeFetchAndComputeVelocity(graduationId, mint, graduationTimestamp, row.total_sol_raised);
+    } catch (err) {
+      logger.warn('Failed to compute bc_velocity for grad %d: %s', graduationId,
+        err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async retryAgeFetchAndComputeVelocity(
+    graduationId: number, mint: string, graduationTimestamp: number, totalSolRaised: number
+  ): Promise<void> {
+    try {
+      // Use a generous rate limit — this is critical data and we're past the busy graduation window
+      if (!await globalRpcLimiter.throttleOrDrop(20)) {
+        logger.warn({ graduationId }, 'bc_velocity retry: RPC queue full, giving up');
+        return;
+      }
+
+      const mintPubkey = new PublicKey(mint);
+      const sigs = await this.connection.getSignaturesForAddress(mintPubkey, { limit: 1000 });
+      if (sigs.length === 0) {
+        logger.warn({ graduationId }, 'bc_velocity retry: no signatures found for mint');
+        return;
+      }
+
+      // Walk to the oldest signature to find creation time
+      let oldestBlockTime: number | null = null;
+      let before: string | undefined = undefined;
+      const MAX_PAGES = 5;
+
+      // First page already fetched
+      const lastSig = sigs[sigs.length - 1];
+      if (lastSig.blockTime) oldestBlockTime = lastSig.blockTime;
+
+      if (sigs.length >= 1000) {
+        before = lastSig.signature;
+        for (let page = 1; page < MAX_PAGES; page++) {
+          if (!await globalRpcLimiter.throttleOrDrop(20)) break;
+          const moreSigs = await this.connection.getSignaturesForAddress(mintPubkey, { limit: 1000, before });
+          if (moreSigs.length === 0) break;
+          const last = moreSigs[moreSigs.length - 1];
+          if (last.blockTime) oldestBlockTime = last.blockTime;
+          if (moreSigs.length < 1000) break;
+          before = last.signature;
+        }
+      }
+
+      if (oldestBlockTime === null) {
+        logger.warn({ graduationId }, 'bc_velocity retry: could not determine creation time');
+        return;
+      }
+
+      const tokenAgeSeconds = Math.max(0, graduationTimestamp - oldestBlockTime);
+      if (tokenAgeSeconds <= 0) {
+        logger.warn({ graduationId, graduationTimestamp, oldestBlockTime }, 'bc_velocity retry: token_age_seconds <= 0');
+        return;
+      }
+
+      // Write recovered token_age_seconds back to both tables
+      this.db.prepare(
+        'UPDATE graduation_momentum SET token_age_seconds = ? WHERE graduation_id = ? AND token_age_seconds IS NULL'
+      ).run(tokenAgeSeconds, graduationId);
+      this.db.prepare(
+        'UPDATE graduations SET token_age_seconds = ? WHERE id = ? AND token_age_seconds IS NULL'
+      ).run(tokenAgeSeconds, graduationId);
+
+      // Now compute and store velocity
+      const velocity = (totalSolRaised / tokenAgeSeconds) * 60;
+      this.db.prepare(
+        'UPDATE graduation_momentum SET bc_velocity_sol_per_min = ? WHERE graduation_id = ?'
+      ).run(+velocity.toFixed(2), graduationId);
+
+      logger.info(
+        { graduationId, tokenAgeSeconds, velocity: +velocity.toFixed(2) },
+        'bc_velocity recovered via retry'
+      );
+    } catch (err) {
+      logger.warn('bc_velocity retry failed for grad %d: %s', graduationId,
+        err instanceof Error ? err.message : String(err));
+    }
   }
 }
