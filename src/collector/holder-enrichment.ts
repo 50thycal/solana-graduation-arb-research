@@ -157,9 +157,10 @@ export class HolderEnrichment {
           TOKEN_PROGRAM_ID,
           {
             commitment: 'confirmed',
-            // No dataSlice — avoids dataSize+dataSlice interaction bug on some RPCs
+            // dataSize filter omitted — some RPC providers silently return 0 for
+            // dataSize queries on TOKEN_PROGRAM_ID even when memcmp-only works.
+            // All SPL token accounts are 165 bytes so non-165 matches are impossible.
             filters: [
-              { dataSize: SPL_ACCOUNT_SIZE },
               { memcmp: { offset: 0, bytes: mintPubkey.toBase58() } },
             ],
           }
