@@ -87,87 +87,13 @@ export class HolderEnrichment {
       devWalletPct: 0,
     };
 
-    // ── TRUE HOLDER COUNT via getProgramAccounts ──────────────────────────────
-    // getTokenLargestAccounts is capped at 20 results (19 real after infra),
-    // making it useless as a filter. Instead we enumerate ALL token accounts
-    // for this mint using getProgramAccounts with:
-    //   • dataSize: 165 — only SPL token accounts (not mints or multisigs)
-    //   • memcmp offset 0 — the mint address is the first 32 bytes of an SPL
-    //     token account's data layout
-    //   • dataSlice {0, 0} — we only need the count, not the account data
-    // This can be slow for tokens with thousands of holders, so we cap at 500.
-    try {
-      if (!await globalRpcLimiter.throttleOrDrop(15)) {
-        logger.debug({ mint: mint.slice(0, 8) }, 'True holder count dropped — RPC queue full');
-      } else {
-        const mintPubkey = new PublicKey(mint);
-        const allTokenAccounts = await this.connection.getProgramAccounts(
-          TOKEN_PROGRAM_ID,
-          {
-            commitment: 'confirmed',
-            dataSlice: { offset: 0, length: 0 }, // no data — just count results
-            filters: [
-              { dataSize: SPL_ACCOUNT_SIZE },
-              { memcmp: { offset: 0, bytes: mintPubkey.toBase58() } },
-            ],
-          }
-        );
-
-        const rawCount = allTokenAccounts.length;
-        if (rawCount >= HOLDER_COUNT_CAP) {
-          result.holderCount = HOLDER_COUNT_CAP;
-          result.holderCountCapped = true;
-        } else {
-          result.holderCount = rawCount;
-          result.holderCountCapped = false;
-        }
-
-        logger.debug(
-          { mint: mint.slice(0, 8), rawCount, capped: result.holderCountCapped },
-          'True holder count from getProgramAccounts'
-        );
-      }
-    } catch (err) {
-      logger.warn(
-        { mint: mint.slice(0, 8), err: err instanceof Error ? err.message : String(err) },
-        'getProgramAccounts holder count failed — falling back to getTokenLargestAccounts'
-      );
-      // Fallback: getTokenLargestAccounts gives at most 19 real holders.
-      // Set capped=true whenever we hit that ceiling so downstream analysis
-      // knows the number is a floor, not an exact count.
-      try {
-        if (await globalRpcLimiter.throttleOrDrop(10)) {
-          const largestAccounts = await this.connection.getTokenLargestAccounts(
-            new PublicKey(mint),
-            'confirmed'
-          );
-          if (largestAccounts.value && largestAccounts.value.length > 0) {
-            const INFRA_THRESHOLD = PUMP_TOTAL_SUPPLY_RAW * 0.15;
-            const realHolders = largestAccounts.value.filter((acc) => {
-              const amt = parseInt(acc.amount, 10) || 0;
-              return amt > 0 && amt < INFRA_THRESHOLD;
-            });
-            result.holderCount = realHolders.length;
-            // 19 = max real holders from this method (20 minus 1 infra).
-            // Flag as capped so filters know "19" means "at least 19".
-            result.holderCountCapped = realHolders.length >= 19;
-          }
-        }
-      } catch (fallbackErr) {
-        logger.warn(
-          { mint: mint.slice(0, 8) },
-          'Fallback holder count also failed: %s',
-          fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr)
-        );
-      }
-    }
-
-    // ── TOP 5 / DEV WALLET CONCENTRATION via getTokenLargestAccounts ─────────
-    // We still need balances for concentration metrics, so a separate call is
-    // required regardless of the true holder count method above.
+    // ── STEP 1: getTokenLargestAccounts (always run first) ───────────────────
+    // Cheap call (≤20 accounts), works on all RPC providers.
+    // Provides: top5/dev concentration + a guaranteed fallback holder count.
+    // holderCount from this path is capped at 19 — will be upgraded in step 2.
     try {
       if (!await globalRpcLimiter.throttleOrDrop(10)) {
-        logger.debug({ mint: mint.slice(0, 8) }, 'Concentration enrichment dropped — RPC queue full');
+        logger.debug({ mint: mint.slice(0, 8) }, 'getTokenLargestAccounts dropped — RPC queue full');
       } else {
         const largestAccounts = await this.connection.getTokenLargestAccounts(
           new PublicKey(mint),
@@ -181,14 +107,17 @@ export class HolderEnrichment {
             return bAmt - aAmt;
           });
 
-          // Filter out the pool vault (>15% of supply) and zero-balance accounts
           const INFRA_THRESHOLD = PUMP_TOTAL_SUPPLY_RAW * 0.15;
           const realHolders = sorted.filter((acc) => {
             const amt = parseInt(acc.amount, 10) || 0;
             return amt > 0 && amt < INFRA_THRESHOLD;
           });
 
-          // Top 5 holder concentration (excluding infrastructure)
+          // Fallback count — will be overwritten by step 2 if getProgramAccounts works
+          result.holderCount = realHolders.length;
+          result.holderCountCapped = realHolders.length >= 19;
+
+          // Top 5 holder concentration (requires balances — only available here)
           const top5Amount = realHolders.slice(0, 5).reduce((sum, acc) => {
             return sum + (parseInt(acc.amount, 10) || 0);
           }, 0);
@@ -203,9 +132,53 @@ export class HolderEnrichment {
       }
     } catch (err) {
       logger.warn(
-        { mint: mint.slice(0, 8) },
-        'Concentration enrichment failed: %s',
-        err instanceof Error ? err.message : String(err)
+        { mint: mint.slice(0, 8), err: err instanceof Error ? err.message : String(err) },
+        'getTokenLargestAccounts failed'
+      );
+    }
+
+    // ── STEP 2: getProgramAccounts — TRUE holder count (best-effort upgrade) ──
+    // getTokenLargestAccounts is capped at 20 results (19 real after infra),
+    // making the count useless as a filter. This call enumerates ALL SPL token
+    // accounts for the mint to get the real number.
+    //
+    // NOTE: Many RPC providers block getProgramAccounts for TOKEN_PROGRAM_ID
+    // because it scans all token accounts. If this fails, step 1's count is used.
+    // dataSize: 165 = SPL token account size (filters out mints/multisigs)
+    // memcmp offset 0 = mint address is first 32 bytes of SPL account layout
+    // dataSlice {0,0} = return no data, only keys (minimises response size)
+    try {
+      if (!await globalRpcLimiter.throttleOrDrop(15)) {
+        logger.debug({ mint: mint.slice(0, 8) }, 'getProgramAccounts holder count dropped — RPC queue full');
+      } else {
+        const mintPubkey = new PublicKey(mint);
+        const allTokenAccounts = await this.connection.getProgramAccounts(
+          TOKEN_PROGRAM_ID,
+          {
+            commitment: 'confirmed',
+            dataSlice: { offset: 0, length: 0 },
+            filters: [
+              { dataSize: SPL_ACCOUNT_SIZE },
+              { memcmp: { offset: 0, bytes: mintPubkey.toBase58() } },
+            ],
+          }
+        );
+
+        const rawCount = allTokenAccounts.length;
+        result.holderCount = Math.min(rawCount, HOLDER_COUNT_CAP);
+        result.holderCountCapped = rawCount >= HOLDER_COUNT_CAP;
+
+        logger.debug(
+          { mint: mint.slice(0, 8), rawCount, capped: result.holderCountCapped },
+          'True holder count from getProgramAccounts'
+        );
+      }
+    } catch (err) {
+      // getProgramAccounts is often blocked by RPC providers for TOKEN_PROGRAM_ID.
+      // Step 1's count remains in result — log at debug to avoid log spam.
+      logger.debug(
+        { mint: mint.slice(0, 8), err: err instanceof Error ? err.message : String(err) },
+        'getProgramAccounts unavailable — using getTokenLargestAccounts count'
       );
     }
 
