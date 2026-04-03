@@ -1315,12 +1315,14 @@ async function main() {
           const velBuckets = db.prepare(`
             SELECT
               CASE
-                WHEN bc_velocity_sol_per_min IS NULL   THEN 'null'
-                WHEN bc_velocity_sol_per_min < 5       THEN '<5 sol/min'
-                WHEN bc_velocity_sol_per_min < 10      THEN '5-10 sol/min'
-                WHEN bc_velocity_sol_per_min < 20      THEN '10-20 sol/min'
-                WHEN bc_velocity_sol_per_min < 50      THEN '20-50 sol/min'
-                ELSE '50+ sol/min'
+                WHEN bc_velocity_sol_per_min IS NULL    THEN 'null'
+                WHEN bc_velocity_sol_per_min < 5        THEN '<5 sol/min'
+                WHEN bc_velocity_sol_per_min < 10       THEN '5-10 sol/min'
+                WHEN bc_velocity_sol_per_min < 20       THEN '10-20 sol/min'
+                WHEN bc_velocity_sol_per_min < 50       THEN '20-50 sol/min'
+                WHEN bc_velocity_sol_per_min < 200      THEN '50-200 sol/min'
+                WHEN bc_velocity_sol_per_min < 500      THEN '200-500 sol/min'
+                ELSE '500 sol/min (capped)'
               END as bucket,
               COUNT(*) as total,
               SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pump,
@@ -1412,7 +1414,9 @@ async function main() {
               avg_liquidity_sol_t30: avg(subset.map((r: any) => r.liquidity_sol_t30)),
               avg_slippage_05sol: avg(subset.map((r: any) => r.slippage_est_05sol)),
               avg_round_trip_slippage_pct: avg(subset.filter((r: any) => r.round_trip_slippage_pct != null).map((r: any) => r.round_trip_slippage_pct)),
-              avg_bc_velocity: avg(subset.filter((r: any) => r.bc_velocity_sol_per_min != null).map((r: any) => r.bc_velocity_sol_per_min)),
+              // Cap at 500 sol/min when averaging so pre-migration outliers don't skew the mean.
+              // New rows are already capped at storage time.
+              avg_bc_velocity: avg(subset.filter((r: any) => r.bc_velocity_sol_per_min != null).map((r: any) => Math.min(r.bc_velocity_sol_per_min, 500))),
             };
           };
 

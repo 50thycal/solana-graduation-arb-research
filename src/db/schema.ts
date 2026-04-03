@@ -202,6 +202,13 @@ function runMigrations(db: Database.Database): void {
       SET round_trip_slippage_pct = ROUND(slippage_est_05sol * 2, 3)
       WHERE slippage_est_05sol IS NOT NULL AND round_trip_slippage_pct IS NULL
     `);
+    // Cap any existing bc_velocity_sol_per_min values > 500 (bot-rush / instant graduations).
+    // New rows are capped at write time. This fixes pre-migration outliers that skew averages.
+    db.exec(`
+      UPDATE graduation_momentum
+      SET bc_velocity_sol_per_min = 500
+      WHERE bc_velocity_sol_per_min > 500
+    `);
   }
 
   // Add columns to graduations if they don't exist yet (safe migration)
