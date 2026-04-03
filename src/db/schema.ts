@@ -187,6 +187,7 @@ function runMigrations(db: Database.Database): void {
       ['volatility_0_30', 'REAL'],       // price range (max-min)/open as % in first 30s
       ['liquidity_sol_t30', 'REAL'],     // SOL reserves in pool at T+30
       ['slippage_est_05sol', 'REAL'],    // estimated slippage % for 0.5 SOL buy at T+30
+      ['round_trip_slippage_pct', 'REAL'], // estimated round-trip slippage % (entry + exit, conservative: 2x entry)
       ['bc_velocity_sol_per_min', 'REAL'], // bonding curve fill rate (sol_raised / age in minutes)
     ];
     for (const [col, type] of newMomCols) {
