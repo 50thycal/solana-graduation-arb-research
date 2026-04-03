@@ -370,7 +370,7 @@ async function main() {
 
       const lastGradAgo = pipeline.last_ts ? Math.floor(Date.now() / 1000) - pipeline.last_ts : null;
       const status = listenerStatus === 'running'
-        ? (lastGradAgo && lastGradAgo > 300 ? 'STALLED' : 'RUNNING')
+        ? (lastGradAgo && lastGradAgo > 600 ? 'STALLED' : 'RUNNING')
         : 'ERROR';
       const statusColor = status === 'RUNNING' ? '#4ade80' : status === 'STALLED' ? '#facc15' : '#ef4444';
 
@@ -484,7 +484,7 @@ async function main() {
       ).get() as any;
 
       const botStatus = listenerStatus === 'running'
-        ? (lastGradSecondsAgo !== null && lastGradSecondsAgo > 300 ? 'STALLED' : 'RUNNING')
+        ? (lastGradSecondsAgo !== null && lastGradSecondsAgo > 600 ? 'STALLED' : 'RUNNING')
         : 'ERROR';
 
       // ── THESIS SCORECARD ──
