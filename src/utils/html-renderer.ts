@@ -447,38 +447,30 @@ function regimeAnalysisSection(ra: any): string {
 export function renderFilterHtml(data: any): string {
   const d = data;
 
+  // Removed: sol_raised_filters, holder_filters, top5_filters, sol_raised_distribution,
+  // SL-only sections (basic, velocity_combos, stacked_combos), momentum_continuation.
+  // All confirmed dead at n=630+. Data still in DB.
+
   const sections = [
     filterTable('T+30 Entry Filters',
-      'Core momentum gate: only enter tokens showing positive momentum at T+30. This is the primary entry signal for the trading bot.',
+      'Core momentum gate: only enter tokens showing positive momentum at T+30. This is the primary entry signal.',
       d.t30_entry_filters),
 
-    filterTable('Velocity Sweet Spot & Combo Filters',
-      'bc_velocity = how fast the bonding curve filled (SOL/min). Sweet spot is 5-20 sol/min — too slow means dead, too fast means bot rush. These combos stack velocity with other proven signals.',
+    filterTable('Velocity & Liquidity Combo Filters',
+      'bc_velocity = how fast the bonding curve filled (SOL/min). Sweet spot is 5-20 sol/min. These combos stack velocity with liquidity, bc_age, and holder signals.',
       (d.combination_filters || []).filter((r: any) =>
         r.filter.includes('velocity') || r.filter.includes('liquidity')
       )),
 
-    filterTable('Traditional Combo Filters',
-      'Stacked filters using holder count, SOL raised, top5 wallet concentration, bc_age, and dev wallet %. These were the original signal tests.',
+    filterTable('BC Age Combo Filters',
+      'bc_age-based combos (no velocity). Older tokens may have more organic holder bases.',
       (d.combination_filters || []).filter((r: any) =>
-        !r.filter.includes('velocity') && !r.filter.includes('liquidity')
+        r.filter.includes('bc_age') && !r.filter.includes('velocity') && !r.filter.includes('liquidity')
       )),
 
     filterTable('BC Age Filters',
-      'bc_age = time the token spent on the bonding curve before graduating. Older tokens may have more organic holder bases.',
+      'bc_age = time the token spent on the bonding curve before graduating.',
       d.bc_age_filters),
-
-    filterTable('Holder Filters',
-      'holder_count = number of unique holders at graduation (capped at 19 due to RPC limit of top-20 accounts minus infrastructure). More holders suggests organic interest.',
-      d.holder_filters),
-
-    filterTable('SOL Raised Filters',
-      'total SOL raised on the bonding curve. Real graduations need ~85 SOL. Post-cleanup, nearly all tokens are in the 80-86 range.',
-      d.sol_raised_filters),
-
-    filterTable('Top5 Wallet Filters',
-      'top5_wallet_pct = percentage of supply held by top 5 wallets. Lower concentration may indicate more distributed (organic) holding.',
-      d.top5_filters),
   ];
 
   // Distributions
@@ -487,31 +479,15 @@ export function renderFilterHtml(data: any): string {
       'Win rate by bonding curve fill speed. The 5-20 sol/min range consistently outperforms. Very slow (<5) and very fast (50+) both underperform.',
       d.bc_velocity_distribution, false),
 
-    filterTable('SOL Raised Distribution',
-      'Win rate by SOL raised bucket. After cleanup, data is concentrated in the 80-86 SOL range (real graduations).',
-      d.sol_raised_distribution, false),
-
     filterTable('BC Age Distribution',
       'Win rate by how long the token was on the bonding curve. <1h tends to perform best.',
       d.bc_age_distribution, false),
   ];
 
-  // Stop-loss
+  // Stop-loss — only TP+SL combos (SL-only confirmed negative EV)
   const slSections = [
-    slTable('Stop-Loss: Basic T+30 Ranges',
-      'Enter at T+30, exit at T+300 or when stop-loss triggers. Uses granular checkpoints (T+40 through T+240) for accurate stop detection.',
-      d.stop_loss_simulation?.basic || d.stop_loss_simulation?.results),
-
-    slTable('Stop-Loss: Velocity Combos',
-      'Same stop-loss simulation but applied to the velocity-filtered cohort. Does the high win rate survive after accounting for stop-loss hits?',
-      d.stop_loss_simulation?.velocity_combos),
-
-    slTable('Stop-Loss: Stacked Combos',
-      'Multi-signal filters with stop-losses. These represent the most refined trading bot strategies.',
-      d.stop_loss_simulation?.stacked_combos),
-
     slTpTable('Take-Profit + Stop-Loss Combos',
-      'Tests TP levels of 20/30/50/75/100% against SL levels. TP checked at same granular checkpoints as SL — SL checked first (conservative). SL exit: 20% adverse gap penalty. TP exit: 10% adverse gap penalty (fills cleaner but still slips in thin pools). Remaining trades exit at T+300.',
+      'The only positive-EV strategies. SL: 20% adverse gap. TP: 10% adverse gap. SL checked first (conservative). Round-trip slippage on all exits.',
       d.stop_loss_simulation?.tp_sl_combos),
   ];
 

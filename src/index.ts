@@ -927,23 +927,7 @@ async function main() {
         };
       };
 
-      const solBuckets = db.prepare(`
-        SELECT
-          CASE
-            WHEN total_sol_raised IS NULL THEN 'null'
-            WHEN total_sol_raised < 1    THEN '<1 SOL'
-            WHEN total_sol_raised < 10   THEN '1-10 SOL'
-            WHEN total_sol_raised < 50   THEN '10-50 SOL'
-            WHEN total_sol_raised < 80   THEN '50-80 SOL'
-            WHEN total_sol_raised < 86   THEN '80-86 SOL'
-            ELSE '86+ SOL'
-          END as bucket,
-          COUNT(*) as total,
-          SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pump,
-          SUM(CASE WHEN label='DUMP' THEN 1 ELSE 0 END) as dump
-        FROM graduation_momentum WHERE label IS NOT NULL
-        GROUP BY bucket ORDER BY MIN(COALESCE(total_sol_raised, -1))
-      `).all() as any[];
+      // REMOVED: solBuckets query (sol_raised_distribution confirmed no signal — single 80-86 bucket)
 
       const ageBuckets = db.prepare(`
         SELECT
@@ -961,15 +945,7 @@ async function main() {
         GROUP BY bucket ORDER BY MIN(COALESCE(token_age_seconds, -1))
       `).all() as any[];
 
-      const contRow = db.prepare(`
-        SELECT
-          COUNT(*) as total,
-          SUM(CASE WHEN pct_t300 > pct_t30 THEN 1 ELSE 0 END) as continued,
-          SUM(CASE WHEN pct_t300 > pct_t30 AND total_sol_raised >= 80 THEN 1 ELSE 0 END) as cont_hq,
-          COUNT(CASE WHEN total_sol_raised >= 80 THEN 1 END) as total_hq
-        FROM graduation_momentum
-        WHERE pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
-      `).get() as any;
+      // REMOVED: contRow query (momentum_continuation confirmed 47%, not useful)
 
       const dupes = db.prepare(
         `SELECT mint, COUNT(*) as cnt FROM graduations GROUP BY mint HAVING cnt > 1`
@@ -1057,31 +1033,8 @@ async function main() {
       const filterData = {
         generated_at: new Date().toISOString(),
 
-        sol_raised_filters: [
-          runFilter('ALL (no filter)',    ''),
-          runFilter('sol >= 30',          'total_sol_raised >= 30'),
-          runFilter('sol >= 50',          'total_sol_raised >= 50'),
-          runFilter('sol >= 70',          'total_sol_raised >= 70'),
-          runFilter('sol >= 80',          'total_sol_raised >= 80'),
-          runFilter('sol >= 84',          'total_sol_raised >= 84'),
-        ],
-
-        holder_filters: [
-          runFilter('holders >= 5',       'holder_count >= 5'),
-          runFilter('holders >= 10',      'holder_count >= 10'),
-          runFilter('holders >= 12',      'holder_count >= 12'),
-          runFilter('holders >= 15',      'holder_count >= 15'),
-          runFilter('holders >= 18',      'holder_count >= 18'),
-        ],
-
-        top5_filters: [
-          runFilter('top5 > 5%',          'top5_wallet_pct > 5'),
-          runFilter('top5 > 8%',          'top5_wallet_pct > 8'),
-          runFilter('top5 > 10%',         'top5_wallet_pct > 10'),
-          runFilter('top5 > 12%',         'top5_wallet_pct > 12'),
-          runFilter('top5 > 15%',         'top5_wallet_pct > 15'),
-          runFilter('top5 < 20%',         'top5_wallet_pct < 20'),
-        ],
+        // ── REMOVED: sol_raised_filters, holder_filters, top5_filters ───
+        // All confirmed no-signal at n=630+. Data still in DB for future queries.
 
         bc_age_filters: [
           runFilter('bc_age > 10min',     'token_age_seconds > 600'),
@@ -1095,42 +1048,20 @@ async function main() {
           runFilter('t30 between +5% and +50% (modest)',  'pct_t30 >= 5 AND pct_t30 <= 50'),
           runFilter('t30 between +5% and +100%',          'pct_t30 >= 5 AND pct_t30 <= 100'),
           runFilter('t30 > 0%',                           'pct_t30 > 0'),
-          runFilter('t30 < 200% (no mega-spikes)',        'pct_t30 < 200'),
-          runFilter('t30 < 100%',                         'pct_t30 < 100'),
           runFilter('t30 between -10% and +100%',         'pct_t30 >= -10 AND pct_t30 <= 100'),
         ],
 
+        // Only velocity, liquidity, and bc_age combo filters (non-velocity combos confirmed dead)
         combination_filters: [
-          runFilter('sol>=70 AND holders>=12',                  'total_sol_raised>=70 AND holder_count>=12'),
-          runFilter('sol>=70 AND holders>=15',                  'total_sol_raised>=70 AND holder_count>=15'),
-          runFilter('sol>=80 AND holders>=12',                  'total_sol_raised>=80 AND holder_count>=12'),
-          runFilter('sol>=80 AND holders>=15',                  'total_sol_raised>=80 AND holder_count>=15'),
-          runFilter('sol>=70 AND top5>10%',                     'total_sol_raised>=70 AND top5_wallet_pct>10'),
-          runFilter('sol>=80 AND top5>10%',                     'total_sol_raised>=80 AND top5_wallet_pct>10'),
-          runFilter('holders>=10 AND top5>10%',                 'holder_count>=10 AND top5_wallet_pct>10'),
-          runFilter('holders>=12 AND top5>10%',                 'holder_count>=12 AND top5_wallet_pct>10'),
-          runFilter('holders>=15 AND top5>10%',                 'holder_count>=15 AND top5_wallet_pct>10'),
-          runFilter('sol>=70 AND holders>=10 AND top5>10%',     'total_sol_raised>=70 AND holder_count>=10 AND top5_wallet_pct>10'),
-          runFilter('sol>=80 AND holders>=12 AND top5>10%',     'total_sol_raised>=80 AND holder_count>=12 AND top5_wallet_pct>10'),
-          runFilter('sol>=80 AND holders>=15 AND top5>10%',     'total_sol_raised>=80 AND holder_count>=15 AND top5_wallet_pct>10'),
-          runFilter('sol>=80 AND holders>=10 AND dev<5%',       'total_sol_raised>=80 AND holder_count>=10 AND dev_wallet_pct<5'),
-          runFilter('sol>=80 AND holders>=10 AND t30<200%',     'total_sol_raised>=80 AND holder_count>=10 AND pct_t30<200'),
-          runFilter('sol>=80 AND t30 between +5% and +100%',                  'total_sol_raised>=80 AND pct_t30>=5 AND pct_t30<=100'),
-          runFilter('holders>=10 AND t30 between +5% and +100%',               'holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
-          runFilter('sol>=70 AND holders>=10 AND t30<200%',                    'total_sol_raised>=70 AND holder_count>=10 AND pct_t30<200'),
-          runFilter('sol>=84 AND holders>=15 AND top5>10%',                    'total_sol_raised>=84 AND holder_count>=15 AND top5_wallet_pct>10'),
-          // bc_age + t30 combos — testing if older BCs + early momentum is best combo
+          // bc_age + t30 combos
           runFilter('bc_age>10min AND t30 +5% to +100%',                      'token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_age>10min AND holders>=10 AND t30 +5% to +100%',      'token_age_seconds>600 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
-          runFilter('bc_age>10min AND sol>=80 AND t30 +5% to +100%',          'token_age_seconds>600 AND total_sol_raised>=80 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_age>30min AND t30 +5% to +100%',                      'token_age_seconds>1800 AND pct_t30>=5 AND pct_t30<=100'),
-          runFilter('bc_age>30min AND holders>=10 AND t30 +5% to +100%',      'token_age_seconds>1800 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
           // ── VELOCITY FILTERS ─────────────────────────────────────────
-          // Data shows non-linear sweet spot: <5 sol/min = 20.7%, 10-20 = 65%, 50+ = 20%
           runFilter('bc_velocity<10 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<10 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_velocity<20 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('bc_velocity<50 sol/min AND t30 +5% to +100%',           'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<50 AND pct_t30>=5 AND pct_t30<=100'),
-          // Sweet spot filters — the 10-20 sol/min range shows 65% win rate
+          // Sweet spot filters
           runFilter('velocity 5-20 sol/min AND t30 +5% to +100%',
             'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('velocity 5-50 sol/min AND t30 +5% to +100%',
@@ -1145,11 +1076,9 @@ async function main() {
           runFilter('velocity 5-20 AND liquidity>100 AND t30 +5% to +100%',
             'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100 AND pct_t30>=5 AND pct_t30<=100'),
           // ── LIQUIDITY FILTERS ─────────────────────────────────────────
-          // Hypothesis: deeper pools = better execution + more real interest
           runFilter('liquidity>100 SOL AND t30 +5% to +100%',               'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30>100 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('liquidity>150 SOL AND t30 +5% to +100%',               'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30>150 AND pct_t30>=5 AND pct_t30<=100'),
           // ── FULL STACK COMBOS ─────────────────────────────────────────
-          // These are the "trading bot candidate" filters — stack all proven signals
           runFilter('velocity<20 AND holders>=10 AND t30 +5% to +100%',
             'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('velocity<20 AND bc_age>10m AND t30 +5% to +100%',
@@ -1160,10 +1089,8 @@ async function main() {
             'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND holder_count>=10 AND token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('velocity<20 AND liquidity>100 AND bc_age>10m AND t30 +5% to +100%',
             'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100 AND token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
-          // The "kitchen sink" — every signal stacked
           runFilter('velocity<20 AND liquidity>100 AND holders>=10 AND bc_age>10m AND t30 +5% to +100%',
             'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100 AND holder_count>=10 AND token_age_seconds>600 AND pct_t30>=5 AND pct_t30<=100'),
-          // Looser velocity threshold combos
           runFilter('velocity<50 AND holders>=10 AND t30 +5% to +100%',
             'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<50 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
           runFilter('velocity<50 AND liquidity>100 AND t30 +5% to +100%',
@@ -1172,11 +1099,7 @@ async function main() {
             'bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min<50 AND token_age_seconds>600 AND holder_count>=10 AND pct_t30>=5 AND pct_t30<=100'),
         ],
 
-        momentum_continuation: {
-          note: 'Does price at T+300 exceed price at T+30? (delayed entry thesis)',
-          all_samples: { continued: contRow.continued, total: contRow.total, rate_pct: winRate(contRow.continued, contRow.total) },
-          sol_gte_80:  { continued: contRow.cont_hq,   total: contRow.total_hq, rate_pct: winRate(contRow.cont_hq, contRow.total_hq) },
-        },
+        // REMOVED: momentum_continuation (47%, not useful)
 
         t30_entry_economics: {
           note: 'Shows actual return if you ENTER at T+30 price (not T+0 open). Tested at progressively tighter T+30 thresholds to find the optimal entry bar. avg_return_from_t30_pct is what the trade actually makes after entering at T+30.',
@@ -1350,46 +1273,9 @@ async function main() {
           };
 
           return {
-            note: 'Enter at T+30, apply stop-loss. Granular checkpoints T+40 through T+240 for stop detection. Combo filters test the top-performing strategies.',
-            // Basic t30 range filters
-            basic: [
-              simulate(5,  100, 10),
-              simulate(5,  100, 15),
-              simulate(5,  100, 20),
-              simulate(5,   50, 15),
-              simulate(5,   50, 20),
-              simulate(10, 100, 10),
-              simulate(10, 100, 15),
-              simulate(10, 100, 20),
-            ].filter(Boolean),
-            // Velocity sweet spot combos — the top performers
-            velocity_combos: [
-              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20',  'vel 5-20 + t30 +5-100% @ 10% SL'),
-              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20',  'vel 5-20 + t30 +5-100% @ 15% SL'),
-              simulate(5, 100, 20, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20',  'vel 5-20 + t30 +5-100% @ 20% SL'),
-              simulate(5, 100, 25, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20',  'vel 5-20 + t30 +5-100% @ 25% SL'),
-              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50',  'vel 5-50 + t30 +5-100% @ 10% SL'),
-              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50',  'vel 5-50 + t30 +5-100% @ 15% SL'),
-              simulate(5, 100, 20, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50',  'vel 5-50 + t30 +5-100% @ 20% SL'),
-              simulate(5, 100, 10, 'bc_velocity_sol_per_min<20',                                  'vel <20 + t30 +5-100% @ 10% SL'),
-              simulate(5, 100, 15, 'bc_velocity_sol_per_min<20',                                  'vel <20 + t30 +5-100% @ 15% SL'),
-              simulate(5, 100, 20, 'bc_velocity_sol_per_min<20',                                  'vel <20 + t30 +5-100% @ 20% SL'),
-            ].filter(Boolean),
-            // Multi-signal stacks
-            stacked_combos: [
-              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND holder_count>=10', 'vel 5-20 + holders>=10 + t30 @ 10% SL'),
-              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND holder_count>=10', 'vel 5-20 + holders>=10 + t30 @ 15% SL'),
-              simulate(5, 100, 20, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND holder_count>=10', 'vel 5-20 + holders>=10 + t30 @ 20% SL'),
-              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100', 'vel 5-20 + liq>100 + t30 @ 10% SL'),
-              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<20 AND liquidity_sol_t30>100', 'vel 5-20 + liq>100 + t30 @ 15% SL'),
-              simulate(5, 100, 10, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50 AND holder_count>=10', 'vel 5-50 + holders>=10 + t30 @ 10% SL'),
-              simulate(5, 100, 15, 'bc_velocity_sol_per_min>=5 AND bc_velocity_sol_per_min<50 AND holder_count>=10', 'vel 5-50 + holders>=10 + t30 @ 15% SL'),
-              simulate(5, 100, 10, 'bc_velocity_sol_per_min<20 AND token_age_seconds>600',       'vel <20 + bc_age>10m + t30 @ 10% SL'),
-              simulate(5, 100, 15, 'bc_velocity_sol_per_min<20 AND token_age_seconds>600',       'vel <20 + bc_age>10m + t30 @ 15% SL'),
-            ].filter(Boolean),
-            // Take-profit + stop-loss combos — tests whether locking gains early improves EV.
-            // TP is checked at the same granular checkpoints as SL (T+40 through T+240).
-            // SL checked first (conservative). TP exit assumes clean fill at target price.
+            note: 'TP+SL combos only (SL-only strategies confirmed negative EV at n=630+). SL: 20% adverse gap. TP: 10% adverse gap. Round-trip slippage applied to all exits.',
+            // REMOVED: basic, velocity_combos, stacked_combos — all SL-only strategies are negative EV.
+            // Data still accessible via DB queries if needed.
             tp_sl_combos: (() => {
               const tpLevels = [20, 30, 50, 75, 100];
               const results: any[] = [];
@@ -1462,10 +1348,7 @@ async function main() {
           };
         })(),
 
-        sol_raised_distribution: solBuckets.map((b: any) => ({
-          bucket: b.bucket, total: b.total, pump: b.pump, dump: b.dump,
-          win_rate_pct: winRate(b.pump, b.total),
-        })),
+        // REMOVED: sol_raised_distribution — single bucket (80-86 SOL), no signal
 
         bc_velocity_distribution: (() => {
           const velBuckets = db.prepare(`
