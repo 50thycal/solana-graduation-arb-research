@@ -362,41 +362,115 @@ function signalFrequencySection(sf: any): string {
   </div>`;
 }
 
+function returnDistributionSection(rd: any): string {
+  if (!rd || rd.samples != null) return '';  // skip if insufficient data message
+  if (!rd.all_t30_5_100 && !rd.vel_5_20) return '';
+
+  const percRow = (d: any) => {
+    if (!d) return '';
+    return `
+      <tr>
+        <td><b>${d.cohort}</b></td><td>${d.n}</td>
+        <td>${pct(d.avg_return_pct)}</td>
+        <td class="red">${d.p10}%</td>
+        <td class="red">${d.p25}%</td>
+        <td>${pct(d.median)}</td>
+        <td class="green">${d.p75}%</td>
+        <td class="green">${d.p90}%</td>
+        <td class="red">${d.min}%</td>
+        <td class="green">${d.max}%</td>
+        <td class="red">${d.pct_worse_than_neg50}%</td>
+        <td class="green">${d.pct_better_than_pos30}%</td>
+      </tr>`;
+  };
+
+  const labelRows = rd.by_label
+    ? [rd.by_label.pump, rd.by_label.dump, rd.by_label.stable].filter(Boolean).map(percRow).join('')
+    : '';
+
+  return `
+  <hr class="section-sep">
+  <div class="card">
+    <h2>Return Distribution (Percentiles)</h2>
+    <div class="desc">${rd.note || 'Percentile returns from T+30 entry to T+300 exit, cost-adjusted.'}</div>
+    <h3>Key Cohorts</h3>
+    <table>
+      <tr><th>Cohort</th><th>n</th><th>Avg</th><th>p10</th><th>p25</th><th>Median</th><th>p75</th><th>p90</th><th>Min</th><th>Max</th><th>&lt;-50%</th><th>&gt;+30%</th></tr>
+      ${percRow(rd.all_t30_5_100)}
+      ${percRow(rd.vel_5_20)}
+    </table>
+    <h3>By Label</h3>
+    <table>
+      <tr><th>Cohort</th><th>n</th><th>Avg</th><th>p10</th><th>p25</th><th>Median</th><th>p75</th><th>p90</th><th>Min</th><th>Max</th><th>&lt;-50%</th><th>&gt;+30%</th></tr>
+      ${labelRows}
+    </table>
+  </div>`;
+}
+
+function regimeAnalysisSection(ra: any): string {
+  if (!ra || ra.samples != null) return '';  // skip if insufficient data
+  if (!ra.time_buckets?.length) return '';
+
+  const verdictClass = ra.stability_verdict?.includes('STABLE') ? 'green'
+    : ra.stability_verdict?.includes('MODERATE') ? 'yellow' : 'red';
+
+  const bucketRows = ra.time_buckets.map((b: any) => `
+    <tr>
+      <td style="white-space:nowrap;font-size:11px">${b.window}</td>
+      <td>${b.n_total}</td>
+      <td class="green">${b.pump}</td>
+      <td class="red">${b.dump}</td>
+      <td>${wr(b.raw_win_rate_pct)}</td>
+      <td>${b.vel_5_20_n}</td>
+      <td>${b.vel_5_20_win_rate_pct != null ? wr(b.vel_5_20_win_rate_pct) : '—'}</td>
+      <td>${b.vel_5_20_avg_return_pct != null ? pct(b.vel_5_20_avg_return_pct) : '—'}</td>
+    </tr>`).join('');
+
+  return `
+  <hr class="section-sep">
+  <div class="card">
+    <h2>Regime Analysis (n=${ra.total_samples})</h2>
+    <div class="desc">${ra.note || ''}</div>
+    <div class="grid">
+      <div class="stat"><span class="label">Overall Win Rate Std Dev</span><span class="value">${ra.overall_win_rate_std_dev}%</span></div>
+      <div class="stat"><span class="label">Vel 5-20 Win Rate Std Dev</span><span class="value">${ra.vel_5_20_win_rate_std_dev != null ? ra.vel_5_20_win_rate_std_dev + '%' : '—'}</span></div>
+      <div class="stat"><span class="label">Stability Verdict</span><span class="value ${verdictClass}">${ra.stability_verdict}</span></div>
+    </div>
+    <h3>Performance by Time Window</h3>
+    <table>
+      <tr><th>Window</th><th>n</th><th>PUMP</th><th>DUMP</th><th>Win Rate</th><th>Vel 5-20 n</th><th>Vel 5-20 WR</th><th>Vel 5-20 Avg Ret</th></tr>
+      ${bucketRows}
+    </table>
+  </div>`;
+}
+
 export function renderFilterHtml(data: any): string {
   const d = data;
 
+  // Removed: sol_raised_filters, holder_filters, top5_filters, sol_raised_distribution,
+  // SL-only sections (basic, velocity_combos, stacked_combos), momentum_continuation.
+  // All confirmed dead at n=630+. Data still in DB.
+
   const sections = [
     filterTable('T+30 Entry Filters',
-      'Core momentum gate: only enter tokens showing positive momentum at T+30. This is the primary entry signal for the trading bot.',
+      'Core momentum gate: only enter tokens showing positive momentum at T+30. This is the primary entry signal.',
       d.t30_entry_filters),
 
-    filterTable('Velocity Sweet Spot & Combo Filters',
-      'bc_velocity = how fast the bonding curve filled (SOL/min). Sweet spot is 5-20 sol/min — too slow means dead, too fast means bot rush. These combos stack velocity with other proven signals.',
+    filterTable('Velocity & Liquidity Combo Filters',
+      'bc_velocity = how fast the bonding curve filled (SOL/min). Sweet spot is 5-20 sol/min. These combos stack velocity with liquidity, bc_age, and holder signals.',
       (d.combination_filters || []).filter((r: any) =>
         r.filter.includes('velocity') || r.filter.includes('liquidity')
       )),
 
-    filterTable('Traditional Combo Filters',
-      'Stacked filters using holder count, SOL raised, top5 wallet concentration, bc_age, and dev wallet %. These were the original signal tests.',
+    filterTable('BC Age Combo Filters',
+      'bc_age-based combos (no velocity). Older tokens may have more organic holder bases.',
       (d.combination_filters || []).filter((r: any) =>
-        !r.filter.includes('velocity') && !r.filter.includes('liquidity')
+        r.filter.includes('bc_age') && !r.filter.includes('velocity') && !r.filter.includes('liquidity')
       )),
 
     filterTable('BC Age Filters',
-      'bc_age = time the token spent on the bonding curve before graduating. Older tokens may have more organic holder bases.',
+      'bc_age = time the token spent on the bonding curve before graduating.',
       d.bc_age_filters),
-
-    filterTable('Holder Filters',
-      'holder_count = number of unique holders at graduation (capped at 19 due to RPC limit of top-20 accounts minus infrastructure). More holders suggests organic interest.',
-      d.holder_filters),
-
-    filterTable('SOL Raised Filters',
-      'total SOL raised on the bonding curve. Real graduations need ~85 SOL. Post-cleanup, nearly all tokens are in the 80-86 range.',
-      d.sol_raised_filters),
-
-    filterTable('Top5 Wallet Filters',
-      'top5_wallet_pct = percentage of supply held by top 5 wallets. Lower concentration may indicate more distributed (organic) holding.',
-      d.top5_filters),
   ];
 
   // Distributions
@@ -405,31 +479,15 @@ export function renderFilterHtml(data: any): string {
       'Win rate by bonding curve fill speed. The 5-20 sol/min range consistently outperforms. Very slow (<5) and very fast (50+) both underperform.',
       d.bc_velocity_distribution, false),
 
-    filterTable('SOL Raised Distribution',
-      'Win rate by SOL raised bucket. After cleanup, data is concentrated in the 80-86 SOL range (real graduations).',
-      d.sol_raised_distribution, false),
-
     filterTable('BC Age Distribution',
       'Win rate by how long the token was on the bonding curve. <1h tends to perform best.',
       d.bc_age_distribution, false),
   ];
 
-  // Stop-loss
+  // Stop-loss — only TP+SL combos (SL-only confirmed negative EV)
   const slSections = [
-    slTable('Stop-Loss: Basic T+30 Ranges',
-      'Enter at T+30, exit at T+300 or when stop-loss triggers. Uses granular checkpoints (T+40 through T+240) for accurate stop detection.',
-      d.stop_loss_simulation?.basic || d.stop_loss_simulation?.results),
-
-    slTable('Stop-Loss: Velocity Combos',
-      'Same stop-loss simulation but applied to the velocity-filtered cohort. Does the high win rate survive after accounting for stop-loss hits?',
-      d.stop_loss_simulation?.velocity_combos),
-
-    slTable('Stop-Loss: Stacked Combos',
-      'Multi-signal filters with stop-losses. These represent the most refined trading bot strategies.',
-      d.stop_loss_simulation?.stacked_combos),
-
     slTpTable('Take-Profit + Stop-Loss Combos',
-      'Tests TP levels of 20/30/50/75/100% against SL levels. TP is checked at same granular checkpoints (T+40–T+240) as SL — SL checked first (conservative). TP exit assumes clean fill. Remaining trades exit at T+300 as usual.',
+      'The only positive-EV strategies. SL: 20% adverse gap. TP: 10% adverse gap. SL checked first (conservative). Round-trip slippage on all exits.',
       d.stop_loss_simulation?.tp_sl_combos),
   ];
 
@@ -531,7 +589,9 @@ export function renderFilterHtml(data: any): string {
     distSections.join('') + '<hr class="section-sep">' +
     slSections.join('') + '<hr class="section-sep">' +
     signalFrequencySection(d.signal_frequency) + '<hr class="section-sep">' +
-    drawdownSection + tradingSection + econSection;
+    drawdownSection + tradingSection + econSection +
+    returnDistributionSection(d.return_distribution) +
+    regimeAnalysisSection(d.regime_analysis);
 
   return shell('Filter Analysis — Graduation Arb Research', '/filter-analysis', body, data);
 }
