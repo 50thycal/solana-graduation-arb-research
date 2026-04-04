@@ -41,6 +41,7 @@ const STYLES = `
   td{padding:5px 8px;border-bottom:1px solid #222}
   tr:hover td{background:#1a1a30}
   .ev-pos{color:#4ade80;font-weight:600}.ev-neg{color:#ef4444;font-weight:600}
+  .n-insuf{color:#4b5563;font-style:italic;font-size:11px}
   .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
   .badge-pump{background:#166534;color:#4ade80}.badge-dump{background:#7f1d1d;color:#ef4444}
   .badge-stable{background:#422006;color:#facc15}
@@ -59,10 +60,32 @@ function nav(currentPath: string): string {
   ).join('');
 }
 
+const N_MIN = 50;
+
+function nInsufficient(): string {
+  return `<span class="n-insuf">n&lt;${N_MIN}</span>`;
+}
+
 function wr(val: number | null, threshold = 50): string {
   if (val === null) return '<span class="yellow">—</span>';
   const cls = val >= threshold ? 'green' : val >= 40 ? 'yellow' : 'red';
   return `<span class="${cls}">${val}%</span>`;
+}
+
+function wrN(val: number | null, n: number, threshold = 50): string {
+  if (n < N_MIN) return nInsufficient();
+  return wr(val, threshold);
+}
+
+function evN(evPositive: boolean, avgReturn: number, n: number): string {
+  if (n < N_MIN) return nInsufficient();
+  const retStr = `${avgReturn > 0 ? '+' : ''}${avgReturn}%`;
+  return `<span class="${evPositive ? 'ev-pos' : 'ev-neg'}">${retStr}</span>`;
+}
+
+function evBadgeN(evPositive: boolean, n: number): string {
+  if (n < N_MIN) return nInsufficient();
+  return evPositive ? '<span class="green">YES</span>' : '<span class="red">NO</span>';
 }
 
 function pct(val: number | null | undefined): string {
@@ -249,11 +272,12 @@ function filterTable(title: string, desc: string, rows: any[], showAvgT300 = tru
   if (!rows || rows.length === 0) return '';
   const t300Header = showAvgT300 ? '<th>Avg T+300</th>' : '';
   const tableRows = rows.map((r: any) => {
+    const n = r.n ?? r.total ?? 0;
     const t300Cell = showAvgT300 ? `<td>${pct(r.avg_t300_pct)}</td>` : '';
     return `<tr>
       <td>${r.filter || r.strategy || r.bucket || '—'}</td>
-      <td>${r.n ?? r.total ?? '—'}</td><td class="green">${r.pump ?? '—'}</td><td class="red">${r.dump ?? '—'}</td>
-      <td>${wr(r.win_rate_pct)}</td>${t300Cell}
+      <td>${n || '—'}</td><td class="green">${r.pump ?? '—'}</td><td class="red">${r.dump ?? '—'}</td>
+      <td>${wrN(r.win_rate_pct, n)}</td>${t300Cell}
     </tr>`;
   }).join('');
   return `
@@ -274,8 +298,8 @@ function slTable(title: string, desc: string, rows: any[]): string {
       <td>${r.strategy || r.t30_filter || '—'}</td>
       <td>${r.stop_loss_pct}%</td><td>${r.n}</td>
       <td>${r.stopped_pct}%</td><td>${r.profitable_rate_pct}%</td>
-      <td class="${r.ev_positive ? 'ev-pos' : 'ev-neg'}">${r.avg_return_pct > 0 ? '+' : ''}${r.avg_return_pct}%</td>
-      <td>${r.ev_positive ? '<span class="green">YES</span>' : '<span class="red">NO</span>'}</td>
+      <td>${evN(r.ev_positive, r.avg_return_pct, r.n)}</td>
+      <td>${evBadgeN(r.ev_positive, r.n)}</td>
     </tr>`).join('');
   return `
   <div class="card">
@@ -296,8 +320,8 @@ function slTpTable(title: string, desc: string, rows: any[]): string {
       <td>${r.stop_loss_pct}%</td><td>${r.take_profit_pct}%</td><td>${r.n}</td>
       <td>${r.stopped_pct}%</td><td class="green">${r.tp_hit_pct}%</td>
       <td>${r.profitable_rate_pct}%</td>
-      <td class="${r.ev_positive ? 'ev-pos' : 'ev-neg'}">${r.avg_return_pct > 0 ? '+' : ''}${r.avg_return_pct}%</td>
-      <td>${r.ev_positive ? '<span class="green">YES</span>' : '<span class="red">NO</span>'}</td>
+      <td>${evN(r.ev_positive, r.avg_return_pct, r.n)}</td>
+      <td>${evBadgeN(r.ev_positive, r.n)}</td>
     </tr>`).join('');
   return `
   <div class="card">
@@ -486,8 +510,8 @@ export function renderFilterHtml(data: any): string {
       const c = t.all_cohort;
       return `<tr>
         <td>${t.threshold}</td><td>${c.n}</td>
-        <td>${pct(c.avg_return_from_t30_pct)}</td>
-        <td>${c.profitable_rate_pct}%</td>
+        <td>${c.n < N_MIN ? nInsufficient() : pct(c.avg_return_from_t30_pct)}</td>
+        <td>${c.n < N_MIN ? nInsufficient() : c.profitable_rate_pct + '%'}</td>
         <td>${pct(c.avg_t300_gain_pct)}</td>
       </tr>`;
     }).join('');
