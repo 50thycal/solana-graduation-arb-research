@@ -14,18 +14,24 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'price-collector' });
 
-// Momentum research schedule: T+0 for open price, then checkpoints for price tracking
-// Granular in the first 60s (every 10s) for stop-loss analysis,
-// then every 30s until T+300, then T+600 for final state.
-const SNAPSHOT_SCHEDULE = [0, 10, 20, 30, 40, 50, 60, 90, 120, 150, 180, 240, 300, 600];
+// Momentum research schedule: T+0 for open price, then checkpoints for price tracking.
+// Every 5s for the first 60s (for price path shape analysis), then every 30s until T+300,
+// then T+600 for final state.
+const SNAPSHOT_SCHEDULE = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 90, 120, 150, 180, 240, 300, 600];
 
 // Map snapshot seconds to momentum checkpoint column names
 const CHECKPOINT_MAP: Record<number, string> = {
+  5:  't5',
   10: 't10',
+  15: 't15',
   20: 't20',
+  25: 't25',
   30: 't30',
+  35: 't35',
   40: 't40',
+  45: 't45',
   50: 't50',
+  55: 't55',
   60: 't60',
   90: 't90',
   120: 't120',
@@ -81,6 +87,62 @@ interface ActiveObservation {
   earlySolReserves: number[];    // SOL reserves at each early snapshot
   liquiditySolT30?: number;      // SOL reserves at T+30
 }
+
+// ── Price path shape helpers ─────────────────────────────────────────────────
+// All functions accept an array of pct-change values at uniform intervals.
+
+/** Fraction of consecutive intervals where price increased (0.0 – 1.0). */
+function computeMonotonicity(pcts: number[]): number {
+  if (pcts.length < 2) return 0;
+  let positive = 0;
+  for (let i = 1; i < pcts.length; i++) {
+    if (pcts[i] > pcts[i - 1]) positive++;
+  }
+  return positive / (pcts.length - 1);
+}
+
+/** Std dev of interval-to-interval returns (measures choppiness). */
+function computePathSmoothness(pcts: number[]): number {
+  if (pcts.length < 2) return 0;
+  const diffs: number[] = [];
+  for (let i = 1; i < pcts.length; i++) diffs.push(pcts[i] - pcts[i - 1]);
+  const mean = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+  const variance = diffs.reduce((a, b) => a + (b - mean) ** 2, 0) / diffs.length;
+  return Math.sqrt(variance);
+}
+
+/** Max peak-to-trough % drop along the path (always ≤ 0). */
+function computeMaxDrawdown(pcts: number[]): number {
+  let peak = pcts[0];
+  let maxDD = 0;
+  for (const p of pcts) {
+    if (p > peak) peak = p;
+    const dd = p - peak;
+    if (dd < maxDD) maxDD = dd;
+  }
+  return maxDD;
+}
+
+/**
+ * Returns 1 if price dropped more than `threshold`% from a running peak
+ * and then subsequently recovered above that same peak; 0 otherwise.
+ */
+function computeDipAndRecover(pcts: number[], threshold = 10): number {
+  let peak = pcts[0];
+  let dippedBelow = false;
+  let peakAtDip = 0;
+  for (const p of pcts) {
+    if (p > peak) {
+      if (dippedBelow && p > peakAtDip) return 1;
+      peak = p;
+      dippedBelow = false;
+    } else if (peak - p > threshold) {
+      if (!dippedBelow) { dippedBelow = true; peakAtDip = peak; }
+    }
+  }
+  return 0;
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export class PriceCollector {
   private db: Database.Database;
@@ -358,6 +420,16 @@ export class PriceCollector {
           },
           'Momentum checkpoint recorded'
         );
+
+        // Compute derived path shape metrics at T+30 (pct_t30 is now in DB)
+        if (targetSec === 30) {
+          this.computeT30PathMetrics(graduationId);
+        }
+
+        // Compute derived path shape metrics at T+60 (pct_t60 is now in DB)
+        if (targetSec === 60) {
+          this.computeT60PathMetrics(graduationId);
+        }
       }
     } catch (err) {
       logger.error(
@@ -376,8 +448,8 @@ export class PriceCollector {
   private findCheckpoint(targetSec: number): string | null {
     // Direct match
     if (CHECKPOINT_MAP[targetSec]) return CHECKPOINT_MAP[targetSec];
-    // For the immediate/T+0 snapshot, no checkpoint
-    if (targetSec < 15) return null;
+    // For the immediate/T+0 snapshot (targetSec ~0-3), no checkpoint
+    if (targetSec < 3) return null;
     // Find closest checkpoint within 50% tolerance
     for (const [sec, name] of Object.entries(CHECKPOINT_MAP)) {
       const s = parseInt(sec, 10);
@@ -535,6 +607,123 @@ export class PriceCollector {
       return new BN(data.subarray(64, 72), 'le').toNumber();
     } catch {
       return null;
+    }
+  }
+
+  /** Compute and persist path shape metrics based on T+0 – T+30 pct snapshots. */
+  private computeT30PathMetrics(graduationId: number): void {
+    try {
+      const row = this.db.prepare(`
+        SELECT pct_t5, pct_t10, pct_t15, pct_t20, pct_t25, pct_t30
+        FROM graduation_momentum WHERE graduation_id = ?
+      `).get(graduationId) as any;
+
+      if (!row || row.pct_t30 == null) return;
+
+      // Build ordered pct array: [0, t5, t10, t15, t20, t25, t30], skipping nulls
+      const allPcts: (number | null)[] = [
+        0, row.pct_t5, row.pct_t10, row.pct_t15, row.pct_t20, row.pct_t25, row.pct_t30,
+      ];
+      const valid = allPcts.filter(p => p !== null) as number[];
+      if (valid.length < 3) return;
+
+      const acceleration_t30 =
+        row.pct_t25 != null && row.pct_t20 != null
+          ? (row.pct_t30 - row.pct_t25) - (row.pct_t25 - row.pct_t20)
+          : null;
+
+      const monotonicity_0_30   = computeMonotonicity(valid);
+      const path_smoothness_0_30 = computePathSmoothness(valid);
+      const max_drawdown_0_30   = computeMaxDrawdown(valid);
+      const dip_and_recover_flag = computeDipAndRecover(valid);
+
+      // Front-loaded (+) vs back-loaded (-): first half gain minus second half gain
+      const early_vs_late_0_30 =
+        row.pct_t15 != null
+          ? row.pct_t15 - (row.pct_t30 - row.pct_t15)
+          : null;
+
+      this.db.prepare(`
+        UPDATE graduation_momentum
+        SET acceleration_t30     = ?,
+            monotonicity_0_30    = ?,
+            path_smoothness_0_30 = ?,
+            max_drawdown_0_30    = ?,
+            dip_and_recover_flag = ?,
+            early_vs_late_0_30   = ?
+        WHERE graduation_id = ?
+      `).run(
+        acceleration_t30 != null ? +acceleration_t30.toFixed(3) : null,
+        +monotonicity_0_30.toFixed(3),
+        +path_smoothness_0_30.toFixed(3),
+        +max_drawdown_0_30.toFixed(3),
+        dip_and_recover_flag,
+        early_vs_late_0_30 != null ? +early_vs_late_0_30.toFixed(3) : null,
+        graduationId,
+      );
+
+      logger.debug({ graduationId, acceleration_t30, monotonicity_0_30: +monotonicity_0_30.toFixed(3) }, 'T+30 path metrics computed');
+    } catch (err) {
+      logger.warn('Failed to compute T+30 path metrics for grad %d: %s', graduationId,
+        err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  /** Compute and persist path shape metrics based on T+0 – T+60 pct snapshots. */
+  private computeT60PathMetrics(graduationId: number): void {
+    try {
+      const row = this.db.prepare(`
+        SELECT pct_t5, pct_t10, pct_t15, pct_t20, pct_t25, pct_t30,
+               pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60
+        FROM graduation_momentum WHERE graduation_id = ?
+      `).get(graduationId) as any;
+
+      if (!row || row.pct_t60 == null) return;
+
+      const allPcts: (number | null)[] = [
+        0,
+        row.pct_t5,  row.pct_t10, row.pct_t15, row.pct_t20, row.pct_t25, row.pct_t30,
+        row.pct_t35, row.pct_t40, row.pct_t45, row.pct_t50, row.pct_t55, row.pct_t60,
+      ];
+      const valid = allPcts.filter(p => p !== null) as number[];
+      if (valid.length < 5) return;
+
+      const acceleration_t60 =
+        row.pct_t55 != null && row.pct_t50 != null
+          ? (row.pct_t60 - row.pct_t55) - (row.pct_t55 - row.pct_t50)
+          : null;
+
+      const monotonicity_0_60   = computeMonotonicity(valid);
+      const path_smoothness_0_60 = computePathSmoothness(valid);
+      const max_drawdown_0_60   = computeMaxDrawdown(valid);
+
+      // Front half (0→30) vs back half (30→60)
+      const early_vs_late_0_60 =
+        row.pct_t30 != null
+          ? row.pct_t30 - (row.pct_t60 - row.pct_t30)
+          : null;
+
+      this.db.prepare(`
+        UPDATE graduation_momentum
+        SET acceleration_t60     = ?,
+            monotonicity_0_60    = ?,
+            path_smoothness_0_60 = ?,
+            max_drawdown_0_60    = ?,
+            early_vs_late_0_60   = ?
+        WHERE graduation_id = ?
+      `).run(
+        acceleration_t60 != null ? +acceleration_t60.toFixed(3) : null,
+        +monotonicity_0_60.toFixed(3),
+        +path_smoothness_0_60.toFixed(3),
+        +max_drawdown_0_60.toFixed(3),
+        early_vs_late_0_60 != null ? +early_vs_late_0_60.toFixed(3) : null,
+        graduationId,
+      );
+
+      logger.debug({ graduationId, acceleration_t60, monotonicity_0_60: +monotonicity_0_60.toFixed(3) }, 'T+60 path metrics computed');
+    } catch (err) {
+      logger.warn('Failed to compute T+60 path metrics for grad %d: %s', graduationId,
+        err instanceof Error ? err.message : String(err));
     }
   }
 

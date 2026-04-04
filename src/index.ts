@@ -4,7 +4,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { getGraduationCount } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml } from './utils/html-renderer';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'main' });
 
@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
+  { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
@@ -793,6 +794,58 @@ async function main() {
           last_grad_seconds_ago: lastGradSecondsAgo,
           listener_connected: listenerStats?.wsConnected ?? false,
         },
+
+        // ── PATH DATA SUMMARY ──
+        path_data_summary: (() => {
+          const complete5s = (db.prepare(
+            'SELECT COUNT(*) as n FROM graduation_momentum WHERE pct_t5 IS NOT NULL AND pct_t60 IS NOT NULL'
+          ).get() as any)?.n ?? 0;
+
+          // Best entry time: T+N with highest avg return at 10%SL/50%TP (n>=20)
+          let bestTime: string | null = null;
+          let bestRet: number | null = null;
+          const SL_G = 0.20, TP_G = 0.10, DEF_COST = 3.0;
+          const entryTimes = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] as const;
+          const checkCols = ['pct_t5','pct_t10','pct_t15','pct_t20','pct_t25','pct_t30',
+            'pct_t35','pct_t40','pct_t45','pct_t50','pct_t55','pct_t60',
+            'pct_t90','pct_t120','pct_t150','pct_t180','pct_t240'] as const;
+          const allSim = db.prepare(`
+            SELECT round_trip_slippage_pct,
+                   pct_t5, pct_t10, pct_t15, pct_t20, pct_t25, pct_t30,
+                   pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60,
+                   pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300
+            FROM graduation_momentum
+            WHERE label IS NOT NULL AND pct_t5 IS NOT NULL
+          `).all() as any[];
+          for (const t of entryTimes) {
+            const ecol = `pct_t${t}`;
+            let total = 0, n = 0;
+            for (const r of allSim) {
+              const ep: number | null = r[ecol];
+              if (ep == null || ep < 5 || ep > 100) continue;
+              const openM = 1 + ep / 100;
+              const slLvl = (openM * 0.9 - 1) * 100;
+              const tpLvl = (openM * 1.5 - 1) * 100;
+              const cost: number = r.round_trip_slippage_pct ?? DEF_COST;
+              const eIdx = checkCols.indexOf(ecol as any);
+              let exit: number | null = null;
+              for (let ci = eIdx + 1; ci < checkCols.length; ci++) {
+                const cv: number | null = r[checkCols[ci]];
+                if (cv == null) continue;
+                if (cv <= slLvl) { exit = -(10 * (1 + SL_G)); break; }
+                if (cv >= tpLvl) { exit = 50 * (1 - TP_G); break; }
+              }
+              if (exit == null) exit = r.pct_t300 != null ? ((1 + r.pct_t300 / 100) / (1 + ep / 100) - 1) * 100 : -100;
+              total += exit - cost;
+              n++;
+            }
+            if (n >= 20) {
+              const avg = +(total / n).toFixed(2);
+              if (bestRet === null || avg > bestRet) { bestRet = avg; bestTime = `T+${t}s`; }
+            }
+          }
+          return { complete_5s_count: complete5s, best_entry_time: bestTime, best_entry_avg_return: bestRet };
+        })(),
 
         // ── CODE VERSION ──
         code_version: codeVersion,
@@ -1629,6 +1682,16 @@ async function main() {
       } else {
         res.json(filterData);
       }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── PRICE PATH ANALYSIS ──────────────────────────────────────────────────
+  app.get('/price-path', (_req, res) => {
+    try {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(renderPricePathHtml(db));
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }

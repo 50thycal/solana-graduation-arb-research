@@ -4,10 +4,13 @@
  * the raw JSON for copy-paste to AI assistants.
  */
 
+import Database from 'better-sqlite3';
+
 const NAV_LINKS = [
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
+  { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
@@ -262,7 +265,17 @@ export function renderThesisHtml(data: any): string {
     <div class="stat"><span class="label">WS Connected</span><span class="value ${dq.listener_connected ? 'green' : 'red'}">${dq.listener_connected ? 'YES' : 'NO'}</span></div>
   </div>`;
 
-  const body = header + verdict + scorecard + t30Signal + trajectory + last10 + quality;
+  const pd = d.path_data_summary;
+  const pathSummary = pd ? `
+  <div class="card" style="border-color:#334155">
+    <h2>Price Path Analysis</h2>
+    <div class="desc">5-second granular snapshots (T+0→T+60) for shape analysis. <a href="/price-path" style="color:#60a5fa">View full analysis →</a></div>
+    <div class="stat"><span class="label">Tokens with complete 5s data</span><span class="value blue">${pd.complete_5s_count}</span></div>
+    <div class="stat"><span class="label">Best entry time (10%SL/50%TP)</span><span class="value">${pd.best_entry_time ?? '—'}</span></div>
+    <div class="stat"><span class="label">Best entry avg return</span><span class="value">${pd.best_entry_avg_return != null ? pct(pd.best_entry_avg_return) : '—'}</span></div>
+  </div>` : '';
+
+  const body = header + verdict + scorecard + t30Signal + trajectory + last10 + quality + pathSummary;
   return shell('Thesis — Graduation Arb Research', '/thesis', body, data);
 }
 
@@ -594,4 +607,544 @@ export function renderFilterHtml(data: any): string {
     regimeAnalysisSection(d.regime_analysis);
 
   return shell('Filter Analysis — Graduation Arb Research', '/filter-analysis', body, data);
+}
+
+// ── PRICE PATH ANALYSIS PAGE ─────────────────────────────────────────────────
+
+// SVG chart constants
+const CHART_W = 820;
+const CHART_H = 310;
+const PAD_L = 58;
+const PAD_R = 20;
+const PAD_T = 22;
+const PAD_B = 38;
+const PLOT_W = CHART_W - PAD_L - PAD_R;
+const PLOT_H = CHART_H - PAD_T - PAD_B;
+const TIME_POINTS = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+
+function xScale(sec: number): number {
+  return PAD_L + (sec / 60) * PLOT_W;
+}
+
+function yScale(pct: number, yMin: number, yMax: number): number {
+  const range = yMax - yMin || 1;
+  return PAD_T + (1 - (pct - yMin) / range) * PLOT_H;
+}
+
+function svgGrid(yMin: number, yMax: number): string {
+  const lines: string[] = [];
+  // X grid + labels (every 10s)
+  for (let s = 0; s <= 60; s += 10) {
+    const x = xScale(s);
+    lines.push(`<line x1="${x}" y1="${PAD_T}" x2="${x}" y2="${PAD_T + PLOT_H}" stroke="#2a2a3e" stroke-width="1"/>`);
+    lines.push(`<text x="${x}" y="${PAD_T + PLOT_H + 14}" fill="#64748b" font-size="10" text-anchor="middle">T+${s}s</text>`);
+  }
+  // Y grid + labels (5 ticks)
+  const step = (yMax - yMin) / 4;
+  for (let i = 0; i <= 4; i++) {
+    const v = yMin + i * step;
+    const y = yScale(v, yMin, yMax);
+    lines.push(`<line x1="${PAD_L}" y1="${y}" x2="${PAD_L + PLOT_W}" y2="${y}" stroke="#2a2a3e" stroke-width="1"/>`);
+    lines.push(`<text x="${PAD_L - 5}" y="${y + 4}" fill="#64748b" font-size="10" text-anchor="end">${v > 0 ? '+' : ''}${v.toFixed(0)}%</text>`);
+  }
+  // Zero line
+  if (yMin < 0 && yMax > 0) {
+    const y0 = yScale(0, yMin, yMax);
+    lines.push(`<line x1="${PAD_L}" y1="${y0}" x2="${PAD_L + PLOT_W}" y2="${y0}" stroke="#334155" stroke-width="1.5" stroke-dasharray="4,3"/>`);
+  }
+  return lines.join('');
+}
+
+function svgPolyline(pcts: (number | null)[], yMin: number, yMax: number, color: string, opacity: number, strokeWidth: number): string {
+  const pts: string[] = [];
+  for (let i = 0; i < TIME_POINTS.length; i++) {
+    const v = pcts[i];
+    if (v == null) continue;
+    pts.push(`${xScale(TIME_POINTS[i]).toFixed(1)},${yScale(v, yMin, yMax).toFixed(1)}`);
+  }
+  if (pts.length < 2) return '';
+  return `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="${strokeWidth}" opacity="${opacity}" stroke-linejoin="round"/>`;
+}
+
+function svgArea(pcts: (number | null)[], yMin: number, yMax: number, color: string): string {
+  const y0 = yScale(0, yMin, yMax);
+  const fwd: string[] = [];
+  const valid: string[] = [];
+  for (let i = 0; i < TIME_POINTS.length; i++) {
+    const v = pcts[i];
+    if (v == null) continue;
+    const x = xScale(TIME_POINTS[i]).toFixed(1);
+    const y = yScale(v, yMin, yMax).toFixed(1);
+    fwd.push(`${x},${y}`);
+    valid.push(x);
+  }
+  if (fwd.length < 2) return '';
+  const y0str = y0.toFixed(1);
+  const first = valid[0];
+  const last = valid[valid.length - 1];
+  return `<polygon points="${first},${y0str} ${fwd.join(' ')} ${last},${y0str}" fill="${color}" opacity="0.15"/>`;
+}
+
+function svgChart(title: string, lines: string[], grid: string): string {
+  return `
+  <div style="overflow-x:auto;margin-bottom:4px">
+  <svg width="${CHART_W}" height="${CHART_H}" viewBox="0 0 ${CHART_W} ${CHART_H}" style="background:#13131f;border-radius:8px;display:block">
+    ${grid}
+    ${lines.join('\n    ')}
+    <text x="${CHART_W / 2}" y="14" fill="#94a3b8" font-size="11" text-anchor="middle">${title}</text>
+  </svg>
+  </div>`;
+}
+
+function computeYRange(tokenPcts: Array<(number | null)[]>, padding = 10): [number, number] {
+  let mn = 0, mx = 0;
+  for (const row of tokenPcts) {
+    for (const v of row) {
+      if (v != null) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    }
+  }
+  // Clip extreme outliers to ±300%
+  mn = Math.max(mn - padding, -200);
+  mx = Math.min(mx + padding, 400);
+  return [mn, mx];
+}
+
+function groupBy<T>(rows: T[], key: (r: T) => string): Map<string, T[]> {
+  const m = new Map<string, T[]>();
+  for (const r of rows) {
+    const k = key(r);
+    if (!m.has(k)) m.set(k, []);
+    m.get(k)!.push(r);
+  }
+  return m;
+}
+
+function meanPcts(rows: any[]): (number | null)[] {
+  return TIME_POINTS.map((_, i) => {
+    const col = `pct_t${TIME_POINTS[i]}`;
+    const vals = rows.map(r => r[col] as number | null).filter(v => v != null) as number[];
+    return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  });
+}
+
+function stdDevPcts(rows: any[], means: (number | null)[]): (number | null)[] {
+  return TIME_POINTS.map((_, i) => {
+    const col = `pct_t${TIME_POINTS[i]}`;
+    const m = means[i];
+    if (m == null) return null;
+    const vals = rows.map(r => r[col] as number | null).filter(v => v != null) as number[];
+    if (vals.length < 2) return null;
+    const variance = vals.reduce((a, b) => a + (b - m) ** 2, 0) / vals.length;
+    return Math.sqrt(variance);
+  });
+}
+
+// TP+SL simulation (mirror of index.ts logic, entry at arbitrary pct column)
+const SL_GAP = 0.20;
+const TP_GAP = 0.10;
+const FALLBACK_COST = 3.0;
+const STOP_CPS = ['pct_t35','pct_t40','pct_t45','pct_t50','pct_t55','pct_t60','pct_t90','pct_t120','pct_t150','pct_t180','pct_t240'] as const;
+
+function simulateEntryAtTime(
+  rows: any[], entryCol: string, slPct: number, tpPct: number,
+  minEntry: number, maxEntry: number
+): { n: number; avg_return: number; win_rate: number } {
+  let total = 0, count = 0;
+  let wins = 0;
+  for (const r of rows) {
+    const entryPct: number | null = entryCol === 'pct_t0' ? 0 : r[entryCol];
+    if (entryPct == null || entryPct < minEntry || entryPct > maxEntry) continue;
+    // Levels relative to open
+    const openMult = 1 + entryPct / 100;
+    const slLevel = (openMult * (1 - slPct / 100) - 1) * 100;
+    const tpLevel = (openMult * (1 + tpPct / 100) - 1) * 100;
+    const cost = r.round_trip_slippage_pct ?? FALLBACK_COST;
+    let exit: number | null = null;
+    // Check checkpoints after entry for SL/TP
+    const allCps = ['pct_t5','pct_t10','pct_t15','pct_t20','pct_t25','pct_t30',
+                    'pct_t35','pct_t40','pct_t45','pct_t50','pct_t55','pct_t60',
+                    'pct_t90','pct_t120','pct_t150','pct_t180','pct_t240'] as const;
+    const entryIdx = allCps.indexOf(entryCol as any);
+    for (let ci = entryIdx + 1; ci < allCps.length; ci++) {
+      const cpv: number | null = r[allCps[ci]];
+      if (cpv == null) continue;
+      if (cpv <= slLevel) { exit = -(slPct * (1 + SL_GAP)); break; }
+      if (cpv >= tpLevel) { exit = tpPct * (1 - TP_GAP); break; }
+    }
+    if (exit == null) {
+      exit = r.pct_t300 != null
+        ? ((1 + r.pct_t300 / 100) / (1 + entryPct / 100) - 1) * 100
+        : -100;
+    }
+    const net = exit - cost;
+    total += net;
+    count++;
+    if (net > 0) wins++;
+  }
+  if (count === 0) return { n: 0, avg_return: 0, win_rate: 0 };
+  return { n: count, avg_return: +(total / count).toFixed(2), win_rate: +(wins / count * 100).toFixed(1) };
+}
+
+export function renderPricePathHtml(db: Database.Database): string {
+  // ── 1. Load data ──────────────────────────────────────────────────────────
+  const allTokens = db.prepare(`
+    SELECT label, bc_velocity_sol_per_min, round_trip_slippage_pct,
+           pct_t5,  pct_t10, pct_t15, pct_t20, pct_t25, pct_t30,
+           pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60,
+           pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
+           acceleration_t30, acceleration_t60,
+           monotonicity_0_30, monotonicity_0_60,
+           path_smoothness_0_30, path_smoothness_0_60,
+           max_drawdown_0_30, max_drawdown_0_60,
+           dip_and_recover_flag, early_vs_late_0_30, early_vs_late_0_60
+    FROM graduation_momentum
+    WHERE pct_t5 IS NOT NULL AND pct_t10 IS NOT NULL
+      AND pct_t30 IS NOT NULL AND pct_t60 IS NOT NULL
+      AND label IS NOT NULL
+    ORDER BY id DESC
+    LIMIT 600
+  `).all() as any[];
+
+  const total5s = (db.prepare(`
+    SELECT COUNT(*) as n FROM graduation_momentum
+    WHERE pct_t5 IS NOT NULL AND pct_t60 IS NOT NULL
+  `).get() as any)?.n ?? 0;
+
+  const labeled = allTokens.filter(r => r.label != null);
+  const byLabel = groupBy(labeled, r => r.label);
+  const pumps   = byLabel.get('PUMP') || [];
+  const dumps   = byLabel.get('DUMP') || [];
+  const stables = byLabel.get('STABLE') || [];
+  const vel520  = labeled.filter(r => r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 20);
+  const vel520P = vel520.filter(r => r.label === 'PUMP');
+  const vel520D = vel520.filter(r => r.label === 'DUMP');
+
+  // ── 2. Shape overlay chart ────────────────────────────────────────────────
+  const overlayPcts = labeled.slice(0, 200).map(r =>
+    TIME_POINTS.map(t => t === 0 ? 0 : r[`pct_t${t}`] as number | null)
+  );
+  const [yMin, yMax] = computeYRange(overlayPcts);
+  const grid = svgGrid(yMin, yMax);
+
+  const overlayLines: string[] = [];
+  for (const row of labeled.slice(0, 200)) {
+    const rowPcts = TIME_POINTS.map(t => t === 0 ? 0 : row[`pct_t${t}`] as number | null);
+    const color = row.label === 'PUMP' ? '#4ade80' : row.label === 'DUMP' ? '#ef4444' : '#facc15';
+    overlayLines.push(svgPolyline(rowPcts, yMin, yMax, color, 0.15, 1));
+  }
+  const overlayChart = svgChart(
+    `Price Path Overlay — all labeled tokens with complete 5s data (n=${labeled.length}, showing ≤200, green=PUMP red=DUMP yellow=STABLE)`,
+    overlayLines, grid
+  );
+
+  // ── 3. Average path by label ──────────────────────────────────────────────
+  const avgPump   = meanPcts(pumps);
+  const avgDump   = meanPcts(dumps);
+  const avgStable = meanPcts(stables);
+  const sdPump    = stdDevPcts(pumps, avgPump);
+  const sdDump    = stdDevPcts(dumps, avgDump);
+
+  const avgAllPcts = [avgPump, avgDump, avgStable].filter(a => a.some(v => v != null));
+  const [ayMin, ayMax] = computeYRange(avgAllPcts, 5);
+  const avgGrid = svgGrid(ayMin, ayMax);
+
+  // Shade ±1 SD bands for PUMP and DUMP
+  const sdBandLines: string[] = [];
+  const bandPts = (means: (number | null)[], sds: (number | null)[], sign: 1 | -1): string => {
+    const pts: string[] = [];
+    for (let i = 0; i < TIME_POINTS.length; i++) {
+      const m = means[i], sd = sds[i];
+      if (m == null || sd == null) continue;
+      pts.push(`${xScale(TIME_POINTS[i]).toFixed(1)},${yScale(m + sign * sd, ayMin, ayMax).toFixed(1)}`);
+    }
+    return pts.join(' ');
+  };
+  if (pumps.length > 1) {
+    const upper = bandPts(avgPump, sdPump, 1);
+    const lower = bandPts(avgPump, sdPump, -1).split(' ').reverse().join(' ');
+    if (upper && lower) sdBandLines.push(`<polygon points="${upper} ${lower}" fill="#4ade80" opacity="0.08"/>`);
+  }
+  if (dumps.length > 1) {
+    const upper = bandPts(avgDump, sdDump, 1);
+    const lower = bandPts(avgDump, sdDump, -1).split(' ').reverse().join(' ');
+    if (upper && lower) sdBandLines.push(`<polygon points="${upper} ${lower}" fill="#ef4444" opacity="0.08"/>`);
+  }
+
+  const avgLines = [
+    ...sdBandLines,
+    pumps.length   > 0 ? svgPolyline(avgPump,   ayMin, ayMax, '#4ade80', 0.9, 2.5) : '',
+    dumps.length   > 0 ? svgPolyline(avgDump,   ayMin, ayMax, '#ef4444', 0.9, 2.5) : '',
+    stables.length > 0 ? svgPolyline(avgStable, ayMin, ayMax, '#facc15', 0.9, 2.5) : '',
+  ].filter(Boolean);
+
+  const avgLegend = [
+    pumps.length   > 0 ? `<span style="color:#4ade80">■ PUMP (n=${pumps.length})</span>` : '',
+    dumps.length   > 0 ? `<span style="color:#ef4444">■ DUMP (n=${dumps.length})</span>` : '',
+    stables.length > 0 ? `<span style="color:#facc15">■ STABLE (n=${stables.length})</span>` : '',
+  ].filter(Boolean).join(' &nbsp; ');
+
+  const avgChart = svgChart(
+    'Average Price Path by Label (±1 SD shaded)',
+    avgLines, avgGrid
+  );
+
+  // ── 4. Vel 5-20 vs all ────────────────────────────────────────────────────
+  const avgAllP  = meanPcts(pumps);
+  const avgAllD  = meanPcts(dumps);
+  const avgV5P   = meanPcts(vel520P);
+  const avgV5D   = meanPcts(vel520D);
+  const [vyMin, vyMax] = computeYRange([avgAllP, avgAllD, avgV5P, avgV5D].filter(a => a.some(v => v != null)), 5);
+  const velGrid = svgGrid(vyMin, vyMax);
+
+  const velLines = [
+    avgAllP.some(v => v != null) ? svgPolyline(avgAllP, vyMin, vyMax, '#4ade80', 0.35, 1.5) : '',
+    avgAllD.some(v => v != null) ? svgPolyline(avgAllD, vyMin, vyMax, '#ef4444', 0.35, 1.5) : '',
+    avgV5P.some(v => v != null)  ? svgPolyline(avgV5P,  vyMin, vyMax, '#22d3ee', 0.9, 2.5) : '',
+    avgV5D.some(v => v != null)  ? svgPolyline(avgV5D,  vyMin, vyMax, '#f97316', 0.9, 2.5) : '',
+  ].filter(Boolean);
+
+  const velLegend = [
+    `<span style="color:#4ade80;opacity:0.5">— All PUMP (n=${pumps.length})</span>`,
+    `<span style="color:#ef4444;opacity:0.5">— All DUMP (n=${dumps.length})</span>`,
+    `<span style="color:#22d3ee">— Vel5-20 PUMP (n=${vel520P.length})</span>`,
+    `<span style="color:#f97316">— Vel5-20 DUMP (n=${vel520D.length})</span>`,
+  ].join(' &nbsp; ');
+
+  const velChart = svgChart(
+    'Average Path: Vel 5-20 (bold) vs All (faded)',
+    velLines, velGrid
+  );
+
+  // ── 5. Derived metrics table ──────────────────────────────────────────────
+  function avgMetric(rows: any[], col: string): string {
+    const vals = rows.map(r => r[col] as number | null).filter(v => v != null) as number[];
+    if (vals.length === 0) return '—';
+    return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(3);
+  }
+  function effectSize(p: any[], d: any[], col: string): string {
+    const pv = p.map(r => r[col] as number | null).filter(v => v != null) as number[];
+    const dv = d.map(r => r[col] as number | null).filter(v => v != null) as number[];
+    if (pv.length < 2 || dv.length < 2) return '—';
+    const pm = pv.reduce((a, b) => a + b, 0) / pv.length;
+    const dm = dv.reduce((a, b) => a + b, 0) / dv.length;
+    const pv2 = pv.reduce((a, b) => a + (b - pm) ** 2, 0) / pv.length;
+    const dv2 = dv.reduce((a, b) => a + (b - dm) ** 2, 0) / dv.length;
+    const pooledSD = Math.sqrt((pv2 + dv2) / 2);
+    if (pooledSD === 0) return '—';
+    const d_eff = Math.abs(pm - dm) / pooledSD;
+    const cls = d_eff > 0.8 ? 'green' : d_eff > 0.4 ? 'yellow' : 'red';
+    return `<span class="${cls}">${d_eff.toFixed(2)}</span>`;
+  }
+
+  const metricRows = [
+    ['acceleration_t30',    'Acceleration at T+30'],
+    ['acceleration_t60',    'Acceleration at T+60'],
+    ['monotonicity_0_30',   'Monotonicity 0–30s (0–1)'],
+    ['monotonicity_0_60',   'Monotonicity 0–60s (0–1)'],
+    ['path_smoothness_0_30','Path Smoothness 0–30s (SD)'],
+    ['path_smoothness_0_60','Path Smoothness 0–60s (SD)'],
+    ['max_drawdown_0_30',   'Max Drawdown 0–30s (%)'],
+    ['max_drawdown_0_60',   'Max Drawdown 0–60s (%)'],
+    ['early_vs_late_0_30',  'Early vs Late 0–30s'],
+    ['early_vs_late_0_60',  'Early vs Late 0–60s'],
+  ].map(([col, label]) => `
+    <tr>
+      <td>${label}</td>
+      <td class="green">${avgMetric(pumps, col)}</td>
+      <td class="red">${avgMetric(dumps, col)}</td>
+      <td class="yellow">${avgMetric(stables, col)}</td>
+      <td>${effectSize(pumps, dumps, col)}</td>
+    </tr>`).join('');
+
+  const dipRow = (() => {
+    const pDip = pumps.filter(r => r.dip_and_recover_flag === 1).length;
+    const dDip = dumps.filter(r => r.dip_and_recover_flag === 1).length;
+    const sDip = stables.filter(r => r.dip_and_recover_flag === 1).length;
+    return `
+    <tr>
+      <td>Dip &amp; Recover % (flag=1)</td>
+      <td class="green">${pumps.length > 0 ? (pDip/pumps.length*100).toFixed(1) + '%' : '—'}</td>
+      <td class="red">${dumps.length > 0 ? (dDip/dumps.length*100).toFixed(1) + '%' : '—'}</td>
+      <td class="yellow">${stables.length > 0 ? (sDip/stables.length*100).toFixed(1) + '%' : '—'}</td>
+      <td>—</td>
+    </tr>`;
+  })();
+
+  const metricsTable = `
+  <div class="card">
+    <h2>Derived Path Metrics by Label</h2>
+    <div class="desc">Effect Size = Cohen's d (|PUMP mean − DUMP mean| / pooled SD). >0.8 = large signal (green), 0.4–0.8 = medium (yellow), &lt;0.4 = weak (red).</div>
+    <table>
+      <tr><th>Metric</th><th>PUMP avg</th><th>DUMP avg</th><th>STABLE avg</th><th>Effect Size</th></tr>
+      ${metricRows}
+      ${dipRow}
+    </table>
+  </div>`;
+
+  // ── 6. Acceleration histogram (PUMP vs DUMP) ──────────────────────────────
+  const accValues = (label: string) =>
+    labeled.filter(r => r.label === label && r.acceleration_t30 != null)
+           .map(r => r.acceleration_t30 as number);
+
+  const pumpAcc = accValues('PUMP');
+  const dumpAcc = accValues('DUMP');
+
+  let accHistHtml = '';
+  if (pumpAcc.length > 0 || dumpAcc.length > 0) {
+    const allAcc = [...pumpAcc, ...dumpAcc];
+    const accMin = Math.max(Math.min(...allAcc), -100);
+    const accMax = Math.min(Math.max(...allAcc),  100);
+    const BIN_COUNT = 14;
+    const binW = (accMax - accMin) / BIN_COUNT;
+
+    function buildBins(vals: number[]): number[] {
+      const bins = new Array(BIN_COUNT).fill(0);
+      for (const v of vals) {
+        const idx = Math.min(Math.floor((v - accMin) / binW), BIN_COUNT - 1);
+        if (idx >= 0) bins[idx]++;
+      }
+      return bins;
+    }
+    const pBins = buildBins(pumpAcc);
+    const dBins = buildBins(dumpAcc);
+    const maxCount = Math.max(...pBins, ...dBins, 1);
+
+    const HW = 800, HH = 160, HP = 30;
+    const bw = (HW - HP * 2) / BIN_COUNT;
+    const bars: string[] = [];
+    for (let i = 0; i < BIN_COUNT; i++) {
+      const x = HP + i * bw;
+      const ph = (pBins[i] / maxCount) * (HH - HP - 20);
+      const dh = (dBins[i] / maxCount) * (HH - HP - 20);
+      const py = HH - HP - ph;
+      const dy = HH - HP - dh;
+      bars.push(`<rect x="${x}" y="${py}" width="${bw * 0.45}" height="${ph}" fill="#4ade80" opacity="0.6"/>`);
+      bars.push(`<rect x="${x + bw * 0.5}" y="${dy}" width="${bw * 0.45}" height="${dh}" fill="#ef4444" opacity="0.6"/>`);
+      const label = (accMin + i * binW).toFixed(0);
+      bars.push(`<text x="${x + bw / 2}" y="${HH - 5}" fill="#64748b" font-size="9" text-anchor="middle">${label}</text>`);
+    }
+
+    accHistHtml = `
+    <div class="card">
+      <h2>Acceleration T+30 Histogram</h2>
+      <div class="desc">Distribution of momentum acceleration at T+30 — (pct_t30−pct_t25)−(pct_t25−pct_t20). Green=PUMP (n=${pumpAcc.length}), Red=DUMP (n=${dumpAcc.length}). Separation = usable filter.</div>
+      <div style="overflow-x:auto">
+      <svg width="${HW}" height="${HH}" viewBox="0 0 ${HW} ${HH}" style="background:#13131f;border-radius:8px;display:block">
+        <line x1="${HP}" y1="${HH - HP}" x2="${HW - HP}" y2="${HH - HP}" stroke="#333" stroke-width="1"/>
+        ${bars.join('\n        ')}
+      </svg>
+      </div>
+    </div>`;
+  }
+
+  // ── 7. Entry timing heatmap ───────────────────────────────────────────────
+  const SL = 10, TP = 50;
+  const entryTimes = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
+  const entrySimRows: string[] = [];
+  let bestTime = '—', bestReturn = -Infinity;
+
+  // Load full data for simulation (needs more pct columns + slippage)
+  const simRows = db.prepare(`
+    SELECT label, bc_velocity_sol_per_min, round_trip_slippage_pct,
+           pct_t5,  pct_t10, pct_t15, pct_t20, pct_t25, pct_t30,
+           pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60,
+           pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300
+    FROM graduation_momentum
+    WHERE label IS NOT NULL
+  `).all() as any[];
+
+  for (const t of entryTimes) {
+    const col = `pct_t${t}`;
+    const r = simulateEntryAtTime(simRows, col, SL, TP, 5, 100);
+    const cls = r.avg_return > 0 ? 'ev-pos' : r.avg_return < -0.5 ? 'ev-neg' : '';
+    entrySimRows.push(`
+      <tr>
+        <td>T+${t}s</td>
+        <td>${r.n}</td>
+        <td>${r.win_rate}%</td>
+        <td class="${cls}">${r.avg_return > 0 ? '+' : ''}${r.avg_return}%</td>
+      </tr>`);
+    if (r.n >= 20 && r.avg_return > bestReturn) {
+      bestReturn = r.avg_return;
+      bestTime = `T+${t}s`;
+    }
+  }
+
+  const entryHeatmap = `
+  <div class="card">
+    <h2>Entry Timing Heatmap (${SL}% SL / ${TP}% TP)</h2>
+    <div class="desc">If we entered at each 5s snapshot instead of T+30, how does avg return change? Gate: +5% to +100% from open. Costs: 20% SL gap, 10% TP gap, round-trip slippage.</div>
+    <table>
+      <tr><th>Entry Time</th><th>n</th><th>Win Rate</th><th>Avg Return</th></tr>
+      ${entrySimRows.join('')}
+    </table>
+    <div style="margin-top:8px;font-size:12px;color:#94a3b8">Best entry time (n≥20): <span class="blue">${bestTime}</span></div>
+  </div>`;
+
+  // ── 8. Monotonicity breakdown ─────────────────────────────────────────────
+  const monoBuckets = [
+    { label: '0–33% (choppy)',    min: 0,    max: 0.334 },
+    { label: '33–67% (mixed)',    min: 0.334, max: 0.667 },
+    { label: '67–100% (smooth)', min: 0.667, max: 1.001 },
+  ];
+
+  const monoRows = monoBuckets.map(b => {
+    const inBucket = labeled.filter(r => r.monotonicity_0_30 != null && r.monotonicity_0_30 >= b.min && r.monotonicity_0_30 < b.max);
+    const bPump = inBucket.filter(r => r.label === 'PUMP').length;
+    const bDump = inBucket.filter(r => r.label === 'DUMP').length;
+    const bN    = inBucket.length;
+    const bWR   = bN > 0 ? (bPump / bN * 100).toFixed(1) + '%' : '—';
+    const vSub  = inBucket.filter(r => r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 20);
+    const vN    = vSub.length;
+    const vP    = vSub.filter(r => r.label === 'PUMP').length;
+    const vWR   = vN > 0 ? (vP / vN * 100).toFixed(1) + '%' : '—';
+    return `
+    <tr>
+      <td>${b.label}</td><td>${bN}</td>
+      <td class="green">${bPump}</td><td class="red">${bDump}</td>
+      <td>${wr(bN > 0 ? +((bPump / bN) * 100).toFixed(1) : null)}</td>
+      <td>${vN}</td><td>${wr(vN > 0 ? +(vP / vN * 100).toFixed(1) : null)}</td>
+    </tr>`;
+  }).join('');
+
+  const monoTable = `
+  <div class="card">
+    <h2>Win Rate by Monotonicity (0–30s)</h2>
+    <div class="desc">Does a smooth upward path (high monotonicity) predict PUMP? Cross-referenced with vel 5-20 filter.</div>
+    <table>
+      <tr><th>Bucket</th><th>n</th><th>PUMP</th><th>DUMP</th><th>Win Rate</th><th>Vel5-20 n</th><th>Vel5-20 WR</th></tr>
+      ${monoRows || '<tr><td colspan="7" class="n-insuf">No monotonicity data yet — data will appear once 5s snapshots are collected</td></tr>'}
+    </table>
+  </div>`;
+
+  // ── Assemble page ──────────────────────────────────────────────────────────
+  const statusCard = `
+  <div class="card">
+    <h2>Price Path Data Status</h2>
+    <div class="stat"><span class="label">Tokens with complete T+0→T+60 5s data</span><span class="value blue">${total5s}</span></div>
+    <div class="stat"><span class="label">Labeled tokens used for charts</span><span class="value">${labeled.length}</span></div>
+    <div class="stat"><span class="label">PUMP / DUMP / STABLE</span><span class="value"><span class="green">${pumps.length}</span> / <span class="red">${dumps.length}</span> / <span class="yellow">${stables.length}</span></span></div>
+    <div class="stat"><span class="label">Vel 5-20 subset</span><span class="value">${vel520.length} (${vel520P.length} PUMP / ${vel520D.length} DUMP)</span></div>
+    ${total5s === 0 ? '<div style="color:#facc15;margin-top:8px;font-size:12px">No 5s data yet — charts will populate as the bot collects new graduations with the updated snapshot schedule.</div>' : ''}
+  </div>`;
+
+  const body = statusCard +
+    '<hr class="section-sep">' + overlayChart +
+    `<div style="font-size:11px;color:#64748b;margin-bottom:12px;padding-left:4px">${avgLegend}</div>` +
+    '<hr class="section-sep">' + avgChart +
+    '<hr class="section-sep">' + velChart +
+    `<div style="font-size:11px;color:#64748b;margin-bottom:12px;padding-left:4px">${velLegend}</div>` +
+    '<hr class="section-sep">' + metricsTable +
+    accHistHtml +
+    '<hr class="section-sep">' + entryHeatmap +
+    '<hr class="section-sep">' + monoTable;
+
+  return shell('Price Path Analysis — Graduation Arb Research', '/price-path', body, {
+    total_5s_tokens: total5s,
+    labeled_count: labeled.length,
+    by_label: { PUMP: pumps.length, DUMP: dumps.length, STABLE: stables.length },
+    vel520_count: vel520.length,
+    best_entry_time: bestTime,
+    best_entry_avg_return: bestReturn === -Infinity ? null : bestReturn,
+  });
 }
