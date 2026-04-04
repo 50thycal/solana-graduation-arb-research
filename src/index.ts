@@ -1200,6 +1200,9 @@ async function main() {
           // simulate(minPct, maxPct, stopPct, extraWhere?, label?) — enter at T+30, stop out at stopPct loss
           // Uses granular checkpoints T+40/T+50/T+60/T+90/T+120/T+150/T+180/T+240 for accurate stop detection
           const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
+          // Gap penalties for thin-pool execution reality
+          const SL_GAP_PENALTY_PCT = 0.20; // SL fills 20% worse than target (adverse gap-through)
+          const TP_GAP_PENALTY_PCT = 0.10; // TP fills 10% worse than target (fast spike, partial fill)
           const simulate = (minPct: number, maxPct: number, stopPct: number, extraWhere?: string, label?: string) => {
             const whereExtra = extraWhere ? ` AND ${extraWhere}` : '';
             const rows = db.prepare(`
@@ -1220,7 +1223,7 @@ async function main() {
 
               for (const cp of stopCheckpoints) {
                 if (r[cp] != null && r[cp] <= stopLevelPct) {
-                  exitReturn = -(stopPct * 1.2); // 20% gap-through penalty on stop execution
+                  exitReturn = -(stopPct * (1 + SL_GAP_PENALTY_PCT)); // adverse gap on stop
                   stopped++;
                   wasStoppedOut = true;
                   break;
@@ -1267,7 +1270,7 @@ async function main() {
 
           // simulateWithTP: same as simulate but exits early when price hits take-profit level.
           // At each checkpoint, stop-loss is checked first (conservative), then take-profit.
-          // TP exit return = exactly tpPct (no gap-through penalty assumed on the upside).
+          // simulateWithTP: same SL/TP gap constants defined above (SL_GAP_PENALTY_PCT, TP_GAP_PENALTY_PCT)
           const simulateWithTP = (minPct: number, maxPct: number, stopPct: number, tpPct: number, extraWhere?: string, label?: string) => {
             const whereExtra = extraWhere ? ` AND ${extraWhere}` : '';
             const rows = db.prepare(`
@@ -1292,13 +1295,13 @@ async function main() {
               for (const cp of stopCheckpoints) {
                 if (r[cp] == null) continue;
                 if (r[cp] <= stopLevelPct) {
-                  exitReturn = -(stopPct * 1.2); // 20% gap-through penalty on stop
+                  exitReturn = -(stopPct * (1 + SL_GAP_PENALTY_PCT)); // adverse gap on stop
                   stopped++;
                   wasStoppedOut = true;
                   break;
                 }
                 if (r[cp] >= tpLevelPct) {
-                  exitReturn = tpPct; // exit at TP target (clean fill assumed)
+                  exitReturn = tpPct * (1 - TP_GAP_PENALTY_PCT); // adverse gap on TP fill
                   tpHit++;
                   wasTpHit = true;
                   break;
@@ -1322,16 +1325,27 @@ async function main() {
 
             const n = rows.length;
             const avgReturn = totalReturn / n;
+            const avgCostUsed = totalCost / n;
             return {
               strategy: label || `t30 +${minPct}% to +${maxPct}%`,
               stop_loss_pct: stopPct,
               take_profit_pct: tpPct,
               n,
+              stopped_count: stopped,
               stopped_pct: +(stopped / n * 100).toFixed(1),
+              tp_hit_count: tpHit,
               tp_hit_pct: +(tpHit / n * 100).toFixed(1),
+              rugged_count: rugged,
+              rugged_pct: +(rugged / n * 100).toFixed(1),
+              profitable_count: profitable,
               profitable_rate_pct: +(profitable / n * 100).toFixed(1),
               avg_return_pct: +avgReturn.toFixed(1),
               ev_positive: avgReturn > 0,
+              avg_cost_per_trade_pct: +avgCostUsed.toFixed(2),
+              costs_included: true,
+              sl_gap_penalty: `${(SL_GAP_PENALTY_PCT * 100).toFixed(0)}% adverse gap on stop`,
+              tp_gap_penalty: `${(TP_GAP_PENALTY_PCT * 100).toFixed(0)}% adverse gap on TP fill`,
+              null_t300_treatment: 'worst-case -100% (pool drained / rug)',
             };
           };
 
@@ -1585,6 +1599,138 @@ async function main() {
             samples: rows.length,
             by_label: [byLabel('PUMP'), byLabel('DUMP'), byLabel('STABLE')].filter(Boolean),
             win_rate_by_volatility: volBuckets,
+          };
+        })(),
+
+        // ── RETURN DISTRIBUTION (PERCENTILES) ──────────────────────────────
+        // Shows the shape of returns, not just averages. Critical for understanding tail risk.
+        // If the 10th percentile is -80%, one bad cluster wipes out months of gains.
+        return_distribution: (() => {
+          const rows = db.prepare(`
+            SELECT label, pct_t30, pct_t300, bc_velocity_sol_per_min,
+                   COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT}) as cost_pct
+            FROM graduation_momentum
+            WHERE pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
+          `).all() as any[];
+
+          if (rows.length < 5) return { note: 'Insufficient data for distribution analysis', samples: rows.length };
+
+          const percentile = (arr: number[], p: number) => {
+            const sorted = [...arr].sort((a, b) => a - b);
+            const idx = Math.floor(sorted.length * p / 100);
+            return +sorted[Math.min(idx, sorted.length - 1)].toFixed(1);
+          };
+
+          const analyzeReturns = (subset: any[], label: string) => {
+            if (subset.length < 3) return null;
+            // Return from T+30 entry to T+300 exit, cost-adjusted
+            const returns = subset.map((r: any) => {
+              const rawReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
+              return rawReturn - r.cost_pct;
+            });
+            const avg = +(returns.reduce((a: number, b: number) => a + b, 0) / returns.length).toFixed(1);
+            return {
+              cohort: label,
+              n: subset.length,
+              avg_return_pct: avg,
+              p10: percentile(returns, 10),
+              p25: percentile(returns, 25),
+              median: percentile(returns, 50),
+              p75: percentile(returns, 75),
+              p90: percentile(returns, 90),
+              min: percentile(returns, 0),
+              max: percentile(returns, 100),
+              pct_worse_than_neg50: +(returns.filter(r => r < -50).length / returns.length * 100).toFixed(1),
+              pct_better_than_pos30: +(returns.filter(r => r > 30).length / returns.length * 100).toFixed(1),
+            };
+          };
+
+          const allRows = rows.filter((r: any) => r.pct_t30 >= 5 && r.pct_t30 <= 100);
+          const vel520 = allRows.filter((r: any) => r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 20);
+
+          return {
+            note: 'Percentile returns from T+30 entry to T+300 exit, cost-adjusted. Tail risk is what kills you — check p10 and min.',
+            all_t30_5_100: analyzeReturns(allRows, 'all t30 +5-100%'),
+            vel_5_20: analyzeReturns(vel520, 'vel 5-20 + t30 +5-100%'),
+            by_label: {
+              pump: analyzeReturns(allRows.filter((r: any) => r.label === 'PUMP'), 'PUMP only'),
+              dump: analyzeReturns(allRows.filter((r: any) => r.label === 'DUMP'), 'DUMP only'),
+              stable: analyzeReturns(allRows.filter((r: any) => r.label === 'STABLE'), 'STABLE only'),
+            },
+          };
+        })(),
+
+        // ── REGIME DETECTION ─────────────────────────────────────────────────
+        // Is the edge stable over time or clustered in specific windows?
+        // Splits data into time buckets and shows win rate + avg return per bucket.
+        regime_analysis: (() => {
+          const rows = db.prepare(`
+            SELECT created_at, label, pct_t30, pct_t300, bc_velocity_sol_per_min,
+                   COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT}) as cost_pct
+            FROM graduation_momentum
+            WHERE pct_t30 IS NOT NULL AND label IS NOT NULL
+            ORDER BY created_at ASC
+          `).all() as any[];
+
+          if (rows.length < 10) return { note: 'Insufficient data for regime analysis', samples: rows.length };
+
+          // Split into ~equal-sized time buckets (aim for 6-8 buckets)
+          const bucketSize = Math.max(10, Math.ceil(rows.length / 8));
+          const buckets: any[] = [];
+          for (let i = 0; i < rows.length; i += bucketSize) {
+            const chunk = rows.slice(i, i + bucketSize);
+            const pumps = chunk.filter((r: any) => r.label === 'PUMP').length;
+            const dumps = chunk.filter((r: any) => r.label === 'DUMP').length;
+            // Vel 5-20 subset
+            const velChunk = chunk.filter((r: any) =>
+              r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 20 &&
+              r.pct_t30 >= 5 && r.pct_t30 <= 100
+            );
+            const velPumps = velChunk.filter((r: any) => r.label === 'PUMP').length;
+            // Avg return for vel 5-20 from T+30 entry
+            const velReturns = velChunk
+              .filter((r: any) => r.pct_t300 != null)
+              .map((r: any) => ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100 - r.cost_pct);
+            const velAvgReturn = velReturns.length > 0
+              ? +(velReturns.reduce((a: number, b: number) => a + b, 0) / velReturns.length).toFixed(1)
+              : null;
+
+            const startTime = new Date(chunk[0].created_at * 1000).toISOString().replace('T', ' ').slice(0, 16);
+            const endTime = new Date(chunk[chunk.length - 1].created_at * 1000).toISOString().replace('T', ' ').slice(0, 16);
+
+            buckets.push({
+              window: `${startTime} → ${endTime}`,
+              n_total: chunk.length,
+              pump: pumps,
+              dump: dumps,
+              raw_win_rate_pct: +(pumps / chunk.length * 100).toFixed(1),
+              vel_5_20_n: velChunk.length,
+              vel_5_20_pump: velPumps,
+              vel_5_20_win_rate_pct: velChunk.length > 0 ? +(velPumps / velChunk.length * 100).toFixed(1) : null,
+              vel_5_20_avg_return_pct: velAvgReturn,
+            });
+          }
+
+          // Edge stability: std dev of win rates across buckets
+          const winRates = buckets.map(b => b.raw_win_rate_pct);
+          const avgWR = winRates.reduce((a, b) => a + b, 0) / winRates.length;
+          const wrStdDev = Math.sqrt(winRates.reduce((s, w) => s + (w - avgWR) ** 2, 0) / winRates.length);
+
+          const velWinRates = buckets.filter(b => b.vel_5_20_win_rate_pct != null).map(b => b.vel_5_20_win_rate_pct);
+          const velAvgWR = velWinRates.length > 0 ? velWinRates.reduce((a: number, b: number) => a + b, 0) / velWinRates.length : null;
+          const velWrStdDev = velWinRates.length > 1
+            ? Math.sqrt(velWinRates.reduce((s: number, w: number) => s + (w - velAvgWR!) ** 2, 0) / velWinRates.length)
+            : null;
+
+          return {
+            note: 'Data split into time-ordered buckets. Stable edge = low std dev across buckets. Clustered edge = high std dev (wins bunched in certain periods).',
+            total_samples: rows.length,
+            bucket_count: buckets.length,
+            samples_per_bucket: bucketSize,
+            overall_win_rate_std_dev: +wrStdDev.toFixed(1),
+            vel_5_20_win_rate_std_dev: velWrStdDev != null ? +velWrStdDev.toFixed(1) : null,
+            stability_verdict: wrStdDev < 8 ? 'STABLE (std dev < 8%)' : wrStdDev < 15 ? 'MODERATE (std dev 8-15%)' : 'CLUSTERED (std dev > 15% — edge may be regime-dependent)',
+            time_buckets: buckets,
           };
         })(),
 
