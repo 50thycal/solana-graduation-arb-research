@@ -189,6 +189,26 @@ function runMigrations(db: Database.Database): void {
       ['slippage_est_05sol', 'REAL'],    // estimated slippage % for 0.5 SOL buy at T+30
       ['round_trip_slippage_pct', 'REAL'], // estimated round-trip slippage % (entry + exit, conservative: 2x entry)
       ['bc_velocity_sol_per_min', 'REAL'], // bonding curve fill rate (sol_raised / age in minutes)
+      // 5s granular price snapshots (added for price path shape analysis)
+      ['price_t5', 'REAL'],  ['pct_t5', 'REAL'],
+      ['price_t15', 'REAL'], ['pct_t15', 'REAL'],
+      ['price_t25', 'REAL'], ['pct_t25', 'REAL'],
+      ['price_t35', 'REAL'], ['pct_t35', 'REAL'],
+      ['price_t45', 'REAL'], ['pct_t45', 'REAL'],
+      ['price_t55', 'REAL'], ['pct_t55', 'REAL'],
+      // Derived path shape metrics (computed at T+30 and T+60)
+      ['acceleration_t30', 'REAL'],    // (pct_t30-pct_t25) - (pct_t25-pct_t20): momentum acceleration at T+30
+      ['acceleration_t60', 'REAL'],    // same logic at T+60
+      ['monotonicity_0_30', 'REAL'],   // fraction of 5s intervals that were positive (0-1)
+      ['monotonicity_0_60', 'REAL'],   // same for 0-60s window
+      ['path_smoothness_0_30', 'REAL'],// std dev of the six 5s interval returns (0-30s)
+      ['path_smoothness_0_60', 'REAL'],// same for 0-60s
+      ['max_drawdown_0_30', 'REAL'],   // max peak-to-trough % drop within 0-30s (negative)
+      ['max_drawdown_0_60', 'REAL'],   // same for 0-60s
+      ['dip_and_recover_flag', 'INTEGER'], // 1 if price dropped >10% from running peak then recovered
+      ['early_vs_late_0_30', 'REAL'],  // (pct_t15-pct_t0) - (pct_t30-pct_t15): positive = front-loaded
+      ['early_vs_late_0_60', 'REAL'],  // (pct_t30-pct_t0) - (pct_t60-pct_t30): same for full window
+      ['path_cluster', 'TEXT'],        // shape cluster label (populated later)
     ];
     for (const [col, type] of newMomCols) {
       if (!momExisting.has(col)) {
