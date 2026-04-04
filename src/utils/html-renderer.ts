@@ -362,6 +362,88 @@ function signalFrequencySection(sf: any): string {
   </div>`;
 }
 
+function returnDistributionSection(rd: any): string {
+  if (!rd || rd.samples != null) return '';  // skip if insufficient data message
+  if (!rd.all_t30_5_100 && !rd.vel_5_20) return '';
+
+  const percRow = (d: any) => {
+    if (!d) return '';
+    return `
+      <tr>
+        <td><b>${d.cohort}</b></td><td>${d.n}</td>
+        <td>${pct(d.avg_return_pct)}</td>
+        <td class="red">${d.p10}%</td>
+        <td class="red">${d.p25}%</td>
+        <td>${pct(d.median)}</td>
+        <td class="green">${d.p75}%</td>
+        <td class="green">${d.p90}%</td>
+        <td class="red">${d.min}%</td>
+        <td class="green">${d.max}%</td>
+        <td class="red">${d.pct_worse_than_neg50}%</td>
+        <td class="green">${d.pct_better_than_pos30}%</td>
+      </tr>`;
+  };
+
+  const labelRows = rd.by_label
+    ? [rd.by_label.pump, rd.by_label.dump, rd.by_label.stable].filter(Boolean).map(percRow).join('')
+    : '';
+
+  return `
+  <hr class="section-sep">
+  <div class="card">
+    <h2>Return Distribution (Percentiles)</h2>
+    <div class="desc">${rd.note || 'Percentile returns from T+30 entry to T+300 exit, cost-adjusted.'}</div>
+    <h3>Key Cohorts</h3>
+    <table>
+      <tr><th>Cohort</th><th>n</th><th>Avg</th><th>p10</th><th>p25</th><th>Median</th><th>p75</th><th>p90</th><th>Min</th><th>Max</th><th>&lt;-50%</th><th>&gt;+30%</th></tr>
+      ${percRow(rd.all_t30_5_100)}
+      ${percRow(rd.vel_5_20)}
+    </table>
+    <h3>By Label</h3>
+    <table>
+      <tr><th>Cohort</th><th>n</th><th>Avg</th><th>p10</th><th>p25</th><th>Median</th><th>p75</th><th>p90</th><th>Min</th><th>Max</th><th>&lt;-50%</th><th>&gt;+30%</th></tr>
+      ${labelRows}
+    </table>
+  </div>`;
+}
+
+function regimeAnalysisSection(ra: any): string {
+  if (!ra || ra.samples != null) return '';  // skip if insufficient data
+  if (!ra.time_buckets?.length) return '';
+
+  const verdictClass = ra.stability_verdict?.includes('STABLE') ? 'green'
+    : ra.stability_verdict?.includes('MODERATE') ? 'yellow' : 'red';
+
+  const bucketRows = ra.time_buckets.map((b: any) => `
+    <tr>
+      <td style="white-space:nowrap;font-size:11px">${b.window}</td>
+      <td>${b.n_total}</td>
+      <td class="green">${b.pump}</td>
+      <td class="red">${b.dump}</td>
+      <td>${wr(b.raw_win_rate_pct)}</td>
+      <td>${b.vel_5_20_n}</td>
+      <td>${b.vel_5_20_win_rate_pct != null ? wr(b.vel_5_20_win_rate_pct) : '—'}</td>
+      <td>${b.vel_5_20_avg_return_pct != null ? pct(b.vel_5_20_avg_return_pct) : '—'}</td>
+    </tr>`).join('');
+
+  return `
+  <hr class="section-sep">
+  <div class="card">
+    <h2>Regime Analysis (n=${ra.total_samples})</h2>
+    <div class="desc">${ra.note || ''}</div>
+    <div class="grid">
+      <div class="stat"><span class="label">Overall Win Rate Std Dev</span><span class="value">${ra.overall_win_rate_std_dev}%</span></div>
+      <div class="stat"><span class="label">Vel 5-20 Win Rate Std Dev</span><span class="value">${ra.vel_5_20_win_rate_std_dev != null ? ra.vel_5_20_win_rate_std_dev + '%' : '—'}</span></div>
+      <div class="stat"><span class="label">Stability Verdict</span><span class="value ${verdictClass}">${ra.stability_verdict}</span></div>
+    </div>
+    <h3>Performance by Time Window</h3>
+    <table>
+      <tr><th>Window</th><th>n</th><th>PUMP</th><th>DUMP</th><th>Win Rate</th><th>Vel 5-20 n</th><th>Vel 5-20 WR</th><th>Vel 5-20 Avg Ret</th></tr>
+      ${bucketRows}
+    </table>
+  </div>`;
+}
+
 export function renderFilterHtml(data: any): string {
   const d = data;
 
@@ -429,7 +511,7 @@ export function renderFilterHtml(data: any): string {
       d.stop_loss_simulation?.stacked_combos),
 
     slTpTable('Take-Profit + Stop-Loss Combos',
-      'Tests TP levels of 20/30/50/75/100% against SL levels. TP is checked at same granular checkpoints (T+40–T+240) as SL — SL checked first (conservative). TP exit assumes clean fill. Remaining trades exit at T+300 as usual.',
+      'Tests TP levels of 20/30/50/75/100% against SL levels. TP checked at same granular checkpoints as SL — SL checked first (conservative). SL exit: 20% adverse gap penalty. TP exit: 10% adverse gap penalty (fills cleaner but still slips in thin pools). Remaining trades exit at T+300.',
       d.stop_loss_simulation?.tp_sl_combos),
   ];
 
@@ -531,7 +613,9 @@ export function renderFilterHtml(data: any): string {
     distSections.join('') + '<hr class="section-sep">' +
     slSections.join('') + '<hr class="section-sep">' +
     signalFrequencySection(d.signal_frequency) + '<hr class="section-sep">' +
-    drawdownSection + tradingSection + econSection;
+    drawdownSection + tradingSection + econSection +
+    returnDistributionSection(d.return_distribution) +
+    regimeAnalysisSection(d.regime_analysis);
 
   return shell('Filter Analysis — Graduation Arb Research', '/filter-analysis', body, data);
 }
