@@ -1042,6 +1042,7 @@ export function renderPricePathHtml(db: Database.Database): string {
   const entryTimes = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60];
   const entrySimRows: string[] = [];
   let bestTime = '—', bestReturn = -Infinity;
+  let bestVelTime = '—', bestVelReturn = -Infinity;
 
   // Load full data for simulation (needs more pct columns + slippage)
   const simRows = db.prepare(`
@@ -1053,32 +1054,59 @@ export function renderPricePathHtml(db: Database.Database): string {
     WHERE label IS NOT NULL
   `).all() as any[];
 
+  const simRowsVel520 = simRows.filter(
+    r => r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 20
+  );
+
+  const fmtRet = (r: { avg_return: number; n: number }) => {
+    if (r.n === 0) return '<span class="n-insuf">—</span>';
+    const cls = r.avg_return > 0 ? 'ev-pos' : r.avg_return < -0.5 ? 'ev-neg' : '';
+    return `<span class="${cls}">${r.avg_return > 0 ? '+' : ''}${r.avg_return}%</span>`;
+  };
+
   for (const t of entryTimes) {
     const col = `pct_t${t}`;
-    const r = simulateEntryAtTime(simRows, col, SL, TP, 5, 100);
-    const cls = r.avg_return > 0 ? 'ev-pos' : r.avg_return < -0.5 ? 'ev-neg' : '';
+    const rAll = simulateEntryAtTime(simRows,       col, SL, TP, 5, 100);
+    const rVel = simulateEntryAtTime(simRowsVel520, col, SL, TP, 5, 100);
     entrySimRows.push(`
       <tr>
         <td>T+${t}s</td>
-        <td>${r.n}</td>
-        <td>${r.win_rate}%</td>
-        <td class="${cls}">${r.avg_return > 0 ? '+' : ''}${r.avg_return}%</td>
+        <td>${rAll.n || 0}</td>
+        <td>${rAll.n > 0 ? rAll.win_rate + '%' : '—'}</td>
+        <td>${fmtRet(rAll)}</td>
+        <td>${rVel.n || 0}</td>
+        <td>${rVel.n > 0 ? rVel.win_rate + '%' : '—'}</td>
+        <td>${fmtRet(rVel)}</td>
       </tr>`);
-    if (r.n >= 20 && r.avg_return > bestReturn) {
-      bestReturn = r.avg_return;
-      bestTime = `T+${t}s`;
+    if (rAll.n >= 20 && rAll.avg_return > bestReturn) {
+      bestReturn = rAll.avg_return; bestTime = `T+${t}s`;
+    }
+    if (rVel.n >= 10 && rVel.avg_return > bestVelReturn) {
+      bestVelReturn = rVel.avg_return; bestVelTime = `T+${t}s`;
     }
   }
 
   const entryHeatmap = `
   <div class="card">
     <h2>Entry Timing Heatmap (${SL}% SL / ${TP}% TP)</h2>
-    <div class="desc">If we entered at each 5s snapshot instead of T+30, how does avg return change? Gate: +5% to +100% from open. Costs: 20% SL gap, 10% TP gap, round-trip slippage.</div>
+    <div class="desc">If we entered at each 5s snapshot instead of T+30, how does avg return change? Gate: +5% to +100% from open. Costs: 20% SL gap, 10% TP gap, round-trip slippage. <b style="color:#60a5fa">Vel 5-20</b> = primary thesis filter (bc_velocity 5–20 sol/min).</div>
     <table>
-      <tr><th>Entry Time</th><th>n</th><th>Win Rate</th><th>Avg Return</th></tr>
+      <tr>
+        <th rowspan="2">Entry Time</th>
+        <th colspan="3" style="background:#1a2a1a;color:#4ade80;text-align:center">All Tokens</th>
+        <th colspan="3" style="background:#1a1a2e;color:#60a5fa;text-align:center">Vel 5-20 sol/min</th>
+      </tr>
+      <tr>
+        <th style="background:#1a2a1a">n</th><th style="background:#1a2a1a">Win Rate</th><th style="background:#1a2a1a">Avg Return</th>
+        <th style="background:#1a1a2e">n</th><th style="background:#1a1a2e">Win Rate</th><th style="background:#1a1a2e">Avg Return</th>
+      </tr>
       ${entrySimRows.join('')}
     </table>
-    <div style="margin-top:8px;font-size:12px;color:#94a3b8">Best entry time (n≥20): <span class="blue">${bestTime}</span></div>
+    <div style="margin-top:8px;font-size:12px;color:#94a3b8">
+      Best all-tokens (n≥20): <span class="green">${bestTime}</span>
+      &nbsp;|&nbsp;
+      Best vel 5-20 (n≥10): <span class="blue">${bestVelTime}</span>
+    </div>
   </div>`;
 
   // ── 8. Monotonicity breakdown ─────────────────────────────────────────────
