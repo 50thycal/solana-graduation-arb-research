@@ -278,6 +278,24 @@ export class PriceCollector {
       this.competitionDetector.detectCompetition(ctx).catch(() => {});
     }
 
+    // Schedule buy pressure quality detection at T+35 (full 0-30s window + 5s buffer)
+    const buyPressureDelay = (35 - elapsedSec) * 1000;
+    if (buyPressureDelay > 0) {
+      const bpTimer = setTimeout(() => {
+        this.competitionDetector.detectBuyPressure(ctx).catch((err) => {
+          logger.error(
+            'Buy pressure detection failed for grad %d: %s',
+            ctx.graduationId,
+            err instanceof Error ? err.message : String(err)
+          );
+        });
+      }, buyPressureDelay);
+      observation.timers.push(bpTimer);
+    } else {
+      // Already past 35s, run immediately
+      this.competitionDetector.detectBuyPressure(ctx).catch(() => {});
+    }
+
     // Schedule observation completion
     const maxSnapshotSec = SNAPSHOT_SCHEDULE[SNAPSHOT_SCHEDULE.length - 1];
     const completionDelay = (maxSnapshotSec - elapsedSec + 5) * 1000; // 5s buffer

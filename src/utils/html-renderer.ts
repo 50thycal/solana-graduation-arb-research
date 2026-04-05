@@ -240,15 +240,19 @@ export function renderThesisHtml(data: any): string {
       <td>${t.sol_raised?.toFixed(0) ?? '—'}</td><td>${t.holders}</td>
       <td>${t.top5_pct?.toFixed(1) ?? '—'}%</td>
       <td>${pct(t.t60)}</td><td>${pct(t.t300)}</td>
+      <td>${t.buyers ?? '—'}</td>
+      <td>${t.buy_ratio != null ? (t.buy_ratio * 100).toFixed(0) + '%' : '—'}</td>
+      <td>${t.whale_pct != null ? (t.whale_pct * 100).toFixed(0) + '%' : '—'}</td>
+      <td>${t.trades ?? '—'}</td>
       <td>${t.has_pool ? '<span class="green">Yes</span>' : '<span class="red">No</span>'}</td>
     </tr>`).join('');
 
   const last10 = `
   <div class="card">
     <h2>Last 10 Graduations</h2>
-    <div class="desc">Most recent graduations with their metrics and outcomes.</div>
+    <div class="desc">Most recent graduations with their metrics and outcomes. Buy pressure metrics: Buyers = unique wallets buying in 0-30s, BuyR = buy ratio, Whale = largest buy as % of total buy vol, Trades = total txs.</div>
     <table>
-      <tr><th>Mint</th><th>Label</th><th>SOL</th><th>Holders</th><th>Top5%</th><th>T+60</th><th>T+300</th><th>Pool</th></tr>
+      <tr><th>Mint</th><th>Label</th><th>SOL</th><th>Holders</th><th>Top5%</th><th>T+60</th><th>T+300</th><th>Buyers</th><th>BuyR</th><th>Whale</th><th>Trades</th><th>Pool</th></tr>
       ${last10Rows}
     </table>
   </div>`;

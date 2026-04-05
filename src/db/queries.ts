@@ -367,6 +367,68 @@ export function getMomentumRow(db: Database.Database, graduationId: number) {
   return db.prepare('SELECT * FROM graduation_momentum WHERE graduation_id = ?').get(graduationId) as any;
 }
 
+// ==================== Buy pressure quality ====================
+
+export function updateBuyPressureMetrics(
+  db: Database.Database,
+  graduationId: number,
+  metrics: {
+    unique_buyers: number;
+    buy_ratio: number | null;
+    whale_pct: number | null;
+    trade_count: number;
+  }
+): void {
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET buy_pressure_unique_buyers = ?,
+        buy_pressure_buy_ratio = ?,
+        buy_pressure_whale_pct = ?,
+        buy_pressure_trade_count = ?
+    WHERE graduation_id = ?
+  `).run(
+    metrics.unique_buyers,
+    metrics.buy_ratio,
+    metrics.whale_pct,
+    metrics.trade_count,
+    graduationId
+  );
+}
+
+export function getExistingSignatures(
+  db: Database.Database,
+  graduationId: number
+): Set<string> {
+  const rows = db.prepare(
+    'SELECT tx_signature FROM competition_signals WHERE graduation_id = ?'
+  ).all(graduationId) as Array<{ tx_signature: string | null }>;
+  return new Set(rows.map(r => r.tx_signature).filter((s): s is string => s !== null));
+}
+
+export function computeBuyPressureAggregates(
+  db: Database.Database,
+  graduationId: number
+): { unique_buyers: number; buy_ratio: number | null; whale_pct: number | null; trade_count: number } {
+  const row = db.prepare(`
+    SELECT
+      COUNT(DISTINCT CASE WHEN action = 'buy' THEN wallet_address END) as unique_buyers,
+      CAST(SUM(CASE WHEN action = 'buy' THEN 1 ELSE 0 END) AS REAL) /
+        NULLIF(SUM(CASE WHEN action IN ('buy', 'sell') THEN 1 ELSE 0 END), 0) as buy_ratio,
+      CAST(MAX(CASE WHEN action = 'buy' THEN amount_sol ELSE 0 END) AS REAL) /
+        NULLIF(SUM(CASE WHEN action = 'buy' THEN amount_sol ELSE 0 END), 0) as whale_pct,
+      COUNT(*) as trade_count
+    FROM competition_signals
+    WHERE graduation_id = ? AND seconds_since_graduation >= 0 AND seconds_since_graduation <= 30
+  `).get(graduationId) as any;
+
+  return {
+    unique_buyers: row?.unique_buyers ?? 0,
+    buy_ratio: row?.buy_ratio ?? null,
+    whale_pct: row?.whale_pct ?? null,
+    trade_count: row?.trade_count ?? 0,
+  };
+}
+
 export function updateGraduationEnrichment(
   db: Database.Database,
   graduationId: number,

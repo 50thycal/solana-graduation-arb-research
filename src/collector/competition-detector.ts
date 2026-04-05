@@ -1,7 +1,7 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import Database from 'better-sqlite3';
 import pino from 'pino';
-import { insertCompetitionSignal } from '../db/queries';
+import { insertCompetitionSignal, getExistingSignatures, computeBuyPressureAggregates, updateBuyPressureMetrics } from '../db/queries';
 import { ObservationContext } from './price-collector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 
@@ -132,6 +132,154 @@ export class CompetitionDetector {
     } catch (err) {
       logger.error(
         'Competition detection failed for grad %d: %s',
+        ctx.graduationId,
+        err instanceof Error ? err.message : String(err)
+      );
+    }
+  }
+
+  /**
+   * Buy Pressure Quality detection — runs at T+35 to capture the full 0-30s window.
+   *
+   * Phase A: Fetch ALL pool signatures in the 0-30s window, parse new ones (up to 50),
+   *          and store in competition_signals (skipping those already stored by T+10 run).
+   * Phase B: Compute aggregate metrics (unique buyers, buy/sell ratio, whale %, trade count)
+   *          from competition_signals via SQL and write to graduation_momentum.
+   */
+  async detectBuyPressure(ctx: ObservationContext): Promise<void> {
+    const MAX_NEW_TX_PARSES = 50;
+
+    try {
+      // Phase A: Fetch signatures and parse new transactions
+      if (!await globalRpcLimiter.throttleOrDrop(20)) {
+        logger.info({ graduationId: ctx.graduationId }, 'Skipping buy pressure detection: RPC queue full');
+        return;
+      }
+
+      const signatures = await this.connection.getSignaturesForAddress(
+        new PublicKey(ctx.poolAddress),
+        { limit: 1000 }
+      );
+
+      if (signatures.length === 0) {
+        // No transactions at all — write zeros
+        updateBuyPressureMetrics(this.db, ctx.graduationId, {
+          unique_buyers: 0,
+          buy_ratio: null,
+          whale_pct: null,
+          trade_count: 0,
+        });
+        logger.info({ graduationId: ctx.graduationId }, 'Buy pressure: no pool transactions found');
+        return;
+      }
+
+      // Filter to 0-30s window
+      const windowSigs = signatures.filter((sig) => {
+        if (!sig.blockTime) return false;
+        const elapsed = sig.blockTime - ctx.graduationTimestamp;
+        return elapsed >= 0 && elapsed <= 30;
+      });
+
+      const totalTradeCount = windowSigs.length;
+
+      // Find which signatures we already stored from the T+10 competition detection run
+      const existingSigs = getExistingSignatures(this.db, ctx.graduationId);
+      const newSigs = windowSigs.filter((s) => !existingSigs.has(s.signature));
+
+      // Parse new transactions (capped at MAX_NEW_TX_PARSES)
+      const toParse = newSigs.slice(0, MAX_NEW_TX_PARSES);
+      let parsed = 0;
+
+      for (const sigInfo of toParse) {
+        try {
+          if (!await globalRpcLimiter.throttleOrDrop(20)) continue;
+
+          const tx = await this.connection.getParsedTransaction(sigInfo.signature, {
+            commitment: 'confirmed',
+            maxSupportedTransactionVersion: 0,
+          });
+
+          if (!tx || !tx.meta || tx.meta.err) continue;
+
+          const accountKeys = tx.transaction.message.accountKeys;
+          const signer = accountKeys[0];
+          const signerAddress = typeof signer === 'string'
+            ? signer
+            : signer.pubkey.toBase58();
+
+          let action = 'unknown';
+          let amountSol: number | undefined;
+
+          if (tx.meta.preBalances && tx.meta.postBalances) {
+            const solChange = (tx.meta.postBalances[0] - tx.meta.preBalances[0]) / 1_000_000_000;
+            if (solChange < -0.01) {
+              action = 'buy';
+              amountSol = Math.abs(solChange);
+            } else if (solChange > 0.01) {
+              action = 'sell';
+              amountSol = solChange;
+            }
+          }
+
+          const txTime = sigInfo.blockTime || Math.floor(Date.now() / 1000);
+          const secSinceGrad = txTime - ctx.graduationTimestamp;
+
+          const isEarly = secSinceGrad <= 2;
+          const usesPriorityFee = tx.transaction.message.instructions.some((ix: any) => {
+            const progId = 'programId' in ix
+              ? (typeof ix.programId === 'string' ? ix.programId : ix.programId.toBase58())
+              : '';
+            return progId === 'ComputeBudget111111111111111111111111111111';
+          });
+          const isLikelyBot = (isEarly && usesPriorityFee) ? 1 : 0;
+
+          insertCompetitionSignal(this.db, {
+            graduation_id: ctx.graduationId,
+            timestamp: txTime,
+            seconds_since_graduation: secSinceGrad,
+            tx_signature: sigInfo.signature,
+            wallet_address: signerAddress,
+            action,
+            amount_sol: amountSol,
+            is_likely_bot: isLikelyBot,
+          });
+
+          parsed++;
+        } catch {
+          continue;
+        }
+      }
+
+      // Phase B: Compute aggregates from all stored signals and write to graduation_momentum
+      const aggregates = computeBuyPressureAggregates(this.db, ctx.graduationId);
+
+      // Use signature-based trade count (more accurate than parsed-only SQL count)
+      // if we had to cap parsing and thus SQL count is lower than reality
+      const finalTradeCount = Math.max(totalTradeCount, aggregates.trade_count);
+
+      updateBuyPressureMetrics(this.db, ctx.graduationId, {
+        unique_buyers: aggregates.unique_buyers,
+        buy_ratio: aggregates.buy_ratio,
+        whale_pct: aggregates.whale_pct,
+        trade_count: finalTradeCount,
+      });
+
+      logger.info(
+        {
+          graduationId: ctx.graduationId,
+          mint: ctx.mint,
+          totalSigs: totalTradeCount,
+          newParsed: parsed,
+          skippedExisting: existingSigs.size,
+          uniqueBuyers: aggregates.unique_buyers,
+          buyRatio: aggregates.buy_ratio?.toFixed(2) ?? 'N/A',
+          whalePct: aggregates.whale_pct?.toFixed(2) ?? 'N/A',
+        },
+        'Buy pressure detection complete'
+      );
+    } catch (err) {
+      logger.error(
+        'Buy pressure detection failed for grad %d: %s',
         ctx.graduationId,
         err instanceof Error ? err.message : String(err)
       );

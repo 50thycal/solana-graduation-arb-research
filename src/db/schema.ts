@@ -209,6 +209,11 @@ function runMigrations(db: Database.Database): void {
       ['early_vs_late_0_30', 'REAL'],  // (pct_t15-pct_t0) - (pct_t30-pct_t15): positive = front-loaded
       ['early_vs_late_0_60', 'REAL'],  // (pct_t30-pct_t0) - (pct_t60-pct_t30): same for full window
       ['path_cluster', 'TEXT'],        // shape cluster label (populated later)
+      // Buy pressure quality metrics (computed at T+35 from pool transactions in 0-30s window)
+      ['buy_pressure_unique_buyers', 'INTEGER'],  // distinct wallets that bought in 0-30s
+      ['buy_pressure_buy_ratio', 'REAL'],          // buys / (buys + sells) as 0-1
+      ['buy_pressure_whale_pct', 'REAL'],          // largest single buy SOL / total buy SOL volume
+      ['buy_pressure_trade_count', 'INTEGER'],     // total txs in 0-30s window (from signature count)
     ];
     for (const [col, type] of newMomCols) {
       if (!momExisting.has(col)) {

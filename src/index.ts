@@ -370,6 +370,10 @@ async function main() {
         { name: 't30 +5-100%',                    sql: "pct_t30 >= 5 AND pct_t30 <= 100" },
         { name: 'top5 < 20%',                     sql: "top5_wallet_pct < 20" },
         { name: 'dev < 5%',                       sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5" },
+        { name: 'buy_ratio>0.7 + t30 +5-100%',    sql: "buy_pressure_buy_ratio > 0.7 AND pct_t30 >= 5 AND pct_t30 <= 100" },
+        { name: 'buyers>=5 + t30 +5-100%',         sql: "buy_pressure_unique_buyers >= 5 AND pct_t30 >= 5 AND pct_t30 <= 100" },
+        { name: 'whale<0.5 + t30 +5-100%',         sql: "buy_pressure_whale_pct < 0.5 AND pct_t30 >= 5 AND pct_t30 <= 100" },
+        { name: 'vel 5-20 + buyers>=5',             sql: "bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20 AND buy_pressure_unique_buyers >= 5 AND pct_t30 >= 5 AND pct_t30 <= 100" },
       ];
       let bestFilterName = '—';
       let bestWr = '—';
@@ -645,7 +649,11 @@ async function main() {
           ROUND(m.top5_wallet_pct, 1) as top5_pct,
           ROUND(m.dev_wallet_pct, 1) as dev_pct,
           ROUND(m.total_sol_raised, 2) as sol_raised,
-          g.new_pool_address IS NOT NULL as has_pool
+          g.new_pool_address IS NOT NULL as has_pool,
+          m.buy_pressure_unique_buyers as buyers,
+          ROUND(m.buy_pressure_buy_ratio, 2) as buy_ratio,
+          ROUND(m.buy_pressure_whale_pct, 2) as whale_pct,
+          m.buy_pressure_trade_count as trades
         FROM graduation_momentum m
         JOIN graduations g ON g.id = m.graduation_id
         ORDER BY m.graduation_id DESC
