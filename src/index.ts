@@ -1350,6 +1350,133 @@ async function main() {
           };
         })(),
 
+        // ── PATH SHAPE FILTERS ───────────────────────────────────────────────
+        // Monotonicity-based entry filters. Only tokens with 5s snapshots have this field.
+        // n is smaller than the main cohort — flag clearly in the UI.
+        path_shape_filters: (() => {
+          const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
+          const SL_GAP_PENALTY_PCT = 0.20;
+          const TP_GAP_PENALTY_PCT = 0.10;
+
+          // Total tokens with monotonicity data (used to show effective sample size)
+          const monoTotal = (db.prepare(`
+            SELECT COUNT(*) as n FROM graduation_momentum
+            WHERE monotonicity_0_30 IS NOT NULL AND label IS NOT NULL
+          `).get() as any)?.n ?? 0;
+
+          const winRateForFilter = (extraWhere: string) => {
+            const row = db.prepare(`
+              SELECT COUNT(*) as total,
+                     SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pump,
+                     SUM(CASE WHEN label='DUMP' THEN 1 ELSE 0 END) as dump
+              FROM graduation_momentum
+              WHERE label IS NOT NULL AND monotonicity_0_30 IS NOT NULL AND ${extraWhere}
+            `).get() as any;
+            return {
+              n: row.total,
+              pump: row.pump,
+              dump: row.dump,
+              win_rate_pct: row.total > 0 ? +(row.pump / row.total * 100).toFixed(1) : null,
+            };
+          };
+
+          const simulateWithTP = (extraWhere: string, label: string) => {
+            const tpLevels = [20, 30, 50, 75];
+            const sl = 10;
+            const results: any[] = [];
+            for (const tp of tpLevels) {
+              const rows = db.prepare(`
+                SELECT pct_t30, ${stopCheckpoints.join(', ')}, pct_t300,
+                       COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT}) as cost_pct
+                FROM graduation_momentum
+                WHERE pct_t30 >= 5 AND pct_t30 <= 100
+                  AND pct_t30 IS NOT NULL
+                  AND monotonicity_0_30 IS NOT NULL
+                  AND ${extraWhere}
+              `).all() as any[];
+
+              if (rows.length === 0) continue;
+
+              let totalReturn = 0, stopped = 0, tpHit = 0, profitable = 0, rugged = 0, totalCost = 0;
+              for (const r of rows) {
+                const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - sl / 100) - 1) * 100;
+                const tpLevelPct   = ((1 + r.pct_t30 / 100) * (1 + tp / 100) - 1) * 100;
+                let exitReturn: number | undefined;
+                let wasStoppedOut = false;
+                let wasTpHit = false;
+
+                for (const cp of stopCheckpoints) {
+                  if (r[cp] == null) continue;
+                  if (r[cp] <= stopLevelPct) {
+                    exitReturn = -(sl * (1 + SL_GAP_PENALTY_PCT));
+                    stopped++;
+                    wasStoppedOut = true;
+                    break;
+                  }
+                  if (r[cp] >= tpLevelPct) {
+                    exitReturn = tp * (1 - TP_GAP_PENALTY_PCT);
+                    tpHit++;
+                    wasTpHit = true;
+                    break;
+                  }
+                }
+
+                if (!wasStoppedOut && !wasTpHit) {
+                  if (r.pct_t300 != null) {
+                    exitReturn = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
+                  } else {
+                    exitReturn = -100;
+                    rugged++;
+                  }
+                }
+
+                exitReturn! -= r.cost_pct;
+                totalCost += r.cost_pct;
+                totalReturn += exitReturn!;
+                if (exitReturn! > 0) profitable++;
+              }
+
+              const n = rows.length;
+              const avgReturn = totalReturn / n;
+              results.push({
+                strategy: `${label} @ ${sl}% SL / ${tp}% TP`,
+                stop_loss_pct: sl,
+                take_profit_pct: tp,
+                n,
+                stopped_pct: +(stopped / n * 100).toFixed(1),
+                tp_hit_pct: +(tpHit / n * 100).toFixed(1),
+                profitable_rate_pct: +(profitable / n * 100).toFixed(1),
+                avg_return_pct: +avgReturn.toFixed(1),
+                ev_positive: avgReturn > 0,
+              });
+            }
+            return results;
+          };
+
+          const filters = [
+            {
+              label: 'mono > 0.5 + t30 +5-100%',
+              where: 'monotonicity_0_30 > 0.5 AND pct_t30 BETWEEN 5 AND 100',
+            },
+            {
+              label: 'mono > 0.33 + t30 +5-100%',
+              where: 'monotonicity_0_30 > 0.33 AND pct_t30 BETWEEN 5 AND 100',
+            },
+            {
+              label: 'mono > 0.5 + vel 5-20 + t30 +5-100%',
+              where: 'monotonicity_0_30 > 0.5 AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20 AND pct_t30 BETWEEN 5 AND 100',
+            },
+          ];
+
+          return {
+            note: `Monotonicity data only exists for tokens with 5s snapshots. Total with mono data: n=${monoTotal}. TP+SL results are noisy until n≥150.`,
+            mono_total_n: monoTotal,
+            filter_stats: filters.map(f => ({ filter: f.label, ...winRateForFilter(f.where) })),
+            tp_sl_combos_mono_05: simulateWithTP(filters[0].where, 'mono>0.5'),
+            tp_sl_combos_mono_05_vel: simulateWithTP(filters[2].where, 'mono>0.5+vel5-20'),
+          };
+        })(),
+
         // ── SIGNAL FREQUENCY ─────────────────────────────────────────────────
         // How often does each filter fire? Derived from actual data timestamps.
         // Useful for sizing position frequency and daily trade volume estimates.

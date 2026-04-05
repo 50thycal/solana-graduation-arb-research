@@ -347,6 +347,60 @@ function slTpTable(title: string, desc: string, rows: any[]): string {
   </div>`;
 }
 
+function pathShapeFiltersSection(psf: any): string {
+  if (!psf) return '';
+  const monoN = psf.mono_total_n ?? 0;
+  const nWarn = monoN < 50
+    ? `<div style="color:#ef4444;font-weight:600;margin-bottom:8px">⚠ n=${monoN} — insufficient data (need ≥50 for meaningful signal)</div>`
+    : monoN < 150
+    ? `<div style="color:#facc15;font-weight:600;margin-bottom:8px">⚠ n=${monoN} — TP+SL results noisy until n≥150</div>`
+    : '';
+
+  const filterRows = (psf.filter_stats || []).map((f: any) => {
+    const wrVal = f.win_rate_pct;
+    const wrCls = wrVal === null ? 'yellow' : wrVal >= 55 ? 'green' : wrVal >= 45 ? 'yellow' : 'red';
+    const nFlag = f.n < 50 ? ' <span class="n-insuf">(n&lt;50)</span>' : '';
+    return `<tr>
+      <td>${f.filter}</td>
+      <td>${f.n}${nFlag}</td>
+      <td>${f.pump ?? '—'}</td>
+      <td>${f.dump ?? '—'}</td>
+      <td><span class="${wrCls}">${wrVal !== null ? wrVal + '%' : '—'}</span></td>
+    </tr>`;
+  }).join('');
+
+  const tpSlBlock = (title: string, rows: any[]) => {
+    if (!rows || rows.length === 0) return '';
+    const trs = rows.map((r: any) => `
+      <tr>
+        <td>${r.strategy}</td>
+        <td>${r.stop_loss_pct}%</td><td>${r.take_profit_pct}%</td><td>${r.n}</td>
+        <td>${r.stopped_pct}%</td><td class="green">${r.tp_hit_pct}%</td>
+        <td>${r.profitable_rate_pct}%</td>
+        <td>${evN(r.ev_positive, r.avg_return_pct, r.n)}</td>
+        <td>${evBadgeN(r.ev_positive, r.n)}</td>
+      </tr>`).join('');
+    return `<h3>${title}</h3>
+    <table>
+      <tr><th>Strategy</th><th>SL%</th><th>TP%</th><th>n</th><th>Stopped%</th><th>TP Hit%</th><th>Profit%</th><th>Avg Return</th><th>EV+</th></tr>
+      ${trs}
+    </table>`;
+  };
+
+  return `
+  <div class="card">
+    <h2>Path Shape Filters — Monotonicity (0–30s)</h2>
+    <div class="desc">${psf.note}</div>
+    ${nWarn}
+    <table>
+      <tr><th>Filter</th><th>n</th><th>PUMP</th><th>DUMP</th><th>Win Rate</th></tr>
+      ${filterRows || '<tr><td colspan="5" class="n-insuf">No monotonicity data yet</td></tr>'}
+    </table>
+    ${tpSlBlock('TP+SL Combos — mono &gt; 0.5 (all tokens)', psf.tp_sl_combos_mono_05)}
+    ${tpSlBlock('TP+SL Combos — mono &gt; 0.5 + vel 5-20', psf.tp_sl_combos_mono_05_vel)}
+  </div>`;
+}
+
 function signalFrequencySection(sf: any): string {
   if (!sf || sf.samples === 0 || !sf.graduations_per_hour) return '';
   const filterRows = (sf.signals_per_day_by_filter || []).map((f: any) => `
@@ -601,6 +655,7 @@ export function renderFilterHtml(data: any): string {
   const body = sections.join('') + '<hr class="section-sep">' +
     distSections.join('') + '<hr class="section-sep">' +
     slSections.join('') + '<hr class="section-sep">' +
+    pathShapeFiltersSection(d.path_shape_filters) + '<hr class="section-sep">' +
     signalFrequencySection(d.signal_frequency) + '<hr class="section-sep">' +
     drawdownSection + tradingSection + econSection +
     returnDistributionSection(d.return_distribution) +
