@@ -989,8 +989,10 @@ export function renderPricePathHtml(db: Database.Database): string {
     return +Math.abs(pm - dm) / pooledSD;
   }
   function avgMetric(rows: any[], col: string): string {
-    const v = avgMetricNum(rows, col);
-    return v === null ? '—' : v.toFixed(3);
+    const vals = rows.map(r => r[col] as number | null).filter(v => v != null) as number[];
+    if (vals.length === 0) return '—';
+    const avg = (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(3);
+    return `${avg} <span style="opacity:0.55;font-size:0.85em">(n=${vals.length})</span>`;
   }
   function effectSize(p: any[], d: any[], col: string): string {
     const d_eff = effectSizeNum(p, d, col);
@@ -1048,9 +1050,9 @@ export function renderPricePathHtml(db: Database.Database): string {
     return `
     <tr>
       <td>Dip &amp; Recover % (flag=1)</td>
-      <td class="green">${pumps.length > 0 ? (pDip/pumps.length*100).toFixed(1) + '%' : '—'}</td>
-      <td class="red">${dumps.length > 0 ? (dDip/dumps.length*100).toFixed(1) + '%' : '—'}</td>
-      <td class="yellow">${stables.length > 0 ? (sDip/stables.length*100).toFixed(1) + '%' : '—'}</td>
+      <td class="green">${pumps.length > 0 ? `${(pDip/pumps.length*100).toFixed(1)}% <span style="opacity:0.55;font-size:0.85em">(n=${pumps.length})</span>` : '—'}</td>
+      <td class="red">${dumps.length > 0 ? `${(dDip/dumps.length*100).toFixed(1)}% <span style="opacity:0.55;font-size:0.85em">(n=${dumps.length})</span>` : '—'}</td>
+      <td class="yellow">${stables.length > 0 ? `${(sDip/stables.length*100).toFixed(1)}% <span style="opacity:0.55;font-size:0.85em">(n=${stables.length})</span>` : '—'}</td>
       <td>—</td>
     </tr>`;
   })();
