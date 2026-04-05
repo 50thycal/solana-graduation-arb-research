@@ -916,27 +916,35 @@ export function renderPricePathHtml(db: Database.Database): string {
   );
 
   // ── 5. Derived metrics table ──────────────────────────────────────────────
-  function avgMetric(rows: any[], col: string): string {
+  function avgMetricNum(rows: any[], col: string): number | null {
     const vals = rows.map(r => r[col] as number | null).filter(v => v != null) as number[];
-    if (vals.length === 0) return '—';
-    return (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(3);
+    if (vals.length === 0) return null;
+    return +(vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(3);
   }
-  function effectSize(p: any[], d: any[], col: string): string {
+  function effectSizeNum(p: any[], d: any[], col: string): number | null {
     const pv = p.map(r => r[col] as number | null).filter(v => v != null) as number[];
     const dv = d.map(r => r[col] as number | null).filter(v => v != null) as number[];
-    if (pv.length < 2 || dv.length < 2) return '—';
+    if (pv.length < 2 || dv.length < 2) return null;
     const pm = pv.reduce((a, b) => a + b, 0) / pv.length;
     const dm = dv.reduce((a, b) => a + b, 0) / dv.length;
     const pv2 = pv.reduce((a, b) => a + (b - pm) ** 2, 0) / pv.length;
     const dv2 = dv.reduce((a, b) => a + (b - dm) ** 2, 0) / dv.length;
     const pooledSD = Math.sqrt((pv2 + dv2) / 2);
-    if (pooledSD === 0) return '—';
-    const d_eff = Math.abs(pm - dm) / pooledSD;
+    if (pooledSD === 0) return null;
+    return +Math.abs(pm - dm) / pooledSD;
+  }
+  function avgMetric(rows: any[], col: string): string {
+    const v = avgMetricNum(rows, col);
+    return v === null ? '—' : v.toFixed(3);
+  }
+  function effectSize(p: any[], d: any[], col: string): string {
+    const d_eff = effectSizeNum(p, d, col);
+    if (d_eff === null) return '—';
     const cls = d_eff > 0.8 ? 'green' : d_eff > 0.4 ? 'yellow' : 'red';
     return `<span class="${cls}">${d_eff.toFixed(2)}</span>`;
   }
 
-  const metricRows = [
+  const METRIC_COLS: Array<[string, string]> = [
     ['acceleration_t30',    'Acceleration at T+30'],
     ['acceleration_t60',    'Acceleration at T+60'],
     ['monotonicity_0_30',   'Monotonicity 0–30s (0–1)'],
@@ -947,7 +955,29 @@ export function renderPricePathHtml(db: Database.Database): string {
     ['max_drawdown_0_60',   'Max Drawdown 0–60s (%)'],
     ['early_vs_late_0_30',  'Early vs Late 0–30s'],
     ['early_vs_late_0_60',  'Early vs Late 0–60s'],
-  ].map(([col, label]) => `
+  ];
+
+  // Collect raw metric data for JSON export
+  const derivedMetricsJson: Record<string, { pump_avg: number | null; dump_avg: number | null; stable_avg: number | null; cohens_d: number | null }> = {};
+  for (const [col] of METRIC_COLS) {
+    derivedMetricsJson[col] = {
+      pump_avg:   avgMetricNum(pumps,   col),
+      dump_avg:   avgMetricNum(dumps,   col),
+      stable_avg: avgMetricNum(stables, col),
+      cohens_d:   effectSizeNum(pumps, dumps, col),
+    };
+  }
+  const pDipForJson = pumps.filter(r => r.dip_and_recover_flag === 1).length;
+  const dDipForJson = dumps.filter(r => r.dip_and_recover_flag === 1).length;
+  const sDipForJson = stables.filter(r => r.dip_and_recover_flag === 1).length;
+  derivedMetricsJson['dip_and_recover_flag'] = {
+    pump_avg:   pumps.length   > 0 ? +(pDipForJson / pumps.length   * 100).toFixed(1) : null,
+    dump_avg:   dumps.length   > 0 ? +(dDipForJson / dumps.length   * 100).toFixed(1) : null,
+    stable_avg: stables.length > 0 ? +(sDipForJson / stables.length * 100).toFixed(1) : null,
+    cohens_d:   null,
+  };
+
+  const metricRows = METRIC_COLS.map(([col, label]) => `
     <tr>
       <td>${label}</td>
       <td class="green">${avgMetric(pumps, col)}</td>
@@ -1043,6 +1073,7 @@ export function renderPricePathHtml(db: Database.Database): string {
   const entrySimRows: string[] = [];
   let bestTime = '—', bestReturn = -Infinity;
   let bestVelTime = '—', bestVelReturn = -Infinity;
+  const entryHeatmapJson: Array<{ entry_time: string; all: { n: number; win_rate: number; avg_return: number }; vel520: { n: number; win_rate: number; avg_return: number } }> = [];
 
   // Load full data for simulation (needs more pct columns + slippage)
   const simRows = db.prepare(`
@@ -1078,6 +1109,7 @@ export function renderPricePathHtml(db: Database.Database): string {
         <td>${rVel.n > 0 ? rVel.win_rate + '%' : '—'}</td>
         <td>${fmtRet(rVel)}</td>
       </tr>`);
+    entryHeatmapJson.push({ entry_time: `T+${t}s`, all: rAll, vel520: rVel });
     if (rAll.n >= 20 && rAll.avg_return > bestReturn) {
       bestReturn = rAll.avg_return; bestTime = `T+${t}s`;
     }
@@ -1116,16 +1148,24 @@ export function renderPricePathHtml(db: Database.Database): string {
     { label: '67–100% (smooth)', min: 0.667, max: 1.001 },
   ];
 
+  const monoJsonData: Array<{ bucket: string; n: number; pump: number; dump: number; win_rate_pct: number | null; vel520_n: number; vel520_win_rate_pct: number | null }> = [];
   const monoRows = monoBuckets.map(b => {
     const inBucket = labeled.filter(r => r.monotonicity_0_30 != null && r.monotonicity_0_30 >= b.min && r.monotonicity_0_30 < b.max);
     const bPump = inBucket.filter(r => r.label === 'PUMP').length;
     const bDump = inBucket.filter(r => r.label === 'DUMP').length;
     const bN    = inBucket.length;
-    const bWR   = bN > 0 ? (bPump / bN * 100).toFixed(1) + '%' : '—';
     const vSub  = inBucket.filter(r => r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 20);
     const vN    = vSub.length;
     const vP    = vSub.filter(r => r.label === 'PUMP').length;
-    const vWR   = vN > 0 ? (vP / vN * 100).toFixed(1) + '%' : '—';
+    monoJsonData.push({
+      bucket: b.label,
+      n: bN,
+      pump: bPump,
+      dump: bDump,
+      win_rate_pct: bN > 0 ? +(bPump / bN * 100).toFixed(1) : null,
+      vel520_n: vN,
+      vel520_win_rate_pct: vN > 0 ? +(vP / vN * 100).toFixed(1) : null,
+    });
     return `
     <tr>
       <td>${b.label}</td><td>${bN}</td>
@@ -1174,5 +1214,10 @@ export function renderPricePathHtml(db: Database.Database): string {
     vel520_count: vel520.length,
     best_entry_time: bestTime,
     best_entry_avg_return: bestReturn === -Infinity ? null : bestReturn,
+    best_vel520_entry_time: bestVelTime,
+    best_vel520_entry_avg_return: bestVelReturn === -Infinity ? null : bestVelReturn,
+    derived_path_metrics_by_label: derivedMetricsJson,
+    entry_timing_heatmap_sl10_tp50: entryHeatmapJson,
+    win_rate_by_monotonicity_0_30: monoJsonData,
   });
 }
