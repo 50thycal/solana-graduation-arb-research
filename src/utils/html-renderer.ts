@@ -530,13 +530,20 @@ export function renderFilterHtml(data: any): string {
     filterTable('Velocity & Liquidity Combo Filters',
       'bc_velocity = how fast the bonding curve filled (SOL/min). Sweet spot is 5-20 sol/min. These combos stack velocity with liquidity, bc_age, and holder signals.',
       (d.combination_filters || []).filter((r: any) =>
-        r.filter.includes('velocity') || r.filter.includes('liquidity')
+        (r.filter.includes('velocity') || r.filter.includes('liquidity'))
+        && !r.filter.includes('buyer') && !r.filter.includes('buy_ratio') && !r.filter.includes('whale')
       )),
 
     filterTable('BC Age Combo Filters',
       'bc_age-based combos (no velocity). Older tokens may have more organic holder bases.',
       (d.combination_filters || []).filter((r: any) =>
-        r.filter.includes('bc_age') && !r.filter.includes('velocity') && !r.filter.includes('liquidity')
+        r.filter.includes('bc_age') && !r.filter.includes('velocity') && !r.filter.includes('liquidity') && !r.filter.includes('buyer') && !r.filter.includes('buy_ratio') && !r.filter.includes('whale') && !r.filter.includes('trades')
+      )),
+
+    filterTable('Buy Pressure Quality Filters',
+      'Buy pressure metrics from 0-30s post-graduation: buyers = unique wallets buying, buy_ratio = buys/(buys+sells), whale_pct = largest single buy as % of total buy volume, trades = total tx count. Distributed buying (many buyers, low whale) may predict more sustainable pumps.',
+      (d.combination_filters || []).filter((r: any) =>
+        r.filter.includes('buyer') || r.filter.includes('buy_ratio') || r.filter.includes('whale') || r.filter.includes('trades>=')
       )),
 
     filterTable('BC Age Filters',
