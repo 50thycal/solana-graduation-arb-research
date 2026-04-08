@@ -63,6 +63,12 @@ const STYLES = `
   th.sortable{cursor:pointer;user-select:none}
   th.sortable:hover{background:#334155}
   th.sortable .arrow{font-size:10px;color:#64748b;margin-left:4px}
+  /* Panel 4 controls */
+  .p4-controls{margin:12px 0;padding:10px 14px;background:#262640;border-radius:6px;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .p4-controls label{color:#94a3b8;font-size:12px}
+  .p4-controls select{background:#0f0f1a;color:#e2e8f0;border:1px solid #334155;padding:4px 8px;margin-left:4px;border-radius:4px;font-size:12px;cursor:pointer}
+  .p4-controls select:hover{border-color:#60a5fa}
+  .p4-controls .desc{margin-bottom:0;margin-left:auto}
 `;
 
 function nav(currentPath: string): string {
@@ -1055,6 +1061,59 @@ function v2RegimeRowHtml(r: FilterV2RegimeRow, lowN: number, strongN: number, is
   </tr>`;
 }
 
+// ── Panel 4 helpers: dynamic TP/SL EV simulator ──
+
+type FilterV2Panel4Combos = {
+  avg_ret: number[];  // flat-indexed: tpIdx * sl_levels.length + slIdx
+  med_ret: number[];
+  win_rate: number[];
+};
+type FilterV2Panel4Optimal = { tp: number; sl: number; avg_ret: number; win_rate: number } | null;
+type FilterV2Panel4Row = {
+  filter: string;
+  group: string;
+  n: number;
+  combos: FilterV2Panel4Combos;
+  optimal: FilterV2Panel4Optimal;
+};
+
+// Static optimum cell — rendered server-side, never changes on dropdown
+function p4OptCell(v: number | null, suffix: '%' | ''): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  return `${v}${suffix}`;
+}
+function p4OptAvgRetCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v > 0.5 ? 'green' : v > -0.5 ? 'yellow' : 'red';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(1)}%</span>`;
+}
+function p4OptWinRateCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v >= 50 ? 'green' : v >= 40 ? 'yellow' : 'red';
+  return `<span class="${cls}">${v}%</span>`;
+}
+
+// Row builder — 4 "Sel *" cells render as placeholders; JS fills them on load and on dropdown change.
+// data-row-idx ties the row to its position in the __PANEL_4.rows array.
+function v2Panel4RowHtml(r: FilterV2Panel4Row, lowN: number, strongN: number, rowIdx: number, isBaseline = false): string {
+  const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
+  const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+  const opt = r.optimal;
+  return `<tr class="${cls}" data-row-idx="${rowIdx}"${isBaseline ? ' data-baseline="1"' : ''}>
+    <td>${r.filter}${nLabel}</td>
+    <td>${r.n}</td>
+    <td class="p4-sel-avg">—</td>
+    <td class="p4-sel-med">—</td>
+    <td class="p4-sel-win">—</td>
+    <td class="p4-sel-diff">—</td>
+    <td>${p4OptCell(opt ? opt.tp : null, '%')}</td>
+    <td>${p4OptCell(opt ? opt.sl : null, '%')}</td>
+    <td>${p4OptAvgRetCell(opt ? opt.avg_ret : null)}</td>
+    <td>${p4OptWinRateCell(opt ? opt.win_rate : null)}</td>
+  </tr>`;
+}
+
 export function renderFilterV2Html(data: any): string {
   const panel1 = data.panel1;
   const baseline: FilterV2Row = panel1.baseline;
@@ -1287,6 +1346,119 @@ export function renderFilterV2Html(data: any): string {
     </div>`;
   }
 
+  // ── Panel 4 (Dynamic TP/SL EV Simulator) ──
+  let panel4Html = '';
+  let panel4DataScript = '';
+  if (data.panel4) {
+    const panel4 = data.panel4;
+    const baseline4: FilterV2Panel4Row = panel4.baseline;
+    const filters4: FilterV2Panel4Row[] = panel4.filters || [];
+    const lowN4 = panel4.flags?.low_n_threshold ?? 20;
+    const strongN4 = panel4.flags?.strong_n_threshold ?? 100;
+    const tpLevels: number[] = panel4.grid.tp_levels;
+    const slLevels: number[] = panel4.grid.sl_levels;
+    const defaultTp: number = panel4.grid.default_tp;
+    const defaultSl: number = panel4.grid.default_sl;
+
+    const groups4 = new Map<string, FilterV2Panel4Row[]>();
+    for (const f of filters4) {
+      if (!groups4.has(f.group)) groups4.set(f.group, []);
+      groups4.get(f.group)!.push(f);
+    }
+
+    // Baseline is always row index 0; filter rows start at index 1
+    const baselineRow4 = v2Panel4RowHtml(baseline4, lowN4, strongN4, 0, true);
+    const groupRows4: string[] = [];
+    let rowIdx = 1;
+    for (const [groupName, rows] of groups4) {
+      groupRows4.push(`<tr class="row-group-header"><td colspan="10">${groupName}</td></tr>`);
+      for (const r of rows) {
+        groupRows4.push(v2Panel4RowHtml(r, lowN4, strongN4, rowIdx, false));
+        rowIdx++;
+      }
+    }
+
+    const tpOptions = tpLevels.map(v => `<option value="${v}"${v === defaultTp ? ' selected' : ''}>${v}%</option>`).join('');
+    const slOptions = slLevels.map(v => `<option value="${v}"${v === defaultSl ? ' selected' : ''}>${v}%</option>`).join('');
+
+    const controls = `
+    <div class="p4-controls">
+      <label>TP %: <select id="p4-tp" onchange="onPanel4Change()">${tpOptions}</select></label>
+      <label>SL %: <select id="p4-sl" onchange="onPanel4Change()">${slOptions}</select></label>
+      <span class="desc">SL gap 20% · TP gap 10% · cost: per-token round_trip_slippage_pct (3% fallback)</span>
+    </div>`;
+
+    const table4Html = `
+    <table id="panel4-table">
+      <thead>
+        <tr>
+          <th class="sortable" onclick="sortPanel4(0,'str')">Filter <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel4(1,'num')">n <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel4(2,'num')">Sel Avg Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel4(3,'num')">Sel Med Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel4(4,'num')">Sel Win % <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel4(5,'num')">Sel vs Base <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel4(6,'num')">Opt TP <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel4(7,'num')">Opt SL <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel4(8,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel4(9,'num')">Opt Win % <span class="arrow">⇅</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baselineRow4}
+        ${groupRows4.join('\n        ')}
+      </tbody>
+    </table>`;
+
+    const legend4 = `
+    <div class="desc" style="margin-top:10px">
+      <strong>Entry:</strong> T+30 (PumpSwap pool price). <strong>Exits scanned:</strong> pct_t40, pct_t50, pct_t60, pct_t90, pct_t120, pct_t150, pct_t180, pct_t240 (SL checked first at each checkpoint, then TP). <strong>Fall-through:</strong> pct_t300.
+      <br>
+      <strong>Gap penalties:</strong> SL fills at −${(panel4.constants.sl_gap_penalty_pct).toFixed(0)}% adverse (e.g., 10% SL → −12% realised); TP fills at −${(panel4.constants.tp_gap_penalty_pct).toFixed(0)}% of TP (e.g., 30% TP → +27% realised). <strong>Cost:</strong> per-token <code>round_trip_slippage_pct</code> with ${panel4.constants.cost_pct_fallback}% fallback subtracted from every exit.
+      <br>
+      <strong>Optimum rule:</strong> per-filter max avg return across the grid, gated by filter n ≥ ${panel4.constants.min_n_for_optimum} AND combo tp_hit_count ≥ ${panel4.constants.min_tp_hits_for_optimum}. <code>—</code> in Opt* columns means the filter cohort is too small or no grid combo ever triggered a take-profit.
+      <br>
+      <strong>Sel vs Base:</strong> <code>filter_avg_ret − baseline_avg_ret</code> at the currently-selected TP/SL. Computed client-side on every dropdown change. Baseline row always shows <code>+0.0%</code>.
+      <br>
+      <strong>Color scales:</strong>
+      <span class="green" style="margin-left:6px">Avg/Med &gt; +0.5%</span>
+      <span class="yellow">−0.5% to +0.5%</span>
+      <span class="red">&lt; −0.5%</span> ·
+      <span class="green">Win ≥ 50%</span>
+      <span class="yellow">40–49%</span>
+      <span class="red">&lt; 40%</span>
+      <br>
+      <strong>URL:</strong> current TP/SL selection is mirrored to the URL hash (<code>#p4=tp30,sl10</code>) so reloads and shared links preserve the view.
+      <br>
+      <em>Sort by <strong>Opt Avg Ret</strong> descending to surface the best static per-filter optima. Sort by <strong>Sel Avg Ret</strong> descending to surface the best filters at the currently-selected TP/SL.</em>
+    </div>`;
+
+    panel4Html = `
+    <div class="card">
+      <h2>Panel 4 — ${panel4.title}</h2>
+      <div class="desc">${panel4.description}</div>
+      ${controls}
+      ${table4Html}
+      ${legend4}
+    </div>`;
+
+    // Client data payload — flat arrays for compact encoding
+    const clientRows = [
+      { combos: baseline4.combos },
+      ...filters4.map(f => ({ combos: f.combos })),
+    ];
+    panel4DataScript = `
+  <script>
+    window.__PANEL_4 = ${JSON.stringify({
+      tp_levels: tpLevels,
+      sl_levels: slLevels,
+      default_tp: defaultTp,
+      default_sl: defaultSl,
+      rows: clientRows,
+    })};
+  </script>`;
+  }
+
   const sortScript = `
   <script>
   function v2GenericSort(tableId, col, type) {
@@ -1316,9 +1488,92 @@ export function renderFilterV2Html(data: any): string {
   function sortPanel1(col, type) { v2GenericSort('panel1-table', col, type); }
   function sortPanel2(col, type) { v2GenericSort('panel2-table', col, type); }
   function sortPanel3(col, type) { v2GenericSort('panel3-table', col, type); }
+  function sortPanel4(col, type) { v2GenericSort('panel4-table', col, type); }
+
+  // ── Panel 4 dynamic update ──
+  function p4ColorAvg(v) {
+    if (v == null) return '—';
+    var cls = v > 0.5 ? 'green' : v > -0.5 ? 'yellow' : 'red';
+    var sign = v > 0 ? '+' : '';
+    return '<span class="' + cls + '">' + sign + v.toFixed(1) + '%</span>';
+  }
+  function p4ColorWin(v) {
+    if (v == null) return '—';
+    var cls = v >= 50 ? 'green' : v >= 40 ? 'yellow' : 'red';
+    return '<span class="' + cls + '">' + v + '%</span>';
+  }
+  function p4ColorDiff(v) {
+    if (v == null) return '—';
+    var cls = v > 0 ? 'green' : v < 0 ? 'red' : 'yellow';
+    var sign = v > 0 ? '+' : '';
+    return '<span class="' + cls + '">' + sign + v.toFixed(1) + '%</span>';
+  }
+  function updatePanel4(tp, sl) {
+    if (!window.__PANEL_4) return;
+    var P = window.__PANEL_4;
+    var ti = P.tp_levels.indexOf(tp);
+    var si = P.sl_levels.indexOf(sl);
+    if (ti === -1 || si === -1) return;
+    var idx = ti * P.sl_levels.length + si;
+    var baselineAvg = P.rows[0].combos.avg_ret[idx];
+    var table = document.getElementById('panel4-table');
+    if (!table) return;
+    var rows = table.tBodies[0].rows;
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var rowIdxAttr = row.getAttribute('data-row-idx');
+      if (rowIdxAttr == null) continue; // group header
+      var rIdx = parseInt(rowIdxAttr, 10);
+      var combos = P.rows[rIdx].combos;
+      var avg = combos.avg_ret[idx];
+      var med = combos.med_ret[idx];
+      var win = combos.win_rate[idx];
+      var diff = +(avg - baselineAvg).toFixed(1);
+      var sAvg = row.querySelector('.p4-sel-avg');
+      var sMed = row.querySelector('.p4-sel-med');
+      var sWin = row.querySelector('.p4-sel-win');
+      var sDiff = row.querySelector('.p4-sel-diff');
+      if (sAvg) sAvg.innerHTML = p4ColorAvg(avg);
+      if (sMed) sMed.innerHTML = p4ColorAvg(med);
+      if (sWin) sWin.innerHTML = p4ColorWin(win);
+      if (sDiff) sDiff.innerHTML = row.getAttribute('data-baseline') === '1' ? '<span class="yellow">+0.0%</span>' : p4ColorDiff(diff);
+    }
+  }
+  function onPanel4Change() {
+    var tpSel = document.getElementById('p4-tp');
+    var slSel = document.getElementById('p4-sl');
+    if (!tpSel || !slSel) return;
+    var tp = parseFloat(tpSel.value);
+    var sl = parseFloat(slSel.value);
+    updatePanel4(tp, sl);
+    try { history.replaceState(null, '', '#p4=tp' + tp + ',sl' + sl); } catch (e) {}
+  }
+  function readPanel4Hash() {
+    if (!window.__PANEL_4) return;
+    var P = window.__PANEL_4;
+    var tp = P.default_tp;
+    var sl = P.default_sl;
+    var m = (location.hash || '').match(/p4=tp([0-9.]+),sl([0-9.]+)/);
+    if (m) {
+      var ht = parseFloat(m[1]);
+      var hs = parseFloat(m[2]);
+      if (P.tp_levels.indexOf(ht) !== -1) tp = ht;
+      if (P.sl_levels.indexOf(hs) !== -1) sl = hs;
+    }
+    var tpSel = document.getElementById('p4-tp');
+    var slSel = document.getElementById('p4-sl');
+    if (tpSel) tpSel.value = String(tp);
+    if (slSel) slSel.value = String(sl);
+    updatePanel4(tp, sl);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', readPanel4Hash);
+  } else {
+    readPanel4Hash();
+  }
   </script>`;
 
-  const body = panel1Html + panel2Html + panel3Html + sortScript;
+  const body = panel1Html + panel2Html + panel3Html + panel4Html + panel4DataScript + sortScript;
   return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
 }
 
