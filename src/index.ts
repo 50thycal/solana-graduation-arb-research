@@ -1878,6 +1878,19 @@ async function main() {
         buy_pressure_whale_pct: number | null;
       };
 
+      // ── Panel 4 row type: RegimeRow + TP/SL checkpoints and fall-through column ──
+      type Panel4Row = RegimeRow & {
+        pct_t40: number | null;
+        pct_t50: number | null;
+        pct_t60: number | null;
+        pct_t90: number | null;
+        pct_t120: number | null;
+        pct_t150: number | null;
+        pct_t180: number | null;
+        pct_t240: number | null;
+        // pct_t300 already on RegimeRow (number, non-null for eligible rows)
+      };
+
       type FilterDef = {
         name: string;
         group: string;
@@ -2272,6 +2285,127 @@ async function main() {
         ...runFilterRegime(f.predicate),
       }));
 
+      // ── Panel 4: dynamic TP/SL EV simulator ──
+      // Constants MUST mirror simulateWithTP at src/index.ts:1283-1359 exactly.
+      const PANEL_4_SL_GAP_PENALTY = 0.20;
+      const PANEL_4_TP_GAP_PENALTY = 0.10;
+      const PANEL_4_CHECKPOINTS = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
+      const PANEL_4_TP_GRID = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150] as const;
+      const PANEL_4_SL_GRID = [3, 4, 5, 7.5, 10, 12.5, 15, 20, 25, 30] as const;
+      const PANEL_4_DEFAULT_TP = 30;
+      const PANEL_4_DEFAULT_SL = 10;
+      const PANEL_4_MIN_N_FOR_OPTIMUM = 30;
+      const PANEL_4_MIN_TP_HITS_FOR_OPTIMUM = 3;
+
+      // Single load: all eligible rows for Panel 4.
+      // Stricter than regimeRows: also guards against pct_t30 <= -99 (division pathology).
+      const panel4Rows = db.prepare(`
+        SELECT
+          created_at, label,
+          pct_t30, pct_t40, pct_t50, pct_t60, pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
+          COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT_V2}) as cost_pct,
+          bc_velocity_sol_per_min, token_age_seconds, holder_count, top5_wallet_pct,
+          dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
+          monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
+          early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
+          buy_pressure_whale_pct
+        FROM graduation_momentum
+        WHERE label IS NOT NULL
+          AND pct_t30 IS NOT NULL
+          AND pct_t30 > -99
+          AND pct_t300 IS NOT NULL
+      `).all() as Panel4Row[];
+
+      // Simulate one token at one (tp, sl). Byte-for-byte mirror of simulateWithTP.
+      // Returns { ret, tpHit } — ret is already cost-adjusted.
+      const simulateInMemory = (r: Panel4Row, tp: number, sl: number): { ret: number; tpHit: boolean } => {
+        const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - sl / 100) - 1) * 100;
+        const tpLevelPct   = ((1 + r.pct_t30 / 100) * (1 + tp / 100) - 1) * 100;
+        for (const cp of PANEL_4_CHECKPOINTS) {
+          const v = r[cp];
+          if (v == null) continue;
+          if (v <= stopLevelPct) return { ret: -(sl * (1 + PANEL_4_SL_GAP_PENALTY)) - r.cost_pct, tpHit: false };
+          if (v >= tpLevelPct)   return { ret:  (tp * (1 - PANEL_4_TP_GAP_PENALTY)) - r.cost_pct, tpHit: true };
+        }
+        // Fall-through: exit at T+300 (non-null by eligibility predicate)
+        const fallRet = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100 - r.cost_pct;
+        return { ret: fallRet, tpHit: false };
+      };
+
+      const runFilterPanel4 = (predicate: (r: Panel4Row) => boolean) => {
+        const filtered = panel4Rows.filter(predicate);
+        const n = filtered.length;
+        const comboCount = PANEL_4_TP_GRID.length * PANEL_4_SL_GRID.length;
+        const avgRet = new Array<number>(comboCount).fill(0);
+        const medRet = new Array<number>(comboCount).fill(0);
+        const winRate = new Array<number>(comboCount).fill(0);
+        let optimal: { tp: number; sl: number; avg_ret: number; win_rate: number } | null = null;
+
+        if (n === 0) {
+          return { n: 0, combos: { avg_ret: avgRet, med_ret: medRet, win_rate: winRate }, optimal };
+        }
+
+        const tpHits = new Array<number>(comboCount).fill(0);
+
+        for (let ti = 0; ti < PANEL_4_TP_GRID.length; ti++) {
+          for (let si = 0; si < PANEL_4_SL_GRID.length; si++) {
+            const tp = PANEL_4_TP_GRID[ti];
+            const sl = PANEL_4_SL_GRID[si];
+            const returns: number[] = new Array(n);
+            let tpHit = 0;
+            let wins = 0;
+            let sum = 0;
+            for (let k = 0; k < n; k++) {
+              const out = simulateInMemory(filtered[k], tp, sl);
+              returns[k] = out.ret;
+              if (out.tpHit) tpHit++;
+              if (out.ret > 0) wins++;
+              sum += out.ret;
+            }
+            const sorted = returns.slice().sort((a, b) => a - b);
+            const median = sorted[Math.floor(n / 2)];
+            const idx = ti * PANEL_4_SL_GRID.length + si;
+            avgRet[idx] = +(sum / n).toFixed(1);
+            medRet[idx] = +median.toFixed(1);
+            winRate[idx] = Math.round(wins / n * 100);
+            tpHits[idx] = tpHit;
+          }
+        }
+
+        // Find optimal: max avg_ret among combos with tp_hit >= 3, gated by filter n >= 30
+        if (n >= PANEL_4_MIN_N_FOR_OPTIMUM) {
+          let bestIdx = -1;
+          let bestAvg = -Infinity;
+          for (let i = 0; i < comboCount; i++) {
+            if (tpHits[i] < PANEL_4_MIN_TP_HITS_FOR_OPTIMUM) continue;
+            if (avgRet[i] > bestAvg) { bestAvg = avgRet[i]; bestIdx = i; }
+          }
+          if (bestIdx !== -1) {
+            const ti = Math.floor(bestIdx / PANEL_4_SL_GRID.length);
+            const si = bestIdx % PANEL_4_SL_GRID.length;
+            optimal = {
+              tp: PANEL_4_TP_GRID[ti],
+              sl: PANEL_4_SL_GRID[si],
+              avg_ret: avgRet[bestIdx],
+              win_rate: winRate[bestIdx],
+            };
+          }
+        }
+
+        return { n, combos: { avg_ret: avgRet, med_ret: medRet, win_rate: winRate }, optimal };
+      };
+
+      const baseline4 = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterPanel4(() => true),
+      };
+      const filters4 = PANEL_1_FILTERS.map(f => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterPanel4(f.predicate as (r: Panel4Row) => boolean),
+      }));
+
       const filterV2Data = {
         generated_at: new Date().toISOString(),
         panel1: {
@@ -2307,6 +2441,32 @@ async function main() {
           })),
           baseline: baseline3,
           filters: filters3,
+          flags: {
+            low_n_threshold: 20,
+            strong_n_threshold: 100,
+          },
+        },
+        panel4: {
+          title: 'TP/SL EV Simulator — T+30 Entry, User-Selectable TP/SL + Per-Filter Optimum',
+          description:
+            'Entry at T+30. Each row precomputes EV across a 12×10 (TP × SL) grid. Dropdowns above the table pick the active cell — all Sel* columns update in place. Opt* columns show the per-filter optimum (max avg return with ≥3 TP hits among combos, requires filter n ≥ 30). Mirrors simulateWithTP (src/index.ts:1283) exactly: SL 20% adverse gap, TP 10% adverse gap, per-token round_trip_slippage_pct with 3% fallback, null pct_t300 excluded via eligibility.',
+          grid: {
+            tp_levels: PANEL_4_TP_GRID,
+            sl_levels: PANEL_4_SL_GRID,
+            default_tp: PANEL_4_DEFAULT_TP,
+            default_sl: PANEL_4_DEFAULT_SL,
+          },
+          constants: {
+            sl_gap_penalty_pct: PANEL_4_SL_GAP_PENALTY * 100,
+            tp_gap_penalty_pct: PANEL_4_TP_GAP_PENALTY * 100,
+            cost_pct_fallback: ROUND_TRIP_COST_PCT_V2,
+            checkpoints: PANEL_4_CHECKPOINTS,
+            fall_through_column: 'pct_t300',
+            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
+            min_tp_hits_for_optimum: PANEL_4_MIN_TP_HITS_FOR_OPTIMUM,
+          },
+          baseline: baseline4,
+          filters: filters4,
           flags: {
             low_n_threshold: 20,
             strong_n_threshold: 100,
