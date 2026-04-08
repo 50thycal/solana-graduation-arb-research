@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
+  { path: '/filter-analysis-v2', label: 'Filters V2' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/health', label: 'Health' },
@@ -53,6 +54,15 @@ const STYLES = `
   .json-toggle summary:hover{background:#334155}
   .json-toggle pre{margin:0;padding:12px;white-space:pre-wrap;word-break:break-all;font-size:11px;max-height:600px;overflow-y:auto;background:#111}
   .section-sep{border:none;border-top:1px solid #333;margin:20px 0}
+  /* V2 filter page row flags */
+  tr.row-low-n td{opacity:.45}
+  tr.row-low-n td .lowN{color:#f59e0b;font-size:10px;margin-left:6px;font-style:italic}
+  tr.row-strong-n td{background:#162033}
+  tr.row-baseline td{background:#1f2a44;font-weight:600;border-top:2px solid #3b82f6;border-bottom:2px solid #3b82f6}
+  tr.row-group-header td{background:#0f0f1a;color:#60a5fa;font-weight:600;font-size:11px;padding:8px;letter-spacing:.5px;text-transform:uppercase}
+  th.sortable{cursor:pointer;user-select:none}
+  th.sortable:hover{background:#334155}
+  th.sortable .arrow{font-size:10px;color:#64748b;margin-left:4px}
 `;
 
 function nav(currentPath: string): string {
@@ -849,6 +859,153 @@ function simulateEntryAtTime(
   }
   if (count === 0) return { n: 0, avg_return: 0, win_rate: 0 };
   return { n: count, avg_return: +(total / count).toFixed(2), win_rate: +(wins / count * 100).toFixed(1) };
+}
+
+// ── FILTER ANALYSIS V2 ───────────────────────────────────────────────────
+// Panel 1: Single-feature filter comparison.
+// Each row shows label distribution after applying ONE filter, normalized
+// for null data (n_applicable). Includes a baseline "no filter" row at top.
+
+type FilterV2Row = {
+  filter: string;
+  group: string;
+  n: number;
+  pump: number;
+  dump: number;
+  stable: number;
+  win_rate_pct: number | null;
+  pump_dump_ratio: number | null;
+};
+
+function pdRatioCell(ratio: number | null): string {
+  if (ratio === null) return '<span class="yellow">—</span>';
+  // Color logic: >2.0 strong asymmetry (green), >1.0 positive (lighter green),
+  // 1.0 even (yellow), <1.0 negative (red)
+  let cls = 'red';
+  if (ratio >= 2.0) cls = 'green';
+  else if (ratio >= 1.5) cls = 'green';
+  else if (ratio >= 1.0) cls = 'yellow';
+  return `<span class="${cls}">${ratio.toFixed(2)}</span>`;
+}
+
+function v2WinRateCell(val: number | null): string {
+  if (val === null) return '<span class="yellow">—</span>';
+  const cls = val >= 50 ? 'green' : val >= 40 ? 'yellow' : 'red';
+  return `<span class="${cls}">${val}%</span>`;
+}
+
+function v2RowClass(n: number, lowN: number, strongN: number): string {
+  if (n < lowN) return 'row-low-n';
+  if (n >= strongN) return 'row-strong-n';
+  return '';
+}
+
+function v2RowHtml(r: FilterV2Row, lowN: number, strongN: number, isBaseline = false): string {
+  const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
+  const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+  return `<tr class="${cls}">
+    <td>${r.filter}${nLabel}</td>
+    <td>${r.n}</td>
+    <td class="green">${r.pump}</td>
+    <td class="red">${r.dump}</td>
+    <td class="yellow">${r.stable}</td>
+    <td>${v2WinRateCell(r.win_rate_pct)}</td>
+    <td>${pdRatioCell(r.pump_dump_ratio)}</td>
+  </tr>`;
+}
+
+export function renderFilterV2Html(data: any): string {
+  const panel1 = data.panel1;
+  const baseline: FilterV2Row = panel1.baseline;
+  const filters: FilterV2Row[] = panel1.filters || [];
+  const lowN = panel1.flags?.low_n_threshold ?? 20;
+  const strongN = panel1.flags?.strong_n_threshold ?? 100;
+
+  // Group filters by family for visual grouping
+  const groups = new Map<string, FilterV2Row[]>();
+  for (const f of filters) {
+    if (!groups.has(f.group)) groups.set(f.group, []);
+    groups.get(f.group)!.push(f);
+  }
+
+  const baselineRow = v2RowHtml(baseline, lowN, strongN, true);
+
+  const groupRows: string[] = [];
+  for (const [groupName, rows] of groups) {
+    groupRows.push(`<tr class="row-group-header"><td colspan="7">${groupName}</td></tr>`);
+    for (const r of rows) groupRows.push(v2RowHtml(r, lowN, strongN, false));
+  }
+
+  const tableHtml = `
+  <table id="panel1-table">
+    <thead>
+      <tr>
+        <th class="sortable" onclick="sortPanel1(0,'str')">Filter <span class="arrow">⇅</span></th>
+        <th class="sortable" onclick="sortPanel1(1,'num')">n (applicable) <span class="arrow">⇅</span></th>
+        <th class="sortable" onclick="sortPanel1(2,'num')">PUMP <span class="arrow">⇅</span></th>
+        <th class="sortable" onclick="sortPanel1(3,'num')">DUMP <span class="arrow">⇅</span></th>
+        <th class="sortable" onclick="sortPanel1(4,'num')">STABLE <span class="arrow">⇅</span></th>
+        <th class="sortable" onclick="sortPanel1(5,'num')">Win % <span class="arrow">⇅</span></th>
+        <th class="sortable" onclick="sortPanel1(6,'num')">PUMP:DUMP <span class="arrow">⇅</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      ${baselineRow}
+      ${groupRows.join('\n      ')}
+    </tbody>
+  </table>`;
+
+  const legend = `
+  <div class="desc" style="margin-top:10px">
+    <strong>Legend:</strong>
+    <span style="margin-left:8px">Baseline row highlighted blue</span> ·
+    <span style="color:#f59e0b">low n &lt; ${lowN} (greyed)</span> ·
+    <span style="color:#60a5fa">strong n ≥ ${strongN} (highlighted)</span>
+    <br>
+    <strong>PUMP:DUMP color scale:</strong>
+    <span class="red" style="margin-left:6px">&lt; 1.0 (more losers)</span> ·
+    <span class="yellow">1.0 - 1.5 (even/slight edge)</span> ·
+    <span class="green">≥ 1.5 (strong edge)</span>
+  </div>`;
+
+  const panel1Html = `
+  <div class="card">
+    <h2>Panel 1 — ${panel1.title}</h2>
+    <div class="desc">${panel1.description}</div>
+    ${tableHtml}
+    ${legend}
+  </div>`;
+
+  const sortScript = `
+  <script>
+  function sortPanel1(col, type) {
+    var table = document.getElementById('panel1-table');
+    var tbody = table.tBodies[0];
+    // Collect rows EXCLUDING baseline (first row) and group headers
+    var allRows = Array.from(tbody.rows);
+    var baselineRow = allRows[0];
+    var dataRows = allRows.slice(1).filter(function(r){ return !r.classList.contains('row-group-header'); });
+    var dir = table.getAttribute('data-sort-dir') === 'asc' ? 'desc' : 'asc';
+    table.setAttribute('data-sort-dir', dir);
+    dataRows.sort(function(a, b) {
+      var av = a.cells[col].textContent.trim().replace('%','').replace('(low n)','').trim();
+      var bv = b.cells[col].textContent.trim().replace('%','').replace('(low n)','').trim();
+      if (type === 'num') {
+        var an = av === '—' ? -Infinity : parseFloat(av);
+        var bn = bv === '—' ? -Infinity : parseFloat(bv);
+        return dir === 'asc' ? an - bn : bn - an;
+      }
+      return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+    // Clear and re-add: baseline first, then sorted data rows (group headers removed in sort mode)
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    tbody.appendChild(baselineRow);
+    dataRows.forEach(function(r){ tbody.appendChild(r); });
+  }
+  </script>`;
+
+  const body = panel1Html + sortScript;
+  return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
 }
 
 export function renderPricePathHtml(db: Database.Database): string {

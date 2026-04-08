@@ -4,7 +4,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { getGraduationCount } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html } from './utils/html-renderer';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'main' });
 
@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
+  { path: '/filter-analysis-v2', label: 'Filters V2' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/health', label: 'Health' },
@@ -1840,6 +1841,170 @@ async function main() {
         res.send(renderFilterHtml(filterData));
       } else {
         res.json(filterData);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── FILTER ANALYSIS V2 ───────────────────────────────────────────────────
+  // Panel 1: Single-feature filter comparison. Each row shows how many tokens
+  // (PUMP/DUMP/STABLE) remain after applying that one filter, normalized for
+  // null data (n_applicable = tokens with non-null feature value AND label).
+  app.get('/filter-analysis-v2', (req, res) => {
+    try {
+      type FilterDef = {
+        name: string;
+        group: string;
+        column: string;        // column to NOT NULL check (or '' for baseline)
+        where: string;         // SQL condition (or '' for baseline)
+      };
+
+      const PANEL_1_FILTERS: FilterDef[] = [
+        // ── Bonding Curve Velocity ──
+        { name: 'vel < 5 sol/min',        group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 5' },
+        { name: 'vel 5-10 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 10' },
+        { name: 'vel 5-20 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20' },
+        { name: 'vel 10-20 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20' },
+        { name: 'vel < 20 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 20' },
+        { name: 'vel < 50 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 50' },
+        { name: 'vel 20-50 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 20 AND bc_velocity_sol_per_min < 50' },
+        { name: 'vel 50-200 sol/min',     group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 50 AND bc_velocity_sol_per_min < 200' },
+        { name: 'vel > 200 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 200' },
+
+        // ── Bonding Curve Age ──
+        { name: 'bc_age < 10 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds < 600' },
+        { name: 'bc_age > 10 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 600' },
+        { name: 'bc_age > 30 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 1800' },
+        { name: 'bc_age > 1 hr',          group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 3600' },
+        { name: 'bc_age > 1 day',         group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 86400' },
+
+        // ── Holders ──
+        { name: 'holders >= 5',           group: 'Holders', column: 'holder_count', where: 'holder_count >= 5' },
+        { name: 'holders >= 10',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 10' },
+        { name: 'holders >= 15',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 15' },
+        { name: 'holders >= 18',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 18' },
+
+        // ── Top 5 Concentration ──
+        { name: 'top5 < 10%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 10' },
+        { name: 'top5 < 15%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 15' },
+        { name: 'top5 < 20%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 20' },
+        { name: 'top5 > 15%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct > 15' },
+
+        // ── Dev Wallet ──
+        { name: 'dev < 3%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct < 3' },
+        { name: 'dev < 5%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct < 5' },
+        { name: 'dev > 5%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct > 5' },
+
+        // ── SOL Raised ──
+        { name: 'sol >= 70',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 70' },
+        { name: 'sol >= 80',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 80' },
+        { name: 'sol >= 84',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 84' },
+
+        // ── Liquidity at T+30 ──
+        { name: 'liquidity > 50 SOL',     group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 50' },
+        { name: 'liquidity > 100 SOL',    group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 100' },
+        { name: 'liquidity > 150 SOL',    group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 150' },
+
+        // ── Volatility (0-30s) ──
+        { name: 'volatility < 10%',       group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 < 10' },
+        { name: 'volatility 10-30%',      group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 10 AND volatility_0_30 < 30' },
+        { name: 'volatility 30-60%',      group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 30 AND volatility_0_30 < 60' },
+        { name: 'volatility > 60%',       group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 60' },
+
+        // ── Path Shape: Monotonicity ──
+        { name: 'mono > 0.33',            group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.33' },
+        { name: 'mono > 0.5',             group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.5' },
+        { name: 'mono > 0.66',            group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.66' },
+
+        // ── Path Shape: Drawdown ──
+        { name: 'max_dd > -10% (shallow)',group: 'Path: Drawdown', column: 'max_drawdown_0_30', where: 'max_drawdown_0_30 > -10' },
+        { name: 'max_dd > -20%',          group: 'Path: Drawdown', column: 'max_drawdown_0_30', where: 'max_drawdown_0_30 > -20' },
+
+        // ── Path Shape: Other ──
+        { name: 'dip_and_recover = 1',    group: 'Path: Other', column: 'dip_and_recover_flag', where: 'dip_and_recover_flag = 1' },
+        { name: 'acceleration > 0',       group: 'Path: Other', column: 'acceleration_t30', where: 'acceleration_t30 > 0' },
+        { name: 'front-loaded (early>late)',  group: 'Path: Other', column: 'early_vs_late_0_30', where: 'early_vs_late_0_30 > 0' },
+        { name: 'back-loaded (late>early)',   group: 'Path: Other', column: 'early_vs_late_0_30', where: 'early_vs_late_0_30 < 0' },
+
+        // ── Buy Pressure (T+0 to T+30) ──
+        { name: 'buy_ratio > 0.5',        group: 'Buy Pressure', column: 'buy_pressure_buy_ratio', where: 'buy_pressure_buy_ratio > 0.5' },
+        { name: 'buy_ratio > 0.6',        group: 'Buy Pressure', column: 'buy_pressure_buy_ratio', where: 'buy_pressure_buy_ratio > 0.6' },
+        { name: 'unique_buyers >= 5',     group: 'Buy Pressure', column: 'buy_pressure_unique_buyers', where: 'buy_pressure_unique_buyers >= 5' },
+        { name: 'unique_buyers >= 10',    group: 'Buy Pressure', column: 'buy_pressure_unique_buyers', where: 'buy_pressure_unique_buyers >= 10' },
+        { name: 'whale_pct < 30%',        group: 'Buy Pressure', column: 'buy_pressure_whale_pct', where: 'buy_pressure_whale_pct < 30' },
+        { name: 'whale_pct < 50%',        group: 'Buy Pressure', column: 'buy_pressure_whale_pct', where: 'buy_pressure_whale_pct < 50' },
+
+        // ── T+30 Entry Gate ──
+        { name: 't30 > 0%',                       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 > 0' },
+        { name: 't30 between +5% and +50%',       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 5 AND pct_t30 <= 50' },
+        { name: 't30 between +5% and +100%',      group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 5 AND pct_t30 <= 100' },
+        { name: 't30 between +10% and +50%',      group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 10 AND pct_t30 <= 50' },
+      ];
+
+      // Helper: run a single filter query and return normalized stats
+      const runFilterStats = (column: string, whereCond: string) => {
+        const baseWhere = 'label IS NOT NULL';
+        const colCheck = column ? `${column} IS NOT NULL` : '';
+        const cond = whereCond || '';
+        const fullWhere = [baseWhere, colCheck, cond].filter(Boolean).join(' AND ');
+        const row = db.prepare(`
+          SELECT
+            COUNT(*) as n,
+            SUM(CASE WHEN label='PUMP'   THEN 1 ELSE 0 END) as pump,
+            SUM(CASE WHEN label='DUMP'   THEN 1 ELSE 0 END) as dump,
+            SUM(CASE WHEN label='STABLE' THEN 1 ELSE 0 END) as stable
+          FROM graduation_momentum
+          WHERE ${fullWhere}
+        `).get() as { n: number; pump: number; dump: number; stable: number };
+        const winRate = row.n > 0 ? +(row.pump / row.n * 100).toFixed(1) : null;
+        const pumpDump = row.dump > 0 ? +(row.pump / row.dump).toFixed(2) : null;
+        return {
+          n: row.n,
+          pump: row.pump,
+          dump: row.dump,
+          stable: row.stable,
+          win_rate_pct: winRate,
+          pump_dump_ratio: pumpDump,
+        };
+      };
+
+      // Baseline: all labeled tokens, no filter
+      const baselineStats = runFilterStats('', '');
+      const baseline = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...baselineStats,
+      };
+
+      // Run all panel 1 filters
+      const filters = PANEL_1_FILTERS.map(f => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterStats(f.column, f.where),
+      }));
+
+      const filterV2Data = {
+        generated_at: new Date().toISOString(),
+        panel1: {
+          title: 'Single-Feature Filter Comparison',
+          description:
+            'Each row applies ONE filter to the labeled dataset. n is normalized — only tokens where the feature has a non-null value are counted, so monotonicity rows have smaller n than velocity rows. PUMP:DUMP ratio shows asymmetry: >1.0 = more winners than losers, >2.0 = strong asymmetry.',
+          baseline,
+          filters,
+          flags: {
+            low_n_threshold: 20,
+            strong_n_threshold: 100,
+          },
+        },
+      };
+
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderFilterV2Html(filterV2Data));
+      } else {
+        res.json(filterV2Data);
       }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
