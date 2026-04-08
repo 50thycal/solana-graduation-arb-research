@@ -1969,6 +1969,109 @@ async function main() {
         };
       };
 
+      // ── Panel 2 helpers: T+30-anchored MAE / MFE / Final return percentiles ──
+
+      // Linear-interpolation percentile. `sorted` must be ascending.
+      const percentile = (sorted: number[], p: number): number | null => {
+        if (sorted.length === 0) return null;
+        if (sorted.length === 1) return sorted[0];
+        const idx = (p / 100) * (sorted.length - 1);
+        const lo = Math.floor(idx);
+        const hi = Math.ceil(idx);
+        if (lo === hi) return sorted[lo];
+        return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+      };
+
+      // Snapshot columns scanned for MAE/MFE (T+30 through T+300 inclusive)
+      const SNAPSHOT_COLS = [
+        'price_t30', 'price_t35', 'price_t40', 'price_t45', 'price_t50', 'price_t55', 'price_t60',
+        'price_t90', 'price_t120', 'price_t150', 'price_t180', 'price_t240', 'price_t300',
+      ];
+
+      type SnapshotRow = Record<string, number | null>;
+
+      const runFilterPercentiles = (column: string, whereCond: string) => {
+        const baseWhere = "label IS NOT NULL AND price_t30 IS NOT NULL AND price_t30 > 0 AND price_t300 IS NOT NULL AND price_t300 > 0";
+        const colCheck = column ? `${column} IS NOT NULL` : '';
+        const cond = whereCond || '';
+        const fullWhere = [baseWhere, colCheck, cond].filter(Boolean).join(' AND ');
+        const rows = db.prepare(`
+          SELECT ${SNAPSHOT_COLS.join(', ')}
+          FROM graduation_momentum
+          WHERE ${fullWhere}
+        `).all() as SnapshotRow[];
+
+        const maes: number[] = [];
+        const mfes: number[] = [];
+        const finals: number[] = [];
+
+        for (const r of rows) {
+          const t30 = r.price_t30;
+          const t300 = r.price_t300;
+          if (t30 == null || t30 <= 0 || t300 == null || t300 <= 0) continue;
+          // Collect non-null, positive prices in the t30..t300 window
+          const window: number[] = [];
+          for (const c of SNAPSHOT_COLS) {
+            const v = r[c];
+            if (v != null && v > 0) window.push(v);
+          }
+          if (window.length < 2) continue;
+          const minP = Math.min(...window);
+          const maxP = Math.max(...window);
+          maes.push((minP / t30 - 1) * 100);
+          mfes.push((maxP / t30 - 1) * 100);
+          finals.push((t300 / t30 - 1) * 100);
+        }
+
+        const n = finals.length;
+        const round = (v: number | null) => v == null ? null : +v.toFixed(1);
+        const round2 = (v: number | null) => v == null ? null : +v.toFixed(2);
+
+        if (n === 0) {
+          return {
+            n: 0,
+            mae_p10: null, mae_p25: null, mae_p50: null, mae_p75: null, mae_p90: null,
+            mfe_p10: null, mfe_p25: null, mfe_p50: null, mfe_p75: null, mfe_p90: null,
+            final_p10: null, final_p25: null, final_p50: null, final_p75: null, final_p90: null,
+            final_mean: null, final_stddev: null, sharpe_ish: null,
+          };
+        }
+
+        const maesSorted = [...maes].sort((a, b) => a - b);
+        const mfesSorted = [...mfes].sort((a, b) => a - b);
+        const finalsSorted = [...finals].sort((a, b) => a - b);
+
+        const mean = finals.reduce((s, v) => s + v, 0) / n;
+        let stddev: number | null = null;
+        if (n >= 2) {
+          const variance = finals.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+          stddev = Math.sqrt(variance);
+        }
+        const sharpe = stddev != null && stddev > 0 ? mean / stddev : null;
+
+        return {
+          n,
+          mae_p10: round(percentile(maesSorted, 10)),
+          mae_p25: round(percentile(maesSorted, 25)),
+          mae_p50: round(percentile(maesSorted, 50)),
+          mae_p75: round(percentile(maesSorted, 75)),
+          mae_p90: round(percentile(maesSorted, 90)),
+          mfe_p10: round(percentile(mfesSorted, 10)),
+          mfe_p25: round(percentile(mfesSorted, 25)),
+          mfe_p50: round(percentile(mfesSorted, 50)),
+          mfe_p75: round(percentile(mfesSorted, 75)),
+          mfe_p90: round(percentile(mfesSorted, 90)),
+          final_p10: round(percentile(finalsSorted, 10)),
+          final_p25: round(percentile(finalsSorted, 25)),
+          final_p50: round(percentile(finalsSorted, 50)),
+          final_p75: round(percentile(finalsSorted, 75)),
+          final_p90: round(percentile(finalsSorted, 90)),
+          final_mean: round(mean),
+          final_stddev: round(stddev),
+          sharpe_ish: round2(sharpe),
+        };
+      };
+
       // Baseline: all labeled tokens, no filter
       const baselineStats = runFilterStats('', '');
       const baseline = {
@@ -1984,6 +2087,18 @@ async function main() {
         ...runFilterStats(f.column, f.where),
       }));
 
+      // ── Panel 2: T+30-anchored MAE/MFE/Final percentiles + Sharpe-ish ──
+      const baseline2 = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterPercentiles('', ''),
+      };
+      const filters2 = PANEL_1_FILTERS.map(f => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterPercentiles(f.column, f.where),
+      }));
+
       const filterV2Data = {
         generated_at: new Date().toISOString(),
         panel1: {
@@ -1992,6 +2107,17 @@ async function main() {
             'Each row applies ONE filter to the labeled dataset. n is normalized — only tokens where the feature has a non-null value are counted, so monotonicity rows have smaller n than velocity rows. PUMP:DUMP ratio shows asymmetry: >1.0 = more winners than losers, >2.0 = strong asymmetry.',
           baseline,
           filters,
+          flags: {
+            low_n_threshold: 20,
+            strong_n_threshold: 100,
+          },
+        },
+        panel2: {
+          title: 'T+30-Anchored Return Percentiles (MAE / MFE / Final)',
+          description:
+            'Percentiles of MAE, MFE, and final return — all anchored from price_t30 (entry price). MAE = worst dip from entry between T+30 and T+300 (≤ 0). MFE = best peak from entry in same window (≥ 0). Final = (price_t300/price_t30 - 1). Sharpe-ish = mean(final)/stddev(final), single-number "profitable AND consistent" score. Tokens missing price_t30 or price_t300 are excluded, so n may be slightly smaller than Panel 1.',
+          baseline: baseline2,
+          filters: filters2,
           flags: {
             low_n_threshold: 20,
             strong_n_threshold: 100,

@@ -914,6 +914,79 @@ function v2RowHtml(r: FilterV2Row, lowN: number, strongN: number, isBaseline = f
   </tr>`;
 }
 
+// ── Panel 2 helpers: T+30-anchored MAE/MFE/Final percentiles + Sharpe-ish ──
+
+type FilterV2PctRow = {
+  filter: string;
+  group: string;
+  n: number;
+  mae_p10: number | null; mae_p25: number | null; mae_p50: number | null;
+  mae_p75: number | null; mae_p90: number | null;
+  mfe_p10: number | null; mfe_p25: number | null; mfe_p50: number | null;
+  mfe_p75: number | null; mfe_p90: number | null;
+  final_p10: number | null; final_p25: number | null; final_p50: number | null;
+  final_p75: number | null; final_p90: number | null;
+  final_mean: number | null;
+  final_stddev: number | null;
+  sharpe_ish: number | null;
+};
+
+// Format a percentage value with explicit sign (+12% / -22%)
+function fmtPct(v: number | null): string {
+  if (v == null) return '—';
+  const sign = v > 0 ? '+' : '';
+  return `${sign}${v.toFixed(1)}%`;
+}
+
+// MAE cell — values are ≤ 0. Less negative = better.
+// Thresholds: > -15 green, -15..-30 yellow, < -30 red
+function maeCell(v: number | null): string {
+  if (v == null) return '<span class="yellow">—</span>';
+  const cls = v > -15 ? 'green' : v > -30 ? 'yellow' : 'red';
+  return `<span class="${cls}">${fmtPct(v)}</span>`;
+}
+
+// MFE cell — values are ≥ 0. More positive = better.
+// Thresholds: > +30 green, +10..+30 yellow, < +10 red
+function mfeCell(v: number | null): string {
+  if (v == null) return '<span class="yellow">—</span>';
+  const cls = v > 30 ? 'green' : v > 10 ? 'yellow' : 'red';
+  return `<span class="${cls}">${fmtPct(v)}</span>`;
+}
+
+// Final return cell — symmetric. Thresholds: > +5 green, -5..+5 yellow, < -5 red
+function finalCell(v: number | null): string {
+  if (v == null) return '<span class="yellow">—</span>';
+  const cls = v > 5 ? 'green' : v > -5 ? 'yellow' : 'red';
+  return `<span class="${cls}">${fmtPct(v)}</span>`;
+}
+
+// Sharpe-ish cell — unitless ratio, higher = better.
+// Thresholds: > 0.2 green, 0..0.2 yellow, < 0 red
+function sharpeCell(v: number | null): string {
+  if (v == null) return '<span class="yellow">—</span>';
+  const cls = v > 0.2 ? 'green' : v > 0 ? 'yellow' : 'red';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(2)}</span>`;
+}
+
+function v2PctRowHtml(r: FilterV2PctRow, lowN: number, strongN: number, isBaseline = false): string {
+  const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
+  const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+  return `<tr class="${cls}">
+    <td>${r.filter}${nLabel}</td>
+    <td>${r.n}</td>
+    <td>${maeCell(r.mae_p10)}</td>
+    <td>${maeCell(r.mae_p50)}</td>
+    <td>${mfeCell(r.mfe_p50)}</td>
+    <td>${mfeCell(r.mfe_p90)}</td>
+    <td>${finalCell(r.final_p10)}</td>
+    <td>${finalCell(r.final_p50)}</td>
+    <td>${finalCell(r.final_p90)}</td>
+    <td>${sharpeCell(r.sharpe_ish)}</td>
+  </tr>`;
+}
+
 export function renderFilterV2Html(data: any): string {
   const panel1 = data.panel1;
   const baseline: FilterV2Row = panel1.baseline;
@@ -976,10 +1049,84 @@ export function renderFilterV2Html(data: any): string {
     ${legend}
   </div>`;
 
+  // ── Panel 2 (T+30-anchored MAE/MFE/Final percentiles) ──
+  let panel2Html = '';
+  if (data.panel2) {
+    const panel2 = data.panel2;
+    const baseline2: FilterV2PctRow = panel2.baseline;
+    const filters2: FilterV2PctRow[] = panel2.filters || [];
+    const lowN2 = panel2.flags?.low_n_threshold ?? 20;
+    const strongN2 = panel2.flags?.strong_n_threshold ?? 100;
+
+    const groups2 = new Map<string, FilterV2PctRow[]>();
+    for (const f of filters2) {
+      if (!groups2.has(f.group)) groups2.set(f.group, []);
+      groups2.get(f.group)!.push(f);
+    }
+
+    const baselineRow2 = v2PctRowHtml(baseline2, lowN2, strongN2, true);
+    const groupRows2: string[] = [];
+    for (const [groupName, rows] of groups2) {
+      groupRows2.push(`<tr class="row-group-header"><td colspan="10">${groupName}</td></tr>`);
+      for (const r of rows) groupRows2.push(v2PctRowHtml(r, lowN2, strongN2, false));
+    }
+
+    const table2Html = `
+    <table id="panel2-table">
+      <thead>
+        <tr>
+          <th class="sortable" onclick="sortPanel2(0,'str')">Filter <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel2(1,'num')">n <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel2(2,'num')">MAE p10 <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel2(3,'num')">MAE p50 <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel2(4,'num')">MFE p50 <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel2(5,'num')">MFE p90 <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel2(6,'num')">Return p10 <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel2(7,'num')">Return p50 <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel2(8,'num')">Return p90 <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel2(9,'num')">Sharpe-ish <span class="arrow">⇅</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baselineRow2}
+        ${groupRows2.join('\n        ')}
+      </tbody>
+    </table>`;
+
+    const legend2 = `
+    <div class="desc" style="margin-top:10px">
+      <strong>Anchor:</strong> All percentiles are computed from <code>price_t30</code> (entry price), not graduation open.
+      <strong>Window:</strong> T+30 → T+300.
+      <br>
+      <strong>MAE</strong> (≤ 0): worst dip from entry. <strong>MFE</strong> (≥ 0): best peak from entry. <strong>Return</strong>: final (price_t300/price_t30 − 1).
+      <br>
+      <strong>Sharpe-ish</strong> = mean(final) / stddev(final). Single number capturing "profitable AND consistent." Sort by this column descending to surface tradeable cohorts.
+      <br>
+      <strong>Color scales:</strong>
+      <span class="green" style="margin-left:6px">MAE &gt; -15%</span>
+      <span class="yellow">-15% to -30%</span>
+      <span class="red">&lt; -30%</span> ·
+      <span class="green">MFE &gt; +30%</span>
+      <span class="yellow">+10% to +30%</span>
+      <span class="red">&lt; +10%</span> ·
+      <span class="green">Sharpe &gt; 0.2</span>
+      <span class="yellow">0 to 0.2</span>
+      <span class="red">&lt; 0</span>
+    </div>`;
+
+    panel2Html = `
+    <div class="card">
+      <h2>Panel 2 — ${panel2.title}</h2>
+      <div class="desc">${panel2.description}</div>
+      ${table2Html}
+      ${legend2}
+    </div>`;
+  }
+
   const sortScript = `
   <script>
-  function sortPanel1(col, type) {
-    var table = document.getElementById('panel1-table');
+  function v2GenericSort(tableId, col, type) {
+    var table = document.getElementById(tableId);
     var tbody = table.tBodies[0];
     // Collect rows EXCLUDING baseline (first row) and group headers
     var allRows = Array.from(tbody.rows);
@@ -988,8 +1135,8 @@ export function renderFilterV2Html(data: any): string {
     var dir = table.getAttribute('data-sort-dir') === 'asc' ? 'desc' : 'asc';
     table.setAttribute('data-sort-dir', dir);
     dataRows.sort(function(a, b) {
-      var av = a.cells[col].textContent.trim().replace('%','').replace('(low n)','').trim();
-      var bv = b.cells[col].textContent.trim().replace('%','').replace('(low n)','').trim();
+      var av = a.cells[col].textContent.trim().replace('%','').replace('(low n)','').replace('+','').trim();
+      var bv = b.cells[col].textContent.trim().replace('%','').replace('(low n)','').replace('+','').trim();
       if (type === 'num') {
         var an = av === '—' ? -Infinity : parseFloat(av);
         var bn = bv === '—' ? -Infinity : parseFloat(bv);
@@ -1002,9 +1149,11 @@ export function renderFilterV2Html(data: any): string {
     tbody.appendChild(baselineRow);
     dataRows.forEach(function(r){ tbody.appendChild(r); });
   }
+  function sortPanel1(col, type) { v2GenericSort('panel1-table', col, type); }
+  function sortPanel2(col, type) { v2GenericSort('panel2-table', col, type); }
   </script>`;
 
-  const body = panel1Html + sortScript;
+  const body = panel1Html + panel2Html + sortScript;
   return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
 }
 
