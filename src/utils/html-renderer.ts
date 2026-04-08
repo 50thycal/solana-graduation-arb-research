@@ -987,6 +987,74 @@ function v2PctRowHtml(r: FilterV2PctRow, lowN: number, strongN: number, isBaseli
   </tr>`;
 }
 
+// ── Panel 3 helpers: regime stability across time buckets ──
+
+type FilterV2RegimeBucket = {
+  n: number;
+  win_rate_pct: number | null;
+  avg_return_pct: number | null;
+};
+type FilterV2RegimeRow = {
+  filter: string;
+  group: string;
+  n: number;
+  buckets: FilterV2RegimeBucket[];
+  wr_std_dev: number | null;
+  stability: 'STABLE' | 'MODERATE' | 'CLUSTERED' | 'INSUFFICIENT';
+};
+
+// Per-bucket win rate cell — same thresholds as v2WinRateCell but null-tolerant
+function bucketWRCell(v: number | null): string {
+  if (v == null) return '<span class="yellow">—</span>';
+  const cls = v >= 50 ? 'green' : v >= 40 ? 'yellow' : 'red';
+  return `<span class="${cls}">${v}%</span>`;
+}
+
+// Per-bucket avg return cell — same thresholds as finalCell
+function bucketRetCell(v: number | null): string {
+  if (v == null) return '<span class="yellow">—</span>';
+  const cls = v > 5 ? 'green' : v > -5 ? 'yellow' : 'red';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(1)}%</span>`;
+}
+
+// Win-rate std dev cell — lower = more stable. Thresholds match Panel 3 stability label.
+function wrStdDevCell(v: number | null): string {
+  if (v == null) return '<span class="yellow">—</span>';
+  const cls = v < 8 ? 'green' : v < 15 ? 'yellow' : 'red';
+  return `<span class="${cls}">${v.toFixed(1)}</span>`;
+}
+
+// Stability label badge
+function stabilityCell(label: 'STABLE' | 'MODERATE' | 'CLUSTERED' | 'INSUFFICIENT'): string {
+  if (label === 'STABLE') return '<span class="green">STABLE</span>';
+  if (label === 'MODERATE') return '<span class="yellow">MODERATE</span>';
+  if (label === 'CLUSTERED') return '<span class="red">CLUSTERED</span>';
+  return '<span style="color:#64748b">INSUFFICIENT</span>';
+}
+
+function v2RegimeRowHtml(r: FilterV2RegimeRow, lowN: number, strongN: number, isBaseline = false): string {
+  const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
+  const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+  // Pad buckets array to PANEL_3_BUCKET_COUNT (4) so the row always has the same number of cells
+  const buckets = r.buckets.slice(0, 4);
+  while (buckets.length < 4) buckets.push({ n: 0, win_rate_pct: null, avg_return_pct: null });
+  return `<tr class="${cls}">
+    <td>${r.filter}${nLabel}</td>
+    <td>${r.n}</td>
+    <td>${bucketWRCell(buckets[0].win_rate_pct)}</td>
+    <td>${bucketRetCell(buckets[0].avg_return_pct)}</td>
+    <td>${bucketWRCell(buckets[1].win_rate_pct)}</td>
+    <td>${bucketRetCell(buckets[1].avg_return_pct)}</td>
+    <td>${bucketWRCell(buckets[2].win_rate_pct)}</td>
+    <td>${bucketRetCell(buckets[2].avg_return_pct)}</td>
+    <td>${bucketWRCell(buckets[3].win_rate_pct)}</td>
+    <td>${bucketRetCell(buckets[3].avg_return_pct)}</td>
+    <td>${wrStdDevCell(r.wr_std_dev)}</td>
+    <td>${stabilityCell(r.stability)}</td>
+  </tr>`;
+}
+
 export function renderFilterV2Html(data: any): string {
   const panel1 = data.panel1;
   const baseline: FilterV2Row = panel1.baseline;
@@ -1123,6 +1191,102 @@ export function renderFilterV2Html(data: any): string {
     </div>`;
   }
 
+  // ── Panel 3 (Regime Stability — time-bucketed WR + return) ──
+  let panel3Html = '';
+  if (data.panel3) {
+    const panel3 = data.panel3;
+    const baseline3: FilterV2RegimeRow = panel3.baseline;
+    const filters3: FilterV2RegimeRow[] = panel3.filters || [];
+    const lowN3 = panel3.flags?.low_n_threshold ?? 20;
+    const strongN3 = panel3.flags?.strong_n_threshold ?? 100;
+    const bucketWindows: { bucket: number; start_iso: string; end_iso: string }[] = panel3.bucket_windows || [];
+
+    const groups3 = new Map<string, FilterV2RegimeRow[]>();
+    for (const f of filters3) {
+      if (!groups3.has(f.group)) groups3.set(f.group, []);
+      groups3.get(f.group)!.push(f);
+    }
+
+    const baselineRow3 = v2RegimeRowHtml(baseline3, lowN3, strongN3, true);
+    const groupRows3: string[] = [];
+    for (const [groupName, rows] of groups3) {
+      groupRows3.push(`<tr class="row-group-header"><td colspan="12">${groupName}</td></tr>`);
+      for (const r of rows) groupRows3.push(v2RegimeRowHtml(r, lowN3, strongN3, false));
+    }
+
+    // Bucket window legend (above the table)
+    const shortDate = (iso: string) => {
+      try { return new Date(iso).toISOString().slice(0, 10); } catch { return iso; }
+    };
+    const windowLegend = bucketWindows.length === 0
+      ? '<div class="desc" style="margin-top:6px"><em>No bucket windows available.</em></div>'
+      : `<div class="desc" style="margin-top:6px">
+          <strong>Bucket windows:</strong>
+          ${bucketWindows.map(b => `<span style="margin-right:10px">B${b.bucket}: ${shortDate(b.start_iso)} → ${shortDate(b.end_iso)}</span>`).join(' · ')}
+        </div>`;
+
+    const table3Html = `
+    <table id="panel3-table">
+      <thead>
+        <tr>
+          <th class="sortable" onclick="sortPanel3(0,'str')">Filter <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(1,'num')">n <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(2,'num')">B1 WR <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(3,'num')">B1 Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(4,'num')">B2 WR <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(5,'num')">B2 Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(6,'num')">B3 WR <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(7,'num')">B3 Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(8,'num')">B4 WR <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(9,'num')">B4 Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(10,'num')">WR StdDev <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel3(11,'str')">Stability <span class="arrow">⇅</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baselineRow3}
+        ${groupRows3.join('\n        ')}
+      </tbody>
+    </table>`;
+
+    const legend3 = `
+    <div class="desc" style="margin-top:10px">
+      <strong>Bucketing:</strong> Global time quartiles. The full eligible cohort (label + price_t30 + price_t300 present) is sorted by <code>created_at</code> and split into 4 equal-sized chunks. Every filter row uses the same B1–B4 windows so cells are directly comparable across rows.
+      <br>
+      <strong>Per-bucket return formula:</strong> <code>((1 + pct_t300/100) / (1 + pct_t30/100) − 1) × 100 − cost_pct</code> where <code>cost_pct</code> is per-token measured slippage (3% fallback). Same formula as the existing regime_analysis.
+      <br>
+      <strong>WR StdDev:</strong> Population std dev of the four bucket win rates (only buckets with n ≥ 5 contribute). Lower = edge persists across regimes.
+      <br>
+      <strong>Stability label:</strong>
+      <span class="green" style="margin-left:6px">STABLE (&lt; 8)</span>
+      <span class="yellow">MODERATE (8–15)</span>
+      <span class="red">CLUSTERED (≥ 15)</span>
+      <span style="color:#64748b">INSUFFICIENT (fewer than 2 buckets had n ≥ 5)</span>
+      <br>
+      <strong>Per-bucket WR colors:</strong>
+      <span class="green" style="margin-left:6px">≥ 50%</span>
+      <span class="yellow">40–49%</span>
+      <span class="red">&lt; 40%</span> ·
+      <strong>Per-bucket Ret colors:</strong>
+      <span class="green" style="margin-left:6px">&gt; +5%</span>
+      <span class="yellow">−5% to +5%</span>
+      <span class="red">&lt; −5%</span>
+      <br>
+      Cells render as <code>—</code> when n &lt; 5 in that bucket; that bucket is excluded from the WR StdDev compute.
+      <br>
+      <em>Sort by WR StdDev ascending to surface the most regime-stable filters.</em>
+    </div>`;
+
+    panel3Html = `
+    <div class="card">
+      <h2>Panel 3 — ${panel3.title}</h2>
+      <div class="desc">${panel3.description}</div>
+      ${windowLegend}
+      ${table3Html}
+      ${legend3}
+    </div>`;
+  }
+
   const sortScript = `
   <script>
   function v2GenericSort(tableId, col, type) {
@@ -1151,9 +1315,10 @@ export function renderFilterV2Html(data: any): string {
   }
   function sortPanel1(col, type) { v2GenericSort('panel1-table', col, type); }
   function sortPanel2(col, type) { v2GenericSort('panel2-table', col, type); }
+  function sortPanel3(col, type) { v2GenericSort('panel3-table', col, type); }
   </script>`;
 
-  const body = panel1Html + panel2Html + sortScript;
+  const body = panel1Html + panel2Html + panel3Html + sortScript;
   return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
 }
 

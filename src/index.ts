@@ -1853,93 +1853,173 @@ async function main() {
   // null data (n_applicable = tokens with non-null feature value AND label).
   app.get('/filter-analysis-v2', (req, res) => {
     try {
+      // ── Panel 3 row type: feature columns referenced by any predicate ──
+      type RegimeRow = {
+        created_at: number;
+        label: string;
+        pct_t30: number;
+        pct_t300: number;
+        cost_pct: number;
+        bc_velocity_sol_per_min: number | null;
+        token_age_seconds: number | null;
+        holder_count: number | null;
+        top5_wallet_pct: number | null;
+        dev_wallet_pct: number | null;
+        total_sol_raised: number | null;
+        liquidity_sol_t30: number | null;
+        volatility_0_30: number | null;
+        monotonicity_0_30: number | null;
+        max_drawdown_0_30: number | null;
+        dip_and_recover_flag: number | null;
+        acceleration_t30: number | null;
+        early_vs_late_0_30: number | null;
+        buy_pressure_buy_ratio: number | null;
+        buy_pressure_unique_buyers: number | null;
+        buy_pressure_whale_pct: number | null;
+      };
+
       type FilterDef = {
         name: string;
         group: string;
         column: string;        // column to NOT NULL check (or '' for baseline)
         where: string;         // SQL condition (or '' for baseline)
+        predicate: (r: RegimeRow) => boolean; // Panel 3 in-memory equivalent of `where`
       };
 
       const PANEL_1_FILTERS: FilterDef[] = [
         // ── Bonding Curve Velocity ──
-        { name: 'vel < 5 sol/min',        group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 5' },
-        { name: 'vel 5-10 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 10' },
-        { name: 'vel 5-20 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20' },
-        { name: 'vel 10-20 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20' },
-        { name: 'vel < 20 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 20' },
-        { name: 'vel < 50 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 50' },
-        { name: 'vel 20-50 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 20 AND bc_velocity_sol_per_min < 50' },
-        { name: 'vel 50-200 sol/min',     group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 50 AND bc_velocity_sol_per_min < 200' },
-        { name: 'vel > 200 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 200' },
+        { name: 'vel < 5 sol/min',        group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 5',
+          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 5 },
+        { name: 'vel 5-10 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 10',
+          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 10 },
+        { name: 'vel 5-20 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20',
+          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 20 },
+        { name: 'vel 10-20 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20',
+          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 10 && r.bc_velocity_sol_per_min < 20 },
+        { name: 'vel < 20 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 20',
+          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 20 },
+        { name: 'vel < 50 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 50',
+          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 50 },
+        { name: 'vel 20-50 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 20 AND bc_velocity_sol_per_min < 50',
+          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 20 && r.bc_velocity_sol_per_min < 50 },
+        { name: 'vel 50-200 sol/min',     group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 50 AND bc_velocity_sol_per_min < 200',
+          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 50 && r.bc_velocity_sol_per_min < 200 },
+        { name: 'vel > 200 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 200',
+          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 200 },
 
         // ── Bonding Curve Age ──
-        { name: 'bc_age < 10 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds < 600' },
-        { name: 'bc_age > 10 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 600' },
-        { name: 'bc_age > 30 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 1800' },
-        { name: 'bc_age > 1 hr',          group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 3600' },
-        { name: 'bc_age > 1 day',         group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 86400' },
+        { name: 'bc_age < 10 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds < 600',
+          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds < 600 },
+        { name: 'bc_age > 10 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 600',
+          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 600 },
+        { name: 'bc_age > 30 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 1800',
+          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 1800 },
+        { name: 'bc_age > 1 hr',          group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 3600',
+          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 3600 },
+        { name: 'bc_age > 1 day',         group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 86400',
+          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 86400 },
 
         // ── Holders ──
-        { name: 'holders >= 5',           group: 'Holders', column: 'holder_count', where: 'holder_count >= 5' },
-        { name: 'holders >= 10',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 10' },
-        { name: 'holders >= 15',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 15' },
-        { name: 'holders >= 18',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 18' },
+        { name: 'holders >= 5',           group: 'Holders', column: 'holder_count', where: 'holder_count >= 5',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 5 },
+        { name: 'holders >= 10',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 10',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 10 },
+        { name: 'holders >= 15',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 15',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 15 },
+        { name: 'holders >= 18',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 18',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 18 },
 
         // ── Top 5 Concentration ──
-        { name: 'top5 < 10%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 10' },
-        { name: 'top5 < 15%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 15' },
-        { name: 'top5 < 20%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 20' },
-        { name: 'top5 > 15%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct > 15' },
+        { name: 'top5 < 10%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 10',
+          predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 10 },
+        { name: 'top5 < 15%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 15',
+          predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 15 },
+        { name: 'top5 < 20%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 20',
+          predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 20 },
+        { name: 'top5 > 15%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct > 15',
+          predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct > 15 },
 
         // ── Dev Wallet ──
-        { name: 'dev < 3%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct < 3' },
-        { name: 'dev < 5%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct < 5' },
-        { name: 'dev > 5%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct > 5' },
+        { name: 'dev < 3%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct < 3',
+          predicate: (r) => r.dev_wallet_pct != null && r.dev_wallet_pct < 3 },
+        { name: 'dev < 5%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct < 5',
+          predicate: (r) => r.dev_wallet_pct != null && r.dev_wallet_pct < 5 },
+        { name: 'dev > 5%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct > 5',
+          predicate: (r) => r.dev_wallet_pct != null && r.dev_wallet_pct > 5 },
 
         // ── SOL Raised ──
-        { name: 'sol >= 70',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 70' },
-        { name: 'sol >= 80',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 80' },
-        { name: 'sol >= 84',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 84' },
+        { name: 'sol >= 70',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 70',
+          predicate: (r) => r.total_sol_raised != null && r.total_sol_raised >= 70 },
+        { name: 'sol >= 80',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 80',
+          predicate: (r) => r.total_sol_raised != null && r.total_sol_raised >= 80 },
+        { name: 'sol >= 84',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 84',
+          predicate: (r) => r.total_sol_raised != null && r.total_sol_raised >= 84 },
 
         // ── Liquidity at T+30 ──
-        { name: 'liquidity > 50 SOL',     group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 50' },
-        { name: 'liquidity > 100 SOL',    group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 100' },
-        { name: 'liquidity > 150 SOL',    group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 150' },
+        { name: 'liquidity > 50 SOL',     group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 50',
+          predicate: (r) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 > 50 },
+        { name: 'liquidity > 100 SOL',    group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 100',
+          predicate: (r) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 > 100 },
+        { name: 'liquidity > 150 SOL',    group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 150',
+          predicate: (r) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 > 150 },
 
         // ── Volatility (0-30s) ──
-        { name: 'volatility < 10%',       group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 < 10' },
-        { name: 'volatility 10-30%',      group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 10 AND volatility_0_30 < 30' },
-        { name: 'volatility 30-60%',      group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 30 AND volatility_0_30 < 60' },
-        { name: 'volatility > 60%',       group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 60' },
+        { name: 'volatility < 10%',       group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 < 10',
+          predicate: (r) => r.volatility_0_30 != null && r.volatility_0_30 < 10 },
+        { name: 'volatility 10-30%',      group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 10 AND volatility_0_30 < 30',
+          predicate: (r) => r.volatility_0_30 != null && r.volatility_0_30 >= 10 && r.volatility_0_30 < 30 },
+        { name: 'volatility 30-60%',      group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 30 AND volatility_0_30 < 60',
+          predicate: (r) => r.volatility_0_30 != null && r.volatility_0_30 >= 30 && r.volatility_0_30 < 60 },
+        { name: 'volatility > 60%',       group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 60',
+          predicate: (r) => r.volatility_0_30 != null && r.volatility_0_30 >= 60 },
 
         // ── Path Shape: Monotonicity ──
-        { name: 'mono > 0.33',            group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.33' },
-        { name: 'mono > 0.5',             group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.5' },
-        { name: 'mono > 0.66',            group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.66' },
+        { name: 'mono > 0.33',            group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.33',
+          predicate: (r) => r.monotonicity_0_30 != null && r.monotonicity_0_30 > 0.33 },
+        { name: 'mono > 0.5',             group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.5',
+          predicate: (r) => r.monotonicity_0_30 != null && r.monotonicity_0_30 > 0.5 },
+        { name: 'mono > 0.66',            group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.66',
+          predicate: (r) => r.monotonicity_0_30 != null && r.monotonicity_0_30 > 0.66 },
 
         // ── Path Shape: Drawdown ──
-        { name: 'max_dd > -10% (shallow)',group: 'Path: Drawdown', column: 'max_drawdown_0_30', where: 'max_drawdown_0_30 > -10' },
-        { name: 'max_dd > -20%',          group: 'Path: Drawdown', column: 'max_drawdown_0_30', where: 'max_drawdown_0_30 > -20' },
+        { name: 'max_dd > -10% (shallow)',group: 'Path: Drawdown', column: 'max_drawdown_0_30', where: 'max_drawdown_0_30 > -10',
+          predicate: (r) => r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > -10 },
+        { name: 'max_dd > -20%',          group: 'Path: Drawdown', column: 'max_drawdown_0_30', where: 'max_drawdown_0_30 > -20',
+          predicate: (r) => r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > -20 },
 
         // ── Path Shape: Other ──
-        { name: 'dip_and_recover = 1',    group: 'Path: Other', column: 'dip_and_recover_flag', where: 'dip_and_recover_flag = 1' },
-        { name: 'acceleration > 0',       group: 'Path: Other', column: 'acceleration_t30', where: 'acceleration_t30 > 0' },
-        { name: 'front-loaded (early>late)',  group: 'Path: Other', column: 'early_vs_late_0_30', where: 'early_vs_late_0_30 > 0' },
-        { name: 'back-loaded (late>early)',   group: 'Path: Other', column: 'early_vs_late_0_30', where: 'early_vs_late_0_30 < 0' },
+        { name: 'dip_and_recover = 1',    group: 'Path: Other', column: 'dip_and_recover_flag', where: 'dip_and_recover_flag = 1',
+          predicate: (r) => r.dip_and_recover_flag != null && r.dip_and_recover_flag === 1 },
+        { name: 'acceleration > 0',       group: 'Path: Other', column: 'acceleration_t30', where: 'acceleration_t30 > 0',
+          predicate: (r) => r.acceleration_t30 != null && r.acceleration_t30 > 0 },
+        { name: 'front-loaded (early>late)',  group: 'Path: Other', column: 'early_vs_late_0_30', where: 'early_vs_late_0_30 > 0',
+          predicate: (r) => r.early_vs_late_0_30 != null && r.early_vs_late_0_30 > 0 },
+        { name: 'back-loaded (late>early)',   group: 'Path: Other', column: 'early_vs_late_0_30', where: 'early_vs_late_0_30 < 0',
+          predicate: (r) => r.early_vs_late_0_30 != null && r.early_vs_late_0_30 < 0 },
 
         // ── Buy Pressure (T+0 to T+30) ──
-        { name: 'buy_ratio > 0.5',        group: 'Buy Pressure', column: 'buy_pressure_buy_ratio', where: 'buy_pressure_buy_ratio > 0.5' },
-        { name: 'buy_ratio > 0.6',        group: 'Buy Pressure', column: 'buy_pressure_buy_ratio', where: 'buy_pressure_buy_ratio > 0.6' },
-        { name: 'unique_buyers >= 5',     group: 'Buy Pressure', column: 'buy_pressure_unique_buyers', where: 'buy_pressure_unique_buyers >= 5' },
-        { name: 'unique_buyers >= 10',    group: 'Buy Pressure', column: 'buy_pressure_unique_buyers', where: 'buy_pressure_unique_buyers >= 10' },
-        { name: 'whale_pct < 30%',        group: 'Buy Pressure', column: 'buy_pressure_whale_pct', where: 'buy_pressure_whale_pct < 30' },
-        { name: 'whale_pct < 50%',        group: 'Buy Pressure', column: 'buy_pressure_whale_pct', where: 'buy_pressure_whale_pct < 50' },
+        { name: 'buy_ratio > 0.5',        group: 'Buy Pressure', column: 'buy_pressure_buy_ratio', where: 'buy_pressure_buy_ratio > 0.5',
+          predicate: (r) => r.buy_pressure_buy_ratio != null && r.buy_pressure_buy_ratio > 0.5 },
+        { name: 'buy_ratio > 0.6',        group: 'Buy Pressure', column: 'buy_pressure_buy_ratio', where: 'buy_pressure_buy_ratio > 0.6',
+          predicate: (r) => r.buy_pressure_buy_ratio != null && r.buy_pressure_buy_ratio > 0.6 },
+        { name: 'unique_buyers >= 5',     group: 'Buy Pressure', column: 'buy_pressure_unique_buyers', where: 'buy_pressure_unique_buyers >= 5',
+          predicate: (r) => r.buy_pressure_unique_buyers != null && r.buy_pressure_unique_buyers >= 5 },
+        { name: 'unique_buyers >= 10',    group: 'Buy Pressure', column: 'buy_pressure_unique_buyers', where: 'buy_pressure_unique_buyers >= 10',
+          predicate: (r) => r.buy_pressure_unique_buyers != null && r.buy_pressure_unique_buyers >= 10 },
+        { name: 'whale_pct < 30%',        group: 'Buy Pressure', column: 'buy_pressure_whale_pct', where: 'buy_pressure_whale_pct < 30',
+          predicate: (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 30 },
+        { name: 'whale_pct < 50%',        group: 'Buy Pressure', column: 'buy_pressure_whale_pct', where: 'buy_pressure_whale_pct < 50',
+          predicate: (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 50 },
 
         // ── T+30 Entry Gate ──
-        { name: 't30 > 0%',                       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 > 0' },
-        { name: 't30 between +5% and +50%',       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 5 AND pct_t30 <= 50' },
-        { name: 't30 between +5% and +100%',      group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 5 AND pct_t30 <= 100' },
-        { name: 't30 between +10% and +50%',      group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 10 AND pct_t30 <= 50' },
+        { name: 't30 > 0%',                       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 > 0',
+          predicate: (r) => r.pct_t30 > 0 },
+        { name: 't30 between +5% and +50%',       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 5 AND pct_t30 <= 50',
+          predicate: (r) => r.pct_t30 >= 5 && r.pct_t30 <= 50 },
+        { name: 't30 between +5% and +100%',      group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 5 AND pct_t30 <= 100',
+          predicate: (r) => r.pct_t30 >= 5 && r.pct_t30 <= 100 },
+        { name: 't30 between +10% and +50%',      group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 10 AND pct_t30 <= 50',
+          predicate: (r) => r.pct_t30 >= 10 && r.pct_t30 <= 50 },
       ];
 
       // Helper: run a single filter query and return normalized stats
@@ -2072,6 +2152,87 @@ async function main() {
         };
       };
 
+      // ── Panel 3 helpers: regime stability across time buckets ──
+
+      const ROUND_TRIP_COST_PCT_V2 = 3.0;
+      const PANEL_3_BUCKET_COUNT = 4;
+
+      // Single load: all eligible rows for regime analysis, sorted by created_at ASC
+      const regimeRows = db.prepare(`
+        SELECT created_at, label, pct_t30, pct_t300,
+               COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT_V2}) as cost_pct,
+               bc_velocity_sol_per_min, token_age_seconds, holder_count, top5_wallet_pct,
+               dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
+               monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
+               early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
+               buy_pressure_whale_pct
+        FROM graduation_momentum
+        WHERE label IS NOT NULL
+          AND pct_t30 IS NOT NULL
+          AND pct_t300 IS NOT NULL
+          AND created_at IS NOT NULL
+        ORDER BY created_at ASC
+      `).all() as RegimeRow[];
+
+      // Global bucket boundaries — same for every filter so cross-row comparison is meaningful
+      const bucketBoundaries: { start: number; end: number }[] = [];
+      if (regimeRows.length > 0) {
+        const bucketSize = Math.ceil(regimeRows.length / PANEL_3_BUCKET_COUNT);
+        for (let i = 0; i < PANEL_3_BUCKET_COUNT; i++) {
+          const startIdx = i * bucketSize;
+          const endIdx = Math.min((i + 1) * bucketSize, regimeRows.length);
+          if (startIdx >= regimeRows.length) break;
+          bucketBoundaries.push({
+            start: regimeRows[startIdx].created_at,
+            end: regimeRows[endIdx - 1].created_at,
+          });
+        }
+      }
+
+      const runFilterRegime = (predicate: (r: RegimeRow) => boolean) => {
+        const buckets: { n: number; pump: number; returns: number[] }[] =
+          Array.from({ length: bucketBoundaries.length }, () => ({ n: 0, pump: 0, returns: [] }));
+
+        for (const r of regimeRows) {
+          if (!predicate(r)) continue;
+          let bucketIdx = -1;
+          for (let i = 0; i < bucketBoundaries.length; i++) {
+            if (r.created_at <= bucketBoundaries[i].end) { bucketIdx = i; break; }
+          }
+          if (bucketIdx === -1) bucketIdx = bucketBoundaries.length - 1;
+          if (bucketIdx < 0) continue;
+          const b = buckets[bucketIdx];
+          b.n++;
+          if (r.label === 'PUMP') b.pump++;
+          const ret = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100 - r.cost_pct;
+          b.returns.push(ret);
+        }
+
+        const MIN_BUCKET_N = 5;
+        const perBucket = buckets.map(b => {
+          if (b.n < MIN_BUCKET_N) return { n: b.n, win_rate_pct: null as number | null, avg_return_pct: null as number | null };
+          const wr = +(b.pump / b.n * 100).toFixed(1);
+          const avgRet = +(b.returns.reduce((s, v) => s + v, 0) / b.returns.length).toFixed(1);
+          return { n: b.n, win_rate_pct: wr, avg_return_pct: avgRet };
+        });
+
+        const validWRs = perBucket.filter(b => b.win_rate_pct != null).map(b => b.win_rate_pct as number);
+        let wrStdDev: number | null = null;
+        let stability: 'STABLE' | 'MODERATE' | 'CLUSTERED' | 'INSUFFICIENT' = 'INSUFFICIENT';
+        if (validWRs.length >= 2) {
+          const mean = validWRs.reduce((a, b) => a + b, 0) / validWRs.length;
+          wrStdDev = +Math.sqrt(validWRs.reduce((s, w) => s + (w - mean) ** 2, 0) / validWRs.length).toFixed(1);
+          stability = wrStdDev < 8 ? 'STABLE' : wrStdDev < 15 ? 'MODERATE' : 'CLUSTERED';
+        }
+
+        return {
+          n: buckets.reduce((s, b) => s + b.n, 0),
+          buckets: perBucket,
+          wr_std_dev: wrStdDev,
+          stability,
+        };
+      };
+
       // Baseline: all labeled tokens, no filter
       const baselineStats = runFilterStats('', '');
       const baseline = {
@@ -2099,6 +2260,18 @@ async function main() {
         ...runFilterPercentiles(f.column, f.where),
       }));
 
+      // ── Panel 3: regime stability across 4 time buckets ──
+      const baseline3 = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterRegime(() => true),
+      };
+      const filters3 = PANEL_1_FILTERS.map(f => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterRegime(f.predicate),
+      }));
+
       const filterV2Data = {
         generated_at: new Date().toISOString(),
         panel1: {
@@ -2118,6 +2291,22 @@ async function main() {
             'Percentiles of MAE, MFE, and final return — all anchored from price_t30 (entry price). MAE = worst dip from entry between T+30 and T+300 (≤ 0). MFE = best peak from entry in same window (≥ 0). Final = (price_t300/price_t30 - 1). Sharpe-ish = mean(final)/stddev(final), single-number "profitable AND consistent" score. Tokens missing price_t30 or price_t300 are excluded, so n may be slightly smaller than Panel 1.',
           baseline: baseline2,
           filters: filters2,
+          flags: {
+            low_n_threshold: 20,
+            strong_n_threshold: 100,
+          },
+        },
+        panel3: {
+          title: 'Regime Stability — Win Rate & Avg Return Across Time Buckets',
+          description:
+            'Each filter cohort is split into 4 equal-sized time buckets (sorted by created_at). Per-bucket win rate and avg return (T+30-anchored, cost-adjusted) reveal whether the edge persists across regimes. WR StdDev = population std dev of win rates across buckets. Stability label uses the same thresholds as the existing regime_analysis: <8% STABLE, 8-15% MODERATE, ≥15% CLUSTERED. Buckets with n<5 are excluded from the std dev compute.',
+          bucket_windows: bucketBoundaries.map((b, i) => ({
+            bucket: i + 1,
+            start_iso: new Date(b.start * 1000).toISOString(),
+            end_iso: new Date(b.end * 1000).toISOString(),
+          })),
+          baseline: baseline3,
+          filters: filters3,
           flags: {
             low_n_threshold: 20,
             strong_n_threshold: 100,
