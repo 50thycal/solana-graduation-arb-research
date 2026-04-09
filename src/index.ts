@@ -2406,6 +2406,417 @@ async function main() {
         ...runFilterPanel4(f.predicate as (r: Panel4Row) => boolean),
       }));
 
+      // Shared type alias for Panel 4 optimum — mirrors the shape returned
+      // by runFilterPanel4 (src/index.ts:2342). Used by Panels 5 & 6.
+      type Panel4Optimal = { tp: number; sl: number; avg_ret: number; win_rate: number } | null;
+
+      // ── Panel 5 helpers: statistical significance ──
+      //
+      // Wilson score 95% confidence interval for a binomial proportion.
+      // Closed-form, stable at small n (unlike normal approximation).
+      const wilsonCI = (successes: number, n: number): { low: number; high: number } | null => {
+        if (n === 0) return null;
+        const z = 1.96; // 95%
+        const p = successes / n;
+        const denom = 1 + (z * z) / n;
+        const center = (p + (z * z) / (2 * n)) / denom;
+        const halfWidth = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / denom;
+        return { low: Math.max(0, center - halfWidth) * 100, high: Math.min(1, center + halfWidth) * 100 };
+      };
+
+      // Two-proportion z-test (two-sided) p-value approximation using the
+      // complementary error function. Returns p-value in [0, 1].
+      const twoPropZPValue = (s1: number, n1: number, s2: number, n2: number): number | null => {
+        if (n1 === 0 || n2 === 0) return null;
+        const p1 = s1 / n1;
+        const p2 = s2 / n2;
+        const pPool = (s1 + s2) / (n1 + n2);
+        const se = Math.sqrt(pPool * (1 - pPool) * (1 / n1 + 1 / n2));
+        if (se === 0) return 1.0;
+        const z = Math.abs(p1 - p2) / se;
+        // Two-sided p-value = 2 * (1 - Phi(|z|)); Phi via erf.
+        // erf approximation (Abramowitz & Stegun 7.1.26), max error ~1.5e-7
+        const erf = (x: number): number => {
+          const sign = x < 0 ? -1 : 1;
+          x = Math.abs(x);
+          const a1 =  0.254829592;
+          const a2 = -0.284496736;
+          const a3 =  1.421413741;
+          const a4 = -1.453152027;
+          const a5 =  1.061405429;
+          const p  =  0.3275911;
+          const t = 1 / (1 + p * x);
+          const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+          return sign * y;
+        };
+        const phi = 0.5 * (1 + erf(z / Math.SQRT2));
+        return Math.max(0, Math.min(1, 2 * (1 - phi)));
+      };
+
+      // Bootstrap 95% confidence interval on the MEAN of a returns array.
+      // Uses 1000 resamples; deterministic PRNG to make the dashboard reproducible.
+      const bootstrapMeanCI = (returns: number[], iterations = 1000): { low: number; high: number } | null => {
+        const n = returns.length;
+        if (n < 2) return null;
+        // Simple LCG for deterministic resampling per filter (seed from n + first return)
+        let seed = (n * 2654435761 + Math.floor((returns[0] + 1e6) * 1000)) >>> 0;
+        const rand = () => {
+          seed = (seed * 1103515245 + 12345) >>> 0;
+          return (seed & 0x7fffffff) / 0x7fffffff;
+        };
+        const means = new Array<number>(iterations);
+        for (let it = 0; it < iterations; it++) {
+          let sum = 0;
+          for (let k = 0; k < n; k++) {
+            sum += returns[Math.floor(rand() * n)];
+          }
+          means[it] = sum / n;
+        }
+        means.sort((a, b) => a - b);
+        const low = means[Math.floor(iterations * 0.025)];
+        const high = means[Math.floor(iterations * 0.975)];
+        return { low, high };
+      };
+
+      // Simulate a single (tp, sl) on an arbitrary row subset and return
+      // the cost-adjusted returns array. Mirrors simulateInMemory exactly.
+      const simulateReturnsAtLevel = (rows: Panel4Row[], tp: number, sl: number): number[] => {
+        const out: number[] = [];
+        for (const r of rows) {
+          out.push(simulateInMemory(r, tp, sl).ret);
+        }
+        return out;
+      };
+
+      // Baseline Panel 1 counts — needed for Panel 5 p-value computation
+      const baselineP1 = runFilterStats('', '');
+      const baselinePump = baselineP1.pump;
+      const baselineN = baselineP1.n;
+
+      type Panel5Row = {
+        filter: string;
+        group: string;
+        n: number;
+        win_rate_pct: number | null;
+        win_ci_low: number | null;
+        win_ci_high: number | null;
+        p_value_vs_baseline: number | null;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        opt_avg_ret: number | null;
+        boot_ret_low: number | null;
+        boot_ret_high: number | null;
+        verdict: 'SIGNIFICANT' | 'MARGINAL' | 'NOISE' | 'INSUFFICIENT';
+      };
+
+      const runFilterPanel5 = (
+        column: string,
+        whereCond: string,
+        predicate: (r: Panel4Row) => boolean,
+        optimal: Panel4Optimal,
+      ): Omit<Panel5Row, 'filter' | 'group'> => {
+        // Panel 1 counts for this filter (for Wilson CI + p-value vs baseline)
+        const p1 = runFilterStats(column, whereCond);
+        const n = p1.n;
+        const winRate = p1.win_rate_pct;
+        const wilson = wilsonCI(p1.pump, n);
+        const pVal = (column === '' && whereCond === '')
+          ? 1.0 // baseline vs itself
+          : twoPropZPValue(p1.pump, n, baselinePump, baselineN);
+
+        // Bootstrap CI on the per-token returns at this filter's optimum (Panel 4)
+        let bootLow: number | null = null;
+        let bootHigh: number | null = null;
+        if (optimal && n >= PANEL_4_MIN_N_FOR_OPTIMUM) {
+          const filtered = panel4Rows.filter(predicate);
+          const returns = simulateReturnsAtLevel(filtered, optimal.tp, optimal.sl);
+          const boot = bootstrapMeanCI(returns, 1000);
+          if (boot) { bootLow = +boot.low.toFixed(2); bootHigh = +boot.high.toFixed(2); }
+        }
+
+        // Verdict: SIGNIFICANT if p<0.05 AND bootstrap CI excludes 0 AND n>=30
+        //          MARGINAL if p<0.10 OR bootstrap CI excludes 0 (not both)
+        //          NOISE otherwise
+        //          INSUFFICIENT if n<30
+        let verdict: Panel5Row['verdict'] = 'INSUFFICIENT';
+        if (n >= PANEL_4_MIN_N_FOR_OPTIMUM) {
+          const pOk = pVal != null && pVal < 0.05;
+          const pMarginal = pVal != null && pVal < 0.10;
+          const bootOk = bootLow != null && bootHigh != null && bootLow > 0;
+          const bootMarginal = bootLow != null && bootHigh != null && (bootLow > 0 || bootHigh > 0);
+          if (pOk && bootOk) verdict = 'SIGNIFICANT';
+          else if (pMarginal || bootMarginal) verdict = 'MARGINAL';
+          else verdict = 'NOISE';
+        }
+
+        return {
+          n,
+          win_rate_pct: winRate,
+          win_ci_low: wilson ? +wilson.low.toFixed(1) : null,
+          win_ci_high: wilson ? +wilson.high.toFixed(1) : null,
+          p_value_vs_baseline: pVal == null ? null : +pVal.toFixed(4),
+          opt_tp: optimal ? optimal.tp : null,
+          opt_sl: optimal ? optimal.sl : null,
+          opt_avg_ret: optimal ? optimal.avg_ret : null,
+          boot_ret_low: bootLow,
+          boot_ret_high: bootHigh,
+          verdict,
+        };
+      };
+
+      // Panel 5 depends on Panel 4's optimal per filter — we already computed it above.
+      const baseline5: Panel5Row = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterPanel5('', '', () => true, (baseline4 as any).optimal),
+      };
+      const filters5: Panel5Row[] = PANEL_1_FILTERS.map((f, idx) => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterPanel5(
+          f.column,
+          f.where,
+          f.predicate as (r: Panel4Row) => boolean,
+          (filters4[idx] as any).optimal,
+        ),
+      }));
+
+      // ── Panel 6: multi-filter intersection (dynamic + top-20 pairs) ──
+      type Panel6Dynamic = {
+        selected: string[];              // filter names in the chosen intersection
+        n: number;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        opt_avg_ret: number | null;
+        opt_win_rate: number | null;
+        lift_vs_best_single: number | null;
+      } | null;
+
+      type Panel6PairRow = {
+        filter_a: string;
+        filter_b: string;
+        n: number;
+        opt_tp: number;
+        opt_sl: number;
+        opt_avg_ret: number;
+        opt_win_rate: number;
+        single_a_opt: number | null;
+        single_b_opt: number | null;
+        lift: number;
+      };
+
+      // Parse the ?p6= query param. Accepts up to 3 filter names separated by commas.
+      // Example: ?p6=vel%205-20%20sol%2Fmin,liquidity%20%3E%20100%20SOL
+      const parsePanel6Selection = (raw: unknown): string[] => {
+        if (typeof raw !== 'string' || raw.length === 0) return [];
+        return raw.split(',')
+          .map(s => s.trim())
+          .filter(s => s.length > 0 && PANEL_1_FILTERS.some(f => f.name === s))
+          .slice(0, 3);
+      };
+
+      const panel6Selected = parsePanel6Selection(req.query.p6);
+      let panel6Dynamic: Panel6Dynamic = null;
+      if (panel6Selected.length >= 1) {
+        const selectedDefs = panel6Selected
+          .map(name => PANEL_1_FILTERS.find(f => f.name === name))
+          .filter((f): f is FilterDef => f !== undefined);
+        const combinedPredicate = (r: Panel4Row) =>
+          selectedDefs.every(def => (def.predicate as (r: Panel4Row) => boolean)(r));
+        const res = runFilterPanel4(combinedPredicate);
+        // "Lift vs best single component" = intersection opt_avg_ret - max(single opt_avg_ret)
+        let bestSingleOpt: number | null = null;
+        for (const def of selectedDefs) {
+          const singleIdx = PANEL_1_FILTERS.findIndex(x => x.name === def.name);
+          const singleOpt = (filters4[singleIdx] as any).optimal as Panel4Optimal;
+          if (singleOpt && (bestSingleOpt == null || singleOpt.avg_ret > bestSingleOpt)) {
+            bestSingleOpt = singleOpt.avg_ret;
+          }
+        }
+        panel6Dynamic = {
+          selected: panel6Selected,
+          n: res.n,
+          opt_tp: res.optimal ? res.optimal.tp : null,
+          opt_sl: res.optimal ? res.optimal.sl : null,
+          opt_avg_ret: res.optimal ? res.optimal.avg_ret : null,
+          opt_win_rate: res.optimal ? res.optimal.win_rate : null,
+          lift_vs_best_single: (res.optimal && bestSingleOpt != null)
+            ? +(res.optimal.avg_ret - bestSingleOpt).toFixed(1)
+            : null,
+        };
+      }
+
+      // Top-20 filter pairs by Opt Avg Ret with n >= 30 and lift > 0.
+      // O(C(N,2)) loop where N=53 → 1378 pairs. Each pair reuses runFilterPanel4
+      // (~120 combos × ~n tokens). Acceptable request-time cost at current data size.
+      const panel6TopPairs: Panel6PairRow[] = [];
+      {
+        const pairResults: Panel6PairRow[] = [];
+        for (let i = 0; i < PANEL_1_FILTERS.length; i++) {
+          const a = PANEL_1_FILTERS[i];
+          const aOpt = (filters4[i] as any).optimal as Panel4Optimal;
+          for (let j = i + 1; j < PANEL_1_FILTERS.length; j++) {
+            const b = PANEL_1_FILTERS[j];
+            const bOpt = (filters4[j] as any).optimal as Panel4Optimal;
+            const combinedPredicate = (r: Panel4Row) =>
+              (a.predicate as (r: Panel4Row) => boolean)(r) &&
+              (b.predicate as (r: Panel4Row) => boolean)(r);
+            const res = runFilterPanel4(combinedPredicate);
+            if (res.n < PANEL_4_MIN_N_FOR_OPTIMUM) continue;
+            if (!res.optimal) continue;
+            const bestSingle = Math.max(
+              aOpt ? aOpt.avg_ret : -Infinity,
+              bOpt ? bOpt.avg_ret : -Infinity,
+            );
+            const lift = Number.isFinite(bestSingle)
+              ? +(res.optimal.avg_ret - bestSingle).toFixed(1)
+              : res.optimal.avg_ret;
+            if (lift <= 0) continue;
+            pairResults.push({
+              filter_a: a.name,
+              filter_b: b.name,
+              n: res.n,
+              opt_tp: res.optimal.tp,
+              opt_sl: res.optimal.sl,
+              opt_avg_ret: res.optimal.avg_ret,
+              opt_win_rate: res.optimal.win_rate,
+              single_a_opt: aOpt ? aOpt.avg_ret : null,
+              single_b_opt: bOpt ? bOpt.avg_ret : null,
+              lift,
+            });
+          }
+        }
+        pairResults.sort((x, y) => y.opt_avg_ret - x.opt_avg_ret);
+        panel6TopPairs.push(...pairResults.slice(0, 20));
+      }
+
+      // ── Panel 7: walk-forward validation of Panel 4 optimum ──
+      //
+      // Split panel4Rows by created_at at the 70/30 boundary. Find optimum
+      // on the TRAIN half, then evaluate it on the TEST half using the same
+      // TP/SL coordinates (no re-optimization on test).
+      //
+      // Verdict thresholds:
+      //   ROBUST      — degradation (train - test) < 2 percentage points
+      //   DEGRADED    — 2pp ≤ degradation ≤ 5pp
+      //   OVERFIT     — degradation > 5pp
+      //   INSUFFICIENT— train or test n < 20
+      type Panel7Row = {
+        filter: string;
+        group: string;
+        n_train: number;
+        n_test: number;
+        train_tp: number | null;
+        train_sl: number | null;
+        train_avg_ret: number | null;
+        test_avg_ret: number | null;
+        degradation: number | null;
+        verdict: 'ROBUST' | 'DEGRADED' | 'OVERFIT' | 'INSUFFICIENT';
+      };
+
+      const PANEL_7_TRAIN_FRAC = 0.7;
+      const PANEL_7_MIN_N_HALF = 20;
+
+      // Sort a COPY of panel4Rows so the original (unsorted) load is untouched.
+      const panel4RowsSorted = [...panel4Rows].sort((a, b) => a.created_at - b.created_at);
+      const splitIdx = Math.floor(panel4RowsSorted.length * PANEL_7_TRAIN_FRAC);
+      const trainRows = panel4RowsSorted.slice(0, splitIdx);
+      const testRows = panel4RowsSorted.slice(splitIdx);
+
+      // Parameterized version of runFilterPanel4 that works on any row subset.
+      // Returns the SAME shape as runFilterPanel4, plus exposes the full combo grid.
+      const runPanel4OnRows = (rows: Panel4Row[], predicate: (r: Panel4Row) => boolean) => {
+        const filtered = rows.filter(predicate);
+        const n = filtered.length;
+        const comboCount = PANEL_4_TP_GRID.length * PANEL_4_SL_GRID.length;
+        const avgRet = new Array<number>(comboCount).fill(0);
+        const tpHits = new Array<number>(comboCount).fill(0);
+        let optimal: { tp: number; sl: number; avg_ret: number } | null = null;
+
+        if (n === 0) return { n: 0, avgRet, optimal };
+
+        for (let ti = 0; ti < PANEL_4_TP_GRID.length; ti++) {
+          for (let si = 0; si < PANEL_4_SL_GRID.length; si++) {
+            const tp = PANEL_4_TP_GRID[ti];
+            const sl = PANEL_4_SL_GRID[si];
+            let sum = 0;
+            let tpHit = 0;
+            for (let k = 0; k < n; k++) {
+              const out = simulateInMemory(filtered[k], tp, sl);
+              sum += out.ret;
+              if (out.tpHit) tpHit++;
+            }
+            const idx = ti * PANEL_4_SL_GRID.length + si;
+            avgRet[idx] = +(sum / n).toFixed(2);
+            tpHits[idx] = tpHit;
+          }
+        }
+
+        if (n >= PANEL_7_MIN_N_HALF) {
+          let bestIdx = -1;
+          let bestAvg = -Infinity;
+          for (let i = 0; i < comboCount; i++) {
+            if (tpHits[i] < PANEL_4_MIN_TP_HITS_FOR_OPTIMUM) continue;
+            if (avgRet[i] > bestAvg) { bestAvg = avgRet[i]; bestIdx = i; }
+          }
+          if (bestIdx !== -1) {
+            const ti = Math.floor(bestIdx / PANEL_4_SL_GRID.length);
+            const si = bestIdx % PANEL_4_SL_GRID.length;
+            optimal = { tp: PANEL_4_TP_GRID[ti], sl: PANEL_4_SL_GRID[si], avg_ret: avgRet[bestIdx] };
+          }
+        }
+
+        return { n, avgRet, optimal };
+      };
+
+      const runFilterPanel7 = (predicate: (r: Panel4Row) => boolean): Omit<Panel7Row, 'filter' | 'group'> => {
+        const train = runPanel4OnRows(trainRows, predicate);
+        const test = runPanel4OnRows(testRows, predicate);
+
+        if (train.n < PANEL_7_MIN_N_HALF || test.n < PANEL_7_MIN_N_HALF || !train.optimal) {
+          return {
+            n_train: train.n,
+            n_test: test.n,
+            train_tp: train.optimal ? train.optimal.tp : null,
+            train_sl: train.optimal ? train.optimal.sl : null,
+            train_avg_ret: train.optimal ? train.optimal.avg_ret : null,
+            test_avg_ret: null,
+            degradation: null,
+            verdict: 'INSUFFICIENT',
+          };
+        }
+
+        // Look up test-half avg return at the train-half optimum coordinates.
+        const ti = (PANEL_4_TP_GRID as readonly number[]).indexOf(train.optimal.tp);
+        const si = (PANEL_4_SL_GRID as readonly number[]).indexOf(train.optimal.sl);
+        const testAvg = test.avgRet[ti * PANEL_4_SL_GRID.length + si];
+        const degradation = +(train.optimal.avg_ret - testAvg).toFixed(2);
+        const verdict: Panel7Row['verdict'] =
+          degradation < 2 ? 'ROBUST' : degradation <= 5 ? 'DEGRADED' : 'OVERFIT';
+
+        return {
+          n_train: train.n,
+          n_test: test.n,
+          train_tp: train.optimal.tp,
+          train_sl: train.optimal.sl,
+          train_avg_ret: train.optimal.avg_ret,
+          test_avg_ret: +testAvg.toFixed(2),
+          degradation,
+          verdict,
+        };
+      };
+
+      const baseline7: Panel7Row = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterPanel7(() => true),
+      };
+      const filters7: Panel7Row[] = PANEL_1_FILTERS.map(f => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterPanel7(f.predicate as (r: Panel4Row) => boolean),
+      }));
+
       const filterV2Data = {
         generated_at: new Date().toISOString(),
         panel1: {
@@ -2469,6 +2880,50 @@ async function main() {
           filters: filters4,
           flags: {
             low_n_threshold: 20,
+            strong_n_threshold: 100,
+          },
+        },
+        panel5: {
+          title: 'Statistical Significance — Wilson CI on Win Rate + Bootstrap CI on Opt Avg Return',
+          description:
+            'For every filter, shows a 95% Wilson confidence interval on the Panel 1 win rate and a two-proportion z-test p-value vs the ALL-labeled baseline. Opt Avg Ret is inherited from Panel 4; the bootstrap 95% CI resamples the per-token return vector at that filter\'s optimum TP/SL 1000 times. Verdict: SIGNIFICANT (p<0.05 AND bootstrap CI > 0), MARGINAL (one of the two conditions), NOISE (neither), INSUFFICIENT (n<30). Use this to gate any filter ranking — at small n, a high raw win rate can still be noise.',
+          baseline: baseline5,
+          filters: filters5,
+          flags: {
+            low_n_threshold: 30,
+            strong_n_threshold: 100,
+          },
+        },
+        panel6: {
+          title: 'Multi-Filter Intersection (2-way + 3-way AND) — Drill-Down',
+          description:
+            'Pick up to 3 filters from the dropdowns. The page reloads with the intersection run through Panel 4\'s optimum-finder. Lift vs best single component tells you whether the combo improves on its strongest constituent (positive lift = compounding edge; zero or negative = no extra information). Selection is encoded in the URL (?p6=name1,name2,name3) so links are shareable. The Top 20 Pairs table below auto-scans all C(53,2)=1378 two-filter intersections where n≥30 and lift>0, sorted by Opt Avg Ret.',
+          filter_names: PANEL_1_FILTERS.map(f => ({ name: f.name, group: f.group })),
+          dynamic: panel6Dynamic,
+          top_pairs: panel6TopPairs,
+          flags: {
+            low_n_threshold: 30,
+            strong_n_threshold: 100,
+          },
+        },
+        panel7: {
+          title: 'Walk-Forward Validation — Train on First 70%, Test on Last 30%',
+          description:
+            'Detects whether Panel 4\'s per-filter optimum is a genuine edge or an overfit corner of the 120-combo grid. panel4Rows is sorted by created_at and split 70/30. Panel 4\'s optimum is found on the TRAIN half only; that same (TP, SL) pair is then applied (NOT re-optimized) to the TEST half. Degradation = train_avg_ret − test_avg_ret. Verdict: ROBUST (<2pp), DEGRADED (2–5pp), OVERFIT (>5pp), INSUFFICIENT (train or test n<20). Cross-reference with Panel 3 stability: ROBUST filters should also be STABLE or MODERATE.',
+          split: {
+            train_frac: PANEL_7_TRAIN_FRAC,
+            n_total: panel4RowsSorted.length,
+            n_train: trainRows.length,
+            n_test: testRows.length,
+            train_start_iso: trainRows.length > 0 ? new Date(trainRows[0].created_at * 1000).toISOString() : null,
+            train_end_iso: trainRows.length > 0 ? new Date(trainRows[trainRows.length - 1].created_at * 1000).toISOString() : null,
+            test_start_iso: testRows.length > 0 ? new Date(testRows[0].created_at * 1000).toISOString() : null,
+            test_end_iso: testRows.length > 0 ? new Date(testRows[testRows.length - 1].created_at * 1000).toISOString() : null,
+          },
+          baseline: baseline7,
+          filters: filters7,
+          flags: {
+            low_n_threshold: 30,
             strong_n_threshold: 100,
           },
         },

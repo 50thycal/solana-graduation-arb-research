@@ -1114,6 +1114,166 @@ function v2Panel4RowHtml(r: FilterV2Panel4Row, lowN: number, strongN: number, ro
   </tr>`;
 }
 
+// Minimal HTML escaper for user-visible text that may contain <, >, &, ", '
+// Filter names like "vel < 5 sol/min" and "holders >= 5" would otherwise
+// break the markup when interpolated directly.
+function escHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// ── Panel 5 helpers: statistical significance (Wilson CI + bootstrap CI) ──
+
+type FilterV2Panel5Row = {
+  filter: string;
+  group: string;
+  n: number;
+  win_rate_pct: number | null;
+  win_ci_low: number | null;
+  win_ci_high: number | null;
+  p_value_vs_baseline: number | null;
+  opt_tp: number | null;
+  opt_sl: number | null;
+  opt_avg_ret: number | null;
+  boot_ret_low: number | null;
+  boot_ret_high: number | null;
+  verdict: 'SIGNIFICANT' | 'MARGINAL' | 'NOISE' | 'INSUFFICIENT';
+};
+
+// Wilson CI cell — formatted as [low, high]
+function wilsonCiCell(low: number | null, high: number | null): string {
+  if (low == null || high == null) return '<span style="color:#64748b">—</span>';
+  return `[${low.toFixed(1)}%, ${high.toFixed(1)}%]`;
+}
+
+// P-value cell — green if <0.05, yellow if <0.10, red otherwise
+function pValueCell(p: number | null): string {
+  if (p == null) return '<span style="color:#64748b">—</span>';
+  const cls = p < 0.05 ? 'green' : p < 0.10 ? 'yellow' : 'red';
+  // Show very small p-values in scientific notation
+  const txt = p < 0.0001 ? p.toExponential(1) : p.toFixed(4);
+  return `<span class="${cls}">${txt}</span>`;
+}
+
+// Bootstrap CI cell — formatted as [low, high]; green if entirely > 0, red if entirely < 0
+function bootCiCell(low: number | null, high: number | null): string {
+  if (low == null || high == null) return '<span style="color:#64748b">—</span>';
+  const cls = low > 0 ? 'green' : high < 0 ? 'red' : 'yellow';
+  const signLow = low > 0 ? '+' : '';
+  const signHigh = high > 0 ? '+' : '';
+  return `<span class="${cls}">[${signLow}${low.toFixed(1)}%, ${signHigh}${high.toFixed(1)}%]</span>`;
+}
+
+// Verdict badge for Panel 5
+function verdictCell5(v: FilterV2Panel5Row['verdict']): string {
+  if (v === 'SIGNIFICANT') return '<span class="green">SIGNIFICANT</span>';
+  if (v === 'MARGINAL') return '<span class="yellow">MARGINAL</span>';
+  if (v === 'NOISE') return '<span class="red">NOISE</span>';
+  return '<span style="color:#64748b">INSUFFICIENT</span>';
+}
+
+function v2Panel5RowHtml(r: FilterV2Panel5Row, lowN: number, strongN: number, isBaseline = false): string {
+  const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
+  const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+  const optTpSl = (r.opt_tp != null && r.opt_sl != null) ? `${r.opt_tp}/${r.opt_sl}` : '—';
+  return `<tr class="${cls}">
+    <td>${r.filter}${nLabel}</td>
+    <td>${r.n}</td>
+    <td>${v2WinRateCell(r.win_rate_pct)}</td>
+    <td>${wilsonCiCell(r.win_ci_low, r.win_ci_high)}</td>
+    <td>${pValueCell(r.p_value_vs_baseline)}</td>
+    <td>${optTpSl}</td>
+    <td>${p4OptAvgRetCell(r.opt_avg_ret)}</td>
+    <td>${bootCiCell(r.boot_ret_low, r.boot_ret_high)}</td>
+    <td>${verdictCell5(r.verdict)}</td>
+  </tr>`;
+}
+
+// ── Panel 6 helpers: multi-filter intersection ──
+
+type FilterV2Panel6Dynamic = {
+  selected: string[];
+  n: number;
+  opt_tp: number | null;
+  opt_sl: number | null;
+  opt_avg_ret: number | null;
+  opt_win_rate: number | null;
+  lift_vs_best_single: number | null;
+} | null;
+
+type FilterV2Panel6PairRow = {
+  filter_a: string;
+  filter_b: string;
+  n: number;
+  opt_tp: number;
+  opt_sl: number;
+  opt_avg_ret: number;
+  opt_win_rate: number;
+  single_a_opt: number | null;
+  single_b_opt: number | null;
+  lift: number;
+};
+
+// Lift cell — positive green, zero/negative yellow, large negative red
+function liftCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v > 0.5 ? 'green' : v > -0.5 ? 'yellow' : 'red';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(1)}%</span>`;
+}
+
+// ── Panel 7 helpers: walk-forward validation ──
+
+type FilterV2Panel7Row = {
+  filter: string;
+  group: string;
+  n_train: number;
+  n_test: number;
+  train_tp: number | null;
+  train_sl: number | null;
+  train_avg_ret: number | null;
+  test_avg_ret: number | null;
+  degradation: number | null;
+  verdict: 'ROBUST' | 'DEGRADED' | 'OVERFIT' | 'INSUFFICIENT';
+};
+
+// Degradation cell — train − test delta. Lower is better (less overfit).
+function degradationCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v < 2 ? 'green' : v <= 5 ? 'yellow' : 'red';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(1)}pp</span>`;
+}
+
+// Verdict badge for Panel 7
+function verdictCell7(v: FilterV2Panel7Row['verdict']): string {
+  if (v === 'ROBUST') return '<span class="green">ROBUST</span>';
+  if (v === 'DEGRADED') return '<span class="yellow">DEGRADED</span>';
+  if (v === 'OVERFIT') return '<span class="red">OVERFIT</span>';
+  return '<span style="color:#64748b">INSUFFICIENT</span>';
+}
+
+function v2Panel7RowHtml(r: FilterV2Panel7Row, lowN: number, strongN: number, isBaseline = false): string {
+  const totalN = r.n_train + r.n_test;
+  const cls = isBaseline ? 'row-baseline' : v2RowClass(totalN, lowN, strongN);
+  const nLabel = totalN < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+  const trainTpSl = (r.train_tp != null && r.train_sl != null) ? `${r.train_tp}/${r.train_sl}` : '—';
+  return `<tr class="${cls}">
+    <td>${r.filter}${nLabel}</td>
+    <td>${r.n_train}</td>
+    <td>${r.n_test}</td>
+    <td>${trainTpSl}</td>
+    <td>${p4OptAvgRetCell(r.train_avg_ret)}</td>
+    <td>${p4OptAvgRetCell(r.test_avg_ret)}</td>
+    <td>${degradationCell(r.degradation)}</td>
+    <td>${verdictCell7(r.verdict)}</td>
+  </tr>`;
+}
+
 export function renderFilterV2Html(data: any): string {
   const panel1 = data.panel1;
   const baseline: FilterV2Row = panel1.baseline;
@@ -1459,6 +1619,283 @@ export function renderFilterV2Html(data: any): string {
   </script>`;
   }
 
+  // ── Panel 5 (Statistical Significance — Wilson CI + bootstrap CI) ──
+  let panel5Html = '';
+  if (data.panel5) {
+    const panel5 = data.panel5;
+    const baseline5: FilterV2Panel5Row = panel5.baseline;
+    const filters5: FilterV2Panel5Row[] = panel5.filters || [];
+    const lowN5 = panel5.flags?.low_n_threshold ?? 30;
+    const strongN5 = panel5.flags?.strong_n_threshold ?? 100;
+
+    const groups5 = new Map<string, FilterV2Panel5Row[]>();
+    for (const f of filters5) {
+      if (!groups5.has(f.group)) groups5.set(f.group, []);
+      groups5.get(f.group)!.push(f);
+    }
+
+    const baselineRow5 = v2Panel5RowHtml(baseline5, lowN5, strongN5, true);
+    const groupRows5: string[] = [];
+    for (const [groupName, rows] of groups5) {
+      groupRows5.push(`<tr class="row-group-header"><td colspan="9">${groupName}</td></tr>`);
+      for (const r of rows) groupRows5.push(v2Panel5RowHtml(r, lowN5, strongN5, false));
+    }
+
+    const table5Html = `
+    <table id="panel5-table">
+      <thead>
+        <tr>
+          <th class="sortable" onclick="sortPanel5(0,'str')">Filter <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel5(1,'num')">n <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel5(2,'num')">Win % <span class="arrow">⇅</span></th>
+          <th>Win % 95% CI</th>
+          <th class="sortable" onclick="sortPanel5(4,'num')">p vs base <span class="arrow">⇅</span></th>
+          <th>Opt TP/SL</th>
+          <th class="sortable" onclick="sortPanel5(6,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
+          <th>Avg Ret 95% CI (boot)</th>
+          <th class="sortable" onclick="sortPanel5(8,'str')">Verdict <span class="arrow">⇅</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baselineRow5}
+        ${groupRows5.join('\n        ')}
+      </tbody>
+    </table>`;
+
+    const legend5 = `
+    <div class="desc" style="margin-top:10px">
+      <strong>Win % 95% CI:</strong> Wilson score interval — closed-form, stable at small n. If the CI is wide, the raw win rate is noisy.
+      <br>
+      <strong>p vs base:</strong> two-proportion z-test vs the ALL-labeled baseline win rate. <span class="green">&lt; 0.05</span> = significantly different, <span class="yellow">&lt; 0.10</span> = marginally, <span class="red">≥ 0.10</span> = indistinguishable.
+      <br>
+      <strong>Avg Ret 95% CI (boot):</strong> 1000-iteration bootstrap on the per-token cost-adjusted return vector at the filter's Panel 4 optimum (TP/SL). <span class="green">CI entirely above 0</span> = profitable with 95% confidence. <span class="red">entirely below 0</span> = the optimum is a loser in disguise.
+      <br>
+      <strong>Verdict:</strong>
+      <span class="green">SIGNIFICANT</span> (p&lt;0.05 AND boot CI &gt; 0) ·
+      <span class="yellow">MARGINAL</span> (one of the two) ·
+      <span class="red">NOISE</span> (neither) ·
+      <span style="color:#64748b">INSUFFICIENT</span> (n &lt; 30)
+      <br>
+      <em>Gate all other panels on this column — a high Opt Avg Ret is meaningless if its bootstrap CI straddles zero.</em>
+    </div>`;
+
+    panel5Html = `
+    <div class="card">
+      <h2>Panel 5 — ${panel5.title}</h2>
+      <div class="desc">${panel5.description}</div>
+      ${table5Html}
+      ${legend5}
+    </div>`;
+  }
+
+  // ── Panel 6 (Multi-Filter Intersection — 2-way + 3-way AND) ──
+  let panel6Html = '';
+  if (data.panel6) {
+    const panel6 = data.panel6;
+    const filterNames: { name: string; group: string }[] = panel6.filter_names || [];
+    const dynamic: FilterV2Panel6Dynamic = panel6.dynamic;
+    const topPairs: FilterV2Panel6PairRow[] = panel6.top_pairs || [];
+
+    // Group dropdown options by filter family for readability
+    const groups6 = new Map<string, { name: string; group: string }[]>();
+    for (const fn of filterNames) {
+      if (!groups6.has(fn.group)) groups6.set(fn.group, []);
+      groups6.get(fn.group)!.push(fn);
+    }
+
+    const mkOptions = (selected: string | null) => {
+      const parts: string[] = ['<option value="">(none)</option>'];
+      for (const [groupName, items] of groups6) {
+        parts.push(`<optgroup label="${escHtml(groupName)}">`);
+        for (const it of items) {
+          const sel = it.name === selected ? ' selected' : '';
+          parts.push(`<option value="${escHtml(it.name)}"${sel}>${escHtml(it.name)}</option>`);
+        }
+        parts.push('</optgroup>');
+      }
+      return parts.join('');
+    };
+
+    const selA = dynamic && dynamic.selected[0] ? dynamic.selected[0] : null;
+    const selB = dynamic && dynamic.selected[1] ? dynamic.selected[1] : null;
+    const selC = dynamic && dynamic.selected[2] ? dynamic.selected[2] : null;
+
+    const controls6 = `
+    <div class="p4-controls">
+      <label>Filter A: <select id="p6-a" onchange="onPanel6Change()">${mkOptions(selA)}</select></label>
+      <label>Filter B: <select id="p6-b" onchange="onPanel6Change()">${mkOptions(selB)}</select></label>
+      <label>Filter C: <select id="p6-c" onchange="onPanel6Change()">${mkOptions(selC)}</select></label>
+      <span class="desc">Intersection is ANDed. Change any dropdown to reload the page with the new selection.</span>
+    </div>`;
+
+    let dynamicHtml = '';
+    if (!dynamic) {
+      dynamicHtml = `<div class="desc" style="margin:10px 0"><em>Select at least one filter from Filter A to see an intersection.</em></div>`;
+    } else {
+      const tpSl = (dynamic.opt_tp != null && dynamic.opt_sl != null) ? `${dynamic.opt_tp}/${dynamic.opt_sl}` : '—';
+      const nWarn = dynamic.n < 30
+        ? ` <span class="lowN">(low n, stats unreliable)</span>`
+        : '';
+      dynamicHtml = `
+      <table id="panel6-dynamic-table" style="margin-top:12px">
+        <thead>
+          <tr>
+            <th>Active combination</th>
+            <th>n</th>
+            <th>Opt TP/SL</th>
+            <th>Opt Avg Ret</th>
+            <th>Opt Win %</th>
+            <th>Lift vs best single</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="row-baseline">
+            <td>${dynamic.selected.map(s => `<code>${escHtml(s)}</code>`).join(' AND ')}</td>
+            <td>${dynamic.n}${nWarn}</td>
+            <td>${tpSl}</td>
+            <td>${p4OptAvgRetCell(dynamic.opt_avg_ret)}</td>
+            <td>${p4OptWinRateCell(dynamic.opt_win_rate)}</td>
+            <td>${liftCell(dynamic.lift_vs_best_single)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+    }
+
+    const topPairsRows = topPairs.length === 0
+      ? '<tr><td colspan="8" style="color:#64748b;text-align:center"><em>No two-filter intersections meet the criteria (n ≥ 30 and lift &gt; 0). Collect more data.</em></td></tr>'
+      : topPairs.map(p => {
+          const tpSl = `${p.opt_tp}/${p.opt_sl}`;
+          return `<tr>
+            <td><code>${escHtml(p.filter_a)}</code></td>
+            <td><code>${escHtml(p.filter_b)}</code></td>
+            <td>${p.n}</td>
+            <td>${tpSl}</td>
+            <td>${p4OptAvgRetCell(p.opt_avg_ret)}</td>
+            <td>${p4OptWinRateCell(p.opt_win_rate)}</td>
+            <td>${p4OptAvgRetCell(p.single_a_opt)} / ${p4OptAvgRetCell(p.single_b_opt)}</td>
+            <td>${liftCell(p.lift)}</td>
+          </tr>`;
+        }).join('\n        ');
+
+    const topPairsTable = `
+    <h3 style="margin-top:20px;color:#e2e8f0;font-size:14px">Top 20 two-filter intersections (n ≥ 30, lift &gt; 0, sorted by Opt Avg Ret)</h3>
+    <table id="panel6-pairs-table">
+      <thead>
+        <tr>
+          <th class="sortable" onclick="sortPanel6Pairs(0,'str')">Filter A <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel6Pairs(1,'str')">Filter B <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel6Pairs(2,'num')">n <span class="arrow">⇅</span></th>
+          <th>Opt TP/SL</th>
+          <th class="sortable" onclick="sortPanel6Pairs(4,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel6Pairs(5,'num')">Opt Win % <span class="arrow">⇅</span></th>
+          <th>Singles (A / B)</th>
+          <th class="sortable" onclick="sortPanel6Pairs(7,'num')">Lift <span class="arrow">⇅</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${topPairsRows}
+      </tbody>
+    </table>`;
+
+    const legend6 = `
+    <div class="desc" style="margin-top:10px">
+      <strong>Lift vs best single:</strong> <code>combo_opt_avg_ret − max(component_opt_avg_ret)</code>. Positive = the combo beats its best constituent (real information gained). Zero or negative = the filters are redundant or hurt each other.
+      <br>
+      <strong>Small-n warning:</strong> Intersections with n &lt; 30 are flagged but not hidden. The optimum TP/SL may still show, but the bootstrap CI (Panel 5) would be untrustworthy at that n.
+      <br>
+      <strong>Top 20 pairs:</strong> auto-scan of all C(53, 2) = 1378 two-filter intersections. If the list is empty, either data is too sparse or no pairs have positive lift — investigate with Panel 5 first.
+      <br>
+      <em>Start by picking the best SIGNIFICANT single filter from Panel 5, then add a second filter to see if lift is positive.</em>
+    </div>`;
+
+    panel6Html = `
+    <div class="card">
+      <h2>Panel 6 — ${panel6.title}</h2>
+      <div class="desc">${panel6.description}</div>
+      ${controls6}
+      ${dynamicHtml}
+      ${topPairsTable}
+      ${legend6}
+    </div>`;
+  }
+
+  // ── Panel 7 (Walk-Forward Validation) ──
+  let panel7Html = '';
+  if (data.panel7) {
+    const panel7 = data.panel7;
+    const baseline7: FilterV2Panel7Row = panel7.baseline;
+    const filters7: FilterV2Panel7Row[] = panel7.filters || [];
+    const lowN7 = panel7.flags?.low_n_threshold ?? 30;
+    const strongN7 = panel7.flags?.strong_n_threshold ?? 100;
+    const split = panel7.split || {};
+
+    const groups7 = new Map<string, FilterV2Panel7Row[]>();
+    for (const f of filters7) {
+      if (!groups7.has(f.group)) groups7.set(f.group, []);
+      groups7.get(f.group)!.push(f);
+    }
+
+    const baselineRow7 = v2Panel7RowHtml(baseline7, lowN7, strongN7, true);
+    const groupRows7: string[] = [];
+    for (const [groupName, rows] of groups7) {
+      groupRows7.push(`<tr class="row-group-header"><td colspan="8">${groupName}</td></tr>`);
+      for (const r of rows) groupRows7.push(v2Panel7RowHtml(r, lowN7, strongN7, false));
+    }
+
+    const splitLegend = (split.train_start_iso && split.test_end_iso)
+      ? `<div class="desc" style="margin-top:6px"><strong>Split:</strong>
+          TRAIN ${split.train_start_iso.slice(0,10)} → ${split.train_end_iso.slice(0,10)} (n=${split.n_train}) ·
+          TEST ${split.test_start_iso.slice(0,10)} → ${split.test_end_iso.slice(0,10)} (n=${split.n_test})
+          ${Math.round((split.train_frac || 0.7) * 100)}/${Math.round((1 - (split.train_frac || 0.7)) * 100)} time split</div>`
+      : '<div class="desc" style="margin-top:6px"><em>No split windows available.</em></div>';
+
+    const table7Html = `
+    <table id="panel7-table">
+      <thead>
+        <tr>
+          <th class="sortable" onclick="sortPanel7(0,'str')">Filter <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel7(1,'num')">n train <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel7(2,'num')">n test <span class="arrow">⇅</span></th>
+          <th>Train TP/SL</th>
+          <th class="sortable" onclick="sortPanel7(4,'num')">Train Avg Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel7(5,'num')">Test Avg Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel7(6,'num')">Degradation <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel7(7,'str')">Verdict <span class="arrow">⇅</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baselineRow7}
+        ${groupRows7.join('\n        ')}
+      </tbody>
+    </table>`;
+
+    const legend7 = `
+    <div class="desc" style="margin-top:10px">
+      <strong>Method:</strong> Sort all eligible rows by <code>created_at</code>. Find Panel 4's optimum TP/SL on the first 70% (TRAIN). Apply that exact (TP, SL) — without re-optimization — to the last 30% (TEST). The optimum was chosen from a 12×10=120 combo grid, so multiple-testing / selection bias is real; this panel quantifies it.
+      <br>
+      <strong>Degradation:</strong> <code>train_avg_ret − test_avg_ret</code>, in percentage points. Small or negative = robust edge. Large positive = the optimum was a lucky corner of the grid.
+      <br>
+      <strong>Verdict:</strong>
+      <span class="green">ROBUST (&lt; 2pp)</span> ·
+      <span class="yellow">DEGRADED (2–5pp)</span> ·
+      <span class="red">OVERFIT (&gt; 5pp)</span> ·
+      <span style="color:#64748b">INSUFFICIENT (train or test n &lt; 20)</span>
+      <br>
+      <strong>Cross-check:</strong> a filter that is ROBUST here should also be STABLE or MODERATE in Panel 3. A filter that is SIGNIFICANT in Panel 5 but OVERFIT here means the optimum is noise — trust the baseline TP/SL instead.
+      <br>
+      <em>Sort by Degradation ascending to surface the most robust filters.</em>
+    </div>`;
+
+    panel7Html = `
+    <div class="card">
+      <h2>Panel 7 — ${panel7.title}</h2>
+      <div class="desc">${panel7.description}</div>
+      ${splitLegend}
+      ${table7Html}
+      ${legend7}
+    </div>`;
+  }
+
   const sortScript = `
   <script>
   function v2GenericSort(tableId, col, type) {
@@ -1489,6 +1926,51 @@ export function renderFilterV2Html(data: any): string {
   function sortPanel2(col, type) { v2GenericSort('panel2-table', col, type); }
   function sortPanel3(col, type) { v2GenericSort('panel3-table', col, type); }
   function sortPanel4(col, type) { v2GenericSort('panel4-table', col, type); }
+  function sortPanel5(col, type) { v2GenericSort('panel5-table', col, type); }
+  function sortPanel7(col, type) { v2GenericSort('panel7-table', col, type); }
+
+  // Panel 6 top-pairs table has NO baseline row — use a simpler sort that treats
+  // every row as data.
+  function sortPanel6Pairs(col, type) {
+    var table = document.getElementById('panel6-pairs-table');
+    if (!table) return;
+    var tbody = table.tBodies[0];
+    var rows = Array.from(tbody.rows).filter(function(r){ return r.cells.length >= 2; });
+    var dir = table.getAttribute('data-sort-dir') === 'asc' ? 'desc' : 'asc';
+    table.setAttribute('data-sort-dir', dir);
+    rows.sort(function(a, b) {
+      var av = a.cells[col].textContent.trim().replace('%','').replace('+','').trim();
+      var bv = b.cells[col].textContent.trim().replace('%','').replace('+','').trim();
+      if (type === 'num') {
+        var an = av === '—' ? -Infinity : parseFloat(av);
+        var bn = bv === '—' ? -Infinity : parseFloat(bv);
+        return dir === 'asc' ? an - bn : bn - an;
+      }
+      return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    });
+    while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+    rows.forEach(function(r){ tbody.appendChild(r); });
+  }
+
+  // Panel 6 dropdowns reload the page with a new ?p6= query param. Server
+  // computes the intersection and renders it server-side on reload.
+  function onPanel6Change() {
+    var a = document.getElementById('p6-a');
+    var b = document.getElementById('p6-b');
+    var c = document.getElementById('p6-c');
+    if (!a) return;
+    var parts = [];
+    if (a.value) parts.push(a.value);
+    if (b && b.value) parts.push(b.value);
+    if (c && c.value) parts.push(c.value);
+    var url = new URL(window.location.href);
+    if (parts.length > 0) {
+      url.searchParams.set('p6', parts.join(','));
+    } else {
+      url.searchParams.delete('p6');
+    }
+    window.location.href = url.toString();
+  }
 
   // ── Panel 4 dynamic update ──
   function p4ColorAvg(v) {
@@ -1573,7 +2055,7 @@ export function renderFilterV2Html(data: any): string {
   }
   </script>`;
 
-  const body = panel1Html + panel2Html + panel3Html + panel4Html + panel4DataScript + sortScript;
+  const body = panel1Html + panel2Html + panel3Html + panel4Html + panel5Html + panel6Html + panel7Html + panel4DataScript + sortScript;
   return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
 }
 
