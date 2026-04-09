@@ -1,9 +1,9 @@
 import { EventEmitter } from 'events';
 import { Connection } from '@solana/web3.js';
-import pino from 'pino';
 import { fetchVaultPrice } from './executor';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'position-manager' });
+const logger = makeLogger('position-manager');
 
 export interface ActivePosition {
   tradeId: number;

@@ -1,6 +1,6 @@
-import pino from 'pino';
+import { makeLogger } from './logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'rpc-limiter' });
+const logger = makeLogger('rpc-limiter');
 
 /**
  * Token-bucket rate limiter for Helius RPC calls.

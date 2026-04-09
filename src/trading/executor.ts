@@ -1,9 +1,9 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
-import pino from 'pino';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'trading-executor' });
+const logger = makeLogger('trading-executor');
 
 export interface PoolPriceResult {
   priceSol: number;

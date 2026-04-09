@@ -1,6 +1,5 @@
 import Database from 'better-sqlite3';
 import { Connection } from '@solana/web3.js';
-import pino from 'pino';
 import { loadTradingConfig, describeTradingConfig, TradingConfig } from './config';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
@@ -8,8 +7,9 @@ import { PositionManager, ExitEvent } from './position-manager';
 import { TradeEvaluator } from './trade-evaluator';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
 import { getOpenTrades } from '../db/queries';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'trading-engine' });
+const logger = makeLogger('trading-engine');
 
 const BACKFILL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 

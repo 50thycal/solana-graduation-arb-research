@@ -1,13 +1,13 @@
 import express from 'express';
-import pino from 'pino';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { getGraduationCount, getTradeStats, getRecentTrades, getRecentSkips, getSkipReasonCounts } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
 import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml } from './utils/html-renderer';
 import { TradingEngine } from './trading';
+import { makeLogger } from './utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'main' });
+const logger = makeLogger('main');
 
 // Send JSON as a browser-friendly HTML page (with copy button) when Accept: text/html,
 // otherwise return plain JSON for API/curl clients.

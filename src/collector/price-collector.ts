@@ -1,7 +1,6 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import BN from 'bn.js';
 import Database from 'better-sqlite3';
-import pino from 'pino';
 import {
   insertPoolObservation,
   markObservationComplete,
@@ -11,8 +10,9 @@ import {
 import { MomentumLabeler } from '../analysis/momentum-labeler';
 import { CompetitionDetector } from './competition-detector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'price-collector' });
+const logger = makeLogger('price-collector');
 
 // Momentum research schedule: T+0 for open price, then checkpoints for price tracking.
 // Every 5s for the first 60s (for price path shape analysis), then every 30s until T+300,

@@ -1,11 +1,11 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import Database from 'better-sqlite3';
-import pino from 'pino';
 import { insertCompetitionSignal, getExistingSignatures, computeBuyPressureAggregates, updateBuyPressureMetrics } from '../db/queries';
 import { ObservationContext } from './price-collector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'competition-detector' });
+const logger = makeLogger('competition-detector');
 
 // Known program IDs that aren't user wallets
 const SYSTEM_PROGRAMS = new Set([

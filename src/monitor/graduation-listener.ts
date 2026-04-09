@@ -7,14 +7,14 @@ import {
 } from '@solana/web3.js';
 import BN from 'bn.js';
 import Database from 'better-sqlite3';
-import pino from 'pino';
 import { insertGraduation, insertMomentum, updateGraduationEnrichment, updateGraduationPool } from '../db/queries';
 import { PoolTracker } from './pool-tracker';
 import { HolderEnrichment } from '../collector/holder-enrichment';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { PriceCollector } from '../collector/price-collector';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'graduation-listener' });
+const logger = makeLogger('graduation-listener');
 
 // pump.fun program ID
 const PUMP_FUN_PROGRAM_ID = new PublicKey(

@@ -1,12 +1,12 @@
 import Database from 'better-sqlite3';
-import pino from 'pino';
 import {
   getPriceComparisons,
   getCompetitionCount10s,
   insertOpportunity,
 } from '../db/queries';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'opportunity-scorer' });
+const logger = makeLogger('opportunity-scorer');
 
 // Cost estimates for Solana transactions
 const ESTIMATED_GAS_SOL = 0.000005; // ~5000 lamports base fee

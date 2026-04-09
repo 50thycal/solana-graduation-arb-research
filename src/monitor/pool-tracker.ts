@@ -1,11 +1,11 @@
 import { Connection, PublicKey, Logs, Context } from '@solana/web3.js';
 import Database from 'better-sqlite3';
-import pino from 'pino';
 import { updateGraduationPool } from '../db/queries';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'pool-tracker' });
+const logger = makeLogger('pool-tracker');
 
 // PumpSwap program ID
 const PUMPSWAP_PROGRAM_ID = new PublicKey(
