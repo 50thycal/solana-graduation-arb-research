@@ -2817,6 +2817,240 @@ async function main() {
         ...runFilterPanel7(f.predicate as (r: Panel4Row) => boolean),
       }));
 
+      // ── Panel 8: loss tail & risk metrics ──
+      //
+      // Computed at each filter's Panel 4 optimum TP/SL on chronologically-
+      // sorted rows (so "max consecutive losses" reflects true trade order).
+      // All metrics are derived from the same per-token cost-adjusted return
+      // vector that Panel 5's bootstrap CI uses.
+      type Panel8Row = {
+        filter: string;
+        group: string;
+        n: number;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        pct_loss_10: number | null;           // % trades with return < -10%
+        pct_loss_25: number | null;           // % trades with return < -25%
+        pct_loss_50: number | null;           // % trades with return < -50%
+        var_95: number | null;                // 5th percentile of return distribution
+        cvar_95: number | null;               // mean of returns at or below VaR 95%
+        worst_trade: number | null;           // min return across all trades
+        max_consecutive_losses: number | null;// longest streak of return<0 in chrono order
+      };
+
+      const runFilterPanel8 = (
+        predicate: (r: Panel4Row) => boolean,
+        optimal: Panel4Optimal,
+      ): Omit<Panel8Row, 'filter' | 'group'> => {
+        if (!optimal) {
+          return {
+            n: 0,
+            opt_tp: null, opt_sl: null,
+            pct_loss_10: null, pct_loss_25: null, pct_loss_50: null,
+            var_95: null, cvar_95: null, worst_trade: null,
+            max_consecutive_losses: null,
+          };
+        }
+        const filtered = panel4RowsSorted.filter(predicate);
+        const n = filtered.length;
+        if (n < PANEL_4_MIN_N_FOR_OPTIMUM) {
+          return {
+            n,
+            opt_tp: optimal.tp, opt_sl: optimal.sl,
+            pct_loss_10: null, pct_loss_25: null, pct_loss_50: null,
+            var_95: null, cvar_95: null, worst_trade: null,
+            max_consecutive_losses: null,
+          };
+        }
+
+        const returns = filtered.map(r => simulateInMemory(r, optimal.tp, optimal.sl).ret);
+
+        // Loss threshold buckets
+        const lossCount = (t: number) => returns.filter(r => r < -t).length;
+        const pct_loss_10 = +(lossCount(10) / n * 100).toFixed(1);
+        const pct_loss_25 = +(lossCount(25) / n * 100).toFixed(1);
+        const pct_loss_50 = +(lossCount(50) / n * 100).toFixed(1);
+
+        // VaR 95 / CVaR 95 (left tail)
+        const sorted = [...returns].sort((a, b) => a - b);
+        const tailSize = Math.max(1, Math.floor(n * 0.05));
+        const var_95 = +sorted[tailSize - 1].toFixed(2);
+        const tailSum = sorted.slice(0, tailSize).reduce((s, v) => s + v, 0);
+        const cvar_95 = +(tailSum / tailSize).toFixed(2);
+
+        // Worst single trade
+        const worst_trade = +sorted[0].toFixed(2);
+
+        // Max consecutive loss streak (chronological order — depends on panel4RowsSorted)
+        let maxStreak = 0;
+        let curStreak = 0;
+        for (const r of returns) {
+          if (r < 0) { curStreak++; if (curStreak > maxStreak) maxStreak = curStreak; }
+          else curStreak = 0;
+        }
+
+        return {
+          n,
+          opt_tp: optimal.tp, opt_sl: optimal.sl,
+          pct_loss_10, pct_loss_25, pct_loss_50,
+          var_95, cvar_95, worst_trade,
+          max_consecutive_losses: maxStreak,
+        };
+      };
+
+      const baseline8: Panel8Row = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterPanel8(() => true, (baseline4 as any).optimal),
+      };
+      const filters8: Panel8Row[] = PANEL_1_FILTERS.map((f, idx) => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterPanel8(
+          f.predicate as (r: Panel4Row) => boolean,
+          (filters4[idx] as any).optimal,
+        ),
+      }));
+
+      // ── Panel 9: equity curve & drawdown simulation ──
+      //
+      // Trade the filter's Panel 4 optimum TP/SL through panel4RowsSorted in
+      // chronological order. Start at equity=1.0, geometrically compound each
+      // trade return. Report final equity, max drawdown, longest losing
+      // streak, per-trade Sharpe, and Kelly-optimal position size. Equity
+      // curve is down-sampled to ≤60 points for an inline SVG sparkline.
+      type Panel9Row = {
+        filter: string;
+        group: string;
+        n: number;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        final_equity_mult: number | null;     // e.g. 1.45 = +45% cumulative
+        max_drawdown_pct: number | null;      // max peak-to-trough decline (≤0)
+        longest_losing_streak: number | null; // same as panel 8 but reported here too
+        sharpe: number | null;                // mean/stddev of per-trade returns
+        kelly_fraction: number | null;        // Kelly-optimal bet size [0, 1]
+        equity_curve: number[];               // down-sampled sparkline points
+      };
+
+      const PANEL_9_SPARKLINE_POINTS = 60;
+
+      const runFilterPanel9 = (
+        predicate: (r: Panel4Row) => boolean,
+        optimal: Panel4Optimal,
+      ): Omit<Panel9Row, 'filter' | 'group'> => {
+        if (!optimal) {
+          return {
+            n: 0,
+            opt_tp: null, opt_sl: null,
+            final_equity_mult: null, max_drawdown_pct: null,
+            longest_losing_streak: null, sharpe: null, kelly_fraction: null,
+            equity_curve: [],
+          };
+        }
+        const filtered = panel4RowsSorted.filter(predicate);
+        const n = filtered.length;
+        if (n < PANEL_4_MIN_N_FOR_OPTIMUM) {
+          return {
+            n,
+            opt_tp: optimal.tp, opt_sl: optimal.sl,
+            final_equity_mult: null, max_drawdown_pct: null,
+            longest_losing_streak: null, sharpe: null, kelly_fraction: null,
+            equity_curve: [],
+          };
+        }
+
+        const returns = filtered.map(r => simulateInMemory(r, optimal.tp, optimal.sl).ret);
+
+        // Geometric equity curve (start=1.0). Tokens clamp at −100% so a single
+        // catastrophic loss cannot wipe the account below zero.
+        const equity: number[] = [1.0];
+        let curr = 1.0;
+        for (const r of returns) {
+          const mult = Math.max(0.01, 1 + r / 100); // clamp at -99% to avoid pathology
+          curr = curr * mult;
+          equity.push(curr);
+        }
+        const final_equity_mult = +curr.toFixed(3);
+
+        // Max drawdown: scan equity curve, track running peak
+        let peak = 1.0;
+        let maxDd = 0;
+        for (const v of equity) {
+          if (v > peak) peak = v;
+          const dd = (v - peak) / peak;
+          if (dd < maxDd) maxDd = dd;
+        }
+        const max_drawdown_pct = +(maxDd * 100).toFixed(1);
+
+        // Longest losing streak (chronological)
+        let longest = 0;
+        let streak = 0;
+        for (const r of returns) {
+          if (r < 0) { streak++; if (streak > longest) longest = streak; }
+          else streak = 0;
+        }
+
+        // Per-trade Sharpe (no annualization — trades are irregular)
+        const mean = returns.reduce((s, v) => s + v, 0) / n;
+        let sharpe: number | null = null;
+        if (n >= 2) {
+          const variance = returns.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
+          const std = Math.sqrt(variance);
+          sharpe = std > 0 ? +(mean / std).toFixed(3) : null;
+        }
+
+        // Kelly fraction: (p*b - q) / b, where p = win rate, b = avg_win/avg_loss, q = 1-p
+        let kelly: number | null = null;
+        const wins = returns.filter(r => r > 0);
+        const losses = returns.filter(r => r <= 0);
+        if (wins.length > 0 && losses.length > 0) {
+          const avgWin = wins.reduce((s, v) => s + v, 0) / wins.length;
+          const avgLoss = Math.abs(losses.reduce((s, v) => s + v, 0) / losses.length);
+          if (avgLoss > 0) {
+            const b = avgWin / avgLoss;
+            const p = wins.length / n;
+            const k = (p * b - (1 - p)) / b;
+            kelly = +Math.max(0, Math.min(1, k)).toFixed(3);
+          }
+        }
+
+        // Down-sample equity curve for sparkline
+        const sparkline: number[] = [];
+        const step = Math.max(1, Math.floor(equity.length / PANEL_9_SPARKLINE_POINTS));
+        for (let i = 0; i < equity.length; i += step) {
+          sparkline.push(+equity[i].toFixed(3));
+        }
+        if (sparkline[sparkline.length - 1] !== equity[equity.length - 1]) {
+          sparkline.push(+equity[equity.length - 1].toFixed(3));
+        }
+
+        return {
+          n,
+          opt_tp: optimal.tp, opt_sl: optimal.sl,
+          final_equity_mult,
+          max_drawdown_pct,
+          longest_losing_streak: longest,
+          sharpe,
+          kelly_fraction: kelly,
+          equity_curve: sparkline,
+        };
+      };
+
+      const baseline9: Panel9Row = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterPanel9(() => true, (baseline4 as any).optimal),
+      };
+      const filters9: Panel9Row[] = PANEL_1_FILTERS.map((f, idx) => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterPanel9(
+          f.predicate as (r: Panel4Row) => boolean,
+          (filters4[idx] as any).optimal,
+        ),
+      }));
+
       const filterV2Data = {
         generated_at: new Date().toISOString(),
         panel1: {
@@ -2922,6 +3156,28 @@ async function main() {
           },
           baseline: baseline7,
           filters: filters7,
+          flags: {
+            low_n_threshold: 30,
+            strong_n_threshold: 100,
+          },
+        },
+        panel8: {
+          title: 'Loss Tail & Risk Metrics — At Per-Filter Optimum TP/SL',
+          description:
+            'Quantifies the downside that the TP/SL is supposed to contain. All metrics are computed from per-token cost-adjusted returns at each filter\'s Panel 4 optimum, sorted chronologically. % loss columns count trades below the given threshold. VaR 95% = 5th percentile of the return distribution (you should expect to lose at least this much 5% of the time). CVaR 95% = mean of the bottom-5% tail (expected shortfall when VaR triggers). Worst = single worst trade. Max consecutive losses = longest streak of negative trades in chronological order.',
+          baseline: baseline8,
+          filters: filters8,
+          flags: {
+            low_n_threshold: 30,
+            strong_n_threshold: 100,
+          },
+        },
+        panel9: {
+          title: 'Equity Curve & Drawdown Simulation — Trade Sequence View',
+          description:
+            'Simulates trading every qualifying token in chronological order at each filter\'s Panel 4 optimum TP/SL. Equity starts at 1.0 and compounds geometrically (per-trade returns are clamped at −99% to avoid zero-out pathology). Final equity multiplier, max drawdown, longest losing streak, per-trade Sharpe, and Kelly-optimal bet fraction. The sparkline shows the down-sampled equity curve (≤60 points). This converts "avg return per trade" into the portfolio view you\'d actually experience.',
+          baseline: baseline9,
+          filters: filters9,
           flags: {
             low_n_threshold: 30,
             strong_n_threshold: 100,
