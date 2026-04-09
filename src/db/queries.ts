@@ -473,17 +473,19 @@ export interface TradeInsert {
 }
 
 export function insertTrade(db: Database.Database, data: TradeInsert): number {
+  // entry_effective_price and entry_tokens_received are left NULL here — they
+  // are populated via updateTradeEntryFill() after the buy actually fills.
   const result = db.prepare(`
     INSERT INTO trades_v2 (
       graduation_id, mode, status, mint, pool_address, base_vault, quote_vault,
       entry_timestamp, entry_price_sol, entry_pct_from_open, entry_liquidity_sol,
-      entry_effective_price, entry_slippage_pct,
+      entry_slippage_pct,
       trade_size_sol, take_profit_pct, stop_loss_pct, max_hold_seconds,
       filter_results_json, filter_config_json
     ) VALUES (
       @graduation_id, @mode, 'open', @mint, @pool_address, @base_vault, @quote_vault,
       @entry_timestamp, @entry_price_sol, @entry_pct_from_open, @entry_liquidity_sol,
-      @entry_effective_price, @entry_slippage_pct,
+      @entry_slippage_pct,
       @trade_size_sol, @take_profit_pct, @stop_loss_pct, @max_hold_seconds,
       @filter_results_json, @filter_config_json
     )
@@ -498,7 +500,6 @@ export function insertTrade(db: Database.Database, data: TradeInsert): number {
     entry_price_sol: data.entry_price_sol,
     entry_pct_from_open: data.entry_pct_from_open,
     entry_liquidity_sol: data.entry_liquidity_sol,
-    entry_effective_price: data.entry_price_sol,
     entry_slippage_pct: data.entry_slippage_pct ?? null,
     trade_size_sol: data.trade_size_sol,
     take_profit_pct: data.take_profit_pct,
@@ -556,6 +557,34 @@ export function closeTrade(db: Database.Database, tradeId: number, data: TradeCl
 export function markTradeFailed(db: Database.Database, tradeId: number, reason: string): void {
   db.prepare(`UPDATE trades_v2 SET status = 'failed', exit_reason = ? WHERE id = ?`)
     .run(reason, tradeId);
+}
+
+/**
+ * Patch the entry fields after the buy actually fills — captures the real
+ * effective price (with slippage) and tokens received. Called from
+ * TradeEvaluator.onT30 between openTrade() and addPosition().
+ */
+export function updateTradeEntryFill(
+  db: Database.Database,
+  tradeId: number,
+  data: {
+    entry_effective_price: number;
+    entry_tokens_received: number;
+    entry_tx_signature?: string;
+  }
+): void {
+  db.prepare(`
+    UPDATE trades_v2 SET
+      entry_effective_price = @entry_effective_price,
+      entry_tokens_received = @entry_tokens_received,
+      entry_tx_signature    = @entry_tx_signature
+    WHERE id = @tradeId
+  `).run({
+    tradeId,
+    entry_effective_price: data.entry_effective_price,
+    entry_tokens_received: data.entry_tokens_received,
+    entry_tx_signature: data.entry_tx_signature ?? null,
+  });
 }
 
 export function insertTradeSkip(

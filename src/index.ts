@@ -3644,6 +3644,13 @@ ${rows.map(r => {
       tradingEngine = new TradingEngine(db, listener.getConnection());
       tradingEngine.initialize();
       tradingEngine.attachToPriceCollector(listener.getPriceCollector());
+      // Refresh the PositionManager's Connection reference on every WS reconnect
+      // so we never poll a dead RPC handle after a network blip.
+      const te = tradingEngine;
+      listener.onReconnect((conn) => {
+        te.updateConnection(conn);
+        logger.info('TradingEngine Connection refreshed after listener reconnect');
+      });
     } catch (err) {
       logger.error('TradingEngine failed to initialize: %s', err instanceof Error ? err.message : String(err));
     }

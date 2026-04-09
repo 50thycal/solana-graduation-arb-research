@@ -116,6 +116,12 @@ export class GraduationListener {
   private totalStrategy3Extractions = 0;
   private lastMintFailReasons: string[] = [];
   private reconnecting = false;
+  /**
+   * Subscribers notified after a successful websocket reconnect with the fresh
+   * Connection object. TradingEngine registers here so its PositionManager
+   * does not keep polling a dead Connection reference.
+   */
+  private reconnectSubscribers: Array<(connection: Connection) => void> = [];
 
   constructor(db: Database.Database) {
     const rpcUrl = process.env.HELIUS_RPC_URL;
@@ -146,6 +152,15 @@ export class GraduationListener {
   /** Expose the active Connection for the TradingEngine's position monitor. */
   getConnection(): Connection {
     return this.connection;
+  }
+
+  /**
+   * Register a callback to be invoked after every successful websocket
+   * reconnect. Used by the TradingEngine to refresh its Connection reference
+   * so PositionManager polls against the live RPC endpoint, not a stale one.
+   */
+  onReconnect(cb: (connection: Connection) => void): void {
+    this.reconnectSubscribers.push(cb);
   }
 
   getStats() {
@@ -321,6 +336,19 @@ export class GraduationListener {
       this.poolTracker.updateConnection(this.connection);
       this.priceCollector.updateConnection(this.connection);
       this.holderEnrichment.updateConnection(this.connection);
+
+      // Notify external subscribers (e.g. TradingEngine → PositionManager)
+      // so they stop holding stale Connection references after reconnect.
+      for (const cb of this.reconnectSubscribers) {
+        try {
+          cb(this.connection);
+        } catch (err) {
+          logger.error(
+            'Reconnect subscriber threw: %s',
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+      }
 
       await this.subscribe();
       logger.info('WebSocket reconnected successfully');
