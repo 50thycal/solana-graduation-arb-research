@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3';
-import pino from 'pino';
 import { getMomentumRow, labelMomentum } from '../db/queries';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'momentum-labeler' });
+const logger = makeLogger('momentum-labeler');
 
 // Label thresholds based on T+300s price change
 const PUMP_THRESHOLD_PCT = 10;

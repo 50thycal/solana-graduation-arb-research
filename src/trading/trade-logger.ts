@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import pino from 'pino';
+import { makeLogger } from '../utils/logger';
 import {
   insertTrade,
   closeTrade,
@@ -11,7 +11,7 @@ import {
 import { TradingConfig } from './config';
 import { FilterStageResult } from './filter-pipeline';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'trade-logger' });
+const logger = makeLogger('trade-logger');
 
 export interface OpenTradeParams {
   graduationId: number;

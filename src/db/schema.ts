@@ -1,9 +1,9 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
-import pino from 'pino';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'db-schema' });
+const logger = makeLogger('db-schema');
 
 export function initDatabase(dataDir: string): Database.Database {
   if (!fs.existsSync(dataDir)) {

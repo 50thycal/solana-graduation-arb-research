@@ -1,6 +1,6 @@
-import pino from 'pino';
+import { makeLogger } from '../utils/logger';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'trading-config' });
+const logger = makeLogger('trading-config');
 
 export interface FilterConfig {
   /** Column name from graduation_momentum table */

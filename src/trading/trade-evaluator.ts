@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import pino from 'pino';
+import { makeLogger } from '../utils/logger';
 import { TradingConfig } from './config';
 import { runFilterPipeline } from './filter-pipeline';
 import { TradeLogger } from './trade-logger';
@@ -7,7 +7,7 @@ import { Executor } from './executor';
 import { PositionManager, ActivePosition } from './position-manager';
 import { ObservationContext } from '../collector/price-collector';
 
-const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'trade-evaluator' });
+const logger = makeLogger('trade-evaluator');
 
 export class TradeEvaluator {
   constructor(
