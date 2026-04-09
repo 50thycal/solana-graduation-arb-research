@@ -449,3 +449,194 @@ export function updateGraduationEnrichment(
     token_age_seconds: data.token_age_seconds ?? null,
   });
 }
+
+// ==================== Trading queries ====================
+
+export interface TradeInsert {
+  graduation_id: number;
+  mode: string;
+  mint: string;
+  pool_address: string;
+  base_vault?: string;
+  quote_vault?: string;
+  entry_timestamp: number;
+  entry_price_sol: number;
+  entry_pct_from_open: number;
+  entry_liquidity_sol: number;
+  trade_size_sol: number;
+  take_profit_pct: number;
+  stop_loss_pct: number;
+  max_hold_seconds: number;
+  entry_slippage_pct?: number;
+  filter_results_json?: string;
+  filter_config_json?: string;
+}
+
+export function insertTrade(db: Database.Database, data: TradeInsert): number {
+  const result = db.prepare(`
+    INSERT INTO trades_v2 (
+      graduation_id, mode, status, mint, pool_address, base_vault, quote_vault,
+      entry_timestamp, entry_price_sol, entry_pct_from_open, entry_liquidity_sol,
+      entry_effective_price, entry_slippage_pct,
+      trade_size_sol, take_profit_pct, stop_loss_pct, max_hold_seconds,
+      filter_results_json, filter_config_json
+    ) VALUES (
+      @graduation_id, @mode, 'open', @mint, @pool_address, @base_vault, @quote_vault,
+      @entry_timestamp, @entry_price_sol, @entry_pct_from_open, @entry_liquidity_sol,
+      @entry_effective_price, @entry_slippage_pct,
+      @trade_size_sol, @take_profit_pct, @stop_loss_pct, @max_hold_seconds,
+      @filter_results_json, @filter_config_json
+    )
+  `).run({
+    graduation_id: data.graduation_id,
+    mode: data.mode,
+    mint: data.mint,
+    pool_address: data.pool_address,
+    base_vault: data.base_vault ?? null,
+    quote_vault: data.quote_vault ?? null,
+    entry_timestamp: data.entry_timestamp,
+    entry_price_sol: data.entry_price_sol,
+    entry_pct_from_open: data.entry_pct_from_open,
+    entry_liquidity_sol: data.entry_liquidity_sol,
+    entry_effective_price: data.entry_price_sol,
+    entry_slippage_pct: data.entry_slippage_pct ?? null,
+    trade_size_sol: data.trade_size_sol,
+    take_profit_pct: data.take_profit_pct,
+    stop_loss_pct: data.stop_loss_pct,
+    max_hold_seconds: data.max_hold_seconds,
+    filter_results_json: data.filter_results_json ?? null,
+    filter_config_json: data.filter_config_json ?? null,
+  });
+  return result.lastInsertRowid as number;
+}
+
+export interface TradeClose {
+  exit_timestamp: number;
+  exit_price_sol: number;
+  exit_reason: string;
+  exit_effective_price: number;
+  gross_return_pct: number;
+  gap_adjusted_return_pct: number;
+  estimated_fees_sol: number;
+  net_profit_sol: number;
+  net_return_pct: number;
+  exit_tx_signature?: string;
+}
+
+export function closeTrade(db: Database.Database, tradeId: number, data: TradeClose): void {
+  db.prepare(`
+    UPDATE trades_v2 SET
+      status = 'closed',
+      exit_timestamp = @exit_timestamp,
+      exit_price_sol = @exit_price_sol,
+      exit_reason = @exit_reason,
+      exit_effective_price = @exit_effective_price,
+      exit_tx_signature = @exit_tx_signature,
+      gross_return_pct = @gross_return_pct,
+      gap_adjusted_return_pct = @gap_adjusted_return_pct,
+      estimated_fees_sol = @estimated_fees_sol,
+      net_profit_sol = @net_profit_sol,
+      net_return_pct = @net_return_pct
+    WHERE id = @tradeId
+  `).run({
+    tradeId,
+    exit_timestamp: data.exit_timestamp,
+    exit_price_sol: data.exit_price_sol,
+    exit_reason: data.exit_reason,
+    exit_effective_price: data.exit_effective_price,
+    exit_tx_signature: data.exit_tx_signature ?? null,
+    gross_return_pct: data.gross_return_pct,
+    gap_adjusted_return_pct: data.gap_adjusted_return_pct,
+    estimated_fees_sol: data.estimated_fees_sol,
+    net_profit_sol: data.net_profit_sol,
+    net_return_pct: data.net_return_pct,
+  });
+}
+
+export function markTradeFailed(db: Database.Database, tradeId: number, reason: string): void {
+  db.prepare(`UPDATE trades_v2 SET status = 'failed', exit_reason = ? WHERE id = ?`)
+    .run(reason, tradeId);
+}
+
+export function insertTradeSkip(
+  db: Database.Database,
+  graduationId: number,
+  skipReason: string,
+  skipValue: number | null,
+  pctT30: number | null,
+): void {
+  db.prepare(`
+    INSERT INTO trade_skips (graduation_id, skip_reason, skip_value, pct_t30)
+    VALUES (?, ?, ?, ?)
+  `).run(graduationId, skipReason, skipValue ?? null, pctT30 ?? null);
+}
+
+export function getOpenTrades(db: Database.Database) {
+  return db.prepare(`SELECT * FROM trades_v2 WHERE status = 'open'`).all();
+}
+
+export function getRecentTrades(db: Database.Database, limit = 50) {
+  return db.prepare(`
+    SELECT t.*, g.mint as grad_mint
+    FROM trades_v2 t
+    JOIN graduations g ON g.id = t.graduation_id
+    ORDER BY t.created_at DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+export function getTradeStats(db: Database.Database) {
+  return db.prepare(`
+    SELECT
+      mode,
+      COUNT(*) as total,
+      COUNT(CASE WHEN status='closed' THEN 1 END) as closed,
+      COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
+      COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
+      AVG(CASE WHEN status='closed' THEN net_return_pct END) as avg_net_return_pct,
+      SUM(CASE WHEN status='closed' AND exit_reason='take_profit' THEN 1 ELSE 0 END) as tp_exits,
+      SUM(CASE WHEN status='closed' AND exit_reason='stop_loss' THEN 1 ELSE 0 END) as sl_exits,
+      SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
+      SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END) as total_net_profit_sol
+    FROM trades_v2
+    GROUP BY mode
+  `).all();
+}
+
+export function getRecentSkips(db: Database.Database, limit = 50) {
+  return db.prepare(`
+    SELECT ts.*, g.mint
+    FROM trade_skips ts
+    JOIN graduations g ON g.id = ts.graduation_id
+    ORDER BY ts.created_at DESC
+    LIMIT ?
+  `).all(limit);
+}
+
+export function getSkipReasonCounts(db: Database.Database) {
+  return db.prepare(`
+    SELECT skip_reason, COUNT(*) as count
+    FROM trade_skips
+    GROUP BY skip_reason
+    ORDER BY count DESC
+  `).all();
+}
+
+/** Backfill momentum comparison fields on closed trades once graduation_momentum is complete */
+export function backfillTradeMomentum(db: Database.Database): number {
+  const result = db.prepare(`
+    UPDATE trades_v2
+    SET
+      momentum_pct_t60  = (SELECT pct_t60  FROM graduation_momentum WHERE graduation_id = trades_v2.graduation_id),
+      momentum_pct_t120 = (SELECT pct_t120 FROM graduation_momentum WHERE graduation_id = trades_v2.graduation_id),
+      momentum_pct_t300 = (SELECT pct_t300 FROM graduation_momentum WHERE graduation_id = trades_v2.graduation_id),
+      momentum_label    = (SELECT label    FROM graduation_momentum WHERE graduation_id = trades_v2.graduation_id)
+    WHERE status = 'closed'
+      AND momentum_pct_t300 IS NULL
+      AND EXISTS (
+        SELECT 1 FROM graduation_momentum
+        WHERE graduation_id = trades_v2.graduation_id AND pct_t300 IS NOT NULL
+      )
+  `).run();
+  return result.changes;
+}

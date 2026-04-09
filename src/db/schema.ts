@@ -287,5 +287,63 @@ function runMigrations(db: Database.Database): void {
     logger.info('Unique mint index created');
   }
 
+  // Trading extension tables (safe migrations)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS trades_v2 (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      graduation_id INTEGER NOT NULL REFERENCES graduations(id),
+      mode TEXT NOT NULL,
+      status TEXT NOT NULL,
+      mint TEXT NOT NULL,
+      pool_address TEXT NOT NULL,
+      base_vault TEXT,
+      quote_vault TEXT,
+      entry_timestamp INTEGER,
+      entry_price_sol REAL,
+      entry_pct_from_open REAL,
+      entry_liquidity_sol REAL,
+      entry_tx_signature TEXT,
+      entry_effective_price REAL,
+      entry_tokens_received REAL,
+      entry_slippage_pct REAL,
+      trade_size_sol REAL,
+      take_profit_pct REAL,
+      stop_loss_pct REAL,
+      max_hold_seconds INTEGER,
+      exit_timestamp INTEGER,
+      exit_price_sol REAL,
+      exit_reason TEXT,
+      exit_tx_signature TEXT,
+      exit_effective_price REAL,
+      gross_return_pct REAL,
+      gap_adjusted_return_pct REAL,
+      estimated_fees_sol REAL,
+      net_profit_sol REAL,
+      net_return_pct REAL,
+      filter_results_json TEXT,
+      filter_config_json TEXT,
+      momentum_pct_t60 REAL,
+      momentum_pct_t120 REAL,
+      momentum_pct_t300 REAL,
+      momentum_label TEXT,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_trades_v2_graduation ON trades_v2(graduation_id);
+    CREATE INDEX IF NOT EXISTS idx_trades_v2_status ON trades_v2(status);
+    CREATE INDEX IF NOT EXISTS idx_trades_v2_mode ON trades_v2(mode);
+
+    CREATE TABLE IF NOT EXISTS trade_skips (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      graduation_id INTEGER NOT NULL REFERENCES graduations(id),
+      skip_reason TEXT NOT NULL,
+      skip_value REAL,
+      pct_t30 REAL,
+      created_at INTEGER DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_trade_skips_graduation ON trade_skips(graduation_id);
+  `);
+
   logger.info('Database migrations complete');
 }

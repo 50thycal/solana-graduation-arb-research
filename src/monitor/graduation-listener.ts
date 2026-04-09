@@ -138,6 +138,16 @@ export class GraduationListener {
     this.holderEnrichment = new HolderEnrichment(this.connection);
   }
 
+  /** Expose the PriceCollector so the TradingEngine can attach its T+30 callback. */
+  getPriceCollector(): PriceCollector {
+    return this.priceCollector;
+  }
+
+  /** Expose the active Connection for the TradingEngine's position monitor. */
+  getConnection(): Connection {
+    return this.connection;
+  }
+
   getStats() {
     return {
       totalLogsReceived: this.totalLogsReceived,

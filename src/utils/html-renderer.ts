@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { path: '/filter-analysis-v2', label: 'Filters V2' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
+  { path: '/trading', label: 'Trading' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
@@ -2799,4 +2800,163 @@ export function renderPricePathHtml(db: Database.Database): string {
     entry_timing_heatmap_sl10_tp50: entryHeatmapJson,
     win_rate_by_monotonicity_0_30: monoJsonData,
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Trading dashboard
+// ─────────────────────────────────────────────────────────────────────────────
+
+export function renderTradingHtml(data: any): string {
+  const navHtml = nav('/trading');
+
+  const cfg = data.config;
+  const modeColor = !data.trading_enabled ? '#94a3b8' : cfg?.mode === 'live' ? '#f59e0b' : '#22d3ee';
+  const modeLabel = !data.trading_enabled ? 'DISABLED' : (cfg?.mode ?? 'unknown').toUpperCase();
+
+  const configHtml = cfg ? `
+    <div class="card">
+      <div class="card-title">Config <span style="color:${modeColor};font-size:15px;margin-left:8px">${modeLabel}</span></div>
+      <table class="table"><tbody>
+        <tr><td>Mode</td><td style="color:${modeColor}">${cfg.mode}</td></tr>
+        <tr><td>Trade Size</td><td>${cfg.trade_size_sol} SOL</td></tr>
+        <tr><td>Take Profit</td><td style="color:#22d3ee">+${cfg.take_profit_pct}%</td></tr>
+        <tr><td>Stop Loss</td><td style="color:#f87171">-${cfg.stop_loss_pct}%</td></tr>
+        <tr><td>Max Hold</td><td>${cfg.max_hold_seconds}s</td></tr>
+        <tr><td>Entry Gate</td><td>${cfg.entry_gate}</td></tr>
+        <tr><td>Max Concurrent</td><td>${cfg.max_concurrent_positions}</td></tr>
+        <tr><td>Filters</td><td style="color:#a78bfa">${(cfg.filters || []).map((f: any) => f.label).join(' AND ') || 'none'}</td></tr>
+      </tbody></table>
+    </div>` : `<div class="card"><div class="card-title">Config</div><p style="color:#94a3b8">Trading disabled — set TRADING_ENABLED=true to activate</p></div>`;
+
+  // Open positions
+  const posRows = (data.open_positions || []).map((p: any) => `
+    <tr>
+      <td>${p.tradeId}</td>
+      <td style="font-family:monospace;font-size:11px">${p.mint.slice(0,8)}…</td>
+      <td>${p.entryPriceSol?.toFixed(8) ?? '-'}</td>
+      <td style="color:#22d3ee">${p.tpPriceSol?.toFixed(8) ?? '-'}</td>
+      <td style="color:#f87171">${p.slPriceSol?.toFixed(8) ?? '-'}</td>
+      <td>${p.secondsHeld}s / ${p.maxHoldSeconds}s</td>
+    </tr>`).join('');
+
+  const openHtml = `
+    <div class="card">
+      <div class="card-title">Open Positions (${(data.open_positions || []).length})</div>
+      ${posRows ? `<table class="table">
+        <thead><tr><th>ID</th><th>Mint</th><th>Entry</th><th>TP</th><th>SL</th><th>Held</th></tr></thead>
+        <tbody>${posRows}</tbody>
+      </table>` : '<p style="color:#94a3b8">No open positions</p>'}
+    </div>`;
+
+  // Performance summary
+  const perfRows = (data.performance_summary || []).map((s: any) => {
+    const ret = s.avg_net_return_pct;
+    const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
+    return `<tr>
+      <td style="color:${s.mode === 'live' ? '#f59e0b' : '#22d3ee'}">${s.mode?.toUpperCase()}</td>
+      <td>${s.total}</td><td>${s.closed}</td><td>${s.open_count}</td><td>${s.failed}</td>
+      <td style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
+      <td style="color:#22d3ee">${s.tp_exits}</td>
+      <td style="color:#f87171">${s.sl_exits}</td>
+      <td style="color:#94a3b8">${s.timeout_exits}</td>
+      <td>${s.total_net_profit_sol != null ? s.total_net_profit_sol.toFixed(4) + ' SOL' : '-'}</td>
+    </tr>`;
+  }).join('');
+
+  const perfHtml = `
+    <div class="card">
+      <div class="card-title">Performance Summary</div>
+      ${perfRows ? `<table class="table">
+        <thead><tr><th>Mode</th><th>Total</th><th>Closed</th><th>Open</th><th>Failed</th>
+          <th>Avg Net Ret%</th><th>TP Exits</th><th>SL Exits</th><th>Timeout</th><th>Net P&L</th></tr></thead>
+        <tbody>${perfRows}</tbody>
+      </table>` : '<p style="color:#94a3b8">No trades yet</p>'}
+    </div>`;
+
+  // Recent trades table
+  const tradeRows = (data.recent_trades || []).map((t: any) => {
+    const ret = t.net_return_pct;
+    const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
+    const reasonColor = t.exit_reason === 'take_profit' ? '#22d3ee' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
+    return `<tr>
+      <td>${t.id}</td>
+      <td style="color:${t.mode === 'live' ? '#f59e0b' : '#22d3ee'}">${t.mode}</td>
+      <td style="color:${t.status === 'open' ? '#a78bfa' : t.status === 'failed' ? '#f87171' : '#94a3b8'}">${t.status}</td>
+      <td style="font-family:monospace;font-size:11px">${(t.mint || '').slice(0,8)}…</td>
+      <td>${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
+      <td style="color:${reasonColor}">${t.exit_reason ?? '-'}</td>
+      <td style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
+      <td style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
+      <td style="font-size:11px;color:#64748b">${t.entry_dt ?? '-'}</td>
+    </tr>`;
+  }).join('');
+
+  const tradesHtml = `
+    <div class="card">
+      <div class="card-title">Recent Trades (last 50)</div>
+      ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
+        <thead><tr><th>ID</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
+          <th>Exit Reason</th><th>Net Ret%</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
+        <tbody>${tradeRows}</tbody>
+      </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
+    </div>`;
+
+  // Skip reason counts
+  const skipCountRows = (data.skip_reason_counts || []).map((s: any) =>
+    `<tr><td>${s.skip_reason}</td><td>${s.count}</td></tr>`
+  ).join('');
+
+  // Recent skips
+  const skipRows = (data.recent_skips || []).slice(0, 20).map((s: any) =>
+    `<tr>
+      <td>${s.graduation_id}</td>
+      <td style="font-family:monospace;font-size:11px">${(s.mint || '').slice(0,8)}…</td>
+      <td style="color:#f87171">${s.skip_reason}</td>
+      <td>${s.skip_value != null ? s.skip_value.toFixed(2) : '-'}</td>
+      <td>${s.pct_t30 != null ? s.pct_t30.toFixed(1) + '%' : '-'}</td>
+      <td style="font-size:11px;color:#64748b">${s.created_dt ?? '-'}</td>
+    </tr>`
+  ).join('');
+
+  const skipsHtml = `
+    <div style="display:grid;grid-template-columns:1fr 2fr;gap:16px">
+      <div class="card">
+        <div class="card-title">Skip Reasons</div>
+        ${skipCountRows ? `<table class="table">
+          <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+          <tbody>${skipCountRows}</tbody>
+        </table>` : '<p style="color:#94a3b8">No skips yet</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">Recent Skips (last 20)</div>
+        ${skipRows ? `<div style="overflow-x:auto"><table class="table">
+          <thead><tr><th>GradID</th><th>Mint</th><th>Reason</th><th>Value</th><th>pct_t30</th><th>Time</th></tr></thead>
+          <tbody>${skipRows}</tbody>
+        </table></div>` : '<p style="color:#94a3b8">No skips yet</p>'}
+      </div>
+    </div>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="10">
+<title>Trading Dashboard</title>
+<style>${STYLES}
+  .card{background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px}
+  .card-title{font-size:14px;font-weight:600;color:#94a3b8;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em}
+  .table{width:100%;border-collapse:collapse;font-size:12px}
+  .table th{text-align:left;padding:6px 8px;color:#64748b;border-bottom:1px solid #334155;font-weight:500}
+  .table td{padding:5px 8px;border-bottom:1px solid #1e293b;vertical-align:top}
+  .table tr:hover td{background:#1e3a5f22}
+</style></head><body>
+<nav><span class="title">Graduation Arb Research</span>${navHtml}</nav>
+<div class="container">
+  <h1 style="font-size:18px;color:#60a5fa;margin:0 0 16px">Trading Dashboard</h1>
+  <p style="color:#64748b;font-size:11px;margin:0 0 16px">Auto-refreshes every 10s · Generated ${data.generated_at}</p>
+  ${configHtml}
+  ${openHtml}
+  ${perfHtml}
+  ${tradesHtml}
+  ${skipsHtml}
+</div>
+</body></html>`;
 }
