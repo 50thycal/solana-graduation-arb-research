@@ -460,6 +460,17 @@ export class PriceCollector {
         // Compute derived path shape metrics at T+30 (pct_t30 is now in DB)
         if (targetSec === 30) {
           this.computeT30PathMetrics(graduationId);
+          // Compute bc_velocity_sol_per_min inline so the trading filter can
+          // read it at T+30. Without this, velocity stays null until
+          // completeObservation() runs at T+300+, and every trade that would
+          // qualify on velocity fails the filter pipeline's null guard.
+          // Safe to call here and again at completeObservation — idempotent UPDATE.
+          this.computeAndStoreVelocity(
+            graduationId,
+            ctx.mint,
+            ctx.graduationTimestamp,
+            ctx.bondingCurveAddress,
+          );
           // Fire trading engine callback — all T+30 momentum fields are now written
           if (this.onT30Callback) {
             this.onT30Callback(graduationId, ctx, poolState.price, pctChange, poolState.solReserves);
