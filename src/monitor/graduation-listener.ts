@@ -199,7 +199,7 @@ export class GraduationListener {
       const silentMs = Date.now() - this.lastEventTime;
       const silentSec = Math.floor(silentMs / 1000);
 
-      logger.info(
+      logger.debug(
         {
           silentSeconds: silentSec,
           totalLogs: this.totalLogsReceived,
@@ -252,7 +252,7 @@ export class GraduationListener {
 
           // Log first 10 events and then every 200th
           if (this.totalLogsReceived <= 10 || this.totalLogsReceived % 200 === 0) {
-            logger.info(
+            logger.debug(
               {
                 signature: logs.signature,
                 slot: ctx.slot,
@@ -581,13 +581,13 @@ export class GraduationListener {
       // Prefer pre-balance mints (real token), fall back to post-only mints (LP mint edge case)
       if (preMints.size >= 1) {
         mint = [...preMints][0];
-        logger.info(
+        logger.debug(
           { signature, mint, preMintCount: preMints.size, postOnlyCount: postOnlyMints.size },
           'Mint extracted from preTokenBalances (Strategy 1 — token balances)'
         );
       } else if (postOnlyMints.size >= 1) {
         mint = [...postOnlyMints][0];
-        logger.info(
+        logger.debug(
           { signature, mint, postOnlyCount: postOnlyMints.size },
           'Mint extracted from postTokenBalances only (Strategy 1 — token balances, post-only)'
         );
@@ -597,7 +597,7 @@ export class GraduationListener {
         const postCount = tx.meta.postTokenBalances?.length ?? -1;
         const allPreMints = (tx.meta.preTokenBalances || []).map((tb: any) => tb.mint?.slice(0, 8) || '?');
         const allPostMints = (tx.meta.postTokenBalances || []).map((tb: any) => tb.mint?.slice(0, 8) || '?');
-        logger.info(
+        logger.debug(
           { signature, preCount, postCount,
             preMints: allPreMints.join(',') || 'empty',
             postMints: allPostMints.join(',') || 'empty' },
@@ -621,7 +621,7 @@ export class GraduationListener {
           const candidate = toStr(accts[2]);
           if (candidate && !isWellKnown(candidate)) {
             mint = candidate;
-            logger.info({ signature, mint }, 'Mint extracted from instruction accounts[2] (Strategy 2 — ix fallback)');
+            logger.debug({ signature, mint }, 'Mint extracted from instruction accounts[2] (Strategy 2 — ix fallback)');
             break;
           }
         }
@@ -647,7 +647,7 @@ export class GraduationListener {
           );
           if (accountKeySet.has(derivedBC.toBase58())) {
             mint = key;
-            logger.info(
+            logger.debug(
               { signature, mint, bondingCurve: derivedBC.toBase58(), totalKeys: fullAccountKeys.length },
               'Mint found via bonding curve correlation (Strategy 3 — account key scan)'
             );
@@ -702,7 +702,7 @@ export class GraduationListener {
 
       if (bestCandidate) {
         mint = bestCandidate;
-        logger.info(
+        logger.debug(
           { signature, mint, acctCount: bestAcctCount, totalPumpIxFound },
           'Mint extracted from inner instruction (Strategy 4 — inner ix fallback)'
         );
@@ -786,7 +786,7 @@ export class GraduationListener {
       this.totalFalsePositives++;
       this.totalBundlerFalsePositives++;
       this.poolTracker.cancelSpeculative(mint);
-      logger.info(
+      logger.debug(
         { signature, mint, bondingCurve: bondingCurveAddress },
         'False positive rejected: could not verify bonding curve reserves (likely bundler/MEV tx)'
       );
@@ -801,7 +801,7 @@ export class GraduationListener {
         this.totalFalsePositives++;
         this.totalBundlerFalsePositives++;
         this.poolTracker.cancelSpeculative(mint);
-        logger.info(
+        logger.debug(
           {
             signature,
             mint,
@@ -823,7 +823,7 @@ export class GraduationListener {
     }
 
     if (txCurveState) {
-      logger.info(
+      logger.debug(
         { mint, realSolReserves: txCurveState.realSolReserves, virtualSolReserves: txCurveState.virtualSolReserves, finalPriceSol },
         'Bonding curve price extracted from tx pre-balances'
       );
@@ -862,7 +862,7 @@ export class GraduationListener {
       const hasParsed = 'parsed' in (ix as any);
       const ixAccounts = (ix as any).accounts;
       const acctArrayLen = Array.isArray(ixAccounts) ? ixAccounts.length : -1;
-      logger.info(
+      logger.debug(
         { mint: mint.slice(0, 8), hasParsed, acctArrayLen, signature },
         'DEBUG pump.fun top-level instruction format'
       );
@@ -877,7 +877,7 @@ export class GraduationListener {
       // accounts[8] is pump_amm — equals PumpSwap program ID for PumpSwap migrations.
       // Only skip if it's a KNOWN non-PumpSwap program (not just missing/truncated).
       if (accts[8] !== PUMPSWAP_PROGRAM) {
-        logger.info(
+        logger.debug(
           { mint: mint.slice(0, 8), accounts8: accts[8]?.slice(0, 8), acctCount: accts.length, signature },
           'accounts[8] is not PumpSwap — Raydium or other DEX migration, or accounts truncated'
         );
@@ -894,7 +894,7 @@ export class GraduationListener {
         poolQuoteVault = accts[18];  // pool_quote_token_account
       }
 
-      logger.info(
+      logger.debug(
         { mint: mint.slice(0, 8), poolAddress, baseVault: poolBaseVault, quoteVault: poolQuoteVault,
           acctCount: accts.length, signature },
         'Pool + vaults extracted from pump.fun migrate instruction'
@@ -941,7 +941,7 @@ export class GraduationListener {
               poolQuoteVault = qv;
             }
           }
-          logger.info(
+          logger.debug(
             { mint: mint.slice(0, 8), poolAddress, acctCount: accts.length, signature },
             'Pool extracted from top-level PumpSwap create_pool instruction (new migration format)'
           );
@@ -977,7 +977,7 @@ export class GraduationListener {
       // If we found vaults here and hadn't already confirmed PumpSwap, mark it now
       if (poolBaseVault && poolQuoteVault && !isPumpSwapMigration) {
         isPumpSwapMigration = true;
-        logger.info(
+        logger.debug(
           { mint: mint.slice(0, 8), baseVault: poolBaseVault, quoteVault: poolQuoteVault, signature },
           'Vault addresses resolved from postTokenBalances (ALT-safe) — PumpSwap migration confirmed'
         );
@@ -1047,14 +1047,14 @@ export class GraduationListener {
               poolQuoteVault = quoteVaultKey.toBase58();
               isPumpSwapMigration = true;
 
-              logger.info(
+              logger.debug(
                 { mint: mint.slice(0, 8), poolAddress, baseVault: poolBaseVault, quoteVault: poolQuoteVault, signature },
                 'Pool + vaults resolved via PDA derivation (Strategy 4) — ALT parsing bypassed'
               );
             }
           }
         } else {
-          logger.info(
+          logger.debug(
             { mint: mint.slice(0, 8), derivedPool: derivedPoolAddr, signature },
             'Strategy 4: PDA-derived pool account not found on-chain after 2 retries'
           );
@@ -1112,7 +1112,7 @@ export class GraduationListener {
         const loadedAddressCount = (tx.meta?.loadedAddresses?.writable?.length ?? 0)
           + (tx.meta?.loadedAddresses?.readonly?.length ?? 0);
 
-        logger.info(
+        logger.debug(
           { mint: mint.slice(0, 8), signature, loadedAddressCount,
             innerIx: innerSummary || 'none',
             ptb: ptbSummary || 'none' },
@@ -1184,7 +1184,7 @@ export class GraduationListener {
 
     const bcIndex = accountKeys.findIndex((k) => k === bondingCurveAddress);
     if (bcIndex === -1) {
-      logger.info(
+      logger.debug(
         { mint, bondingCurveAddress, staticKeys: tx.transaction.message.accountKeys.length, fullKeys: accountKeys.length },
         'Bonding curve not in tx account keys (after ALT expansion) — cannot extract from pre-balances'
       );
@@ -1194,7 +1194,7 @@ export class GraduationListener {
     // realSolReserves: lamports held by the bonding curve before migration
     const preBalanceLamports: number | undefined = tx.meta.preBalances?.[bcIndex];
     if (preBalanceLamports === undefined || preBalanceLamports === 0) {
-      logger.info({ mint, bcIndex, preBalanceLamports, fullKeys: accountKeys.length }, 'Pre-balance missing or zero for bonding curve');
+      logger.debug({ mint, bcIndex, preBalanceLamports, fullKeys: accountKeys.length }, 'Pre-balance missing or zero for bonding curve');
       return null;
     }
 
