@@ -1274,6 +1274,176 @@ function v2Panel7RowHtml(r: FilterV2Panel7Row, lowN: number, strongN: number, is
   </tr>`;
 }
 
+// ── Panel 8 helpers: loss tail & risk metrics ──
+
+type FilterV2Panel8Row = {
+  filter: string;
+  group: string;
+  n: number;
+  opt_tp: number | null;
+  opt_sl: number | null;
+  pct_loss_10: number | null;
+  pct_loss_25: number | null;
+  pct_loss_50: number | null;
+  var_95: number | null;
+  cvar_95: number | null;
+  worst_trade: number | null;
+  max_consecutive_losses: number | null;
+};
+
+// % loss threshold cell. Lower = safer. Thresholds per column differ by severity.
+function pctLossCell(v: number | null, severity: 'mild' | 'moderate' | 'severe'): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  // mild = <-10%: expect 20-40% baseline; severe = <-50%: expect <15% baseline
+  const thresholds = severity === 'mild'
+    ? { green: 15, yellow: 30 }
+    : severity === 'moderate'
+    ? { green: 8, yellow: 20 }
+    : { green: 3, yellow: 10 };
+  const cls = v < thresholds.green ? 'green' : v < thresholds.yellow ? 'yellow' : 'red';
+  return `<span class="${cls}">${v.toFixed(1)}%</span>`;
+}
+
+// VaR / CVaR cell — values are negative; less negative = better
+function varCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v > -15 ? 'green' : v > -30 ? 'yellow' : 'red';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(1)}%</span>`;
+}
+
+// Worst trade cell — much tighter thresholds; a -50% worst is already painful
+function worstTradeCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v > -25 ? 'green' : v > -50 ? 'yellow' : 'red';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(1)}%</span>`;
+}
+
+// Max consecutive losses cell — fewer is better
+function lossStreakCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v < 4 ? 'green' : v < 7 ? 'yellow' : 'red';
+  return `<span class="${cls}">${v}</span>`;
+}
+
+function v2Panel8RowHtml(r: FilterV2Panel8Row, lowN: number, strongN: number, isBaseline = false): string {
+  const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
+  const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+  const optTpSl = (r.opt_tp != null && r.opt_sl != null) ? `${r.opt_tp}/${r.opt_sl}` : '—';
+  return `<tr class="${cls}">
+    <td>${r.filter}${nLabel}</td>
+    <td>${r.n}</td>
+    <td>${optTpSl}</td>
+    <td>${pctLossCell(r.pct_loss_10, 'mild')}</td>
+    <td>${pctLossCell(r.pct_loss_25, 'moderate')}</td>
+    <td>${pctLossCell(r.pct_loss_50, 'severe')}</td>
+    <td>${varCell(r.var_95)}</td>
+    <td>${varCell(r.cvar_95)}</td>
+    <td>${worstTradeCell(r.worst_trade)}</td>
+    <td>${lossStreakCell(r.max_consecutive_losses)}</td>
+  </tr>`;
+}
+
+// ── Panel 9 helpers: equity curve & drawdown simulation ──
+
+type FilterV2Panel9Row = {
+  filter: string;
+  group: string;
+  n: number;
+  opt_tp: number | null;
+  opt_sl: number | null;
+  final_equity_mult: number | null;
+  max_drawdown_pct: number | null;
+  longest_losing_streak: number | null;
+  sharpe: number | null;
+  kelly_fraction: number | null;
+  equity_curve: number[];
+};
+
+// Final equity multiplier cell: >1.2 green, 1.0-1.2 yellow, <1.0 red
+function finalEquityCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v > 1.2 ? 'green' : v > 1.0 ? 'yellow' : 'red';
+  return `<span class="${cls}">${v.toFixed(2)}×</span>`;
+}
+
+// Max drawdown cell: > -10% green, -10 to -20% yellow, < -20% red
+function maxDdCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v > -10 ? 'green' : v > -20 ? 'yellow' : 'red';
+  return `<span class="${cls}">${v.toFixed(1)}%</span>`;
+}
+
+// Per-trade Sharpe cell
+function tradeSharpeCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v > 0.2 ? 'green' : v > 0 ? 'yellow' : 'red';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(2)}</span>`;
+}
+
+// Kelly fraction cell: 0-0.25 green (sensible), 0.25-0.5 yellow (risky), >0.5 red (too aggressive)
+// NOTE: in practice you should bet 0.25-0.5 of Kelly, not full Kelly — this column is a signal,
+// not a prescription.
+function kellyCell(v: number | null): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const cls = v === 0 ? 'red' : v <= 0.25 ? 'green' : v <= 0.5 ? 'yellow' : 'red';
+  return `<span class="${cls}">${(v * 100).toFixed(0)}%</span>`;
+}
+
+// Sparkline SVG — compact equity curve rendered inline per row.
+// Width ~130px, height ~24px. y-axis spans [min, max] of the curve;
+// x-axis spans the downsampled point count. Adds a faint horizontal line
+// at equity=1.0 so the viewer can see whether the curve crosses break-even.
+function equitySparklineCell(curve: number[]): string {
+  if (!curve || curve.length < 2) return '<span style="color:#64748b">—</span>';
+  const W = 130;
+  const H = 24;
+  const PAD = 2;
+  let min = curve[0];
+  let max = curve[0];
+  for (const v of curve) {
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  // Always include equity=1.0 in the range so break-even line is visible
+  if (1.0 < min) min = 1.0;
+  if (1.0 > max) max = 1.0;
+  const range = max - min || 1;
+  const xStep = (W - 2 * PAD) / (curve.length - 1);
+  const points = curve.map((v, i) => {
+    const x = PAD + i * xStep;
+    const y = H - PAD - ((v - min) / range) * (H - 2 * PAD);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  // Break-even line
+  const breakEvenY = H - PAD - ((1.0 - min) / range) * (H - 2 * PAD);
+  // Color: end > start green, end < start red
+  const color = curve[curve.length - 1] > curve[0] ? '#4ade80' : '#ef4444';
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="vertical-align:middle">
+    <line x1="${PAD}" y1="${breakEvenY.toFixed(1)}" x2="${W - PAD}" y2="${breakEvenY.toFixed(1)}" stroke="#475569" stroke-width="0.5" stroke-dasharray="2,2"/>
+    <polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5"/>
+  </svg>`;
+}
+
+function v2Panel9RowHtml(r: FilterV2Panel9Row, lowN: number, strongN: number, isBaseline = false): string {
+  const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
+  const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+  const optTpSl = (r.opt_tp != null && r.opt_sl != null) ? `${r.opt_tp}/${r.opt_sl}` : '—';
+  return `<tr class="${cls}">
+    <td>${r.filter}${nLabel}</td>
+    <td>${r.n}</td>
+    <td>${optTpSl}</td>
+    <td>${equitySparklineCell(r.equity_curve)}</td>
+    <td>${finalEquityCell(r.final_equity_mult)}</td>
+    <td>${maxDdCell(r.max_drawdown_pct)}</td>
+    <td>${lossStreakCell(r.longest_losing_streak)}</td>
+    <td>${tradeSharpeCell(r.sharpe)}</td>
+    <td>${kellyCell(r.kelly_fraction)}</td>
+  </tr>`;
+}
+
 export function renderFilterV2Html(data: any): string {
   const panel1 = data.panel1;
   const baseline: FilterV2Row = panel1.baseline;
@@ -1896,6 +2066,137 @@ export function renderFilterV2Html(data: any): string {
     </div>`;
   }
 
+  // ── Panel 8 (Loss Tail & Risk Metrics) ──
+  let panel8Html = '';
+  if (data.panel8) {
+    const panel8 = data.panel8;
+    const baseline8: FilterV2Panel8Row = panel8.baseline;
+    const filters8: FilterV2Panel8Row[] = panel8.filters || [];
+    const lowN8 = panel8.flags?.low_n_threshold ?? 30;
+    const strongN8 = panel8.flags?.strong_n_threshold ?? 100;
+
+    const groups8 = new Map<string, FilterV2Panel8Row[]>();
+    for (const f of filters8) {
+      if (!groups8.has(f.group)) groups8.set(f.group, []);
+      groups8.get(f.group)!.push(f);
+    }
+
+    const baselineRow8 = v2Panel8RowHtml(baseline8, lowN8, strongN8, true);
+    const groupRows8: string[] = [];
+    for (const [groupName, rows] of groups8) {
+      groupRows8.push(`<tr class="row-group-header"><td colspan="10">${groupName}</td></tr>`);
+      for (const r of rows) groupRows8.push(v2Panel8RowHtml(r, lowN8, strongN8, false));
+    }
+
+    const table8Html = `
+    <table id="panel8-table">
+      <thead>
+        <tr>
+          <th class="sortable" onclick="sortPanel8(0,'str')">Filter <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel8(1,'num')">n <span class="arrow">⇅</span></th>
+          <th>Opt TP/SL</th>
+          <th class="sortable" onclick="sortPanel8(3,'num')">% &lt;-10% <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel8(4,'num')">% &lt;-25% <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel8(5,'num')">% &lt;-50% <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel8(6,'num')">VaR 95% <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel8(7,'num')">CVaR 95% <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel8(8,'num')">Worst <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel8(9,'num')">Max Loss Streak <span class="arrow">⇅</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baselineRow8}
+        ${groupRows8.join('\n        ')}
+      </tbody>
+    </table>`;
+
+    const legend8 = `
+    <div class="desc" style="margin-top:10px">
+      <strong>Method:</strong> All metrics are computed on the <em>cost-adjusted</em> return distribution at each filter's Panel 4 optimum TP/SL. This is the same return array Panel 4 uses, so the rankings line up.
+      <br>
+      <strong>% &lt;-X%:</strong> fraction of trades that closed worse than −X%. Lower is better. Tracks CLAUDE.md's "18.2% of vel 5-20 trades lose &gt;50%" claim — sanity-checks whether the 10% SL is actually containing the tail.
+      <br>
+      <strong>VaR 95%:</strong> 5th percentile of the return distribution (the worst 5% starts here). <strong>CVaR 95%:</strong> mean of the bottom 5% (average loss when you're in the worst 5%). Both are negative; less negative = safer.
+      <br>
+      <strong>Worst:</strong> the single worst trade in the filter's distribution. <strong>Max Loss Streak:</strong> longest run of consecutive losses in chronological order.
+      <br>
+      <em>Cross-check:</em> a SIGNIFICANT filter in Panel 5 should have a manageable Worst (&gt;−50%) and CVaR (&gt;−30%) here. If the tail is fatter than expected, the Sharpe-ish from Panel 2 is misleading and the Kelly fraction in Panel 9 will be tiny.
+    </div>`;
+
+    panel8Html = `
+    <div class="card">
+      <h2>Panel 8 — ${panel8.title}</h2>
+      <div class="desc">${panel8.description}</div>
+      ${table8Html}
+      ${legend8}
+    </div>`;
+  }
+
+  // ── Panel 9 (Equity Curve & Drawdown Simulation) ──
+  let panel9Html = '';
+  if (data.panel9) {
+    const panel9 = data.panel9;
+    const baseline9: FilterV2Panel9Row = panel9.baseline;
+    const filters9: FilterV2Panel9Row[] = panel9.filters || [];
+    const lowN9 = panel9.flags?.low_n_threshold ?? 30;
+    const strongN9 = panel9.flags?.strong_n_threshold ?? 100;
+
+    const groups9 = new Map<string, FilterV2Panel9Row[]>();
+    for (const f of filters9) {
+      if (!groups9.has(f.group)) groups9.set(f.group, []);
+      groups9.get(f.group)!.push(f);
+    }
+
+    const baselineRow9 = v2Panel9RowHtml(baseline9, lowN9, strongN9, true);
+    const groupRows9: string[] = [];
+    for (const [groupName, rows] of groups9) {
+      groupRows9.push(`<tr class="row-group-header"><td colspan="9">${groupName}</td></tr>`);
+      for (const r of rows) groupRows9.push(v2Panel9RowHtml(r, lowN9, strongN9, false));
+    }
+
+    const table9Html = `
+    <table id="panel9-table">
+      <thead>
+        <tr>
+          <th class="sortable" onclick="sortPanel9(0,'str')">Filter <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel9(1,'num')">n <span class="arrow">⇅</span></th>
+          <th>Opt TP/SL</th>
+          <th>Equity Curve</th>
+          <th class="sortable" onclick="sortPanel9(4,'num')">Final Equity <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel9(5,'num')">Max DD <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel9(6,'num')">Longest Loss Streak <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel9(7,'num')">Sharpe <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel9(8,'num')">Kelly <span class="arrow">⇅</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baselineRow9}
+        ${groupRows9.join('\n        ')}
+      </tbody>
+    </table>`;
+
+    const legend9 = `
+    <div class="desc" style="margin-top:10px">
+      <strong>Method:</strong> Take the filter's cost-adjusted return array at its Panel 4 optimum TP/SL, sorted by <code>created_at</code>. Simulate a unit-sized portfolio that compounds geometrically trade by trade: <code>equity[i+1] = equity[i] × (1 + r[i]/100)</code>, clamped at −99% per trade. Max drawdown is the largest peak-to-trough drop along the curve.
+      <br>
+      <strong>Final Equity:</strong> ending multiplier (1.5× = portfolio grew 50%). <strong>Max DD:</strong> worst peak-to-trough drawdown as a percentage. <strong>Longest Loss Streak:</strong> maximum run of consecutive losing trades. <strong>Sharpe:</strong> per-trade <code>mean(r) / stdev(r)</code> — not annualized, comparable across filters.
+      <br>
+      <strong>Kelly:</strong> full Kelly fraction <code>(p·b − q) / b</code> where p=win rate, b=avg_win/avg_loss. Displayed as %. <em>Do not actually bet full Kelly</em> — use 0.25–0.5 Kelly in practice. A high Kelly column just means the win rate and payoff ratio look healthy together.
+      <br>
+      <strong>Sparkline:</strong> green = ends above start, red = ends below. Faint dashed horizontal line marks equity=1.0 (break-even).
+      <br>
+      <em>Cross-check:</em> a SIGNIFICANT (Panel 5) + ROBUST (Panel 7) filter should show a rising green sparkline, Max DD &gt; −20%, and Sharpe &gt; 0.2 here. If it doesn't, the per-trade edge is not surviving sequencing and the filter isn't tradeable as a standalone strategy.
+    </div>`;
+
+    panel9Html = `
+    <div class="card">
+      <h2>Panel 9 — ${panel9.title}</h2>
+      <div class="desc">${panel9.description}</div>
+      ${table9Html}
+      ${legend9}
+    </div>`;
+  }
+
   const sortScript = `
   <script>
   function v2GenericSort(tableId, col, type) {
@@ -1928,6 +2229,8 @@ export function renderFilterV2Html(data: any): string {
   function sortPanel4(col, type) { v2GenericSort('panel4-table', col, type); }
   function sortPanel5(col, type) { v2GenericSort('panel5-table', col, type); }
   function sortPanel7(col, type) { v2GenericSort('panel7-table', col, type); }
+  function sortPanel8(col, type) { v2GenericSort('panel8-table', col, type); }
+  function sortPanel9(col, type) { v2GenericSort('panel9-table', col, type); }
 
   // Panel 6 top-pairs table has NO baseline row — use a simpler sort that treats
   // every row as data.
@@ -2055,7 +2358,7 @@ export function renderFilterV2Html(data: any): string {
   }
   </script>`;
 
-  const body = panel1Html + panel2Html + panel3Html + panel4Html + panel5Html + panel6Html + panel7Html + panel4DataScript + sortScript;
+  const body = panel1Html + panel2Html + panel3Html + panel4Html + panel5Html + panel6Html + panel7Html + panel8Html + panel9Html + panel4DataScript + sortScript;
   return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
 }
 
