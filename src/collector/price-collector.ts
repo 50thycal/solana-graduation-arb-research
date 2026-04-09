@@ -155,6 +155,24 @@ export class PriceCollector {
   private totalSnapshots = 0;
   private totalSnapshotFailures = 0;
   private lastSnapshotFailures: Array<{ graduationId: number; targetSec: number; reason: string; time: string }> = [];
+  private onT30Callback?: (
+    graduationId: number,
+    ctx: ObservationContext,
+    priceT30: number,
+    pctT30: number,
+    solReservesSol: number,
+  ) => void;
+
+  /** Register a callback invoked at T+30 after graduation_momentum metrics are written. */
+  setT30Callback(cb: (
+    graduationId: number,
+    ctx: ObservationContext,
+    priceT30: number,
+    pctT30: number,
+    solReservesSol: number,
+  ) => void): void {
+    this.onT30Callback = cb;
+  }
 
   constructor(db: Database.Database, connection: Connection) {
     this.db = db;
@@ -442,6 +460,10 @@ export class PriceCollector {
         // Compute derived path shape metrics at T+30 (pct_t30 is now in DB)
         if (targetSec === 30) {
           this.computeT30PathMetrics(graduationId);
+          // Fire trading engine callback — all T+30 momentum fields are now written
+          if (this.onT30Callback) {
+            this.onT30Callback(graduationId, ctx, poolState.price, pctChange, poolState.solReserves);
+          }
         }
 
         // Compute derived path shape metrics at T+60 (pct_t60 is now in DB)

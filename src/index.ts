@@ -2,9 +2,10 @@ import express from 'express';
 import pino from 'pino';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
-import { getGraduationCount } from './db/queries';
+import { getGraduationCount, getTradeStats, getRecentTrades, getRecentSkips, getSkipReasonCounts } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml } from './utils/html-renderer';
+import { TradingEngine } from './trading';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info', name: 'main' });
 
@@ -18,6 +19,7 @@ const NAV_LINKS = [
   { path: '/filter-analysis-v2', label: 'Filters V2' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
+  { path: '/trading', label: 'Trading' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
@@ -3207,6 +3209,89 @@ async function main() {
     }
   });
 
+  // ── TRADING DASHBOARD ────────────────────────────────────────────────────
+  app.get('/trading', (req, res) => {
+    try {
+      const stats = (db.prepare(`
+        SELECT
+          mode,
+          COUNT(*) as total,
+          COUNT(CASE WHEN status='closed' THEN 1 END) as closed,
+          COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
+          COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
+          ROUND(AVG(CASE WHEN status='closed' THEN net_return_pct END), 2) as avg_net_return_pct,
+          SUM(CASE WHEN status='closed' AND exit_reason='take_profit' THEN 1 ELSE 0 END) as tp_exits,
+          SUM(CASE WHEN status='closed' AND exit_reason='stop_loss' THEN 1 ELSE 0 END) as sl_exits,
+          SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
+          ROUND(SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END), 4) as total_net_profit_sol
+        FROM trades_v2 GROUP BY mode
+      `).all() as any[]);
+
+      const recentTrades = (db.prepare(`
+        SELECT t.id, t.graduation_id, t.mode, t.status, t.mint,
+          t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
+          t.exit_price_sol, t.exit_reason, t.net_return_pct, t.gap_adjusted_return_pct,
+          t.take_profit_pct, t.stop_loss_pct,
+          t.momentum_pct_t300, t.momentum_label,
+          datetime(t.entry_timestamp, 'unixepoch') as entry_dt,
+          datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
+          t.filter_results_json
+        FROM trades_v2 t
+        ORDER BY t.created_at DESC LIMIT 50
+      `).all() as any[]).map(t => ({
+        ...t,
+        filter_results: t.filter_results_json ? JSON.parse(t.filter_results_json) : null,
+        filter_results_json: undefined,
+      }));
+
+      const openPositions = tradingEngine ? tradingEngine.getStats().activePositionDetails : [];
+
+      const skipReasons = (db.prepare(`
+        SELECT skip_reason, COUNT(*) as count
+        FROM trade_skips GROUP BY skip_reason ORDER BY count DESC
+      `).all() as any[]);
+
+      const recentSkips = (db.prepare(`
+        SELECT ts.graduation_id, ts.skip_reason, ts.skip_value, ts.pct_t30,
+          datetime(ts.created_at, 'unixepoch') as created_dt, g.mint
+        FROM trade_skips ts JOIN graduations g ON g.id = ts.graduation_id
+        ORDER BY ts.created_at DESC LIMIT 50
+      `).all() as any[]);
+
+      const config = tradingEngine ? tradingEngine.getConfig() : null;
+
+      const data = {
+        generated_at: new Date().toISOString(),
+        trading_enabled: config?.enabled ?? false,
+        config: config ? {
+          mode: config.mode,
+          trade_size_sol: config.tradeSizeSol,
+          take_profit_pct: config.takeProfitPct,
+          stop_loss_pct: config.stopLossPct,
+          max_hold_seconds: config.maxHoldSeconds,
+          entry_gate: `+${config.entryGateMinPctT30}% to +${config.entryGateMaxPctT30}%`,
+          max_concurrent_positions: config.maxConcurrentPositions,
+          filters: config.filters,
+        } : null,
+        open_positions: openPositions,
+        performance_summary: stats,
+        recent_trades: recentTrades,
+        skip_reason_counts: skipReasons,
+        recent_skips: recentSkips,
+      };
+
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderTradingHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // ── DEX LISTING CHECK ────────────────────────────────────────────────────
   // Checks where graduated tokens actually land using both Raydium API and
   // DexScreener (which indexes all DEXes). Answers "where do pfeeUxB6 tokens go?"
@@ -3552,9 +3637,22 @@ ${rows.map(r => {
     logger.error('Graduation listener failed to start: %s', message);
   }
 
+  // Initialize trading engine (opt-in via TRADING_ENABLED=true)
+  let tradingEngine: TradingEngine | null = null;
+  if (listener) {
+    try {
+      tradingEngine = new TradingEngine(db, listener.getConnection());
+      tradingEngine.initialize();
+      tradingEngine.attachToPriceCollector(listener.getPriceCollector());
+    } catch (err) {
+      logger.error('TradingEngine failed to initialize: %s', err instanceof Error ? err.message : String(err));
+    }
+  }
+
   // Graceful shutdown
   const shutdown = async () => {
     logger.info('Shutting down...');
+    if (tradingEngine) tradingEngine.stop();
     if (listener) await listener.stop();
     db.close();
     process.exit(0);
