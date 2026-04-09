@@ -6,6 +6,7 @@ import {
   markTradeFailed,
   insertTradeSkip,
   backfillTradeMomentum,
+  updateTradeEntryFill,
 } from '../db/queries';
 import { TradingConfig } from './config';
 import { FilterStageResult } from './filter-pipeline';
@@ -154,6 +155,28 @@ export class TradeLogger {
   failTrade(tradeId: number, reason: string): void {
     markTradeFailed(this.db, tradeId, reason);
     logger.warn({ tradeId, reason }, 'Trade failed');
+  }
+
+  /**
+   * Patch entry fields after the buy fills. Must be called between openTrade()
+   * and addPosition() so restart-recovery and dashboard display see the real
+   * fill price and token balance — not the pre-fill expected price.
+   */
+  recordEntryFill(
+    tradeId: number,
+    effectivePrice: number,
+    tokensReceived: number,
+    txSignature?: string,
+  ): void {
+    updateTradeEntryFill(this.db, tradeId, {
+      entry_effective_price: effectivePrice,
+      entry_tokens_received: tokensReceived,
+      entry_tx_signature: txSignature,
+    });
+    logger.debug(
+      { tradeId, effectivePrice, tokensReceived, hasTx: !!txSignature },
+      'Trade entry fill recorded'
+    );
   }
 
   /** Log a graduation that was evaluated but not entered */

@@ -565,6 +565,10 @@ export class PriceCollector {
         }
         observation.baseVault = vaults.baseVault;
         observation.quoteVault = vaults.quoteVault;
+        // Also write back onto ctx so any consumer of the ObservationContext
+        // (e.g. the TradingEngine T+30 callback) sees the resolved vaults.
+        ctx.baseVault = vaults.baseVault;
+        ctx.quoteVault = vaults.quoteVault;
         logger.info(
           { graduationId: ctx.graduationId, baseVault: vaults.baseVault, quoteVault: vaults.quoteVault },
           'Pool vault addresses decoded from pool account'

@@ -118,6 +118,16 @@ export class TradeEvaluator {
       return;
     }
 
+    // Persist the actual fill price + tokens received onto the trade row.
+    // This replaces the placeholder value written at insert time so dashboards
+    // and restart-recovery see the true (slippage-adjusted) entry price.
+    this.tradeLogger.recordEntryFill(
+      tradeId,
+      entryResult.effectivePrice,
+      entryResult.tokensReceived,
+      entryResult.txSignature,
+    );
+
     // ── 7. Register position for SL/TP monitoring ────────────────────────────
     const effectiveEntry = entryResult.effectivePrice;
     const position: ActivePosition = {
