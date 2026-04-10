@@ -502,6 +502,7 @@ export interface TradeInsert {
   entry_slippage_pct?: number;
   filter_results_json?: string;
   filter_config_json?: string;
+  strategy_id?: string;
 }
 
 export function insertTrade(db: Database.Database, data: TradeInsert): number {
@@ -513,13 +514,13 @@ export function insertTrade(db: Database.Database, data: TradeInsert): number {
       entry_timestamp, entry_price_sol, entry_pct_from_open, entry_liquidity_sol,
       entry_slippage_pct,
       trade_size_sol, take_profit_pct, stop_loss_pct, max_hold_seconds,
-      filter_results_json, filter_config_json
+      filter_results_json, filter_config_json, strategy_id
     ) VALUES (
       @graduation_id, @mode, 'open', @mint, @pool_address, @base_vault, @quote_vault,
       @entry_timestamp, @entry_price_sol, @entry_pct_from_open, @entry_liquidity_sol,
       @entry_slippage_pct,
       @trade_size_sol, @take_profit_pct, @stop_loss_pct, @max_hold_seconds,
-      @filter_results_json, @filter_config_json
+      @filter_results_json, @filter_config_json, @strategy_id
     )
   `).run({
     graduation_id: data.graduation_id,
@@ -539,6 +540,7 @@ export function insertTrade(db: Database.Database, data: TradeInsert): number {
     max_hold_seconds: data.max_hold_seconds,
     filter_results_json: data.filter_results_json ?? null,
     filter_config_json: data.filter_config_json ?? null,
+    strategy_id: data.strategy_id ?? 'default',
   });
   return result.lastInsertRowid as number;
 }
@@ -625,11 +627,12 @@ export function insertTradeSkip(
   skipReason: string,
   skipValue: number | null,
   pctT30: number | null,
+  strategyId: string = 'default',
 ): void {
   db.prepare(`
-    INSERT INTO trade_skips (graduation_id, skip_reason, skip_value, pct_t30)
-    VALUES (?, ?, ?, ?)
-  `).run(graduationId, skipReason, skipValue ?? null, pctT30 ?? null);
+    INSERT INTO trade_skips (graduation_id, skip_reason, skip_value, pct_t30, strategy_id)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(graduationId, skipReason, skipValue ?? null, pctT30 ?? null, strategyId);
 }
 
 export function getOpenTrades(db: Database.Database) {
@@ -681,6 +684,71 @@ export function getSkipReasonCounts(db: Database.Database) {
     GROUP BY skip_reason
     ORDER BY count DESC
   `).all();
+}
+
+// ==================== Strategy config queries ====================
+
+export interface StrategyConfigRow {
+  id: string;
+  label: string;
+  enabled: number;
+  config_json: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export function getStrategyConfigs(db: Database.Database): StrategyConfigRow[] {
+  return db.prepare('SELECT * FROM strategy_configs ORDER BY created_at').all() as StrategyConfigRow[];
+}
+
+export function getStrategyConfig(db: Database.Database, id: string): StrategyConfigRow | undefined {
+  return db.prepare('SELECT * FROM strategy_configs WHERE id = ?').get(id) as StrategyConfigRow | undefined;
+}
+
+export function upsertStrategyConfig(
+  db: Database.Database,
+  id: string,
+  label: string,
+  configJson: string,
+  enabled: number = 1,
+): void {
+  db.prepare(`
+    INSERT INTO strategy_configs (id, label, enabled, config_json, updated_at)
+    VALUES (@id, @label, @enabled, @config_json, unixepoch())
+    ON CONFLICT(id) DO UPDATE SET
+      label = @label,
+      enabled = @enabled,
+      config_json = @config_json,
+      updated_at = unixepoch()
+  `).run({ id, label, enabled, config_json: configJson });
+}
+
+export function deleteStrategyConfig(db: Database.Database, id: string): void {
+  db.prepare('DELETE FROM strategy_configs WHERE id = ?').run(id);
+}
+
+export function getTradeStatsByStrategy(db: Database.Database) {
+  return db.prepare(`
+    SELECT
+      strategy_id,
+      mode,
+      COUNT(*) as total,
+      COUNT(CASE WHEN status='closed' THEN 1 END) as closed,
+      COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
+      COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
+      ROUND(AVG(CASE WHEN status='closed' THEN net_return_pct END), 2) as avg_net_return_pct,
+      SUM(CASE WHEN status='closed' AND exit_reason='take_profit' THEN 1 ELSE 0 END) as tp_exits,
+      SUM(CASE WHEN status='closed' AND exit_reason='stop_loss' THEN 1 ELSE 0 END) as sl_exits,
+      SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
+      ROUND(SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END), 4) as total_net_profit_sol
+    FROM trades_v2
+    GROUP BY strategy_id, mode
+    ORDER BY strategy_id, mode
+  `).all();
+}
+
+export function getOpenTradesByStrategy(db: Database.Database, strategyId: string) {
+  return db.prepare(`SELECT * FROM trades_v2 WHERE status = 'open' AND strategy_id = ?`).all(strategyId);
 }
 
 /** Backfill momentum comparison fields on closed trades once graduation_momentum is complete */

@@ -11,6 +11,23 @@ export interface FilterConfig {
   label: string;
 }
 
+/**
+ * Per-strategy parameters — the subset of TradingConfig that can be
+ * edited from the dashboard and varies between parallel strategies.
+ */
+export interface StrategyParams {
+  tradeSizeSol: number;
+  maxConcurrentPositions: number;
+  entryGateMinPctT30: number;
+  entryGateMaxPctT30: number;
+  takeProfitPct: number;
+  stopLossPct: number;
+  maxHoldSeconds: number;
+  slGapPenaltyPct: number;
+  tpGapPenaltyPct: number;
+  filters: FilterConfig[];
+}
+
 export interface TradingConfig {
   /** Master switch — false = no evaluation, no DB writes */
   enabled: boolean;
@@ -102,4 +119,37 @@ export function describeTradingConfig(cfg: TradingConfig): string {
     `gate=[+${cfg.entryGateMinPctT30}%..+${cfg.entryGateMaxPctT30}%]`,
     `filters=[${filterLabels || 'none'}]`,
   ].join(' ');
+}
+
+/** Extract the per-strategy subset from a full TradingConfig */
+export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
+  return {
+    tradeSizeSol: cfg.tradeSizeSol,
+    maxConcurrentPositions: cfg.maxConcurrentPositions,
+    entryGateMinPctT30: cfg.entryGateMinPctT30,
+    entryGateMaxPctT30: cfg.entryGateMaxPctT30,
+    takeProfitPct: cfg.takeProfitPct,
+    stopLossPct: cfg.stopLossPct,
+    maxHoldSeconds: cfg.maxHoldSeconds,
+    slGapPenaltyPct: cfg.slGapPenaltyPct,
+    tpGapPenaltyPct: cfg.tpGapPenaltyPct,
+    filters: cfg.filters,
+  };
+}
+
+/** Merge per-strategy params with global settings to produce a full TradingConfig */
+export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyParams): TradingConfig {
+  return {
+    ...globalCfg,
+    tradeSizeSol: params.tradeSizeSol,
+    maxConcurrentPositions: params.maxConcurrentPositions,
+    entryGateMinPctT30: params.entryGateMinPctT30,
+    entryGateMaxPctT30: params.entryGateMaxPctT30,
+    takeProfitPct: params.takeProfitPct,
+    stopLossPct: params.stopLossPct,
+    maxHoldSeconds: params.maxHoldSeconds,
+    slGapPenaltyPct: params.slGapPenaltyPct,
+    tpGapPenaltyPct: params.tpGapPenaltyPct,
+    filters: params.filters,
+  };
 }

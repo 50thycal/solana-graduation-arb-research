@@ -24,6 +24,7 @@ export interface OpenTradeParams {
   entryLiquiditySol: number;
   filterStages: FilterStageResult[];
   config: TradingConfig;
+  strategyId?: string;
 }
 
 export interface CloseTradeParams {
@@ -76,6 +77,7 @@ export class TradeLogger {
       entry_slippage_pct: slippagePct,
       filter_results_json: JSON.stringify(params.filterStages),
       filter_config_json: JSON.stringify(params.config.filters),
+      strategy_id: params.strategyId,
     });
 
     logger.info(
@@ -185,9 +187,10 @@ export class TradeLogger {
     skipReason: string,
     skipValue: number | null,
     pctT30: number | null,
+    strategyId: string = 'default',
   ): void {
-    insertTradeSkip(this.db, graduationId, skipReason, skipValue, pctT30);
-    logger.debug({ graduationId, skipReason, skipValue, pctT30 }, 'Trade skipped');
+    insertTradeSkip(this.db, graduationId, skipReason, skipValue, pctT30, strategyId);
+    logger.debug({ graduationId, skipReason, skipValue, pctT30, strategy: strategyId }, 'Trade skipped');
   }
 
   /**

@@ -345,5 +345,34 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_trade_skips_graduation ON trade_skips(graduation_id);
   `);
 
+  // Strategy configs table for multi-strategy parallel testing
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS strategy_configs (
+      id TEXT PRIMARY KEY,
+      label TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      config_json TEXT NOT NULL,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch())
+    );
+  `);
+
+  // Add strategy_id to trades_v2 and trade_skips (safe migration)
+  {
+    const tradeCols = db.prepare("PRAGMA table_info(trades_v2)").all() as Array<{ name: string }>;
+    const tradeExisting = new Set(tradeCols.map(c => c.name));
+    if (!tradeExisting.has('strategy_id')) {
+      db.exec(`ALTER TABLE trades_v2 ADD COLUMN strategy_id TEXT DEFAULT 'default'`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_trades_v2_strategy ON trades_v2(strategy_id)`);
+    }
+
+    const skipCols = db.prepare("PRAGMA table_info(trade_skips)").all() as Array<{ name: string }>;
+    const skipExisting = new Set(skipCols.map(c => c.name));
+    if (!skipExisting.has('strategy_id')) {
+      db.exec(`ALTER TABLE trade_skips ADD COLUMN strategy_id TEXT DEFAULT 'default'`);
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_trade_skips_strategy ON trade_skips(strategy_id)`);
+    }
+  }
+
   logger.info('Database migrations complete');
 }

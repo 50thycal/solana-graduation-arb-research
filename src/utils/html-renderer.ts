@@ -2808,30 +2808,101 @@ export function renderPricePathHtml(db: Database.Database): string {
 
 export function renderTradingHtml(data: any): string {
   const navHtml = nav('/trading');
+  const strategies: any[] = data.strategies || [];
+  const selected = data.selected_strategy || '';
+  const modeColor = !data.trading_enabled ? '#94a3b8' : data.global_mode === 'live' ? '#f59e0b' : '#22d3ee';
+  const modeLabel = !data.trading_enabled ? 'DISABLED' : (data.global_mode ?? 'paper').toUpperCase();
 
-  const cfg = data.config;
-  const modeColor = !data.trading_enabled ? '#94a3b8' : cfg?.mode === 'live' ? '#f59e0b' : '#22d3ee';
-  const modeLabel = !data.trading_enabled ? 'DISABLED' : (cfg?.mode ?? 'unknown').toUpperCase();
+  // ── Strategy tabs ─────────────────────────────────────────────────────────
+  const tabStyle = (active: boolean) => active
+    ? 'background:#2563eb;color:#fff;pointer-events:none'
+    : 'background:#334155;color:#94a3b8';
+  const tabsHtml = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
+      <a href="/trading" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(!selected)}">All</a>
+      ${strategies.map((s: any) => `
+        <a href="/trading?strategy=${s.id}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(selected === s.id)}">
+          ${s.label}${!s.enabled ? ' (off)' : ''}
+          <span style="font-size:10px;color:#64748b;margin-left:4px">${s.activePositions}pos</span>
+        </a>
+      `).join('')}
+      <button onclick="document.getElementById('new-strategy-form').style.display='block'" style="padding:6px 14px;border-radius:4px;font-size:12px;background:#065f46;color:#fff;border:none;cursor:pointer">+ New Strategy</button>
+    </div>`;
 
-  const configHtml = cfg ? `
-    <div class="card">
-      <div class="card-title">Config <span style="color:${modeColor};font-size:15px;margin-left:8px">${modeLabel}</span></div>
-      <table class="table"><tbody>
-        <tr><td>Mode</td><td style="color:${modeColor}">${cfg.mode}</td></tr>
-        <tr><td>Trade Size</td><td>${cfg.trade_size_sol} SOL</td></tr>
-        <tr><td>Take Profit</td><td style="color:#22d3ee">+${cfg.take_profit_pct}%</td></tr>
-        <tr><td>Stop Loss</td><td style="color:#f87171">-${cfg.stop_loss_pct}%</td></tr>
-        <tr><td>Max Hold</td><td>${cfg.max_hold_seconds}s</td></tr>
-        <tr><td>Entry Gate</td><td>${cfg.entry_gate}</td></tr>
-        <tr><td>Max Concurrent</td><td>${cfg.max_concurrent_positions}</td></tr>
-        <tr><td>Filters</td><td style="color:#a78bfa">${(cfg.filters || []).map((f: any) => f.label).join(' AND ') || 'none'}</td></tr>
-      </tbody></table>
-    </div>` : `<div class="card"><div class="card-title">Config</div><p style="color:#94a3b8">Trading disabled — set TRADING_ENABLED=true to activate</p></div>`;
+  // ── New strategy form (hidden by default) ─────────────────────────────────
+  const defaultParams = { tradeSizeSol: 0.5, maxConcurrentPositions: 1, entryGateMinPctT30: 5, entryGateMaxPctT30: 100, takeProfitPct: 30, stopLossPct: 10, maxHoldSeconds: 300, slGapPenaltyPct: 20, tpGapPenaltyPct: 10, filters: [{ field: 'bc_velocity_sol_per_min', operator: '>=', value: 5, label: 'vel>=5' }, { field: 'bc_velocity_sol_per_min', operator: '<', value: 20, label: 'vel<20' }] };
+  const newFormHtml = `
+    <div id="new-strategy-form" class="card" style="display:none;border:1px solid #065f46">
+      <div class="card-title">Create New Strategy</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <label style="color:#94a3b8;font-size:11px">ID (slug)<input id="new-id" type="text" placeholder="e.g. aggressive" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Label<input id="new-label" type="text" placeholder="e.g. Aggressive TP" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
+        <label style="color:#94a3b8;font-size:11px">TP %<input id="new-tp" type="number" value="30" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">SL %<input id="new-sl" type="number" value="10" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Trade Size SOL<input id="new-size" type="number" value="0.5" step="0.1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Max Concurrent<input id="new-maxpos" type="number" value="1" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
+        <label style="color:#94a3b8;font-size:11px">Entry Gate Min %<input id="new-gate-min" type="number" value="5" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Entry Gate Max %<input id="new-gate-max" type="number" value="100" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Max Hold (s)<input id="new-hold" type="number" value="300" step="30" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">SL Gap Penalty %<input id="new-sl-gap" type="number" value="20" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+        <label style="color:#94a3b8;font-size:11px">TP Gap Penalty %<input id="new-tp-gap" type="number" value="10" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+      </div>
+      <label style="color:#94a3b8;font-size:11px">Filters (JSON array)<textarea id="new-filters" rows="3" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px;font-family:monospace;font-size:11px">${JSON.stringify(defaultParams.filters, null, 2)}</textarea></label>
+      <div style="margin-top:12px;display:flex;gap:8px">
+        <button onclick="createStrategy()" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Create</button>
+        <button onclick="document.getElementById('new-strategy-form').style.display='none'" style="background:#334155;color:#94a3b8;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Cancel</button>
+        <span id="new-error" style="color:#f87171;font-size:12px;line-height:30px"></span>
+      </div>
+    </div>`;
 
-  // Open positions
-  const posRows = (data.open_positions || []).map((p: any) => `
+  // ── Strategy config editor (shown when a specific strategy is selected) ───
+  const selectedStrategy = strategies.find((s: any) => s.id === selected);
+  let editorHtml = '';
+  if (selectedStrategy) {
+    const p = selectedStrategy.params;
+    editorHtml = `
+    <div class="card" style="border:1px solid #334155">
+      <div class="card-title">Strategy: ${selectedStrategy.label}
+        <span style="color:${selectedStrategy.enabled ? '#4ade80' : '#f87171'};font-size:12px;margin-left:8px">${selectedStrategy.enabled ? 'ENABLED' : 'DISABLED'}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
+        <label style="color:#94a3b8;font-size:11px">TP %<input id="ed-tp" type="number" value="${p.takeProfitPct}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">SL %<input id="ed-sl" type="number" value="${p.stopLossPct}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Trade Size SOL<input id="ed-size" type="number" value="${p.tradeSizeSol}" step="0.1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Max Concurrent<input id="ed-maxpos" type="number" value="${p.maxConcurrentPositions}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
+        <label style="color:#94a3b8;font-size:11px">Entry Gate Min %<input id="ed-gate-min" type="number" value="${p.entryGateMinPctT30}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Entry Gate Max %<input id="ed-gate-max" type="number" value="${p.entryGateMaxPctT30}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Max Hold (s)<input id="ed-hold" type="number" value="${p.maxHoldSeconds}" step="30" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">SL Gap Penalty %<input id="ed-sl-gap" type="number" value="${p.slGapPenaltyPct}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;margin-bottom:12px">
+        <label style="color:#94a3b8;font-size:11px">TP Gap Penalty %<input id="ed-tp-gap" type="number" value="${p.tpGapPenaltyPct}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Label<input id="ed-label" type="text" value="${selectedStrategy.label}" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+      </div>
+      <label style="color:#94a3b8;font-size:11px">Filters (JSON array)<textarea id="ed-filters" rows="3" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px;font-family:monospace;font-size:11px">${JSON.stringify(p.filters || [], null, 2)}</textarea></label>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button onclick="saveStrategy('${selectedStrategy.id}')" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Save Changes</button>
+        <button onclick="toggleStrategy('${selectedStrategy.id}',${!selectedStrategy.enabled})" style="background:${selectedStrategy.enabled ? '#7f1d1d' : '#065f46'};color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">${selectedStrategy.enabled ? 'Disable' : 'Enable'}</button>
+        ${selectedStrategy.id !== 'default' ? `<button onclick="if(confirm('Delete strategy ${selectedStrategy.id}?'))deleteStrategy('${selectedStrategy.id}')" style="background:#7f1d1d;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Delete</button>` : ''}
+        <span id="ed-status" style="color:#4ade80;font-size:12px"></span>
+      </div>
+    </div>`;
+  }
+
+  // ── Open positions ────────────────────────────────────────────────────────
+  const openPositions = (data.open_positions || []).filter((p: any) => !selected || p.strategyId === selected);
+  const posRows = openPositions.map((p: any) => `
     <tr>
       <td>${p.tradeId}</td>
+      <td style="color:#a78bfa;font-size:11px">${p.strategyId ?? 'default'}</td>
       <td style="font-family:monospace;font-size:11px">${p.mint.slice(0,8)}…</td>
       <td>${p.entryPriceSol?.toFixed(8) ?? '-'}</td>
       <td style="color:#22d3ee">${p.tpPriceSol?.toFixed(8) ?? '-'}</td>
@@ -2841,39 +2912,41 @@ export function renderTradingHtml(data: any): string {
 
   const openHtml = `
     <div class="card">
-      <div class="card-title">Open Positions (${(data.open_positions || []).length})</div>
+      <div class="card-title">Open Positions (${openPositions.length})</div>
       ${posRows ? `<table class="table">
-        <thead><tr><th>ID</th><th>Mint</th><th>Entry</th><th>TP</th><th>SL</th><th>Held</th></tr></thead>
+        <thead><tr><th>ID</th><th>Strategy</th><th>Mint</th><th>Entry</th><th>TP</th><th>SL</th><th>Held</th></tr></thead>
         <tbody>${posRows}</tbody>
       </table>` : '<p style="color:#94a3b8">No open positions</p>'}
     </div>`;
 
-  // Performance summary
-  const perfRows = (data.performance_summary || []).map((s: any) => {
+  // ── Per-strategy performance summary ──────────────────────────────────────
+  const strategyStatsData = data.strategy_stats || [];
+  const stratStatRows = strategyStatsData.map((s: any) => {
     const ret = s.avg_net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
     return `<tr>
+      <td style="color:#a78bfa">${s.strategy_id ?? 'default'}</td>
       <td style="color:${s.mode === 'live' ? '#f59e0b' : '#22d3ee'}">${s.mode?.toUpperCase()}</td>
-      <td>${s.total}</td><td>${s.closed}</td><td>${s.open_count}</td><td>${s.failed}</td>
-      <td style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
+      <td>${s.total}</td><td>${s.closed}</td><td>${s.open_count}</td>
+      <td style="color:${retColor}">${ret != null ? ret + '%' : '-'}</td>
       <td style="color:#22d3ee">${s.tp_exits}</td>
       <td style="color:#f87171">${s.sl_exits}</td>
       <td style="color:#94a3b8">${s.timeout_exits}</td>
-      <td>${s.total_net_profit_sol != null ? s.total_net_profit_sol.toFixed(4) + ' SOL' : '-'}</td>
+      <td>${s.total_net_profit_sol != null ? s.total_net_profit_sol + ' SOL' : '-'}</td>
     </tr>`;
   }).join('');
 
   const perfHtml = `
     <div class="card">
-      <div class="card-title">Performance Summary</div>
-      ${perfRows ? `<table class="table">
-        <thead><tr><th>Mode</th><th>Total</th><th>Closed</th><th>Open</th><th>Failed</th>
-          <th>Avg Net Ret%</th><th>TP Exits</th><th>SL Exits</th><th>Timeout</th><th>Net P&L</th></tr></thead>
-        <tbody>${perfRows}</tbody>
+      <div class="card-title">Performance by Strategy</div>
+      ${stratStatRows ? `<table class="table">
+        <thead><tr><th>Strategy</th><th>Mode</th><th>Total</th><th>Closed</th><th>Open</th>
+          <th>Avg Net Ret%</th><th>TP</th><th>SL</th><th>Timeout</th><th>Net P&L</th></tr></thead>
+        <tbody>${stratStatRows}</tbody>
       </table>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
 
-  // Recent trades table
+  // ── Recent trades table ───────────────────────────────────────────────────
   const tradeRows = (data.recent_trades || []).map((t: any) => {
     const ret = t.net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
@@ -2881,7 +2954,7 @@ export function renderTradingHtml(data: any): string {
     const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
     return `<tr>
       <td>${t.id}</td>
-      <td style="color:${t.mode === 'live' ? '#f59e0b' : '#22d3ee'}">${t.mode}</td>
+      <td style="color:#a78bfa;font-size:11px">${t.strategy_id ?? 'default'}</td>
       <td style="color:${t.status === 'open' ? '#a78bfa' : t.status === 'failed' ? '#f87171' : '#94a3b8'}">${t.status}</td>
       <td style="font-family:monospace;font-size:11px">${(t.mint || '').slice(0,8)}…</td>
       <td>${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
@@ -2895,24 +2968,24 @@ export function renderTradingHtml(data: any): string {
 
   const tradesHtml = `
     <div class="card">
-      <div class="card-title">Recent Trades (last 50)</div>
+      <div class="card-title">Recent Trades (last 50)${selected ? ` — ${selected}` : ''}</div>
       ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
-        <thead><tr><th>ID</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
+        <thead><tr><th>ID</th><th>Strategy</th><th>Status</th><th>Mint</th><th>Entry%</th>
           <th>Exit Reason</th><th>Net Ret%</th><th>Held</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
         <tbody>${tradeRows}</tbody>
       </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
 
-  // Skip reason counts
+  // ── Skips ─────────────────────────────────────────────────────────────────
   const skipCountRows = (data.skip_reason_counts || []).map((s: any) =>
     `<tr><td>${s.skip_reason}</td><td>${s.count}</td></tr>`
   ).join('');
 
-  // Recent skips
   const skipRows = (data.recent_skips || []).slice(0, 20).map((s: any) =>
     `<tr>
       <td>${s.graduation_id}</td>
       <td style="font-family:monospace;font-size:11px">${(s.mint || '').slice(0,8)}…</td>
+      <td style="color:#a78bfa;font-size:11px">${s.strategy_id ?? 'default'}</td>
       <td style="color:#f87171">${s.skip_reason}</td>
       <td>${s.skip_value != null ? s.skip_value.toFixed(2) : '-'}</td>
       <td>${s.pct_t30 != null ? s.pct_t30.toFixed(1) + '%' : '-'}</td>
@@ -2932,15 +3005,82 @@ export function renderTradingHtml(data: any): string {
       <div class="card">
         <div class="card-title">Recent Skips (last 20)</div>
         ${skipRows ? `<div style="overflow-x:auto"><table class="table">
-          <thead><tr><th>GradID</th><th>Mint</th><th>Reason</th><th>Value</th><th>pct_t30</th><th>Time</th></tr></thead>
+          <thead><tr><th>GradID</th><th>Mint</th><th>Strategy</th><th>Reason</th><th>Value</th><th>pct_t30</th><th>Time</th></tr></thead>
           <tbody>${skipRows}</tbody>
         </table></div>` : '<p style="color:#94a3b8">No skips yet</p>'}
       </div>
     </div>`;
 
+  // ── JavaScript for strategy management ────────────────────────────────────
+  const js = `
+  <script>
+    function gv(id) { return document.getElementById(id).value; }
+    function gn(id) { return parseFloat(gv(id)); }
+
+    async function createStrategy() {
+      const errEl = document.getElementById('new-error');
+      errEl.textContent = '';
+      try {
+        const filters = JSON.parse(document.getElementById('new-filters').value);
+        const body = {
+          id: gv('new-id').trim().toLowerCase().replace(/[^a-z0-9-]/g, ''),
+          label: gv('new-label').trim(),
+          params: {
+            tradeSizeSol: gn('new-size'), maxConcurrentPositions: parseInt(gv('new-maxpos')),
+            entryGateMinPctT30: gn('new-gate-min'), entryGateMaxPctT30: gn('new-gate-max'),
+            takeProfitPct: gn('new-tp'), stopLossPct: gn('new-sl'),
+            maxHoldSeconds: parseInt(gv('new-hold')),
+            slGapPenaltyPct: gn('new-sl-gap'), tpGapPenaltyPct: gn('new-tp-gap'),
+            filters: filters
+          }
+        };
+        const res = await fetch('/api/strategies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) { errEl.textContent = data.error || 'Failed'; return; }
+        location.href = '/trading?strategy=' + body.id;
+      } catch (e) { errEl.textContent = e.message; }
+    }
+
+    async function saveStrategy(id) {
+      const statusEl = document.getElementById('ed-status');
+      statusEl.textContent = 'Saving...';
+      statusEl.style.color = '#94a3b8';
+      try {
+        const filters = JSON.parse(document.getElementById('ed-filters').value);
+        const body = {
+          label: gv('ed-label').trim(),
+          params: {
+            tradeSizeSol: gn('ed-size'), maxConcurrentPositions: parseInt(gv('ed-maxpos')),
+            entryGateMinPctT30: gn('ed-gate-min'), entryGateMaxPctT30: gn('ed-gate-max'),
+            takeProfitPct: gn('ed-tp'), stopLossPct: gn('ed-sl'),
+            maxHoldSeconds: parseInt(gv('ed-hold')),
+            slGapPenaltyPct: gn('ed-sl-gap'), tpGapPenaltyPct: gn('ed-tp-gap'),
+            filters: filters
+          }
+        };
+        const res = await fetch('/api/strategies/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await res.json();
+        if (!res.ok) { statusEl.textContent = data.error || 'Failed'; statusEl.style.color = '#f87171'; return; }
+        statusEl.textContent = 'Saved!';
+        statusEl.style.color = '#4ade80';
+      } catch (e) { statusEl.textContent = e.message; statusEl.style.color = '#f87171'; }
+    }
+
+    async function toggleStrategy(id, enabled) {
+      await fetch('/api/strategies/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
+      location.reload();
+    }
+
+    async function deleteStrategy(id) {
+      const res = await fetch('/api/strategies/' + id, { method: 'DELETE' });
+      if (res.ok) location.href = '/trading';
+      else { const d = await res.json(); alert(d.error || 'Failed'); }
+    }
+  </script>`;
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="10">
+<meta http-equiv="refresh" content="15">
 <title>Trading Dashboard</title>
 <style>${STYLES}
   .card{background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px}
@@ -2952,13 +3092,19 @@ export function renderTradingHtml(data: any): string {
 </style></head><body>
 <nav><span class="title">Graduation Arb Research</span>${navHtml}</nav>
 <div class="container">
-  <h1 style="font-size:18px;color:#60a5fa;margin:0 0 16px">Trading Dashboard</h1>
-  <p style="color:#64748b;font-size:11px;margin:0 0 16px">Auto-refreshes every 10s · Generated ${data.generated_at}</p>
-  ${configHtml}
+  <h1 style="font-size:18px;color:#60a5fa;margin:0 0 4px">Trading Dashboard
+    <span style="font-size:13px;color:${modeColor};margin-left:8px">${modeLabel}</span>
+    <span style="font-size:12px;color:#64748b;margin-left:8px">${strategies.length} strateg${strategies.length === 1 ? 'y' : 'ies'}</span>
+  </h1>
+  <p style="color:#64748b;font-size:11px;margin:0 0 16px">Auto-refreshes every 15s · Generated ${data.generated_at}</p>
+  ${tabsHtml}
+  ${newFormHtml}
+  ${editorHtml}
   ${openHtml}
   ${perfHtml}
   ${tradesHtml}
   ${skipsHtml}
 </div>
+${js}
 </body></html>`;
 }
