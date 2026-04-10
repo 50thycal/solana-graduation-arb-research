@@ -2806,6 +2806,22 @@ export function renderPricePathHtml(db: Database.Database): string {
 // Trading dashboard
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** Convert a UTC datetime string (from SQLite datetime()) to Central Time display */
+function utcToCentral(utcStr: string | null | undefined): string {
+  if (!utcStr) return '-';
+  try {
+    // SQLite datetime() returns "YYYY-MM-DD HH:MM:SS" in UTC
+    const d = new Date(utcStr + 'Z');
+    if (isNaN(d.getTime())) return utcStr;
+    return d.toLocaleString('en-US', {
+      timeZone: 'America/Chicago',
+      month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit', second: '2-digit',
+      hour12: true,
+    });
+  } catch { return utcStr; }
+}
+
 export function renderTradingHtml(data: any): string {
   const navHtml = nav('/trading');
   const strategies: any[] = data.strategies || [];
@@ -2962,7 +2978,7 @@ export function renderTradingHtml(data: any): string {
       <td style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
       <td>${heldStr}</td>
       <td style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
-      <td style="font-size:11px;color:#64748b">${t.entry_dt ?? '-'}</td>
+      <td style="font-size:11px;color:#64748b">${utcToCentral(t.entry_dt)}</td>
     </tr>`;
   }).join('');
 
@@ -2989,7 +3005,7 @@ export function renderTradingHtml(data: any): string {
       <td style="color:#f87171">${s.skip_reason}</td>
       <td>${s.skip_value != null ? s.skip_value.toFixed(2) : '-'}</td>
       <td>${s.pct_t30 != null ? s.pct_t30.toFixed(1) + '%' : '-'}</td>
-      <td style="font-size:11px;color:#64748b">${s.created_dt ?? '-'}</td>
+      <td style="font-size:11px;color:#64748b">${utcToCentral(s.created_dt)}</td>
     </tr>`
   ).join('');
 
@@ -3078,9 +3094,11 @@ export function renderTradingHtml(data: any): string {
     }
   </script>`;
 
+  // Convert generated_at to Central time
+  const generatedCT = new Date(data.generated_at).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="15">
 <title>Trading Dashboard</title>
 <style>${STYLES}
   .card{background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px}
@@ -3095,8 +3113,9 @@ export function renderTradingHtml(data: any): string {
   <h1 style="font-size:18px;color:#60a5fa;margin:0 0 4px">Trading Dashboard
     <span style="font-size:13px;color:${modeColor};margin-left:8px">${modeLabel}</span>
     <span style="font-size:12px;color:#64748b;margin-left:8px">${strategies.length} strateg${strategies.length === 1 ? 'y' : 'ies'}</span>
+    <button onclick="location.reload()" style="margin-left:12px;background:#334155;color:#94a3b8;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:11px">Refresh</button>
   </h1>
-  <p style="color:#64748b;font-size:11px;margin:0 0 16px">Auto-refreshes every 15s · Generated ${data.generated_at}</p>
+  <p style="color:#64748b;font-size:11px;margin:0 0 16px">Manual refresh · Generated ${generatedCT} CT</p>
   ${tabsHtml}
   ${newFormHtml}
   ${editorHtml}
