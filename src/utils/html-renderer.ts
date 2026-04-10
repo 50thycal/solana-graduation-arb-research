@@ -2822,6 +2822,166 @@ function utcToCentral(utcStr: string | null | undefined): string {
   } catch { return utcStr; }
 }
 
+/**
+ * Filter presets matching PANEL_1_FILTERS from filter-analysis-v2.
+ * Each maps to the FilterConfig[] array used by the trading engine.
+ * Grouped by category for <optgroup> rendering.
+ */
+const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string; configs: Array<{ field: string; operator: string; value: number; label: string }> }> }> = [
+  { group: 'Velocity', filters: [
+    { name: 'vel < 5 sol/min', configs: [{ field: 'bc_velocity_sol_per_min', operator: '<', value: 5, label: 'vel<5' }] },
+    { name: 'vel 5-10 sol/min', configs: [{ field: 'bc_velocity_sol_per_min', operator: '>=', value: 5, label: 'vel>=5' }, { field: 'bc_velocity_sol_per_min', operator: '<', value: 10, label: 'vel<10' }] },
+    { name: 'vel 5-20 sol/min', configs: [{ field: 'bc_velocity_sol_per_min', operator: '>=', value: 5, label: 'vel>=5' }, { field: 'bc_velocity_sol_per_min', operator: '<', value: 20, label: 'vel<20' }] },
+    { name: 'vel 10-20 sol/min', configs: [{ field: 'bc_velocity_sol_per_min', operator: '>=', value: 10, label: 'vel>=10' }, { field: 'bc_velocity_sol_per_min', operator: '<', value: 20, label: 'vel<20' }] },
+    { name: 'vel < 20 sol/min', configs: [{ field: 'bc_velocity_sol_per_min', operator: '<', value: 20, label: 'vel<20' }] },
+    { name: 'vel < 50 sol/min', configs: [{ field: 'bc_velocity_sol_per_min', operator: '<', value: 50, label: 'vel<50' }] },
+    { name: 'vel 20-50 sol/min', configs: [{ field: 'bc_velocity_sol_per_min', operator: '>=', value: 20, label: 'vel>=20' }, { field: 'bc_velocity_sol_per_min', operator: '<', value: 50, label: 'vel<50' }] },
+    { name: 'vel 50-200 sol/min', configs: [{ field: 'bc_velocity_sol_per_min', operator: '>=', value: 50, label: 'vel>=50' }, { field: 'bc_velocity_sol_per_min', operator: '<', value: 200, label: 'vel<200' }] },
+    { name: 'vel > 200 sol/min', configs: [{ field: 'bc_velocity_sol_per_min', operator: '>=', value: 200, label: 'vel>=200' }] },
+  ]},
+  { group: 'BC Age', filters: [
+    { name: 'bc_age < 10 min', configs: [{ field: 'token_age_seconds', operator: '<', value: 600, label: 'age<10m' }] },
+    { name: 'bc_age > 10 min', configs: [{ field: 'token_age_seconds', operator: '>', value: 600, label: 'age>10m' }] },
+    { name: 'bc_age > 30 min', configs: [{ field: 'token_age_seconds', operator: '>', value: 1800, label: 'age>30m' }] },
+    { name: 'bc_age > 1 hr', configs: [{ field: 'token_age_seconds', operator: '>', value: 3600, label: 'age>1h' }] },
+    { name: 'bc_age > 1 day', configs: [{ field: 'token_age_seconds', operator: '>', value: 86400, label: 'age>1d' }] },
+  ]},
+  { group: 'Holders', filters: [
+    { name: 'holders >= 5', configs: [{ field: 'holder_count', operator: '>=', value: 5, label: 'holders>=5' }] },
+    { name: 'holders >= 10', configs: [{ field: 'holder_count', operator: '>=', value: 10, label: 'holders>=10' }] },
+    { name: 'holders >= 15', configs: [{ field: 'holder_count', operator: '>=', value: 15, label: 'holders>=15' }] },
+    { name: 'holders >= 18', configs: [{ field: 'holder_count', operator: '>=', value: 18, label: 'holders>=18' }] },
+  ]},
+  { group: 'Top 5 Concentration', filters: [
+    { name: 'top5 < 10%', configs: [{ field: 'top5_wallet_pct', operator: '<', value: 10, label: 'top5<10%' }] },
+    { name: 'top5 < 15%', configs: [{ field: 'top5_wallet_pct', operator: '<', value: 15, label: 'top5<15%' }] },
+    { name: 'top5 < 20%', configs: [{ field: 'top5_wallet_pct', operator: '<', value: 20, label: 'top5<20%' }] },
+    { name: 'top5 > 15%', configs: [{ field: 'top5_wallet_pct', operator: '>', value: 15, label: 'top5>15%' }] },
+  ]},
+  { group: 'Dev Wallet', filters: [
+    { name: 'dev < 3%', configs: [{ field: 'dev_wallet_pct', operator: '<', value: 3, label: 'dev<3%' }] },
+    { name: 'dev < 5%', configs: [{ field: 'dev_wallet_pct', operator: '<', value: 5, label: 'dev<5%' }] },
+    { name: 'dev > 5%', configs: [{ field: 'dev_wallet_pct', operator: '>', value: 5, label: 'dev>5%' }] },
+  ]},
+  { group: 'SOL Raised', filters: [
+    { name: 'sol >= 70', configs: [{ field: 'total_sol_raised', operator: '>=', value: 70, label: 'sol>=70' }] },
+    { name: 'sol >= 80', configs: [{ field: 'total_sol_raised', operator: '>=', value: 80, label: 'sol>=80' }] },
+    { name: 'sol >= 84', configs: [{ field: 'total_sol_raised', operator: '>=', value: 84, label: 'sol>=84' }] },
+  ]},
+  { group: 'Liquidity (T+30)', filters: [
+    { name: 'liquidity > 50 SOL', configs: [{ field: 'liquidity_sol_t30', operator: '>', value: 50, label: 'liq>50' }] },
+    { name: 'liquidity > 100 SOL', configs: [{ field: 'liquidity_sol_t30', operator: '>', value: 100, label: 'liq>100' }] },
+    { name: 'liquidity > 150 SOL', configs: [{ field: 'liquidity_sol_t30', operator: '>', value: 150, label: 'liq>150' }] },
+  ]},
+  { group: 'Volatility (0-30s)', filters: [
+    { name: 'volatility < 10%', configs: [{ field: 'volatility_0_30', operator: '<', value: 10, label: 'vol<10%' }] },
+    { name: 'volatility 10-30%', configs: [{ field: 'volatility_0_30', operator: '>=', value: 10, label: 'vol>=10%' }, { field: 'volatility_0_30', operator: '<', value: 30, label: 'vol<30%' }] },
+    { name: 'volatility 30-60%', configs: [{ field: 'volatility_0_30', operator: '>=', value: 30, label: 'vol>=30%' }, { field: 'volatility_0_30', operator: '<', value: 60, label: 'vol<60%' }] },
+    { name: 'volatility > 60%', configs: [{ field: 'volatility_0_30', operator: '>=', value: 60, label: 'vol>=60%' }] },
+  ]},
+  { group: 'Path: Monotonicity', filters: [
+    { name: 'mono > 0.33', configs: [{ field: 'monotonicity_0_30', operator: '>', value: 0.33, label: 'mono>0.33' }] },
+    { name: 'mono > 0.5', configs: [{ field: 'monotonicity_0_30', operator: '>', value: 0.5, label: 'mono>0.5' }] },
+    { name: 'mono > 0.66', configs: [{ field: 'monotonicity_0_30', operator: '>', value: 0.66, label: 'mono>0.66' }] },
+  ]},
+  { group: 'Path: Drawdown', filters: [
+    { name: 'max_dd > -10% (shallow)', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -10, label: 'dd>-10%' }] },
+    { name: 'max_dd > -20%', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -20, label: 'dd>-20%' }] },
+  ]},
+  { group: 'Path: Other', filters: [
+    { name: 'dip_and_recover = 1', configs: [{ field: 'dip_and_recover_flag', operator: '==', value: 1, label: 'dip_recover' }] },
+    { name: 'acceleration > 0', configs: [{ field: 'acceleration_t30', operator: '>', value: 0, label: 'accel>0' }] },
+    { name: 'front-loaded (early>late)', configs: [{ field: 'early_vs_late_0_30', operator: '>', value: 0, label: 'front-loaded' }] },
+    { name: 'back-loaded (late>early)', configs: [{ field: 'early_vs_late_0_30', operator: '<', value: 0, label: 'back-loaded' }] },
+  ]},
+  { group: 'Buy Pressure', filters: [
+    { name: 'buy_ratio > 0.5', configs: [{ field: 'buy_pressure_buy_ratio', operator: '>', value: 0.5, label: 'buy_ratio>0.5' }] },
+    { name: 'buy_ratio > 0.6', configs: [{ field: 'buy_pressure_buy_ratio', operator: '>', value: 0.6, label: 'buy_ratio>0.6' }] },
+    { name: 'unique_buyers >= 5', configs: [{ field: 'buy_pressure_unique_buyers', operator: '>=', value: 5, label: 'buyers>=5' }] },
+    { name: 'unique_buyers >= 10', configs: [{ field: 'buy_pressure_unique_buyers', operator: '>=', value: 10, label: 'buyers>=10' }] },
+    { name: 'whale_pct < 30%', configs: [{ field: 'buy_pressure_whale_pct', operator: '<', value: 30, label: 'whale<30%' }] },
+    { name: 'whale_pct < 50%', configs: [{ field: 'buy_pressure_whale_pct', operator: '<', value: 50, label: 'whale<50%' }] },
+  ]},
+  { group: 'T+30 Entry', filters: [
+    { name: 't30 > 0%', configs: [{ field: 'pct_t30', operator: '>', value: 0, label: 't30>0%' }] },
+    { name: 't30 +5% to +50%', configs: [{ field: 'pct_t30', operator: '>=', value: 5, label: 't30>=5%' }, { field: 'pct_t30', operator: '<=', value: 50, label: 't30<=50%' }] },
+    { name: 't30 +5% to +100%', configs: [{ field: 'pct_t30', operator: '>=', value: 5, label: 't30>=5%' }, { field: 'pct_t30', operator: '<=', value: 100, label: 't30<=100%' }] },
+    { name: 't30 +10% to +50%', configs: [{ field: 'pct_t30', operator: '>=', value: 10, label: 't30>=10%' }, { field: 'pct_t30', operator: '<=', value: 50, label: 't30<=50%' }] },
+  ]},
+];
+
+const TP_OPTIONS = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150];
+const SL_OPTIONS = [3, 4, 5, 7.5, 10, 12.5, 15, 20, 25, 30];
+
+/** Build <option> tags for a filter select, with the matching option pre-selected */
+function filterSelectOptions(selectedName: string): string {
+  let html = '<option value="">-- None --</option>';
+  for (const g of FILTER_PRESET_GROUPS) {
+    html += `<optgroup label="${g.group}">`;
+    for (const f of g.filters) {
+      const sel = f.name === selectedName ? ' selected' : '';
+      html += `<option value="${f.name}"${sel}>${f.name}</option>`;
+    }
+    html += '</optgroup>';
+  }
+  return html;
+}
+
+/** Build <option> tags for TP or SL select */
+function numSelectOptions(options: number[], selected: number, suffix = '%'): string {
+  return options.map(v => {
+    const sel = v === selected ? ' selected' : '';
+    return `<option value="${v}"${sel}>${v}${suffix}</option>`;
+  }).join('');
+}
+
+/**
+ * Reverse-lookup: given a FilterConfig array, find the best matching preset name.
+ * Returns the preset name or '' if no match.
+ */
+function findPresetName(configs: any[]): string {
+  if (!configs || configs.length === 0) return '';
+  for (const g of FILTER_PRESET_GROUPS) {
+    for (const f of g.filters) {
+      if (f.configs.length !== configs.length) continue;
+      const allMatch = f.configs.every((fc, i) => {
+        const c = configs[i];
+        return c && fc.field === c.field && fc.operator === c.operator && fc.value === c.value;
+      });
+      if (allMatch) return f.name;
+    }
+  }
+  return '';
+}
+
+/**
+ * Split a FilterConfig array into up to 3 filter preset slots.
+ * Returns array of preset names (some may be '' for unmatched configs).
+ */
+function splitFiltersToPresets(allConfigs: any[]): string[] {
+  if (!allConfigs || allConfigs.length === 0) return ['', ''];
+  // Try to greedily match presets
+  const matched: string[] = [];
+  let remaining = [...allConfigs];
+  for (const g of FILTER_PRESET_GROUPS) {
+    for (const f of g.filters) {
+      if (remaining.length === 0) break;
+      // Check if f.configs is a prefix of remaining
+      if (f.configs.length > remaining.length) continue;
+      const isMatch = f.configs.every((fc, i) => {
+        const c = remaining[i];
+        return c && fc.field === c.field && fc.operator === c.operator && fc.value === c.value;
+      });
+      if (isMatch) {
+        matched.push(f.name);
+        remaining = remaining.slice(f.configs.length);
+      }
+    }
+  }
+  while (matched.length < 2) matched.push('');
+  return matched;
+}
+
 export function renderTradingHtml(data: any): string {
   const navHtml = nav('/trading');
   const strategies: any[] = data.strategies || [];
@@ -2845,31 +3005,47 @@ export function renderTradingHtml(data: any): string {
       <button onclick="document.getElementById('new-strategy-form').style.display='block'" style="padding:6px 14px;border-radius:4px;font-size:12px;background:#065f46;color:#fff;border:none;cursor:pointer">+ New Strategy</button>
     </div>`;
 
+  // ── Shared select style ────────────────────────────────────────────────────
+  const selStyle = 'display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px;font-size:12px;cursor:pointer';
+  const inpStyle = 'display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px';
+
   // ── New strategy form (hidden by default) ─────────────────────────────────
-  const defaultParams = { tradeSizeSol: 0.5, maxConcurrentPositions: 1, entryGateMinPctT30: 5, entryGateMaxPctT30: 100, takeProfitPct: 30, stopLossPct: 10, maxHoldSeconds: 300, slGapPenaltyPct: 20, tpGapPenaltyPct: 10, filters: [{ field: 'bc_velocity_sol_per_min', operator: '>=', value: 5, label: 'vel>=5' }, { field: 'bc_velocity_sol_per_min', operator: '<', value: 20, label: 'vel<20' }] };
   const newFormHtml = `
     <div id="new-strategy-form" class="card" style="display:none;border:1px solid #065f46">
       <div class="card-title">Create New Strategy</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-        <label style="color:#94a3b8;font-size:11px">ID (slug)<input id="new-id" type="text" placeholder="e.g. aggressive" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Label<input id="new-label" type="text" placeholder="e.g. Aggressive TP" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">ID (slug)<input id="new-id" type="text" placeholder="e.g. aggressive" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Label<input id="new-label" type="text" placeholder="e.g. Aggressive TP" style="${inpStyle}"></label>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
-        <label style="color:#94a3b8;font-size:11px">TP %<input id="new-tp" type="number" value="30" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">SL %<input id="new-sl" type="number" value="10" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Trade Size SOL<input id="new-size" type="number" value="0.5" step="0.1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Max Concurrent<input id="new-maxpos" type="number" value="1" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">TP %<select id="new-tp" style="${selStyle}">${numSelectOptions(TP_OPTIONS, 30)}</select></label>
+        <label style="color:#94a3b8;font-size:11px">SL %<select id="new-sl" style="${selStyle}">${numSelectOptions(SL_OPTIONS, 10)}</select></label>
+        <label style="color:#94a3b8;font-size:11px">Trade Size SOL<input id="new-size" type="number" value="0.5" step="0.1" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Max Concurrent<input id="new-maxpos" type="number" value="1" step="1" style="${inpStyle}"></label>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
-        <label style="color:#94a3b8;font-size:11px">Entry Gate Min %<input id="new-gate-min" type="number" value="5" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Entry Gate Max %<input id="new-gate-max" type="number" value="100" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Max Hold (s)<input id="new-hold" type="number" value="300" step="30" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">SL Gap Penalty %<input id="new-sl-gap" type="number" value="20" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Entry Gate Min %<input id="new-gate-min" type="number" value="5" step="1" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Entry Gate Max %<input id="new-gate-max" type="number" value="100" step="1" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Max Hold (s)<input id="new-hold" type="number" value="300" step="30" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">SL Gap Penalty %<input id="new-sl-gap" type="number" value="20" step="1" style="${inpStyle}"></label>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-        <label style="color:#94a3b8;font-size:11px">TP Gap Penalty %<input id="new-tp-gap" type="number" value="10" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">TP Gap Penalty %<input id="new-tp-gap" type="number" value="10" step="1" style="${inpStyle}"></label>
       </div>
-      <label style="color:#94a3b8;font-size:11px">Filters (JSON array)<textarea id="new-filters" rows="3" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px;font-family:monospace;font-size:11px">${JSON.stringify(defaultParams.filters, null, 2)}</textarea></label>
+      <div style="margin-bottom:12px">
+        <div style="color:#94a3b8;font-size:11px;margin-bottom:6px">Filters (AND logic)</div>
+        <div id="new-filter-slots">
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+            <select id="new-filter-1" style="${selStyle};flex:1">${filterSelectOptions('vel 5-20 sol/min')}</select>
+            <button onclick="removeFilterSlot('new',1)" style="background:#7f1d1d;color:#fff;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px" title="Remove">x</button>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+            <select id="new-filter-2" style="${selStyle};flex:1">${filterSelectOptions('')}</select>
+            <button onclick="removeFilterSlot('new',2)" style="background:#7f1d1d;color:#fff;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px" title="Remove">x</button>
+          </div>
+        </div>
+        <button onclick="addFilterSlot('new')" style="background:#334155;color:#94a3b8;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;margin-top:2px">+ Add Filter</button>
+      </div>
       <div style="margin-top:12px;display:flex;gap:8px">
         <button onclick="createStrategy()" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Create</button>
         <button onclick="document.getElementById('new-strategy-form').style.display='none'" style="background:#334155;color:#94a3b8;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Cancel</button>
@@ -2882,28 +3058,39 @@ export function renderTradingHtml(data: any): string {
   let editorHtml = '';
   if (selectedStrategy) {
     const p = selectedStrategy.params;
+    const edPresets = splitFiltersToPresets(p.filters || []);
+    const edFilterSlots = edPresets.map((name: string, i: number) => `
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:4px">
+        <select id="ed-filter-${i + 1}" style="${selStyle};flex:1">${filterSelectOptions(name)}</select>
+        <button onclick="removeFilterSlot('ed',${i + 1})" style="background:#7f1d1d;color:#fff;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px" title="Remove">x</button>
+      </div>`).join('');
+
     editorHtml = `
     <div class="card" style="border:1px solid #334155">
       <div class="card-title">Strategy: ${selectedStrategy.label}
         <span style="color:${selectedStrategy.enabled ? '#4ade80' : '#f87171'};font-size:12px;margin-left:8px">${selectedStrategy.enabled ? 'ENABLED' : 'DISABLED'}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
-        <label style="color:#94a3b8;font-size:11px">TP %<input id="ed-tp" type="number" value="${p.takeProfitPct}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">SL %<input id="ed-sl" type="number" value="${p.stopLossPct}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Trade Size SOL<input id="ed-size" type="number" value="${p.tradeSizeSol}" step="0.1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Max Concurrent<input id="ed-maxpos" type="number" value="${p.maxConcurrentPositions}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">TP %<select id="ed-tp" style="${selStyle}">${numSelectOptions(TP_OPTIONS, p.takeProfitPct)}</select></label>
+        <label style="color:#94a3b8;font-size:11px">SL %<select id="ed-sl" style="${selStyle}">${numSelectOptions(SL_OPTIONS, p.stopLossPct)}</select></label>
+        <label style="color:#94a3b8;font-size:11px">Trade Size SOL<input id="ed-size" type="number" value="${p.tradeSizeSol}" step="0.1" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Max Concurrent<input id="ed-maxpos" type="number" value="${p.maxConcurrentPositions}" step="1" style="${inpStyle}"></label>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
-        <label style="color:#94a3b8;font-size:11px">Entry Gate Min %<input id="ed-gate-min" type="number" value="${p.entryGateMinPctT30}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Entry Gate Max %<input id="ed-gate-max" type="number" value="${p.entryGateMaxPctT30}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Max Hold (s)<input id="ed-hold" type="number" value="${p.maxHoldSeconds}" step="30" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">SL Gap Penalty %<input id="ed-sl-gap" type="number" value="${p.slGapPenaltyPct}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">Entry Gate Min %<input id="ed-gate-min" type="number" value="${p.entryGateMinPctT30}" step="1" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Entry Gate Max %<input id="ed-gate-max" type="number" value="${p.entryGateMaxPctT30}" step="1" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Max Hold (s)<input id="ed-hold" type="number" value="${p.maxHoldSeconds}" step="30" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">SL Gap Penalty %<input id="ed-sl-gap" type="number" value="${p.slGapPenaltyPct}" step="1" style="${inpStyle}"></label>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;margin-bottom:12px">
-        <label style="color:#94a3b8;font-size:11px">TP Gap Penalty %<input id="ed-tp-gap" type="number" value="${p.tpGapPenaltyPct}" step="1" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
-        <label style="color:#94a3b8;font-size:11px">Label<input id="ed-label" type="text" value="${selectedStrategy.label}" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px"></label>
+        <label style="color:#94a3b8;font-size:11px">TP Gap Penalty %<input id="ed-tp-gap" type="number" value="${p.tpGapPenaltyPct}" step="1" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Label<input id="ed-label" type="text" value="${selectedStrategy.label}" style="${inpStyle}"></label>
       </div>
-      <label style="color:#94a3b8;font-size:11px">Filters (JSON array)<textarea id="ed-filters" rows="3" style="display:block;width:100%;box-sizing:border-box;background:#0f172a;color:#e0e0e0;border:1px solid #334155;padding:4px 8px;border-radius:4px;margin-top:2px;font-family:monospace;font-size:11px">${JSON.stringify(p.filters || [], null, 2)}</textarea></label>
+      <div style="margin-bottom:12px">
+        <div style="color:#94a3b8;font-size:11px;margin-bottom:6px">Filters (AND logic)</div>
+        <div id="ed-filter-slots">${edFilterSlots}</div>
+        <button onclick="addFilterSlot('ed')" style="background:#334155;color:#94a3b8;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px;margin-top:2px">+ Add Filter</button>
+      </div>
       <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
         <button onclick="saveStrategy('${selectedStrategy.id}')" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Save Changes</button>
         <button onclick="toggleStrategy('${selectedStrategy.id}',${!selectedStrategy.enabled})" style="background:${selectedStrategy.enabled ? '#7f1d1d' : '#065f46'};color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">${selectedStrategy.enabled ? 'Disable' : 'Enable'}</button>
@@ -3027,17 +3214,139 @@ export function renderTradingHtml(data: any): string {
       </div>
     </div>`;
 
+  // ── Build client-side FILTER_PRESETS map ────────────────────────────────────
+  const filterPresetsMap: Record<string, any[]> = {};
+  for (const g of FILTER_PRESET_GROUPS) {
+    for (const f of g.filters) {
+      filterPresetsMap[f.name] = f.configs;
+    }
+  }
+
+  // ── Top-20 filter combo presets card ──────────────────────────────────────
+  const topPairs: any[] = data.top_pairs || [];
+  let presetsHtml = '';
+  if (topPairs.length > 0) {
+    const pairRows = topPairs.map((p: any, i: number) => {
+      const retCls = p.opt_avg_ret > 0 ? 'ev-pos' : 'ev-neg';
+      const escA = (p.filter_a || '').replace(/'/g, "\\'");
+      const escB = (p.filter_b || '').replace(/'/g, "\\'");
+      return `<tr>
+        <td>${i + 1}</td>
+        <td style="font-size:11px">${p.filter_a}</td>
+        <td style="font-size:11px">${p.filter_b}</td>
+        <td>${p.n}</td>
+        <td>${p.opt_tp}%</td><td>${p.opt_sl}%</td>
+        <td class="${retCls}">${p.opt_avg_ret > 0 ? '+' : ''}${p.opt_avg_ret}%</td>
+        <td>${p.opt_win_rate}%</td>
+        <td><button onclick="usePreset('${escA}','${escB}',${p.opt_tp},${p.opt_sl})" style="background:#065f46;color:#fff;border:none;border-radius:4px;padding:3px 10px;cursor:pointer;font-size:11px">Use</button></td>
+      </tr>`;
+    }).join('');
+    presetsHtml = `
+    <div class="card" style="border:1px solid #1e3a5f">
+      <div class="card-title">Top Filter Combos <span style="color:#64748b;font-size:11px;font-weight:400">(from Filter V2 — visit <a href="/filter-analysis-v2" style="color:#60a5fa">Filters V2</a> to refresh)</span></div>
+      <div style="overflow-x:auto"><table class="table">
+        <thead><tr><th>#</th><th>Filter A</th><th>Filter B</th><th>n</th><th>TP%</th><th>SL%</th><th>Avg Ret%</th><th>Win%</th><th></th></tr></thead>
+        <tbody>${pairRows}</tbody>
+      </table></div>
+    </div>`;
+  } else {
+    presetsHtml = `
+    <div class="card" style="border:1px solid #334155">
+      <div class="card-title" style="color:#64748b">Top Filter Combos</div>
+      <p style="color:#64748b;font-size:12px">No cached data yet. Visit <a href="/filter-analysis-v2" style="color:#60a5fa">Filters V2</a> first to compute the top combos.</p>
+    </div>`;
+  }
+
   // ── JavaScript for strategy management ────────────────────────────────────
+  const filterOptionsHtml = filterSelectOptions('');
   const js = `
   <script>
+    const FILTER_PRESETS = ${JSON.stringify(filterPresetsMap)};
+    const FILTER_OPTIONS_HTML = ${JSON.stringify(filterOptionsHtml)};
+
     function gv(id) { return document.getElementById(id).value; }
     function gn(id) { return parseFloat(gv(id)); }
+
+    /** Collect all filter configs from select dropdowns with given prefix */
+    function getFilters(prefix) {
+      const container = document.getElementById(prefix + '-filter-slots');
+      if (!container) return [];
+      const selects = container.querySelectorAll('select');
+      const configs = [];
+      for (const sel of selects) {
+        const name = sel.value;
+        if (name && FILTER_PRESETS[name]) {
+          configs.push(...FILTER_PRESETS[name]);
+        }
+      }
+      return configs;
+    }
+
+    /** Count current filter slots */
+    function countFilterSlots(prefix) {
+      const container = document.getElementById(prefix + '-filter-slots');
+      return container ? container.querySelectorAll('select').length : 0;
+    }
+
+    /** Add a new filter dropdown slot */
+    function addFilterSlot(prefix) {
+      const container = document.getElementById(prefix + '-filter-slots');
+      if (!container) return;
+      const idx = countFilterSlots(prefix) + 1;
+      const div = document.createElement('div');
+      div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:4px';
+      div.innerHTML = '<select id="' + prefix + '-filter-' + idx + '" style="${selStyle};flex:1">' + FILTER_OPTIONS_HTML + '</select>'
+        + '<button onclick="removeFilterSlot(\\'' + prefix + '\\',' + idx + ')" style="background:#7f1d1d;color:#fff;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px" title="Remove">x</button>';
+      container.appendChild(div);
+    }
+
+    /** Remove a filter slot and re-index remaining ones */
+    function removeFilterSlot(prefix, idx) {
+      const container = document.getElementById(prefix + '-filter-slots');
+      if (!container) return;
+      const slots = container.children;
+      if (slots.length <= 1) return; // keep at least 1
+      for (let i = 0; i < slots.length; i++) {
+        const sel = slots[i].querySelector('select');
+        if (sel && sel.id === prefix + '-filter-' + idx) {
+          container.removeChild(slots[i]);
+          break;
+        }
+      }
+      // Re-index remaining
+      const remaining = container.querySelectorAll('select');
+      remaining.forEach(function(sel, i) { sel.id = prefix + '-filter-' + (i + 1); });
+    }
+
+    /** Use a top-20 preset — fills the new strategy form */
+    function usePreset(filterA, filterB, tp, sl) {
+      const form = document.getElementById('new-strategy-form');
+      form.style.display = 'block';
+      // Set filters
+      const sel1 = document.getElementById('new-filter-1');
+      const sel2 = document.getElementById('new-filter-2');
+      if (sel1) sel1.value = filterA;
+      if (sel2) sel2.value = filterB;
+      // Set TP/SL
+      const tpSel = document.getElementById('new-tp');
+      const slSel = document.getElementById('new-sl');
+      if (tpSel) tpSel.value = String(tp);
+      if (slSel) slSel.value = String(sl);
+      // Auto-generate ID and label
+      var shortA = filterA.replace(/[^a-z0-9]/gi, '').slice(0, 10).toLowerCase();
+      var shortB = filterB.replace(/[^a-z0-9]/gi, '').slice(0, 10).toLowerCase();
+      var idEl = document.getElementById('new-id');
+      var labelEl = document.getElementById('new-label');
+      if (idEl && !idEl.value) idEl.value = shortA + '-' + shortB;
+      if (labelEl && !labelEl.value) labelEl.value = filterA + ' + ' + filterB;
+      form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
 
     async function createStrategy() {
       const errEl = document.getElementById('new-error');
       errEl.textContent = '';
       try {
-        const filters = JSON.parse(document.getElementById('new-filters').value);
+        const filters = getFilters('new');
         const body = {
           id: gv('new-id').trim().toLowerCase().replace(/[^a-z0-9-]/g, ''),
           label: gv('new-label').trim(),
@@ -3050,6 +3359,8 @@ export function renderTradingHtml(data: any): string {
             filters: filters
           }
         };
+        if (!body.id) { errEl.textContent = 'ID is required'; return; }
+        if (!body.label) { errEl.textContent = 'Label is required'; return; }
         const res = await fetch('/api/strategies', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const data = await res.json();
         if (!res.ok) { errEl.textContent = data.error || 'Failed'; return; }
@@ -3062,7 +3373,7 @@ export function renderTradingHtml(data: any): string {
       statusEl.textContent = 'Saving...';
       statusEl.style.color = '#94a3b8';
       try {
-        const filters = JSON.parse(document.getElementById('ed-filters').value);
+        const filters = getFilters('ed');
         const body = {
           label: gv('ed-label').trim(),
           params: {
@@ -3117,6 +3428,7 @@ export function renderTradingHtml(data: any): string {
   </h1>
   <p style="color:#64748b;font-size:11px;margin:0 0 16px">Manual refresh · Generated ${generatedCT} CT</p>
   ${tabsHtml}
+  ${presetsHtml}
   ${newFormHtml}
   ${editorHtml}
   ${openHtml}

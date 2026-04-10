@@ -78,6 +78,7 @@ function copy(){
 const startTime = Date.now();
 let listenerStatus: 'running' | 'stopped' | 'error' = 'stopped';
 let listenerError: string | null = null;
+let cachedTopPairs: any[] | null = null;
 
 async function main() {
   logger.info('Starting solana-graduation-arb-research');
@@ -2694,6 +2695,9 @@ async function main() {
         panel6TopPairs.push(...pairResults.slice(0, 20));
       }
 
+      // Cache for use by /trading route
+      cachedTopPairs = panel6TopPairs;
+
       // ── Panel 7: walk-forward validation of Panel 4 optimum ──
       //
       // Split panel4Rows by created_at at the 70/30 boundary. Find optimum
@@ -3311,6 +3315,7 @@ async function main() {
         recent_trades: recentTrades,
         skip_reason_counts: skipReasons,
         recent_skips: recentSkips,
+        top_pairs: cachedTopPairs || [],
       };
 
       const wantHtml = (req.headers.accept || '').includes('text/html');
