@@ -365,6 +365,13 @@ export function updateMomentumEnrichment(
   });
 }
 
+// Fix Issue 4: whitelist prevents SQL column-name injection if a future caller
+// passes unsanitized input. All current callers use values from CHECKPOINT_MAP.
+const VALID_MOMENTUM_CHECKPOINTS = new Set([
+  't5','t10','t15','t20','t25','t30','t35','t40','t45','t50','t55',
+  't60','t90','t120','t150','t180','t240','t300','t600',
+]);
+
 export function updateMomentumPrice(
   db: Database.Database,
   graduationId: number,
@@ -372,6 +379,9 @@ export function updateMomentumPrice(
   price: number,
   pctChange: number
 ): void {
+  if (!VALID_MOMENTUM_CHECKPOINTS.has(checkpoint)) {
+    throw new Error(`Invalid momentum checkpoint: ${checkpoint}`);
+  }
   db.prepare(
     `UPDATE graduation_momentum SET price_${checkpoint} = ?, pct_${checkpoint} = ? WHERE graduation_id = ?`
   ).run(price, pctChange, graduationId);

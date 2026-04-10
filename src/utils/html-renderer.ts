@@ -6,6 +6,16 @@
 
 import Database from 'better-sqlite3';
 
+/** Fix Issue 5: escape user-controlled strings before inserting into HTML. */
+function escHtml(str: unknown): string {
+  return String(str ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 const NAV_LINKS = [
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/thesis', label: 'Thesis' },
@@ -2998,7 +3008,7 @@ export function renderTradingHtml(data: any): string {
       <a href="/trading" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(!selected)}">All</a>
       ${strategies.map((s: any) => `
         <a href="/trading?strategy=${s.id}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(selected === s.id)}">
-          ${s.label}${!s.enabled ? ' (off)' : ''}
+          ${escHtml(s.label)}${!s.enabled ? ' (off)' : ''}
           <span style="font-size:10px;color:#64748b;margin-left:4px">${s.activePositions}pos</span>
         </a>
       `).join('')}
@@ -3071,7 +3081,7 @@ export function renderTradingHtml(data: any): string {
 
     editorHtml = `
     <div class="card" style="border:1px solid #334155">
-      <div class="card-title">Strategy: ${selectedStrategy.label}
+      <div class="card-title">Strategy: ${escHtml(selectedStrategy.label)}
         <span style="color:${selectedStrategy.enabled ? '#4ade80' : '#f87171'};font-size:12px;margin-left:8px">${selectedStrategy.enabled ? 'ENABLED' : 'DISABLED'}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
@@ -3088,7 +3098,7 @@ export function renderTradingHtml(data: any): string {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:12px">
         <label style="color:#94a3b8;font-size:11px">TP Gap Penalty %<input id="ed-tp-gap" type="number" value="${p.tpGapPenaltyPct}" step="1" style="${inpStyle}"></label>
-        <label style="color:#94a3b8;font-size:11px">Label<input id="ed-label" type="text" value="${selectedStrategy.label}" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Label<input id="ed-label" type="text" value="${escHtml(selectedStrategy.label)}" style="${inpStyle}"></label>
         <label style="color:#94a3b8;font-size:11px">Position Monitor Mode<select id="ed-monitor-mode" style="${selStyle}">
           <option value="five_second" ${(p.positionMonitorMode ?? 'five_second') === 'five_second' ? 'selected' : ''}>5s intervals (from entry)</option>
           <option value="match_collection" ${p.positionMonitorMode === 'match_collection' ? 'selected' : ''}>Match collection schedule</option>

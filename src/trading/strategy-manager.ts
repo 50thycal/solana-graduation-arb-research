@@ -171,6 +171,9 @@ export class StrategyManager {
       throw new Error('Strategy ID must be lowercase alphanumeric + hyphens, 1-32 chars');
     }
 
+    // Fix Issue 6: validate numeric params at the API boundary
+    this.validateStrategyParams(params);
+
     // Persist to DB
     upsertStrategyConfig(this.db, id, label, JSON.stringify(params), enabled ? 1 : 0);
 
@@ -308,6 +311,44 @@ export class StrategyManager {
 
   // ── Private ───────────────────────────────────────────────────────────────
 
+  /** Fix Issue 6: reject obviously invalid or dangerous param values before DB write. */
+  private validateStrategyParams(p: StrategyParams): void {
+    const errors: string[] = [];
+    if (!isFinite(p.tradeSizeSol) || p.tradeSizeSol <= 0 || p.tradeSizeSol > 100) {
+      errors.push('tradeSizeSol must be between 0 and 100');
+    }
+    if (!Number.isInteger(p.maxConcurrentPositions) || p.maxConcurrentPositions < 1 || p.maxConcurrentPositions > 50) {
+      errors.push('maxConcurrentPositions must be an integer 1–50');
+    }
+    if (!isFinite(p.entryGateMinPctT30) || p.entryGateMinPctT30 < -100 || p.entryGateMinPctT30 > 1000) {
+      errors.push('entryGateMinPctT30 must be between -100 and 1000');
+    }
+    if (!isFinite(p.entryGateMaxPctT30) || p.entryGateMaxPctT30 <= p.entryGateMinPctT30) {
+      errors.push('entryGateMaxPctT30 must be greater than entryGateMinPctT30');
+    }
+    if (!isFinite(p.takeProfitPct) || p.takeProfitPct <= 0 || p.takeProfitPct > 10000) {
+      errors.push('takeProfitPct must be between 0 and 10000');
+    }
+    if (!isFinite(p.stopLossPct) || p.stopLossPct <= 0 || p.stopLossPct >= 100) {
+      errors.push('stopLossPct must be between 0 and 100');
+    }
+    if (!Number.isInteger(p.maxHoldSeconds) || p.maxHoldSeconds < 10 || p.maxHoldSeconds > 86400) {
+      errors.push('maxHoldSeconds must be an integer between 10 and 86400');
+    }
+    if (!isFinite(p.slGapPenaltyPct) || p.slGapPenaltyPct < 0 || p.slGapPenaltyPct > 100) {
+      errors.push('slGapPenaltyPct must be between 0 and 100');
+    }
+    if (!isFinite(p.tpGapPenaltyPct) || p.tpGapPenaltyPct < 0 || p.tpGapPenaltyPct > 100) {
+      errors.push('tpGapPenaltyPct must be between 0 and 100');
+    }
+    if (!Array.isArray(p.filters)) {
+      errors.push('filters must be an array');
+    }
+    if (errors.length > 0) {
+      throw new Error(`Invalid strategy params: ${errors.join('; ')}`);
+    }
+  }
+
   private createInstance(id: string, label: string, enabled: boolean, params: StrategyParams): void {
     const config = mergeStrategyParams(this.globalConfig, params);
     const monitorMode = params.positionMonitorMode ?? 'five_second';
@@ -322,8 +363,11 @@ export class StrategyManager {
     );
 
     // Wire position exits → close trade in DB
+    // Fix Issue 2: read config from the live instance at exit time (not the captured
+    // creation-time local) so hot-swapped TP/SL/gap values are always used.
     positionManager.on('exit', (event: ExitEvent) => {
-      this.handleExit(event, config).catch(err => {
+      const liveConfig = this.strategies.get(id)?.config ?? config;
+      this.handleExit(event, liveConfig).catch(err => {
         logger.error(
           'Exit handler error for trade %d (strategy %s): %s',
           event.position.tradeId,

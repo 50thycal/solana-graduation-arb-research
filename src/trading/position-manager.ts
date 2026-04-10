@@ -43,6 +43,7 @@ export class PositionManager extends EventEmitter {
   private pollTimer: NodeJS.Timeout | null = null;
   private connection: Connection | null = null;
   private running = false;
+  private polling = false; // guard against concurrent poll() invocations (five_second mode)
 
   // match_collection mode: per-position scheduled timeout handles
   private positionTimers: Map<number, NodeJS.Timeout[]> = new Map();
@@ -98,6 +99,12 @@ export class PositionManager extends EventEmitter {
   }
 
   start(connection: Connection): void {
+    // Fix Issue 1: clear any existing timer before creating a new one to prevent
+    // timer leaks when start() is called on an already-running position manager.
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
     this.connection = connection;
     this.running = true;
 
@@ -144,6 +151,18 @@ export class PositionManager extends EventEmitter {
   // ── five_second mode ────────────────────────────────────────────────────────
 
   private async poll(): Promise<void> {
+    // Fix Issue 3: prevent concurrent poll() runs if a prior poll is still
+    // awaiting RPC responses when the next interval fires (possible under load).
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      await this.pollInternal();
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  private async pollInternal(): Promise<void> {
     if (this.positions.size === 0 || !this.connection) return;
     for (const [tradeId] of this.positions) {
       await this.checkPosition(tradeId).catch(err => {
