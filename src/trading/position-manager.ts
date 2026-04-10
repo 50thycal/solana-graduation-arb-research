@@ -33,6 +33,7 @@ export class PositionManager extends EventEmitter {
   private positions: Map<number, ActivePosition> = new Map(); // key = tradeId
   private pollTimer: NodeJS.Timeout | null = null;
   private connection: Connection | null = null;
+  private polling = false; // guard against concurrent poll() invocations
   // Match the price-collector's snapshot schedule (every 5s for the first 60s,
   // every 30s after) so paper trade SL/TP results are directly comparable to
   // the historical Panel 4 simulation. 500ms would catch intra-5s dips that
@@ -72,6 +73,12 @@ export class PositionManager extends EventEmitter {
   }
 
   start(connection: Connection): void {
+    // Fix Issue 1: clear any existing timer before creating a new one to prevent
+    // timer leaks when start() is called on an already-running position manager.
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
     this.connection = connection;
     this.pollTimer = setInterval(() => {
       this.poll().catch(err => {
@@ -94,6 +101,18 @@ export class PositionManager extends EventEmitter {
   }
 
   private async poll(): Promise<void> {
+    // Fix Issue 3: prevent concurrent poll() runs if a prior poll is still
+    // awaiting RPC responses when the next interval fires (possible under load).
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      await this.pollInternal();
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  private async pollInternal(): Promise<void> {
     if (this.positions.size === 0 || !this.connection) return;
 
     const now = Math.floor(Date.now() / 1000);
