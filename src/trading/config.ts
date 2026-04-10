@@ -26,6 +26,13 @@ export interface StrategyParams {
   slGapPenaltyPct: number;
   tpGapPenaltyPct: number;
   filters: FilterConfig[];
+  /**
+   * Controls how often the position manager checks price for SL/TP.
+   * five_second: independent 5s polling from position entry (more responsive, may catch intra-schedule moves)
+   * match_collection: checks at the same SNAPSHOT_SCHEDULE offsets as the price collector
+   *   (every 5s for T+0–T+60, then 30s/60s gaps) — results directly comparable to historical Panel 4 data
+   */
+  positionMonitorMode: 'five_second' | 'match_collection';
 }
 
 export interface TradingConfig {
@@ -55,6 +62,9 @@ export interface TradingConfig {
   slGapPenaltyPct: number;
   /** Applied to TP exits: effective exit = price * (1 - tpGapPenaltyPct/100) */
   tpGapPenaltyPct: number;
+
+  // ── Position monitor mode ────────────────────────────────────────────────
+  positionMonitorMode: 'five_second' | 'match_collection';
 
   // ── Execution (live mode only) ───────────────────────────────────────────
   slippageBps: number;
@@ -134,6 +144,7 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     slGapPenaltyPct: cfg.slGapPenaltyPct,
     tpGapPenaltyPct: cfg.tpGapPenaltyPct,
     filters: cfg.filters,
+    positionMonitorMode: cfg.positionMonitorMode ?? 'five_second',
   };
 }
 
@@ -151,5 +162,6 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     slGapPenaltyPct: params.slGapPenaltyPct,
     tpGapPenaltyPct: params.tpGapPenaltyPct,
     filters: params.filters,
+    positionMonitorMode: params.positionMonitorMode ?? 'five_second',
   };
 }
