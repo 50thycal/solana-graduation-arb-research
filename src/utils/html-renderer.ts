@@ -6,16 +6,6 @@
 
 import Database from 'better-sqlite3';
 
-/** Fix Issue 5: escape user-controlled strings before inserting into HTML. */
-function escHtml(str: unknown): string {
-  return String(str ?? '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 const NAV_LINKS = [
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/thesis', label: 'Thesis' },

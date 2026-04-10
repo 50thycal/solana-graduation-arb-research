@@ -105,6 +105,7 @@ export function loadTradingConfig(): TradingConfig {
     maxHoldSeconds: parseInt(process.env.MAX_HOLD_SECONDS || '300', 10),
     slGapPenaltyPct: parseFloat(process.env.SL_GAP_PENALTY_PCT || '20'),
     tpGapPenaltyPct: parseFloat(process.env.TP_GAP_PENALTY_PCT || '10'),
+    positionMonitorMode: (process.env.POSITION_MONITOR_MODE === 'match_collection' ? 'match_collection' : 'five_second'),
     slippageBps: parseInt(process.env.SLIPPAGE_BPS || '300', 10),
     priorityFeeMicroLamports: parseInt(process.env.PRIORITY_FEE_MICRO_LAMPORTS || '100000', 10),
     walletPrivateKey: process.env.WALLET_PRIVATE_KEY,
