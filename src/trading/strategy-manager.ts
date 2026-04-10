@@ -183,6 +183,18 @@ export class StrategyManager {
       existing.enabled = enabled;
       existing.evaluator.updateConfig(newConfig);
 
+      // positionMonitorMode is baked into the PositionManager at construction
+      // time and cannot be hot-swapped. Warn if the user changed it — the new
+      // mode takes effect after the next bot restart.
+      const oldMode = strategyParamsFromConfig(existing.config).positionMonitorMode ?? 'five_second';
+      const newMode = params.positionMonitorMode ?? 'five_second';
+      if (oldMode !== newMode) {
+        logger.warn(
+          { strategyId: id, oldMode, newMode },
+          'positionMonitorMode changed — restart the bot for this to take effect'
+        );
+      }
+
       if (enabled && !existing.positionManager.activeCount()) {
         // Ensure position manager is running if re-enabled
         existing.positionManager.start(this.connection);
@@ -298,7 +310,8 @@ export class StrategyManager {
 
   private createInstance(id: string, label: string, enabled: boolean, params: StrategyParams): void {
     const config = mergeStrategyParams(this.globalConfig, params);
-    const positionManager = new PositionManager();
+    const monitorMode = params.positionMonitorMode ?? 'five_second';
+    const positionManager = new PositionManager(monitorMode);
     const evaluator = new TradeEvaluator(
       this.db,
       config,
@@ -414,6 +427,8 @@ export class StrategyManager {
         maxExitTimestamp: trade.entry_timestamp + trade.max_hold_seconds,
         tokensHeld: trade.entry_tokens_received ?? 0,
         mode: 'live',
+        // graduation_timestamp not stored on trades_v2; approximate from entry
+        graduationDetectedAt: trade.entry_timestamp - 30,
       });
       logger.info({ tradeId: trade.id, strategyId }, 'Live position recovered for monitoring');
     }

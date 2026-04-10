@@ -3029,8 +3029,12 @@ export function renderTradingHtml(data: any): string {
         <label style="color:#94a3b8;font-size:11px">Max Hold (s)<input id="new-hold" type="number" value="300" step="30" style="${inpStyle}"></label>
         <label style="color:#94a3b8;font-size:11px">SL Gap Penalty %<input id="new-sl-gap" type="number" value="20" step="1" style="${inpStyle}"></label>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
         <label style="color:#94a3b8;font-size:11px">TP Gap Penalty %<input id="new-tp-gap" type="number" value="10" step="1" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Position Monitor Mode<select id="new-monitor-mode" style="${selStyle}">
+          <option value="five_second">5s intervals (from entry)</option>
+          <option value="match_collection">Match collection schedule</option>
+        </select></label>
       </div>
       <div style="margin-bottom:12px">
         <div style="color:#94a3b8;font-size:11px;margin-bottom:6px">Filters (AND logic)</div>
@@ -3082,9 +3086,14 @@ export function renderTradingHtml(data: any): string {
         <label style="color:#94a3b8;font-size:11px">Max Hold (s)<input id="ed-hold" type="number" value="${p.maxHoldSeconds}" step="30" style="${inpStyle}"></label>
         <label style="color:#94a3b8;font-size:11px">SL Gap Penalty %<input id="ed-sl-gap" type="number" value="${p.slGapPenaltyPct}" step="1" style="${inpStyle}"></label>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:8px;margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px;margin-bottom:12px">
         <label style="color:#94a3b8;font-size:11px">TP Gap Penalty %<input id="ed-tp-gap" type="number" value="${p.tpGapPenaltyPct}" step="1" style="${inpStyle}"></label>
         <label style="color:#94a3b8;font-size:11px">Label<input id="ed-label" type="text" value="${selectedStrategy.label}" style="${inpStyle}"></label>
+        <label style="color:#94a3b8;font-size:11px">Position Monitor Mode<select id="ed-monitor-mode" style="${selStyle}">
+          <option value="five_second" ${(p.positionMonitorMode ?? 'five_second') === 'five_second' ? 'selected' : ''}>5s intervals (from entry)</option>
+          <option value="match_collection" ${p.positionMonitorMode === 'match_collection' ? 'selected' : ''}>Match collection schedule</option>
+        </select>
+        <span style="color:#64748b;font-size:10px;display:block;margin-top:2px">Restart required to apply</span></label>
       </div>
       <div style="margin-bottom:12px">
         <div style="color:#94a3b8;font-size:11px;margin-bottom:6px">Filters (AND logic)</div>
@@ -3356,7 +3365,8 @@ export function renderTradingHtml(data: any): string {
             takeProfitPct: gn('new-tp'), stopLossPct: gn('new-sl'),
             maxHoldSeconds: parseInt(gv('new-hold')),
             slGapPenaltyPct: gn('new-sl-gap'), tpGapPenaltyPct: gn('new-tp-gap'),
-            filters: filters
+            filters: filters,
+            positionMonitorMode: gv('new-monitor-mode')
           }
         };
         if (!body.id) { errEl.textContent = 'ID is required'; return; }
@@ -3382,7 +3392,8 @@ export function renderTradingHtml(data: any): string {
             takeProfitPct: gn('ed-tp'), stopLossPct: gn('ed-sl'),
             maxHoldSeconds: parseInt(gv('ed-hold')),
             slGapPenaltyPct: gn('ed-sl-gap'), tpGapPenaltyPct: gn('ed-tp-gap'),
-            filters: filters
+            filters: filters,
+            positionMonitorMode: gv('ed-monitor-mode')
           }
         };
         const res = await fetch('/api/strategies/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
