@@ -3235,6 +3235,8 @@ async function main() {
           t.momentum_pct_t300, t.momentum_label,
           datetime(t.entry_timestamp, 'unixepoch') as entry_dt,
           datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
+          CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
+               THEN t.exit_timestamp - t.entry_timestamp END as held_seconds,
           t.filter_results_json
         FROM trades_v2 t
         ORDER BY t.created_at DESC LIMIT 50
