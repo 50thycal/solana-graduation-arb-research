@@ -33,7 +33,11 @@ export class PositionManager extends EventEmitter {
   private positions: Map<number, ActivePosition> = new Map(); // key = tradeId
   private pollTimer: NodeJS.Timeout | null = null;
   private connection: Connection | null = null;
-  private readonly POLL_INTERVAL_MS = 500;
+  // Match the price-collector's snapshot schedule (every 5s for the first 60s,
+  // every 30s after) so paper trade SL/TP results are directly comparable to
+  // the historical Panel 4 simulation. 500ms would catch intra-5s dips that
+  // the historical data never saw, biasing paper results toward more SL hits.
+  private readonly POLL_INTERVAL_MS = 5_000;
 
   activeCount(): number {
     return this.positions.size;

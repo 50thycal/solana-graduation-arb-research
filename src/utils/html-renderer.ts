@@ -2878,6 +2878,7 @@ export function renderTradingHtml(data: any): string {
     const ret = t.net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
     const reasonColor = t.exit_reason === 'take_profit' ? '#22d3ee' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
+    const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
     return `<tr>
       <td>${t.id}</td>
       <td style="color:${t.mode === 'live' ? '#f59e0b' : '#22d3ee'}">${t.mode}</td>
@@ -2886,6 +2887,7 @@ export function renderTradingHtml(data: any): string {
       <td>${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
       <td style="color:${reasonColor}">${t.exit_reason ?? '-'}</td>
       <td style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
+      <td>${heldStr}</td>
       <td style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
       <td style="font-size:11px;color:#64748b">${t.entry_dt ?? '-'}</td>
     </tr>`;
@@ -2896,7 +2898,7 @@ export function renderTradingHtml(data: any): string {
       <div class="card-title">Recent Trades (last 50)</div>
       ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
         <thead><tr><th>ID</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
-          <th>Exit Reason</th><th>Net Ret%</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
+          <th>Exit Reason</th><th>Net Ret%</th><th>Held</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
         <tbody>${tradeRows}</tbody>
       </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;

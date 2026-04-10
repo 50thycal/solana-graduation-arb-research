@@ -7,7 +7,7 @@ import {
 } from '@solana/web3.js';
 import BN from 'bn.js';
 import Database from 'better-sqlite3';
-import { insertGraduation, insertMomentum, updateGraduationEnrichment, updateGraduationPool } from '../db/queries';
+import { insertGraduation, insertMomentum, updateMomentumEnrichment, updateGraduationEnrichment, updateGraduationPool } from '../db/queries';
 import { PoolTracker } from './pool-tracker';
 import { HolderEnrichment } from '../collector/holder-enrichment';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -402,7 +402,18 @@ export class GraduationListener {
       'Graduation verified and recorded'
     );
 
-    // Holder enrichment (fire-and-forget — don't block pool tracking)
+    // Insert graduation_momentum row SYNCHRONOUSLY with fields known at grad
+    // time. This guarantees the row exists before the price-collector's first
+    // snapshot UPDATE lands (which is a silent no-op if the row doesn't exist).
+    // Holder/age fields are backfilled asynchronously by enrichment below.
+    insertMomentum(this.db, {
+      graduation_id: graduationId,
+      open_price_sol: event.finalPriceSol,
+      total_sol_raised: event.finalSolReserves,
+    });
+
+    // Holder enrichment (fire-and-forget — don't block pool tracking).
+    // Now uses UPDATE (not INSERT) since the row already exists above.
     this.holderEnrichment.enrich(event.mint, event.bondingCurveAddress, event.timestamp).then((enrichment) => {
       updateGraduationEnrichment(this.db, graduationId, {
         holder_count: enrichment.holderCount,
@@ -411,14 +422,11 @@ export class GraduationListener {
         token_age_seconds: enrichment.tokenAgeSeconds,
       });
 
-      insertMomentum(this.db, {
-        graduation_id: graduationId,
-        open_price_sol: event.finalPriceSol,
+      updateMomentumEnrichment(this.db, graduationId, {
         holder_count: enrichment.holderCount,
         top5_wallet_pct: enrichment.top5WalletPct,
         dev_wallet_pct: enrichment.devWalletPct,
         token_age_seconds: enrichment.tokenAgeSeconds,
-        total_sol_raised: event.finalSolReserves,
       });
     }).catch((err) => {
       logger.warn(
@@ -427,20 +435,16 @@ export class GraduationListener {
         err instanceof Error ? err.message : String(err)
       );
       // Fetch token_age_seconds independently — it's required for velocity calculation
-      // and doesn't depend on holder data. Use a nested promise chain to keep this
-      // fire-and-forget without blocking pool tracking.
+      // and doesn't depend on holder data.
       this.holderEnrichment.getBondingCurveCreationTime(new PublicKey(event.bondingCurveAddress))
         .then((creationTime: number | null) => {
           const tokenAgeSeconds = (creationTime !== null && event.timestamp)
             ? Math.max(0, event.timestamp - creationTime)
             : undefined;
-          insertMomentum(this.db, {
-            graduation_id: graduationId,
-            open_price_sol: event.finalPriceSol,
-            total_sol_raised: event.finalSolReserves,
-            token_age_seconds: tokenAgeSeconds,
-          });
           if (tokenAgeSeconds !== undefined) {
+            updateMomentumEnrichment(this.db, graduationId, {
+              token_age_seconds: tokenAgeSeconds,
+            });
             logger.info(
               { graduationId, tokenAgeSeconds },
               'token_age_seconds recovered after holder enrichment failure'
@@ -448,12 +452,9 @@ export class GraduationListener {
           }
         })
         .catch(() => {
-          // Age fetch also failed — insert without it
-          insertMomentum(this.db, {
-            graduation_id: graduationId,
-            open_price_sol: event.finalPriceSol,
-            total_sol_raised: event.finalSolReserves,
-          });
+          // Age fetch also failed — row already has total_sol_raised from the
+          // synchronous insert; velocity will be computed at T+30 if
+          // token_age_seconds arrives via the recovery sweep later.
         });
     });
 

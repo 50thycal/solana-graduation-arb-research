@@ -333,6 +333,38 @@ export function insertMomentum(db: Database.Database, data: MomentumInsert): num
   return result.lastInsertRowid as number;
 }
 
+/**
+ * UPDATE holder-enrichment fields onto an existing graduation_momentum row.
+ * Called from the async enrichment callback AFTER the row was already created
+ * synchronously at graduation-detection time. This split ensures the row
+ * always exists before the price-collector's first snapshot UPDATE lands.
+ */
+export function updateMomentumEnrichment(
+  db: Database.Database,
+  graduationId: number,
+  data: {
+    holder_count?: number;
+    top5_wallet_pct?: number;
+    dev_wallet_pct?: number;
+    token_age_seconds?: number;
+  }
+): void {
+  db.prepare(`
+    UPDATE graduation_momentum SET
+      holder_count      = COALESCE(@holder_count,      holder_count),
+      top5_wallet_pct   = COALESCE(@top5_wallet_pct,   top5_wallet_pct),
+      dev_wallet_pct    = COALESCE(@dev_wallet_pct,     dev_wallet_pct),
+      token_age_seconds = COALESCE(@token_age_seconds,  token_age_seconds)
+    WHERE graduation_id = @graduation_id
+  `).run({
+    graduation_id: graduationId,
+    holder_count: data.holder_count ?? null,
+    top5_wallet_pct: data.top5_wallet_pct ?? null,
+    dev_wallet_pct: data.dev_wallet_pct ?? null,
+    token_age_seconds: data.token_age_seconds ?? null,
+  });
+}
+
 export function updateMomentumPrice(
   db: Database.Database,
   graduationId: number,
