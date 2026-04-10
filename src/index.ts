@@ -1,10 +1,11 @@
 import express from 'express';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
-import { getGraduationCount, getTradeStats, getRecentTrades, getRecentSkips, getSkipReasonCounts } from './db/queries';
+import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
 import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml } from './utils/html-renderer';
-import { TradingEngine } from './trading';
+import { StrategyManager } from './trading';
+import { StrategyParams } from './trading/config';
 import { makeLogger } from './utils/logger';
 
 const logger = makeLogger('main');
@@ -96,6 +97,7 @@ async function main() {
   // Start health/API server first so we can always debug via /health
   const healthPort = parseInt(process.env.HEALTH_PORT || '8080', 10);
   const app = express();
+  app.use(express.json());
 
   // Reset research data — wipes all rows but keeps tables/schema intact
   // Support both GET and POST so it works from a phone browser
@@ -3212,6 +3214,12 @@ async function main() {
   // ── TRADING DASHBOARD ────────────────────────────────────────────────────
   app.get('/trading', (req, res) => {
     try {
+      const strategyFilter = (req.query.strategy as string) || '';
+
+      // Per-strategy performance stats
+      const strategyStats = getTradeStatsByStrategy(db);
+
+      // Aggregate performance (all strategies)
       const stats = (db.prepare(`
         SELECT
           mode,
@@ -3227,26 +3235,45 @@ async function main() {
         FROM trades_v2 GROUP BY mode
       `).all() as any[]);
 
-      const recentTrades = (db.prepare(`
-        SELECT t.id, t.graduation_id, t.mode, t.status, t.mint,
-          t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
-          t.exit_price_sol, t.exit_reason, t.net_return_pct, t.gap_adjusted_return_pct,
-          t.take_profit_pct, t.stop_loss_pct,
-          t.momentum_pct_t300, t.momentum_label,
-          datetime(t.entry_timestamp, 'unixepoch') as entry_dt,
-          datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
-          CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
-               THEN t.exit_timestamp - t.entry_timestamp END as held_seconds,
-          t.filter_results_json
-        FROM trades_v2 t
-        ORDER BY t.created_at DESC LIMIT 50
-      `).all() as any[]).map(t => ({
+      // Recent trades — optionally filtered by strategy
+      const tradesQuery = strategyFilter
+        ? `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
+            t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
+            t.exit_price_sol, t.exit_reason, t.net_return_pct, t.gap_adjusted_return_pct,
+            t.take_profit_pct, t.stop_loss_pct,
+            t.momentum_pct_t300, t.momentum_label,
+            datetime(t.entry_timestamp, 'unixepoch') as entry_dt,
+            datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
+            CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
+                 THEN t.exit_timestamp - t.entry_timestamp END as held_seconds,
+            t.filter_results_json
+          FROM trades_v2 t WHERE t.strategy_id = ?
+          ORDER BY t.created_at DESC LIMIT 50`
+        : `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
+            t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
+            t.exit_price_sol, t.exit_reason, t.net_return_pct, t.gap_adjusted_return_pct,
+            t.take_profit_pct, t.stop_loss_pct,
+            t.momentum_pct_t300, t.momentum_label,
+            datetime(t.entry_timestamp, 'unixepoch') as entry_dt,
+            datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
+            CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
+                 THEN t.exit_timestamp - t.entry_timestamp END as held_seconds,
+            t.filter_results_json
+          FROM trades_v2 t
+          ORDER BY t.created_at DESC LIMIT 50`;
+
+      const recentTrades = (strategyFilter
+        ? db.prepare(tradesQuery).all(strategyFilter) as any[]
+        : db.prepare(tradesQuery).all() as any[]
+      ).map(t => ({
         ...t,
         filter_results: t.filter_results_json ? JSON.parse(t.filter_results_json) : null,
         filter_results_json: undefined,
       }));
 
-      const openPositions = tradingEngine ? tradingEngine.getStats().activePositionDetails : [];
+      const smStats = strategyManager ? strategyManager.getStats() : null;
+      const openPositions = smStats?.activePositionDetails ?? [];
+      const strategies = strategyManager ? strategyManager.getStrategies() : [];
 
       const skipReasons = (db.prepare(`
         SELECT skip_reason, COUNT(*) as count
@@ -3254,17 +3281,20 @@ async function main() {
       `).all() as any[]);
 
       const recentSkips = (db.prepare(`
-        SELECT ts.graduation_id, ts.skip_reason, ts.skip_value, ts.pct_t30,
+        SELECT ts.graduation_id, ts.skip_reason, ts.skip_value, ts.pct_t30, ts.strategy_id,
           datetime(ts.created_at, 'unixepoch') as created_dt, g.mint
         FROM trade_skips ts JOIN graduations g ON g.id = ts.graduation_id
         ORDER BY ts.created_at DESC LIMIT 50
       `).all() as any[]);
 
-      const config = tradingEngine ? tradingEngine.getConfig() : null;
+      const config = strategyManager ? strategyManager.getConfig() : null;
 
       const data = {
         generated_at: new Date().toISOString(),
         trading_enabled: config?.enabled ?? false,
+        global_mode: config?.mode ?? 'paper',
+        strategies,
+        selected_strategy: strategyFilter || '',
         config: config ? {
           mode: config.mode,
           trade_size_sol: config.tradeSizeSol,
@@ -3277,6 +3307,7 @@ async function main() {
         } : null,
         open_positions: openPositions,
         performance_summary: stats,
+        strategy_stats: strategyStats,
         recent_trades: recentTrades,
         skip_reason_counts: skipReasons,
         recent_skips: recentSkips,
@@ -3292,6 +3323,50 @@ async function main() {
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
+  });
+
+  // ── STRATEGY API ENDPOINTS ──────────────────────────────────────────────
+  app.get('/api/strategies', (_req, res) => {
+    if (!strategyManager) return res.json({ strategies: [] });
+    res.json({ strategies: strategyManager.getStrategies(), stats: strategyManager.getPerStrategyStats() });
+  });
+
+  app.post('/api/strategies', (req, res) => {
+    if (!strategyManager) return res.status(400).json({ error: 'Trading not enabled' });
+    try {
+      const { id, label, params, enabled } = req.body;
+      if (!id || !label || !params) return res.status(400).json({ error: 'id, label, and params are required' });
+      strategyManager.upsertStrategy(id, label, params as StrategyParams, enabled !== false);
+      res.json({ ok: true, strategy: strategyManager.getStrategy(id) });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.put('/api/strategies/:id', (req, res) => {
+    if (!strategyManager) return res.status(400).json({ error: 'Trading not enabled' });
+    try {
+      const { id } = req.params;
+      const { label, params, enabled } = req.body;
+      const existing = strategyManager.getStrategy(id);
+      if (!existing) return res.status(404).json({ error: `Strategy "${id}" not found` });
+      strategyManager.upsertStrategy(
+        id,
+        label ?? existing.label,
+        params ?? existing.params,
+        enabled !== undefined ? enabled : existing.enabled,
+      );
+      res.json({ ok: true, strategy: strategyManager.getStrategy(id) });
+    } catch (err) {
+      res.status(400).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.delete('/api/strategies/:id', (req, res) => {
+    if (!strategyManager) return res.status(400).json({ error: 'Trading not enabled' });
+    const result = strategyManager.deleteStrategy(req.params.id);
+    if (result.error) return res.status(400).json({ error: result.error });
+    res.json({ ok: true });
   });
 
   // ── DEX LISTING CHECK ────────────────────────────────────────────────────
@@ -3639,29 +3714,29 @@ ${rows.map(r => {
     logger.error('Graduation listener failed to start: %s', message);
   }
 
-  // Initialize trading engine (opt-in via TRADING_ENABLED=true)
-  let tradingEngine: TradingEngine | null = null;
+  // Initialize strategy manager (opt-in via TRADING_ENABLED=true)
+  let strategyManager: StrategyManager | null = null;
   if (listener) {
     try {
-      tradingEngine = new TradingEngine(db, listener.getConnection());
-      tradingEngine.initialize();
-      tradingEngine.attachToPriceCollector(listener.getPriceCollector());
+      strategyManager = new StrategyManager(db, listener.getConnection());
+      strategyManager.initialize();
+      strategyManager.attachToPriceCollector(listener.getPriceCollector());
       // Refresh the PositionManager's Connection reference on every WS reconnect
       // so we never poll a dead RPC handle after a network blip.
-      const te = tradingEngine;
+      const sm = strategyManager;
       listener.onReconnect((conn) => {
-        te.updateConnection(conn);
-        logger.info('TradingEngine Connection refreshed after listener reconnect');
+        sm.updateConnection(conn);
+        logger.info('StrategyManager Connection refreshed after listener reconnect');
       });
     } catch (err) {
-      logger.error('TradingEngine failed to initialize: %s', err instanceof Error ? err.message : String(err));
+      logger.error('StrategyManager failed to initialize: %s', err instanceof Error ? err.message : String(err));
     }
   }
 
   // Graceful shutdown
   const shutdown = async () => {
     logger.info('Shutting down...');
-    if (tradingEngine) tradingEngine.stop();
+    if (strategyManager) strategyManager.stop();
     if (listener) await listener.stop();
     db.close();
     process.exit(0);

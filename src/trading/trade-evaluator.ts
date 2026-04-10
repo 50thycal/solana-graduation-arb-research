@@ -10,13 +10,23 @@ import { ObservationContext } from '../collector/price-collector';
 const logger = makeLogger('trade-evaluator');
 
 export class TradeEvaluator {
+  private strategyId: string;
+
   constructor(
     private db: Database.Database,
     private config: TradingConfig,
     private tradeLogger: TradeLogger,
     private executor: Executor,
     private positionManager: PositionManager,
-  ) {}
+    strategyId: string = 'default',
+  ) {
+    this.strategyId = strategyId;
+  }
+
+  /** Hot-swap config without replacing the evaluator instance */
+  updateConfig(config: TradingConfig): void {
+    this.config = config;
+  }
 
   /**
    * Called at T+30 after graduation_momentum row is fully written.
@@ -35,20 +45,23 @@ export class TradeEvaluator {
     pctT30: number,
     solReserves: number,
   ): Promise<void> {
+    // Snapshot config to avoid race conditions if config is hot-swapped mid-evaluation
+    const cfg = this.config;
+
     // ── 1. Entry gate ────────────────────────────────────────────────────────
-    if (pctT30 < this.config.entryGateMinPctT30 || pctT30 > this.config.entryGateMaxPctT30) {
-      this.tradeLogger.logSkipped(graduationId, 'entry_gate', pctT30, pctT30);
+    if (pctT30 < cfg.entryGateMinPctT30 || pctT30 > cfg.entryGateMaxPctT30) {
+      this.tradeLogger.logSkipped(graduationId, 'entry_gate', pctT30, pctT30, this.strategyId);
       logger.debug(
-        { graduationId, pctT30: pctT30.toFixed(1) },
+        { graduationId, pctT30: pctT30.toFixed(1), strategy: this.strategyId },
         'Entry gate failed'
       );
       return;
     }
 
     // ── 2. Capacity check ────────────────────────────────────────────────────
-    if (this.positionManager.activeCount() >= this.config.maxConcurrentPositions) {
-      this.tradeLogger.logSkipped(graduationId, 'max_positions', this.positionManager.activeCount(), pctT30);
-      logger.debug({ graduationId, activePositions: this.positionManager.activeCount() }, 'Max positions reached');
+    if (this.positionManager.activeCount() >= cfg.maxConcurrentPositions) {
+      this.tradeLogger.logSkipped(graduationId, 'max_positions', this.positionManager.activeCount(), pctT30, this.strategyId);
+      logger.debug({ graduationId, activePositions: this.positionManager.activeCount(), strategy: this.strategyId }, 'Max positions reached');
       return;
     }
 
@@ -58,19 +71,20 @@ export class TradeEvaluator {
     ).get(graduationId) as Record<string, unknown> | undefined;
 
     if (!row) {
-      this.tradeLogger.logSkipped(graduationId, 'no_momentum_row', null, pctT30);
-      logger.warn({ graduationId }, 'No graduation_momentum row at T+30');
+      this.tradeLogger.logSkipped(graduationId, 'no_momentum_row', null, pctT30, this.strategyId);
+      logger.warn({ graduationId, strategy: this.strategyId }, 'No graduation_momentum row at T+30');
       return;
     }
 
     // ── 4. Filter pipeline ───────────────────────────────────────────────────
-    const filterResult = runFilterPipeline(row, this.config.filters);
+    const filterResult = runFilterPipeline(row, cfg.filters);
     if (!filterResult.passed) {
       this.tradeLogger.logSkipped(
         graduationId,
         `filter:${filterResult.failedFilter}`,
         filterResult.failedValue,
         pctT30,
+        this.strategyId,
       );
       logger.debug(
         { graduationId, failedFilter: filterResult.failedFilter, failedValue: filterResult.failedValue },
@@ -86,6 +100,7 @@ export class TradeEvaluator {
         pctT30: pctT30.toFixed(1),
         solReserves: solReserves.toFixed(1),
         filters: filterResult.stages.map(s => `${s.label}:${s.actualValue}`).join(','),
+        strategy: this.strategyId,
       },
       'Trade signal — opening position'
     );
@@ -101,13 +116,14 @@ export class TradeEvaluator {
       entryPctFromOpen: pctT30,
       entryLiquiditySol: solReserves,
       filterStages: filterResult.stages,
-      config: this.config,
+      config: cfg,
+      strategyId: this.strategyId,
     });
 
     // ── 6. Execute entry ─────────────────────────────────────────────────────
     let entryResult;
     try {
-      entryResult = await this.executor.buy(ctx.mint, this.config.tradeSizeSol, priceT30);
+      entryResult = await this.executor.buy(ctx.mint, cfg.tradeSizeSol, priceT30);
     } catch (err) {
       this.tradeLogger.failTrade(tradeId, `buy_exception: ${err instanceof Error ? err.message : String(err)}`);
       return;
@@ -139,11 +155,11 @@ export class TradeEvaluator {
       quoteVault: ctx.quoteVault ?? '',
       entryPriceSol: effectiveEntry,
       entryTimestamp: Math.floor(Date.now() / 1000),
-      tpPriceSol: effectiveEntry * (1 + this.config.takeProfitPct / 100),
-      slPriceSol: effectiveEntry * (1 - this.config.stopLossPct / 100),
-      maxExitTimestamp: Math.floor(Date.now() / 1000) + this.config.maxHoldSeconds,
+      tpPriceSol: effectiveEntry * (1 + cfg.takeProfitPct / 100),
+      slPriceSol: effectiveEntry * (1 - cfg.stopLossPct / 100),
+      maxExitTimestamp: Math.floor(Date.now() / 1000) + cfg.maxHoldSeconds,
       tokensHeld: entryResult.tokensReceived,
-      mode: this.config.mode,
+      mode: cfg.mode,
     };
 
     if (!position.baseVault || !position.quoteVault) {
