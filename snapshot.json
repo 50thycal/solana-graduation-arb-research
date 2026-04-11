@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-04-11T16:36:38.209Z",
-  "uptime_sec": 3602,
+  "generated_at": "2026-04-11T16:38:38.210Z",
+  "uptime_sec": 3722,
   "counts": {
     "graduations": 1907,
-    "momentum_labeled": 1804,
+    "momentum_labeled": 1805,
     "pump": 719,
-    "dump": 819,
+    "dump": 820,
     "stable": 266,
-    "unlabeled": 103
+    "unlabeled": 102
   },
   "scorecard": {
-    "total_labeled": 1804,
+    "total_labeled": 1805,
     "PUMP": 719,
-    "DUMP": 819,
+    "DUMP": 820,
     "STABLE": 266,
-    "unlabeled": 103,
-    "raw_win_rate_pct": 39.9,
+    "unlabeled": 102,
+    "raw_win_rate_pct": 39.8,
     "vel_5_20_cohort": {
       "n": 197,
       "win_rate_pct": 61.9,
@@ -36,17 +36,17 @@
     "null_fields_in_last_10": [
       "#14119: pct_t300"
     ],
-    "last_graduation_seconds_ago": 588,
-    "stalled": false,
+    "last_graduation_seconds_ago": 708,
+    "stalled": true,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 141063,
-    "totalCandidatesDetected": 181,
+    "totalLogsReceived": 145605,
+    "totalCandidatesDetected": 186,
     "totalVerifiedGraduations": 6,
     "totalGraduationsRecorded": 6,
-    "totalFalsePositives": 115,
-    "totalBundlerFalsePositives": 115,
+    "totalFalsePositives": 119,
+    "totalBundlerFalsePositives": 119,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
     "totalVaultExtractions": 6,
@@ -63,7 +63,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 1454488,
+      "totalPumpSwapEvents": 1498985,
       "totalPoolCreationEvents": 36,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
@@ -78,10 +78,10 @@
       }
     },
     "directPriceCollector": {
-      "activeObservations": 1,
+      "activeObservations": 0,
       "totalStarted": 6,
-      "totalCompleted": 5,
-      "totalSnapshots": 118,
+      "totalCompleted": 6,
+      "totalSnapshots": 119,
       "totalSnapshotFailures": 2,
       "lastSnapshotFailures": [
         {
@@ -107,7 +107,7 @@
       "pct_t30": -76.52318243152673,
       "pct_t60": -94.95889439843629,
       "pct_t300": -94.74901736356385,
-      "label": null,
+      "label": "DUMP",
       "holder_count": 0,
       "top5_wallet_pct": 0,
       "dev_wallet_pct": 0,
