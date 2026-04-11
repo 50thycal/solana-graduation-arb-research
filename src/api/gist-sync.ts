@@ -1,20 +1,17 @@
 /**
  * src/api/gist-sync.ts
  *
- * Pushes diagnose.json, snapshot.json, and best-combos.json to a dedicated
- * `bot-status` branch in the GitHub repo every SYNC_INTERVAL_MS. Because
- * raw.githubusercontent.com is accessible from Anthropic's WebFetch (while
- * gist.githubusercontent.com and Railway's edge are not), this lets Claude
- * self-serve bot state without the human being a middleman.
+ * Pushes diagnose.json, snapshot.json, best-combos.json, and trades.json to
+ * a dedicated `bot-status` branch every SYNC_INTERVAL_MS so Claude can
+ * self-serve via WebFetch (raw.githubusercontent.com is reachable; Railway's
+ * edge and gist.githubusercontent.com are not).
  *
- * Required env var: GITHUB_TOKEN — a personal access token with `public_repo`
- *   scope (classic token) or Contents:Write (fine-grained token).
+ * Uses the low-level GitHub Git Tree API + force-push so the branch always
+ * has exactly ONE commit — no history accumulates regardless of sync frequency.
+ *
+ * Required env var: GITHUB_TOKEN — classic token with `public_repo` scope,
+ *   or fine-grained token with Contents:Write permission.
  * Optional env var: GIST_SYNC_INTERVAL_MS — defaults to 120000 (2 min).
- *
- * Files are written to the root of the `bot-status` branch:
- *   https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/diagnose.json
- *   https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/snapshot.json
- *   https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/best-combos.json
  */
 
 import type Database from 'better-sqlite3';
@@ -25,7 +22,13 @@ import {
   computeBestCombos,
 } from './aggregates';
 import { runDiagnosis } from './diagnose';
-import { getGraduationCount, getLastBotError, getRecentTrades, getTradeStats, getTradeStatsByStrategy } from '../db/queries';
+import {
+  getGraduationCount,
+  getLastBotError,
+  getRecentTrades,
+  getTradeStats,
+  getTradeStatsByStrategy,
+} from '../db/queries';
 import { makeLogger } from '../utils/logger';
 import type { LogBuffer } from '../utils/log-buffer';
 
@@ -36,9 +39,6 @@ const OWNER = '50thycal';
 const REPO = 'solana-graduation-arb-research';
 const BRANCH = 'bot-status';
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
-
-const STATUS_FILES = ['diagnose.json', 'snapshot.json', 'best-combos.json', 'trades.json'] as const;
-type StatusFile = (typeof STATUS_FILES)[number];
 
 export interface StatusUrls {
   diagnose: string;
@@ -57,8 +57,6 @@ export class GistSync {
   private readonly intervalMs: number;
 
   private timer: ReturnType<typeof setInterval> | null = null;
-  // Cached blob SHAs — required by GitHub Contents API to overwrite files.
-  private fileShas = new Map<StatusFile, string>();
 
   constructor(opts: {
     db: Database.Database;
@@ -79,8 +77,6 @@ export class GistSync {
   }
 
   async start(): Promise<void> {
-    await this.ensureBranch();
-    await this.loadFileShas();
     await this.sync();
 
     this.timer = setInterval(() => {
@@ -110,69 +106,7 @@ export class GistSync {
 
   // ── private ──────────────────────────────────────────────────
 
-  private async ensureBranch(): Promise<void> {
-    const resp = await fetch(
-      `${GITHUB_API}/repos/${OWNER}/${REPO}/branches/${BRANCH}`,
-      { headers: this.headers() },
-    );
-
-    if (resp.ok) {
-      logger.info({ branch: BRANCH }, 'bot-status branch exists');
-      return;
-    }
-
-    if (resp.status !== 404) {
-      throw new Error(`Branch check failed: ${resp.status} ${await resp.text()}`);
-    }
-
-    // Create bot-status from current HEAD of main.
-    const mainResp = await fetch(
-      `${GITHUB_API}/repos/${OWNER}/${REPO}/git/ref/heads/main`,
-      { headers: this.headers() },
-    );
-    if (!mainResp.ok) {
-      throw new Error(`Could not read main branch SHA: ${mainResp.status}`);
-    }
-    const mainData = (await mainResp.json()) as { object: { sha: string } };
-
-    const createResp = await fetch(
-      `${GITHUB_API}/repos/${OWNER}/${REPO}/git/refs`,
-      {
-        method: 'POST',
-        headers: this.headers(),
-        body: JSON.stringify({
-          ref: `refs/heads/${BRANCH}`,
-          sha: mainData.object.sha,
-        }),
-      },
-    );
-
-    if (!createResp.ok) {
-      throw new Error(`Failed to create branch: ${createResp.status} ${await createResp.text()}`);
-    }
-
-    logger.info({ branch: BRANCH }, 'bot-status branch created');
-  }
-
-  private async loadFileShas(): Promise<void> {
-    for (const filename of STATUS_FILES) {
-      try {
-        const resp = await fetch(
-          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${filename}?ref=${BRANCH}`,
-          { headers: this.headers() },
-        );
-        if (resp.ok) {
-          const data = (await resp.json()) as { sha: string };
-          this.fileShas.set(filename, data.sha);
-        }
-        // 404 = file not yet created, skip — PUT without sha will create it.
-      } catch (err) {
-        logger.warn({ err, filename }, 'Could not pre-load file SHA');
-      }
-    }
-  }
-
-  private buildPayloads(): Record<StatusFile, string> {
+  private buildPayloads(): Record<string, string> {
     const nowMs = Date.now();
 
     const diagnose = runDiagnosis(this.db, this.logBuffer);
@@ -224,44 +158,83 @@ export class GistSync {
     };
   }
 
+  /**
+   * Core sync: build a Git tree from scratch, create an orphan commit,
+   * then force-update the bot-status ref. The branch always has exactly
+   * one commit — no history accumulates.
+   */
   private async sync(): Promise<void> {
     const payloads = this.buildPayloads();
 
-    for (const filename of STATUS_FILES) {
-      const content = payloads[filename];
-      const encoded = Buffer.from(content).toString('base64');
-      const currentSha = this.fileShas.get(filename);
-
-      const body: Record<string, unknown> = {
-        message: `bot: update ${filename} [skip ci]`,
-        content: encoded,
-        branch: BRANCH,
-      };
-      if (currentSha) body.sha = currentSha;
-
-      try {
-        const resp = await fetch(
-          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${filename}`,
-          {
-            method: 'PUT',
-            headers: this.headers(),
-            body: JSON.stringify(body),
-          },
-        );
-
-        if (resp.ok) {
-          const data = (await resp.json()) as { content: { sha: string } };
-          this.fileShas.set(filename, data.content.sha);
-        } else {
-          const text = await resp.text();
-          logger.error({ filename, status: resp.status, body: text }, 'File PUT failed');
+    try {
+      // 1. Create one blob per file.
+      const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
+      for (const [filename, content] of Object.entries(payloads)) {
+        const blobResp = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/git/blobs`, {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({ content: Buffer.from(content).toString('base64'), encoding: 'base64' }),
+        });
+        if (!blobResp.ok) {
+          throw new Error(`Blob create failed for ${filename}: ${blobResp.status} ${await blobResp.text()}`);
         }
-      } catch (err) {
-        logger.error({ err, filename }, 'File PUT threw');
+        const blob = (await blobResp.json()) as { sha: string };
+        treeItems.push({ path: filename, mode: '100644', type: 'blob', sha: blob.sha });
       }
-    }
 
-    logger.debug({ branch: BRANCH }, 'Status files updated');
+      // 2. Create a tree (no base_tree → clean root with only our files).
+      const treeResp = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/git/trees`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({ tree: treeItems }),
+      });
+      if (!treeResp.ok) {
+        throw new Error(`Tree create failed: ${treeResp.status} ${await treeResp.text()}`);
+      }
+      const tree = (await treeResp.json()) as { sha: string };
+
+      // 3. Create an orphan commit (no parents).
+      const commitResp = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/git/commits`, {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          message: `bot: status update ${new Date().toISOString()} [skip ci]`,
+          tree: tree.sha,
+          parents: [],
+        }),
+      });
+      if (!commitResp.ok) {
+        throw new Error(`Commit create failed: ${commitResp.status} ${await commitResp.text()}`);
+      }
+      const commit = (await commitResp.json()) as { sha: string };
+
+      // 4. Force-update (or create) the branch ref.
+      const refUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/git/refs/heads/${BRANCH}`;
+      const patchResp = await fetch(refUrl, {
+        method: 'PATCH',
+        headers: this.headers(),
+        body: JSON.stringify({ sha: commit.sha, force: true }),
+      });
+
+      if (patchResp.status === 422 || patchResp.status === 404) {
+        // Ref doesn't exist yet — create it.
+        const createResp = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/git/refs`, {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({ ref: `refs/heads/${BRANCH}`, sha: commit.sha }),
+        });
+        if (!createResp.ok) {
+          throw new Error(`Ref create failed: ${createResp.status} ${await createResp.text()}`);
+        }
+        logger.info({ branch: BRANCH }, 'bot-status branch created');
+      } else if (!patchResp.ok) {
+        throw new Error(`Ref update failed: ${patchResp.status} ${await patchResp.text()}`);
+      }
+
+      logger.debug({ branch: BRANCH, commit: commit.sha.slice(0, 7) }, 'Status updated');
+    } catch (err) {
+      logger.error({ err }, 'Status sync error');
+    }
   }
 
   private headers(): Record<string, string> {
