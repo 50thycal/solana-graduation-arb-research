@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-11T17:06:38.236Z",
-  "uptime_sec": 5402,
+  "generated_at": "2026-04-11T17:08:38.237Z",
+  "uptime_sec": 5522,
   "counts": {
     "graduations": 1909,
     "momentum_labeled": 1806,
@@ -33,20 +33,18 @@
   },
   "data_quality": {
     "price_source_pumpswap_all_last_10": true,
-    "null_fields_in_last_10": [
-      "#14130: pct_t300"
-    ],
-    "last_graduation_seconds_ago": 243,
+    "null_fields_in_last_10": [],
+    "last_graduation_seconds_ago": 363,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 225167,
-    "totalCandidatesDetected": 325,
+    "totalLogsReceived": 229905,
+    "totalCandidatesDetected": 336,
     "totalVerifiedGraduations": 8,
     "totalGraduationsRecorded": 8,
-    "totalFalsePositives": 216,
-    "totalBundlerFalsePositives": 216,
+    "totalFalsePositives": 225,
+    "totalBundlerFalsePositives": 225,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
     "totalVaultExtractions": 8,
@@ -63,7 +61,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 2118904,
+      "totalPumpSwapEvents": 2159555,
       "totalPoolCreationEvents": 69,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
@@ -81,7 +79,7 @@
       "activeObservations": 1,
       "totalStarted": 8,
       "totalCompleted": 7,
-      "totalSnapshots": 157,
+      "totalSnapshots": 158,
       "totalSnapshotFailures": 2,
       "lastSnapshotFailures": [
         {
@@ -106,7 +104,7 @@
       "open_price": 2.3625155606604927e-7,
       "pct_t30": 3.138679640466983,
       "pct_t60": 6.610445700876285,
-      "pct_t300": null,
+      "pct_t300": -56.69426575841845,
       "label": null,
       "holder_count": 19,
       "top5_wallet_pct": 13.4521636576554,
