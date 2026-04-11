@@ -1,12 +1,13 @@
 import express from 'express';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
-import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts } from './db/queries';
+import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
 import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml } from './utils/html-renderer';
 import { StrategyManager } from './trading';
 import { StrategyParams } from './trading/config';
-import { makeLogger } from './utils/logger';
+import { makeLogger, logBuffer } from './utils/logger';
+import { registerApiRoutes } from './api/routes';
 
 const logger = makeLogger('main');
 
@@ -99,6 +100,49 @@ async function main() {
   const healthPort = parseInt(process.env.HEALTH_PORT || '8080', 10);
   const app = express();
   app.use(express.json());
+
+  // Graduation listener (declared early so both /api routes and legacy
+  // HTML routes can capture it by closure; assigned later in main()).
+  let listener: GraduationListener | null = null;
+
+  // Self-service JSON API — /api/diagnose, /api/snapshot, /api/best-combos,
+  // etc. Registered before the legacy HTML routes so they take precedence
+  // on the /api/* prefix. See src/api/routes.ts.
+  registerApiRoutes({
+    app,
+    db,
+    logBuffer,
+    startTime,
+    getListenerStats: () => listener?.getStats() ?? null,
+  });
+
+  // Crash capture — record uncaught exceptions and unhandled rejections to
+  // the bot_errors table so /api/snapshot.last_error can surface them even
+  // after a restart. Do this once at boot, not per-route.
+  const recordCrash = (level: string, name: string, err: unknown): void => {
+    try {
+      const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      insertBotError(db, {
+        ts: Date.now(),
+        level,
+        name,
+        message,
+        stack,
+        git_sha: process.env.RAILWAY_GIT_COMMIT_SHA ?? process.env.GIT_SHA ?? undefined,
+      });
+    } catch {
+      // Never let the crash handler itself throw.
+    }
+  };
+  process.on('uncaughtException', (err) => {
+    logger.error({ err }, 'Uncaught exception');
+    recordCrash('fatal', 'uncaughtException', err);
+  });
+  process.on('unhandledRejection', (reason) => {
+    logger.error({ reason }, 'Unhandled promise rejection');
+    recordCrash('error', 'unhandledRejection', reason);
+  });
 
   // Reset research data — wipes all rows but keeps tables/schema intact
   // Support both GET and POST so it works from a phone browser
@@ -4067,7 +4111,7 @@ ${rows.map(r => {
   });
 
   // Start graduation listener (after Express so health endpoint is available)
-  let listener: GraduationListener | null = null;
+  // Note: `listener` is declared earlier in main() so /api routes can reference it.
   try {
     listener = new GraduationListener(db);
     await listener.start();

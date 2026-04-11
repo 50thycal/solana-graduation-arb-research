@@ -357,6 +357,21 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // Bot error log — one row per uncaught exception / unhandled rejection so
+  // /api/snapshot can surface the last crash without depending on Railway logs.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bot_errors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts INTEGER NOT NULL,
+      level TEXT NOT NULL,
+      name TEXT,
+      message TEXT NOT NULL,
+      stack TEXT,
+      git_sha TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_bot_errors_ts ON bot_errors(ts);
+  `);
+
   // Add strategy_id to trades_v2 and trade_skips (safe migration)
   {
     const tradeCols = db.prepare("PRAGMA table_info(trades_v2)").all() as Array<{ name: string }>;

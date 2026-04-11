@@ -779,3 +779,52 @@ export function backfillTradeMomentum(db: Database.Database): number {
   `).run();
   return result.changes;
 }
+
+// ==================== Bot error log ====================
+
+export interface BotErrorInsert {
+  ts: number;          // epoch millis
+  level: string;       // 'error' | 'fatal'
+  name?: string;       // logger name or error class
+  message: string;
+  stack?: string;
+  git_sha?: string;
+}
+
+export function insertBotError(db: Database.Database, data: BotErrorInsert): number {
+  const result = db.prepare(`
+    INSERT INTO bot_errors (ts, level, name, message, stack, git_sha)
+    VALUES (@ts, @level, @name, @message, @stack, @git_sha)
+  `).run({
+    ts: data.ts,
+    level: data.level,
+    name: data.name ?? null,
+    message: data.message,
+    stack: data.stack ?? null,
+    git_sha: data.git_sha ?? null,
+  });
+  return result.lastInsertRowid as number;
+}
+
+export interface BotErrorRow {
+  id: number;
+  ts: number;
+  level: string;
+  name: string | null;
+  message: string;
+  stack: string | null;
+  git_sha: string | null;
+}
+
+export function getLastBotError(db: Database.Database): BotErrorRow | null {
+  const row = db.prepare(
+    'SELECT * FROM bot_errors ORDER BY id DESC LIMIT 1'
+  ).get() as BotErrorRow | undefined;
+  return row ?? null;
+}
+
+export function getRecentBotErrors(db: Database.Database, limit = 20): BotErrorRow[] {
+  return db.prepare(
+    'SELECT * FROM bot_errors ORDER BY id DESC LIMIT ?'
+  ).all(limit) as BotErrorRow[];
+}
