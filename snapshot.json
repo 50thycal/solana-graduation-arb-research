@@ -1,20 +1,20 @@
 {
-  "generated_at": "2026-04-11T15:56:38.203Z",
-  "uptime_sec": 1202,
+  "generated_at": "2026-04-11T15:58:38.204Z",
+  "uptime_sec": 1322,
   "counts": {
-    "graduations": 1904,
+    "graduations": 1905,
     "momentum_labeled": 1800,
     "pump": 717,
     "dump": 818,
     "stable": 265,
-    "unlabeled": 104
+    "unlabeled": 105
   },
   "scorecard": {
     "total_labeled": 1800,
     "PUMP": 717,
     "DUMP": 818,
     "STABLE": 265,
-    "unlabeled": 104,
+    "unlabeled": 105,
     "raw_win_rate_pct": 39.8,
     "vel_5_20_cohort": {
       "n": 197,
@@ -34,26 +34,25 @@
   "data_quality": {
     "price_source_pumpswap_all_last_10": true,
     "null_fields_in_last_10": [
-      "#14125: pct_t300",
+      "#14126: pct_t300",
       "#14119: pct_t300",
       "#14118: pct_t300",
-      "#14117: pct_t300",
-      "#14116: pct_t300"
+      "#14117: pct_t300"
     ],
-    "last_graduation_seconds_ago": 263,
+    "last_graduation_seconds_ago": 12,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 43529,
-    "totalCandidatesDetected": 32,
-    "totalVerifiedGraduations": 3,
-    "totalGraduationsRecorded": 3,
-    "totalFalsePositives": 19,
-    "totalBundlerFalsePositives": 19,
+    "totalLogsReceived": 48150,
+    "totalCandidatesDetected": 36,
+    "totalVerifiedGraduations": 4,
+    "totalGraduationsRecorded": 4,
+    "totalFalsePositives": 21,
+    "totalBundlerFalsePositives": 21,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
-    "totalVaultExtractions": 3,
+    "totalVaultExtractions": 4,
     "totalVaultExtractionFails": 0,
     "lastVaultFailReasons": [],
     "lastMintFailReasons": [],
@@ -62,13 +61,13 @@
     "reconnecting": false,
     "poolTracker": {
       "pending": 0,
-      "speculative": 0,
+      "speculative": 1,
       "preFound": 0,
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 420180,
-      "totalPoolCreationEvents": 8,
+      "totalPumpSwapEvents": 463417,
+      "totalPoolCreationEvents": 12,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
       "pumpSwapSubscribed": true,
@@ -82,22 +81,39 @@
       }
     },
     "directPriceCollector": {
-      "activeObservations": 2,
-      "totalStarted": 3,
+      "activeObservations": 3,
+      "totalStarted": 4,
       "totalCompleted": 1,
-      "totalSnapshots": 57,
+      "totalSnapshots": 60,
       "totalSnapshotFailures": 0,
       "lastSnapshotFailures": []
     }
   },
   "recent_graduations": [
     {
+      "id": 14126,
+      "mint": "2WFYdoqn6ua5ZMKTnJpwQsSZsvZGcH7fdA7kQi5npump",
+      "open_price": 1.9265003566599343e-7,
+      "pct_t30": null,
+      "pct_t60": null,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 0,
+      "top5_wallet_pct": 0,
+      "dev_wallet_pct": 0,
+      "token_age_minutes": 0,
+      "bc_velocity_sol_per_min": null,
+      "total_sol_raised": 71.161962384,
+      "has_pool": true,
+      "created_at": 1775923107
+    },
+    {
       "id": 14125,
       "mint": "A2Px3FMumMJ7W67VEp9ahFXueEyf9aHpei4TTJ5mpump",
       "open_price": 2.362515574362213e-7,
       "pct_t30": 34.61758131303397,
       "pct_t60": 25.710852567970928,
-      "pct_t300": null,
+      "pct_t300": 100.88830928318573,
       "label": null,
       "holder_count": 19,
       "top5_wallet_pct": 12.5809599821085,
@@ -243,23 +259,6 @@
       "total_sol_raised": 85.006827625,
       "has_pool": true,
       "created_at": 1775919434
-    },
-    {
-      "id": 14116,
-      "mint": "D1X7Bru5xWUrzUe56xRk42RqfPR6WdpTysMPRfu1pump",
-      "open_price": 2.362515526786225e-7,
-      "pct_t30": -5.795810873699512,
-      "pct_t60": -3.4312179059394246,
-      "pct_t300": null,
-      "label": null,
-      "holder_count": 19,
-      "top5_wallet_pct": 25.8705432,
-      "dev_wallet_pct": 5.231672,
-      "token_age_minutes": 1239.5,
-      "bc_velocity_sol_per_min": 0.07,
-      "total_sol_raised": 85.007300968,
-      "has_pool": true,
-      "created_at": 1775919187
     }
   ],
   "last_error": null
