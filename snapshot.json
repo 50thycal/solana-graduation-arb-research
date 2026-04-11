@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-11T16:50:38.220Z",
-  "uptime_sec": 4442,
+  "generated_at": "2026-04-11T16:52:38.232Z",
+  "uptime_sec": 4562,
   "counts": {
     "graduations": 1908,
     "momentum_labeled": 1806,
@@ -34,17 +34,17 @@
   "data_quality": {
     "price_source_pumpswap_all_last_10": true,
     "null_fields_in_last_10": [],
-    "last_graduation_seconds_ago": 608,
+    "last_graduation_seconds_ago": 728,
     "stalled": true,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 180114,
-    "totalCandidatesDetected": 225,
+    "totalLogsReceived": 186565,
+    "totalCandidatesDetected": 246,
     "totalVerifiedGraduations": 7,
     "totalGraduationsRecorded": 7,
-    "totalFalsePositives": 141,
-    "totalBundlerFalsePositives": 141,
+    "totalFalsePositives": 154,
+    "totalBundlerFalsePositives": 154,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
     "totalVaultExtractions": 7,
@@ -61,7 +61,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 1791109,
+      "totalPumpSwapEvents": 1835300,
       "totalPoolCreationEvents": 53,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
