@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-11T17:04:38.235Z",
-  "uptime_sec": 5282,
+  "generated_at": "2026-04-11T17:06:38.236Z",
+  "uptime_sec": 5402,
   "counts": {
     "graduations": 1909,
     "momentum_labeled": 1806,
@@ -36,17 +36,17 @@
     "null_fields_in_last_10": [
       "#14130: pct_t300"
     ],
-    "last_graduation_seconds_ago": 123,
+    "last_graduation_seconds_ago": 243,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 220281,
-    "totalCandidatesDetected": 311,
+    "totalLogsReceived": 225167,
+    "totalCandidatesDetected": 325,
     "totalVerifiedGraduations": 8,
     "totalGraduationsRecorded": 8,
-    "totalFalsePositives": 205,
-    "totalBundlerFalsePositives": 205,
+    "totalFalsePositives": 216,
+    "totalBundlerFalsePositives": 216,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
     "totalVaultExtractions": 8,
@@ -63,7 +63,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 2080709,
+      "totalPumpSwapEvents": 2118904,
       "totalPoolCreationEvents": 69,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
@@ -81,7 +81,7 @@
       "activeObservations": 1,
       "totalStarted": 8,
       "totalCompleted": 7,
-      "totalSnapshots": 154,
+      "totalSnapshots": 157,
       "totalSnapshotFailures": 2,
       "lastSnapshotFailures": [
         {
