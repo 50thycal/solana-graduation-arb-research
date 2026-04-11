@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-04-11T16:16:38.207Z",
-  "verdict": "LEVEL1_FAIL",
-  "next_action": "Last graduation 1092s ago — listener may be disconnected or RPC stalled.",
+  "generated_at": "2026-04-11T16:18:38.207Z",
+  "verdict": "HEALTHY",
+  "next_action": "All checks pass. Safe to interpret /api/snapshot and /api/best-combos as real signal.",
   "level1_bot_running": {
-    "pass": false,
+    "pass": true,
     "evidence": {
-      "total_graduations": 1905,
-      "last_graduation_seconds_ago": 1092,
+      "total_graduations": 1906,
+      "last_graduation_seconds_ago": 6,
       "stall_threshold_seconds": 600
     },
-    "notes": "Last graduation 1092s ago — listener may be disconnected or RPC stalled."
+    "notes": "Bot is receiving graduations."
   },
   "level2_price_capture": {
     "pass": true,
@@ -17,7 +17,7 @@
       "sample_size": 50,
       "null_open_price_count": 0,
       "null_open_price_rate": 0,
-      "null_pct_t300_count": 6,
+      "null_pct_t300_count": 7,
       "no_pumpswap_pool_count": 0,
       "no_pumpswap_pool_rate": 0,
       "first_bad_row_id": null
