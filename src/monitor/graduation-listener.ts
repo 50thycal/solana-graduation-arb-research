@@ -115,6 +115,7 @@ export class GraduationListener {
   private lastVaultFailReasons: string[] = [];
   private totalStrategy3Extractions = 0;
   private lastMintFailReasons: string[] = [];
+  private totalTxFetchFails = 0;
   private reconnecting = false;
   /**
    * Subscribers notified after a successful websocket reconnect with the fresh
@@ -175,6 +176,7 @@ export class GraduationListener {
       totalStrategy3Extractions: this.totalStrategy3Extractions,
       totalVaultExtractions: this.totalVaultExtractions,
       totalVaultExtractionFails: this.totalVaultExtractionFails,
+      totalTxFetchFails: this.totalTxFetchFails,
       lastVaultFailReasons: this.lastVaultFailReasons.slice(-5),
       lastMintFailReasons: this.lastMintFailReasons.slice(-5),
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
@@ -532,12 +534,29 @@ export class GraduationListener {
     matchedLog: string
   ): Promise<GraduationEvent | null> {
     await globalRpcLimiter.throttlePriority();
-    const tx = await this.connection.getParsedTransaction(signature, {
+    let tx = await this.connection.getParsedTransaction(signature, {
       commitment: 'confirmed',
       maxSupportedTransactionVersion: 0,
     });
 
-    if (!tx || !tx.meta || tx.meta.err) return null;
+    // Retry up to 2 more times — Helius may not have indexed a freshly-confirmed tx yet.
+    for (let attempt = 1; attempt <= 2 && (!tx || !tx.meta); attempt++) {
+      await new Promise(r => setTimeout(r, 1000 * attempt));
+      await globalRpcLimiter.throttlePriority();
+      tx = await this.connection.getParsedTransaction(signature, {
+        commitment: 'confirmed',
+        maxSupportedTransactionVersion: 0,
+      });
+    }
+
+    if (!tx || !tx.meta || tx.meta.err) {
+      this.totalTxFetchFails++;
+      logger.debug(
+        { signature, hasTx: !!tx, hasMeta: !!tx?.meta, txErr: tx?.meta?.err ?? null },
+        'getParsedTransaction returned null/error after 3 attempts — skipping candidate'
+      );
+      return null;
+    }
 
     const timestamp = tx.blockTime || Math.floor(Date.now() / 1000);
 
