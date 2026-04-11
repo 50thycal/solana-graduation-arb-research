@@ -2198,6 +2198,225 @@ export function renderFilterV2Html(data: any): string {
     </div>`;
   }
 
+  // ── Panel 10 (Dynamic Position Monitoring Optimizer) ──
+  let panel10Html = '';
+  if (data.panel10) {
+    const panel10 = data.panel10;
+    const baseline10 = panel10.baseline;
+    const filters10 = panel10.filters || [];
+    const categoryAggs10 = panel10.category_aggregates || [];
+    const overall10 = panel10.overall_aggregate;
+    const lowN10 = panel10.flags?.low_n_threshold ?? 30;
+    const strongN10 = panel10.flags?.strong_n_threshold ?? 100;
+
+    // Cell helpers for DPM columns — '—' for null, color-coded for avg ret
+    const p10Cell = (v: any): string => {
+      if (v == null || v === '') return '<span style="color:#64748b">—</span>';
+      return String(v);
+    };
+    const p10RetCell = (v: number | null | undefined): string => {
+      if (v == null) return '<span style="color:#64748b">—</span>';
+      const cls = v > 0.5 ? 'green' : v > -0.5 ? 'yellow' : 'red';
+      const sign = v > 0 ? '+' : '';
+      return `<span class="${cls}">${sign}${v.toFixed(1)}%</span>`;
+    };
+    const p10WinCell = (v: number | null | undefined): string => {
+      if (v == null) return '<span style="color:#64748b">—</span>';
+      const cls = v >= 50 ? 'green' : v >= 40 ? 'yellow' : 'red';
+      return `<span class="${cls}">${v}%</span>`;
+    };
+    const p10DeltaCell = (opt: any): string => {
+      if (!opt || opt.avg_ret == null || opt.fallthrough_avg_ret == null) {
+        return '<span style="color:#64748b">—</span>';
+      }
+      const delta = opt.avg_ret - opt.fallthrough_avg_ret;
+      const cls = delta > 0.25 ? 'green' : delta > -0.25 ? 'yellow' : 'red';
+      const sign = delta > 0 ? '+' : '';
+      return `<span class="${cls}">${sign}${delta.toFixed(1)}pp</span>`;
+    };
+
+    // Row builder for per-filter optimum table
+    const p10RowHtml = (r: any, isBaseline = false): string => {
+      const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN10, strongN10);
+      const nLabel = r.n < lowN10 && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+      const opt = r.optimal;
+      return `<tr class="${cls}">
+        <td>${escHtml(r.filter)}${nLabel}</td>
+        <td>${r.n}</td>
+        <td>${p10RetCell(opt?.fallthrough_avg_ret)}</td>
+        <td>${p10Cell(opt?.trailing_sl)}</td>
+        <td>${opt?.sl_delay != null ? opt.sl_delay + 's' : p10Cell(null)}</td>
+        <td>${p10Cell(opt?.trailing_tp)}</td>
+        <td>${opt?.breakeven != null ? opt.breakeven + '%' : p10Cell(null)}</td>
+        <td>${p10RetCell(opt?.avg_ret)}</td>
+        <td>${p10WinCell(opt?.win_rate)}</td>
+        <td>${p10DeltaCell(opt)}</td>
+      </tr>`;
+    };
+
+    // Group per-filter rows by category
+    const groups10 = new Map<string, any[]>();
+    for (const f of filters10) {
+      if (!groups10.has(f.group)) groups10.set(f.group, []);
+      groups10.get(f.group)!.push(f);
+    }
+    const baselineRow10 = p10RowHtml(baseline10, true);
+    const groupRows10: string[] = [];
+    for (const [groupName, rows] of groups10) {
+      groupRows10.push(`<tr class="row-group-header"><td colspan="10">${escHtml(groupName)}</td></tr>`);
+      for (const r of rows) groupRows10.push(p10RowHtml(r, false));
+    }
+
+    const perFilterTable = `
+    <h3 style="margin-top:16px;margin-bottom:6px">Per-Filter Optimum DPM Values</h3>
+    <table id="panel10-table">
+      <thead>
+        <tr>
+          <th class="sortable" onclick="sortPanel10(0,'str')">Filter <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel10(1,'num')">n <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel10(2,'num')">Fallthrough Avg <span class="arrow">⇅</span></th>
+          <th>Opt Trailing SL</th>
+          <th>Opt SL Delay</th>
+          <th>Opt Trailing TP</th>
+          <th>Opt Breakeven</th>
+          <th class="sortable" onclick="sortPanel10(7,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel10(8,'num')">Opt Win % <span class="arrow">⇅</span></th>
+          <th class="sortable" onclick="sortPanel10(9,'num')">Δ vs Fallthrough <span class="arrow">⇅</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baselineRow10}
+        ${groupRows10.join('\n        ')}
+      </tbody>
+    </table>`;
+
+    // ── Per-category aggregate table ──
+    const categoryRowHtml = (cat: any): string => {
+      const opt = cat.optimal;
+      const eligibleLabel = `${cat.eligible_count}/${cat.filter_count}`;
+      return `<tr>
+        <td>${escHtml(cat.group)}</td>
+        <td>${eligibleLabel}</td>
+        <td>${p10RetCell(opt?.fallthrough_avg_ret)}</td>
+        <td>${p10Cell(opt?.trailing_sl)}</td>
+        <td>${opt?.sl_delay != null ? opt.sl_delay + 's' : p10Cell(null)}</td>
+        <td>${p10Cell(opt?.trailing_tp)}</td>
+        <td>${opt?.breakeven != null ? opt.breakeven + '%' : p10Cell(null)}</td>
+        <td>${p10RetCell(opt?.avg_ret)}</td>
+        <td>${p10WinCell(opt?.win_rate)}</td>
+        <td>${p10DeltaCell(opt)}</td>
+      </tr>`;
+    };
+    const categoryRows = categoryAggs10.map((c: any) => categoryRowHtml(c)).join('');
+
+    const categoryTable = `
+    <h3 style="margin-top:20px;margin-bottom:6px">Best DPM Values Per Filter Category <span style="color:#64748b;font-size:12px;font-weight:normal">(n-weighted avg across filters in category)</span></h3>
+    <table id="panel10-cat-table">
+      <thead>
+        <tr>
+          <th>Category</th>
+          <th>Eligible Filters</th>
+          <th>Fallthrough Avg</th>
+          <th>Best Trailing SL</th>
+          <th>Best SL Delay</th>
+          <th>Best Trailing TP</th>
+          <th>Best Breakeven</th>
+          <th>Avg Ret</th>
+          <th>Win %</th>
+          <th>Δ vs Fallthrough</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${categoryRows || '<tr><td colspan="10" style="color:#64748b">No eligible categories (need n ≥ 30)</td></tr>'}
+      </tbody>
+    </table>`;
+
+    // ── Overall best row ──
+    const overallRow = overall10 ? `
+      <tr>
+        <td><strong>All Filters</strong> (weighted avg)</td>
+        <td>${filters10.filter((f: any) => f.n >= lowN10).length}/${filters10.length}</td>
+        <td>${p10RetCell(overall10.fallthrough_avg_ret)}</td>
+        <td>${p10Cell(overall10.trailing_sl)}</td>
+        <td>${overall10.sl_delay != null ? overall10.sl_delay + 's' : p10Cell(null)}</td>
+        <td>${p10Cell(overall10.trailing_tp)}</td>
+        <td>${overall10.breakeven != null ? overall10.breakeven + '%' : p10Cell(null)}</td>
+        <td>${p10RetCell(overall10.avg_ret)}</td>
+        <td>${p10WinCell(overall10.win_rate)}</td>
+        <td>${p10DeltaCell(overall10)}</td>
+      </tr>` : '';
+    const baselineOpt = baseline10.optimal;
+    const baselineOptRow = baselineOpt ? `
+      <tr>
+        <td><strong>ALL labeled</strong> (no filter)</td>
+        <td>${baseline10.n}</td>
+        <td>${p10RetCell(baselineOpt.fallthrough_avg_ret)}</td>
+        <td>${p10Cell(baselineOpt.trailing_sl)}</td>
+        <td>${baselineOpt.sl_delay != null ? baselineOpt.sl_delay + 's' : p10Cell(null)}</td>
+        <td>${p10Cell(baselineOpt.trailing_tp)}</td>
+        <td>${baselineOpt.breakeven != null ? baselineOpt.breakeven + '%' : p10Cell(null)}</td>
+        <td>${p10RetCell(baselineOpt.avg_ret)}</td>
+        <td>${p10WinCell(baselineOpt.win_rate)}</td>
+        <td>${p10DeltaCell(baselineOpt)}</td>
+      </tr>` : '';
+
+    const overallTable = `
+    <h3 style="margin-top:20px;margin-bottom:6px">Overall Best DPM Values</h3>
+    <table id="panel10-overall-table">
+      <thead>
+        <tr>
+          <th>Scope</th>
+          <th>Sample</th>
+          <th>Fallthrough Avg</th>
+          <th>Best Trailing SL</th>
+          <th>Best SL Delay</th>
+          <th>Best Trailing TP</th>
+          <th>Best Breakeven</th>
+          <th>Avg Ret</th>
+          <th>Win %</th>
+          <th>Δ vs Fallthrough</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${baselineOptRow}
+        ${overallRow}
+      </tbody>
+    </table>`;
+
+    const legend10 = `
+    <div class="desc" style="margin-top:10px">
+      <strong>Entry:</strong> T+30. <strong>Base TP/SL:</strong> ${panel10.constants.base_tp_pct}% / ${panel10.constants.base_sl_pct}% (fixed — thesis defaults). Only DPM parameters vary across the ${panel10.constants.combo_count}-cell grid.
+      <br>
+      <strong>Grid:</strong>
+      Trailing SL: [${panel10.grid.trailing_sl.map((x: any) => x.label).join(', ')}] ·
+      SL Delay: [${panel10.grid.sl_delay_sec.join(', ')}]s ·
+      Trailing TP: [${panel10.grid.trailing_tp.map((x: any) => x.label).join(', ')}] ·
+      Breakeven: [${panel10.grid.breakeven_pct.join(', ')}]%
+      <br>
+      <strong>Simulation logic:</strong> Mirrors <code>position-manager.ts</code> exactly. At each checkpoint (T+40 … T+240): update high-water mark, compute effective SL as a layered max over [fixed SL, breakeven floor, trailing SL from peak], check SL exit (if past activation delay), check TP exit (fixed or trailing). Fall-through at T+300. SL gap penalty = ${panel10.constants.sl_gap_penalty_pct}% × distance-from-peak; TP gap penalty = ${panel10.constants.tp_gap_penalty_pct}% of exit return.
+      <br>
+      <strong>Fallthrough Avg:</strong> avg return when ALL DPM features are disabled (pure fixed 30/10). This is your baseline — the DPM optimizer should beat it meaningfully for a filter to be worth using DPM on.
+      <br>
+      <strong>Δ vs Fallthrough:</strong> improvement from activating the optimal DPM combo over the pure fixed 30/10 strategy, in percentage points.
+      <br>
+      <strong>Per-category aggregate:</strong> Single DPM combo maximizing n-weighted avg return across all filters in that category. Use this to pick DPM values when you're applying ANY filter in that category.
+      <br>
+      <strong>Overall aggregate:</strong> Single DPM combo maximizing n-weighted avg return across ALL filters (and also shown: the baseline "no filter" optimum). Use the All-Filters row as a safe default when you don't know which filter to use.
+      <br>
+      <strong>Gating:</strong> per-filter optimum requires n ≥ ${panel10.constants.min_n_for_optimum} AND ≥ ${panel10.constants.min_active_exits_for_optimum} non-fall-through exits. <code>—</code> means the filter cohort is too small or no combo actually triggered SL/TP.
+    </div>`;
+
+    panel10Html = `
+    <div class="card">
+      <h2>Panel 10 — ${panel10.title}</h2>
+      <div class="desc">${panel10.description}</div>
+      ${overallTable}
+      ${categoryTable}
+      ${perFilterTable}
+      ${legend10}
+    </div>`;
+  }
+
   const sortScript = `
   <script>
   function v2GenericSort(tableId, col, type) {
@@ -2232,6 +2451,7 @@ export function renderFilterV2Html(data: any): string {
   function sortPanel7(col, type) { v2GenericSort('panel7-table', col, type); }
   function sortPanel8(col, type) { v2GenericSort('panel8-table', col, type); }
   function sortPanel9(col, type) { v2GenericSort('panel9-table', col, type); }
+  function sortPanel10(col, type) { v2GenericSort('panel10-table', col, type); }
 
   // Panel 6 top-pairs table has NO baseline row — use a simpler sort that treats
   // every row as data.
@@ -2359,7 +2579,7 @@ export function renderFilterV2Html(data: any): string {
   }
   </script>`;
 
-  const body = panel1Html + panel2Html + panel3Html + panel4Html + panel5Html + panel6Html + panel7Html + panel8Html + panel9Html + panel4DataScript + sortScript;
+  const body = panel1Html + panel2Html + panel3Html + panel4Html + panel5Html + panel6Html + panel7Html + panel8Html + panel9Html + panel10Html + panel4DataScript + sortScript;
   return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
 }
 
