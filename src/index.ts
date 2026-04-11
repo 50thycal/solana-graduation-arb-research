@@ -4125,13 +4125,11 @@ ${rows.map(r => {
     });
     gistSync.start().then(() => {
       const urls = gistSync.getUrls();
-      if (urls) {
-        logger.info({ urls }, 'Gist sync active — Claude can self-serve from these URLs');
-        logger.info('GIST_DIAGNOSE_URL=' + urls.diagnose);
-        logger.info('GIST_SNAPSHOT_URL=' + urls.snapshot);
-        logger.info('GIST_BEST_COMBOS_URL=' + urls.best_combos);
-        logger.info('GIST_HTML_URL=' + urls.gist_html);
-      }
+      logger.info({ urls }, 'Status sync active — Claude can self-serve from these URLs');
+      logger.info('GIST_DIAGNOSE_URL=' + urls.diagnose);
+      logger.info('GIST_SNAPSHOT_URL=' + urls.snapshot);
+      logger.info('GIST_BEST_COMBOS_URL=' + urls.best_combos);
+      logger.info('GIST_HTML_URL=' + urls.branch_html);
     }).catch((err) => logger.error({ err }, 'Gist sync failed to start'));
   } else {
     logger.warn('GITHUB_TOKEN not set — Gist sync disabled. Add it to Railway env vars to enable self-service for Claude.');
