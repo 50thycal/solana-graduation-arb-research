@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-11T16:34:38.209Z",
-  "uptime_sec": 3482,
+  "generated_at": "2026-04-11T16:36:38.209Z",
+  "uptime_sec": 3602,
   "counts": {
     "graduations": 1907,
     "momentum_labeled": 1804,
@@ -36,24 +36,24 @@
     "null_fields_in_last_10": [
       "#14119: pct_t300"
     ],
-    "last_graduation_seconds_ago": 468,
+    "last_graduation_seconds_ago": 588,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 135873,
-    "totalCandidatesDetected": 175,
+    "totalLogsReceived": 141063,
+    "totalCandidatesDetected": 181,
     "totalVerifiedGraduations": 6,
     "totalGraduationsRecorded": 6,
-    "totalFalsePositives": 109,
-    "totalBundlerFalsePositives": 109,
+    "totalFalsePositives": 115,
+    "totalBundlerFalsePositives": 115,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
     "totalVaultExtractions": 6,
     "totalVaultExtractionFails": 0,
     "lastVaultFailReasons": [],
     "lastMintFailReasons": [],
-    "lastEventSecondsAgo": 1,
+    "lastEventSecondsAgo": 0,
     "wsConnected": true,
     "reconnecting": false,
     "poolTracker": {
@@ -63,7 +63,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 1411292,
+      "totalPumpSwapEvents": 1454488,
       "totalPoolCreationEvents": 36,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
