@@ -31,6 +31,14 @@ export class CompetitionDetector {
   }
 
   async detectCompetition(ctx: ObservationContext): Promise<void> {
+    // Synthetic pool addresses (e.g. "vaults:abc12345") are stored when the pool PDA
+    // wasn't extractable from the migration tx. They're valid for vault-based price
+    // collection but can't be used as RPC addresses — skip detection in that case.
+    try { new PublicKey(ctx.poolAddress); } catch {
+      logger.debug({ graduationId: ctx.graduationId, poolAddress: ctx.poolAddress }, 'Skipping competition detection: synthetic pool address');
+      return;
+    }
+
     try {
       // Get recent transactions for the pool — drop if queue already backed up
       if (!await globalRpcLimiter.throttleOrDrop(10)) {
@@ -148,6 +156,12 @@ export class CompetitionDetector {
    */
   async detectBuyPressure(ctx: ObservationContext): Promise<void> {
     const MAX_NEW_TX_PARSES = 50;
+
+    // Same guard as detectCompetition — synthetic pool addresses aren't valid RPC addresses.
+    try { new PublicKey(ctx.poolAddress); } catch {
+      logger.debug({ graduationId: ctx.graduationId, poolAddress: ctx.poolAddress }, 'Skipping buy pressure detection: synthetic pool address');
+      return;
+    }
 
     try {
       // Phase A: Fetch signatures and parse new transactions
