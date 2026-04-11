@@ -2,40 +2,57 @@
 
 ## MISSION
 
-We are running a focused research sprint to validate or invalidate this thesis:
+Build a profitable trading bot on post-graduation PumpFun tokens.
 
-> "Post-graduation PumpFun token momentum can be scalped profitably using a TP+SL strategy on the vel 5-20 sol/min cohort, achieving >+1% avg return per trade after all costs."
+The open research question is:
 
-The original "buy and hold to T+300" thesis was invalidated at n=630. The scalp thesis (enter at T+30, 10% SL / 30-50% TP) is the only surviving positive-EV strategy. We are now collecting data to reach n=200 on the vel 5-20 cohort (currently n=80) to confirm or kill it.
+> **Which single filter or combination of filters — from the full v2 filter search space — yields a profitable bot after all costs (gap penalties, round-trip slippage), on n ≥ 100 samples, with regime-stable edge?**
 
-The human operator is the feedback loop. They are NOT writing code. Their job is to read the dashboard, screenshot it, and feed it back to you. Your job is to iterate the code until the thesis is proven or disproven. Move fast.
+Velocity 5–20 sol/min + 10% SL / 30–50% TP is the current **best-known baseline** (+1.4% avg return, n=80). It is a floor to beat, not the goal. Any new filter or combination is fair game — single filters, pairs, triples, cross-dimension combos — as long as each candidate is evaluated against the baseline and the same rigor (sample size, regime stability, cost modeling).
+
+The bot is free to hypothesize, test, and adopt new filters without asking permission. The only rules are: beat the baseline, survive regime checks, and never claim victory on small n.
+
+The human operator is the code-review and deploy loop — they do not write code, screenshot dashboards, or query the database. Claude self-serves all data via the `/api/*` JSON endpoints (see `## SELF-SERVICE DATA ACCESS` below). Move fast.
 
 ---
 
 ## RESEARCH FINDINGS (as of n=630)
 
-### Confirmed Dead (do not revisit)
+These are prior results. They are **starting knowledge**, not constraints. If newer data contradicts anything here, update the doc — don't twist the data to fit.
+
+### Confirmed Dead (do not revisit without strong reason)
 - **Raw buy-and-hold T+30 to T+300**: -6.2% avg return. Dead.
-- **SL-only strategies (no TP)**: All negative EV. The asymmetry kills you — winners give +19%, losers take -59%.
+- **SL-only strategies (no TP)**: All negative EV. The asymmetry kills you — winners give +19%, losers take -59%. TP is mandatory for any strategy.
 - **SOL raised filters**: All tokens graduate at ~85 SOL. No discriminating power.
-- **Holder count filters**: No signal. All ~38% win rate regardless of threshold.
-- **Top5 wallet concentration**: Actively negative — higher concentration = worse performance.
+- **Raw holder count filters**: No signal in isolation. All ~38% win rate regardless of threshold. (Holders may still matter as part of a combination — do not exclude from combo search.)
+- **Raw top5 wallet concentration filters**: Actively negative in isolation — higher concentration = worse. (Same caveat: may have value in combos.)
 - **Momentum continuation** (T+300 > T+30): Only 47%. Not a signal.
 
-### Confirmed Signals
-- **BC velocity 5-20 sol/min**: 63% raw win rate (n=76). Best single filter.
-- **BC velocity 10-20 sol/min**: 52.4% win rate. The sweet spot within the sweet spot.
-- **T+30 entry gate (+5% to +100%)**: Required for positive selection. Below +5% = dead tokens.
-- **TP+SL combos**: The only way to turn the velocity signal into positive EV. TP locks in gains before reversion. Best combos:
-  - vel 5-20 @ 10% SL / 50% TP: +1.4% avg return (n=80)
-  - vel 5-20 @ 10% SL / 30% TP: +0.8% avg return (n=80)
-  - vel 5-20 @ 10% SL / 75% TP: +1.0% avg return (n=80)
-- **BC age >10min + vel <20**: +0.8% avg return at 10% SL (n=103). Secondary signal.
+### Current Best-Known Baseline
+- **vel 5-20 sol/min + T+30 gate (+5% to +100%) + 10% SL / 50% TP**: +1.4% avg return (n=80). **This is the number to beat.**
+- vel 5-20 @ 10% SL / 30% TP: +0.8% avg return (n=80)
+- vel 5-20 @ 10% SL / 75% TP: +1.0% avg return (n=80)
+- BC age >10 min + vel <20 @ 10% SL: +0.8% avg return (n=103)
 
-### Under Investigation
-- **Liquidity >100 SOL**: 66.7% win rate but only n=45. Promising but unproven.
-- **Regime stability**: Overall win rate std dev 7.7% (stable), but vel 5-20 at 13.9% (moderate). Edge may be time-dependent.
-- **Tail risk**: 18.2% of vel 5-20 trades lose >50%. The 10% SL is what prevents catastrophic losses.
+### Promising Leads (under investigation — finish these or beat them)
+- **Liquidity >100 SOL at T+30**: 66.7% win rate, n=45. Needs more samples.
+- **Regime stability**: Overall std dev 7.7% (stable); vel 5-20 at 13.9% (moderate). Any new candidate must include a regime-stability check.
+- **Tail risk**: 18.2% of vel 5-20 trades lose >50%. Whatever filter you pick, the 10% SL is what keeps the tail survivable.
+
+## SEARCH SPACE
+
+The full space Claude is free to explore (see `FILTER_PRESET_GROUPS` in `src/utils/html-renderer.ts:3050` for exact thresholds, and `/filter-analysis-v2` Panels 1–9 for current combinatorial coverage):
+
+- **Velocity** (`bc_velocity_sol_per_min`): <5, 5–10, 5–20, 10–20, <20, <50, 20–50, 50–200, >200
+- **BC Age** (`token_age_seconds`): <10 min, >10 min, >30 min, >1 hr, >1 day
+- **Holders** (`holder_count`): ≥5, ≥10, ≥15, ≥18
+- **Top 5 Wallet Concentration** (`top5_wallet_pct`): <10%, <15%, <20%, <30%, <40%
+- **Liquidity at T+30** (pool SOL reserves)
+- **T+30 entry gate** (PumpSwap pool price move from open)
+- **Cross-dimension combos** — any pair, triple, or N-way combination of the above
+- **New dimensions** — add any field already captured on `graduation_momentum` as a candidate filter; if a useful field isn't captured yet, add it to the schema and backfill
+
+For each candidate, the evaluation protocol is fixed: compute avg return, win rate, and regime std-dev on n ≥ 100, across the same TP/SL grid as the baseline, with the same cost model. No special pleading.
 
 ---
 
@@ -43,14 +60,13 @@ The human operator is the feedback loop. They are NOT writing code. Their job is
 
 Each cycle follows this exact pattern:
 
-1. **Push a code update**
-2. **Bot runs and collects data**
-3. **Dashboard displays current results**
-4. **Human screenshots dashboard and feeds back to you**
-5. **You diagnose: data issue, code bug, or real signal?**
-6. **You push next fix or next feature. Repeat.**
+1. **Claude fetches live state** via `/api/diagnose`, `/api/snapshot`, and `/api/best-combos` (see `## SELF-SERVICE DATA ACCESS`). No human screenshots.
+2. **Claude picks the next hypothesis** — a filter or combo to test, or a bug to fix — based on the leaderboard and diagnose verdict, not on what a previous session said.
+3. **Claude pushes a code update** (new filter, new panel, bug fix, schema addition).
+4. **Bot redeploys and collects data.**
+5. **Next cycle starts at step 1.**
 
-Never skip straight to "the thesis is working" without checking the data quality first. Assume bugs exist until proven otherwise.
+Never skip straight to "the new signal is working" without checking the diagnose verdict first. Assume bugs exist until `/api/diagnose` says `HEALTHY`.
 
 ---
 
@@ -125,51 +141,48 @@ Fix bugs in order. Do not skip levels.
 
 ---
 
-## THESIS CONCLUSION RULES
+## CONCLUSION RULES (per candidate strategy)
 
-Declare a conclusion when ONE of these is true:
+Every candidate filter or combo passes, fails, or is inconclusive on these rules. The mission as a whole is never "done" — it ends only when a **shipped profitable strategy** is running.
 
-### THESIS VALID
-- 200+ samples on vel 5-20 cohort
-- TP+SL avg return >+0.5% after all costs (gap penalties, round-trip slippage)
-- Regime analysis shows STABLE or MODERATE (std dev <15%)
-- No Level 1-4 bugs present
-- Output: "THESIS VALID — here is the exact strategy spec for execution"
+### CANDIDATE VALID (adopt as new baseline)
+- n ≥ 100 samples
+- Avg return beats current baseline by at least +0.3 percentage points after all costs (gap penalties + round-trip slippage)
+- Regime std-dev < 15% across available time windows
+- `/api/diagnose` returns `HEALTHY`
+- Output: "NEW BASELINE — `<filter spec>` beats `<old baseline>` by `<delta>` on n=`<n>`. Updating CLAUDE.md baseline section and promoting in `/api/best-combos`."
 
-### THESIS INVALID
-- 200+ samples on vel 5-20 cohort
-- TP+SL avg return <+0.5% OR negative after all costs
-- OR regime analysis shows CLUSTERED (std dev >15% — edge is not stable)
-- No Level 1-4 bugs present
-- Output: "THESIS INVALID — here is what the data showed. Scalp edge does not survive at scale."
+### CANDIDATE INVALID (drop and try next)
+- n ≥ 100 and avg return ≤ baseline − 0 pp, OR
+- Regime std-dev ≥ 15% (edge too unstable), OR
+- Tail loss rate >20% of trades losing >50% despite SL
+- Output: "`<filter spec>` — no edge. Avg return `<X>`, std dev `<Y>`. Moving to next candidate."
 
-### INCONCLUSIVE
-- Data quality issues persist after 3+ fix cycles on same bug
-- Graduation detection too sparse to collect data
-- Output: "BLOCKED — here is the specific technical blocker, here are the options to resolve it"
+### BLOCKED
+- Data quality issues persist after 3+ fix cycles on the same Level 1–4 bug
+- Graduation detection too sparse (less than ~30/day) to collect data in reasonable time
+- Schema is missing a field needed to test the next candidate
+- Output: "BLOCKED — `<specific technical blocker>`. Options: `<A>`, `<B>`."
 
-Do not run indefinitely without declaring. If you have 200+ clean samples and a clear answer, say it.
+Never declare victory on n < 100. Never keep a candidate running past a clear invalidation.
 
 ---
 
-## CURRENT THESIS PARAMETERS
+## BASELINE PARAMETERS (current best-known — update whenever a new winner is promoted)
 
 | Parameter | Value |
 |---|---|
 | Entry timing | T+30 post-graduation on PumpSwap pool |
 | Entry gate | T+30 price between +5% and +100% from open |
-| Velocity filter | BC velocity 5-20 sol/min |
+| Filter | BC velocity 5-20 sol/min |
 | Stop-loss | 10% from entry (with 20% adverse gap penalty modeled) |
-| Take-profit | 30-50% from entry (with 10% adverse gap penalty modeled) |
+| Take-profit | 50% from entry (with 10% adverse gap penalty modeled) |
 | Round-trip costs | Per-token measured slippage, fallback 3% |
-| Target avg return | >+0.5% per trade after all costs |
-| Sample target | 200 clean samples on vel 5-20 cohort |
+| Baseline avg return | +1.4% per trade (n=80) |
+| Promotion bar | Beat baseline by ≥ +0.3 pp on n ≥ 100 with regime std-dev < 15% |
 | Price source | PumpSwap pool ONLY (not bonding curve) |
 | Execution | Research only — no live trades |
 | Monthly revenue target | ~$490/month at 0.5 SOL position size (covers AI/infra costs) |
 
-### Active signals being tracked:
-- BC velocity 5-20 sol/min (primary)
-- BC age >10 min (secondary)
-- Liquidity >100 SOL at T+30 (under investigation, low n)
-- Regime stability across time windows (monitoring)
+### Filter dimensions currently exposed in the search:
+See `SEARCH SPACE` section above. Any dimension there is fair game; add new ones freely.
