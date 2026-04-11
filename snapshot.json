@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-11T17:54:38.264Z",
-  "uptime_sec": 8282,
+  "generated_at": "2026-04-11T17:56:38.263Z",
+  "uptime_sec": 8402,
   "counts": {
     "graduations": 1917,
     "momentum_labeled": 1814,
@@ -36,12 +36,12 @@
     "null_fields_in_last_10": [
       "#14138: pct_t300"
     ],
-    "last_graduation_seconds_ago": 118,
+    "last_graduation_seconds_ago": 238,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 336141,
+    "totalLogsReceived": 340269,
     "totalCandidatesDetected": 452,
     "totalVerifiedGraduations": 16,
     "totalGraduationsRecorded": 16,
@@ -63,7 +63,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 3142898,
+      "totalPumpSwapEvents": 3198676,
       "totalPoolCreationEvents": 187,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
@@ -81,7 +81,7 @@
       "activeObservations": 1,
       "totalStarted": 16,
       "totalCompleted": 15,
-      "totalSnapshots": 313,
+      "totalSnapshots": 316,
       "totalSnapshotFailures": 2,
       "lastSnapshotFailures": [
         {
