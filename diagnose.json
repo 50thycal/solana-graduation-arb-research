@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-04-11T16:36:38.209Z",
-  "verdict": "HEALTHY",
-  "next_action": "All checks pass. Safe to interpret /api/snapshot and /api/best-combos as real signal.",
+  "generated_at": "2026-04-11T16:38:38.210Z",
+  "verdict": "LEVEL1_FAIL",
+  "next_action": "Last graduation 708s ago — listener may be disconnected or RPC stalled.",
   "level1_bot_running": {
-    "pass": true,
+    "pass": false,
     "evidence": {
       "total_graduations": 1907,
-      "last_graduation_seconds_ago": 588,
+      "last_graduation_seconds_ago": 708,
       "stall_threshold_seconds": 600
     },
-    "notes": "Bot is receiving graduations."
+    "notes": "Last graduation 708s ago — listener may be disconnected or RPC stalled."
   },
   "level2_price_capture": {
     "pass": true,
