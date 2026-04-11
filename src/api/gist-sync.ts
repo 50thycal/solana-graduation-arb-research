@@ -25,7 +25,7 @@ import {
   computeBestCombos,
 } from './aggregates';
 import { runDiagnosis } from './diagnose';
-import { getGraduationCount, getLastBotError } from '../db/queries';
+import { getGraduationCount, getLastBotError, getRecentTrades, getTradeStats, getTradeStatsByStrategy } from '../db/queries';
 import { makeLogger } from '../utils/logger';
 import type { LogBuffer } from '../utils/log-buffer';
 
@@ -37,13 +37,14 @@ const REPO = 'solana-graduation-arb-research';
 const BRANCH = 'bot-status';
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
-const STATUS_FILES = ['diagnose.json', 'snapshot.json', 'best-combos.json'] as const;
+const STATUS_FILES = ['diagnose.json', 'snapshot.json', 'best-combos.json', 'trades.json'] as const;
 type StatusFile = (typeof STATUS_FILES)[number];
 
 export interface StatusUrls {
   diagnose: string;
   snapshot: string;
   best_combos: string;
+  trades: string;
   branch_html: string;
 }
 
@@ -102,6 +103,7 @@ export class GistSync {
       diagnose: `${base}/diagnose.json`,
       snapshot: `${base}/snapshot.json`,
       best_combos: `${base}/best-combos.json`,
+      trades: `${base}/trades.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
@@ -205,10 +207,20 @@ export class GistSync {
       include_pairs: true,
     });
 
+    const recentTrades = getRecentTrades(this.db, 50);
+    const trades = {
+      generated_at: new Date(nowMs).toISOString(),
+      stats: getTradeStats(this.db),
+      by_strategy: getTradeStatsByStrategy(this.db),
+      count: recentTrades.length,
+      trades: recentTrades,
+    };
+
     return {
       'diagnose.json': JSON.stringify(diagnose, null, 2),
       'snapshot.json': JSON.stringify(snapshot, null, 2),
       'best-combos.json': JSON.stringify(bestCombos, null, 2),
+      'trades.json': JSON.stringify(trades, null, 2),
     };
   }
 

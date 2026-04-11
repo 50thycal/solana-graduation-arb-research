@@ -4,6 +4,7 @@
     "RAILWAY_URL": "https://solana-graduation-arb-research-production.up.railway.app/",
     "GIST_DIAGNOSE_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/diagnose.json",
     "GIST_SNAPSHOT_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/snapshot.json",
-    "GIST_BEST_COMBOS_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/best-combos.json"
+    "GIST_BEST_COMBOS_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/best-combos.json",
+    "GIST_TRADES_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/trades.json"
   }
 }
