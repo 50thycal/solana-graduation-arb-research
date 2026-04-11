@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-04-11T15:31:22.129Z",
-  "uptime_sec": 842,
+  "generated_at": "2026-04-11T15:33:22.129Z",
+  "uptime_sec": 962,
   "counts": {
     "graduations": 1901,
-    "momentum_labeled": 1797,
-    "pump": 716,
-    "dump": 816,
+    "momentum_labeled": 1799,
+    "pump": 717,
+    "dump": 817,
     "stable": 265,
-    "unlabeled": 104
+    "unlabeled": 102
   },
   "scorecard": {
-    "total_labeled": 1797,
-    "PUMP": 716,
-    "DUMP": 816,
+    "total_labeled": 1799,
+    "PUMP": 717,
+    "DUMP": 817,
     "STABLE": 265,
-    "unlabeled": 104,
-    "raw_win_rate_pct": 39.8,
+    "unlabeled": 102,
+    "raw_win_rate_pct": 39.9,
     "vel_5_20_cohort": {
       "n": 197,
       "win_rate_pct": 61.9,
@@ -41,17 +41,17 @@
       "#14116: pct_t300",
       "#14114: pct_t300"
     ],
-    "last_graduation_seconds_ago": 152,
+    "last_graduation_seconds_ago": 272,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 35667,
-    "totalCandidatesDetected": 19,
+    "totalLogsReceived": 40713,
+    "totalCandidatesDetected": 21,
     "totalVerifiedGraduations": 3,
     "totalGraduationsRecorded": 3,
-    "totalFalsePositives": 11,
-    "totalBundlerFalsePositives": 11,
+    "totalFalsePositives": 12,
+    "totalBundlerFalsePositives": 12,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
     "totalVaultExtractions": 3,
@@ -68,7 +68,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 280182,
+      "totalPumpSwapEvents": 321968,
       "totalPoolCreationEvents": 25,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
@@ -83,10 +83,10 @@
       }
     },
     "directPriceCollector": {
-      "activeObservations": 3,
+      "activeObservations": 1,
       "totalStarted": 3,
-      "totalCompleted": 0,
-      "totalSnapshots": 54,
+      "totalCompleted": 2,
+      "totalSnapshots": 58,
       "totalSnapshotFailures": 0,
       "lastSnapshotFailures": []
     }
@@ -116,7 +116,7 @@
       "pct_t30": -11.594836047624359,
       "pct_t60": -13.879096095853486,
       "pct_t300": -48.258537037381515,
-      "label": null,
+      "label": "DUMP",
       "holder_count": 19,
       "top5_wallet_pct": 9.8924576914299,
       "dev_wallet_pct": 2.0931643516009997,
@@ -133,7 +133,7 @@
       "pct_t30": 20.484617487364385,
       "pct_t60": 9.960398273574269,
       "pct_t300": 26.474390647853742,
-      "label": null,
+      "label": "PUMP",
       "holder_count": 19,
       "top5_wallet_pct": 6.1443262600008,
       "dev_wallet_pct": 1.5335429639423999,
