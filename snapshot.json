@@ -1,20 +1,20 @@
 {
-  "generated_at": "2026-04-11T17:22:38.237Z",
-  "uptime_sec": 6362,
+  "generated_at": "2026-04-11T17:24:38.237Z",
+  "uptime_sec": 6482,
   "counts": {
-    "graduations": 1912,
+    "graduations": 1913,
     "momentum_labeled": 1807,
     "pump": 719,
     "dump": 822,
     "stable": 266,
-    "unlabeled": 105
+    "unlabeled": 106
   },
   "scorecard": {
     "total_labeled": 1807,
     "PUMP": 719,
     "DUMP": 822,
     "STABLE": 266,
-    "unlabeled": 105,
+    "unlabeled": 106,
     "raw_win_rate_pct": 39.8,
     "vel_5_20_cohort": {
       "n": 197,
@@ -34,24 +34,23 @@
   "data_quality": {
     "price_source_pumpswap_all_last_10": true,
     "null_fields_in_last_10": [
-      "#14133: pct_t300",
-      "#14132: pct_t300",
-      "#14131: pct_t300"
+      "#14134: pct_t300",
+      "#14133: pct_t300"
     ],
-    "last_graduation_seconds_ago": 158,
+    "last_graduation_seconds_ago": 42,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 262714,
-    "totalCandidatesDetected": 394,
-    "totalVerifiedGraduations": 11,
-    "totalGraduationsRecorded": 11,
-    "totalFalsePositives": 266,
-    "totalBundlerFalsePositives": 266,
+    "totalLogsReceived": 268217,
+    "totalCandidatesDetected": 397,
+    "totalVerifiedGraduations": 12,
+    "totalGraduationsRecorded": 12,
+    "totalFalsePositives": 267,
+    "totalBundlerFalsePositives": 267,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
-    "totalVaultExtractions": 11,
+    "totalVaultExtractions": 12,
     "totalVaultExtractionFails": 0,
     "lastVaultFailReasons": [],
     "lastMintFailReasons": [],
@@ -65,7 +64,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 2463870,
+      "totalPumpSwapEvents": 2510954,
       "totalPoolCreationEvents": 112,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
@@ -80,10 +79,10 @@
       }
     },
     "directPriceCollector": {
-      "activeObservations": 3,
-      "totalStarted": 11,
+      "activeObservations": 4,
+      "totalStarted": 12,
       "totalCompleted": 8,
-      "totalSnapshots": 210,
+      "totalSnapshots": 224,
       "totalSnapshotFailures": 2,
       "lastSnapshotFailures": [
         {
@@ -102,6 +101,23 @@
     }
   },
   "recent_graduations": [
+    {
+      "id": 14134,
+      "mint": "792CkmhRLTpSLDKrg31NDRDJZZFqD9bFKZ4ZoW9apump",
+      "open_price": 3.9304692727101657e-7,
+      "pct_t30": -10.711572013435303,
+      "pct_t60": null,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 0,
+      "top5_wallet_pct": 0,
+      "dev_wallet_pct": 0,
+      "token_age_minutes": 0,
+      "bc_velocity_sol_per_min": 500,
+      "total_sol_raised": 85.006827617,
+      "has_pool": true,
+      "created_at": 1775928237
+    },
     {
       "id": 14133,
       "mint": "4oFZFm3s8VKeCnwM2G5X5mZrsPivDyzCLvDYZmVipump",
@@ -125,7 +141,7 @@
       "open_price": 2.3625155415150607e-7,
       "pct_t30": -6.935289713228286,
       "pct_t60": -10.304970381645637,
-      "pct_t300": null,
+      "pct_t300": -49.674983982109346,
       "label": null,
       "holder_count": 19,
       "top5_wallet_pct": 13.8851061553009,
@@ -142,7 +158,7 @@
       "open_price": 2.362515534756641e-7,
       "pct_t30": 3.4531690267588595,
       "pct_t60": -2.75363060905696,
-      "pct_t300": null,
+      "pct_t300": -6.5103231430164845,
       "label": null,
       "holder_count": 19,
       "top5_wallet_pct": 11.6170402519595,
@@ -254,23 +270,6 @@
       "total_sol_raised": 85.007303284,
       "has_pool": true,
       "created_at": 1775922736
-    },
-    {
-      "id": 14124,
-      "mint": "13kJtdVgHra7V7VcfJ16v4zssi2c3CMYuXWA7EW1pump",
-      "open_price": 2.3625058031047487e-7,
-      "pct_t30": -1.6227927992368378,
-      "pct_t60": -23.795724642494697,
-      "pct_t300": 8.518144933153991,
-      "label": "STABLE",
-      "holder_count": 0,
-      "top5_wallet_pct": 0,
-      "dev_wallet_pct": 0,
-      "token_age_minutes": 0,
-      "bc_velocity_sol_per_min": 500,
-      "total_sol_raised": 85.006827619,
-      "has_pool": true,
-      "created_at": 1775922658
     }
   ],
   "last_error": null
