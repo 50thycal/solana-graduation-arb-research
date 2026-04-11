@@ -1,20 +1,20 @@
 {
-  "generated_at": "2026-04-11T15:27:22.129Z",
-  "uptime_sec": 602,
+  "generated_at": "2026-04-11T15:29:22.129Z",
+  "uptime_sec": 722,
   "counts": {
-    "graduations": 1900,
+    "graduations": 1901,
     "momentum_labeled": 1797,
     "pump": 716,
     "dump": 816,
     "stable": 265,
-    "unlabeled": 103
+    "unlabeled": 104
   },
   "scorecard": {
     "total_labeled": 1797,
     "PUMP": 716,
     "DUMP": 816,
     "STABLE": 265,
-    "unlabeled": 103,
+    "unlabeled": 104,
     "raw_win_rate_pct": 39.8,
     "vel_5_20_cohort": {
       "n": 197,
@@ -34,28 +34,27 @@
   "data_quality": {
     "price_source_pumpswap_all_last_10": true,
     "null_fields_in_last_10": [
-      "#14121: pct_t300",
+      "#14122: pct_t300",
       "#14119: pct_t300",
       "#14118: pct_t300",
       "#14117: pct_t300",
       "#14116: pct_t300",
-      "#14114: pct_t300",
-      "#14112: pct_t300"
+      "#14114: pct_t300"
     ],
-    "last_graduation_seconds_ago": 273,
+    "last_graduation_seconds_ago": 32,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 25962,
-    "totalCandidatesDetected": 16,
-    "totalVerifiedGraduations": 2,
-    "totalGraduationsRecorded": 2,
+    "totalLogsReceived": 31071,
+    "totalCandidatesDetected": 17,
+    "totalVerifiedGraduations": 3,
+    "totalGraduationsRecorded": 3,
     "totalFalsePositives": 10,
     "totalBundlerFalsePositives": 10,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
-    "totalVaultExtractions": 2,
+    "totalVaultExtractions": 3,
     "totalVaultExtractionFails": 0,
     "lastVaultFailReasons": [],
     "lastMintFailReasons": [],
@@ -64,13 +63,13 @@
     "reconnecting": false,
     "poolTracker": {
       "pending": 0,
-      "speculative": 0,
+      "speculative": 1,
       "preFound": 0,
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 203660,
-      "totalPoolCreationEvents": 10,
+      "totalPumpSwapEvents": 243253,
+      "totalPoolCreationEvents": 19,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
       "pumpSwapSubscribed": true,
@@ -84,22 +83,39 @@
       }
     },
     "directPriceCollector": {
-      "activeObservations": 2,
-      "totalStarted": 2,
+      "activeObservations": 3,
+      "totalStarted": 3,
       "totalCompleted": 0,
-      "totalSnapshots": 37,
+      "totalSnapshots": 45,
       "totalSnapshotFailures": 0,
       "lastSnapshotFailures": []
     }
   },
   "recent_graduations": [
     {
+      "id": 14122,
+      "mint": "Aq6XmZSohMJeRGU9WswbyQo9paEcKrTEs3xdfDFtpump",
+      "open_price": 2.362515535824841e-7,
+      "pct_t30": 3.5161775525211434,
+      "pct_t60": null,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 19,
+      "top5_wallet_pct": 3.8532065218492,
+      "dev_wallet_pct": 0.780040292594,
+      "token_age_minutes": 18,
+      "bc_velocity_sol_per_min": 4.72,
+      "total_sol_raised": 85.007301408,
+      "has_pool": true,
+      "created_at": 1775921331
+    },
+    {
       "id": 14121,
       "mint": "8MNQs9SjX68eaNpWCYLURfUeYc23BkQJPxXVZdtMpump",
       "open_price": 2.3625155416793994e-7,
       "pct_t30": -11.594836047624359,
       "pct_t60": -13.879096095853486,
-      "pct_t300": null,
+      "pct_t300": -48.258537037381515,
       "label": null,
       "holder_count": 19,
       "top5_wallet_pct": 9.8924576914299,
@@ -245,23 +261,6 @@
       "total_sol_raised": 71.132332754,
       "has_pool": true,
       "created_at": 1775917591
-    },
-    {
-      "id": 14112,
-      "mint": "qw1A8ceXZjCJAsUw4KLAZwzuZyAWEPh6U2mCgnHpump",
-      "open_price": 2.3625155937952376e-7,
-      "pct_t30": -17.577437503944644,
-      "pct_t60": -18.43533479517831,
-      "pct_t300": null,
-      "label": null,
-      "holder_count": 19,
-      "top5_wallet_pct": 13.726719538967899,
-      "dev_wallet_pct": 3.4453926513095,
-      "token_age_minutes": 360,
-      "bc_velocity_sol_per_min": 0.24,
-      "total_sol_raised": 85.00730423,
-      "has_pool": true,
-      "created_at": 1775917111
     }
   ],
   "last_error": null
