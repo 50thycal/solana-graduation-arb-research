@@ -2415,6 +2415,339 @@ async function main() {
       // by runFilterPanel4 (src/index.ts:2342). Used by Panels 5 & 6.
       type Panel4Optimal = { tp: number; sl: number; avg_ret: number; win_rate: number } | null;
 
+      // ── Panel 10: Dynamic Position Monitoring (DPM) EV Optimizer ──
+      //
+      // For each filter, brute-force the DPM parameter grid to find the combo
+      // that maximizes avg return. Base TP/SL held fixed at 30/10 (thesis
+      // defaults) so only DPM params vary. Mirrors the layered SL logic in
+      // src/trading/position-manager.ts checkPosition(). Also aggregates
+      // best DPM combos per filter category and overall.
+      const PANEL_10_BASE_TP = 30;
+      const PANEL_10_BASE_SL = 10;
+      const PANEL_10_SL_GAP_PENALTY = 0.20;
+      const PANEL_10_TP_GAP_PENALTY = 0.10;
+      const PANEL_10_MIN_N = 30;
+      const PANEL_10_MIN_ACTIVE_EXITS = 3;
+
+      // checkpoint → seconds since entry (T+30)
+      const PANEL_10_CHECKPOINT_DELAYS: Record<string, number> = {
+        pct_t40: 10, pct_t50: 20, pct_t60: 30, pct_t90: 60,
+        pct_t120: 90, pct_t150: 120, pct_t180: 150, pct_t240: 210,
+      };
+
+      // Paired trailing-SL configs (activation / distance) — keeps grid compact
+      // and avoids nonsensical combinations where distance >= activation.
+      const PANEL_10_TRAILING_SL = [
+        { act: 0,  dist: 0,  label: 'off' },
+        { act: 5,  dist: 3,  label: '5/3' },
+        { act: 10, dist: 5,  label: '10/5' },
+        { act: 15, dist: 7,  label: '15/7' },
+        { act: 20, dist: 10, label: '20/10' },
+      ] as const;
+      const PANEL_10_SL_DELAY_SEC = [0, 10, 30, 60] as const;
+      const PANEL_10_TRAILING_TP = [
+        { en: false, drop: 0,  label: 'off' },
+        { en: true,  drop: 3,  label: 'drop3' },
+        { en: true,  drop: 5,  label: 'drop5' },
+        { en: true,  drop: 10, label: 'drop10' },
+      ] as const;
+      const PANEL_10_BREAKEVEN = [0, 10, 15, 20] as const;
+
+      type DpmCombo = {
+        tsIdx: number;     // index into PANEL_10_TRAILING_SL
+        sdIdx: number;     // index into PANEL_10_SL_DELAY_SEC
+        ttIdx: number;     // index into PANEL_10_TRAILING_TP
+        beIdx: number;     // index into PANEL_10_BREAKEVEN
+      };
+
+      const PANEL_10_COMBO_COUNT =
+        PANEL_10_TRAILING_SL.length *
+        PANEL_10_SL_DELAY_SEC.length *
+        PANEL_10_TRAILING_TP.length *
+        PANEL_10_BREAKEVEN.length; // = 5*4*4*4 = 320
+
+      const panel10ComboIdx = (c: DpmCombo): number =>
+        c.tsIdx * (PANEL_10_SL_DELAY_SEC.length * PANEL_10_TRAILING_TP.length * PANEL_10_BREAKEVEN.length) +
+        c.sdIdx * (PANEL_10_TRAILING_TP.length * PANEL_10_BREAKEVEN.length) +
+        c.ttIdx * PANEL_10_BREAKEVEN.length +
+        c.beIdx;
+
+      const panel10DecodeIdx = (idx: number): DpmCombo => {
+        const beSize = PANEL_10_BREAKEVEN.length;
+        const ttSize = PANEL_10_TRAILING_TP.length;
+        const sdSize = PANEL_10_SL_DELAY_SEC.length;
+        const beIdx = idx % beSize;
+        const ttIdx = Math.floor(idx / beSize) % ttSize;
+        const sdIdx = Math.floor(idx / (beSize * ttSize)) % sdSize;
+        const tsIdx = Math.floor(idx / (beSize * ttSize * sdSize));
+        return { tsIdx, sdIdx, ttIdx, beIdx };
+      };
+
+      type DpmExitType = 'stop_loss' | 'trailing_stop' | 'breakeven_stop' | 'take_profit' | 'trailing_tp' | 'fall_through';
+
+      /**
+       * Simulate a single token under one DPM combo. Base TP=30, SL=10.
+       * Mirrors position-manager.ts checkPosition logic: layered SL composition
+       * (each rule can only raise the floor), HWM tracking, SL activation delay,
+       * trailing TP with post-TP peak tracking.
+       * Returns { ret, exitType } — ret is cost-adjusted.
+       */
+      const simulateDpmInMemory = (r: Panel4Row, combo: DpmCombo): { ret: number; exitType: DpmExitType } => {
+        const trailingSl = PANEL_10_TRAILING_SL[combo.tsIdx];
+        const slDelay = PANEL_10_SL_DELAY_SEC[combo.sdIdx];
+        const trailingTp = PANEL_10_TRAILING_TP[combo.ttIdx];
+        const breakeven = PANEL_10_BREAKEVEN[combo.beIdx];
+
+        const entryRatio = 1 + r.pct_t30 / 100;
+        let hwm = 0;              // peak relative return (% from entry)
+        let postTpPeak = 0;       // peak relative return after TP hit (for trailing TP)
+        let tpHit = false;
+        let trailingSlActive = false;
+
+        const checkpointKeys: (keyof typeof PANEL_10_CHECKPOINT_DELAYS)[] = [
+          'pct_t40', 'pct_t50', 'pct_t60', 'pct_t90',
+          'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240',
+        ];
+
+        for (const cp of checkpointKeys) {
+          const v = (r as any)[cp];
+          if (v == null) continue;
+          const relRet = ((1 + v / 100) / entryRatio - 1) * 100;
+          const secondsSinceEntry = PANEL_10_CHECKPOINT_DELAYS[cp];
+
+          if (relRet > hwm) hwm = relRet;
+
+          // Compute effective SL (layered — each rule can only raise the floor).
+          // effSl is stored as a percentage return from entry (e.g. -10 = -10% from entry).
+          let effSl = -PANEL_10_BASE_SL;
+
+          // Breakeven stop
+          if (breakeven > 0 && hwm >= breakeven) {
+            if (0 > effSl) effSl = 0;
+          }
+
+          // Trailing SL — price-ratio based (matches position-manager.ts)
+          if (trailingSl.act > 0) {
+            if (hwm >= trailingSl.act) trailingSlActive = true;
+            if (trailingSlActive) {
+              const hwmRatio = 1 + hwm / 100;
+              const trailingSlRatio = hwmRatio * (1 - trailingSl.dist / 100);
+              const trailingSlPct = (trailingSlRatio - 1) * 100;
+              if (trailingSlPct > effSl) effSl = trailingSlPct;
+            }
+          }
+
+          // SL activation delay — suppress SL exits during the grace window
+          const slActive = secondsSinceEntry >= slDelay;
+
+          // Check SL exit (SL first, like Panel 4)
+          if (slActive && relRet <= effSl) {
+            // Adverse gap = 20% of the distance from peak to SL trigger
+            const distanceFromPeak = hwm - effSl;
+            const adverseGap = PANEL_10_SL_GAP_PENALTY * distanceFromPeak;
+            const realized = effSl - adverseGap;
+            let exitType: DpmExitType;
+            if (trailingSlActive && effSl > -PANEL_10_BASE_SL) {
+              // Trailing or breakeven set the floor above the fixed SL
+              if (effSl <= 0.001) exitType = 'breakeven_stop';
+              else exitType = 'trailing_stop';
+            } else {
+              exitType = 'stop_loss';
+            }
+            return { ret: realized - r.cost_pct, exitType };
+          }
+
+          // Check TP exit
+          if (trailingTp.en) {
+            if (relRet >= PANEL_10_BASE_TP) tpHit = true;
+            if (tpHit) {
+              if (relRet > postTpPeak) postTpPeak = relRet;
+              // Drop from peak in price-ratio terms (mirrors position-manager.ts)
+              const postTpPeakRatio = 1 + postTpPeak / 100;
+              const currRatio = 1 + relRet / 100;
+              const dropFromPeakPct = ((postTpPeakRatio - currRatio) / postTpPeakRatio) * 100;
+              if (dropFromPeakPct >= trailingTp.drop) {
+                const realized = relRet * (1 - PANEL_10_TP_GAP_PENALTY);
+                return { ret: realized - r.cost_pct, exitType: 'trailing_tp' };
+              }
+            }
+          } else {
+            // Fixed TP
+            if (relRet >= PANEL_10_BASE_TP) {
+              const realized = PANEL_10_BASE_TP * (1 - PANEL_10_TP_GAP_PENALTY);
+              return { ret: realized - r.cost_pct, exitType: 'take_profit' };
+            }
+          }
+        }
+
+        // Fall-through at T+300 (guaranteed non-null by eligibility predicate)
+        const fallRet = ((1 + r.pct_t300 / 100) / entryRatio - 1) * 100 - r.cost_pct;
+        return { ret: fallRet, exitType: 'fall_through' };
+      };
+
+      type Panel10ComboResult = {
+        avg_ret: number;    // per-combo avg return
+        win_rate: number;   // per-combo win %
+        active_exits: number; // non-fall-through exits (used for gating optimum)
+      };
+      type Panel10Optimal = {
+        trailing_sl: string;     // e.g. '10/5' or 'off'
+        sl_delay: number;
+        trailing_tp: string;     // e.g. 'drop5' or 'off'
+        breakeven: number;
+        avg_ret: number;
+        win_rate: number;
+        fallthrough_avg_ret: number; // all-DPM-off baseline for this filter
+      } | null;
+      type Panel10FilterResult = {
+        filter: string;
+        group: string;
+        n: number;
+        combos: Panel10ComboResult[];  // length = PANEL_10_COMBO_COUNT
+        optimal: Panel10Optimal;
+      };
+
+      const runFilterPanel10 = (
+        filterName: string,
+        group: string,
+        predicate: (r: Panel4Row) => boolean,
+      ): Panel10FilterResult => {
+        const filtered = panel4Rows.filter(predicate);
+        const n = filtered.length;
+        const combos: Panel10ComboResult[] = new Array(PANEL_10_COMBO_COUNT);
+        for (let i = 0; i < PANEL_10_COMBO_COUNT; i++) {
+          combos[i] = { avg_ret: 0, win_rate: 0, active_exits: 0 };
+        }
+        let optimal: Panel10Optimal = null;
+
+        if (n === 0) {
+          return { filter: filterName, group, n: 0, combos, optimal };
+        }
+
+        // "Fallthrough" combo = all DPM features off (trailingSl=off, slDelay=0,
+        // trailingTp=off, breakeven=0). This is the pure fixed 30/10 baseline.
+        const fallthroughIdx = panel10ComboIdx({ tsIdx: 0, sdIdx: 0, ttIdx: 0, beIdx: 0 });
+
+        for (let idx = 0; idx < PANEL_10_COMBO_COUNT; idx++) {
+          const combo = panel10DecodeIdx(idx);
+          let sum = 0;
+          let wins = 0;
+          let active = 0;
+          for (let k = 0; k < n; k++) {
+            const out = simulateDpmInMemory(filtered[k], combo);
+            sum += out.ret;
+            if (out.ret > 0) wins++;
+            if (out.exitType !== 'fall_through') active++;
+          }
+          combos[idx] = {
+            avg_ret: +(sum / n).toFixed(2),
+            win_rate: Math.round((wins / n) * 100),
+            active_exits: active,
+          };
+        }
+
+        // Find the optimum: max avg_ret gated by n ≥ 30 AND ≥3 active exits.
+        if (n >= PANEL_10_MIN_N) {
+          let bestIdx = -1;
+          let bestAvg = -Infinity;
+          for (let i = 0; i < PANEL_10_COMBO_COUNT; i++) {
+            if (combos[i].active_exits < PANEL_10_MIN_ACTIVE_EXITS) continue;
+            if (combos[i].avg_ret > bestAvg) {
+              bestAvg = combos[i].avg_ret;
+              bestIdx = i;
+            }
+          }
+          if (bestIdx !== -1) {
+            const c = panel10DecodeIdx(bestIdx);
+            optimal = {
+              trailing_sl: PANEL_10_TRAILING_SL[c.tsIdx].label,
+              sl_delay: PANEL_10_SL_DELAY_SEC[c.sdIdx],
+              trailing_tp: PANEL_10_TRAILING_TP[c.ttIdx].label,
+              breakeven: PANEL_10_BREAKEVEN[c.beIdx],
+              avg_ret: combos[bestIdx].avg_ret,
+              win_rate: combos[bestIdx].win_rate,
+              fallthrough_avg_ret: combos[fallthroughIdx].avg_ret,
+            };
+          }
+        }
+
+        return { filter: filterName, group, n, combos, optimal };
+      };
+
+      const baseline10 = runFilterPanel10('ALL labeled (no filter)', 'Baseline', () => true);
+      const filters10 = PANEL_1_FILTERS.map(f =>
+        runFilterPanel10(f.name, f.group, f.predicate as (r: Panel4Row) => boolean)
+      );
+
+      /**
+       * Given a list of per-filter panel-10 results, find the single DPM combo
+       * that maximizes n-weighted avg return across those filters. Used for
+       * per-category and overall aggregates.
+       */
+      const findAggregateOptimum = (
+        results: Panel10FilterResult[],
+      ): Panel10Optimal => {
+        // Only consider filters with n >= 30 (same gate as per-filter optimum)
+        const eligible = results.filter(r => r.n >= PANEL_10_MIN_N);
+        if (eligible.length === 0) return null;
+
+        // For each combo: compute n-weighted avg of per-filter avg_rets.
+        // Also require total active exits across all filters to be meaningful.
+        let bestIdx = -1;
+        let bestWeightedAvg = -Infinity;
+        const totalN = eligible.reduce((s, f) => s + f.n, 0);
+        for (let i = 0; i < PANEL_10_COMBO_COUNT; i++) {
+          let weightedSum = 0;
+          let totalActive = 0;
+          for (const f of eligible) {
+            weightedSum += f.n * f.combos[i].avg_ret;
+            totalActive += f.combos[i].active_exits;
+          }
+          if (totalActive < PANEL_10_MIN_ACTIVE_EXITS * eligible.length) continue;
+          const weightedAvg = weightedSum / totalN;
+          if (weightedAvg > bestWeightedAvg) {
+            bestWeightedAvg = weightedAvg;
+            bestIdx = i;
+          }
+        }
+
+        if (bestIdx === -1) return null;
+        const c = panel10DecodeIdx(bestIdx);
+        // Compute n-weighted avg fallthrough and win rate for the winning combo
+        const fallthroughIdx = panel10ComboIdx({ tsIdx: 0, sdIdx: 0, ttIdx: 0, beIdx: 0 });
+        let fallthroughWeightedSum = 0;
+        let winRateWeightedSum = 0;
+        for (const f of eligible) {
+          fallthroughWeightedSum += f.n * f.combos[fallthroughIdx].avg_ret;
+          winRateWeightedSum += f.n * f.combos[bestIdx].win_rate;
+        }
+        return {
+          trailing_sl: PANEL_10_TRAILING_SL[c.tsIdx].label,
+          sl_delay: PANEL_10_SL_DELAY_SEC[c.sdIdx],
+          trailing_tp: PANEL_10_TRAILING_TP[c.ttIdx].label,
+          breakeven: PANEL_10_BREAKEVEN[c.beIdx],
+          avg_ret: +bestWeightedAvg.toFixed(2),
+          win_rate: Math.round(winRateWeightedSum / totalN),
+          fallthrough_avg_ret: +(fallthroughWeightedSum / totalN).toFixed(2),
+        };
+      };
+
+      // Group filters by category and compute per-category aggregate optima
+      const groups10Map = new Map<string, Panel10FilterResult[]>();
+      for (const f of filters10) {
+        if (!groups10Map.has(f.group)) groups10Map.set(f.group, []);
+        groups10Map.get(f.group)!.push(f);
+      }
+      const categoryAggregates10 = Array.from(groups10Map.entries()).map(([group, results]) => ({
+        group,
+        filter_count: results.length,
+        eligible_count: results.filter(r => r.n >= PANEL_10_MIN_N).length,
+        optimal: findAggregateOptimum(results),
+      }));
+
+      // Overall aggregate: across all filters
+      const overallAggregate10 = findAggregateOptimum(filters10);
+
       // ── Panel 5 helpers: statistical significance ──
       //
       // Wilson score 95% confidence interval for a binomial proportion.
@@ -3186,6 +3519,34 @@ async function main() {
             'Simulates trading every qualifying token in chronological order at each filter\'s Panel 4 optimum TP/SL. Equity starts at 1.0 and compounds geometrically (per-trade returns are clamped at −99% to avoid zero-out pathology). Final equity multiplier, max drawdown, longest losing streak, per-trade Sharpe, and Kelly-optimal bet fraction. The sparkline shows the down-sampled equity curve (≤60 points). This converts "avg return per trade" into the portfolio view you\'d actually experience.',
           baseline: baseline9,
           filters: filters9,
+          flags: {
+            low_n_threshold: 30,
+            strong_n_threshold: 100,
+          },
+        },
+        panel10: {
+          title: 'Dynamic Position Monitoring (DPM) Optimizer — Per-Filter, Per-Category, Overall',
+          description:
+            'For each filter, brute-force a 320-cell grid of DPM parameter combos (trailing SL, SL activation delay, trailing TP, breakeven stop) to find the set that maximizes avg return. Base TP/SL held fixed at 30/10 (thesis defaults) so only DPM values vary. Mirrors the layered SL logic in position-manager.ts exactly: HWM tracking, composable SL floors (each rule can only raise), SL activation delay, price-ratio trailing distances. Also reports the best DPM combo for each filter category (n-weighted across filters in the category) and the best DPM combo across ALL filters (n-weighted). Per-filter optimum gated by n≥30 AND ≥3 non-fall-through exits.',
+          constants: {
+            base_tp_pct: PANEL_10_BASE_TP,
+            base_sl_pct: PANEL_10_BASE_SL,
+            sl_gap_penalty_pct: PANEL_10_SL_GAP_PENALTY * 100,
+            tp_gap_penalty_pct: PANEL_10_TP_GAP_PENALTY * 100,
+            min_n_for_optimum: PANEL_10_MIN_N,
+            min_active_exits_for_optimum: PANEL_10_MIN_ACTIVE_EXITS,
+            combo_count: PANEL_10_COMBO_COUNT,
+          },
+          grid: {
+            trailing_sl: PANEL_10_TRAILING_SL.map(x => ({ label: x.label, activation_pct: x.act, distance_pct: x.dist })),
+            sl_delay_sec: PANEL_10_SL_DELAY_SEC,
+            trailing_tp: PANEL_10_TRAILING_TP.map(x => ({ label: x.label, enabled: x.en, drop_pct: x.drop })),
+            breakeven_pct: PANEL_10_BREAKEVEN,
+          },
+          baseline: baseline10,
+          filters: filters10.map(f => ({ filter: f.filter, group: f.group, n: f.n, optimal: f.optimal })),
+          category_aggregates: categoryAggregates10,
+          overall_aggregate: overallAggregate10,
           flags: {
             low_n_threshold: 30,
             strong_n_threshold: 100,
