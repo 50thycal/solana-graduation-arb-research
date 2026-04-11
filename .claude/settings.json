@@ -1,9 +1,9 @@
 {
-  "_comment": "RAILWAY_URL: public base URL of the deployed bot. GIST_*_URL: set automatically after first deploy with GITHUB_TOKEN — check Railway logs for 'GIST_DIAGNOSE_URL=...' and paste here.",
+  "_comment": "RAILWAY_URL: public base URL of the deployed bot. GIST_*_URL: raw.githubusercontent.com URLs for the bot-status branch, updated every 2 min by the bot.",
   "env": {
     "RAILWAY_URL": "https://solana-graduation-arb-research-production.up.railway.app/",
-    "GIST_DIAGNOSE_URL": "",
-    "GIST_SNAPSHOT_URL": "",
-    "GIST_BEST_COMBOS_URL": ""
+    "GIST_DIAGNOSE_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/diagnose.json",
+    "GIST_SNAPSHOT_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/snapshot.json",
+    "GIST_BEST_COMBOS_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/best-combos.json"
   }
 }

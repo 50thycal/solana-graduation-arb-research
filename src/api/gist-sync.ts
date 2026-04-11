@@ -1,16 +1,20 @@
 /**
  * src/api/gist-sync.ts
  *
- * Pushes a snapshot of /api/diagnose, /api/snapshot, and /api/best-combos to
- * a public GitHub Gist every SYNC_INTERVAL_MS so Claude can self-serve via
- * WebFetch (Railway's edge blocks Anthropic IPs; gist.githubusercontent.com
- * does not).
+ * Pushes diagnose.json, snapshot.json, and best-combos.json to a dedicated
+ * `bot-status` branch in the GitHub repo every SYNC_INTERVAL_MS. Because
+ * raw.githubusercontent.com is accessible from Anthropic's WebFetch (while
+ * gist.githubusercontent.com and Railway's edge are not), this lets Claude
+ * self-serve bot state without the human being a middleman.
  *
- * Required env var: GITHUB_TOKEN — a personal access token with `gist` scope.
+ * Required env var: GITHUB_TOKEN — a personal access token with `public_repo`
+ *   scope (classic token) or Contents:Write (fine-grained token).
  * Optional env var: GIST_SYNC_INTERVAL_MS — defaults to 120000 (2 min).
  *
- * The Gist ID is persisted in the bot_settings DB table so it survives
- * restarts without creating a new Gist each time.
+ * Files are written to the root of the `bot-status` branch:
+ *   https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/diagnose.json
+ *   https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/snapshot.json
+ *   https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/best-combos.json
  */
 
 import type Database from 'better-sqlite3';
@@ -27,25 +31,20 @@ import type { LogBuffer } from '../utils/log-buffer';
 
 const logger = makeLogger('gist-sync');
 
-const GIST_API = 'https://api.github.com/gists';
-const GIST_DESCRIPTION = 'solana-graduation-arb-research bot status (auto-updated)';
+const GITHUB_API = 'https://api.github.com';
+const OWNER = '50thycal';
+const REPO = 'solana-graduation-arb-research';
+const BRANCH = 'bot-status';
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
-interface GistFile {
-  raw_url: string;
-}
+const STATUS_FILES = ['diagnose.json', 'snapshot.json', 'best-combos.json'] as const;
+type StatusFile = (typeof STATUS_FILES)[number];
 
-interface GistResponse {
-  id: string;
-  html_url: string;
-  files: Record<string, GistFile>;
-}
-
-export interface GistUrls {
+export interface StatusUrls {
   diagnose: string;
   snapshot: string;
   best_combos: string;
-  gist_html: string;
+  branch_html: string;
 }
 
 export class GistSync {
@@ -57,8 +56,8 @@ export class GistSync {
   private readonly intervalMs: number;
 
   private timer: ReturnType<typeof setInterval> | null = null;
-  private gistId: string | null = null;
-  private urls: GistUrls | null = null;
+  // Cached blob SHAs — required by GitHub Contents API to overwrite files.
+  private fileShas = new Map<StatusFile, string>();
 
   constructor(opts: {
     db: Database.Database;
@@ -72,22 +71,22 @@ export class GistSync {
     this.startTime = opts.startTime;
     this.getListenerStats = opts.getListenerStats;
     this.token = opts.token;
-    this.intervalMs = parseInt(process.env.GIST_SYNC_INTERVAL_MS ?? String(DEFAULT_INTERVAL_MS), 10);
+    this.intervalMs = parseInt(
+      process.env.GIST_SYNC_INTERVAL_MS ?? String(DEFAULT_INTERVAL_MS),
+      10,
+    );
   }
 
   async start(): Promise<void> {
-    this.gistId = this.loadGistId();
-    if (this.gistId) {
-      logger.info({ gistId: this.gistId }, 'Resuming existing Gist');
-    }
-
+    await this.ensureBranch();
+    await this.loadFileShas();
     await this.sync();
 
     this.timer = setInterval(() => {
-      this.sync().catch((err) => logger.error({ err }, 'Gist sync failed'));
+      this.sync().catch((err) => logger.error({ err }, 'Status sync failed'));
     }, this.intervalMs);
 
-    logger.info({ intervalMs: this.intervalMs }, 'Gist sync scheduled');
+    logger.info({ intervalMs: this.intervalMs, branch: BRANCH }, 'Status sync scheduled');
   }
 
   stop(): void {
@@ -97,13 +96,81 @@ export class GistSync {
     }
   }
 
-  getUrls(): GistUrls | null {
-    return this.urls;
+  getUrls(): StatusUrls {
+    const base = `https://raw.githubusercontent.com/${OWNER}/${REPO}/${BRANCH}`;
+    return {
+      diagnose: `${base}/diagnose.json`,
+      snapshot: `${base}/snapshot.json`,
+      best_combos: `${base}/best-combos.json`,
+      branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
+    };
   }
 
   // ── private ──────────────────────────────────────────────────
 
-  private buildFiles(): Record<string, { content: string }> {
+  private async ensureBranch(): Promise<void> {
+    const resp = await fetch(
+      `${GITHUB_API}/repos/${OWNER}/${REPO}/branches/${BRANCH}`,
+      { headers: this.headers() },
+    );
+
+    if (resp.ok) {
+      logger.info({ branch: BRANCH }, 'bot-status branch exists');
+      return;
+    }
+
+    if (resp.status !== 404) {
+      throw new Error(`Branch check failed: ${resp.status} ${await resp.text()}`);
+    }
+
+    // Create bot-status from current HEAD of main.
+    const mainResp = await fetch(
+      `${GITHUB_API}/repos/${OWNER}/${REPO}/git/ref/heads/main`,
+      { headers: this.headers() },
+    );
+    if (!mainResp.ok) {
+      throw new Error(`Could not read main branch SHA: ${mainResp.status}`);
+    }
+    const mainData = (await mainResp.json()) as { object: { sha: string } };
+
+    const createResp = await fetch(
+      `${GITHUB_API}/repos/${OWNER}/${REPO}/git/refs`,
+      {
+        method: 'POST',
+        headers: this.headers(),
+        body: JSON.stringify({
+          ref: `refs/heads/${BRANCH}`,
+          sha: mainData.object.sha,
+        }),
+      },
+    );
+
+    if (!createResp.ok) {
+      throw new Error(`Failed to create branch: ${createResp.status} ${await createResp.text()}`);
+    }
+
+    logger.info({ branch: BRANCH }, 'bot-status branch created');
+  }
+
+  private async loadFileShas(): Promise<void> {
+    for (const filename of STATUS_FILES) {
+      try {
+        const resp = await fetch(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${filename}?ref=${BRANCH}`,
+          { headers: this.headers() },
+        );
+        if (resp.ok) {
+          const data = (await resp.json()) as { sha: string };
+          this.fileShas.set(filename, data.sha);
+        }
+        // 404 = file not yet created, skip — PUT without sha will create it.
+      } catch (err) {
+        logger.warn({ err, filename }, 'Could not pre-load file SHA');
+      }
+    }
+  }
+
+  private buildPayloads(): Record<StatusFile, string> {
     const nowMs = Date.now();
 
     const diagnose = runDiagnosis(this.db, this.logBuffer);
@@ -139,70 +206,50 @@ export class GistSync {
     });
 
     return {
-      'diagnose.json': { content: JSON.stringify(diagnose, null, 2) },
-      'snapshot.json': { content: JSON.stringify(snapshot, null, 2) },
-      'best-combos.json': { content: JSON.stringify(bestCombos, null, 2) },
+      'diagnose.json': JSON.stringify(diagnose, null, 2),
+      'snapshot.json': JSON.stringify(snapshot, null, 2),
+      'best-combos.json': JSON.stringify(bestCombos, null, 2),
     };
   }
 
   private async sync(): Promise<void> {
-    const files = this.buildFiles();
+    const payloads = this.buildPayloads();
 
-    try {
-      let data: GistResponse;
+    for (const filename of STATUS_FILES) {
+      const content = payloads[filename];
+      const encoded = Buffer.from(content).toString('base64');
+      const currentSha = this.fileShas.get(filename);
 
-      if (this.gistId) {
-        const resp = await fetch(`${GIST_API}/${this.gistId}`, {
-          method: 'PATCH',
-          headers: this.headers(),
-          body: JSON.stringify({ files }),
-        });
-
-        if (resp.status === 404) {
-          // Gist was deleted externally — create a fresh one.
-          logger.warn({ gistId: this.gistId }, 'Gist not found, recreating');
-          this.gistId = null;
-          this.clearGistId();
-          await this.sync();
-          return;
-        }
-
-        if (!resp.ok) {
-          throw new Error(`Gist PATCH ${resp.status}: ${await resp.text()}`);
-        }
-
-        data = (await resp.json()) as GistResponse;
-        logger.debug({ gistId: this.gistId }, 'Gist updated');
-      } else {
-        const resp = await fetch(GIST_API, {
-          method: 'POST',
-          headers: this.headers(),
-          body: JSON.stringify({
-            description: GIST_DESCRIPTION,
-            public: true,
-            files,
-          }),
-        });
-
-        if (!resp.ok) {
-          throw new Error(`Gist POST ${resp.status}: ${await resp.text()}`);
-        }
-
-        data = (await resp.json()) as GistResponse;
-        this.gistId = data.id;
-        this.saveGistId(data.id);
-        logger.info({ gistId: this.gistId, html_url: data.html_url }, 'Gist created');
-      }
-
-      this.urls = {
-        diagnose: data.files['diagnose.json']?.raw_url ?? '',
-        snapshot: data.files['snapshot.json']?.raw_url ?? '',
-        best_combos: data.files['best-combos.json']?.raw_url ?? '',
-        gist_html: data.html_url,
+      const body: Record<string, unknown> = {
+        message: `bot: update ${filename} [skip ci]`,
+        content: encoded,
+        branch: BRANCH,
       };
-    } catch (err) {
-      logger.error({ err }, 'Gist sync error');
+      if (currentSha) body.sha = currentSha;
+
+      try {
+        const resp = await fetch(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${filename}`,
+          {
+            method: 'PUT',
+            headers: this.headers(),
+            body: JSON.stringify(body),
+          },
+        );
+
+        if (resp.ok) {
+          const data = (await resp.json()) as { content: { sha: string } };
+          this.fileShas.set(filename, data.content.sha);
+        } else {
+          const text = await resp.text();
+          logger.error({ filename, status: resp.status, body: text }, 'File PUT failed');
+        }
+      } catch (err) {
+        logger.error({ err, filename }, 'File PUT threw');
+      }
     }
+
+    logger.debug({ branch: BRANCH }, 'Status files updated');
   }
 
   private headers(): Record<string, string> {
@@ -212,34 +259,5 @@ export class GistSync {
       Accept: 'application/vnd.github.v3+json',
       'User-Agent': 'solana-graduation-arb-research-bot',
     };
-  }
-
-  private loadGistId(): string | null {
-    try {
-      const row = this.db
-        .prepare('SELECT value FROM bot_settings WHERE key = ?')
-        .get('gist_id') as { value: string } | undefined;
-      return row?.value ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  private saveGistId(id: string): void {
-    try {
-      this.db
-        .prepare('INSERT OR REPLACE INTO bot_settings (key, value) VALUES (?, ?)')
-        .run('gist_id', id);
-    } catch (err) {
-      logger.error({ err }, 'Failed to persist Gist ID');
-    }
-  }
-
-  private clearGistId(): void {
-    try {
-      this.db.prepare('DELETE FROM bot_settings WHERE key = ?').run('gist_id');
-    } catch {
-      // best-effort
-    }
   }
 }
