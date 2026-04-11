@@ -1,15 +1,15 @@
 {
-  "generated_at": "2026-04-11T16:54:38.232Z",
+  "generated_at": "2026-04-11T16:56:38.233Z",
   "verdict": "LEVEL1_FAIL",
-  "next_action": "Last graduation 848s ago — listener may be disconnected or RPC stalled.",
+  "next_action": "Last graduation 968s ago — listener may be disconnected or RPC stalled.",
   "level1_bot_running": {
     "pass": false,
     "evidence": {
       "total_graduations": 1908,
-      "last_graduation_seconds_ago": 848,
+      "last_graduation_seconds_ago": 968,
       "stall_threshold_seconds": 600
     },
-    "notes": "Last graduation 848s ago — listener may be disconnected or RPC stalled."
+    "notes": "Last graduation 968s ago — listener may be disconnected or RPC stalled."
   },
   "level2_price_capture": {
     "pass": true,
