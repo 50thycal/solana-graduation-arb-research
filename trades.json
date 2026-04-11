@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-04-11T16:00:38.204Z",
+  "generated_at": "2026-04-11T16:02:38.204Z",
   "stats": [
     {
       "mode": "paper",
@@ -233,9 +233,9 @@
       "net_return_pct": 31.94951682910771,
       "filter_results_json": "[{\"label\":\"mono>0.5\",\"field\":\"monotonicity_0_30\",\"operator\":\">\",\"threshold\":\">0.5\",\"actualValue\":1,\"passed\":true}]",
       "filter_config_json": "[{\"field\":\"monotonicity_0_30\",\"operator\":\">\",\"value\":0.5,\"label\":\"mono>0.5\"}]",
-      "momentum_pct_t60": null,
-      "momentum_pct_t120": null,
-      "momentum_pct_t300": null,
+      "momentum_pct_t60": 25.710852567970928,
+      "momentum_pct_t120": 26.120613472551696,
+      "momentum_pct_t300": 100.88830928318573,
       "momentum_label": null,
       "created_at": 1775922765,
       "strategy_id": "mono05",
@@ -274,9 +274,9 @@
       "net_return_pct": 9.335213723097134,
       "filter_results_json": "[{\"label\":\"mono>0.5\",\"field\":\"monotonicity_0_30\",\"operator\":\">\",\"threshold\":\">0.5\",\"actualValue\":1,\"passed\":true}]",
       "filter_config_json": "[{\"field\":\"monotonicity_0_30\",\"operator\":\">\",\"value\":0.5,\"label\":\"mono>0.5\"}]",
-      "momentum_pct_t60": null,
-      "momentum_pct_t120": null,
-      "momentum_pct_t300": null,
+      "momentum_pct_t60": 25.710852567970928,
+      "momentum_pct_t120": 26.120613472551696,
+      "momentum_pct_t300": 100.88830928318573,
       "momentum_label": null,
       "created_at": 1775922765,
       "strategy_id": "mono05-dpm",
