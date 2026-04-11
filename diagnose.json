@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-04-11T17:22:38.237Z",
+  "generated_at": "2026-04-11T17:24:38.237Z",
   "verdict": "HEALTHY",
   "next_action": "All checks pass. Safe to interpret /api/snapshot and /api/best-combos as real signal.",
   "level1_bot_running": {
     "pass": true,
     "evidence": {
-      "total_graduations": 1912,
-      "last_graduation_seconds_ago": 158,
+      "total_graduations": 1913,
+      "last_graduation_seconds_ago": 42,
       "stall_threshold_seconds": 600
     },
     "notes": "Bot is receiving graduations."
@@ -17,7 +17,7 @@
       "sample_size": 50,
       "null_open_price_count": 0,
       "null_open_price_rate": 0,
-      "null_pct_t300_count": 9,
+      "null_pct_t300_count": 8,
       "no_pumpswap_pool_count": 0,
       "no_pumpswap_pool_rate": 0,
       "first_bad_row_id": null
@@ -42,5 +42,18 @@
     },
     "notes": "Label logic matches expected rule on recent rows."
   },
-  "recent_errors": []
+  "recent_errors": [
+    {
+      "ts": "2026-04-11T17:24:06.002Z",
+      "level": "error",
+      "name": "competition-detector",
+      "msg": "Competition detection failed for grad 14134: Non-base58 character"
+    },
+    {
+      "ts": "2026-04-11T17:24:31.003Z",
+      "level": "error",
+      "name": "competition-detector",
+      "msg": "Buy pressure detection failed for grad 14134: Non-base58 character"
+    }
+  ]
 }
