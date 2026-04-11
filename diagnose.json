@@ -1,12 +1,12 @@
 {
-  "generated_at": "2026-04-11T17:08:38.237Z",
+  "generated_at": "2026-04-11T17:10:38.236Z",
   "verdict": "HEALTHY",
   "next_action": "All checks pass. Safe to interpret /api/snapshot and /api/best-combos as real signal.",
   "level1_bot_running": {
     "pass": true,
     "evidence": {
       "total_graduations": 1909,
-      "last_graduation_seconds_ago": 363,
+      "last_graduation_seconds_ago": 483,
       "stall_threshold_seconds": 600
     },
     "notes": "Bot is receiving graduations."
