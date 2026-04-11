@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-11T15:36:36.288Z",
-  "uptime_sec": 0,
+  "generated_at": "2026-04-11T15:38:38.198Z",
+  "uptime_sec": 122,
   "counts": {
     "graduations": 1901,
     "momentum_labeled": 1799,
@@ -40,12 +40,12 @@
       "#14116: pct_t300",
       "#14114: pct_t300"
     ],
-    "last_graduation_seconds_ago": 466,
+    "last_graduation_seconds_ago": 588,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 0,
+    "totalLogsReceived": 5408,
     "totalCandidatesDetected": 0,
     "totalVerifiedGraduations": 0,
     "totalGraduationsRecorded": 0,
@@ -67,7 +67,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 0,
+      "totalPumpSwapEvents": 41720,
       "totalPoolCreationEvents": 0,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
