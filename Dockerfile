@@ -24,9 +24,9 @@ RUN mkdir -p /app/data
 ENV DATA_DIR=/app/data
 ENV HEALTH_PORT=8080
 
-EXPOSE 8080
+EXPOSE 8080 8888
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-  CMD node -e "fetch('http://localhost:8080/health').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
+  CMD node -e "const p=process.env.PORT||process.env.HEALTH_PORT||'8080';fetch('http://localhost:'+p+'/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
 
 CMD ["node", "dist/index.js"]

@@ -97,7 +97,7 @@ async function main() {
   const db = initDatabase(dataDir);
 
   // Start health/API server first so we can always debug via /health
-  const healthPort = parseInt(process.env.HEALTH_PORT || '8080', 10);
+  const healthPort = parseInt(process.env.PORT || process.env.HEALTH_PORT || '8080', 10);
   const app = express();
   app.use(express.json());
 
