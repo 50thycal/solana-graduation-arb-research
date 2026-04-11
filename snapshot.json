@@ -1,20 +1,20 @@
 {
-  "generated_at": "2026-04-11T15:50:38.202Z",
-  "uptime_sec": 842,
+  "generated_at": "2026-04-11T15:52:38.202Z",
+  "uptime_sec": 962,
   "counts": {
-    "graduations": 1902,
+    "graduations": 1904,
     "momentum_labeled": 1799,
     "pump": 717,
     "dump": 817,
     "stable": 265,
-    "unlabeled": 103
+    "unlabeled": 105
   },
   "scorecard": {
     "total_labeled": 1799,
     "PUMP": 717,
     "DUMP": 817,
     "STABLE": 265,
-    "unlabeled": 103,
+    "unlabeled": 105,
     "raw_win_rate_pct": 39.9,
     "vel_5_20_cohort": {
       "n": 197,
@@ -34,26 +34,27 @@
   "data_quality": {
     "price_source_pumpswap_all_last_10": true,
     "null_fields_in_last_10": [
+      "#14125: pct_t300",
+      "#14124: pct_t300",
       "#14119: pct_t300",
       "#14118: pct_t300",
       "#14117: pct_t300",
-      "#14116: pct_t300",
-      "#14114: pct_t300"
+      "#14116: pct_t300"
     ],
-    "last_graduation_seconds_ago": 328,
+    "last_graduation_seconds_ago": 23,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 30961,
-    "totalCandidatesDetected": 14,
-    "totalVerifiedGraduations": 1,
-    "totalGraduationsRecorded": 1,
-    "totalFalsePositives": 8,
-    "totalBundlerFalsePositives": 8,
+    "totalLogsReceived": 34728,
+    "totalCandidatesDetected": 22,
+    "totalVerifiedGraduations": 3,
+    "totalGraduationsRecorded": 3,
+    "totalFalsePositives": 11,
+    "totalBundlerFalsePositives": 11,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
-    "totalVaultExtractions": 1,
+    "totalVaultExtractions": 3,
     "totalVaultExtractionFails": 0,
     "lastVaultFailReasons": [],
     "lastMintFailReasons": [],
@@ -67,8 +68,8 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 307759,
-      "totalPoolCreationEvents": 6,
+      "totalPumpSwapEvents": 344331,
+      "totalPoolCreationEvents": 8,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
       "pumpSwapSubscribed": true,
@@ -82,15 +83,49 @@
       }
     },
     "directPriceCollector": {
-      "activeObservations": 1,
-      "totalStarted": 1,
+      "activeObservations": 3,
+      "totalStarted": 3,
       "totalCompleted": 0,
-      "totalSnapshots": 19,
+      "totalSnapshots": 38,
       "totalSnapshotFailures": 0,
       "lastSnapshotFailures": []
     }
   },
   "recent_graduations": [
+    {
+      "id": 14125,
+      "mint": "A2Px3FMumMJ7W67VEp9ahFXueEyf9aHpei4TTJ5mpump",
+      "open_price": 2.362515574362213e-7,
+      "pct_t30": null,
+      "pct_t60": null,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 19,
+      "top5_wallet_pct": 12.5809599821085,
+      "dev_wallet_pct": 2.8402323516063,
+      "token_age_minutes": 57.3,
+      "bc_velocity_sol_per_min": null,
+      "total_sol_raised": 85.007303284,
+      "has_pool": true,
+      "created_at": 1775922736
+    },
+    {
+      "id": 14124,
+      "mint": "13kJtdVgHra7V7VcfJ16v4zssi2c3CMYuXWA7EW1pump",
+      "open_price": 2.3625058031047487e-7,
+      "pct_t30": -1.6227927992368378,
+      "pct_t60": -23.795724642494697,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 0,
+      "top5_wallet_pct": 0,
+      "dev_wallet_pct": 0,
+      "token_age_minutes": 0,
+      "bc_velocity_sol_per_min": 500,
+      "total_sol_raised": 85.006827619,
+      "has_pool": true,
+      "created_at": 1775922658
+    },
     {
       "id": 14123,
       "mint": "k3tctkQRpeJAGTMxg9ohDZ1A5sKfjEajTJLxwCwpump",
@@ -226,40 +261,6 @@
       "total_sol_raised": 85.007300968,
       "has_pool": true,
       "created_at": 1775919187
-    },
-    {
-      "id": 14115,
-      "mint": "EDq8zkp7WHAEbgXxQmdF9p3wSwM3QHZ27JC42csrpump",
-      "open_price": 2.3625156009234187e-7,
-      "pct_t30": 2.3340044433855875,
-      "pct_t60": 4.44416608950143,
-      "pct_t300": -28.384116047029778,
-      "label": null,
-      "holder_count": 19,
-      "top5_wallet_pct": 14.1550143394376,
-      "dev_wallet_pct": 3.4169933279445,
-      "token_age_minutes": 662.3,
-      "bc_velocity_sol_per_min": 0.13,
-      "total_sol_raised": 85.007304577,
-      "has_pool": true,
-      "created_at": 1775918874
-    },
-    {
-      "id": 14114,
-      "mint": "4nfZ64KBBkVqGCiWPHcmbieuV9JU9sYdgNaU9Ayepump",
-      "open_price": 2.3625155643170238e-7,
-      "pct_t30": 6.447187766117938,
-      "pct_t60": -5.152745445405209,
-      "pct_t300": null,
-      "label": null,
-      "holder_count": 19,
-      "top5_wallet_pct": 11.5332769327148,
-      "dev_wallet_pct": 2.5152551830135,
-      "token_age_minutes": 53.8,
-      "bc_velocity_sol_per_min": 1.58,
-      "total_sol_raised": 85.007302795,
-      "has_pool": true,
-      "created_at": 1775918441
     }
   ],
   "last_error": null
