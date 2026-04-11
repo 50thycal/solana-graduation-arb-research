@@ -3036,6 +3036,25 @@ export function renderTradingHtml(data: any): string {
           <option value="match_collection">Match collection schedule</option>
         </select></label>
       </div>
+      <div style="margin-bottom:12px;border-top:1px solid #334155;padding-top:10px">
+        <div style="color:#94a3b8;font-size:11px;font-weight:bold;margin-bottom:8px">Dynamic Position Monitoring <span style="color:#64748b;font-weight:normal">(0 = disabled)</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+          <label style="color:#94a3b8;font-size:11px">Trailing SL Activation %<input id="new-trailing-sl-act" type="number" value="0" step="1" min="0" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">Trailing SL Distance %<input id="new-trailing-sl-dist" type="number" value="5" step="1" min="1" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">SL Delay (s)<input id="new-sl-delay" type="number" value="0" step="5" min="0" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">Breakeven Stop %<input id="new-breakeven-stop" type="number" value="0" step="1" min="0" style="${inpStyle}"></label>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+          <label style="color:#94a3b8;font-size:11px">Trailing TP<select id="new-trailing-tp" style="${selStyle}"><option value="false" selected>Off</option><option value="true">On</option></select></label>
+          <label style="color:#94a3b8;font-size:11px">Trailing TP Drop %<input id="new-trailing-tp-drop" type="number" value="5" step="1" min="1" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">SL Tighten @ Time %<input id="new-tighten-sl-time" type="number" value="0" step="5" min="0" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">SL Tighten to %<input id="new-tighten-sl-pct" type="number" value="7" step="0.5" min="0.5" style="${inpStyle}"></label>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+          <label style="color:#94a3b8;font-size:11px">SL Tighten Stage 2 @ %<input id="new-tighten-sl-time2" type="number" value="0" step="5" min="0" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">SL Tighten Stage 2 to %<input id="new-tighten-sl-pct2" type="number" value="5" step="0.5" min="0.5" style="${inpStyle}"></label>
+        </div>
+      </div>
       <div style="margin-bottom:12px">
         <div style="color:#94a3b8;font-size:11px;margin-bottom:6px">Filters (AND logic)</div>
         <div id="new-filter-slots">
@@ -3095,6 +3114,25 @@ export function renderTradingHtml(data: any): string {
         </select>
         <span style="color:#64748b;font-size:10px;display:block;margin-top:2px">Restart required to apply</span></label>
       </div>
+      <div style="margin-bottom:12px;border-top:1px solid #334155;padding-top:10px">
+        <div style="color:#94a3b8;font-size:11px;font-weight:bold;margin-bottom:8px">Dynamic Position Monitoring <span style="color:#64748b;font-weight:normal">(0 = disabled)</span></div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+          <label style="color:#94a3b8;font-size:11px">Trailing SL Activation %<input id="ed-trailing-sl-act" type="number" value="${p.trailingSlActivationPct ?? 0}" step="1" min="0" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">Trailing SL Distance %<input id="ed-trailing-sl-dist" type="number" value="${p.trailingSlDistancePct ?? 5}" step="1" min="1" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">SL Delay (s)<input id="ed-sl-delay" type="number" value="${p.slActivationDelaySec ?? 0}" step="5" min="0" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">Breakeven Stop %<input id="ed-breakeven-stop" type="number" value="${p.breakevenStopPct ?? 0}" step="1" min="0" style="${inpStyle}"></label>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+          <label style="color:#94a3b8;font-size:11px">Trailing TP<select id="ed-trailing-tp" style="${selStyle}"><option value="false" ${!(p.trailingTpEnabled) ? 'selected' : ''}>Off</option><option value="true" ${p.trailingTpEnabled ? 'selected' : ''}>On</option></select></label>
+          <label style="color:#94a3b8;font-size:11px">Trailing TP Drop %<input id="ed-trailing-tp-drop" type="number" value="${p.trailingTpDropPct ?? 5}" step="1" min="1" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">SL Tighten @ Time %<input id="ed-tighten-sl-time" type="number" value="${p.tightenSlAtPctTime ?? 0}" step="5" min="0" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">SL Tighten to %<input id="ed-tighten-sl-pct" type="number" value="${p.tightenSlTargetPct ?? 7}" step="0.5" min="0.5" style="${inpStyle}"></label>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+          <label style="color:#94a3b8;font-size:11px">SL Tighten Stage 2 @ %<input id="ed-tighten-sl-time2" type="number" value="${p.tightenSlAtPctTime2 ?? 0}" step="5" min="0" style="${inpStyle}"></label>
+          <label style="color:#94a3b8;font-size:11px">SL Tighten Stage 2 to %<input id="ed-tighten-sl-pct2" type="number" value="${p.tightenSlTargetPct2 ?? 5}" step="0.5" min="0.5" style="${inpStyle}"></label>
+        </div>
+      </div>
       <div style="margin-bottom:12px">
         <div style="color:#94a3b8;font-size:11px;margin-bottom:6px">Filters (AND logic)</div>
         <div id="ed-filter-slots">${edFilterSlots}</div>
@@ -3111,7 +3149,9 @@ export function renderTradingHtml(data: any): string {
 
   // ── Open positions ────────────────────────────────────────────────────────
   const openPositions = (data.open_positions || []).filter((p: any) => !selected || p.strategyId === selected);
-  const posRows = openPositions.map((p: any) => `
+  const posRows = openPositions.map((p: any) => {
+    const effSlDiffers = p.effectiveSlPriceSol != null && p.slPriceSol != null && Math.abs(p.effectiveSlPriceSol - p.slPriceSol) > 1e-12;
+    return `
     <tr>
       <td>${p.tradeId}</td>
       <td style="color:#a78bfa;font-size:11px">${p.strategyId ?? 'default'}</td>
@@ -3119,14 +3159,17 @@ export function renderTradingHtml(data: any): string {
       <td>${p.entryPriceSol?.toFixed(8) ?? '-'}</td>
       <td style="color:#22d3ee">${p.tpPriceSol?.toFixed(8) ?? '-'}</td>
       <td style="color:#f87171">${p.slPriceSol?.toFixed(8) ?? '-'}</td>
+      <td style="color:${effSlDiffers ? '#fbbf24' : '#f87171'}">${p.effectiveSlPriceSol?.toFixed(8) ?? p.slPriceSol?.toFixed(8) ?? '-'}${effSlDiffers ? ' *' : ''}</td>
+      <td style="color:#a78bfa">${p.highWaterMark?.toFixed(8) ?? '-'}</td>
       <td>${p.secondsHeld}s / ${p.maxHoldSeconds}s</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   const openHtml = `
     <div class="card">
       <div class="card-title">Open Positions (${openPositions.length})</div>
       ${posRows ? `<table class="table">
-        <thead><tr><th>ID</th><th>Strategy</th><th>Mint</th><th>Entry</th><th>TP</th><th>SL</th><th>Held</th></tr></thead>
+        <thead><tr><th>ID</th><th>Strategy</th><th>Mint</th><th>Entry</th><th>TP</th><th>Fixed SL</th><th>Eff. SL</th><th>HWM</th><th>Held</th></tr></thead>
         <tbody>${posRows}</tbody>
       </table>` : '<p style="color:#94a3b8">No open positions</p>'}
     </div>`;
@@ -3162,7 +3205,7 @@ export function renderTradingHtml(data: any): string {
   const tradeRows = (data.recent_trades || []).map((t: any) => {
     const ret = t.net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
-    const reasonColor = t.exit_reason === 'take_profit' ? '#22d3ee' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
+    const reasonColor = (t.exit_reason === 'take_profit' || t.exit_reason === 'trailing_tp') ? '#22d3ee' : t.exit_reason === 'trailing_stop' ? '#fb923c' : t.exit_reason === 'breakeven_stop' ? '#fbbf24' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
     const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
     return `<tr>
       <td>${t.id}</td>
@@ -3366,7 +3409,17 @@ export function renderTradingHtml(data: any): string {
             maxHoldSeconds: parseInt(gv('new-hold')),
             slGapPenaltyPct: gn('new-sl-gap'), tpGapPenaltyPct: gn('new-tp-gap'),
             filters: filters,
-            positionMonitorMode: gv('new-monitor-mode')
+            positionMonitorMode: gv('new-monitor-mode'),
+            trailingSlActivationPct: gn('new-trailing-sl-act'),
+            trailingSlDistancePct: gn('new-trailing-sl-dist'),
+            slActivationDelaySec: parseInt(gv('new-sl-delay')),
+            breakevenStopPct: gn('new-breakeven-stop'),
+            trailingTpEnabled: gv('new-trailing-tp') === 'true',
+            trailingTpDropPct: gn('new-trailing-tp-drop'),
+            tightenSlAtPctTime: gn('new-tighten-sl-time'),
+            tightenSlTargetPct: gn('new-tighten-sl-pct'),
+            tightenSlAtPctTime2: gn('new-tighten-sl-time2'),
+            tightenSlTargetPct2: gn('new-tighten-sl-pct2')
           }
         };
         if (!body.id) { errEl.textContent = 'ID is required'; return; }
@@ -3393,7 +3446,17 @@ export function renderTradingHtml(data: any): string {
             maxHoldSeconds: parseInt(gv('ed-hold')),
             slGapPenaltyPct: gn('ed-sl-gap'), tpGapPenaltyPct: gn('ed-tp-gap'),
             filters: filters,
-            positionMonitorMode: gv('ed-monitor-mode')
+            positionMonitorMode: gv('ed-monitor-mode'),
+            trailingSlActivationPct: gn('ed-trailing-sl-act'),
+            trailingSlDistancePct: gn('ed-trailing-sl-dist'),
+            slActivationDelaySec: parseInt(gv('ed-sl-delay')),
+            breakevenStopPct: gn('ed-breakeven-stop'),
+            trailingTpEnabled: gv('ed-trailing-tp') === 'true',
+            trailingTpDropPct: gn('ed-trailing-tp-drop'),
+            tightenSlAtPctTime: gn('ed-tighten-sl-time'),
+            tightenSlTargetPct: gn('ed-tighten-sl-pct'),
+            tightenSlAtPctTime2: gn('ed-tighten-sl-time2'),
+            tightenSlTargetPct2: gn('ed-tighten-sl-pct2')
           }
         };
         const res = await fetch('/api/strategies/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

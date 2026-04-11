@@ -31,7 +31,7 @@ export interface CloseTradeParams {
   tradeId: number;
   entryPriceSol: number;
   exitPriceSol: number;
-  exitReason: 'take_profit' | 'stop_loss' | 'timeout' | 'manual';
+  exitReason: 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout' | 'manual';
   tradeSizeSol: number;
   takeProfitPct: number;
   stopLossPct: number;
@@ -105,9 +105,9 @@ export class TradeLogger {
     // SL exits: modelled as gapping 20% worse than trigger price
     // TP exits: modelled as gapping 10% worse than trigger price
     let effectiveExitPrice = exitPriceSol;
-    if (exitReason === 'stop_loss') {
+    if (exitReason === 'stop_loss' || exitReason === 'trailing_stop' || exitReason === 'breakeven_stop') {
       effectiveExitPrice = exitPriceSol * (1 - params.slGapPenaltyPct / 100);
-    } else if (exitReason === 'take_profit') {
+    } else if (exitReason === 'take_profit' || exitReason === 'trailing_tp') {
       effectiveExitPrice = exitPriceSol * (1 - params.tpGapPenaltyPct / 100);
     }
     const gapAdjustedReturnPct = ((effectiveExitPrice - entryPriceSol) / entryPriceSol) * 100;

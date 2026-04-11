@@ -28,9 +28,37 @@ export interface ActivePosition {
   /** Unix seconds of graduation detection — used by match_collection mode to
    *  align price checks with SNAPSHOT_SCHEDULE. Falls back to entryTimestamp-30. */
   graduationDetectedAt: number;
+
+  // ── Dynamic monitoring runtime state ──────────────────────────────────
+  /** Highest price observed since entry. Updated every poll tick. */
+  highWaterMark: number;
+  /** True once price has risen >= trailingSlActivationPct% above entry */
+  trailingSlActive: boolean;
+  /** True once price has first reached the fixed TP threshold */
+  tpThresholdHit: boolean;
+  /** Highest price observed after TP threshold was first hit (for trailing TP) */
+  postTpHighWaterMark: number;
+  /** The currently effective SL price (dynamically adjusted). Init to slPriceSol. */
+  effectiveSlPriceSol: number;
 }
 
-export type ExitReason = 'take_profit' | 'stop_loss' | 'timeout';
+export type ExitReason = 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout';
+
+/** Dynamic monitoring parameters — subset of strategy params needed by PositionManager */
+export interface DynamicMonitorParams {
+  stopLossPct: number;
+  maxHoldSeconds: number;
+  trailingSlActivationPct: number;
+  trailingSlDistancePct: number;
+  slActivationDelaySec: number;
+  trailingTpEnabled: boolean;
+  trailingTpDropPct: number;
+  tightenSlAtPctTime: number;
+  tightenSlTargetPct: number;
+  tightenSlAtPctTime2: number;
+  tightenSlTargetPct2: number;
+  breakevenStopPct: number;
+}
 
 export interface ExitEvent {
   position: ActivePosition;
@@ -44,12 +72,39 @@ export class PositionManager extends EventEmitter {
   private connection: Connection | null = null;
   private running = false;
   private polling = false; // guard against concurrent poll() invocations (five_second mode)
+  private dynamicParams: DynamicMonitorParams;
 
   // match_collection mode: per-position scheduled timeout handles
   private positionTimers: Map<number, NodeJS.Timeout[]> = new Map();
 
-  constructor(private readonly monitorMode: 'five_second' | 'match_collection' = 'five_second') {
+  constructor(
+    private readonly monitorMode: 'five_second' | 'match_collection' = 'five_second',
+    dynamicParams?: DynamicMonitorParams,
+  ) {
     super();
+    this.dynamicParams = dynamicParams ?? {
+      stopLossPct: 10,
+      maxHoldSeconds: 300,
+      trailingSlActivationPct: 0,
+      trailingSlDistancePct: 5,
+      slActivationDelaySec: 0,
+      trailingTpEnabled: false,
+      trailingTpDropPct: 5,
+      tightenSlAtPctTime: 0,
+      tightenSlTargetPct: 7,
+      tightenSlAtPctTime2: 0,
+      tightenSlTargetPct2: 5,
+      breakevenStopPct: 0,
+    };
+  }
+
+  /** Hot-swap dynamic monitoring params without replacing the manager */
+  updateDynamicParams(params: DynamicMonitorParams): void {
+    this.dynamicParams = params;
+  }
+
+  getDynamicParams(): DynamicMonitorParams {
+    return this.dynamicParams;
   }
 
   activeCount(): number {
@@ -75,6 +130,7 @@ export class PositionManager extends EventEmitter {
         entryPriceSol: pos.entryPriceSol,
         tpPriceSol: pos.tpPriceSol,
         slPriceSol: pos.slPriceSol,
+        effectiveSlPriceSol: pos.effectiveSlPriceSol,
         maxExitTimestamp: new Date(pos.maxExitTimestamp * 1000).toISOString(),
       },
       'Position added'
@@ -217,7 +273,9 @@ export class PositionManager extends EventEmitter {
     if (!pos || !this.connection) return;
 
     const now = Math.floor(Date.now() / 1000);
+    const params = this.dynamicParams;
 
+    // 1. TIMEOUT CHECK (highest priority)
     if (now >= pos.maxExitTimestamp) {
       const r = await this.tryFetchPrice(pos);
       const exitPrice = r?.priceSol ?? pos.entryPriceSol;
@@ -225,15 +283,102 @@ export class PositionManager extends EventEmitter {
       return;
     }
 
+    // 2. FETCH PRICE
     const r = await this.tryFetchPrice(pos);
     if (!r) return; // RPC unavailable — skip this tick
 
     const { priceSol } = r;
 
-    if (priceSol >= pos.tpPriceSol) {
-      this.triggerExit(pos, 'take_profit', priceSol);
-    } else if (priceSol <= pos.slPriceSol) {
-      this.triggerExit(pos, 'stop_loss', priceSol);
+    // 3. UPDATE HIGH WATER MARK (always, even during SL delay)
+    if (priceSol > pos.highWaterMark) {
+      pos.highWaterMark = priceSol;
+    }
+
+    // 4. COMPUTE EFFECTIVE SL (layered — each rule can only RAISE the floor)
+    let effectiveSl = pos.slPriceSol; // start with the original fixed SL
+    const secondsHeld = now - pos.entryTimestamp;
+
+    // 4a. TIME-BASED SL TIGHTENING
+    if (params.tightenSlAtPctTime > 0 && params.maxHoldSeconds > 0) {
+      const elapsedPct = (secondsHeld / params.maxHoldSeconds) * 100;
+      if (params.tightenSlAtPctTime2 > 0 && elapsedPct >= params.tightenSlAtPctTime2) {
+        const tightenedSl = pos.entryPriceSol * (1 - params.tightenSlTargetPct2 / 100);
+        effectiveSl = Math.max(effectiveSl, tightenedSl);
+      } else if (elapsedPct >= params.tightenSlAtPctTime) {
+        const tightenedSl = pos.entryPriceSol * (1 - params.tightenSlTargetPct / 100);
+        effectiveSl = Math.max(effectiveSl, tightenedSl);
+      }
+    }
+
+    // 4b. BREAKEVEN STOP (raise floor to entry price)
+    if (params.breakevenStopPct > 0) {
+      const breakevenActivation = pos.entryPriceSol * (1 + params.breakevenStopPct / 100);
+      if (pos.highWaterMark >= breakevenActivation) {
+        effectiveSl = Math.max(effectiveSl, pos.entryPriceSol);
+      }
+    }
+
+    // 4c. TRAILING STOP-LOSS (raise floor to trail below high water mark)
+    if (params.trailingSlActivationPct > 0) {
+      const activationPrice = pos.entryPriceSol * (1 + params.trailingSlActivationPct / 100);
+      if (pos.highWaterMark >= activationPrice) {
+        pos.trailingSlActive = true;
+      }
+      if (pos.trailingSlActive) {
+        const trailingSl = pos.highWaterMark * (1 - params.trailingSlDistancePct / 100);
+        effectiveSl = Math.max(effectiveSl, trailingSl);
+      }
+    }
+
+    // 4d. Store effective SL on position for dashboard display
+    pos.effectiveSlPriceSol = effectiveSl;
+
+    // 5. SL ACTIVATION DELAY CHECK
+    let slActive = true;
+    if (params.slActivationDelaySec > 0 && secondsHeld < params.slActivationDelaySec) {
+      slActive = false;
+    }
+
+    // 6. SL EXIT CHECK (only if SL active)
+    if (slActive && priceSol <= effectiveSl) {
+      let exitReason: ExitReason;
+      if (pos.trailingSlActive && effectiveSl > pos.slPriceSol) {
+        // Trailing or breakeven raised the floor
+        if (effectiveSl <= pos.entryPriceSol * 1.001) {
+          // Effective SL is at or near entry price — breakeven stop
+          exitReason = 'breakeven_stop';
+        } else {
+          exitReason = 'trailing_stop';
+        }
+      } else {
+        exitReason = 'stop_loss';
+      }
+      this.triggerExit(pos, exitReason, priceSol);
+      return;
+    }
+
+    // 7. TP CHECK
+    if (params.trailingTpEnabled) {
+      // Trailing TP mode: when price first hits TP, start trailing
+      if (priceSol >= pos.tpPriceSol) {
+        pos.tpThresholdHit = true;
+      }
+      if (pos.tpThresholdHit) {
+        if (priceSol > pos.postTpHighWaterMark) {
+          pos.postTpHighWaterMark = priceSol;
+        }
+        const dropFromPeak = ((pos.postTpHighWaterMark - priceSol) / pos.postTpHighWaterMark) * 100;
+        if (dropFromPeak >= params.trailingTpDropPct) {
+          this.triggerExit(pos, 'trailing_tp', priceSol);
+          return;
+        }
+      }
+    } else {
+      // Fixed TP mode (current behavior)
+      if (priceSol >= pos.tpPriceSol) {
+        this.triggerExit(pos, 'take_profit', priceSol);
+        return;
+      }
     }
   }
 
@@ -259,6 +404,8 @@ export class PositionManager extends EventEmitter {
         reason,
         exitPriceSol,
         entryPriceSol: pos.entryPriceSol,
+        highWaterMark: pos.highWaterMark,
+        effectiveSlPriceSol: pos.effectiveSlPriceSol,
         returnPct: (((exitPriceSol - pos.entryPriceSol) / pos.entryPriceSol) * 100).toFixed(2),
       },
       'Position exit triggered'

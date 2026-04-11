@@ -147,6 +147,7 @@ export class TradeEvaluator {
     // ── 7. Register position for SL/TP monitoring ────────────────────────────
     const effectiveEntry = entryResult.effectivePrice;
     const nowSec = Math.floor(Date.now() / 1000);
+    const slPriceSol = effectiveEntry * (1 - cfg.stopLossPct / 100);
     const position: ActivePosition = {
       tradeId,
       graduationId,
@@ -157,13 +158,19 @@ export class TradeEvaluator {
       entryPriceSol: effectiveEntry,
       entryTimestamp: nowSec,
       tpPriceSol: effectiveEntry * (1 + cfg.takeProfitPct / 100),
-      slPriceSol: effectiveEntry * (1 - cfg.stopLossPct / 100),
+      slPriceSol,
       maxExitTimestamp: nowSec + cfg.maxHoldSeconds,
       tokensHeld: entryResult.tokensReceived,
       mode: cfg.mode,
       // graduationTimestamp from ObservationContext — used by match_collection
       // mode to align price checks with SNAPSHOT_SCHEDULE offsets.
       graduationDetectedAt: ctx.graduationTimestamp,
+      // Dynamic monitoring runtime state — initialized at entry
+      highWaterMark: effectiveEntry,
+      trailingSlActive: false,
+      tpThresholdHit: false,
+      postTpHighWaterMark: 0,
+      effectiveSlPriceSol: slPriceSol,
     };
 
     if (!position.baseVault || !position.quoteVault) {
