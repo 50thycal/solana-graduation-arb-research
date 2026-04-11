@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-04-11T17:28:38.237Z",
-  "uptime_sec": 6722,
+  "generated_at": "2026-04-11T17:30:38.238Z",
+  "uptime_sec": 6842,
   "counts": {
     "graduations": 1913,
-    "momentum_labeled": 1808,
+    "momentum_labeled": 1810,
     "pump": 719,
-    "dump": 822,
-    "stable": 267,
-    "unlabeled": 105
+    "dump": 823,
+    "stable": 268,
+    "unlabeled": 103
   },
   "scorecard": {
-    "total_labeled": 1808,
+    "total_labeled": 1810,
     "PUMP": 719,
-    "DUMP": 822,
-    "STABLE": 267,
-    "unlabeled": 105,
-    "raw_win_rate_pct": 39.8,
+    "DUMP": 823,
+    "STABLE": 268,
+    "unlabeled": 103,
+    "raw_win_rate_pct": 39.7,
     "vel_5_20_cohort": {
       "n": 197,
       "win_rate_pct": 61.9,
@@ -33,20 +33,18 @@
   },
   "data_quality": {
     "price_source_pumpswap_all_last_10": true,
-    "null_fields_in_last_10": [
-      "#14134: pct_t300"
-    ],
-    "last_graduation_seconds_ago": 282,
+    "null_fields_in_last_10": [],
+    "last_graduation_seconds_ago": 402,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 277737,
-    "totalCandidatesDetected": 401,
+    "totalLogsReceived": 281577,
+    "totalCandidatesDetected": 402,
     "totalVerifiedGraduations": 12,
     "totalGraduationsRecorded": 12,
-    "totalFalsePositives": 271,
-    "totalBundlerFalsePositives": 271,
+    "totalFalsePositives": 272,
+    "totalBundlerFalsePositives": 272,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
     "totalVaultExtractions": 12,
@@ -63,7 +61,7 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 2602425,
+      "totalPumpSwapEvents": 2649295,
       "totalPoolCreationEvents": 112,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
@@ -78,10 +76,10 @@
       }
     },
     "directPriceCollector": {
-      "activeObservations": 3,
+      "activeObservations": 1,
       "totalStarted": 12,
-      "totalCompleted": 9,
-      "totalSnapshots": 235,
+      "totalCompleted": 11,
+      "totalSnapshots": 238,
       "totalSnapshotFailures": 2,
       "lastSnapshotFailures": [
         {
@@ -106,7 +104,7 @@
       "open_price": 3.9304692727101657e-7,
       "pct_t30": -10.711572013435303,
       "pct_t60": -8.859772653014483,
-      "pct_t300": null,
+      "pct_t300": -78.82658633465904,
       "label": null,
       "holder_count": 0,
       "top5_wallet_pct": 0,
@@ -124,7 +122,7 @@
       "pct_t30": 2.5081309608882334,
       "pct_t60": 24.053646863509936,
       "pct_t300": 2.9348969398222535,
-      "label": null,
+      "label": "STABLE",
       "holder_count": 19,
       "top5_wallet_pct": 10.6279016718116,
       "dev_wallet_pct": 2.2981007085569,
@@ -141,7 +139,7 @@
       "pct_t30": -6.935289713228286,
       "pct_t60": -10.304970381645637,
       "pct_t300": -49.674983982109346,
-      "label": null,
+      "label": "DUMP",
       "holder_count": 19,
       "top5_wallet_pct": 13.8851061553009,
       "dev_wallet_pct": 2.912049546426,
