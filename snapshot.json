@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-04-11T16:40:38.219Z",
-  "uptime_sec": 3842,
+  "generated_at": "2026-04-11T16:42:38.219Z",
+  "uptime_sec": 3962,
   "counts": {
     "graduations": 1908,
     "momentum_labeled": 1805,
@@ -36,17 +36,17 @@
     "null_fields_in_last_10": [
       "#14129: pct_t300"
     ],
-    "last_graduation_seconds_ago": 8,
+    "last_graduation_seconds_ago": 128,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 150997,
-    "totalCandidatesDetected": 199,
+    "totalLogsReceived": 156221,
+    "totalCandidatesDetected": 201,
     "totalVerifiedGraduations": 7,
     "totalGraduationsRecorded": 7,
-    "totalFalsePositives": 125,
-    "totalBundlerFalsePositives": 125,
+    "totalFalsePositives": 126,
+    "totalBundlerFalsePositives": 126,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
     "totalVaultExtractions": 7,
@@ -58,13 +58,13 @@
     "reconnecting": false,
     "poolTracker": {
       "pending": 0,
-      "speculative": 1,
+      "speculative": 0,
       "preFound": 0,
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 1549154,
-      "totalPoolCreationEvents": 42,
+      "totalPumpSwapEvents": 1593734,
+      "totalPoolCreationEvents": 53,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
       "pumpSwapSubscribed": true,
@@ -81,7 +81,7 @@
       "activeObservations": 1,
       "totalStarted": 7,
       "totalCompleted": 6,
-      "totalSnapshots": 121,
+      "totalSnapshots": 134,
       "totalSnapshotFailures": 2,
       "lastSnapshotFailures": [
         {
@@ -104,15 +104,15 @@
       "id": 14129,
       "mint": "E5NjJnpMfZ4by39h296RhXf2FMwQyGS4MwJTztWjpump",
       "open_price": 2.3625155801140596e-7,
-      "pct_t30": null,
-      "pct_t60": null,
+      "pct_t30": 8.805982320713305,
+      "pct_t60": 17.87748170238861,
       "pct_t300": null,
       "label": null,
       "holder_count": 19,
       "top5_wallet_pct": 14.6685960665081,
       "dev_wallet_pct": 3.1875758946926998,
       "token_age_minutes": 132.1,
-      "bc_velocity_sol_per_min": null,
+      "bc_velocity_sol_per_min": 0.64,
       "total_sol_raised": 85.007303564,
       "has_pool": true,
       "created_at": 1775925631
