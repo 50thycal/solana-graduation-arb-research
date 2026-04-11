@@ -1,0 +1,6 @@
+{
+  "_comment": "Set RAILWAY_URL to the public base URL of the deployed bot. The slash commands in .claude/commands/ interpolate this.",
+  "env": {
+    "RAILWAY_URL": ""
+  }
+}

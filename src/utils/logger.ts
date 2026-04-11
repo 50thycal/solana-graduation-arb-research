@@ -1,4 +1,5 @@
 import pino, { Logger } from 'pino';
+import { logBuffer, makeBufferStream } from './log-buffer';
 
 /**
  * Per-logger level factory.
@@ -56,6 +57,18 @@ const TRADE_MODE_LEVELS: Record<string, string> = {
 const DEFAULT_TRADE_MODE_LEVEL = 'warn';
 
 /**
+ * Fan out every log line to both stdout (Railway captures) and the in-process
+ * ring buffer (serves /api/logs). Level filtering is done per-logger below,
+ * so the multistream always receives everything; each stream decides what
+ * to drop via its own minimum level.
+ */
+const bufferStream = makeBufferStream(logBuffer);
+const multiStream = pino.multistream([
+  { stream: process.stdout },
+  { stream: bufferStream as unknown as NodeJS.WritableStream, level: 'trace' },
+]);
+
+/**
  * Build a pino logger whose level respects the LOG_LEVEL env var, with
  * special handling for the 'trade' sentinel value.
  */
@@ -63,5 +76,8 @@ export function makeLogger(name: string): Logger {
   const level = TRADE_MODE
     ? (TRADE_MODE_LEVELS[name] ?? DEFAULT_TRADE_MODE_LEVEL)
     : RAW_LEVEL;
-  return pino({ level, name });
+  return pino({ level, name }, multiStream);
 }
+
+/** Shared log buffer singleton — re-exported for convenience. */
+export { logBuffer };

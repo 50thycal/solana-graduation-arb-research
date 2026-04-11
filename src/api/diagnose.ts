@@ -1,0 +1,260 @@
+/**
+ * src/api/diagnose.ts
+ *
+ * Encodes the CLAUDE.md Bug Triage Protocol (Levels 1-4) as executable checks.
+ * One call returns a structured verdict so Claude can self-diagnose without
+ * pinging the human.
+ *
+ * Level 1: Is the bot running and detecting graduations?
+ * Level 2: Is price data being captured correctly (PumpSwap pool, no nulls)?
+ * Level 3: Are timestamps correct (checkpoint grid not skewed)?
+ * Level 4: Is label logic correct (PUMP = >+10% at T+300, DUMP = <-10%)?
+ *
+ * Levels are checked in order. Failure at any level short-circuits the
+ * verdict. "next_action" is always set to the most useful thing Claude
+ * can do next.
+ */
+
+import Database from 'better-sqlite3';
+import type { LogBuffer } from '../utils/log-buffer';
+
+export interface LevelResult {
+  pass: boolean;
+  evidence: Record<string, unknown>;
+  notes?: string;
+}
+
+export interface DiagnosisReport {
+  generated_at: string;
+  verdict:
+    | 'HEALTHY'
+    | 'LEVEL1_FAIL'
+    | 'LEVEL2_FAIL'
+    | 'LEVEL3_FAIL'
+    | 'LEVEL4_FAIL'
+    | 'NO_DATA';
+  next_action: string;
+  level1_bot_running: LevelResult;
+  level2_price_capture: LevelResult;
+  level3_timestamps: LevelResult;
+  level4_label_logic: LevelResult;
+  recent_errors: Array<{ ts: string; level: string; name: string; msg: string }>;
+}
+
+const STALL_SECONDS = 600; // 10 min without a new graduation = stalled
+const NULL_RATE_FAIL = 0.5; // >50% of critical fields null on recent rows = fail
+const SAMPLE_SIZE_FOR_LEVEL4 = 20;
+
+export function runDiagnosis(
+  db: Database.Database,
+  logBuffer?: LogBuffer,
+): DiagnosisReport {
+  const generated_at = new Date().toISOString();
+
+  // ── LEVEL 1: Bot running and detecting graduations ──
+  const pipelineRow = db.prepare(`
+    SELECT
+      COUNT(*) as total,
+      MAX(timestamp) as last_ts
+    FROM graduations
+  `).get() as { total: number; last_ts: number | null };
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const secondsSinceLast = pipelineRow.last_ts !== null
+    ? nowSec - pipelineRow.last_ts
+    : null;
+
+  const level1: LevelResult = {
+    pass: pipelineRow.total > 0 && secondsSinceLast !== null && secondsSinceLast < STALL_SECONDS,
+    evidence: {
+      total_graduations: pipelineRow.total,
+      last_graduation_seconds_ago: secondsSinceLast,
+      stall_threshold_seconds: STALL_SECONDS,
+    },
+    notes: pipelineRow.total === 0
+      ? 'No graduations in DB. Check WebSocket connection and program subscription.'
+      : secondsSinceLast !== null && secondsSinceLast >= STALL_SECONDS
+        ? `Last graduation ${secondsSinceLast}s ago — listener may be disconnected or RPC stalled.`
+        : 'Bot is receiving graduations.',
+  };
+
+  // ── LEVEL 2: Price data captured correctly ──
+  // Check last 50 momentum rows: null rate on open_price_sol and pct_t300,
+  // and confirm all have a linked PumpSwap pool (new_pool_address non-null).
+  const recent50 = db.prepare(`
+    SELECT
+      m.graduation_id as id,
+      m.open_price_sol,
+      m.pct_t30,
+      m.pct_t300,
+      g.new_pool_address
+    FROM graduation_momentum m
+    JOIN graduations g ON g.id = m.graduation_id
+    ORDER BY m.graduation_id DESC
+    LIMIT 50
+  `).all() as Array<{
+    id: number;
+    open_price_sol: number | null;
+    pct_t30: number | null;
+    pct_t300: number | null;
+    new_pool_address: string | null;
+  }>;
+
+  const n50 = recent50.length;
+  const nullOpen = recent50.filter((r) => r.open_price_sol === null).length;
+  const nullT300 = recent50.filter((r) => r.pct_t300 === null).length;
+  const noPool = recent50.filter((r) => r.new_pool_address === null).length;
+  const nullOpenRate = n50 > 0 ? nullOpen / n50 : 0;
+  const noPoolRate = n50 > 0 ? noPool / n50 : 0;
+  const firstBadRow = recent50.find((r) => r.open_price_sol === null || r.new_pool_address === null);
+
+  const level2: LevelResult = {
+    pass: n50 >= 5 && nullOpenRate < NULL_RATE_FAIL && noPoolRate < NULL_RATE_FAIL,
+    evidence: {
+      sample_size: n50,
+      null_open_price_count: nullOpen,
+      null_open_price_rate: +nullOpenRate.toFixed(3),
+      null_pct_t300_count: nullT300,
+      no_pumpswap_pool_count: noPool,
+      no_pumpswap_pool_rate: +noPoolRate.toFixed(3),
+      first_bad_row_id: firstBadRow?.id ?? null,
+    },
+    notes: n50 < 5
+      ? 'Not enough rows to assess price capture health.'
+      : nullOpenRate >= NULL_RATE_FAIL
+        ? `High null rate on open_price_sol (${(nullOpenRate * 100).toFixed(1)}%). Check PumpSwap pool observation ingest.`
+        : noPoolRate >= NULL_RATE_FAIL
+          ? 'Many recent graduations have no linked PumpSwap pool. Migration listener may be broken.'
+          : 'Price capture looks clean — PumpSwap pool linked and prices populated on recent rows.',
+  };
+
+  // ── LEVEL 3: Timestamp / checkpoint grid sanity ──
+  // Pick a row with complete 5s->300s grid and confirm checkpoints monotonically
+  // follow time. We can't easily prove "T+300 is really 300s after T+0" without
+  // the raw observation timestamps, but we can assert that checkpoint fields
+  // exist in the expected ordering for rows that claim completeness.
+  const grid = db.prepare(`
+    SELECT
+      graduation_id as id,
+      price_t30, price_t60, price_t120, price_t300,
+      pct_t30, pct_t60, pct_t120, pct_t300
+    FROM graduation_momentum
+    WHERE pct_t30 IS NOT NULL
+      AND pct_t60 IS NOT NULL
+      AND pct_t120 IS NOT NULL
+      AND pct_t300 IS NOT NULL
+    ORDER BY graduation_id DESC
+    LIMIT 20
+  `).all() as Array<{
+    id: number;
+    price_t30: number | null;
+    price_t60: number | null;
+    price_t120: number | null;
+    price_t300: number | null;
+    pct_t30: number | null;
+    pct_t60: number | null;
+    pct_t120: number | null;
+    pct_t300: number | null;
+  }>;
+
+  const gridBad = grid.filter((r) =>
+    r.price_t30 === null || r.price_t60 === null || r.price_t120 === null || r.price_t300 === null,
+  );
+
+  const level3: LevelResult = {
+    pass: grid.length >= 5 && gridBad.length === 0,
+    evidence: {
+      sample_size: grid.length,
+      missing_price_checkpoints: gridBad.length,
+      first_bad_row_id: gridBad[0]?.id ?? null,
+    },
+    notes: grid.length < 5
+      ? 'Not enough complete checkpoint rows to verify grid.'
+      : gridBad.length > 0
+        ? 'Some rows report pct_t* non-null but price_t* is missing — writer bug likely.'
+        : 'Checkpoint grid is consistent on recent rows.',
+  };
+
+  // ── LEVEL 4: Label logic correctness ──
+  // Re-derive the label on a sample of 20 rows and confirm it matches.
+  // CLAUDE.md: PUMP = >+10% at T+300 from open, DUMP = <-10% at T+300 from open.
+  const sample = db.prepare(`
+    SELECT graduation_id as id, pct_t300, label
+    FROM graduation_momentum
+    WHERE label IS NOT NULL AND pct_t300 IS NOT NULL
+    ORDER BY graduation_id DESC
+    LIMIT ?
+  `).all(SAMPLE_SIZE_FOR_LEVEL4) as Array<{
+    id: number;
+    pct_t300: number;
+    label: 'PUMP' | 'DUMP' | 'STABLE';
+  }>;
+
+  const mismatches: Array<{ id: number; pct_t300: number; label: string; expected: string }> = [];
+  for (const r of sample) {
+    const expected = r.pct_t300 > 10 ? 'PUMP' : r.pct_t300 < -10 ? 'DUMP' : 'STABLE';
+    if (expected !== r.label) {
+      mismatches.push({ id: r.id, pct_t300: r.pct_t300, label: r.label, expected });
+    }
+  }
+
+  const level4: LevelResult = {
+    pass: sample.length >= 5 && mismatches.length === 0,
+    evidence: {
+      sample_size: sample.length,
+      mismatches: mismatches.slice(0, 5),
+      mismatch_count: mismatches.length,
+    },
+    notes: sample.length < 5
+      ? 'Not enough labeled rows to verify label logic.'
+      : mismatches.length > 0
+        ? `${mismatches.length}/${sample.length} labels disagree with the re-derived PUMP/DUMP/STABLE rule.`
+        : 'Label logic matches expected rule on recent rows.',
+  };
+
+  // ── Recent errors from the log ring buffer ──
+  const recent_errors: DiagnosisReport['recent_errors'] = [];
+  if (logBuffer) {
+    const errs = logBuffer.query({ level: 'error', limit: 5 });
+    for (const e of errs) {
+      recent_errors.push({
+        ts: new Date(e.ts).toISOString(),
+        level: e.level,
+        name: e.name,
+        msg: e.msg,
+      });
+    }
+  }
+
+  // ── Verdict ──
+  let verdict: DiagnosisReport['verdict'] = 'HEALTHY';
+  let next_action = 'All checks pass. Safe to interpret /api/snapshot and /api/best-combos as real signal.';
+
+  if (pipelineRow.total === 0) {
+    verdict = 'NO_DATA';
+    next_action = 'Bot has never detected a graduation. Verify WebSocket URL, program subscription, and that the listener is running.';
+  } else if (!level1.pass) {
+    verdict = 'LEVEL1_FAIL';
+    next_action = level1.notes ?? 'Fix bot connection before looking at signals.';
+  } else if (!level2.pass) {
+    verdict = 'LEVEL2_FAIL';
+    next_action = level2.notes ?? 'Fix price capture before looking at signals.';
+  } else if (!level3.pass) {
+    verdict = 'LEVEL3_FAIL';
+    next_action = level3.notes ?? 'Fix checkpoint grid before looking at signals.';
+  } else if (!level4.pass) {
+    verdict = 'LEVEL4_FAIL';
+    next_action = level4.notes ?? 'Fix label logic before looking at signals.';
+  }
+
+  return {
+    generated_at,
+    verdict,
+    next_action,
+    level1_bot_running: level1,
+    level2_price_capture: level2,
+    level3_timestamps: level3,
+    level4_label_logic: level4,
+    recent_errors,
+  };
+}
