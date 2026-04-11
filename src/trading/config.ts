@@ -33,6 +33,29 @@ export interface StrategyParams {
    *   (every 5s for T+0–T+60, then 30s/60s gaps) — results directly comparable to historical Panel 4 data
    */
   positionMonitorMode: 'five_second' | 'match_collection';
+
+  // ── Dynamic position monitoring ──────────────────────────────────────
+  /** Trailing SL: once price rises this % above entry, SL starts trailing.
+   *  0 = disabled. e.g. 10 → activate after +10% from entry. */
+  trailingSlActivationPct: number;
+  /** Trailing SL trails this % below the highest price seen. e.g. 5 → 5% below peak. */
+  trailingSlDistancePct: number;
+  /** Ignore the hard SL for this many seconds after entry. 0 = disabled. */
+  slActivationDelaySec: number;
+  /** When true, hitting TP starts a trailing mechanism instead of exiting immediately. */
+  trailingTpEnabled: boolean;
+  /** Trailing TP: exit when price drops this % from post-TP peak. e.g. 5 → 5% drop. */
+  trailingTpDropPct: number;
+  /** Tighten SL at this % of maxHoldSeconds elapsed. 0 = disabled. e.g. 50. */
+  tightenSlAtPctTime: number;
+  /** Tighten SL to this % at stage 1. e.g. 7 → SL becomes 7%. */
+  tightenSlTargetPct: number;
+  /** Second tightening stage at this % of maxHoldSeconds. 0 = disabled. */
+  tightenSlAtPctTime2: number;
+  /** Tighten SL to this % at stage 2. e.g. 5 → SL becomes 5%. */
+  tightenSlTargetPct2: number;
+  /** Move SL to entry price once price reaches this % above entry. 0 = disabled. */
+  breakevenStopPct: number;
 }
 
 export interface TradingConfig {
@@ -65,6 +88,18 @@ export interface TradingConfig {
 
   // ── Position monitor mode ────────────────────────────────────────────────
   positionMonitorMode: 'five_second' | 'match_collection';
+
+  // ── Dynamic position monitoring ──────────────────────────────────────────
+  trailingSlActivationPct: number;
+  trailingSlDistancePct: number;
+  slActivationDelaySec: number;
+  trailingTpEnabled: boolean;
+  trailingTpDropPct: number;
+  tightenSlAtPctTime: number;
+  tightenSlTargetPct: number;
+  tightenSlAtPctTime2: number;
+  tightenSlTargetPct2: number;
+  breakevenStopPct: number;
 
   // ── Execution (live mode only) ───────────────────────────────────────────
   slippageBps: number;
@@ -106,6 +141,16 @@ export function loadTradingConfig(): TradingConfig {
     slGapPenaltyPct: parseFloat(process.env.SL_GAP_PENALTY_PCT || '20'),
     tpGapPenaltyPct: parseFloat(process.env.TP_GAP_PENALTY_PCT || '10'),
     positionMonitorMode: (process.env.POSITION_MONITOR_MODE === 'match_collection' ? 'match_collection' : 'five_second'),
+    trailingSlActivationPct: 0,
+    trailingSlDistancePct: 5,
+    slActivationDelaySec: 0,
+    trailingTpEnabled: false,
+    trailingTpDropPct: 5,
+    tightenSlAtPctTime: 0,
+    tightenSlTargetPct: 7,
+    tightenSlAtPctTime2: 0,
+    tightenSlTargetPct2: 5,
+    breakevenStopPct: 0,
     slippageBps: parseInt(process.env.SLIPPAGE_BPS || '300', 10),
     priorityFeeMicroLamports: parseInt(process.env.PRIORITY_FEE_MICRO_LAMPORTS || '100000', 10),
     walletPrivateKey: process.env.WALLET_PRIVATE_KEY,
@@ -146,6 +191,16 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     tpGapPenaltyPct: cfg.tpGapPenaltyPct,
     filters: cfg.filters,
     positionMonitorMode: cfg.positionMonitorMode ?? 'five_second',
+    trailingSlActivationPct: cfg.trailingSlActivationPct ?? 0,
+    trailingSlDistancePct: cfg.trailingSlDistancePct ?? 5,
+    slActivationDelaySec: cfg.slActivationDelaySec ?? 0,
+    trailingTpEnabled: cfg.trailingTpEnabled ?? false,
+    trailingTpDropPct: cfg.trailingTpDropPct ?? 5,
+    tightenSlAtPctTime: cfg.tightenSlAtPctTime ?? 0,
+    tightenSlTargetPct: cfg.tightenSlTargetPct ?? 7,
+    tightenSlAtPctTime2: cfg.tightenSlAtPctTime2 ?? 0,
+    tightenSlTargetPct2: cfg.tightenSlTargetPct2 ?? 5,
+    breakevenStopPct: cfg.breakevenStopPct ?? 0,
   };
 }
 
@@ -164,5 +219,15 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     tpGapPenaltyPct: params.tpGapPenaltyPct,
     filters: params.filters,
     positionMonitorMode: params.positionMonitorMode ?? 'five_second',
+    trailingSlActivationPct: params.trailingSlActivationPct ?? 0,
+    trailingSlDistancePct: params.trailingSlDistancePct ?? 5,
+    slActivationDelaySec: params.slActivationDelaySec ?? 0,
+    trailingTpEnabled: params.trailingTpEnabled ?? false,
+    trailingTpDropPct: params.trailingTpDropPct ?? 5,
+    tightenSlAtPctTime: params.tightenSlAtPctTime ?? 0,
+    tightenSlTargetPct: params.tightenSlTargetPct ?? 7,
+    tightenSlAtPctTime2: params.tightenSlAtPctTime2 ?? 0,
+    tightenSlTargetPct2: params.tightenSlTargetPct2 ?? 5,
+    breakevenStopPct: params.breakevenStopPct ?? 0,
   };
 }

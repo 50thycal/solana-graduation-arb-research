@@ -668,8 +668,8 @@ export function getTradeStats(db: Database.Database) {
       COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
       COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
       AVG(CASE WHEN status='closed' THEN net_return_pct END) as avg_net_return_pct,
-      SUM(CASE WHEN status='closed' AND exit_reason='take_profit' THEN 1 ELSE 0 END) as tp_exits,
-      SUM(CASE WHEN status='closed' AND exit_reason='stop_loss' THEN 1 ELSE 0 END) as sl_exits,
+      SUM(CASE WHEN status='closed' AND exit_reason IN ('take_profit','trailing_tp') THEN 1 ELSE 0 END) as tp_exits,
+      SUM(CASE WHEN status='closed' AND exit_reason IN ('stop_loss','trailing_stop','breakeven_stop') THEN 1 ELSE 0 END) as sl_exits,
       SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
       SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END) as total_net_profit_sol
     FROM trades_v2
@@ -747,8 +747,8 @@ export function getTradeStatsByStrategy(db: Database.Database) {
       COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
       COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
       ROUND(AVG(CASE WHEN status='closed' THEN net_return_pct END), 2) as avg_net_return_pct,
-      SUM(CASE WHEN status='closed' AND exit_reason='take_profit' THEN 1 ELSE 0 END) as tp_exits,
-      SUM(CASE WHEN status='closed' AND exit_reason='stop_loss' THEN 1 ELSE 0 END) as sl_exits,
+      SUM(CASE WHEN status='closed' AND exit_reason IN ('take_profit','trailing_tp') THEN 1 ELSE 0 END) as tp_exits,
+      SUM(CASE WHEN status='closed' AND exit_reason IN ('stop_loss','trailing_stop','breakeven_stop') THEN 1 ELSE 0 END) as sl_exits,
       SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
       ROUND(SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END), 4) as total_net_profit_sol
     FROM trades_v2

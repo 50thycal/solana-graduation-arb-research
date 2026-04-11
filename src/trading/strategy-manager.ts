@@ -10,7 +10,7 @@ import {
 } from './config';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
-import { PositionManager, ExitEvent } from './position-manager';
+import { PositionManager, ExitEvent, DynamicMonitorParams } from './position-manager';
 import { TradeEvaluator } from './trade-evaluator';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
 import {
@@ -185,6 +185,7 @@ export class StrategyManager {
       existing.label = label;
       existing.enabled = enabled;
       existing.evaluator.updateConfig(newConfig);
+      existing.positionManager.updateDynamicParams(StrategyManager.extractDynamicParams(newConfig));
 
       // positionMonitorMode is baked into the PositionManager at construction
       // time and cannot be hot-swapped. Warn if the user changed it — the new
@@ -270,6 +271,10 @@ export class StrategyManager {
           entryPriceSol: p.entryPriceSol,
           tpPriceSol: p.tpPriceSol,
           slPriceSol: p.slPriceSol,
+          effectiveSlPriceSol: p.effectiveSlPriceSol,
+          highWaterMark: p.highWaterMark,
+          trailingSlActive: p.trailingSlActive,
+          tpThresholdHit: p.tpThresholdHit,
           secondsHeld: Math.floor(Date.now() / 1000) - p.entryTimestamp,
           maxHoldSeconds: p.maxExitTimestamp - p.entryTimestamp,
         });
@@ -344,15 +349,79 @@ export class StrategyManager {
     if (!Array.isArray(p.filters)) {
       errors.push('filters must be an array');
     }
+    // ── Dynamic position monitoring validation ──────────────────────────
+    const tsa = p.trailingSlActivationPct ?? 0;
+    const tsd = p.trailingSlDistancePct ?? 5;
+    if (!isFinite(tsa) || tsa < 0 || tsa > 1000) {
+      errors.push('trailingSlActivationPct must be between 0 and 1000');
+    }
+    if (!isFinite(tsd) || tsd <= 0 || tsd >= 100) {
+      errors.push('trailingSlDistancePct must be between 0 and 100 (exclusive)');
+    }
+    if (tsa > 0 && tsd >= tsa) {
+      errors.push('trailingSlDistancePct must be less than trailingSlActivationPct');
+    }
+    const sld = p.slActivationDelaySec ?? 0;
+    if (!Number.isInteger(sld) || sld < 0 || sld > p.maxHoldSeconds) {
+      errors.push('slActivationDelaySec must be an integer between 0 and maxHoldSeconds');
+    }
+    const ttpd = p.trailingTpDropPct ?? 5;
+    if (!isFinite(ttpd) || ttpd <= 0 || ttpd > 100) {
+      errors.push('trailingTpDropPct must be between 0 and 100');
+    }
+    const t1 = p.tightenSlAtPctTime ?? 0;
+    const t2 = p.tightenSlAtPctTime2 ?? 0;
+    if (!isFinite(t1) || t1 < 0 || t1 > 100) {
+      errors.push('tightenSlAtPctTime must be between 0 and 100');
+    }
+    if (!isFinite(t2) || t2 < 0 || t2 > 100) {
+      errors.push('tightenSlAtPctTime2 must be between 0 and 100');
+    }
+    if (t1 > 0 && t2 > 0 && t2 <= t1) {
+      errors.push('tightenSlAtPctTime2 must be greater than tightenSlAtPctTime');
+    }
+    const ts1 = p.tightenSlTargetPct ?? 7;
+    const ts2 = p.tightenSlTargetPct2 ?? 5;
+    if (!isFinite(ts1) || ts1 <= 0 || ts1 >= 100) {
+      errors.push('tightenSlTargetPct must be between 0 and 100');
+    }
+    if (!isFinite(ts2) || ts2 <= 0 || ts2 >= 100) {
+      errors.push('tightenSlTargetPct2 must be between 0 and 100');
+    }
+    if (t1 > 0 && t2 > 0 && ts2 >= ts1) {
+      errors.push('tightenSlTargetPct2 should be tighter (smaller) than tightenSlTargetPct');
+    }
+    const bp = p.breakevenStopPct ?? 0;
+    if (!isFinite(bp) || bp < 0 || bp > 1000) {
+      errors.push('breakevenStopPct must be between 0 and 1000');
+    }
     if (errors.length > 0) {
       throw new Error(`Invalid strategy params: ${errors.join('; ')}`);
     }
   }
 
+  private static extractDynamicParams(cfg: TradingConfig): DynamicMonitorParams {
+    return {
+      stopLossPct: cfg.stopLossPct,
+      maxHoldSeconds: cfg.maxHoldSeconds,
+      trailingSlActivationPct: cfg.trailingSlActivationPct ?? 0,
+      trailingSlDistancePct: cfg.trailingSlDistancePct ?? 5,
+      slActivationDelaySec: cfg.slActivationDelaySec ?? 0,
+      trailingTpEnabled: cfg.trailingTpEnabled ?? false,
+      trailingTpDropPct: cfg.trailingTpDropPct ?? 5,
+      tightenSlAtPctTime: cfg.tightenSlAtPctTime ?? 0,
+      tightenSlTargetPct: cfg.tightenSlTargetPct ?? 7,
+      tightenSlAtPctTime2: cfg.tightenSlAtPctTime2 ?? 0,
+      tightenSlTargetPct2: cfg.tightenSlTargetPct2 ?? 5,
+      breakevenStopPct: cfg.breakevenStopPct ?? 0,
+    };
+  }
+
   private createInstance(id: string, label: string, enabled: boolean, params: StrategyParams): void {
     const config = mergeStrategyParams(this.globalConfig, params);
     const monitorMode = params.positionMonitorMode ?? 'five_second';
-    const positionManager = new PositionManager(monitorMode);
+    const dynamicParams = StrategyManager.extractDynamicParams(config);
+    const positionManager = new PositionManager(monitorMode, dynamicParams);
     const evaluator = new TradeEvaluator(
       this.db,
       config,
@@ -457,6 +526,7 @@ export class StrategyManager {
       }
 
       const entryPrice = trade.entry_effective_price ?? trade.entry_price_sol;
+      const slPriceSol = entryPrice * (1 - trade.stop_loss_pct / 100);
       instance.positionManager.addPosition({
         tradeId: trade.id,
         graduationId: trade.graduation_id,
@@ -467,12 +537,18 @@ export class StrategyManager {
         entryPriceSol: entryPrice,
         entryTimestamp: trade.entry_timestamp,
         tpPriceSol: entryPrice * (1 + trade.take_profit_pct / 100),
-        slPriceSol: entryPrice * (1 - trade.stop_loss_pct / 100),
+        slPriceSol,
         maxExitTimestamp: trade.entry_timestamp + trade.max_hold_seconds,
         tokensHeld: trade.entry_tokens_received ?? 0,
         mode: 'live',
         // graduation_timestamp not stored on trades_v2; approximate from entry
         graduationDetectedAt: trade.entry_timestamp - 30,
+        // Dynamic monitoring runtime state — initialize conservatively on recovery
+        highWaterMark: entryPrice,
+        trailingSlActive: false,
+        tpThresholdHit: false,
+        postTpHighWaterMark: 0,
+        effectiveSlPriceSol: slPriceSol,
       });
       logger.info({ tradeId: trade.id, strategyId }, 'Live position recovered for monitoring');
     }
