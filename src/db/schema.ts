@@ -389,5 +389,14 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Generic key-value store for bot settings (e.g. persisted Gist ID).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bot_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER DEFAULT (unixepoch())
+    );
+  `);
+
   logger.info('Database migrations complete');
 }

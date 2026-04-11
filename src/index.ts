@@ -8,6 +8,7 @@ import { StrategyManager } from './trading';
 import { StrategyParams } from './trading/config';
 import { makeLogger, logBuffer } from './utils/logger';
 import { registerApiRoutes } from './api/routes';
+import { GistSync } from './api/gist-sync';
 
 const logger = makeLogger('main');
 
@@ -4109,6 +4110,32 @@ ${rows.map(r => {
   app.listen(healthPort, () => {
     logger.info({ port: healthPort }, 'Health server listening');
   });
+
+  // Gist sync — push diagnose/snapshot/best-combos to a public GitHub Gist
+  // every 2 min so Claude can self-serve via WebFetch (Railway's edge blocks
+  // Anthropic IPs; gist.githubusercontent.com does not).
+  const githubToken = process.env.GITHUB_TOKEN;
+  if (githubToken) {
+    const gistSync = new GistSync({
+      db,
+      logBuffer,
+      startTime,
+      getListenerStats: () => listener?.getStats() ?? null,
+      token: githubToken,
+    });
+    gistSync.start().then(() => {
+      const urls = gistSync.getUrls();
+      if (urls) {
+        logger.info({ urls }, 'Gist sync active — Claude can self-serve from these URLs');
+        logger.info('GIST_DIAGNOSE_URL=' + urls.diagnose);
+        logger.info('GIST_SNAPSHOT_URL=' + urls.snapshot);
+        logger.info('GIST_BEST_COMBOS_URL=' + urls.best_combos);
+        logger.info('GIST_HTML_URL=' + urls.gist_html);
+      }
+    }).catch((err) => logger.error({ err }, 'Gist sync failed to start'));
+  } else {
+    logger.warn('GITHUB_TOKEN not set — Gist sync disabled. Add it to Railway env vars to enable self-service for Claude.');
+  }
 
   // Start graduation listener (after Express so health endpoint is available)
   // Note: `listener` is declared earlier in main() so /api routes can reference it.

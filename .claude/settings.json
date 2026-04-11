@@ -1,6 +1,9 @@
 {
-  "_comment": "Set RAILWAY_URL to the public base URL of the deployed bot. The slash commands in .claude/commands/ interpolate this.",
+  "_comment": "RAILWAY_URL: public base URL of the deployed bot. GIST_*_URL: set automatically after first deploy with GITHUB_TOKEN — check Railway logs for 'GIST_DIAGNOSE_URL=...' and paste here.",
   "env": {
-    "RAILWAY_URL": "https://solana-graduation-arb-research-production.up.railway.app/"
+    "RAILWAY_URL": "https://solana-graduation-arb-research-production.up.railway.app/",
+    "GIST_DIAGNOSE_URL": "",
+    "GIST_SNAPSHOT_URL": "",
+    "GIST_BEST_COMBOS_URL": ""
   }
 }
