@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-04-11T16:26:38.207Z",
-  "uptime_sec": 3002,
+  "generated_at": "2026-04-11T16:28:38.208Z",
+  "uptime_sec": 3122,
   "counts": {
-    "graduations": 1906,
-    "momentum_labeled": 1803,
-    "pump": 718,
+    "graduations": 1907,
+    "momentum_labeled": 1804,
+    "pump": 719,
     "dump": 819,
     "stable": 266,
     "unlabeled": 103
   },
   "scorecard": {
-    "total_labeled": 1803,
-    "PUMP": 718,
+    "total_labeled": 1804,
+    "PUMP": 719,
     "DUMP": 819,
     "STABLE": 266,
     "unlabeled": 103,
-    "raw_win_rate_pct": 39.8,
+    "raw_win_rate_pct": 39.9,
     "vel_5_20_cohort": {
       "n": 197,
       "win_rate_pct": 61.9,
@@ -34,23 +34,23 @@
   "data_quality": {
     "price_source_pumpswap_all_last_10": true,
     "null_fields_in_last_10": [
-      "#14119: pct_t300",
-      "#14118: pct_t300"
+      "#14128: pct_t300",
+      "#14119: pct_t300"
     ],
-    "last_graduation_seconds_ago": 486,
+    "last_graduation_seconds_ago": 108,
     "stalled": false,
     "timestamp_drift_detected": false
   },
   "listener": {
-    "totalLogsReceived": 115788,
-    "totalCandidatesDetected": 142,
-    "totalVerifiedGraduations": 5,
-    "totalGraduationsRecorded": 5,
-    "totalFalsePositives": 90,
-    "totalBundlerFalsePositives": 90,
+    "totalLogsReceived": 120232,
+    "totalCandidatesDetected": 150,
+    "totalVerifiedGraduations": 6,
+    "totalGraduationsRecorded": 6,
+    "totalFalsePositives": 92,
+    "totalBundlerFalsePositives": 92,
     "totalMintExtractionFails": 0,
     "totalStrategy3Extractions": 0,
-    "totalVaultExtractions": 5,
+    "totalVaultExtractions": 6,
     "totalVaultExtractionFails": 0,
     "lastVaultFailReasons": [],
     "lastMintFailReasons": [],
@@ -64,8 +64,8 @@
       "totalPoolsFound": 0,
       "totalExpired": 0,
       "totalSkipped": 0,
-      "totalPumpSwapEvents": 1177451,
-      "totalPoolCreationEvents": 35,
+      "totalPumpSwapEvents": 1232845,
+      "totalPoolCreationEvents": 36,
       "totalMatched": 0,
       "totalSpeculativeHits": 0,
       "pumpSwapSubscribed": true,
@@ -80,9 +80,9 @@
     },
     "directPriceCollector": {
       "activeObservations": 1,
-      "totalStarted": 5,
-      "totalCompleted": 4,
-      "totalSnapshots": 98,
+      "totalStarted": 6,
+      "totalCompleted": 5,
+      "totalSnapshots": 113,
       "totalSnapshotFailures": 2,
       "lastSnapshotFailures": [
         {
@@ -102,13 +102,30 @@
   },
   "recent_graduations": [
     {
+      "id": 14128,
+      "mint": "FQ4WZm9QZhhgcTapk887f7Rr28ufzUH5z1mm5vd2pump",
+      "open_price": 2.3625155257385673e-7,
+      "pct_t30": -76.52318243152673,
+      "pct_t60": -94.95889439843629,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 0,
+      "top5_wallet_pct": 0,
+      "dev_wallet_pct": 0,
+      "token_age_minutes": 0.1,
+      "bc_velocity_sol_per_min": 500,
+      "total_sol_raised": 85.007300917,
+      "has_pool": true,
+      "created_at": 1775924811
+    },
+    {
       "id": 14127,
       "mint": "7bfbBZXpMYbNjhZ6eQ8Ch8VFAbgcz4WsrY7JtQKcpump",
       "open_price": 2.3625155834008288e-7,
       "pct_t30": -15.201651933631712,
       "pct_t60": -19.231680656474275,
       "pct_t300": 47.11103891229935,
-      "label": null,
+      "label": "PUMP",
       "holder_count": 19,
       "top5_wallet_pct": 17.156255099850302,
       "dev_wallet_pct": 5.890242647316899,
@@ -253,23 +270,6 @@
       "total_sol_raised": 85.007301319,
       "has_pool": true,
       "created_at": 1775920456
-    },
-    {
-      "id": 14118,
-      "mint": "8KrW9F93pBZ15YDb3S3yeJHkWk39LuYo5X5X8hyypump",
-      "open_price": 2.3625155357632144e-7,
-      "pct_t30": -14.542342609527253,
-      "pct_t60": 1.7446929311600852,
-      "pct_t300": null,
-      "label": null,
-      "holder_count": 19,
-      "top5_wallet_pct": 16.150194893820398,
-      "dev_wallet_pct": 3.5962769180423,
-      "token_age_minutes": 8.5,
-      "bc_velocity_sol_per_min": 9.96,
-      "total_sol_raised": 85.007301405,
-      "has_pool": true,
-      "created_at": 1775920166
     }
   ],
   "last_error": null
