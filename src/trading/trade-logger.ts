@@ -104,9 +104,17 @@ export class TradeLogger {
     // Apply gap penalty matching Panel 4 methodology:
     // SL exits: modelled as gapping 20% worse than trigger price
     // TP exits: modelled as gapping 10% worse than trigger price
+    // DPM trailing_stop/breakeven_stop exits in profit territory use TP gap penalty
+    // (the token isn't in freefall — it's pulling back from a peak, so fill quality
+    //  is closer to a TP exit than a dump-triggered SL)
     let effectiveExitPrice = exitPriceSol;
-    if (exitReason === 'stop_loss' || exitReason === 'trailing_stop' || exitReason === 'breakeven_stop') {
+    if (exitReason === 'stop_loss') {
       effectiveExitPrice = exitPriceSol * (1 - params.slGapPenaltyPct / 100);
+    } else if (exitReason === 'trailing_stop' || exitReason === 'breakeven_stop') {
+      // Use TP gap penalty when exiting in profit, SL gap penalty when exiting at a loss
+      const inProfit = exitPriceSol > entryPriceSol;
+      const penaltyPct = inProfit ? params.tpGapPenaltyPct : params.slGapPenaltyPct;
+      effectiveExitPrice = exitPriceSol * (1 - penaltyPct / 100);
     } else if (exitReason === 'take_profit' || exitReason === 'trailing_tp') {
       effectiveExitPrice = exitPriceSol * (1 - params.tpGapPenaltyPct / 100);
     }
