@@ -6,6 +6,8 @@
     "GIST_SNAPSHOT_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/snapshot.json",
     "GIST_BEST_COMBOS_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/best-combos.json",
     "GIST_TRADES_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/trades.json",
-    "GIST_PANEL11_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/panel11.json"
+    "GIST_PANEL11_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/panel11.json",
+    "GIST_PANEL3_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/panel3.json",
+    "GIST_PRICE_PATH_URL": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/price-path-stats.json"
   }
 }

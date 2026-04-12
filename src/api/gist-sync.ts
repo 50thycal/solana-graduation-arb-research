@@ -23,6 +23,8 @@ import {
 } from './aggregates';
 import { runDiagnosis } from './diagnose';
 import { computePanel11 } from './panel11';
+import { computePanel3Summary } from './panel3-summary';
+import { computePricePathStats } from './price-path-stats';
 import {
   getGraduationCount,
   getLastBotError,
@@ -47,6 +49,8 @@ export interface StatusUrls {
   best_combos: string;
   trades: string;
   panel11: string;
+  panel3: string;
+  price_path_stats: string;
   branch_html: string;
 }
 
@@ -103,6 +107,8 @@ export class GistSync {
       best_combos: `${base}/best-combos.json`,
       trades: `${base}/trades.json`,
       panel11: `${base}/panel11.json`,
+      panel3: `${base}/panel3.json`,
+      price_path_stats: `${base}/price-path-stats.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
@@ -154,6 +160,8 @@ export class GistSync {
     };
 
     const panel11 = computePanel11(this.db);
+    const panel3 = computePanel3Summary(this.db);
+    const pricePathStats = computePricePathStats(this.db);
 
     return {
       'diagnose.json': JSON.stringify(diagnose, null, 2),
@@ -161,6 +169,8 @@ export class GistSync {
       'best-combos.json': JSON.stringify(bestCombos, null, 2),
       'trades.json': JSON.stringify(trades, null, 2),
       'panel11.json': JSON.stringify(panel11, null, 2),
+      'panel3.json': JSON.stringify(panel3, null, 2),
+      'price-path-stats.json': JSON.stringify(pricePathStats, null, 2),
     };
   }
 
