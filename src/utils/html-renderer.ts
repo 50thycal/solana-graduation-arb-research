@@ -1062,6 +1062,51 @@ function v2RegimeRowHtml(r: FilterV2RegimeRow, lowN: number, strongN: number, is
   </tr>`;
 }
 
+// Panel 11 row type — extends base regime row with sim return from best-combos leaderboard
+type FilterV2ComboRegimeRow = FilterV2RegimeRow & {
+  sim_avg_return: number | null;
+  beats_baseline: boolean;
+};
+
+// Panel 11 row renderer — same as v2RegimeRowHtml but with Sim Ret + Beats? columns after n
+function v2ComboRegimeRowHtml(r: FilterV2ComboRegimeRow, lowN: number, strongN: number, isBaseline = false): string {
+  const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
+  const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
+  const buckets = r.buckets.slice(0, 4);
+  while (buckets.length < 4) buckets.push({ n: 0, win_rate_pct: null, avg_return_pct: null });
+
+  let simRetHtml: string;
+  if (isBaseline || r.sim_avg_return === null) {
+    simRetHtml = '<span style="color:#64748b">—</span>';
+  } else {
+    const sc = r.sim_avg_return > 5 ? 'green' : r.sim_avg_return > 0 ? 'yellow' : 'red';
+    const sign = r.sim_avg_return > 0 ? '+' : '';
+    simRetHtml = `<span class="${sc}">${sign}${r.sim_avg_return.toFixed(2)}%</span>`;
+  }
+  const beatsHtml = isBaseline
+    ? '<span style="color:#64748b">—</span>'
+    : r.beats_baseline
+      ? '<span class="green" style="font-weight:600">YES</span>'
+      : '<span style="color:#64748b">no</span>';
+
+  return `<tr class="${cls}">
+    <td>${r.filter}${nLabel}</td>
+    <td>${r.n}</td>
+    <td>${simRetHtml}</td>
+    <td>${beatsHtml}</td>
+    <td>${bucketWRCell(buckets[0].win_rate_pct)}</td>
+    <td>${bucketRetCell(buckets[0].avg_return_pct)}</td>
+    <td>${bucketWRCell(buckets[1].win_rate_pct)}</td>
+    <td>${bucketRetCell(buckets[1].avg_return_pct)}</td>
+    <td>${bucketWRCell(buckets[2].win_rate_pct)}</td>
+    <td>${bucketRetCell(buckets[2].avg_return_pct)}</td>
+    <td>${bucketWRCell(buckets[3].win_rate_pct)}</td>
+    <td>${bucketRetCell(buckets[3].avg_return_pct)}</td>
+    <td>${wrStdDevCell(r.wr_std_dev)}</td>
+    <td>${stabilityCell(r.stability)}</td>
+  </tr>`;
+}
+
 // ── Panel 4 helpers: dynamic TP/SL EV simulator ──
 
 type FilterV2Panel4Combos = {
@@ -2202,14 +2247,14 @@ export function renderFilterV2Html(data: any): string {
   let panel11Html = '';
   if (data.panel11) {
     const panel11 = data.panel11;
-    const baseline11: FilterV2RegimeRow = panel11.baseline;
-    const filters11: FilterV2RegimeRow[] = panel11.filters || [];
+    const baseline11: FilterV2ComboRegimeRow = panel11.baseline;
+    const filters11: FilterV2ComboRegimeRow[] = panel11.filters || [];
     const lowN11 = panel11.flags?.low_n_threshold ?? 20;
     const strongN11 = panel11.flags?.strong_n_threshold ?? 100;
     const bucketWindows11: { bucket: number; start_iso: string; end_iso: string }[] = panel11.bucket_windows || [];
 
-    const baselineRow11 = v2RegimeRowHtml(baseline11, lowN11, strongN11, true);
-    const dataRows11 = filters11.map((r: FilterV2RegimeRow) => v2RegimeRowHtml(r, lowN11, strongN11, false)).join('\n        ');
+    const baselineRow11 = v2ComboRegimeRowHtml(baseline11, lowN11, strongN11, true);
+    const dataRows11 = filters11.map((r: FilterV2ComboRegimeRow) => v2ComboRegimeRowHtml(r, lowN11, strongN11, false)).join('\n        ');
 
     const shortDate = (iso: string) => {
       try { return new Date(iso).toISOString().slice(0, 10); } catch { return iso; }
@@ -2231,16 +2276,18 @@ export function renderFilterV2Html(data: any): string {
           <tr>
             <th class="sortable" onclick="v2GenericSort('panel11-table',0,'str')">Combo <span class="arrow">⇅</span></th>
             <th class="sortable" onclick="v2GenericSort('panel11-table',1,'num')">n <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',2,'num')">B1 WR <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',3,'num')">B1 Ret <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',4,'num')">B2 WR <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',5,'num')">B2 Ret <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',6,'num')">B3 WR <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',7,'num')">B3 Ret <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',8,'num')">B4 WR <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',9,'num')">B4 Ret <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',10,'num')">WR StdDev <span class="arrow">⇅</span></th>
-            <th class="sortable" onclick="v2GenericSort('panel11-table',11,'str')">Stability <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',2,'num')">Sim Ret <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',3,'str')">Beats? <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',4,'num')">B1 WR <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',5,'num')">B1 Ret <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',6,'num')">B2 WR <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',7,'num')">B2 Ret <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',8,'num')">B3 WR <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',9,'num')">B3 Ret <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',10,'num')">B4 WR <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',11,'num')">B4 Ret <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',12,'num')">WR StdDev <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',13,'str')">Stability <span class="arrow">⇅</span></th>
           </tr>
         </thead>
         <tbody>
@@ -2249,11 +2296,12 @@ export function renderFilterV2Html(data: any): string {
         </tbody>
       </table>
       <div class="desc" style="margin-top:10px">
-        <strong>Entry gate:</strong> T+30 price +5% to +100% from open (same gate used by /api/best-combos). Only cross-group pairs with n ≥ 20 are shown (max 60 rows).
+        <strong>Entry gate:</strong> T+30 price +5% to +100% from open (same gate as /api/best-combos). Only cross-group pairs with n ≥ 20 are shown (max 40 rows).
         <br>
-        <strong>Sort:</strong> WR StdDev ascending by default — scroll to the top of the table for the most regime-stable combos. Click any column header to re-sort.
+        <strong>Sort:</strong> Sim return descending by default — same order as the best-combos leaderboard. Click any column header to re-sort; click WR StdDev to find the most regime-stable combos.
         <br>
-        <strong>Bucketing:</strong> Same global B1–B4 time quartiles as Panel 3 — every row is directly comparable.
+        <strong>Sim Ret:</strong> Simulated avg return at 10% SL / 50% TP with entry gate, same methodology as /api/best-combos.
+        <strong>Beats?:</strong> YES = sim return beats the +1.7% baseline (≥ +0.3 pp above +1.4% floor) on n ≥ 100.
         <br>
         <strong>WR StdDev:</strong> Population std dev of bucket win rates (buckets with n &lt; 5 excluded).
         <strong>Stability:</strong>
@@ -2261,8 +2309,6 @@ export function renderFilterV2Html(data: any): string {
         <span class="yellow">MODERATE (8–15)</span>
         <span class="red">CLUSTERED (≥ 15)</span>
         <span style="color:#64748b">INSUFFICIENT (&lt; 2 buckets with n ≥ 5)</span>
-        <br>
-        <em>Cross-reference with /api/best-combos for sim 10%SL/50%TP return — this panel adds the regime dimension that best-combos lacks.</em>
       </div>
     </div>`;
   }
