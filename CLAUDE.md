@@ -212,38 +212,65 @@ See `SEARCH SPACE` section above. Any dimension there is fair game; add new ones
 
 ## SELF-SERVICE DATA ACCESS
 
-**Rule: Claude self-serves all bot data via JSON endpoints. The human operator does NOT screenshot dashboards, query the DB, or pull Railway logs anymore.**
+**Rule: Claude self-serves all bot data via the `bot-status` branch on GitHub. The human operator does NOT screenshot dashboards, query the DB, or pull Railway logs anymore.**
 
-The bot's Express server exposes a JSON API under `/api/*`. The base URL is the Railway deployment URL (store it in `RAILWAY_URL` or `.claude/settings.json`). Hit these endpoints with `WebFetch` at the start of every session.
+**IMPORTANT: Do NOT use `WebFetch` against the Railway deployment URL — it returns 403.** Instead, read data from the `bot-status` branch, which the bot pushes to every 2 minutes. Two methods are available (prefer GitHub MCP, fall back to raw URL):
+
+#### Method 1: GitHub MCP tool (preferred — returns full JSON)
+Use `mcp__github__get_file_contents` with `owner=50thycal`, `repo=solana-graduation-arb-research`, `ref=refs/heads/bot-status`, and `path=<filename>.json`. The result may be large — pipe through `python3`/`jq` to extract what you need (see examples below).
+
+#### Method 2: raw.githubusercontent.com (fallback — may be summarized by WebFetch)
+Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These are `raw.githubusercontent.com` URLs pointing at the same `bot-status` branch files. Note: WebFetch passes content through a summarizer, so you may lose detail on large responses.
 
 ### Session-start protocol (do this first, every time)
 
-1. **`GET /api/diagnose`** → confirm `verdict: "HEALTHY"`. If not, fix the reported level before doing anything else.
-2. **`GET /api/snapshot`** → read counts, scorecard, data quality, last 10 graduations, last error.
-3. **`GET /api/best-combos?min_n=20&top=30&pairs=true`** → leaderboard ranked by sim return. Pick the next hypothesis.
-4. **`GET /api/panel11`** → regime stability for the top combos — check `stability` and `wr_std_dev` alongside sim return.
-5. **`GET /api/panel3`** → regime stability for individual filters — useful when evaluating single-dimension signals.
-6. **`GET /api/price-path-stats`** → mean price paths by label, Cohen's d effect sizes for path features, entry timing optimization.
-7. **`GET /api/trades`** → paper trading performance: stats, by-strategy breakdown, recent trades.
+1. **`diagnose.json`** → confirm `verdict: "HEALTHY"`. If not, fix the reported level before doing anything else.
+2. **`snapshot.json`** → read counts, scorecard, data quality, last 10 graduations, last error.
+3. **`best-combos.json`** → leaderboard ranked by sim return. Pick the next hypothesis.
+4. **`panel11.json`** → regime stability for the top combos — check `stability` and `wr_std_dev` alongside sim return.
+5. **`panel3.json`** → regime stability for individual filters — useful when evaluating single-dimension signals.
+6. **`price-path-stats.json`** → mean price paths by label, Cohen's d effect sizes for path features, entry timing optimization.
+7. **`trades.json`** → paper trading performance: stats, by-strategy breakdown, recent trades.
 
-All 7 endpoints are also pushed to the bot-status branch every 2 min and readable via `raw.githubusercontent.com` (GIST_* env vars in `.claude/settings.json`).
+#### Example: reading trades data via GitHub MCP + python3
+```
+# 1. Fetch via MCP (result saved to a temp file when large)
+mcp__github__get_file_contents(owner=50thycal, repo=solana-graduation-arb-research,
+    path=trades.json, ref=refs/heads/bot-status)
 
-### Endpoint catalogue
+# 2. Parse the MCP response (it wraps content in [{type, text}] array)
+python3 -c "
+import json
+with open('<temp_file_path>') as f:
+    raw = json.load(f)
+text = raw[1]['text']
+data = json.loads(text[text.find('{'):])
+print(json.dumps(data['by_strategy'], indent=2))
+"
+```
+
+### File catalogue (on `bot-status` branch)
+
+| File | Corresponding API | Description |
+|---|---|---|
+| `diagnose.json` | `/api/diagnose` | Level 1–4 bug triage verdict |
+| `snapshot.json` | `/api/snapshot` | Dashboard summary: counts, scorecard, data quality, recent graduations |
+| `best-combos.json` | `/api/best-combos` | Filter + combo leaderboard ranked by sim return |
+| `panel3.json` | `/api/panel3` | Single-filter regime stability |
+| `panel11.json` | `/api/panel11` | Combo regime stability |
+| `price-path-stats.json` | `/api/price-path-stats` | Mean price paths by label, Cohen's d, entry timing |
+| `trades.json` | `/api/trades` | Paper trading: stats, by-strategy breakdown, recent trades |
+
+### Live-only endpoints (not synced to bot-status)
+
+These endpoints are only available on the Railway deployment and are NOT synced to the `bot-status` branch. They require direct Railway access (which currently returns 403 from Claude sessions). If you need this data, ask the human operator to check the dashboard directly.
 
 | Endpoint | Description |
 |---|---|
-| `GET /api` | Index of all `/api/*` endpoints |
-| `GET /api/diagnose` | Level 1–4 bug triage verdict (see mapping below) |
-| `GET /api/snapshot` | One-call dashboard summary: counts, scorecard, data quality, recent graduations, last error |
-| `GET /api/best-combos?min_n=50&top=20&pairs=true` | Leaderboard of filters + cross-group pairs ranked by 10%SL/50%TP simulated avg return. `min_n` defaults 20, `top` defaults 20, `pairs=false` disables pair combos. |
-| `GET /api/panel3` | Single-filter regime stability JSON — same as Panel 3 on `/filter-analysis-v2`. `stability` + `wr_std_dev` for every individual filter. Synced to `panel3.json`. |
-| `GET /api/panel11` | Combo regime stability JSON — same as Panel 11 on `/filter-analysis-v2`. Also synced to `panel11.json`. |
-| `GET /api/price-path-stats` | Mean price paths by label (PUMP/DUMP/STABLE), Cohen's d for path features, entry timing optimization, velocity breakdown. Synced to `price-path-stats.json`. |
-| `GET /api/filter-catalog` | All filter definitions (`FILTER_CATALOG` in `src/api/aggregates.ts`) — the search space best-combos runs over |
-| `GET /api/graduations?limit=50&label=PUMP&vel_min=5&vel_max=20` | Filtered graduation rows (all params optional) |
-| `GET /api/trades?limit=50&status=open\|closed\|all` | Recent paper trades + stats |
+| `GET /api/filter-catalog` | All filter definitions (`FILTER_CATALOG` in `src/api/aggregates.ts`) |
+| `GET /api/graduations?limit=50&label=PUMP&vel_min=5&vel_max=20` | Filtered graduation rows |
 | `GET /api/skips?limit=50` | Recent skipped candidates + reason counts |
-| `GET /api/logs?level=warn&limit=500&grep=<substr>&since=<epoch_ms>` | In-process log ring buffer (~5000 entries, resets on redeploy) |
+| `GET /api/logs?level=warn&limit=500&grep=<substr>&since=<epoch_ms>` | In-process log ring buffer |
 | `GET /api/bot-errors?limit=20` | Recent uncaught exceptions + unhandled rejections |
 
 ### Bug Triage Protocol → `/api/diagnose` mapping
