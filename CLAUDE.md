@@ -260,6 +260,7 @@ print(json.dumps(data['by_strategy'], indent=2))
 | `panel11.json` | `/api/panel11` | Combo regime stability |
 | `price-path-stats.json` | `/api/price-path-stats` | Mean price paths by label, Cohen's d, entry timing |
 | `trades.json` | `/api/trades` | Paper trading: stats, by-strategy breakdown, recent trades |
+| `strategies.json` | `/api/strategies` | All strategy configs incl. DPM params (TP/SL, trailing SL, breakeven, etc.) |
 
 ### Live-only endpoints (not synced to bot-status)
 
