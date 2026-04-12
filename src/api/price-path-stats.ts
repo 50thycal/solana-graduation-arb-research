@@ -170,7 +170,7 @@ export function computePricePathStats(db: Database.Database): PricePathStats {
     const returns = valid.map(r => {
       const entryPct = r[col] as number;
       const exitPct  = r.pct_t300 as number;
-      const cost     = r.round_trip_slippage_pct;
+      const cost     = (r.round_trip_slippage_pct as number | null) ?? 0;
       return ((1 + exitPct / 100) / (1 + entryPct / 100) - 1) * 100 - cost;
     });
     const avgRet = returns.length >= 5 ? round2(mean(returns)) : null;
