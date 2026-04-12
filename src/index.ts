@@ -10,6 +10,7 @@ import { makeLogger, logBuffer } from './utils/logger';
 import { registerApiRoutes } from './api/routes';
 import { GistSync } from './api/gist-sync';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
+import { computePanel11 } from './api/panel11';
 
 const logger = makeLogger('main');
 
@@ -2336,87 +2337,9 @@ async function main() {
         ...runFilterRegime(f.predicate),
       }));
 
-      // ── Panel 11: combo filter regime stability — anchored to best-combos leaderboard ──
-      // Uses the same FILTER_CATALOG + entry gate as /api/best-combos so the combos
-      // here are the EXACT same as the leaderboard, just with regime stability added.
-      // Predicates mirror each FILTER_CATALOG WHERE clause in-memory for runFilterRegime.
-      const ENTRY_GATE_PRED = (r: RegimeRow): boolean => r.pct_t30 >= 5 && r.pct_t30 <= 100;
-
-      // In-memory predicate for every FILTER_CATALOG entry (mirrors the SQL WHERE clause)
-      const catalogPredicates = new Map<string, (r: RegimeRow) => boolean>([
-        // Velocity
-        ['vel < 5',    (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 5],
-        ['vel 5-10',   (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 5  && r.bc_velocity_sol_per_min < 10],
-        ['vel 5-20',   (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 5  && r.bc_velocity_sol_per_min < 20],
-        ['vel 10-20',  (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 10 && r.bc_velocity_sol_per_min < 20],
-        ['vel < 20',   (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 20],
-        ['vel < 50',   (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 50],
-        ['vel 20-50',  (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 20 && r.bc_velocity_sol_per_min < 50],
-        ['vel 50-200', (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 50 && r.bc_velocity_sol_per_min < 200],
-        // BC Age
-        ['age < 10min', (r) => r.token_age_seconds != null && r.token_age_seconds < 600],
-        ['age > 10min', (r) => r.token_age_seconds != null && r.token_age_seconds > 600],
-        ['age > 30min', (r) => r.token_age_seconds != null && r.token_age_seconds > 1800],
-        ['age > 1hr',   (r) => r.token_age_seconds != null && r.token_age_seconds > 3600],
-        // Holders
-        ['holders >= 5',  (r) => r.holder_count != null && r.holder_count >= 5],
-        ['holders >= 10', (r) => r.holder_count != null && r.holder_count >= 10],
-        ['holders >= 15', (r) => r.holder_count != null && r.holder_count >= 15],
-        ['holders >= 18', (r) => r.holder_count != null && r.holder_count >= 18],
-        // Top 5 Concentration
-        ['top5 < 10%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 10],
-        ['top5 < 15%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 15],
-        ['top5 < 20%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 20],
-        // Dev Wallet
-        ['dev < 3%', (r) => r.dev_wallet_pct != null && r.dev_wallet_pct < 3],
-        ['dev < 5%', (r) => r.dev_wallet_pct != null && r.dev_wallet_pct < 5],
-        // Liquidity
-        ['liq > 50',  (r) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 > 50],
-        ['liq > 100', (r) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 > 100],
-        ['liq > 150', (r) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 > 150],
-        // Path shape
-        ['mono > 0.5',  (r) => r.monotonicity_0_30 != null && r.monotonicity_0_30 > 0.5],
-        ['mono > 0.66', (r) => r.monotonicity_0_30 != null && r.monotonicity_0_30 > 0.66],
-        ['dd > -10%',   (r) => r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > -10],
-        ['dd > -20%',   (r) => r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > -20],
-        ['accel > 0',   (r) => r.acceleration_t30 != null && r.acceleration_t30 > 0],
-        // Buy pressure
-        ['buy_ratio > 0.5', (r) => r.buy_pressure_buy_ratio != null && r.buy_pressure_buy_ratio > 0.5],
-        ['buy_ratio > 0.6', (r) => r.buy_pressure_buy_ratio != null && r.buy_pressure_buy_ratio > 0.6],
-        ['buyers >= 5',     (r) => r.buy_pressure_unique_buyers != null && r.buy_pressure_unique_buyers >= 5],
-        ['buyers >= 10',    (r) => r.buy_pressure_unique_buyers != null && r.buy_pressure_unique_buyers >= 10],
-        ['whale < 30%',     (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 30],
-        ['whale < 50%',     (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 50],
-      ]);
-
-      const baseline11 = {
-        filter: 'ALL labeled (entry gate only)',
-        group: 'Baseline',
-        sim_avg_return: null as number | null,
-        beats_baseline: false,
-        ...runFilterRegime(ENTRY_GATE_PRED),
-      };
-
-      // Get the leaderboard order from best-combos (same as /api/best-combos)
-      const bestCombosForPanel11 = computeBestCombos(db, { min_n: 20, top: 40, include_pairs: true });
-
-      const filters11 = bestCombosForPanel11.rows
-        .filter(row => row.filters.length === 2)
-        .map(row => {
-          const predA = catalogPredicates.get(row.filters[0]);
-          const predB = catalogPredicates.get(row.filters[1]);
-          if (!predA || !predB) return null;
-          const comboPred = (r: RegimeRow) => ENTRY_GATE_PRED(r) && predA(r) && predB(r);
-          const regime = runFilterRegime(comboPred);
-          return {
-            filter: row.filter_spec,
-            group: `${FILTER_CATALOG.find(f => f.name === row.filters[0])?.group ?? ''} × ${FILTER_CATALOG.find(f => f.name === row.filters[1])?.group ?? ''}`,
-            sim_avg_return: row.sim_avg_return_10sl_50tp_pct,
-            beats_baseline: row.beats_baseline,
-            ...regime,
-          };
-        })
-        .filter((r): r is NonNullable<typeof r> => r !== null);
+      // ── Panel 11: combo filter regime stability — delegated to src/api/panel11.ts ──
+      const panel11Data = computePanel11(db);
+      const { baseline: baseline11, filters: filters11 } = panel11Data;
 
       // ── Panel 4: dynamic TP/SL EV simulator ──
       // Constants MUST mirror simulateWithTP at src/index.ts:1283-1359 exactly.
@@ -3652,22 +3575,7 @@ async function main() {
             strong_n_threshold: 100,
           },
         },
-        panel11: {
-          title: 'Combo Filter Regime Stability — Cross-Group Filter Pairs',
-          description:
-            'Regime check for every cross-group two-filter combination in the catalog, with the T+30 entry gate (+5% to +100%) applied. Rows are the EXACT same combos as the /api/best-combos leaderboard, ordered by sim return descending (highest first). Combos with n < 20 are excluded (max 40 rows). Use this to validate that a high-sim-return combo from the leaderboard also holds up across time buckets.',
-          bucket_windows: bucketBoundaries.map((b, i) => ({
-            bucket: i + 1,
-            start_iso: new Date(b.start * 1000).toISOString(),
-            end_iso: new Date(b.end * 1000).toISOString(),
-          })),
-          baseline: baseline11,
-          filters: filters11,
-          flags: {
-            low_n_threshold: 20,
-            strong_n_threshold: 100,
-          },
-        },
+        panel11: panel11Data,
         panel10: {
           title: 'Dynamic Position Monitoring (DPM) Optimizer — Per-Filter, Per-Category, Overall',
           description:
