@@ -750,7 +750,9 @@ export function getTradeStatsByStrategy(db: Database.Database) {
       SUM(CASE WHEN status='closed' AND exit_reason IN ('take_profit','trailing_tp') THEN 1 ELSE 0 END) as tp_exits,
       SUM(CASE WHEN status='closed' AND exit_reason IN ('stop_loss','trailing_stop','breakeven_stop') THEN 1 ELSE 0 END) as sl_exits,
       SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
-      ROUND(SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END), 4) as total_net_profit_sol
+      ROUND(SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END), 4) as total_net_profit_sol,
+      MIN(entry_timestamp) as first_trade_ts,
+      MAX(entry_timestamp) as last_trade_ts
     FROM trades_v2
     GROUP BY strategy_id, mode
     ORDER BY strategy_id, mode
