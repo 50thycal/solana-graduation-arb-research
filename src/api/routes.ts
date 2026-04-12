@@ -33,6 +33,7 @@ import {
   FILTER_CATALOG,
 } from './aggregates';
 import { runDiagnosis } from './diagnose';
+import { computePanel11 } from './panel11';
 import type { LogBuffer } from '../utils/log-buffer';
 import {
   getGraduationCount,
@@ -127,6 +128,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       include_pairs: includePairs,
     });
     res.json(leaderboard);
+  }));
+
+  // ── /api/panel11 ──
+  // Combo filter regime stability — same data as Panel 11 on /filter-analysis-v2
+  // but as JSON for Claude self-serve. Includes sim return + beats_baseline from
+  // best-combos alongside regime bucket data.
+  app.get('/api/panel11', wrap((_req, res) => {
+    res.json(computePanel11(db));
   }));
 
   // ── /api/filter-catalog ──
@@ -272,6 +281,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
         { path: '/api/diagnose',       description: 'Level 1-4 bug triage verdict' },
         { path: '/api/snapshot',       description: 'One-call dashboard summary' },
         { path: '/api/best-combos',    description: 'Filter leaderboard ranked by simulated EV' },
+        { path: '/api/panel11',        description: 'Combo regime stability — same as Panel 11 on /filter-analysis-v2 but JSON' },
         { path: '/api/filter-catalog', description: 'Filter definitions used by best-combos' },
         { path: '/api/trades',         description: 'Recent trades (query: limit, status)' },
         { path: '/api/skips',          description: 'Recent skipped candidates' },

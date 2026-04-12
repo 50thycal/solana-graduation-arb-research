@@ -22,6 +22,7 @@ import {
   computeBestCombos,
 } from './aggregates';
 import { runDiagnosis } from './diagnose';
+import { computePanel11 } from './panel11';
 import {
   getGraduationCount,
   getLastBotError,
@@ -45,6 +46,7 @@ export interface StatusUrls {
   snapshot: string;
   best_combos: string;
   trades: string;
+  panel11: string;
   branch_html: string;
 }
 
@@ -100,6 +102,7 @@ export class GistSync {
       snapshot: `${base}/snapshot.json`,
       best_combos: `${base}/best-combos.json`,
       trades: `${base}/trades.json`,
+      panel11: `${base}/panel11.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
@@ -150,11 +153,14 @@ export class GistSync {
       trades: recentTrades,
     };
 
+    const panel11 = computePanel11(this.db);
+
     return {
       'diagnose.json': JSON.stringify(diagnose, null, 2),
       'snapshot.json': JSON.stringify(snapshot, null, 2),
       'best-combos.json': JSON.stringify(bestCombos, null, 2),
       'trades.json': JSON.stringify(trades, null, 2),
+      'panel11.json': JSON.stringify(panel11, null, 2),
     };
   }
 

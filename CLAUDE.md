@@ -8,7 +8,7 @@ The open research question is:
 
 > **Which single filter or combination of filters — from the full v2 filter search space — yields a profitable bot after all costs (gap penalties, round-trip slippage), on n ≥ 100 samples, with regime-stable edge?**
 
-Velocity 5–20 sol/min + 10% SL / 30–50% TP is the current **best-known baseline** (+1.4% avg return, n=80). It is a floor to beat, not the goal. Any new filter or combination is fair game — single filters, pairs, triples, cross-dimension combos — as long as each candidate is evaluated against the baseline and the same rigor (sample size, regime stability, cost modeling).
+Velocity 5–20 sol/min + 10% SL / 30–50% TP was the old baseline (+1.4% avg return, n=80). **The current baseline is `vel < 20 + top5 < 10%` — sim +6.44%, n=111, STABLE regime.** Any new filter or combination is fair game — single filters, pairs, triples, cross-dimension combos — as long as each candidate is evaluated against the baseline and the same rigor (sample size, regime stability, cost modeling).
 
 The bot is free to hypothesize, test, and adopt new filters without asking permission. The only rules are: beat the baseline, survive regime checks, and never claim victory on small n.
 
@@ -29,35 +29,39 @@ These are prior results. They are **starting knowledge**, not constraints. If ne
 - **Momentum continuation** (T+300 > T+30): Only 47%. Not a signal.
 
 ### Current Best-Known Baseline
-- **vel 5-20 sol/min + T+30 gate (+5% to +100%) + 10% SL / 50% TP**: +1.4% avg return (n=80, recorded 2026-04). At n=202 the raw T+30→T+300 return is +0.57% (sim TP/SL return not yet recalculated for n=202). **+1.4% sim return is the floor to beat until recalculated.**
-- vel 5-20 @ 10% SL / 30% TP: +0.8% avg return (n=80)
-- vel 5-20 @ 10% SL / 75% TP: +1.0% avg return (n=80)
-- BC age >10 min + vel <20 @ 10% SL: +0.8% avg return (n=103)
+- **`vel < 20 + top5 < 10%` + T+30 gate (+5% to +100%) + 10% SL / 50% TP**: sim **+6.44%** avg return, n=111, win rate 72.1%, regime **STABLE** (WR StdDev < 8). Promoted 2026-04-12. **This is the floor to beat.**
+- Former baseline: vel 5-20 @ 10% SL / 50% TP: +1.4% avg return (n=80, 2026-04). Retired.
+- Former baseline sim returns for reference: vel 5-20 @ 30% TP: +0.8%; vel 5-20 @ 75% TP: +1.0%; BC age >10min + vel<20 @ 10%SL: +0.8% (n=103)
 
-### Leaderboard Leaders (as of n=1,847 labeled, 2026-04-12)
-All results below include the T+30 entry gate (+5% to +100%) and model 10% SL / 50% TP with per-token round-trip slippage. Source: `/api/best-combos`.
+### Leaderboard Leaders (as of 1,964 total grads, 2026-04-12)
+All results below include the T+30 entry gate (+5% to +100%) and model 10% SL / 50% TP with per-token round-trip slippage. Source: `/api/best-combos`. Regime stability now available via Panel 11 on `/filter-analysis-v2`.
 
-**Best single filter with n ≥ 100:** No single filter currently appears in the top 20 — all are dominated by two-filter combos. `vel 5-20` at n=202 is below the +5.68% floor of the top 20 (sim return not recalculated since n=80).
+**Best single filter with n ≥ 100:** No single filter currently appears in the top 20 — all are dominated by two-filter combos.
 
-**Best combos with n ≥ 100 (beats_baseline = true):**
-1. `vel < 20 + top5 < 10%` — n=111, sim +6.44%, win rate 72.1% — **regime check NOT yet done**
-2. `holders >= 18 + top5 < 10%` — n=127, sim +5.68%, win rate 69.3% — **regime check NOT yet done**
+**Best combos with n ≥ 100:**
+1. `vel < 20 + top5 < 10%` — n=111, sim +6.44%, win rate 72.1% — **STABLE regime — CURRENT BASELINE (promoted 2026-04-12)**
+2. `holders >= 18 + top5 < 10%` — n=127, sim +5.68%, win rate 69.3% — **regime check pending (use Panel 11)**
 
-**Top combo by sim return (insufficient n):**
-- `vel 10-20 + buy_ratio > 0.6` — n=33, sim +8.90%, win rate 72.7% — needs ~67 more samples
+**Top combos by sim return (insufficient n — watch for n=100):**
+1. `vel 10-20 + buy_ratio > 0.6` — n=33, sim +8.90%, win rate 72.7% — needs ~67 more samples
+2. `vel 20-50 + dd > -10%` — n=24, sim +8.67%, win rate 70.8% — new entrant; avg raw return +54% (pump-heavy)
+3. `vel 10-20 + top5 < 10%` — n=51, sim +8.08%, win rate 74.5% — subset of #1 leader, higher return
+4. `vel 5-20 + top5 < 10%` — n=76, sim +7.07%, win rate 75.0% — needs ~24 more samples
 
-**Interpretation:** `vel < 20 + top5 < 10%` is the current leader on all measurable criteria (n, sim return, win rate) except regime stability. The top5 < 10% filter adds consistent signal when combined with velocity — both leaders share it. Until regime std-dev is checked for the top two combos, vel 5-20 remains the operative baseline.
+**Interpretation:** `vel < 20 + top5 < 10%` is the only n≥100 combo with beats_baseline=true AND the highest sim return at that sample size. `top5 < 10%` appears in 3 of the top 4 combos by sim return — it is the strongest individual signal component. The `vel 10-20` narrowing consistently outperforms `vel 5-20` when paired with `top5 < 10%` (sim +8.08% vs +7.07%), suggesting the lower velocity floor is noise. Regime checks for the two n≥100 leaders are the next required step before promoting either as the new baseline.
 
-### Promising Leads (under investigation — finish these or beat them)
-- **`vel < 20 + top5 < 10%`**: sim +6.44% at n=111 — run regime check. If std-dev < 15%, this is the new baseline.
-- **`vel 10-20 + buy_ratio > 0.6`**: sim +8.90% at n=33 — highest sim return in catalog. Needs ~67 more samples.
-- **`vel 5-20 + top5 < 10%`**: sim +7.07% at n=76 — close to n=100, similar pattern to #1 leader.
-- **Regime stability**: Overall std dev 7.7% (stable); vel 5-20 at 13.9% (moderate). Any new candidate must include a regime-stability check.
-- **Tail risk**: 18.2% of vel 5-20 trades lose >50%. Whatever filter you pick, the 10% SL is what keeps the tail survivable.
+### Promising Leads (priority order — beat +6.44% on n ≥ 100 with STABLE regime)
+1. **`vel 10-20 + top5 < 10%`** (n=51, sim +8.08%): Best sim return of the top5<10% family. ~49 samples from n=100. If it holds, it supersedes the new baseline.
+2. **`vel 5-20 + top5 < 10%`** (n=76, sim +7.07%): ~24 samples from n=100. Should validate or refine #1 above.
+3. **`vel 10-20 + buy_ratio > 0.6`** (n=33, sim +8.90%): Highest sim return in catalog. ~67 samples from n=100.
+4. **`vel 20-50 + dd > -10%`** (n=24, sim +8.67%): Extreme raw return (+54%) suggests pump-outlier bias; monitor as n grows.
+5. **`holders >= 18 + top5 < 10%`** (n=127, sim +5.68%): Already at n≥100. Regime check via Panel 11 — if STABLE, compare against new baseline.
+- **Regime stability**: Panel 11 now live on `/filter-analysis-v2` — use it for regime checks. New baseline `vel < 20 + top5 < 10%` confirmed STABLE (WR StdDev < 8).
+- **Tail risk**: 10% SL is mandatory for any strategy. Do not run without it.
 
 ## SEARCH SPACE
 
-The full space Claude is free to explore (see `FILTER_PRESET_GROUPS` in `src/utils/html-renderer.ts:3050` for exact thresholds, and `/filter-analysis-v2` Panels 1–9 for current combinatorial coverage):
+The full space Claude is free to explore (see `FILTER_PRESET_GROUPS` in `src/utils/html-renderer.ts:3050` for exact thresholds, and `/filter-analysis-v2` Panels 1–11 for current combinatorial coverage; Panel 11 = combo regime stability):
 
 - **Velocity** (`bc_velocity_sol_per_min`): <5, 5–10, 5–20, 10–20, <20, <50, 20–50, 50–200, >200
 - **BC Age** (`token_age_seconds`): <10 min, >10 min, >30 min, >1 hr, >1 day
@@ -190,13 +194,13 @@ Never declare victory on n < 100. Never keep a candidate running past a clear in
 |---|---|
 | Entry timing | T+30 post-graduation on PumpSwap pool |
 | Entry gate | T+30 price between +5% and +100% from open |
-| Filter | BC velocity 5-20 sol/min (operative baseline); leading candidate: vel < 20 + top5 < 10% (n=111, sim +6.44%) |
+| Filter | `vel < 20 + top5 < 10%` — **CURRENT BASELINE** (promoted 2026-04-12) |
 | Stop-loss | 10% from entry (with 20% adverse gap penalty modeled) |
 | Take-profit | 50% from entry (with 10% adverse gap penalty modeled) |
 | Round-trip costs | Per-token measured slippage, fallback 3% |
-| Baseline avg return | +1.4% per trade (n=80, sim 10%SL/50%TP) — raw return at n=202 is +0.57%; sim not yet recalculated |
-| Leading candidate | vel < 20 + top5 < 10%: sim +6.44%, n=111, win 72.1% — pending regime std-dev check |
-| Promotion bar | Beat baseline by ≥ +0.3 pp on n ≥ 100 with regime std-dev < 15% |
+| Baseline avg return | **+6.44%** per trade sim (n=111, 10%SL/50%TP, STABLE regime) — replaces +1.4% (vel 5-20, n=80) |
+| Next candidates | `vel 10-20 + top5 < 10%` sim +8.08% (n=51); `vel 10-20 + buy_ratio > 0.6` sim +8.90% (n=33) |
+| Promotion bar | Beat **+6.44%** by ≥ +0.3 pp on n ≥ 100 with regime std-dev < 15% |
 | Price source | PumpSwap pool ONLY (not bonding curve) |
 | Execution | Research only — no live trades |
 | Monthly revenue target | ~$490/month at 0.5 SOL position size (covers AI/infra costs) |
@@ -228,6 +232,7 @@ Only after those three calls should you consider fetching narrower data.
 | `GET /api/diagnose` | Level 1–4 bug triage verdict (see mapping below) |
 | `GET /api/snapshot` | One-call dashboard summary: counts, scorecard, data quality, recent graduations, last error |
 | `GET /api/best-combos?min_n=50&top=20&pairs=true` | Leaderboard of filters + cross-group pairs ranked by 10%SL/50%TP simulated avg return. `min_n` defaults 20, `top` defaults 20, `pairs=false` disables pair combos. |
+| `GET /api/panel11` | Combo regime stability JSON — same data as Panel 11 on `/filter-analysis-v2`. Use this to check `stability` and `wr_std_dev` for any combo. Also synced to bot-status branch as `panel11.json`. |
 | `GET /api/filter-catalog` | All filter definitions (`FILTER_CATALOG` in `src/api/aggregates.ts`) — the search space best-combos runs over |
 | `GET /api/graduations?limit=50&label=PUMP&vel_min=5&vel_max=20` | Filtered graduation rows (all params optional) |
 | `GET /api/trades?limit=50&status=open\|closed\|all` | Recent paper trades + stats |
