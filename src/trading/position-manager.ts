@@ -295,18 +295,23 @@ export class PositionManager extends EventEmitter {
     }
 
     // 4. COMPUTE EFFECTIVE SL (layered — each rule can only RAISE the floor)
+    // Track which DPM rule raised the floor highest so exit reason is correct.
     let effectiveSl = pos.slPriceSol; // start with the original fixed SL
+    let slRaisedBy: 'none' | 'tighten' | 'breakeven' | 'trailing' = 'none';
     const secondsHeld = now - pos.entryTimestamp;
 
     // 4a. TIME-BASED SL TIGHTENING
     if (params.tightenSlAtPctTime > 0 && params.maxHoldSeconds > 0) {
       const elapsedPct = (secondsHeld / params.maxHoldSeconds) * 100;
+      let tightenedSl = -Infinity;
       if (params.tightenSlAtPctTime2 > 0 && elapsedPct >= params.tightenSlAtPctTime2) {
-        const tightenedSl = pos.entryPriceSol * (1 - params.tightenSlTargetPct2 / 100);
-        effectiveSl = Math.max(effectiveSl, tightenedSl);
+        tightenedSl = pos.entryPriceSol * (1 - params.tightenSlTargetPct2 / 100);
       } else if (elapsedPct >= params.tightenSlAtPctTime) {
-        const tightenedSl = pos.entryPriceSol * (1 - params.tightenSlTargetPct / 100);
-        effectiveSl = Math.max(effectiveSl, tightenedSl);
+        tightenedSl = pos.entryPriceSol * (1 - params.tightenSlTargetPct / 100);
+      }
+      if (tightenedSl > effectiveSl) {
+        effectiveSl = tightenedSl;
+        slRaisedBy = 'tighten';
       }
     }
 
@@ -314,7 +319,10 @@ export class PositionManager extends EventEmitter {
     if (params.breakevenStopPct > 0) {
       const breakevenActivation = pos.entryPriceSol * (1 + params.breakevenStopPct / 100);
       if (pos.highWaterMark >= breakevenActivation) {
-        effectiveSl = Math.max(effectiveSl, pos.entryPriceSol);
+        if (pos.entryPriceSol > effectiveSl) {
+          effectiveSl = pos.entryPriceSol;
+          slRaisedBy = 'breakeven';
+        }
       }
     }
 
@@ -326,7 +334,10 @@ export class PositionManager extends EventEmitter {
       }
       if (pos.trailingSlActive) {
         const trailingSl = pos.highWaterMark * (1 - params.trailingSlDistancePct / 100);
-        effectiveSl = Math.max(effectiveSl, trailingSl);
+        if (trailingSl > effectiveSl) {
+          effectiveSl = trailingSl;
+          slRaisedBy = 'trailing';
+        }
       }
     }
 
@@ -342,14 +353,15 @@ export class PositionManager extends EventEmitter {
     // 6. SL EXIT CHECK (only if SL active)
     if (slActive && priceSol <= effectiveSl) {
       let exitReason: ExitReason;
-      if (pos.trailingSlActive && effectiveSl > pos.slPriceSol) {
-        // Trailing or breakeven raised the floor
-        if (effectiveSl <= pos.entryPriceSol * 1.001) {
-          // Effective SL is at or near entry price — breakeven stop
-          exitReason = 'breakeven_stop';
-        } else {
-          exitReason = 'trailing_stop';
-        }
+      // Classify based on which DPM rule actually set the effective SL floor
+      if (slRaisedBy === 'trailing') {
+        exitReason = 'trailing_stop';
+      } else if (slRaisedBy === 'breakeven') {
+        exitReason = 'breakeven_stop';
+      } else if (slRaisedBy === 'tighten') {
+        // Time-based SL tightening is a dynamic adjustment — classify as trailing_stop
+        // so gap penalties and dashboard display correctly reflect DPM activity
+        exitReason = 'trailing_stop';
       } else {
         exitReason = 'stop_loss';
       }
@@ -404,8 +416,11 @@ export class PositionManager extends EventEmitter {
         reason,
         exitPriceSol,
         entryPriceSol: pos.entryPriceSol,
+        baseSl: pos.slPriceSol,
         highWaterMark: pos.highWaterMark,
         effectiveSlPriceSol: pos.effectiveSlPriceSol,
+        trailingSlActive: pos.trailingSlActive,
+        tpThresholdHit: pos.tpThresholdHit,
         returnPct: (((exitPriceSol - pos.entryPriceSol) / pos.entryPriceSol) * 100).toFixed(2),
       },
       'Position exit triggered'
