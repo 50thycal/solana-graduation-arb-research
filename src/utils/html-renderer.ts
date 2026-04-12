@@ -2198,6 +2198,75 @@ export function renderFilterV2Html(data: any): string {
     </div>`;
   }
 
+  // ── Panel 11 (Combo Filter Regime Stability) ──
+  let panel11Html = '';
+  if (data.panel11) {
+    const panel11 = data.panel11;
+    const baseline11: FilterV2RegimeRow = panel11.baseline;
+    const filters11: FilterV2RegimeRow[] = panel11.filters || [];
+    const lowN11 = panel11.flags?.low_n_threshold ?? 20;
+    const strongN11 = panel11.flags?.strong_n_threshold ?? 100;
+    const bucketWindows11: { bucket: number; start_iso: string; end_iso: string }[] = panel11.bucket_windows || [];
+
+    const baselineRow11 = v2RegimeRowHtml(baseline11, lowN11, strongN11, true);
+    const dataRows11 = filters11.map((r: FilterV2RegimeRow) => v2RegimeRowHtml(r, lowN11, strongN11, false)).join('\n        ');
+
+    const shortDate = (iso: string) => {
+      try { return new Date(iso).toISOString().slice(0, 10); } catch { return iso; }
+    };
+    const windowLegend11 = bucketWindows11.length === 0
+      ? '<div class="desc" style="margin-top:6px"><em>No bucket windows available.</em></div>'
+      : `<div class="desc" style="margin-top:6px">
+          <strong>Bucket windows:</strong>
+          ${bucketWindows11.map((b: any) => `<span style="margin-right:10px">B${b.bucket}: ${shortDate(b.start_iso)} → ${shortDate(b.end_iso)}</span>`).join(' · ')}
+        </div>`;
+
+    panel11Html = `
+    <div class="card">
+      <h2>Panel 11 — ${panel11.title}</h2>
+      <div class="desc">${panel11.description}</div>
+      ${windowLegend11}
+      <table id="panel11-table">
+        <thead>
+          <tr>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',0,'str')">Combo <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',1,'num')">n <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',2,'num')">B1 WR <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',3,'num')">B1 Ret <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',4,'num')">B2 WR <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',5,'num')">B2 Ret <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',6,'num')">B3 WR <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',7,'num')">B3 Ret <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',8,'num')">B4 WR <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',9,'num')">B4 Ret <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',10,'num')">WR StdDev <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="v2GenericSort('panel11-table',11,'str')">Stability <span class="arrow">⇅</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${baselineRow11}
+          ${dataRows11}
+        </tbody>
+      </table>
+      <div class="desc" style="margin-top:10px">
+        <strong>Entry gate:</strong> T+30 price +5% to +100% from open (same gate used by /api/best-combos). Only cross-group pairs with n ≥ 20 are shown (max 60 rows).
+        <br>
+        <strong>Sort:</strong> WR StdDev ascending by default — scroll to the top of the table for the most regime-stable combos. Click any column header to re-sort.
+        <br>
+        <strong>Bucketing:</strong> Same global B1–B4 time quartiles as Panel 3 — every row is directly comparable.
+        <br>
+        <strong>WR StdDev:</strong> Population std dev of bucket win rates (buckets with n &lt; 5 excluded).
+        <strong>Stability:</strong>
+        <span class="green" style="margin-left:6px">STABLE (&lt; 8)</span>
+        <span class="yellow">MODERATE (8–15)</span>
+        <span class="red">CLUSTERED (≥ 15)</span>
+        <span style="color:#64748b">INSUFFICIENT (&lt; 2 buckets with n ≥ 5)</span>
+        <br>
+        <em>Cross-reference with /api/best-combos for sim 10%SL/50%TP return — this panel adds the regime dimension that best-combos lacks.</em>
+      </div>
+    </div>`;
+  }
+
   // ── Panel 10 (Dynamic Position Monitoring Optimizer) ──
   let panel10Html = '';
   if (data.panel10) {
@@ -2579,7 +2648,7 @@ export function renderFilterV2Html(data: any): string {
   }
   </script>`;
 
-  const body = panel1Html + panel2Html + panel3Html + panel4Html + panel5Html + panel6Html + panel7Html + panel8Html + panel9Html + panel10Html + panel4DataScript + sortScript;
+  const body = panel1Html + panel2Html + panel3Html + panel4Html + panel5Html + panel6Html + panel7Html + panel8Html + panel9Html + panel10Html + panel11Html + panel4DataScript + sortScript;
   return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
 }
 
