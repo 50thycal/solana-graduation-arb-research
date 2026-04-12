@@ -31,6 +31,7 @@ import {
   getRecentTrades,
   getTradeStats,
   getTradeStatsByStrategy,
+  getStrategyConfigs,
 } from '../db/queries';
 import { makeLogger } from '../utils/logger';
 import type { LogBuffer } from '../utils/log-buffer';
@@ -163,6 +164,15 @@ export class GistSync {
     const panel3 = computePanel3Summary(this.db);
     const pricePathStats = computePricePathStats(this.db);
 
+    // Strategy configs — includes all DPM params per strategy
+    const strategyRows = getStrategyConfigs(this.db);
+    const strategies = strategyRows.map(row => ({
+      id: row.id,
+      label: row.label,
+      enabled: row.enabled === 1,
+      params: JSON.parse(row.config_json),
+    }));
+
     return {
       'diagnose.json': JSON.stringify(diagnose, null, 2),
       'snapshot.json': JSON.stringify(snapshot, null, 2),
@@ -171,6 +181,11 @@ export class GistSync {
       'panel11.json': JSON.stringify(panel11, null, 2),
       'panel3.json': JSON.stringify(panel3, null, 2),
       'price-path-stats.json': JSON.stringify(pricePathStats, null, 2),
+      'strategies.json': JSON.stringify({
+        generated_at: new Date(nowMs).toISOString(),
+        count: strategies.length,
+        strategies,
+      }, null, 2),
     };
   }
 
