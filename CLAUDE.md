@@ -34,30 +34,35 @@ These are prior results. They are **starting knowledge**, not constraints. If ne
 - vel 5-20 @ 10% SL / 75% TP: +1.0% avg return (n=80)
 - BC age >10 min + vel <20 @ 10% SL: +0.8% avg return (n=103)
 
-### Leaderboard Leaders (as of n=1,847 labeled, 2026-04-12)
-All results below include the T+30 entry gate (+5% to +100%) and model 10% SL / 50% TP with per-token round-trip slippage. Source: `/api/best-combos`.
+### Leaderboard Leaders (as of 1,964 total grads, 2026-04-12)
+All results below include the T+30 entry gate (+5% to +100%) and model 10% SL / 50% TP with per-token round-trip slippage. Source: `/api/best-combos`. Regime stability now available via Panel 11 on `/filter-analysis-v2`.
 
-**Best single filter with n ≥ 100:** No single filter currently appears in the top 20 — all are dominated by two-filter combos. `vel 5-20` at n=202 is below the +5.68% floor of the top 20 (sim return not recalculated since n=80).
+**Best single filter with n ≥ 100:** No single filter currently appears in the top 20 — all are dominated by two-filter combos.
 
 **Best combos with n ≥ 100 (beats_baseline = true):**
-1. `vel < 20 + top5 < 10%` — n=111, sim +6.44%, win rate 72.1% — **regime check NOT yet done**
-2. `holders >= 18 + top5 < 10%` — n=127, sim +5.68%, win rate 69.3% — **regime check NOT yet done**
+1. `vel < 20 + top5 < 10%` — n=111, sim +6.44%, win rate 72.1% — **regime check pending (use Panel 11)**
+2. `holders >= 18 + top5 < 10%` — n=127, sim +5.68%, win rate 69.3% — **regime check pending (use Panel 11)**
 
-**Top combo by sim return (insufficient n):**
-- `vel 10-20 + buy_ratio > 0.6` — n=33, sim +8.90%, win rate 72.7% — needs ~67 more samples
+**Top combos by sim return (insufficient n — watch for n=100):**
+1. `vel 10-20 + buy_ratio > 0.6` — n=33, sim +8.90%, win rate 72.7% — needs ~67 more samples
+2. `vel 20-50 + dd > -10%` — n=24, sim +8.67%, win rate 70.8% — new entrant; avg raw return +54% (pump-heavy)
+3. `vel 10-20 + top5 < 10%` — n=51, sim +8.08%, win rate 74.5% — subset of #1 leader, higher return
+4. `vel 5-20 + top5 < 10%` — n=76, sim +7.07%, win rate 75.0% — needs ~24 more samples
 
-**Interpretation:** `vel < 20 + top5 < 10%` is the current leader on all measurable criteria (n, sim return, win rate) except regime stability. The top5 < 10% filter adds consistent signal when combined with velocity — both leaders share it. Until regime std-dev is checked for the top two combos, vel 5-20 remains the operative baseline.
+**Interpretation:** `vel < 20 + top5 < 10%` is the only n≥100 combo with beats_baseline=true AND the highest sim return at that sample size. `top5 < 10%` appears in 3 of the top 4 combos by sim return — it is the strongest individual signal component. The `vel 10-20` narrowing consistently outperforms `vel 5-20` when paired with `top5 < 10%` (sim +8.08% vs +7.07%), suggesting the lower velocity floor is noise. Regime checks for the two n≥100 leaders are the next required step before promoting either as the new baseline.
 
-### Promising Leads (under investigation — finish these or beat them)
-- **`vel < 20 + top5 < 10%`**: sim +6.44% at n=111 — run regime check. If std-dev < 15%, this is the new baseline.
-- **`vel 10-20 + buy_ratio > 0.6`**: sim +8.90% at n=33 — highest sim return in catalog. Needs ~67 more samples.
-- **`vel 5-20 + top5 < 10%`**: sim +7.07% at n=76 — close to n=100, similar pattern to #1 leader.
-- **Regime stability**: Overall std dev 7.7% (stable); vel 5-20 at 13.9% (moderate). Any new candidate must include a regime-stability check.
-- **Tail risk**: 18.2% of vel 5-20 trades lose >50%. Whatever filter you pick, the 10% SL is what keeps the tail survivable.
+### Promising Leads (priority order)
+1. **`vel < 20 + top5 < 10%`** (n=111, sim +6.44%): Run regime check via Panel 11. If WR StdDev < 15% → **NEW BASELINE**.
+2. **`vel 5-20 + top5 < 10%`** (n=76, sim +7.07%): ~24 samples from n=100. Similar pattern to #1 — will validate or challenge it.
+3. **`vel 10-20 + top5 < 10%`** (n=51, sim +8.08%): Best sim return of any top5<10% combo. ~49 samples from n=100.
+4. **`vel 10-20 + buy_ratio > 0.6`** (n=33, sim +8.90%): Highest sim return in catalog. ~67 samples from n=100.
+5. **`vel 20-50 + dd > -10%`** (n=24, sim +8.67%): New entrant. Raw avg return is extreme (+54%) — likely driven by outlier pumps; monitor for regime stability as n grows.
+- **Regime stability**: Overall std dev 7.7% (stable); vel 5-20 at 13.9% (moderate). Panel 11 now live for regime checks on all combos.
+- **Tail risk**: 18.2% of vel 5-20 trades lose >50%. The 10% SL is mandatory for any strategy.
 
 ## SEARCH SPACE
 
-The full space Claude is free to explore (see `FILTER_PRESET_GROUPS` in `src/utils/html-renderer.ts:3050` for exact thresholds, and `/filter-analysis-v2` Panels 1–9 for current combinatorial coverage):
+The full space Claude is free to explore (see `FILTER_PRESET_GROUPS` in `src/utils/html-renderer.ts:3050` for exact thresholds, and `/filter-analysis-v2` Panels 1–11 for current combinatorial coverage; Panel 11 = combo regime stability):
 
 - **Velocity** (`bc_velocity_sol_per_min`): <5, 5–10, 5–20, 10–20, <20, <50, 20–50, 50–200, >200
 - **BC Age** (`token_age_seconds`): <10 min, >10 min, >30 min, >1 hr, >1 day
@@ -195,7 +200,9 @@ Never declare victory on n < 100. Never keep a candidate running past a clear in
 | Take-profit | 50% from entry (with 10% adverse gap penalty modeled) |
 | Round-trip costs | Per-token measured slippage, fallback 3% |
 | Baseline avg return | +1.4% per trade (n=80, sim 10%SL/50%TP) — raw return at n=202 is +0.57%; sim not yet recalculated |
-| Leading candidate | vel < 20 + top5 < 10%: sim +6.44%, n=111, win 72.1% — pending regime std-dev check |
+| Leading candidate | `vel < 20 + top5 < 10%`: sim +6.44%, n=111, win 72.1% — **pending regime check via Panel 11** |
+| #2 candidate | `holders >= 18 + top5 < 10%`: sim +5.68%, n=127, win 69.3% — pending regime check |
+| Best sim return (low n) | `vel 10-20 + buy_ratio > 0.6`: sim +8.90%, n=33 — needs ~67 more samples |
 | Promotion bar | Beat baseline by ≥ +0.3 pp on n ≥ 100 with regime std-dev < 15% |
 | Price source | PumpSwap pool ONLY (not bonding curve) |
 | Execution | Research only — no live trades |
