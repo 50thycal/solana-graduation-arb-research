@@ -29,7 +29,7 @@ These are prior results. They are **starting knowledge**, not constraints. If ne
 - **Momentum continuation** (T+300 > T+30): Only 47%. Not a signal.
 
 ### Current Best-Known Baseline
-- **vel 5-20 sol/min + T+30 gate (+5% to +100%) + 10% SL / 50% TP**: +1.4% avg return (n=80). **This is the number to beat.**
+- **vel 5-20 sol/min + T+30 gate (+5% to +100%) + 10% SL / 50% TP**: +1.4% avg return (n=80, recorded 2026-04). At n=202 the raw T+30→T+300 return is +0.57% (sim TP/SL return not yet recalculated for n=202). **+1.4% sim return is the floor to beat until recalculated.**
 - vel 5-20 @ 10% SL / 30% TP: +0.8% avg return (n=80)
 - vel 5-20 @ 10% SL / 75% TP: +1.0% avg return (n=80)
 - BC age >10 min + vel <20 @ 10% SL: +0.8% avg return (n=103)
@@ -178,7 +178,7 @@ Never declare victory on n < 100. Never keep a candidate running past a clear in
 | Stop-loss | 10% from entry (with 20% adverse gap penalty modeled) |
 | Take-profit | 50% from entry (with 10% adverse gap penalty modeled) |
 | Round-trip costs | Per-token measured slippage, fallback 3% |
-| Baseline avg return | +1.4% per trade (n=80) |
+| Baseline avg return | +1.4% per trade (n=80, sim 10%SL/50%TP) — raw return at n=202 is +0.57%; sim not yet recalculated |
 | Promotion bar | Beat baseline by ≥ +0.3 pp on n ≥ 100 with regime std-dev < 15% |
 | Price source | PumpSwap pool ONLY (not bonding curve) |
 | Execution | Research only — no live trades |

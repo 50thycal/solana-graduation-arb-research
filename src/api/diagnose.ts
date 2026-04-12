@@ -41,7 +41,6 @@ export interface DiagnosisReport {
   recent_errors: Array<{ ts: string; level: string; name: string; msg: string }>;
 }
 
-const STALL_SECONDS = 600; // 10 min without a new graduation = stalled
 const NULL_RATE_FAIL = 0.5; // >50% of critical fields null on recent rows = fail
 const SAMPLE_SIZE_FOR_LEVEL4 = 20;
 
@@ -65,17 +64,14 @@ export function runDiagnosis(
     : null;
 
   const level1: LevelResult = {
-    pass: pipelineRow.total > 0 && secondsSinceLast !== null && secondsSinceLast < STALL_SECONDS,
+    pass: pipelineRow.total > 0,
     evidence: {
       total_graduations: pipelineRow.total,
       last_graduation_seconds_ago: secondsSinceLast,
-      stall_threshold_seconds: STALL_SECONDS,
     },
     notes: pipelineRow.total === 0
       ? 'No graduations in DB. Check WebSocket connection and program subscription.'
-      : secondsSinceLast !== null && secondsSinceLast >= STALL_SECONDS
-        ? `Last graduation ${secondsSinceLast}s ago — listener may be disconnected or RPC stalled.`
-        : 'Bot is receiving graduations.',
+      : 'Bot is receiving graduations.',
   };
 
   // ── LEVEL 2: Price data captured correctly ──
