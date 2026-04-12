@@ -1,0 +1,14 @@
+{
+  "commands": [
+    { "action": "delete", "id": "bcage1h" },
+    { "action": "delete", "id": "bcage1hr-dpm" },
+    { "action": "delete", "id": "mono05" },
+    { "action": "delete", "id": "mono05-dpm" },
+    { "action": "delete", "id": "test1" },
+    { "action": "delete", "id": "vel1020sol-mono05" },
+    { "action": "delete", "id": "vel1020sol-top510" },
+    { "action": "delete", "id": "vel20-50tp75sl20" },
+    { "action": "delete", "id": "vel2050sol-liquidity1" },
+    { "action": "delete", "id": "vel2050sol-maxdd20" }
+  ]
+}
