@@ -34,6 +34,8 @@ import {
 } from './aggregates';
 import { runDiagnosis } from './diagnose';
 import { computePanel11 } from './panel11';
+import { computePanel3Summary } from './panel3-summary';
+import { computePricePathStats } from './price-path-stats';
 import type { LogBuffer } from '../utils/log-buffer';
 import {
   getGraduationCount,
@@ -130,12 +132,25 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     res.json(leaderboard);
   }));
 
+  // ── /api/panel3 ──
+  // Single-filter regime stability — same as Panel 3 on /filter-analysis-v2 as JSON.
+  app.get('/api/panel3', wrap((_req, res) => {
+    res.json(computePanel3Summary(db));
+  }));
+
   // ── /api/panel11 ──
   // Combo filter regime stability — same data as Panel 11 on /filter-analysis-v2
   // but as JSON for Claude self-serve. Includes sim return + beats_baseline from
   // best-combos alongside regime bucket data.
   app.get('/api/panel11', wrap((_req, res) => {
     res.json(computePanel11(db));
+  }));
+
+  // ── /api/price-path-stats ──
+  // Aggregated price path statistics: mean paths by label, Cohen's d feature effects,
+  // entry timing optimization, velocity breakdown. Compact — no raw token rows.
+  app.get('/api/price-path-stats', wrap((_req, res) => {
+    res.json(computePricePathStats(db));
   }));
 
   // ── /api/filter-catalog ──
@@ -278,11 +293,13 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       service: 'solana-graduation-arb-research',
       version: 1,
       endpoints: [
-        { path: '/api/diagnose',       description: 'Level 1-4 bug triage verdict' },
-        { path: '/api/snapshot',       description: 'One-call dashboard summary' },
-        { path: '/api/best-combos',    description: 'Filter leaderboard ranked by simulated EV' },
-        { path: '/api/panel11',        description: 'Combo regime stability — same as Panel 11 on /filter-analysis-v2 but JSON' },
-        { path: '/api/filter-catalog', description: 'Filter definitions used by best-combos' },
+        { path: '/api/diagnose',           description: 'Level 1-4 bug triage verdict' },
+        { path: '/api/snapshot',           description: 'One-call dashboard summary' },
+        { path: '/api/best-combos',        description: 'Filter leaderboard ranked by simulated EV' },
+        { path: '/api/panel3',             description: 'Single-filter regime stability JSON (same as Panel 3 on /filter-analysis-v2)' },
+        { path: '/api/panel11',            description: 'Combo regime stability JSON (same as Panel 11 on /filter-analysis-v2)' },
+        { path: '/api/price-path-stats',   description: 'Aggregated price path stats: mean paths by label, Cohen\'s d, entry timing' },
+        { path: '/api/filter-catalog',     description: 'Filter definitions used by best-combos' },
         { path: '/api/trades',         description: 'Recent trades (query: limit, status)' },
         { path: '/api/skips',          description: 'Recent skipped candidates' },
         { path: '/api/graduations',    description: 'Recent graduations (query: limit, label, vel_min, vel_max)' },

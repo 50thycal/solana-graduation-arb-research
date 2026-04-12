@@ -218,11 +218,15 @@ The bot's Express server exposes a JSON API under `/api/*`. The base URL is the 
 
 ### Session-start protocol (do this first, every time)
 
-1. **`GET /api/diagnose`** → confirm `verdict: "HEALTHY"`. If not, fix the reported level before doing anything else. The verdict encodes the Bug Triage Protocol below.
+1. **`GET /api/diagnose`** → confirm `verdict: "HEALTHY"`. If not, fix the reported level before doing anything else.
 2. **`GET /api/snapshot`** → read counts, scorecard, data quality, last 10 graduations, last error.
-3. **`GET /api/best-combos?min_n=50&top=20`** → see the current leaderboard of filters and pairs ranked by simulated 10% SL / 50% TP EV. Pick the next hypothesis from here — or propose a new filter not yet in the catalog.
+3. **`GET /api/best-combos?min_n=20&top=30&pairs=true`** → leaderboard ranked by sim return. Pick the next hypothesis.
+4. **`GET /api/panel11`** → regime stability for the top combos — check `stability` and `wr_std_dev` alongside sim return.
+5. **`GET /api/panel3`** → regime stability for individual filters — useful when evaluating single-dimension signals.
+6. **`GET /api/price-path-stats`** → mean price paths by label, Cohen's d effect sizes for path features, entry timing optimization.
+7. **`GET /api/trades`** → paper trading performance: stats, by-strategy breakdown, recent trades.
 
-Only after those three calls should you consider fetching narrower data.
+All 7 endpoints are also pushed to the bot-status branch every 2 min and readable via `raw.githubusercontent.com` (GIST_* env vars in `.claude/settings.json`).
 
 ### Endpoint catalogue
 
@@ -232,7 +236,9 @@ Only after those three calls should you consider fetching narrower data.
 | `GET /api/diagnose` | Level 1–4 bug triage verdict (see mapping below) |
 | `GET /api/snapshot` | One-call dashboard summary: counts, scorecard, data quality, recent graduations, last error |
 | `GET /api/best-combos?min_n=50&top=20&pairs=true` | Leaderboard of filters + cross-group pairs ranked by 10%SL/50%TP simulated avg return. `min_n` defaults 20, `top` defaults 20, `pairs=false` disables pair combos. |
-| `GET /api/panel11` | Combo regime stability JSON — same data as Panel 11 on `/filter-analysis-v2`. Use this to check `stability` and `wr_std_dev` for any combo. Also synced to bot-status branch as `panel11.json`. |
+| `GET /api/panel3` | Single-filter regime stability JSON — same as Panel 3 on `/filter-analysis-v2`. `stability` + `wr_std_dev` for every individual filter. Synced to `panel3.json`. |
+| `GET /api/panel11` | Combo regime stability JSON — same as Panel 11 on `/filter-analysis-v2`. Also synced to `panel11.json`. |
+| `GET /api/price-path-stats` | Mean price paths by label (PUMP/DUMP/STABLE), Cohen's d for path features, entry timing optimization, velocity breakdown. Synced to `price-path-stats.json`. |
 | `GET /api/filter-catalog` | All filter definitions (`FILTER_CATALOG` in `src/api/aggregates.ts`) — the search space best-combos runs over |
 | `GET /api/graduations?limit=50&label=PUMP&vel_min=5&vel_max=20` | Filtered graduation rows (all params optional) |
 | `GET /api/trades?limit=50&status=open\|closed\|all` | Recent paper trades + stats |
