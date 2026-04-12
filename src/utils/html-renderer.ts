@@ -3514,26 +3514,71 @@ export function renderTradingHtml(data: any): string {
   const stratStatRows = strategyStatsData.map((s: any) => {
     const ret = s.avg_net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
+    const firstDt = s.first_trade_ts ? utcToCentral(new Date(s.first_trade_ts * 1000).toISOString()) : '-';
     return `<tr>
       <td style="color:#a78bfa">${s.strategy_id ?? 'default'}</td>
       <td style="color:${s.mode === 'live' ? '#f59e0b' : '#22d3ee'}">${s.mode?.toUpperCase()}</td>
       <td>${s.total}</td><td>${s.closed}</td><td>${s.open_count}</td>
-      <td style="color:${retColor}">${ret != null ? ret + '%' : '-'}</td>
+      <td style="color:${retColor}" data-sort="${ret ?? -999}">${ret != null ? ret + '%' : '-'}</td>
       <td style="color:#22d3ee">${s.tp_exits}</td>
       <td style="color:#f87171">${s.sl_exits}</td>
       <td style="color:#94a3b8">${s.timeout_exits}</td>
-      <td>${s.total_net_profit_sol != null ? s.total_net_profit_sol + ' SOL' : '-'}</td>
+      <td data-sort="${s.total_net_profit_sol ?? -999}">${s.total_net_profit_sol != null ? s.total_net_profit_sol + ' SOL' : '-'}</td>
+      <td style="font-size:11px;color:#64748b" data-sort="${s.first_trade_ts ?? 0}">${firstDt}</td>
     </tr>`;
   }).join('');
 
   const perfHtml = `
     <div class="card">
       <div class="card-title">Performance by Strategy</div>
-      ${stratStatRows ? `<table class="table">
-        <thead><tr><th>Strategy</th><th>Mode</th><th>Total</th><th>Closed</th><th>Open</th>
-          <th>Avg Net Ret%</th><th>TP</th><th>SL</th><th>Timeout</th><th>Net P&L</th></tr></thead>
+      ${stratStatRows ? `<div style="overflow-x:auto"><table class="table sortable" id="perf-table">
+        <thead><tr>
+          <th data-col="0">Strategy</th><th data-col="1">Mode</th><th data-col="2">Total</th>
+          <th data-col="3">Closed</th><th data-col="4">Open</th>
+          <th data-col="5">Avg Net Ret%</th><th data-col="6">TP</th><th data-col="7">SL</th>
+          <th data-col="8">Timeout</th><th data-col="9">Net P&L</th><th data-col="10">First Trade</th>
+        </tr></thead>
         <tbody>${stratStatRows}</tbody>
-      </table>` : '<p style="color:#94a3b8">No trades yet</p>'}
+      </table></div>
+      <script>
+      (function(){
+        const table = document.getElementById('perf-table');
+        if (!table) return;
+        const headers = table.querySelectorAll('th[data-col]');
+        let sortCol = -1, sortAsc = true;
+        headers.forEach(th => {
+          th.style.cursor = 'pointer';
+          th.style.userSelect = 'none';
+          th.addEventListener('click', () => {
+            const col = parseInt(th.getAttribute('data-col'));
+            if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
+            headers.forEach(h => h.textContent = h.textContent.replace(/ [▲▼]$/, ''));
+            th.textContent += sortAsc ? ' ▲' : ' ▼';
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort((a, b) => {
+              const aCell = a.children[col];
+              const bCell = b.children[col];
+              const aSort = aCell.getAttribute('data-sort');
+              const bSort = bCell.getAttribute('data-sort');
+              let aVal, bVal;
+              if (aSort !== null && bSort !== null) {
+                aVal = parseFloat(aSort); bVal = parseFloat(bSort);
+              } else {
+                aVal = (aCell.textContent || '').trim();
+                bVal = (bCell.textContent || '').trim();
+                const aNum = parseFloat(aVal); const bNum = parseFloat(bVal);
+                if (!isNaN(aNum) && !isNaN(bNum)) { aVal = aNum; bVal = bNum; }
+              }
+              if (aVal < bVal) return sortAsc ? -1 : 1;
+              if (aVal > bVal) return sortAsc ? 1 : -1;
+              return 0;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+          });
+        });
+      })();
+      </script>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
 
   // ── Recent trades table ───────────────────────────────────────────────────
