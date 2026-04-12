@@ -1,10 +1,13 @@
 /**
  * src/api/gist-sync.ts
  *
- * Pushes diagnose.json, snapshot.json, best-combos.json, and trades.json to
- * a dedicated `bot-status` branch every SYNC_INTERVAL_MS so Claude can
- * self-serve via WebFetch (raw.githubusercontent.com is reachable; Railway's
- * edge and gist.githubusercontent.com are not).
+ * Pushes diagnose.json, snapshot.json, best-combos.json, trades.json, and
+ * strategies.json to a dedicated `bot-status` branch every SYNC_INTERVAL_MS
+ * so Claude can self-serve via WebFetch / GitHub MCP tools.
+ *
+ * Also polls for `strategy-commands.json` on the main branch — when found,
+ * applies the commands (upsert/delete/toggle strategies) and deletes the file.
+ * This lets Claude push strategy configs via git without needing direct API access.
  *
  * Uses the low-level GitHub Git Tree API + force-push so the branch always
  * has exactly ONE commit — no history accumulates regardless of sync frequency.
@@ -33,6 +36,8 @@ import {
   getTradeStatsByStrategy,
   getStrategyConfigs,
 } from '../db/queries';
+import type { StrategyManager } from '../trading/strategy-manager';
+import type { StrategyParams } from '../trading/config';
 import { makeLogger } from '../utils/logger';
 import type { LogBuffer } from '../utils/log-buffer';
 
@@ -42,6 +47,7 @@ const GITHUB_API = 'https://api.github.com';
 const OWNER = '50thycal';
 const REPO = 'solana-graduation-arb-research';
 const BRANCH = 'bot-status';
+const COMMANDS_FILE = 'strategy-commands.json';
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
 export interface StatusUrls {
@@ -52,7 +58,20 @@ export interface StatusUrls {
   panel11: string;
   panel3: string;
   price_path_stats: string;
+  strategies: string;
   branch_html: string;
+}
+
+interface StrategyCommand {
+  action: 'upsert' | 'delete' | 'toggle';
+  id: string;
+  label?: string;
+  enabled?: boolean;
+  params?: StrategyParams;
+}
+
+interface StrategyCommandsFile {
+  commands: StrategyCommand[];
 }
 
 export class GistSync {
@@ -62,6 +81,7 @@ export class GistSync {
   private readonly getListenerStats: () => unknown;
   private readonly token: string;
   private readonly intervalMs: number;
+  private strategyManager: StrategyManager | null = null;
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -81,6 +101,11 @@ export class GistSync {
       process.env.GIST_SYNC_INTERVAL_MS ?? String(DEFAULT_INTERVAL_MS),
       10,
     );
+  }
+
+  /** Wire up the strategy manager so inbound commands can be applied live */
+  setStrategyManager(sm: StrategyManager): void {
+    this.strategyManager = sm;
   }
 
   async start(): Promise<void> {
@@ -110,8 +135,103 @@ export class GistSync {
       panel11: `${base}/panel11.json`,
       panel3: `${base}/panel3.json`,
       price_path_stats: `${base}/price-path-stats.json`,
+      strategies: `${base}/strategies.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
+  }
+
+  // ── Inbound strategy commands ───────────────────────────────────
+
+  /**
+   * Check for strategy-commands.json on the main branch. If found,
+   * apply each command (upsert/delete/toggle) and delete the file.
+   * Runs at the start of each sync cycle.
+   */
+  private async processInboundCommands(): Promise<void> {
+    if (!this.strategyManager) return;
+
+    try {
+      const resp = await fetch(
+        `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${COMMANDS_FILE}?ref=main`,
+        { headers: this.headers() },
+      );
+
+      if (resp.status === 404) return; // No commands pending
+      if (!resp.ok) {
+        logger.debug('Inbound commands check returned %d', resp.status);
+        return;
+      }
+
+      const fileInfo = (await resp.json()) as { sha: string; content: string };
+      const content = Buffer.from(fileInfo.content, 'base64').toString('utf-8');
+      let commands: StrategyCommandsFile;
+      try {
+        commands = JSON.parse(content) as StrategyCommandsFile;
+      } catch {
+        logger.error('Failed to parse strategy-commands.json — deleting');
+        await this.deleteCommandsFile(fileInfo.sha);
+        return;
+      }
+
+      if (!Array.isArray(commands.commands) || commands.commands.length === 0) {
+        await this.deleteCommandsFile(fileInfo.sha);
+        return;
+      }
+
+      const results: Array<{ id: string; action: string; ok: boolean; error?: string }> = [];
+
+      for (const cmd of commands.commands) {
+        try {
+          if (cmd.action === 'upsert' && cmd.params && cmd.label) {
+            this.strategyManager.upsertStrategy(
+              cmd.id, cmd.label, cmd.params, cmd.enabled !== false,
+            );
+            results.push({ id: cmd.id, action: 'upsert', ok: true });
+          } else if (cmd.action === 'delete') {
+            const result = this.strategyManager.deleteStrategy(cmd.id);
+            results.push({
+              id: cmd.id, action: 'delete',
+              ok: !result.error, error: result.error,
+            });
+          } else if (cmd.action === 'toggle') {
+            this.strategyManager.toggleStrategy(cmd.id, cmd.enabled ?? true);
+            results.push({ id: cmd.id, action: 'toggle', ok: true });
+          } else {
+            results.push({ id: cmd.id, action: cmd.action, ok: false, error: 'invalid command' });
+          }
+        } catch (err) {
+          results.push({
+            id: cmd.id, action: cmd.action, ok: false,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      // Delete the commands file after processing
+      await this.deleteCommandsFile(fileInfo.sha);
+
+      logger.info(
+        { results, commandCount: commands.commands.length },
+        'Inbound strategy commands processed',
+      );
+    } catch (err) {
+      logger.error({ err }, 'Error checking inbound strategy commands');
+    }
+  }
+
+  private async deleteCommandsFile(sha: string): Promise<void> {
+    try {
+      await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${COMMANDS_FILE}`, {
+        method: 'DELETE',
+        headers: this.headers(),
+        body: JSON.stringify({
+          message: 'bot: processed strategy commands [skip ci]',
+          sha,
+        }),
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to delete strategy-commands.json');
+    }
   }
 
   // ── private ──────────────────────────────────────────────────
@@ -190,11 +310,12 @@ export class GistSync {
   }
 
   /**
-   * Core sync: build a Git tree from scratch, create an orphan commit,
-   * then force-update the bot-status ref. The branch always has exactly
-   * one commit — no history accumulates.
+   * Core sync: process inbound commands, build status payloads, push to bot-status.
    */
   private async sync(): Promise<void> {
+    // Process any inbound strategy commands before building status
+    await this.processInboundCommands();
+
     const payloads = this.buildPayloads();
 
     try {

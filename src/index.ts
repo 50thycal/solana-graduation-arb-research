@@ -4118,12 +4118,13 @@ ${rows.map(r => {
     logger.info({ port: healthPort }, 'Health server listening');
   });
 
-  // Gist sync — push diagnose/snapshot/best-combos to a public GitHub Gist
-  // every 2 min so Claude can self-serve via WebFetch (Railway's edge blocks
-  // Anthropic IPs; gist.githubusercontent.com does not).
+  // Gist sync — push diagnose/snapshot/best-combos to bot-status branch
+  // every 2 min so Claude can self-serve via WebFetch / GitHub MCP tools.
+  // Also polls for strategy-commands.json on main branch (inbound commands from Claude).
+  let gistSync: GistSync | null = null;
   const githubToken = process.env.GITHUB_TOKEN;
   if (githubToken) {
-    const gistSync = new GistSync({
+    gistSync = new GistSync({
       db,
       logBuffer,
       startTime,
@@ -4131,7 +4132,7 @@ ${rows.map(r => {
       token: githubToken,
     });
     gistSync.start().then(() => {
-      const urls = gistSync.getUrls();
+      const urls = gistSync!.getUrls();
       logger.info({ urls }, 'Status sync active — Claude can self-serve from these URLs');
       logger.info('GIST_DIAGNOSE_URL=' + urls.diagnose);
       logger.info('GIST_SNAPSHOT_URL=' + urls.snapshot);
@@ -4170,6 +4171,8 @@ ${rows.map(r => {
         sm.updateConnection(conn);
         logger.info('StrategyManager Connection refreshed after listener reconnect');
       });
+      // Wire up GistSync so inbound strategy commands are applied live
+      if (gistSync) gistSync.setStrategyManager(strategyManager);
     } catch (err) {
       logger.error('StrategyManager failed to initialize: %s', err instanceof Error ? err.message : String(err));
     }

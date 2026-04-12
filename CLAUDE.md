@@ -262,6 +262,58 @@ print(json.dumps(data['by_strategy'], indent=2))
 | `trades.json` | `/api/trades` | Paper trading: stats, by-strategy breakdown, recent trades |
 | `strategies.json` | `/api/strategies` | All strategy configs incl. DPM params (TP/SL, trailing SL, breakeven, etc.) |
 
+### Pushing strategy commands (create/update/delete strategies remotely)
+
+Claude can manage strategies without direct Railway API access by pushing a `strategy-commands.json` file to the **main branch**. The bot polls for this file every sync cycle (~2 min), applies the commands, and deletes the file.
+
+**How to push commands:** Use `mcp__github__create_or_update_file` to write `strategy-commands.json` to the main branch, or commit it via git push.
+
+**File format:**
+```json
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "my-strategy",
+      "label": "My Strategy",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 50,
+        "stopLossPct": 10,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 20, "label": "vel<20"},
+          {"field": "top5_wallet_pct", "operator": "<", "value": 10, "label": "top5<10%"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    { "action": "delete", "id": "old-strategy" },
+    { "action": "toggle", "id": "some-strategy", "enabled": false }
+  ]
+}
+```
+
+**Actions:** `upsert` (create or update), `delete` (remove), `toggle` (enable/disable). Commands are applied in order. The file is deleted from the repo after processing.
+
+**Latency:** Commands are picked up within ~2 minutes (next sync cycle). Check `strategies.json` on bot-status to confirm they were applied.
+
 ### Live-only endpoints (not synced to bot-status)
 
 These endpoints are only available on the Railway deployment and are NOT synced to the `bot-status` branch. They require direct Railway access (which currently returns 403 from Claude sessions). If you need this data, ask the human operator to check the dashboard directly.
