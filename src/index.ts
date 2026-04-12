@@ -2335,6 +2335,44 @@ async function main() {
         ...runFilterRegime(f.predicate),
       }));
 
+      // ── Panel 11: cross-group combo filter regime stability ──
+      // Applies the entry gate (pct_t30 5–100%) so results are directly comparable
+      // with /api/best-combos sim returns. Every cross-group pair from PANEL_1_FILTERS
+      // is run through runFilterRegime; results with n < 20 are dropped; the rest are
+      // sorted by WR StdDev ascending (most regime-stable first).
+      const ENTRY_GATE_PRED = (r: RegimeRow): boolean => r.pct_t30 >= 5 && r.pct_t30 <= 100;
+
+      const baseline11 = {
+        filter: 'ALL labeled (entry gate only)',
+        group: 'Baseline',
+        ...runFilterRegime(ENTRY_GATE_PRED),
+      };
+
+      const allCombo11Results: Array<{ filter: string; group: string; n: number; buckets: { n: number; win_rate_pct: number | null; avg_return_pct: number | null }[]; wr_std_dev: number | null; stability: 'STABLE' | 'MODERATE' | 'CLUSTERED' | 'INSUFFICIENT' }> = [];
+      for (let i = 0; i < PANEL_1_FILTERS.length; i++) {
+        for (let j = i + 1; j < PANEL_1_FILTERS.length; j++) {
+          const a = PANEL_1_FILTERS[i];
+          const b = PANEL_1_FILTERS[j];
+          if (a.group === b.group) continue; // skip same-group pairs (e.g. two velocity buckets)
+          const comboPred = (r: RegimeRow) => ENTRY_GATE_PRED(r) && a.predicate(r) && b.predicate(r);
+          const result = runFilterRegime(comboPred);
+          if (result.n < 20) continue; // skip combos with insufficient data
+          allCombo11Results.push({
+            filter: `${a.name} + ${b.name}`,
+            group: `${a.group} × ${b.group}`,
+            ...result,
+          });
+        }
+      }
+      // Sort: lowest WR StdDev first (most regime-stable), then by n descending for ties
+      allCombo11Results.sort((a, b) => {
+        const aStab = a.wr_std_dev ?? 999;
+        const bStab = b.wr_std_dev ?? 999;
+        if (aStab !== bStab) return aStab - bStab;
+        return b.n - a.n;
+      });
+      const filters11 = allCombo11Results.slice(0, 60);
+
       // ── Panel 4: dynamic TP/SL EV simulator ──
       // Constants MUST mirror simulateWithTP at src/index.ts:1283-1359 exactly.
       const PANEL_4_SL_GAP_PENALTY = 0.20;
@@ -3566,6 +3604,22 @@ async function main() {
           filters: filters9,
           flags: {
             low_n_threshold: 30,
+            strong_n_threshold: 100,
+          },
+        },
+        panel11: {
+          title: 'Combo Filter Regime Stability — Cross-Group Filter Pairs',
+          description:
+            'Regime check for every cross-group two-filter combination in the catalog, with the T+30 entry gate (+5% to +100%) applied so results are directly comparable with /api/best-combos sim returns. Sorted by WR StdDev ascending — lowest = most regime-stable. Combos with n < 20 are excluded. Use this to validate that a high-sim-return combo from the leaderboard also holds up across time buckets.',
+          bucket_windows: bucketBoundaries.map((b, i) => ({
+            bucket: i + 1,
+            start_iso: new Date(b.start * 1000).toISOString(),
+            end_iso: new Date(b.end * 1000).toISOString(),
+          })),
+          baseline: baseline11,
+          filters: filters11,
+          flags: {
+            low_n_threshold: 20,
             strong_n_threshold: 100,
           },
         },
