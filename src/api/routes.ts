@@ -37,6 +37,8 @@ import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import type { LogBuffer } from '../utils/log-buffer';
+import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { vaultPriceCacheStats } from '../trading/executor';
 import {
   getGraduationCount,
   getRecentTrades,
@@ -111,6 +113,10 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       scorecard,
       data_quality: quality,
       listener: listenerStats,
+      rpc: {
+        limiter: globalRpcLimiter.getStats(),
+        vault_price_cache: { ...vaultPriceCacheStats },
+      },
       recent_graduations: recent,
       last_error: lastError,
     });

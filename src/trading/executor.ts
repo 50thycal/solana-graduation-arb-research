@@ -34,8 +34,33 @@ export function readTokenAccountAmount(data: Buffer): number | null {
   }
 }
 
+// ── Vault price deduplication cache ────────────────────────────────────────
+//
+// Multiple strategies may have positions on the same pool. Without dedup,
+// 6 strategies = 6 identical RPC calls per 5-second tick. This cache ensures
+// only 1 RPC call per unique vault pair per TTL window. In-flight requests
+// are coalesced — concurrent callers share the same promise.
+//
+const VAULT_CACHE_TTL_MS = 4_000; // 4 seconds (shorter than the 5s poll interval)
+
+interface CachedVaultPrice {
+  result: PoolPriceResult | null;
+  fetchedAt: number;
+}
+
+/** Settled results cache: key = `${baseVault}:${quoteVault}` */
+const vaultPriceCache = new Map<string, CachedVaultPrice>();
+
+/** In-flight promises: callers arriving while a fetch is in progress share the same promise */
+const inflightFetches = new Map<string, Promise<PoolPriceResult | null>>();
+
+/** Stats for monitoring dedup effectiveness */
+export const vaultPriceCacheStats = { hits: 0, misses: 0, coalesced: 0 };
+
 /**
  * Fetch the current pool price by reading both vault token accounts in a single RPC call.
+ * Deduplicates concurrent requests for the same vault pair — multiple strategies monitoring
+ * the same pool share a single RPC call per tick.
  *
  * @param critical  When true, uses throttle() (always waits) instead of throttleOrDrop().
  *                  Use critical=true for active position SL/TP monitoring — a missed check
@@ -46,6 +71,46 @@ export async function fetchVaultPrice(
   baseVault: string,
   quoteVault: string,
   critical: boolean = false,
+): Promise<PoolPriceResult | null> {
+  const cacheKey = `${baseVault}:${quoteVault}`;
+
+  // 1. Check settled cache (recent result within TTL)
+  const cached = vaultPriceCache.get(cacheKey);
+  if (cached && (Date.now() - cached.fetchedAt) < VAULT_CACHE_TTL_MS) {
+    vaultPriceCacheStats.hits++;
+    return cached.result;
+  }
+
+  // 2. Check in-flight: if another caller is already fetching this pair, wait for it
+  const inflight = inflightFetches.get(cacheKey);
+  if (inflight) {
+    vaultPriceCacheStats.coalesced++;
+    return inflight;
+  }
+
+  // 3. No cache, no in-flight — make the actual RPC call
+  vaultPriceCacheStats.misses++;
+  const fetchPromise = fetchVaultPriceRpc(connection, baseVault, quoteVault, critical);
+
+  // Register in-flight so concurrent callers share this promise
+  inflightFetches.set(cacheKey, fetchPromise);
+
+  try {
+    const result = await fetchPromise;
+    // Store in settled cache
+    vaultPriceCache.set(cacheKey, { result, fetchedAt: Date.now() });
+    return result;
+  } finally {
+    inflightFetches.delete(cacheKey);
+  }
+}
+
+/** Raw RPC fetch — called only when cache misses and no in-flight request exists */
+async function fetchVaultPriceRpc(
+  connection: Connection,
+  baseVault: string,
+  quoteVault: string,
+  critical: boolean,
 ): Promise<PoolPriceResult | null> {
   if (critical) {
     // Position monitoring: always wait for a slot — never silently skip
