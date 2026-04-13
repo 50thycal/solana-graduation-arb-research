@@ -389,6 +389,25 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Add archived column to trades_v2 — backfill legacy strategy trades so they
+  // stay queryable but are excluded from dashboard/snapshot by default.
+  {
+    const tradeColsArchive = db.prepare("PRAGMA table_info(trades_v2)").all() as Array<{ name: string }>;
+    if (!new Set(tradeColsArchive.map(c => c.name)).has('archived')) {
+      db.exec(`ALTER TABLE trades_v2 ADD COLUMN archived INTEGER DEFAULT 0`);
+      // Archive all trades from strategies that pre-date the combo1/2/3 era.
+      // New strategies default to archived=0, so this only runs once on migration.
+      db.exec(`
+        UPDATE trades_v2 SET archived = 1
+        WHERE strategy_id NOT IN (
+          'combo1-std', 'combo1-dpm',
+          'combo2-std', 'combo2-dpm',
+          'combo3-std', 'combo3-dpm'
+        )
+      `);
+    }
+  }
+
   // Generic key-value store for bot settings (e.g. persisted Gist ID).
   db.exec(`
     CREATE TABLE IF NOT EXISTS bot_settings (

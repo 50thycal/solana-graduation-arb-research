@@ -241,7 +241,20 @@ export class GistSync {
 
     const diagnose = runDiagnosis(this.db, this.logBuffer);
 
-    const scorecard = computeThesisScorecard(this.db);
+    // Compute leaderboard first so we can pass the live leader into the scorecard.
+    const bestCombos = computeBestCombos(this.db, {
+      min_n: 20,
+      top: 20,
+      include_pairs: true,
+    });
+
+    // Find the best combo with n≥100 that beats the old baseline — this becomes
+    // the live best_known_baseline shown in snapshot.json.
+    const liveLeader = bestCombos.rows
+      .filter(r => r.n >= 100 && r.beats_baseline && r.sim_avg_return_10sl_50tp_pct != null)
+      .sort((a, b) => (b.sim_avg_return_10sl_50tp_pct ?? 0) - (a.sim_avg_return_10sl_50tp_pct ?? 0))[0];
+
+    const scorecard = computeThesisScorecard(this.db, liveLeader);
     const quality = computeDataQualityFlags(this.db);
     const recent = computeRecentGraduationsEnriched(this.db, 10);
     const lastError = getLastBotError(this.db);
@@ -264,12 +277,6 @@ export class GistSync {
       recent_graduations: recent,
       last_error: lastError,
     };
-
-    const bestCombos = computeBestCombos(this.db, {
-      min_n: 20,
-      top: 20,
-      include_pairs: true,
-    });
 
     const recentTrades = getRecentTrades(this.db, 50);
     const trades = {

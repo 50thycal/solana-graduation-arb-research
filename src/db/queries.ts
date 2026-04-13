@@ -649,17 +649,20 @@ export function getOpenTrades(db: Database.Database) {
   return db.prepare(`SELECT * FROM trades_v2 WHERE status = 'open'`).all();
 }
 
-export function getRecentTrades(db: Database.Database, limit = 50) {
+export function getRecentTrades(db: Database.Database, limit = 50, includeArchived = false) {
+  const archiveFilter = includeArchived ? '' : 'AND (t.archived IS NULL OR t.archived = 0)';
   return db.prepare(`
     SELECT t.*, g.mint as grad_mint
     FROM trades_v2 t
     JOIN graduations g ON g.id = t.graduation_id
+    WHERE 1=1 ${archiveFilter}
     ORDER BY t.created_at DESC
     LIMIT ?
   `).all(limit);
 }
 
-export function getTradeStats(db: Database.Database) {
+export function getTradeStats(db: Database.Database, includeArchived = false) {
+  const archiveFilter = includeArchived ? '' : 'WHERE (archived IS NULL OR archived = 0)';
   return db.prepare(`
     SELECT
       mode,
@@ -673,6 +676,7 @@ export function getTradeStats(db: Database.Database) {
       SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
       SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END) as total_net_profit_sol
     FROM trades_v2
+    ${archiveFilter}
     GROUP BY mode
   `).all();
 }
@@ -737,7 +741,8 @@ export function deleteStrategyConfig(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM strategy_configs WHERE id = ?').run(id);
 }
 
-export function getTradeStatsByStrategy(db: Database.Database) {
+export function getTradeStatsByStrategy(db: Database.Database, includeArchived = false) {
+  const archiveFilter = includeArchived ? '' : 'WHERE (archived IS NULL OR archived = 0)';
   return db.prepare(`
     SELECT
       strategy_id,
@@ -754,6 +759,7 @@ export function getTradeStatsByStrategy(db: Database.Database) {
       MIN(entry_timestamp) as first_trade_ts,
       MAX(entry_timestamp) as last_trade_ts
     FROM trades_v2
+    ${archiveFilter}
     GROUP BY strategy_id, mode
     ORDER BY strategy_id, mode
   `).all();

@@ -8,7 +8,7 @@ The open research question is:
 
 > **Which single filter or combination of filters — from the full v2 filter search space — yields a profitable bot after all costs (gap penalties, round-trip slippage), on n ≥ 100 samples, with regime-stable edge?**
 
-Velocity 5–20 sol/min + 10% SL / 30–50% TP was the old baseline (+1.4% avg return, n=80). **The current baseline is `vel < 20 + top5 < 10%` — sim +6.44%, n=111, STABLE regime.** Any new filter or combination is fair game — single filters, pairs, triples, cross-dimension combos — as long as each candidate is evaluated against the baseline and the same rigor (sample size, regime stability, cost modeling).
+Velocity 5–20 sol/min + 10% SL / 30–50% TP was the old baseline (+1.4% avg return, n=80). **The current baseline is `vel < 20 + top5 < 10%` — promoted at sim +6.44% (n=111, STABLE regime, 2026-04-12); live sim return drifts as data grows, check `/api/best-combos` for the current value.** Any new filter or combination is fair game — single filters, pairs, triples, cross-dimension combos — as long as each candidate is evaluated against the baseline and the same rigor (sample size, regime stability, cost modeling).
 
 The bot is free to hypothesize, test, and adopt new filters without asking permission. The only rules are: beat the baseline, survive regime checks, and never claim victory on small n.
 
@@ -29,7 +29,8 @@ These are prior results. They are **starting knowledge**, not constraints. If ne
 - **Momentum continuation** (T+300 > T+30): Only 47%. Not a signal.
 
 ### Current Best-Known Baseline
-- **`vel < 20 + top5 < 10%` + T+30 gate (+5% to +100%) + 10% SL / 50% TP**: sim **+6.44%** avg return, n=111, win rate 72.1%, regime **STABLE** (WR StdDev < 8). Promoted 2026-04-12. **This is the floor to beat.**
+- **`vel < 20 + top5 < 10%` + T+30 gate (+5% to +100%) + 10% SL / 50% TP**: sim **+6.44%** avg return at promotion (n=111, win rate 72.1%), regime **STABLE** (WR StdDev < 8). Promoted 2026-04-12. **This is the floor to beat.**
+- **Note on sim return drift**: The recorded +6.44% was the value at the moment of promotion. As more data accumulates, the live sim return will drift (up or down) — this is expected and not a bug. `snapshot.json` always shows the live value from the leaderboard. Use the promotion value (+6.44%, n=111) as the historical anchor for CLAUDE.md; the live `/api/best-combos` value is what matters for current decisions.
 - Former baseline: vel 5-20 @ 10% SL / 50% TP: +1.4% avg return (n=80, 2026-04). Retired.
 - Former baseline sim returns for reference: vel 5-20 @ 30% TP: +0.8%; vel 5-20 @ 75% TP: +1.0%; BC age >10min + vel<20 @ 10%SL: +0.8% (n=103)
 
@@ -248,6 +249,33 @@ data = json.loads(text[text.find('{'):])
 print(json.dumps(data['by_strategy'], indent=2))
 "
 ```
+
+#### IMPORTANT: trades.json large-file workaround
+
+`trades.json` grows large as paper trading accumulates. The MCP tool will exceed context limits and save the result to a local temp file instead of returning it inline. When this happens:
+
+1. **The MCP call will say:** `"Error: result (N characters) exceeds maximum allowed tokens. Output has been saved to <path>.txt"`
+2. **Do NOT try to Read() the file directly** — it will also exceed the limit.
+3. **Instead, use Bash + python3 to extract only what you need:**
+
+```bash
+python3 -c "
+import json
+with open('<path_from_error_message>.txt') as f:
+    raw = json.load(f)
+text = raw[1]['text']
+data = json.loads(text[text.find('{'):])
+# Extract specific fields — don't print the whole thing
+print('Stats:', json.dumps(data['stats'], indent=2))
+print('By strategy:', json.dumps(data['by_strategy'], indent=2))
+print('Recent trades count:', len(data.get('trades', [])))
+# For last N trades:
+for t in data.get('trades', [])[-5:]:
+    print(json.dumps({k: t[k] for k in ['id','strategy_id','exit_reason','net_return_pct','net_profit_sol']}, indent=2))
+"
+```
+
+This pattern works reliably. The file path comes from the MCP error message — copy it exactly.
 
 ### File catalogue (on `bot-status` branch)
 

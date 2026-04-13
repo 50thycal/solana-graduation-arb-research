@@ -74,7 +74,10 @@ export interface EnrichedGraduation {
 // Counts & scorecard
 // ──────────────────────────────────────────────────────────────
 
-export function computeThesisScorecard(db: Database.Database): ThesisScorecard {
+export function computeThesisScorecard(
+  db: Database.Database,
+  currentBestCombo?: { filter_spec: string; n: number; sim_avg_return_10sl_50tp_pct: number | null },
+): ThesisScorecard {
   const labels = db.prepare(`
     SELECT label, COUNT(*) as count
     FROM graduation_momentum
@@ -125,14 +128,23 @@ export function computeThesisScorecard(db: Database.Database): ThesisScorecard {
       avg_return_t30_to_t300_pct: vel.avg_return,
       progress_to_200: `${vel.n}/200`,
     },
-    best_known_baseline: {
-      filter: 'vel 5-20 sol/min + t30 +5-100%',
-      sl_pct: 10,
-      tp_pct: 50,
-      avg_return_pct: 1.4,
-      n: 80,
-      note: 'Current best-known baseline from CLAUDE.md. New candidates must beat this by >=0.3pp on n>=100.',
-    },
+    best_known_baseline: currentBestCombo
+      ? {
+          filter: currentBestCombo.filter_spec,
+          sl_pct: 10,
+          tp_pct: 50,
+          avg_return_pct: currentBestCombo.sim_avg_return_10sl_50tp_pct ?? 0,
+          n: currentBestCombo.n,
+          note: 'Live leader from leaderboard (n≥100, beats old baseline). Sim return updates as new data arrives — value at promotion is recorded in CLAUDE.md.',
+        }
+      : {
+          filter: 'vel < 20 + top5 < 10%',
+          sl_pct: 10,
+          tp_pct: 50,
+          avg_return_pct: 5.31,
+          n: 118,
+          note: 'Current best-known baseline — leaderboard not yet computed. See CLAUDE.md for promotion value.',
+        },
   };
 }
 
