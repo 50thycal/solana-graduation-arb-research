@@ -604,57 +604,67 @@ async function main() {
       const pumpFiltered = labelsFiltered.find((l: any) => l.label === 'PUMP')?.count || 0;
       const filteredWinRate = totalLabeledFiltered > 0 ? +(pumpFiltered / totalLabeledFiltered * 100).toFixed(1) : null;
 
-      // ── BEST FILTER (pick highest T+30 profitable rate) ──
-      let bestFilter: { name: string; rule: string; win_rate: number; t30_profitable_rate: number | null; t30_avg_return: number | null; sample_size: number } | null = null;
+      // ── BEST FILTER (ranked by sim return: 10%SL/50%TP from T+30 entry gate) ──
+      // Same cost model as /api/best-combos: enter at T+30 (+5%→+100% gate), 10%SL/50%TP,
+      // 20% SL gap penalty, 10% TP gap penalty, per-token round-trip slippage (fallback 3%).
+      let bestFilter: { name: string; rule: string; win_rate: number; sim_avg_return: number | null; sample_size: number } | null = null;
       if (totalLabeled >= 5) {
+        const SL_G = 0.20, TP_G = 0.10, DEF_COST = 3.0;
+        const simCols = ['pct_t60','pct_t90','pct_t120','pct_t150','pct_t180','pct_t240','pct_t300'] as const;
         const filterTests = [
-          { name: 'top5_wallet_pct < 30', sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 30" },
-          { name: 'top5_wallet_pct < 20', sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 20" },
-          { name: 'dev_wallet_pct < 10', sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 10" },
-          { name: 'dev_wallet_pct < 5', sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5" },
-          { name: 'holder_count >= 10', sql: "holder_count IS NOT NULL AND holder_count >= 10" },
-          { name: 'holder_count >= 15', sql: "holder_count IS NOT NULL AND holder_count >= 15" },
-          { name: 'total_sol_raised >= 80', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 80" },
-          { name: 'total_sol_raised >= 85', sql: "total_sol_raised IS NOT NULL AND total_sol_raised >= 85" },
-          // bc_age filters — data shows bc_age>30min gives 51.7% T+30 profitable at n=143
-          { name: 'bc_age > 10min', sql: "token_age_seconds > 600" },
-          { name: 'bc_age > 30min', sql: "token_age_seconds > 1800" },
-          { name: 'bc_age > 1hr',   sql: "token_age_seconds > 3600" },
-          // T+30 momentum signal — the v2 thesis signal
-          { name: 't30 +5% to +100%', sql: "pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
-          { name: 'holders>=10 AND t30 +5% to +100%', sql: "holder_count >= 10 AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
-          { name: 'bc_age>10m AND t30 +5% to +100%', sql: "token_age_seconds > 600 AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100" },
-          { name: 'bc_velocity<20 AND t30 +5% to +100%', sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20 AND pct_t30 >= 5 AND pct_t30 <= 100" },
-          { name: 'velocity 5-20 AND t30 +5% to +100%', sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20 AND pct_t30 >= 5 AND pct_t30 <= 100" },
-          { name: 'liquidity>100 AND t30 +5% to +100%', sql: "liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t30 > 100 AND pct_t30 >= 5 AND pct_t30 <= 100" },
+          // Current baseline + top candidates (per CLAUDE.md research state)
+          { name: 'vel<20 + top5<10%',        sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
+          { name: 'vel 10-20 + top5<10%',     sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
+          { name: 'holders>=18 + top5<10%',   sql: "holder_count IS NOT NULL AND holder_count >= 18 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
+          { name: 'vel 10-20 + buy_ratio>0.6', sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20 AND buy_pressure_buy_ratio IS NOT NULL AND buy_pressure_buy_ratio > 0.6" },
+          // Single filters and legacy candidates
+          { name: 'top5<10%',                 sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
+          { name: 'top5<20%',                 sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 20" },
+          { name: 'vel 5-20',                 sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20" },
+          { name: 'vel<20',                   sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20" },
+          { name: 'holders>=18',              sql: "holder_count IS NOT NULL AND holder_count >= 18" },
+          { name: 'bc_age>30min',             sql: "token_age_seconds > 1800" },
+          { name: 'dev_wallet_pct<5%',        sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5" },
         ];
         for (const ft of filterTests) {
-          const r = db.prepare(`
-            SELECT
-              COUNT(*) as total,
-              SUM(CASE WHEN label = 'PUMP' THEN 1 ELSE 0 END) as pumps,
-              ROUND(AVG(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
-                THEN (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) * 100.0 - 100.0
-                END), 1) as avg_return_t30,
-              SUM(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL
-                AND (1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) > 1.0
-                THEN 1 ELSE 0 END) as profitable_t30,
-              COUNT(CASE WHEN pct_t30 IS NOT NULL AND pct_t300 IS NOT NULL THEN 1 END) as n_with_t30
+          // Fetch tokens matching filter + T+30 entry gate with price checkpoints
+          const rows = db.prepare(`
+            SELECT pct_t30, pct_t60, pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
+                   round_trip_slippage_pct, label
             FROM graduation_momentum
-            WHERE label IS NOT NULL AND ${ft.sql}
-          `).get() as any;
-          if (r.total >= 3) {
-            const wr = +(r.pumps / r.total * 100).toFixed(1);
-            const t30ProfRate = r.n_with_t30 > 0 ? +(r.profitable_t30 / r.n_with_t30 * 100).toFixed(1) : null;
-            const t30AvgReturn = r.avg_return_t30;
-            // Rank by T+30 profitable rate (the real trading metric); fall back to win_rate
-            const rankScore = t30ProfRate ?? wr;
-            const bestScore = bestFilter
-              ? (bestFilter.t30_profitable_rate ?? bestFilter.win_rate)
-              : -Infinity;
-            if (rankScore > bestScore) {
-              bestFilter = { name: ft.name, rule: ft.sql, win_rate: wr, t30_profitable_rate: t30ProfRate, t30_avg_return: t30AvgReturn, sample_size: r.total };
+            WHERE label IS NOT NULL
+              AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100
+              AND ${ft.sql}
+          `).all() as any[];
+          if (rows.length < 3) continue;
+          let simTotal = 0, simN = 0, pumps = 0;
+          for (const r of rows) {
+            if (r.label === 'PUMP') pumps++;
+            const ep: number = r.pct_t30;
+            const cost: number = r.round_trip_slippage_pct ?? DEF_COST;
+            const openM = 1 + ep / 100;
+            const slLvl = (openM * 0.9 - 1) * 100;
+            const tpLvl = (openM * 1.5 - 1) * 100;
+            let exit: number | null = null;
+            for (const col of simCols) {
+              const cv: number | null = r[col];
+              if (cv == null) continue;
+              if (cv <= slLvl) { exit = -(10 * (1 + SL_G)); break; }
+              if (cv >= tpLvl) { exit = 50 * (1 - TP_G); break; }
             }
+            if (exit == null) {
+              exit = r.pct_t300 != null
+                ? ((1 + r.pct_t300 / 100) / (1 + ep / 100) - 1) * 100
+                : -100;
+            }
+            simTotal += exit - cost;
+            simN++;
+          }
+          if (simN < 3) continue;
+          const wr = +(pumps / rows.length * 100).toFixed(1);
+          const simAvgReturn = +(simTotal / simN).toFixed(2);
+          if (!bestFilter || simAvgReturn > (bestFilter.sim_avg_return ?? -Infinity)) {
+            bestFilter = { name: ft.name, rule: ft.sql, win_rate: wr, sim_avg_return: simAvgReturn, sample_size: simN };
           }
         }
       }
@@ -728,8 +738,8 @@ async function main() {
       const allHavePumpswapPool = last10.every((r: any) => r.has_pool);
       const listenerStats = listener ? listener.getStats() : null;
 
-      // ── T+30 MOMENTUM SIGNAL SUMMARY (v2 thesis) ──
-      // Reports T+30-entry profitability: "if I enter at T+30, does price exceed my entry by T+300?"
+      // ── BASELINE SIGNAL SUMMARY: vel<20 + top5<10% + T+30 entry gate ──
+      // Shows live stats for the current promoted baseline filter.
       const t30Signal = db.prepare(`
         SELECT
           COUNT(*) as n,
@@ -746,31 +756,34 @@ async function main() {
         FROM graduation_momentum
         WHERE label IS NOT NULL
           AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100
-          AND holder_count >= 10
+          AND bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20
+          AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10
       `).get() as any;
-      // t30ProfitableRate: % of trades profitable when entering at T+30 (the real trading question)
+      // t30ProfitableRate: % of trades profitable when entering at T+30 (raw, pre-SL/TP)
       const t30ProfitableRate = t30Signal.n_with_t30 > 0
         ? +(t30Signal.profitable_from_t30 / t30Signal.n_with_t30 * 100).toFixed(1)
         : null;
-      // Keep backward-compat label-based win rate for context
       const t30WinRate = t30Signal.n > 0 ? +(t30Signal.pump / t30Signal.n * 100).toFixed(1) : null;
 
-      // ── VERDICT (T+30 entry basis) ──
-      const bestT30Rate = bestFilter?.t30_profitable_rate ?? null;
-      const verdict = totalLabeled < 10 ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)` :
-        totalLabeled < 30 ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%, T+30 profitable rate ${t30ProfitableRate ?? '?'}% (n=${t30Signal.n_with_t30})` :
-        (t30ProfitableRate !== null && t30ProfitableRate > 60) ? `THESIS VALID — ${t30ProfitableRate}% profitable from T+30 entry (n=${t30Signal.n_with_t30}), avg return ${t30Signal.avg_return_from_t30}%` :
-        (bestT30Rate !== null && bestT30Rate > 51) ? `SIGNAL FOUND — best filter [${bestFilter!.name}] shows ${bestT30Rate}% T+30 profitable rate, avg return ${bestFilter!.t30_avg_return}% (n=${bestFilter!.sample_size})` :
-        (t30ProfitableRate !== null && t30ProfitableRate >= 40) ? `MOMENTUM EDGE — T+30 profitable rate ${t30ProfitableRate}% (n=${t30Signal.n_with_t30}), avg return ${t30Signal.avg_return_from_t30}% — below 51% target, testing stop-loss to flip EV` :
-        (rawWinRate !== null && rawWinRate > 40) ? `MARGINAL — ${rawWinRate}% raw PUMP label rate, T+30 profitable ${t30ProfitableRate ?? '?'}% — filters may help` :
-        `WEAK — ${rawWinRate}% raw win rate, T+30 profitable rate ${t30ProfitableRate ?? '?'}% (n=${t30Signal.n_with_t30})`;
+      // ── VERDICT ──
+      // Current baseline: vel<20 + top5<10%, sim +6.44%, n=111, win rate 72.1%, STABLE (promoted 2026-04-12)
+      const BASELINE_SIM_RETURN = 6.44;
+      const BASELINE_FILTER = 'vel<20 + top5<10%';
+      const bestSimReturn = bestFilter?.sim_avg_return ?? null;
+      const verdict = totalLabeled < 10
+        ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)`
+        : totalLabeled < 30
+        ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%`
+        : (bestSimReturn !== null && (bestFilter?.sample_size ?? 0) >= 100 && bestSimReturn > BASELINE_SIM_RETURN + 0.3)
+        ? `NEW LEADER — ${bestFilter!.name} sim ${bestSimReturn > 0 ? '+' : ''}${bestSimReturn}% (n=${bestFilter!.sample_size}, win rate ${bestFilter!.win_rate}%) beats baseline +${BASELINE_SIM_RETURN}% by +${(bestSimReturn - BASELINE_SIM_RETURN).toFixed(2)}pp. Run regime check (/filter-analysis-v2 Panel 11).`
+        : `BASELINE ESTABLISHED — ${BASELINE_FILTER} sim +${BASELINE_SIM_RETURN}%, n=111, win rate 72.1%, STABLE regime (promoted 2026-04-12). Promotion bar: beat +${(BASELINE_SIM_RETURN + 0.3).toFixed(2)}% on n≥100 with regime std-dev < 15%.${bestSimReturn !== null ? ` Live best: ${bestFilter!.name} sim ${bestSimReturn > 0 ? '+' : ''}${bestSimReturn}% (n=${bestFilter!.sample_size})` : ''}`;
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'momentum-v4b-dashboard-fix',
-        thesis: 'bc_age>30min shows 51.7% T+30 profitable rate, +6.7% avg return, n=143 — best EV signal so far. velocity 5-20 + t30+5-100% shows 55.9% T+30 profitable rate but avg_return=-0.6% before stop-loss; with 10-20% SL turns to +7-9% avg return.',
-        last_change: 'Fixed dashboard Best Filter card: was hardcoded to bc_age>10min (showing misleading 42.4%). Now dynamically selects best filter from ranked candidate list. Added bc_age>30min and bc_age>10min to scorecard filterTests (were missing — bc_age>30min should now win as best filter at 51.7%). Dashboard card now shows filter name alongside rate.',
-        watch_for: 'best_filter on scorecard should now show bc_age>30min at ~51.7% (or velocity 5-20+t30 at 55.9% if it wins). Dashboard Best Filter card should show the same filter name. If they still differ, there is a bug in one of the two candidate lists.',
+        version: 'thesis-page-v2-baseline-reflect',
+        thesis: 'Baseline established: vel<20 + top5<10% sim +6.44%, n=111, win rate 72.1%, STABLE regime (promoted 2026-04-12). Next candidates: vel 10-20 + top5<10% (n=51, sim +8.08%), vel 10-20 + buy_ratio>0.6 (n=33, sim +8.90%). Need n≥100 + sim>+6.74% + STABLE regime to promote.',
+        last_change: 'Thesis page now reflects actual research state: (1) Best Filter ranked by sim return (10%SL/50%TP + costs) instead of raw T+30 profitable rate. (2) filterTests updated with current baseline combo (vel<20+top5<10%) and top candidates. (3) T+30 signal card now shows live stats for baseline filter instead of holders>=10. (4) Verdict logic reflects BASELINE ESTABLISHED vs searching for improvement.',
+        watch_for: 'Best Filter on scorecard should show vel<20+top5<10% with sim return near +6.44% (or higher if a candidate is now beating it). Baseline Signal card should show n growing as more data is collected. If sim return deviates significantly from +6.44%, check /api/best-combos for the authoritative leaderboard.',
       };
 
       // Detection pipeline stats (shows how many raw events → real graduations)
@@ -819,20 +832,18 @@ async function main() {
           },
         },
 
-        // ── V2 MOMENTUM SIGNAL ──
+        // ── BASELINE SIGNAL (live stats for current promoted baseline) ──
         t30_momentum_signal: {
-          filter: 'holders>=10 AND t30 +5% to +100%',
+          filter: 'vel<20 + top5<10% + t30 +5%→+100%',
           n: t30Signal.n,
           n_with_t30_data: t30Signal.n_with_t30,
           pump_label_count: t30Signal.pump,
           dump_label_count: t30Signal.dump,
-          // T+0 label-based win rate (kept for historical context — NOT the trading metric)
           win_rate_from_t0_pct: t30WinRate,
-          // T+30 entry metrics — the real trading question
           t30_profitable_rate_pct: t30ProfitableRate,
           t30_avg_return_pct: t30Signal.avg_return_from_t30,
           avg_t300_pct: t30Signal.avg_t300,
-          note: 'Key signal for v2 thesis. t30_profitable_rate_pct = % of entries profitable when buying at T+30 price and holding to T+300.',
+          note: 'Live stats for current baseline filter (vel<20 + top5<10% + T+30 entry gate). t30_profitable_rate_pct = raw % profitable at T+300 (pre-SL/TP). Sim return (+6.44% on n=111) is in Best Filter card above.',
         },
 
         // ── THESIS VERDICT ──
