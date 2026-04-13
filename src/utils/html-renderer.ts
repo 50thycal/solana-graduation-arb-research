@@ -179,12 +179,31 @@ export function renderThesisHtml(data: any): string {
     </div>
   </div>`;
 
+  // Current baseline banner
+  const baseline = `
+  <div class="card" style="border-color:#16a34a;background:rgba(22,163,74,0.06)">
+    <h2>Current Baseline — Promoted 2026-04-12</h2>
+    <div class="grid">
+      <div>
+        <div class="stat"><span class="label">Filter</span><span class="value green">vel&lt;20 + top5&lt;10%</span></div>
+        <div class="stat"><span class="label">Sim Avg Return</span><span class="value green">+6.44%</span></div>
+        <div class="stat"><span class="label">Win Rate</span><span class="value green">72.1%</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">n (samples)</span><span class="value">111</span></div>
+        <div class="stat"><span class="label">Regime</span><span class="value green">STABLE</span></div>
+        <div class="stat"><span class="label">Promotion bar</span><span class="value yellow">beat +6.74% on n≥100 + STABLE regime</span></div>
+      </div>
+    </div>
+    <div class="desc" style="margin-top:8px">Next candidates: vel 10-20 + top5&lt;10% (n=51, sim +8.08%) · vel 10-20 + buy_ratio&gt;0.6 (n=33, sim +8.90%) · holders≥18 + top5&lt;10% (n=127, sim +5.68%). Check /filter-analysis-v2 Panel 11 for regime stability.</div>
+  </div>`;
+
   // Scorecard
   const sc = d.scorecard;
   const scorecard = `
   <div class="card">
     <h2>Thesis Scorecard</h2>
-    <div class="desc">Core thesis: "Post-graduation PumpFun token momentum is tradeable." PUMP = >+10% at T+300, DUMP = <-10%. Win rate = PUMP / total labeled.</div>
+    <div class="desc">Core thesis: "Post-graduation PumpFun token momentum is tradeable." PUMP = >+10% at T+300, DUMP = <-10%. Win rate = PUMP / total labeled. Best Filter ranked by sim return (10%SL/50%TP + costs), same model as /api/best-combos.</div>
     <div class="grid">
       <div>
         <div class="stat"><span class="label">Total Labeled</span><span class="value">${sc.total_labeled}</span></div>
@@ -194,11 +213,11 @@ export function renderThesisHtml(data: any): string {
         <div class="stat"><span class="label">Raw Win Rate</span><span class="value">${wr(sc.raw_win_rate_pct)}</span></div>
       </div>
       <div>
-        <div class="stat"><span class="label">Best Filter</span><span class="value blue">${sc.best_filter?.name || '—'}</span></div>
-        <div class="stat"><span class="label">Best Filter T+30 Profit%</span><span class="value">${wr(sc.best_filter?.t30_profitable_rate ?? sc.best_filter?.win_rate)}</span></div>
-        <div class="stat"><span class="label">Sample Size</span><span class="value">${sc.best_filter?.sample_size || '—'}</span></div>
+        <div class="stat"><span class="label">Best Filter (sim)</span><span class="value blue">${sc.best_filter?.name || '—'}</span></div>
+        <div class="stat"><span class="label">Sim Avg Return</span><span class="value ${(sc.best_filter?.sim_avg_return ?? 0) >= 6.44 ? 'green' : (sc.best_filter?.sim_avg_return ?? 0) > 0 ? 'yellow' : 'red'}">${sc.best_filter?.sim_avg_return != null ? (sc.best_filter.sim_avg_return > 0 ? '+' : '') + sc.best_filter.sim_avg_return + '%' : '—'}</span></div>
+        <div class="stat"><span class="label">Win Rate</span><span class="value">${wr(sc.best_filter?.win_rate)}</span></div>
+        <div class="stat"><span class="label">Sample Size (n)</span><span class="value">${sc.best_filter?.sample_size || '—'}</span></div>
         <div class="stat"><span class="label">Unlabeled</span><span class="value">${sc.unlabeled}</span></div>
-        <div class="stat"><span class="label">Samples to 30</span><span class="value">${sc.samples_remaining}</span></div>
       </div>
     </div>
   </div>`;
@@ -210,11 +229,11 @@ export function renderThesisHtml(data: any): string {
     <div style="font-size:14px;padding:8px 0;color:#e2e8f0">${d.thesis_verdict}</div>
   </div>`;
 
-  // T+30 momentum signal
+  // Baseline signal card
   const t30 = d.t30_momentum_signal;
   const t30Signal = `
   <div class="card">
-    <h2>T+30 Momentum Signal</h2>
+    <h2>Baseline Signal: vel&lt;20 + top5&lt;10% + T+30 Gate</h2>
     <div class="desc">${t30.note}</div>
     <div class="grid">
       <div>
@@ -296,7 +315,7 @@ export function renderThesisHtml(data: any): string {
     <div class="stat"><span class="label">Best entry avg return</span><span class="value">${pd.best_entry_avg_return != null ? pct(pd.best_entry_avg_return) : '—'}</span></div>
   </div>` : '';
 
-  const body = header + verdict + scorecard + t30Signal + trajectory + last10 + quality + pathSummary;
+  const body = header + verdict + baseline + scorecard + t30Signal + trajectory + last10 + quality + pathSummary;
   return shell('Thesis — Graduation Arb Research', '/thesis', body, data);
 }
 
