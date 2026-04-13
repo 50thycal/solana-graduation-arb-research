@@ -1,14 +1,14 @@
 ---
-description: Fetch /api/logs from the in-process ring buffer. Args — level grep limit.
+description: Report that logs are only available on the live Railway dashboard (not synced to bot-status).
 ---
 
-Fetch `${RAILWAY_URL}/api/logs?level=<arg1>&grep=<arg2>&limit=<arg3>` via `WebFetch`.
+Logs are **NOT synced to the bot-status branch**. The `/api/logs` endpoint is live-only on the Railway deployment, and Railway returns 403 from Claude sessions.
 
-Defaults: `level=warn`, no grep, `limit=200`.
+To check logs, the human operator needs to check the Railway dashboard directly.
 
-Then:
+**What Claude CAN check instead:**
+- `/diagnose` — runs the Level 1-4 bug triage which catches most issues
+- `/snapshot` — shows recent errors, data quality flags, and listener stats
+- `/recent-trades` — shows paper trade results including any failed trades
 
-1. Print `buffer_size` so we know how much history is available.
-2. For each entry, print: `ts_iso | level | name | msg` (+ bindings if present).
-3. Call out repeated errors (same msg appearing > 3 times) as likely a real bug.
-4. Reminder: the ring buffer resets on redeploy. If you need older logs, fall back to the Railway dashboard.
+If you're looking for specific error information, try `/diagnose` first — it surfaces the most actionable issues without needing raw logs.

@@ -34,20 +34,89 @@ export function readTokenAccountAmount(data: Buffer): number | null {
   }
 }
 
+// ── Vault price deduplication cache ────────────────────────────────────────
+//
+// Multiple strategies may have positions on the same pool. Without dedup,
+// 6 strategies = 6 identical RPC calls per 5-second tick. This cache ensures
+// only 1 RPC call per unique vault pair per TTL window. In-flight requests
+// are coalesced — concurrent callers share the same promise.
+//
+const VAULT_CACHE_TTL_MS = 4_000; // 4 seconds (shorter than the 5s poll interval)
+
+interface CachedVaultPrice {
+  result: PoolPriceResult | null;
+  fetchedAt: number;
+}
+
+/** Settled results cache: key = `${baseVault}:${quoteVault}` */
+const vaultPriceCache = new Map<string, CachedVaultPrice>();
+
+/** In-flight promises: callers arriving while a fetch is in progress share the same promise */
+const inflightFetches = new Map<string, Promise<PoolPriceResult | null>>();
+
+/** Stats for monitoring dedup effectiveness */
+export const vaultPriceCacheStats = { hits: 0, misses: 0, coalesced: 0 };
+
 /**
  * Fetch the current pool price by reading both vault token accounts in a single RPC call.
- * Uses the globalRpcLimiter — drops the call if the queue is full (returns null).
+ * Deduplicates concurrent requests for the same vault pair — multiple strategies monitoring
+ * the same pool share a single RPC call per tick.
  *
- * This is extracted from PriceCollector.fetchPoolPrice and used by both the price
- * collector and the position manager for SL/TP monitoring.
+ * @param critical  When true, uses throttle() (always waits) instead of throttleOrDrop().
+ *                  Use critical=true for active position SL/TP monitoring — a missed check
+ *                  could mean a late SL exit and much larger losses than expected.
  */
 export async function fetchVaultPrice(
   connection: Connection,
   baseVault: string,
   quoteVault: string,
+  critical: boolean = false,
 ): Promise<PoolPriceResult | null> {
-  if (!await globalRpcLimiter.throttleOrDrop(5)) {
-    // Lower priority (5) than graduation detection — yield under load
+  const cacheKey = `${baseVault}:${quoteVault}`;
+
+  // 1. Check settled cache (recent result within TTL)
+  const cached = vaultPriceCache.get(cacheKey);
+  if (cached && (Date.now() - cached.fetchedAt) < VAULT_CACHE_TTL_MS) {
+    vaultPriceCacheStats.hits++;
+    return cached.result;
+  }
+
+  // 2. Check in-flight: if another caller is already fetching this pair, wait for it
+  const inflight = inflightFetches.get(cacheKey);
+  if (inflight) {
+    vaultPriceCacheStats.coalesced++;
+    return inflight;
+  }
+
+  // 3. No cache, no in-flight — make the actual RPC call
+  vaultPriceCacheStats.misses++;
+  const fetchPromise = fetchVaultPriceRpc(connection, baseVault, quoteVault, critical);
+
+  // Register in-flight so concurrent callers share this promise
+  inflightFetches.set(cacheKey, fetchPromise);
+
+  try {
+    const result = await fetchPromise;
+    // Store in settled cache
+    vaultPriceCache.set(cacheKey, { result, fetchedAt: Date.now() });
+    return result;
+  } finally {
+    inflightFetches.delete(cacheKey);
+  }
+}
+
+/** Raw RPC fetch — called only when cache misses and no in-flight request exists */
+async function fetchVaultPriceRpc(
+  connection: Connection,
+  baseVault: string,
+  quoteVault: string,
+  critical: boolean,
+): Promise<PoolPriceResult | null> {
+  if (critical) {
+    // Position monitoring: always wait for a slot — never silently skip
+    await globalRpcLimiter.throttle();
+  } else if (!await globalRpcLimiter.throttleOrDrop(5)) {
+    // Non-critical callers: yield under load
     return null;
   }
 
@@ -89,17 +158,20 @@ export class Executor {
   /**
    * Simulate or execute a buy.
    *
-   * Paper mode: return an immediate result with a 1.75% simulated slippage overhead.
+   * Paper mode: uses per-token slippage estimate when available (from
+   * graduation_momentum.slippage_est_05sol), falling back to 1.75%.
    * Live mode: execute via Jupiter aggregator (Phase 3).
    */
   async buy(
     mint: string,
     amountSol: number,
     expectedPriceSol: number,
+    slippageEstPct?: number,
   ): Promise<ExecutionResult> {
     if (this.mode === 'paper') {
-      // Simulate entry slippage: 1.75% overhead matching average observed slippage_est_05sol
-      const effectivePrice = expectedPriceSol * 1.0175;
+      // Use per-token slippage estimate if available, otherwise fall back to 1.75%
+      const slippagePct = (slippageEstPct != null && slippageEstPct > 0) ? slippageEstPct : 1.75;
+      const effectivePrice = expectedPriceSol * (1 + slippagePct / 100);
       const tokensReceived = amountSol / effectivePrice;
       return { success: true, effectivePrice, tokensReceived, dryRun: true };
     }
@@ -111,17 +183,22 @@ export class Executor {
   /**
    * Simulate or execute a sell.
    *
-   * Paper mode: return an immediate result at the given exit price (no tx needed).
+   * Paper mode: applies estimated exit slippage (AMM impact + fees) to model
+   * realistic fill quality. Uses the same slippage estimate as entry when available.
    * Live mode: sell all held tokens via Jupiter (Phase 3).
    */
   async sell(
     mint: string,
     tokensHeld: number,
     exitPriceSol: number,
+    slippageEstPct?: number,
   ): Promise<ExecutionResult> {
     if (this.mode === 'paper') {
-      const solReceived = tokensHeld * exitPriceSol;
-      return { success: true, effectivePrice: exitPriceSol, tokensReceived: 0, dryRun: true };
+      // Apply exit slippage: sell fills worse than the observed price.
+      // Use per-token estimate if available, otherwise fall back to 1.75%.
+      const slippagePct = (slippageEstPct != null && slippageEstPct > 0) ? slippageEstPct : 1.75;
+      const effectivePrice = exitPriceSol * (1 - slippagePct / 100);
+      return { success: true, effectivePrice, tokensReceived: 0, dryRun: true };
     }
 
     // Live mode — Phase 3

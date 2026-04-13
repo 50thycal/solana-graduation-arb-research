@@ -36,7 +36,8 @@ export class TradeEvaluator {
    *   - pctT30, priceT30, solReserves: live from price-collector snapshot
    *   - graduation_momentum row: all T+30 metrics (velocity, age, holders,
    *     liquidity, volatility, monotonicity, drawdown, acceleration, early_vs_late)
-   *   - NOT available: buy_pressure_* (written at T+35)
+   *   - buy_pressure_* fields: available if strategy uses buy_pressure filters
+   *     (StrategyManager auto-delays evaluation to T+35)
    */
   async onT30(
     graduationId: number,
@@ -121,9 +122,15 @@ export class TradeEvaluator {
     });
 
     // ── 6. Execute entry ─────────────────────────────────────────────────────
+    // Use per-token slippage estimate from graduation_momentum if available
+    let slippageEstPct: number | undefined;
+    if (row.slippage_est_05sol != null) {
+      slippageEstPct = Number(row.slippage_est_05sol);
+    }
+
     let entryResult;
     try {
-      entryResult = await this.executor.buy(ctx.mint, cfg.tradeSizeSol, priceT30);
+      entryResult = await this.executor.buy(ctx.mint, cfg.tradeSizeSol, priceT30, slippageEstPct);
     } catch (err) {
       this.tradeLogger.failTrade(tradeId, `buy_exception: ${err instanceof Error ? err.message : String(err)}`);
       return;
@@ -171,6 +178,7 @@ export class TradeEvaluator {
       tpThresholdHit: false,
       postTpHighWaterMark: 0,
       effectiveSlPriceSol: slPriceSol,
+      slippageEstPct,
     };
 
     if (!position.baseVault || !position.quoteVault) {

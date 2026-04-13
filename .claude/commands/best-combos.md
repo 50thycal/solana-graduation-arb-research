@@ -1,10 +1,8 @@
 ---
-description: Fetch /api/best-combos and report the filter leaderboard. Args (optional) — min_n top.
+description: Fetch best-combos from bot-status branch and report the filter leaderboard.
 ---
 
-Fetch `${RAILWAY_URL}/api/best-combos?min_n=<arg1>&top=<arg2>&pairs=true` via `WebFetch`.
-
-Defaults if args missing: `min_n=50 top=20`.
+Fetch `best-combos.json` from the bot-status branch using `mcp__github__get_file_contents` with `owner=50thycal`, `repo=solana-graduation-arb-research`, `path=best-combos.json`, `ref=refs/heads/bot-status`.
 
 Then:
 

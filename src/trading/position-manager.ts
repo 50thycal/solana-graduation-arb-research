@@ -40,6 +40,9 @@ export interface ActivePosition {
   postTpHighWaterMark: number;
   /** The currently effective SL price (dynamically adjusted). Init to slPriceSol. */
   effectiveSlPriceSol: number;
+  /** Per-token slippage estimate (%) from graduation_momentum.slippage_est_05sol.
+   *  Used by paper mode sell to model realistic exit fill quality. */
+  slippageEstPct?: number;
 }
 
 export type ExitReason = 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout';
@@ -396,7 +399,8 @@ export class PositionManager extends EventEmitter {
 
   private async tryFetchPrice(pos: ActivePosition): Promise<{ priceSol: number } | null> {
     try {
-      return await fetchVaultPrice(this.connection!, pos.baseVault, pos.quoteVault);
+      // critical=true: position SL/TP checks must never be silently dropped
+      return await fetchVaultPrice(this.connection!, pos.baseVault, pos.quoteVault, true);
     } catch {
       return null;
     }
