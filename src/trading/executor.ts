@@ -36,18 +36,22 @@ export function readTokenAccountAmount(data: Buffer): number | null {
 
 /**
  * Fetch the current pool price by reading both vault token accounts in a single RPC call.
- * Uses the globalRpcLimiter — drops the call if the queue is full (returns null).
  *
- * This is extracted from PriceCollector.fetchPoolPrice and used by both the price
- * collector and the position manager for SL/TP monitoring.
+ * @param critical  When true, uses throttle() (always waits) instead of throttleOrDrop().
+ *                  Use critical=true for active position SL/TP monitoring — a missed check
+ *                  could mean a late SL exit and much larger losses than expected.
  */
 export async function fetchVaultPrice(
   connection: Connection,
   baseVault: string,
   quoteVault: string,
+  critical: boolean = false,
 ): Promise<PoolPriceResult | null> {
-  if (!await globalRpcLimiter.throttleOrDrop(5)) {
-    // Lower priority (5) than graduation detection — yield under load
+  if (critical) {
+    // Position monitoring: always wait for a slot — never silently skip
+    await globalRpcLimiter.throttle();
+  } else if (!await globalRpcLimiter.throttleOrDrop(5)) {
+    // Non-critical callers: yield under load
     return null;
   }
 
@@ -89,17 +93,20 @@ export class Executor {
   /**
    * Simulate or execute a buy.
    *
-   * Paper mode: return an immediate result with a 1.75% simulated slippage overhead.
+   * Paper mode: uses per-token slippage estimate when available (from
+   * graduation_momentum.slippage_est_05sol), falling back to 1.75%.
    * Live mode: execute via Jupiter aggregator (Phase 3).
    */
   async buy(
     mint: string,
     amountSol: number,
     expectedPriceSol: number,
+    slippageEstPct?: number,
   ): Promise<ExecutionResult> {
     if (this.mode === 'paper') {
-      // Simulate entry slippage: 1.75% overhead matching average observed slippage_est_05sol
-      const effectivePrice = expectedPriceSol * 1.0175;
+      // Use per-token slippage estimate if available, otherwise fall back to 1.75%
+      const slippagePct = (slippageEstPct != null && slippageEstPct > 0) ? slippageEstPct : 1.75;
+      const effectivePrice = expectedPriceSol * (1 + slippagePct / 100);
       const tokensReceived = amountSol / effectivePrice;
       return { success: true, effectivePrice, tokensReceived, dryRun: true };
     }
@@ -111,17 +118,22 @@ export class Executor {
   /**
    * Simulate or execute a sell.
    *
-   * Paper mode: return an immediate result at the given exit price (no tx needed).
+   * Paper mode: applies estimated exit slippage (AMM impact + fees) to model
+   * realistic fill quality. Uses the same slippage estimate as entry when available.
    * Live mode: sell all held tokens via Jupiter (Phase 3).
    */
   async sell(
     mint: string,
     tokensHeld: number,
     exitPriceSol: number,
+    slippageEstPct?: number,
   ): Promise<ExecutionResult> {
     if (this.mode === 'paper') {
-      const solReceived = tokensHeld * exitPriceSol;
-      return { success: true, effectivePrice: exitPriceSol, tokensReceived: 0, dryRun: true };
+      // Apply exit slippage: sell fills worse than the observed price.
+      // Use per-token estimate if available, otherwise fall back to 1.75%.
+      const slippagePct = (slippageEstPct != null && slippageEstPct > 0) ? slippageEstPct : 1.75;
+      const effectivePrice = exitPriceSol * (1 - slippagePct / 100);
+      return { success: true, effectivePrice, tokensReceived: 0, dryRun: true };
     }
 
     // Live mode — Phase 3

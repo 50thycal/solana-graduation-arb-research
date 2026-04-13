@@ -113,7 +113,9 @@ export class StrategyManager {
     logger.info('Attached to PriceCollector T+30 callback (fan-out to %d strategies)', this.strategies.size);
   }
 
-  /** Fan out T+30 signal to all enabled strategies */
+  /** Fan out T+30 signal to all enabled strategies.
+   *  Strategies whose filters reference buy_pressure_* fields are automatically
+   *  delayed 5 seconds (to T+35) so those fields are populated before evaluation. */
   private fanOutT30(
     graduationId: number,
     ctx: ObservationContext,
@@ -125,16 +127,45 @@ export class StrategyManager {
 
     for (const instance of this.strategies.values()) {
       if (!instance.enabled) continue;
-      promises.push(
-        instance.evaluator.onT30(graduationId, ctx, priceT30, pctT30, solReserves).catch(err => {
-          logger.error(
-            'Strategy %s onT30 error for grad %d: %s',
-            instance.id,
-            graduationId,
-            err instanceof Error ? err.message : String(err)
-          );
-        })
+
+      const needsBuyPressure = instance.config.filters.some(
+        f => f.field.startsWith('buy_pressure_')
       );
+
+      if (needsBuyPressure) {
+        // Delay evaluation by 5s so buy_pressure fields (written at T+35) are available.
+        // Entry price is still T+30 — matches the sim model.
+        const delayed = new Promise<void>((resolve) => {
+          setTimeout(() => {
+            instance.evaluator.onT30(graduationId, ctx, priceT30, pctT30, solReserves)
+              .catch(err => {
+                logger.error(
+                  'Strategy %s delayed onT30 error for grad %d: %s',
+                  instance.id,
+                  graduationId,
+                  err instanceof Error ? err.message : String(err)
+                );
+              })
+              .finally(resolve);
+          }, 5_000);
+        });
+        promises.push(delayed);
+        logger.debug(
+          { strategyId: instance.id, graduationId },
+          'Delaying evaluation by 5s (buy_pressure filter detected)'
+        );
+      } else {
+        promises.push(
+          instance.evaluator.onT30(graduationId, ctx, priceT30, pctT30, solReserves).catch(err => {
+            logger.error(
+              'Strategy %s onT30 error for grad %d: %s',
+              instance.id,
+              graduationId,
+              err instanceof Error ? err.message : String(err)
+            );
+          })
+        );
+      }
     }
 
     // Fire and forget — don't block the price collector
@@ -454,7 +485,7 @@ export class StrategyManager {
 
     let sellResult;
     try {
-      sellResult = await this.executor.sell(pos.mint, pos.tokensHeld, exitPriceSol);
+      sellResult = await this.executor.sell(pos.mint, pos.tokensHeld, exitPriceSol, pos.slippageEstPct);
     } catch (err) {
       logger.error({ tradeId: pos.tradeId }, 'Sell execution threw: %s', err instanceof Error ? err.message : String(err));
       sellResult = { success: true, effectivePrice: exitPriceSol, tokensReceived: 0, dryRun: pos.mode === 'paper' };

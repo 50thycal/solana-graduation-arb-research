@@ -27,8 +27,9 @@ export interface FilterPipelineResult {
  *
  * Mirrors the predicate() functions in PANEL_1_FILTERS (src/index.ts:1902–2021).
  *
- * NOTE: buy_pressure_* fields are NOT available at T+30 (written at T+35).
- * Do not include them in filters — they will null-fail every trade.
+ * NOTE: buy_pressure_* fields are written at T+35 (not T+30). Strategies
+ * with buy_pressure filters are automatically delayed 5s by StrategyManager
+ * so these fields are populated before evaluation.
  */
 export function runFilterPipeline(
   row: Record<string, unknown>,
