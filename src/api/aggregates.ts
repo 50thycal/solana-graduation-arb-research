@@ -429,7 +429,7 @@ export function computeBestCombos(
     let simSum = 0;
     let simWins = 0;
     let simN = 0;
-    const SL_GAP = 0.30;   // adverse gap on stop-loss exits (calibrated 2026-04-15 against live SL fills of -34% to -40%)
+    const SL_GAP = 0.30;   // adverse gap on stop-loss exits — price-multiplier model, mirrors trade-logger.ts:112
     const TP_GAP = 0.10;   // adverse gap on take-profit exits
     const DEFAULT_COST = 3.0;
     const checkpoints: Array<'pct_t40'|'pct_t50'|'pct_t60'|'pct_t90'|'pct_t120'|'pct_t150'|'pct_t180'|'pct_t240'|'pct_t300'> =
@@ -446,7 +446,12 @@ export function computeBestCombos(
       for (const cp of checkpoints) {
         const cv = r[cp];
         if (cv === null) continue;
-        if (cv <= slLvl) { exit = -(10 * (1 + SL_GAP)); break; }
+        if (cv <= slLvl) {
+          // Price-multiplier gap: observed price * (1 - SL_GAP), return vs entry
+          const exitRatio = (1 + cv / 100) * (1 - SL_GAP);
+          exit = (exitRatio / openM - 1) * 100;
+          break;
+        }
         if (cv >= tpLvl) { exit = 50 * (1 - TP_GAP); break; }
       }
       if (exit === null) {

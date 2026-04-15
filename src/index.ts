@@ -649,7 +649,12 @@ async function main() {
             for (const col of simCols) {
               const cv: number | null = r[col];
               if (cv == null) continue;
-              if (cv <= slLvl) { exit = -(10 * (1 + SL_G)); break; }
+              if (cv <= slLvl) {
+                // Price-multiplier SL (mirrors trade-logger.ts:112)
+                const exitRatio = (1 + cv / 100) * (1 - SL_G);
+                exit = (exitRatio / openM - 1) * 100;
+                break;
+              }
               if (cv >= tpLvl) { exit = 50 * (1 - TP_G); break; }
             }
             if (exit == null) {
@@ -904,7 +909,12 @@ async function main() {
               for (let ci = eIdx + 1; ci < checkCols.length; ci++) {
                 const cv: number | null = r[checkCols[ci]];
                 if (cv == null) continue;
-                if (cv <= slLvl) { exit = -(10 * (1 + SL_G)); break; }
+                if (cv <= slLvl) {
+                  // Price-multiplier SL (mirrors trade-logger.ts:112)
+                  const exitRatio = (1 + cv / 100) * (1 - SL_G);
+                  exit = (exitRatio / openM - 1) * 100;
+                  break;
+                }
                 if (cv >= tpLvl) { exit = 50 * (1 - TP_G); break; }
               }
               if (exit == null) exit = r.pct_t300 != null ? ((1 + r.pct_t300 / 100) / (1 + ep / 100) - 1) * 100 : -100;
@@ -1296,7 +1306,10 @@ async function main() {
 
               for (const cp of stopCheckpoints) {
                 if (r[cp] != null && r[cp] <= stopLevelPct) {
-                  exitReturn = -(stopPct * (1 + SL_GAP_PENALTY_PCT)); // adverse gap on stop
+                  // Price-multiplier SL (mirrors trade-logger.ts:112)
+                  const entryRatio = 1 + r.pct_t30 / 100;
+                  const exitRatio = (1 + r[cp] / 100) * (1 - SL_GAP_PENALTY_PCT);
+                  exitReturn = (exitRatio / entryRatio - 1) * 100;
                   stopped++;
                   wasStoppedOut = true;
                   break;
@@ -1336,7 +1349,7 @@ async function main() {
               ev_positive: avgReturn > 0,
               avg_cost_per_trade_pct: +avgCostUsed.toFixed(2),
               costs_included: true,
-              stop_gap_penalty: '20% (modeled gap-through on stop execution)',
+              stop_gap_penalty: `${(SL_GAP_PENALTY_PCT * 100).toFixed(0)}% price-multiplier (mirrors trade-logger)`,
               null_t300_treatment: 'worst-case -100% (pool drained / rug)',
             };
           };
@@ -1368,7 +1381,10 @@ async function main() {
               for (const cp of stopCheckpoints) {
                 if (r[cp] == null) continue;
                 if (r[cp] <= stopLevelPct) {
-                  exitReturn = -(stopPct * (1 + SL_GAP_PENALTY_PCT)); // adverse gap on stop
+                  // Price-multiplier SL (mirrors trade-logger.ts:112)
+                  const entryRatio = 1 + r.pct_t30 / 100;
+                  const exitRatio = (1 + r[cp] / 100) * (1 - SL_GAP_PENALTY_PCT);
+                  exitReturn = (exitRatio / entryRatio - 1) * 100;
                   stopped++;
                   wasStoppedOut = true;
                   break;
@@ -1505,7 +1521,10 @@ async function main() {
                 for (const cp of stopCheckpoints) {
                   if (r[cp] == null) continue;
                   if (r[cp] <= stopLevelPct) {
-                    exitReturn = -(sl * (1 + SL_GAP_PENALTY_PCT));
+                    // Price-multiplier SL (mirrors trade-logger.ts:112)
+                    const entryRatio = 1 + r.pct_t30 / 100;
+                    const exitRatio = (1 + r[cp] / 100) * (1 - SL_GAP_PENALTY_PCT);
+                    exitReturn = (exitRatio / entryRatio - 1) * 100;
                     stopped++;
                     wasStoppedOut = true;
                     break;
@@ -2388,16 +2407,22 @@ async function main() {
       // Simulate one token at one (tp, sl). Byte-for-byte mirror of simulateWithTP.
       // Returns { ret, tpHit } — ret is already cost-adjusted.
       const simulateInMemory = (r: Panel4Row, tp: number, sl: number): { ret: number; tpHit: boolean } => {
-        const stopLevelPct = ((1 + r.pct_t30 / 100) * (1 - sl / 100) - 1) * 100;
-        const tpLevelPct   = ((1 + r.pct_t30 / 100) * (1 + tp / 100) - 1) * 100;
+        const entryRatio = 1 + r.pct_t30 / 100;
+        const stopLevelPct = (entryRatio * (1 - sl / 100) - 1) * 100;
+        const tpLevelPct   = (entryRatio * (1 + tp / 100) - 1) * 100;
         for (const cp of PANEL_4_CHECKPOINTS) {
           const v = r[cp];
           if (v == null) continue;
-          if (v <= stopLevelPct) return { ret: -(sl * (1 + PANEL_4_SL_GAP_PENALTY)) - r.cost_pct, tpHit: false };
+          if (v <= stopLevelPct) {
+            // Price-multiplier SL (mirrors trade-logger.ts:112)
+            const exitRatio = (1 + v / 100) * (1 - PANEL_4_SL_GAP_PENALTY);
+            const ret = (exitRatio / entryRatio - 1) * 100;
+            return { ret: ret - r.cost_pct, tpHit: false };
+          }
           if (v >= tpLevelPct)   return { ret:  (tp * (1 - PANEL_4_TP_GAP_PENALTY)) - r.cost_pct, tpHit: true };
         }
         // Fall-through: exit at T+300 (non-null by eligibility predicate)
-        const fallRet = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100 - r.cost_pct;
+        const fallRet = ((1 + r.pct_t300 / 100) / entryRatio - 1) * 100 - r.cost_pct;
         return { ret: fallRet, tpHit: false };
       };
 
@@ -2606,10 +2631,13 @@ async function main() {
 
           // Check SL exit (SL first, like Panel 4)
           if (slActive && relRet <= effSl) {
-            // Adverse gap = 20% of the distance from peak to SL trigger
-            const distanceFromPeak = hwm - effSl;
-            const adverseGap = PANEL_10_SL_GAP_PENALTY * distanceFromPeak;
-            const realized = effSl - adverseGap;
+            // Price-multiplier SL (mirrors trade-logger.ts:111-120).
+            // When the trigger floor is above -baseSL (trailing/breakeven set a higher floor)
+            // AND we're exiting in profit, use TP gap (softer pullback); otherwise SL gap.
+            const inProfit = relRet > 0;
+            const gap = inProfit ? PANEL_10_TP_GAP_PENALTY : PANEL_10_SL_GAP_PENALTY;
+            const exitRatio = (1 + relRet / 100) * (1 - gap);
+            const realized = (exitRatio - 1) * 100;
             let exitType: DpmExitType;
             if (trailingSlActive && effSl > -PANEL_10_BASE_SL) {
               // Trailing or breakeven set the floor above the fixed SL
