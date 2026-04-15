@@ -842,8 +842,9 @@ function stdDevPcts(rows: any[], means: (number | null)[]): (number | null)[] {
 }
 
 // TP+SL simulation (mirror of index.ts logic, entry at arbitrary pct column)
-// SL_GAP recalibrated 2026-04-15 from 0.20 -> 0.30 after live paper trades showed
-// SL fills realizing at -34% to -40% vs the old -28% (10*1.2) sim estimate.
+// SL now uses the price-multiplier model from trade-logger.ts:112 — observed price
+// at the checkpoint is multiplied by (1 - SL_GAP) to model thin-pool slippage on the
+// exit fill, then compared against entry. Matches live paper fills.
 const SL_GAP = 0.30;
 const TP_GAP = 0.10;
 const FALLBACK_COST = 3.0;
@@ -872,7 +873,12 @@ function simulateEntryAtTime(
     for (let ci = entryIdx + 1; ci < allCps.length; ci++) {
       const cpv: number | null = r[allCps[ci]];
       if (cpv == null) continue;
-      if (cpv <= slLevel) { exit = -(slPct * (1 + SL_GAP)); break; }
+      if (cpv <= slLevel) {
+        // Price-multiplier: observed price * (1 - SL_GAP), return vs entry
+        const exitRatio = (1 + cpv / 100) * (1 - SL_GAP);
+        exit = (exitRatio / openMult - 1) * 100;
+        break;
+      }
       if (cpv >= tpLevel) { exit = tpPct * (1 - TP_GAP); break; }
     }
     if (exit == null) {
