@@ -138,7 +138,7 @@ export function loadTradingConfig(): TradingConfig {
     takeProfitPct: parseFloat(process.env.TAKE_PROFIT_PCT || '30'),
     stopLossPct: parseFloat(process.env.STOP_LOSS_PCT || '10'),
     maxHoldSeconds: parseInt(process.env.MAX_HOLD_SECONDS || '300', 10),
-    slGapPenaltyPct: parseFloat(process.env.SL_GAP_PENALTY_PCT || '20'),
+    slGapPenaltyPct: parseFloat(process.env.SL_GAP_PENALTY_PCT || '30'),
     tpGapPenaltyPct: parseFloat(process.env.TP_GAP_PENALTY_PCT || '10'),
     positionMonitorMode: (process.env.POSITION_MONITOR_MODE === 'match_collection' ? 'match_collection' : 'five_second'),
     trailingSlActivationPct: parseFloat(process.env.TRAILING_SL_ACTIVATION_PCT || '0'),

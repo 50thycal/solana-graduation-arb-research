@@ -606,10 +606,10 @@ async function main() {
 
       // ── BEST FILTER (ranked by sim return: 10%SL/50%TP from T+30 entry gate) ──
       // Same cost model as /api/best-combos: enter at T+30 (+5%→+100% gate), 10%SL/50%TP,
-      // 20% SL gap penalty, 10% TP gap penalty, per-token round-trip slippage (fallback 3%).
+      // 30% SL gap penalty (recalibrated 2026-04-15), 10% TP gap penalty, per-token round-trip slippage (fallback 3%).
       let bestFilter: { name: string; rule: string; win_rate: number; sim_avg_return: number | null; sample_size: number } | null = null;
       if (totalLabeled >= 5) {
-        const SL_G = 0.20, TP_G = 0.10, DEF_COST = 3.0;
+        const SL_G = 0.30, TP_G = 0.10, DEF_COST = 3.0;  // SL gap recalibrated 2026-04-15
         const simCols = ['pct_t60','pct_t90','pct_t120','pct_t150','pct_t180','pct_t240','pct_t300'] as const;
         const filterTests = [
           // Current baseline + top candidates (per CLAUDE.md research state)
@@ -876,7 +876,7 @@ async function main() {
           // Best entry time: T+N with highest avg return at 10%SL/50%TP (n>=20)
           let bestTime: string | null = null;
           let bestRet: number | null = null;
-          const SL_G = 0.20, TP_G = 0.10, DEF_COST = 3.0;
+          const SL_G = 0.30, TP_G = 0.10, DEF_COST = 3.0;  // SL gap recalibrated 2026-04-15
           const entryTimes = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] as const;
           const checkCols = ['pct_t5','pct_t10','pct_t15','pct_t20','pct_t25','pct_t30',
             'pct_t35','pct_t40','pct_t45','pct_t50','pct_t55','pct_t60',
@@ -1273,7 +1273,8 @@ async function main() {
           // Uses granular checkpoints T+40/T+50/T+60/T+90/T+120/T+150/T+180/T+240 for accurate stop detection
           const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
           // Gap penalties for thin-pool execution reality
-          const SL_GAP_PENALTY_PCT = 0.20; // SL fills 20% worse than target (adverse gap-through)
+          // Recalibrated 2026-04-15: live SL fills realize at -34% to -40% vs -28% (10*1.2) sim estimate
+          const SL_GAP_PENALTY_PCT = 0.30; // SL fills 30% worse than target (adverse gap-through)
           const TP_GAP_PENALTY_PCT = 0.10; // TP fills 10% worse than target (fast spike, partial fill)
           const simulate = (minPct: number, maxPct: number, stopPct: number, extraWhere?: string, label?: string) => {
             const whereExtra = extraWhere ? ` AND ${extraWhere}` : '';
@@ -1422,7 +1423,7 @@ async function main() {
           };
 
           return {
-            note: 'TP+SL combos only (SL-only strategies confirmed negative EV at n=630+). SL: 20% adverse gap. TP: 10% adverse gap. Round-trip slippage applied to all exits.',
+            note: 'TP+SL combos only (SL-only strategies confirmed negative EV at n=630+). SL: 30% adverse gap (recalibrated 2026-04-15). TP: 10% adverse gap. Round-trip slippage applied to all exits.',
             // REMOVED: basic, velocity_combos, stacked_combos — all SL-only strategies are negative EV.
             // Data still accessible via DB queries if needed.
             tp_sl_combos: (() => {
@@ -1451,7 +1452,7 @@ async function main() {
         // n is smaller than the main cohort — flag clearly in the UI.
         path_shape_filters: (() => {
           const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
-          const SL_GAP_PENALTY_PCT = 0.20;
+          const SL_GAP_PENALTY_PCT = 0.30; // recalibrated 2026-04-15
           const TP_GAP_PENALTY_PCT = 0.10;
 
           // Total tokens with monotonicity data (used to show effective sample size)
@@ -2354,7 +2355,8 @@ async function main() {
 
       // ── Panel 4: dynamic TP/SL EV simulator ──
       // Constants MUST mirror simulateWithTP at src/index.ts:1283-1359 exactly.
-      const PANEL_4_SL_GAP_PENALTY = 0.20;
+      // SL gap recalibrated 2026-04-15 from 0.20 -> 0.30 (live SL fills observed at -34% to -40%)
+      const PANEL_4_SL_GAP_PENALTY = 0.30;
       const PANEL_4_TP_GAP_PENALTY = 0.10;
       const PANEL_4_CHECKPOINTS = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
       const PANEL_4_TP_GRID = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150] as const;
@@ -2486,7 +2488,7 @@ async function main() {
       // best DPM combos per filter category and overall.
       const PANEL_10_BASE_TP = 30;
       const PANEL_10_BASE_SL = 10;
-      const PANEL_10_SL_GAP_PENALTY = 0.20;
+      const PANEL_10_SL_GAP_PENALTY = 0.30; // recalibrated 2026-04-15 (live SL fills -34% to -40%)
       const PANEL_10_TP_GAP_PENALTY = 0.10;
       const PANEL_10_MIN_N = 30;
       const PANEL_10_MIN_ACTIVE_EXITS = 3;
@@ -3497,7 +3499,7 @@ async function main() {
         panel4: {
           title: 'TP/SL EV Simulator — T+30 Entry, User-Selectable TP/SL + Per-Filter Optimum',
           description:
-            'Entry at T+30. Each row precomputes EV across a 12×10 (TP × SL) grid. Dropdowns above the table pick the active cell — all Sel* columns update in place. Opt* columns show the per-filter optimum (max avg return with ≥3 TP hits among combos, requires filter n ≥ 30). Mirrors simulateWithTP (src/index.ts:1283) exactly: SL 20% adverse gap, TP 10% adverse gap, per-token round_trip_slippage_pct with 3% fallback, null pct_t300 excluded via eligibility.',
+            'Entry at T+30. Each row precomputes EV across a 12×10 (TP × SL) grid. Dropdowns above the table pick the active cell — all Sel* columns update in place. Opt* columns show the per-filter optimum (max avg return with ≥3 TP hits among combos, requires filter n ≥ 30). Mirrors simulateWithTP (src/index.ts:1283) exactly: SL 30% adverse gap (recalibrated 2026-04-15), TP 10% adverse gap, per-token round_trip_slippage_pct with 3% fallback, null pct_t300 excluded via eligibility.',
           grid: {
             tp_levels: PANEL_4_TP_GRID,
             sl_levels: PANEL_4_SL_GRID,
