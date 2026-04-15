@@ -429,7 +429,7 @@ export function computeBestCombos(
     let simSum = 0;
     let simWins = 0;
     let simN = 0;
-    const SL_GAP = 0.20;   // adverse gap on stop-loss exits
+    const SL_GAP = 0.30;   // adverse gap on stop-loss exits (calibrated 2026-04-15 against live SL fills of -34% to -40%)
     const TP_GAP = 0.10;   // adverse gap on take-profit exits
     const DEFAULT_COST = 3.0;
     const checkpoints: Array<'pct_t40'|'pct_t50'|'pct_t60'|'pct_t90'|'pct_t120'|'pct_t150'|'pct_t180'|'pct_t240'|'pct_t300'> =

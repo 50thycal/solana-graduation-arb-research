@@ -601,7 +601,7 @@ export function renderFilterHtml(data: any): string {
   // Stop-loss — only TP+SL combos (SL-only confirmed negative EV)
   const slSections = [
     slTpTable('Take-Profit + Stop-Loss Combos',
-      'The only positive-EV strategies. SL: 20% adverse gap. TP: 10% adverse gap. SL checked first (conservative). Round-trip slippage on all exits.',
+      'The only positive-EV strategies. SL: 30% adverse gap (recalibrated 2026-04-15). TP: 10% adverse gap. SL checked first (conservative). Round-trip slippage on all exits.',
       d.stop_loss_simulation?.tp_sl_combos),
   ];
 
@@ -842,7 +842,9 @@ function stdDevPcts(rows: any[], means: (number | null)[]): (number | null)[] {
 }
 
 // TP+SL simulation (mirror of index.ts logic, entry at arbitrary pct column)
-const SL_GAP = 0.20;
+// SL_GAP recalibrated 2026-04-15 from 0.20 -> 0.30 after live paper trades showed
+// SL fills realizing at -34% to -40% vs the old -28% (10*1.2) sim estimate.
+const SL_GAP = 0.30;
 const TP_GAP = 0.10;
 const FALLBACK_COST = 3.0;
 const STOP_CPS = ['pct_t35','pct_t40','pct_t45','pct_t50','pct_t55','pct_t60','pct_t90','pct_t120','pct_t150','pct_t180','pct_t240'] as const;
@@ -3055,7 +3057,7 @@ export function renderPricePathHtml(db: Database.Database): string {
   const entryHeatmap = `
   <div class="card">
     <h2>Entry Timing Heatmap (${SL}% SL / ${TP}% TP)</h2>
-    <div class="desc">If we entered at each 5s snapshot instead of T+30, how does avg return change? Gate: +5% to +100% from open. Costs: 20% SL gap, 10% TP gap, round-trip slippage. <b style="color:#60a5fa">Vel 5-20</b> = primary thesis filter (bc_velocity 5–20 sol/min).</div>
+    <div class="desc">If we entered at each 5s snapshot instead of T+30, how does avg return change? Gate: +5% to +100% from open. Costs: 30% SL gap (recalibrated 2026-04-15), 10% TP gap, round-trip slippage. <b style="color:#60a5fa">Vel 5-20</b> = primary thesis filter (bc_velocity 5–20 sol/min).</div>
     <table>
       <tr>
         <th rowspan="2">Entry Time</th>
