@@ -340,11 +340,6 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'clean_dev',          group: 'Creator Rep', where: 'creator_prior_rug_rate IS NOT NULL AND creator_prior_rug_rate < 0.3' },
   { name: 'serial_rugger',      group: 'Creator Rep', where: 'creator_prior_rug_rate >= 0.7' },
   { name: 'rapid_fire',         group: 'Creator Rep', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1' },
-  // Peak return from entry (T+30 entry-relative peak during 0-300s)
-  { name: 'peak > 20%',         group: 'Peak Return', where: 'max_relret_0_300 > 20' },
-  { name: 'peak > 40%',         group: 'Peak Return', where: 'max_relret_0_300 > 40' },
-  { name: 'peak > 75%',         group: 'Peak Return', where: 'max_relret_0_300 > 75' },
-  { name: 'peak > 100%',        group: 'Peak Return', where: 'max_relret_0_300 > 100' },
 ];
 
 /** Entry gate shared by all candidates — matches the baseline. */

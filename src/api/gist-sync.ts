@@ -28,6 +28,7 @@ import { runDiagnosis } from './diagnose';
 import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
+import { computePeakAnalysis } from './peak-analysis';
 import {
   getGraduationCount,
   getLastBotError,
@@ -58,6 +59,7 @@ export interface StatusUrls {
   panel11: string;
   panel3: string;
   price_path_stats: string;
+  peak_analysis: string;
   strategies: string;
   branch_html: string;
 }
@@ -135,6 +137,7 @@ export class GistSync {
       panel11: `${base}/panel11.json`,
       panel3: `${base}/panel3.json`,
       price_path_stats: `${base}/price-path-stats.json`,
+      peak_analysis: `${base}/peak-analysis.json`,
       strategies: `${base}/strategies.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
@@ -290,6 +293,7 @@ export class GistSync {
     const panel11 = computePanel11(this.db);
     const panel3 = computePanel3Summary(this.db);
     const pricePathStats = computePricePathStats(this.db);
+    const peakAnalysis = computePeakAnalysis(this.db);
 
     // Strategy configs — includes all DPM params per strategy
     const strategyRows = getStrategyConfigs(this.db);
@@ -308,6 +312,7 @@ export class GistSync {
       'panel11.json': JSON.stringify(panel11, null, 2),
       'panel3.json': JSON.stringify(panel3, null, 2),
       'price-path-stats.json': JSON.stringify(pricePathStats, null, 2),
+      'peak-analysis.json': JSON.stringify(peakAnalysis, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: new Date(nowMs).toISOString(),
         count: strategies.length,
