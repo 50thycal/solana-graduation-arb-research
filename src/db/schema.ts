@@ -183,6 +183,8 @@ function runMigrations(db: Database.Database): void {
       ['max_peak_sec', 'INTEGER'],    // seconds since graduation when peak occurred
       ['max_drawdown_pct', 'REAL'],   // worst drop from peak (negative)
       ['max_drawdown_sec', 'INTEGER'],// seconds since graduation when max drawdown occurred
+      ['max_relret_0_300', 'REAL'],       // peak %-return from T+30 entry during 0-300s window
+      ['max_relret_0_300_sec', 'INTEGER'],// seconds since graduation when peak relret occurred
       // Trading readiness metrics (computed at T+30)
       ['volatility_0_30', 'REAL'],       // price range (max-min)/open as % in first 30s
       ['liquidity_sol_t30', 'REAL'],     // SOL reserves in pool at T+30
@@ -242,6 +244,50 @@ function runMigrations(db: Database.Database): void {
       SET bc_velocity_sol_per_min = 500
       WHERE bc_velocity_sol_per_min > 500
     `);
+    // Backfill max_relret_0_300 / max_relret_0_300_sec from existing pct_tN checkpoints.
+    // Formula mirrors src/index.ts:2617 (Panel 4 simulateInMemory):
+    //   relret_N = ((1 + pct_tN/100) / (1 + pct_t30/100) - 1) * 100
+    // SQLite can't cleanly do correlated MAX-of-UNION, so compute in JS.
+    const backfillRows = db.prepare(`
+      SELECT id, pct_t30,
+             pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60,
+             pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300
+      FROM graduation_momentum
+      WHERE max_relret_0_300 IS NULL
+        AND pct_t30 IS NOT NULL
+        AND pct_t300 IS NOT NULL
+    `).all() as Array<Record<string, number | null>>;
+    if (backfillRows.length > 0) {
+      const updateStmt = db.prepare(
+        `UPDATE graduation_momentum SET max_relret_0_300 = ?, max_relret_0_300_sec = ? WHERE id = ?`
+      );
+      const postEntry: Array<[string, number]> = [
+        ['pct_t35', 35], ['pct_t40', 40], ['pct_t45', 45], ['pct_t50', 50],
+        ['pct_t55', 55], ['pct_t60', 60], ['pct_t90', 90], ['pct_t120', 120],
+        ['pct_t150', 150], ['pct_t180', 180], ['pct_t240', 240], ['pct_t300', 300],
+      ];
+      const tx = db.transaction((rows: typeof backfillRows) => {
+        for (const r of rows) {
+          const t30 = r.pct_t30;
+          if (t30 == null) continue;
+          const entryRatio = 1 + t30 / 100;
+          if (entryRatio <= 0) continue;
+          let maxRel = 0;
+          let maxSec = 30;
+          for (const [col, sec] of postEntry) {
+            const v = r[col];
+            if (v == null) continue;
+            const rel = ((1 + v / 100) / entryRatio - 1) * 100;
+            if (rel > maxRel) {
+              maxRel = rel;
+              maxSec = sec;
+            }
+          }
+          updateStmt.run(+maxRel.toFixed(2), maxSec, r.id);
+        }
+      });
+      tx(backfillRows);
+    }
   }
 
   // Add columns to graduations if they don't exist yet (safe migration)
