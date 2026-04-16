@@ -2464,7 +2464,9 @@ async function main() {
                dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
                monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
                early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
-               buy_pressure_whale_pct
+               buy_pressure_whale_pct,
+               creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
+               creator_last_token_age_hours
         FROM graduation_momentum
         WHERE label IS NOT NULL
           AND pct_t30 IS NOT NULL
@@ -2599,7 +2601,9 @@ async function main() {
           dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
           monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
           early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
-          buy_pressure_whale_pct
+          buy_pressure_whale_pct,
+          creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
+          creator_last_token_age_hours
         FROM graduation_momentum
         WHERE label IS NOT NULL
           AND pct_t30 IS NOT NULL
