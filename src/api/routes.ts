@@ -36,6 +36,7 @@ import { runDiagnosis } from './diagnose';
 import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
+import { computePeakAnalysis } from './peak-analysis';
 import type { LogBuffer } from '../utils/log-buffer';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { vaultPriceCacheStats } from '../trading/executor';
@@ -157,6 +158,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // entry timing optimization, velocity breakdown. Compact — no raw token rows.
   app.get('/api/price-path-stats', wrap((_req, res) => {
     res.json(computePricePathStats(db));
+  }));
+
+  // ── /api/peak-analysis ──
+  // Diagnostic data for max_relret_0_300 (look-ahead peak from T+30 entry).
+  // CDF, peak-time histogram, per-filter peak-bucket table, suggested TP.
+  // NOT a tradable filter — kept off /api/best-combos by design.
+  app.get('/api/peak-analysis', wrap((_req, res) => {
+    res.json(computePeakAnalysis(db));
   }));
 
   // ── /api/filter-catalog ──

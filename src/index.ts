@@ -3,7 +3,8 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml, renderPeakAnalysisHtml } from './utils/html-renderer';
+import { computePeakAnalysis } from './api/peak-analysis';
 import { StrategyManager } from './trading';
 import { StrategyParams } from './trading/config';
 import { makeLogger, logBuffer } from './utils/logger';
@@ -23,6 +24,7 @@ const NAV_LINKS = [
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
   { path: '/filter-analysis-v2', label: 'Filters V2' },
+  { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/trading', label: 'Trading' },
@@ -2311,16 +2313,6 @@ async function main() {
         { name: 'rapid_fire',             group: 'Creator Rep', column: 'creator_last_token_age_hours', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1',
           predicate: (r) => r.creator_last_token_age_hours != null && r.creator_last_token_age_hours < 1 },
 
-        // ── Peak Return (entry-relative, 0-300s) ──
-        { name: 'peak > 20%',             group: 'Peak Return', column: 'max_relret_0_300', where: 'max_relret_0_300 > 20',
-          predicate: (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 20 },
-        { name: 'peak > 40%',             group: 'Peak Return', column: 'max_relret_0_300', where: 'max_relret_0_300 > 40',
-          predicate: (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 40 },
-        { name: 'peak > 75%',             group: 'Peak Return', column: 'max_relret_0_300', where: 'max_relret_0_300 > 75',
-          predicate: (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 75 },
-        { name: 'peak > 100%',            group: 'Peak Return', column: 'max_relret_0_300', where: 'max_relret_0_300 > 100',
-          predicate: (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 100 },
-
         // ── T+30 Entry Gate ──
         { name: 't30 > 0%',                       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 > 0',
           predicate: (r) => r.pct_t30 > 0 },
@@ -3884,6 +3876,24 @@ async function main() {
     try {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(renderPricePathHtml(db));
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── PEAK ANALYSIS (diagnostic, NOT a trading filter) ─────────────────────
+  // Isolated page for max_relret_0_300 — TP calibration, exit timing, filter
+  // quality scoring. Look-ahead metric, so kept out of all filter leaderboards.
+  app.get('/peak-analysis', (req, res) => {
+    try {
+      const data = computePeakAnalysis(db);
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderPeakAnalysisHtml(data));
+      } else {
+        res.json(data);
+      }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }

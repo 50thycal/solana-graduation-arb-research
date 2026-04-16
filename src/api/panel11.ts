@@ -103,11 +103,6 @@ export const CATALOG_PREDICATES = new Map<string, (r: RegimeRow) => boolean>([
   ['clean_dev',       (r) => r.creator_prior_rug_rate != null && r.creator_prior_rug_rate < 0.3],
   ['serial_rugger',   (r) => r.creator_prior_rug_rate != null && r.creator_prior_rug_rate >= 0.7],
   ['rapid_fire',      (r) => r.creator_last_token_age_hours != null && r.creator_last_token_age_hours < 1],
-  // Peak return from entry
-  ['peak > 20%',  (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 20],
-  ['peak > 40%',  (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 40],
-  ['peak > 75%',  (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 75],
-  ['peak > 100%', (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 100],
 ]);
 
 export function loadRegimeRows(db: Database.Database): RegimeRow[] {

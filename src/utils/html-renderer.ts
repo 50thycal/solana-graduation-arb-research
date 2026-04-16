@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
   { path: '/filter-analysis-v2', label: 'Filters V2' },
+  { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/trading', label: 'Trading' },
@@ -3250,12 +3251,6 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'max_dd > -10% (shallow)', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -10, label: 'dd>-10%' }] },
     { name: 'max_dd > -20%', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -20, label: 'dd>-20%' }] },
   ]},
-  { group: 'Peak Return (entry-relative)', filters: [
-    { name: 'peak > 20%',  configs: [{ field: 'max_relret_0_300', operator: '>', value: 20,  label: 'peak>20%'  }] },
-    { name: 'peak > 40%',  configs: [{ field: 'max_relret_0_300', operator: '>', value: 40,  label: 'peak>40%'  }] },
-    { name: 'peak > 75%',  configs: [{ field: 'max_relret_0_300', operator: '>', value: 75,  label: 'peak>75%'  }] },
-    { name: 'peak > 100%', configs: [{ field: 'max_relret_0_300', operator: '>', value: 100, label: 'peak>100%' }] },
-  ]},
   { group: 'Path: Other', filters: [
     { name: 'dip_and_recover = 1', configs: [{ field: 'dip_and_recover_flag', operator: '==', value: 1, label: 'dip_recover' }] },
     { name: 'acceleration > 0', configs: [{ field: 'acceleration_t30', operator: '>', value: 0, label: 'accel>0' }] },
@@ -3932,4 +3927,153 @@ export function renderTradingHtml(data: any): string {
 </div>
 ${js}
 </body></html>`;
+}
+
+// ── PEAK ANALYSIS PAGE ───────────────────────────────────────────────
+// Diagnostic-only surface for max_relret_0_300. The metric is look-ahead
+// (only known at T+300), so peak-filters are intentionally absent from the
+// filter leaderboards. This page exposes the data for TP calibration,
+// exit-timing calibration, and filter-quality scoring.
+
+export function renderPeakAnalysisHtml(data: any): string {
+  const d = data;
+
+  const headerCards = `
+    <div class="grid">
+      <div class="card">
+        <h2>Sample size</h2>
+        <div class="stat"><span class="label">Total (entry-gated)</span><span class="value">${d.n_total}</span></div>
+        <div class="stat"><span class="label">Baseline (vel&lt;20 + top5&lt;10%)</span><span class="value">${d.n_baseline}</span></div>
+      </div>
+      <div class="card">
+        <h2>Recommended TP</h2>
+        ${d.recommended_tp
+          ? `<div class="stat"><span class="label">TP %</span><span class="value blue">${d.recommended_tp.tp_pct}%</span></div>
+             <div class="stat"><span class="label">Expected return / trade</span><span class="value ${d.recommended_tp.expected_return_pct >= 0 ? 'green' : 'red'}">${d.recommended_tp.expected_return_pct >= 0 ? '+' : ''}${d.recommended_tp.expected_return_pct}%</span></div>
+             <div class="desc">Model: if peak ≥ TP, exit at TP × 0.9 (gap); else exit at T+300. Cost from per-token round_trip_slippage_pct.</div>`
+          : '<div class="n-insuf">No baseline rows yet.</div>'}
+      </div>
+      <div class="card" style="grid-column:1 / -1;background:#2a1810;border-color:#7c2d12">
+        <h2 class="red">⚠ Look-ahead disclaimer</h2>
+        <div class="desc">${d.disclaimer}</div>
+      </div>
+    </div>
+  `;
+
+  // Panel A: CDF
+  const cdfRows = d.cdf.map((r: any) => `
+    <tr>
+      <td>≥ +${r.threshold_pct}%</td>
+      <td>${r.all_reach_pct.toFixed(1)}%</td>
+      <td>${r.baseline_reach_pct.toFixed(1)}%</td>
+      <td class="${r.baseline_reach_pct - r.all_reach_pct > 0 ? 'green' : r.baseline_reach_pct - r.all_reach_pct < 0 ? 'red' : ''}">
+        ${(r.baseline_reach_pct - r.all_reach_pct > 0 ? '+' : '') + (r.baseline_reach_pct - r.all_reach_pct).toFixed(1)}pp
+      </td>
+    </tr>`).join('');
+  const panelA = `
+    <div class="card">
+      <h2>Panel A — Peak CDF</h2>
+      <div class="desc">What fraction of tokens' peak-from-entry crosses each threshold. Baseline vs ALL cohort.
+        If baseline has a higher reach rate at +30% than at +50%, drop TP to where hit-rate × TP peaks (see Panel D).</div>
+      <table>
+        <thead><tr><th>Peak threshold</th><th>ALL reach %</th><th>Baseline reach %</th><th>Baseline vs ALL</th></tr></thead>
+        <tbody>${cdfRows}</tbody>
+      </table>
+    </div>
+  `;
+
+  // Panel B: peak-time histogram
+  const histRows = d.peak_time_histogram.map((r: any) => `
+    <tr>
+      <td>${r.bin}</td>
+      <td>${r.all_count}</td>
+      <td>${r.all_pct.toFixed(1)}%</td>
+      <td>${r.baseline_count}</td>
+      <td>${r.baseline_pct.toFixed(1)}%</td>
+    </tr>`).join('');
+  const panelB = `
+    <div class="card">
+      <h2>Panel B — Peak time histogram</h2>
+      <div class="desc">When does the peak occur? If most peaks cluster at 60-120s, maxHoldSeconds=180 is wasting the tail.
+        If peaks are late (240-300s), the 300s observation window may be cutting winners off.</div>
+      <table>
+        <thead><tr><th>Peak time bin</th><th>ALL n</th><th>ALL %</th><th>Baseline n</th><th>Baseline %</th></tr></thead>
+        <tbody>${histRows}</tbody>
+      </table>
+    </div>
+  `;
+
+  // Panel C: per-filter peak-bucket table
+  const thresholds = (d.cdf as any[]).map(c => c.threshold_pct);
+  const thresholdHeaders = thresholds.map(t => `<th>≥+${t}%</th>`).join('');
+  let lastGroup = '';
+  const perFilterRows = d.per_filter.map((r: any) => {
+    const groupHeader = r.group !== lastGroup
+      ? `<tr class="row-group-header"><td colspan="${6 + thresholds.length}">${r.group}</td></tr>`
+      : '';
+    lastGroup = r.group;
+    const reachCells = thresholds.map(t => {
+      const v = r.pct_reach[String(t)];
+      return `<td>${v == null ? '—' : v.toFixed(1) + '%'}</td>`;
+    }).join('');
+    const nClass = r.n < 30 ? 'row-low-n' : r.n >= 100 ? 'row-strong-n' : '';
+    return groupHeader + `
+      <tr class="${nClass}">
+        <td><strong>${r.filter}</strong></td>
+        <td>${r.n}</td>
+        <td>${r.p25_peak == null ? '—' : r.p25_peak.toFixed(1) + '%'}</td>
+        <td>${r.median_peak == null ? '—' : r.median_peak.toFixed(1) + '%'}</td>
+        <td>${r.p75_peak == null ? '—' : r.p75_peak.toFixed(1) + '%'}</td>
+        <td class="${r.avg_final_return != null && r.avg_final_return > 0 ? 'green' : r.avg_final_return != null && r.avg_final_return < 0 ? 'red' : ''}">
+          ${r.avg_final_return == null ? '—' : (r.avg_final_return > 0 ? '+' : '') + r.avg_final_return.toFixed(2) + '%'}
+        </td>
+        ${reachCells}
+      </tr>`;
+  }).join('');
+  const panelC = `
+    <div class="card">
+      <h2>Panel C — Per-filter peak bucket</h2>
+      <div class="desc">For each early-only filter, the peak distribution of its matching rows. Use this as a quality
+        score: a filter whose rows have higher median_peak and higher reach% at +30-50% is producing tokens that actually move.
+        avg_final_return = avg pct_t300-from-entry (the tradable outcome, no TP/SL applied).</div>
+      <table>
+        <thead><tr>
+          <th>Filter</th><th>n</th><th>p25 peak</th><th>median peak</th><th>p75 peak</th><th>avg final ret</th>
+          ${thresholdHeaders}
+        </tr></thead>
+        <tbody>${perFilterRows}</tbody>
+      </table>
+    </div>
+  `;
+
+  // Panel D: suggested TP
+  const tpRows = d.suggested_tp.map((r: any) => {
+    const isRecommended = d.recommended_tp && r.tp_pct === d.recommended_tp.tp_pct;
+    return `
+      <tr class="${isRecommended ? 'row-baseline' : ''}">
+        <td>${r.tp_pct}%${isRecommended ? ' ★' : ''}</td>
+        <td>${r.hit_rate_pct.toFixed(1)}%</td>
+        <td class="${r.avg_nonhit_return_pct > 0 ? 'green' : r.avg_nonhit_return_pct < 0 ? 'red' : ''}">
+          ${(r.avg_nonhit_return_pct > 0 ? '+' : '') + r.avg_nonhit_return_pct.toFixed(2)}%
+        </td>
+        <td class="${r.expected_return_pct > 0 ? 'green' : 'red'}"><strong>
+          ${(r.expected_return_pct > 0 ? '+' : '') + r.expected_return_pct.toFixed(2)}%
+        </strong></td>
+      </tr>`;
+  }).join('');
+  const panelD = `
+    <div class="card">
+      <h2>Panel D — Suggested TP (baseline cohort)</h2>
+      <div class="desc">For each TP level, the expected per-trade return if we swapped today's 50% TP for it, keeping
+        the baseline filter (vel&lt;20 + top5&lt;10%). Model: hit_rate × (TP × 0.9) + (1 − hit_rate) × avg_nonhit_T300 − avg_cost.
+        Ignores SL — treat the EV peak as a directional signal, not an absolute prediction. ★ = argmax.</div>
+      <table>
+        <thead><tr><th>TP %</th><th>Hit rate</th><th>Avg non-hit return</th><th>Expected return / trade</th></tr></thead>
+        <tbody>${tpRows}</tbody>
+      </table>
+    </div>
+  `;
+
+  const body = headerCards + panelA + panelB + panelC + panelD;
+  return shell('Peak Analysis', '/peak-analysis', body, d);
 }
