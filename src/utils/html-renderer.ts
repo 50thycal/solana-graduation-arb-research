@@ -3250,6 +3250,12 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'max_dd > -10% (shallow)', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -10, label: 'dd>-10%' }] },
     { name: 'max_dd > -20%', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -20, label: 'dd>-20%' }] },
   ]},
+  { group: 'Peak Return (entry-relative)', filters: [
+    { name: 'peak > 20%',  configs: [{ field: 'max_relret_0_300', operator: '>', value: 20,  label: 'peak>20%'  }] },
+    { name: 'peak > 40%',  configs: [{ field: 'max_relret_0_300', operator: '>', value: 40,  label: 'peak>40%'  }] },
+    { name: 'peak > 75%',  configs: [{ field: 'max_relret_0_300', operator: '>', value: 75,  label: 'peak>75%'  }] },
+    { name: 'peak > 100%', configs: [{ field: 'max_relret_0_300', operator: '>', value: 100, label: 'peak>100%' }] },
+  ]},
   { group: 'Path: Other', filters: [
     { name: 'dip_and_recover = 1', configs: [{ field: 'dip_and_recover_flag', operator: '==', value: 1, label: 'dip_recover' }] },
     { name: 'acceleration > 0', configs: [{ field: 'acceleration_t30', operator: '>', value: 0, label: 'accel>0' }] },

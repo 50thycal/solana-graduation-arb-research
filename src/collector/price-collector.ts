@@ -82,6 +82,10 @@ interface ActiveObservation {
   peakPriceSec: number;    // when peak occurred (seconds since graduation)
   maxDrawdownPct: number;  // worst drop from peak (negative number)
   maxDrawdownSec: number;  // when max drawdown occurred
+  // Entry-relative peak tracking (T+30 entry; seed at T+30, update through T+300)
+  entryPct: number | null; // pct_t30 captured at T+30 (open-relative)
+  maxRelretPct: number;    // peak entry-relative return so far
+  maxRelretSec: number;    // seconds since graduation when maxRelretPct was reached
   // Price history for volatility/liquidity tracking (first 30s)
   earlyPrices: number[];         // all prices seen T+0 to T+30
   earlySolReserves: number[];    // SOL reserves at each early snapshot
@@ -245,6 +249,9 @@ export class PriceCollector {
       peakPriceSec: 0,
       maxDrawdownPct: 0,
       maxDrawdownSec: 0,
+      entryPct: null,
+      maxRelretPct: 0,
+      maxRelretSec: 30,
       earlyPrices: [],
       earlySolReserves: [],
     };
@@ -443,6 +450,21 @@ export class PriceCollector {
         if (drawdownFromPeak < observation.maxDrawdownPct) {
           observation.maxDrawdownPct = drawdownFromPeak;
           observation.maxDrawdownSec = targetSec;
+        }
+
+        // Track entry-relative peak (T+30 seed, update through T+300).
+        // Formula mirrors src/index.ts:2811 (Panel 4 simulateInMemory) exactly.
+        if (targetSec === 30) {
+          observation.entryPct = pctChange;
+        } else if (targetSec > 30 && observation.entryPct != null) {
+          const entryRatio = 1 + observation.entryPct / 100;
+          if (entryRatio > 0) {
+            const relRet = ((1 + pctChange / 100) / entryRatio - 1) * 100;
+            if (relRet > observation.maxRelretPct) {
+              observation.maxRelretPct = relRet;
+              observation.maxRelretSec = targetSec;
+            }
+          }
         }
 
         logger.info(
@@ -811,6 +833,18 @@ export class PriceCollector {
           observation.maxDrawdownSec,
           graduationId
         );
+        // Entry-relative peak: only write when we captured T+30 (entryPct != null)
+        if (observation.entryPct != null) {
+          this.db.prepare(`
+            UPDATE graduation_momentum
+            SET max_relret_0_300 = ?, max_relret_0_300_sec = ?
+            WHERE graduation_id = ?
+          `).run(
+            +observation.maxRelretPct.toFixed(2),
+            observation.maxRelretSec,
+            graduationId
+          );
+        }
       } catch (err) {
         logger.error(
           'Failed to write drawdown metrics for grad %d: %s',
