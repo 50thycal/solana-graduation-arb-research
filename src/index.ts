@@ -1,7 +1,7 @@
 import express from 'express';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
-import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError } from './db/queries';
+import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
 import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml } from './utils/html-renderer';
 import { StrategyManager } from './trading';
@@ -11,6 +11,7 @@ import { registerApiRoutes } from './api/routes';
 import { GistSync } from './api/gist-sync';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
 import { computePanel11 } from './api/panel11';
+import { HolderEnrichment } from './collector/holder-enrichment';
 
 const logger = makeLogger('main');
 
@@ -386,6 +387,192 @@ async function main() {
       has_velocity: totalWithVelocity,
       total_labeled: total,
       velocity_coverage_pct: total > 0 ? +((totalWithVelocity / total) * 100).toFixed(1) : 0,
+    });
+  });
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // WALLET ADDRESS BACKFILL
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  let walletBackfillRunning = false;
+
+  app.get('/backfill-wallets', async (req, res) => {
+    if (walletBackfillRunning) {
+      sendJsonOrHtml(req, res, { status: 'already_running', message: 'Wallet backfill is already in progress.' });
+      return;
+    }
+
+    const rpcUrl = process.env.HELIUS_RPC_URL;
+    if (!rpcUrl) {
+      res.status(500).json({ error: 'HELIUS_RPC_URL not configured' });
+      return;
+    }
+
+    // Find all rows missing creator_wallet_address (the primary target).
+    // Also backfill dev_wallet_address where missing.
+    const candidates = db.prepare(`
+      SELECT gm.graduation_id, g.mint, g.bonding_curve_address,
+             g.timestamp as grad_timestamp,
+             gm.dev_wallet_address, gm.creator_wallet_address
+      FROM graduation_momentum gm
+      JOIN graduations g ON g.id = gm.graduation_id
+      WHERE gm.creator_wallet_address IS NULL
+         OR gm.dev_wallet_address IS NULL
+    `).all() as Array<{
+      graduation_id: number; mint: string; bonding_curve_address: string | null;
+      grad_timestamp: number; dev_wallet_address: string | null; creator_wallet_address: string | null;
+    }>;
+
+    if (candidates.length === 0) {
+      sendJsonOrHtml(req, res, { status: 'done', message: 'All rows already have wallet addresses.' });
+      return;
+    }
+
+    sendJsonOrHtml(req, res, {
+      status: 'started',
+      total_to_backfill: candidates.length,
+      message: `Backfilling wallet addresses for ${candidates.length} rows in background (~3 RPC calls/row, throttled)...`,
+    });
+
+    walletBackfillRunning = true;
+    const conn = new Connection(rpcUrl, { commitment: 'confirmed' });
+    const enricher = new HolderEnrichment(conn);
+
+    let devResolved = 0;
+    let creatorResolved = 0;
+    let reputationComputed = 0;
+    let failed = 0;
+
+    (async () => {
+      for (const row of candidates) {
+        try {
+          // ── Dev wallet address (if missing) ──
+          if (!row.dev_wallet_address && row.mint) {
+            try {
+              const largestAccounts = await conn.getTokenLargestAccounts(
+                new PublicKey(row.mint), 'confirmed'
+              );
+              if (largestAccounts.value && largestAccounts.value.length > 0) {
+                const sorted = [...largestAccounts.value].sort((a, b) =>
+                  (parseInt(b.amount, 10) || 0) - (parseInt(a.amount, 10) || 0)
+                );
+                const PUMP_TOTAL_SUPPLY_RAW = 1_000_000_000_000_000;
+                const INFRA_THRESHOLD = PUMP_TOTAL_SUPPLY_RAW * 0.15;
+                const realHolders = sorted.filter(acc => {
+                  const amt = parseInt(acc.amount, 10) || 0;
+                  return amt > 0 && amt < INFRA_THRESHOLD;
+                });
+                if (realHolders.length > 0) {
+                  const parsedAcct = await conn.getParsedAccountInfo(realHolders[0].address);
+                  const parsed = parsedAcct?.value?.data;
+                  if (parsed && typeof parsed === 'object' && 'parsed' in parsed) {
+                    const devAddr = (parsed as any).parsed?.info?.owner;
+                    if (devAddr) {
+                      updateMomentumEnrichment(db, row.graduation_id, { dev_wallet_address: devAddr });
+                      updateGraduationEnrichment(db, row.graduation_id, { dev_wallet_address: devAddr });
+                      devResolved++;
+                    }
+                  }
+                }
+              }
+            } catch (devErr) {
+              logger.debug('Wallet backfill: dev wallet failed for grad %d: %s',
+                row.graduation_id, devErr instanceof Error ? devErr.message : String(devErr));
+            }
+            await new Promise(r => setTimeout(r, 200));
+          }
+
+          // ── Creator wallet address (if missing) ──
+          if (!row.creator_wallet_address && row.bonding_curve_address) {
+            try {
+              const bcResult = await enricher.getBondingCurveCreationTime(
+                new PublicKey(row.bonding_curve_address)
+              );
+              if (bcResult) {
+                const creator = await enricher.getCreatorWallet(bcResult.oldestSignature);
+                if (creator) {
+                  updateMomentumEnrichment(db, row.graduation_id, { creator_wallet_address: creator });
+                  updateGraduationEnrichment(db, row.graduation_id, { creator_wallet_address: creator });
+                  creatorResolved++;
+
+                  // Compute reputation now that we have the creator wallet
+                  if (row.grad_timestamp) {
+                    const rep = computeCreatorReputation(db, creator, row.grad_timestamp);
+                    updateMomentumReputation(db, row.graduation_id, rep);
+                    if (rep.priorCount > 0) reputationComputed++;
+                  }
+                }
+              }
+            } catch (creatorErr) {
+              logger.debug('Wallet backfill: creator wallet failed for grad %d: %s',
+                row.graduation_id, creatorErr instanceof Error ? creatorErr.message : String(creatorErr));
+            }
+            await new Promise(r => setTimeout(r, 300));
+          }
+        } catch (err) {
+          failed++;
+          logger.warn('Wallet backfill failed for grad %d: %s', row.graduation_id,
+            err instanceof Error ? err.message : String(err));
+        }
+      }
+
+      // Second pass: recompute reputation for ALL rows that have creator_wallet_address
+      // now that more addresses are filled in. Earlier rows may now have priors.
+      try {
+        const allWithCreator = db.prepare(`
+          SELECT gm.graduation_id, gm.creator_wallet_address, g.timestamp as grad_timestamp
+          FROM graduation_momentum gm
+          JOIN graduations g ON g.id = gm.graduation_id
+          WHERE gm.creator_wallet_address IS NOT NULL
+          ORDER BY g.timestamp ASC
+        `).all() as Array<{ graduation_id: number; creator_wallet_address: string; grad_timestamp: number }>;
+
+        let repUpdated = 0;
+        for (const row of allWithCreator) {
+          const rep = computeCreatorReputation(db, row.creator_wallet_address, row.grad_timestamp);
+          updateMomentumReputation(db, row.graduation_id, rep);
+          repUpdated++;
+        }
+        logger.info({ repUpdated }, 'Wallet backfill: reputation recomputed for all rows');
+      } catch (repErr) {
+        logger.warn('Wallet backfill: reputation recompute failed: %s',
+          repErr instanceof Error ? repErr.message : String(repErr));
+      }
+
+      walletBackfillRunning = false;
+      logger.info(
+        { devResolved, creatorResolved, reputationComputed, failed, total: candidates.length },
+        'Wallet backfill complete'
+      );
+    })().catch((err) => {
+      walletBackfillRunning = false;
+      logger.error('Wallet backfill crashed: %s', err instanceof Error ? err.message : String(err));
+    });
+  });
+
+  app.get('/backfill-wallets/status', (req, res) => {
+    const nullCreator = (db.prepare(
+      'SELECT COUNT(*) as n FROM graduation_momentum WHERE creator_wallet_address IS NULL'
+    ).get() as any).n;
+    const nullDev = (db.prepare(
+      'SELECT COUNT(*) as n FROM graduation_momentum WHERE dev_wallet_address IS NULL'
+    ).get() as any).n;
+    const hasCreator = (db.prepare(
+      'SELECT COUNT(*) as n FROM graduation_momentum WHERE creator_wallet_address IS NOT NULL'
+    ).get() as any).n;
+    const hasDev = (db.prepare(
+      'SELECT COUNT(*) as n FROM graduation_momentum WHERE dev_wallet_address IS NOT NULL'
+    ).get() as any).n;
+    const hasReputation = (db.prepare(
+      'SELECT COUNT(*) as n FROM graduation_momentum WHERE creator_prior_token_count IS NOT NULL'
+    ).get() as any).n;
+    const total = (db.prepare('SELECT COUNT(*) as n FROM graduation_momentum').get() as any).n;
+
+    sendJsonOrHtml(req, res, {
+      backfill_running: walletBackfillRunning,
+      dev_wallet: { has: hasDev, missing: nullDev, coverage_pct: total > 0 ? +((hasDev / total) * 100).toFixed(1) : 0 },
+      creator_wallet: { has: hasCreator, missing: nullCreator, coverage_pct: total > 0 ? +((hasCreator / total) * 100).toFixed(1) : 0 },
+      reputation: { has: hasReputation, coverage_pct: total > 0 ? +((hasReputation / total) * 100).toFixed(1) : 0 },
+      total_rows: total,
     });
   });
 
