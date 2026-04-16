@@ -214,6 +214,14 @@ function runMigrations(db: Database.Database): void {
       ['buy_pressure_buy_ratio', 'REAL'],          // buys / (buys + sells) as 0-1
       ['buy_pressure_whale_pct', 'REAL'],          // largest single buy SOL / total buy SOL volume
       ['buy_pressure_trade_count', 'INTEGER'],     // total txs in 0-30s window (from signature count)
+      // Wallet address tracking
+      ['dev_wallet_address', 'TEXT'],              // wallet address of largest non-infrastructure holder
+      ['creator_wallet_address', 'TEXT'],          // wallet that deployed the token on pump.fun
+      // Creator reputation scores (computed at enrichment time via self-join)
+      ['creator_prior_token_count', 'INTEGER'],    // how many tokens this creator graduated before this one
+      ['creator_prior_rug_rate', 'REAL'],          // fraction of prior tokens that dumped >50% by T+300
+      ['creator_prior_avg_return', 'REAL'],        // avg pct_t300 of their prior tokens
+      ['creator_last_token_age_hours', 'REAL'],    // hours since their last graduation
     ];
     for (const [col, type] of newMomCols) {
       if (!momExisting.has(col)) {
@@ -244,6 +252,8 @@ function runMigrations(db: Database.Database): void {
     ['top5_wallet_pct', 'REAL'],
     ['dev_wallet_pct', 'REAL'],
     ['token_age_seconds', 'INTEGER'],
+    ['dev_wallet_address', 'TEXT'],
+    ['creator_wallet_address', 'TEXT'],
   ];
   for (const [col, type] of newCols) {
     if (!existing.has(col)) {

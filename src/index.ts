@@ -1959,6 +1959,10 @@ async function main() {
         buy_pressure_buy_ratio: number | null;
         buy_pressure_unique_buyers: number | null;
         buy_pressure_whale_pct: number | null;
+        creator_prior_token_count: number | null;
+        creator_prior_rug_rate: number | null;
+        creator_prior_avg_return: number | null;
+        creator_last_token_age_hours: number | null;
       };
 
       // ── Panel 4 row type: RegimeRow + TP/SL checkpoints and fall-through column ──
@@ -2106,6 +2110,18 @@ async function main() {
           predicate: (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 30 },
         { name: 'whale_pct < 50%',        group: 'Buy Pressure', column: 'buy_pressure_whale_pct', where: 'buy_pressure_whale_pct < 50',
           predicate: (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 50 },
+
+        // ── Creator Reputation ──
+        { name: 'fresh_dev',               group: 'Creator Rep', column: 'creator_prior_token_count', where: 'creator_prior_token_count IS NOT NULL AND creator_prior_token_count = 0',
+          predicate: (r) => r.creator_prior_token_count != null && r.creator_prior_token_count === 0 },
+        { name: 'repeat_dev >= 3',         group: 'Creator Rep', column: 'creator_prior_token_count', where: 'creator_prior_token_count >= 3',
+          predicate: (r) => r.creator_prior_token_count != null && r.creator_prior_token_count >= 3 },
+        { name: 'clean_dev',              group: 'Creator Rep', column: 'creator_prior_rug_rate', where: 'creator_prior_rug_rate IS NOT NULL AND creator_prior_rug_rate < 0.3',
+          predicate: (r) => r.creator_prior_rug_rate != null && r.creator_prior_rug_rate < 0.3 },
+        { name: 'serial_rugger',          group: 'Creator Rep', column: 'creator_prior_rug_rate', where: 'creator_prior_rug_rate >= 0.7',
+          predicate: (r) => r.creator_prior_rug_rate != null && r.creator_prior_rug_rate >= 0.7 },
+        { name: 'rapid_fire',             group: 'Creator Rep', column: 'creator_last_token_age_hours', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1',
+          predicate: (r) => r.creator_last_token_age_hours != null && r.creator_last_token_age_hours < 1 },
 
         // ── T+30 Entry Gate ──
         { name: 't30 > 0%',                       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 > 0',

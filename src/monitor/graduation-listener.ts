@@ -7,7 +7,7 @@ import {
 } from '@solana/web3.js';
 import BN from 'bn.js';
 import Database from 'better-sqlite3';
-import { insertGraduation, insertMomentum, updateMomentumEnrichment, updateGraduationEnrichment, updateGraduationPool } from '../db/queries';
+import { insertGraduation, insertMomentum, updateMomentumEnrichment, updateGraduationEnrichment, updateGraduationPool, computeCreatorReputation, updateMomentumReputation } from '../db/queries';
 import { PoolTracker } from './pool-tracker';
 import { HolderEnrichment } from '../collector/holder-enrichment';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -422,6 +422,8 @@ export class GraduationListener {
         top5_wallet_pct: enrichment.top5WalletPct,
         dev_wallet_pct: enrichment.devWalletPct,
         token_age_seconds: enrichment.tokenAgeSeconds,
+        dev_wallet_address: enrichment.devWalletAddress,
+        creator_wallet_address: enrichment.creatorWalletAddress,
       });
 
       updateMomentumEnrichment(this.db, graduationId, {
@@ -429,27 +431,41 @@ export class GraduationListener {
         top5_wallet_pct: enrichment.top5WalletPct,
         dev_wallet_pct: enrichment.devWalletPct,
         token_age_seconds: enrichment.tokenAgeSeconds,
+        dev_wallet_address: enrichment.devWalletAddress,
+        creator_wallet_address: enrichment.creatorWalletAddress,
       });
+
+      // Compute creator reputation if we have the creator wallet address
+      if (enrichment.creatorWalletAddress && event.timestamp) {
+        const rep = computeCreatorReputation(this.db, enrichment.creatorWalletAddress, event.timestamp);
+        updateMomentumReputation(this.db, graduationId, rep);
+      }
     }).catch((err) => {
       logger.warn(
         'Holder enrichment failed for grad %d: %s',
         graduationId,
         err instanceof Error ? err.message : String(err)
       );
-      // Fetch token_age_seconds independently — it's required for velocity calculation
-      // and doesn't depend on holder data.
+      // Fetch token_age_seconds + creator wallet independently — token_age is required
+      // for velocity calculation and doesn't depend on holder data.
       this.holderEnrichment.getBondingCurveCreationTime(new PublicKey(event.bondingCurveAddress))
-        .then((creationTime: number | null) => {
-          const tokenAgeSeconds = (creationTime !== null && event.timestamp)
-            ? Math.max(0, event.timestamp - creationTime)
+        .then(async (bcResult) => {
+          const tokenAgeSeconds = (bcResult !== null && event.timestamp)
+            ? Math.max(0, event.timestamp - bcResult.blockTime)
             : undefined;
-          if (tokenAgeSeconds !== undefined) {
+          let creatorWalletAddress: string | undefined;
+          if (bcResult) {
+            const creator = await this.holderEnrichment.getCreatorWallet(bcResult.oldestSignature);
+            if (creator) creatorWalletAddress = creator;
+          }
+          if (tokenAgeSeconds !== undefined || creatorWalletAddress) {
             updateMomentumEnrichment(this.db, graduationId, {
               token_age_seconds: tokenAgeSeconds,
+              creator_wallet_address: creatorWalletAddress,
             });
             logger.info(
-              { graduationId, tokenAgeSeconds },
-              'token_age_seconds recovered after holder enrichment failure'
+              { graduationId, tokenAgeSeconds, creator: creatorWalletAddress?.slice(0, 8) },
+              'token_age_seconds / creator_wallet recovered after holder enrichment failure'
             );
           }
         })
