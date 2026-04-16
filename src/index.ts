@@ -2150,6 +2150,7 @@ async function main() {
         creator_prior_rug_rate: number | null;
         creator_prior_avg_return: number | null;
         creator_last_token_age_hours: number | null;
+        max_relret_0_300: number | null;
       };
 
       // ── Panel 4 row type: RegimeRow + TP/SL checkpoints and fall-through column ──
@@ -2310,6 +2311,16 @@ async function main() {
         { name: 'rapid_fire',             group: 'Creator Rep', column: 'creator_last_token_age_hours', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1',
           predicate: (r) => r.creator_last_token_age_hours != null && r.creator_last_token_age_hours < 1 },
 
+        // ── Peak Return (entry-relative, 0-300s) ──
+        { name: 'peak > 20%',             group: 'Peak Return', column: 'max_relret_0_300', where: 'max_relret_0_300 > 20',
+          predicate: (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 20 },
+        { name: 'peak > 40%',             group: 'Peak Return', column: 'max_relret_0_300', where: 'max_relret_0_300 > 40',
+          predicate: (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 40 },
+        { name: 'peak > 75%',             group: 'Peak Return', column: 'max_relret_0_300', where: 'max_relret_0_300 > 75',
+          predicate: (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 75 },
+        { name: 'peak > 100%',            group: 'Peak Return', column: 'max_relret_0_300', where: 'max_relret_0_300 > 100',
+          predicate: (r) => r.max_relret_0_300 != null && r.max_relret_0_300 > 100 },
+
         // ── T+30 Entry Gate ──
         { name: 't30 > 0%',                       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 > 0',
           predicate: (r) => r.pct_t30 > 0 },
@@ -2466,7 +2477,8 @@ async function main() {
                early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
                buy_pressure_whale_pct,
                creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
-               creator_last_token_age_hours
+               creator_last_token_age_hours,
+               max_relret_0_300
         FROM graduation_momentum
         WHERE label IS NOT NULL
           AND pct_t30 IS NOT NULL
@@ -2603,7 +2615,8 @@ async function main() {
           early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
           buy_pressure_whale_pct,
           creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
-          creator_last_token_age_hours
+          creator_last_token_age_hours,
+          max_relret_0_300
         FROM graduation_momentum
         WHERE label IS NOT NULL
           AND pct_t30 IS NOT NULL
