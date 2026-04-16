@@ -19,6 +19,8 @@ export interface EnrichmentResult {
   holderCountCapped: boolean; // true when true count >= HOLDER_COUNT_CAP (500)
   top5WalletPct: number;
   devWalletPct: number;
+  devWalletAddress?: string;       // wallet address of largest non-infrastructure holder
+  creatorWalletAddress?: string;   // wallet that deployed the token on pump.fun
   tokenAgeSeconds?: number;
 }
 
@@ -50,9 +52,10 @@ export class HolderEnrichment {
    * data point and is called after the busy graduation window, so a direct await
    * is fine.
    */
-  async getBondingCurveCreationTime(bcPubkey: PublicKey): Promise<number | null> {
+  async getBondingCurveCreationTime(bcPubkey: PublicKey): Promise<{ blockTime: number; oldestSignature: string } | null> {
     let before: string | undefined = undefined;
     let oldestBlockTime: number | null = null;
+    let oldestSignature: string | null = null;
     const MAX_PAGES = 3; // 3 000 txns — covers all but the most actively-traded tokens
 
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -66,12 +69,37 @@ export class HolderEnrichment {
 
       const last = sigs[sigs.length - 1] as { signature: string; blockTime?: number | null };
       if (last.blockTime) oldestBlockTime = last.blockTime;
+      oldestSignature = last.signature;
 
       if (sigs.length < 1000) break; // reached the beginning
       before = last.signature;
     }
 
-    return oldestBlockTime;
+    if (oldestBlockTime !== null && oldestSignature !== null) {
+      return { blockTime: oldestBlockTime, oldestSignature };
+    }
+    return null;
+  }
+
+  /**
+   * Resolve the creator (deployer) wallet from the oldest bonding curve transaction.
+   * The fee payer / signer of the first BC transaction is the token creator.
+   */
+  async getCreatorWallet(oldestSignature: string): Promise<string | null> {
+    try {
+      const tx = await this.connection.getParsedTransaction(oldestSignature, {
+        maxSupportedTransactionVersion: 0,
+      });
+      const signers = tx?.transaction?.message?.accountKeys?.filter((k: any) => k.signer);
+      return signers?.[0]?.pubkey?.toBase58() ?? null;
+    } catch (err) {
+      logger.debug(
+        'Failed to resolve creator wallet from sig %s: %s',
+        oldestSignature.slice(0, 8),
+        err instanceof Error ? err.message : String(err)
+      );
+      return null;
+    }
   }
 
   async enrich(
@@ -127,6 +155,25 @@ export class HolderEnrichment {
           if (realHolders.length > 0) {
             const largestAmt = parseInt(realHolders[0].amount, 10) || 0;
             result.devWalletPct = (largestAmt / PUMP_TOTAL_SUPPLY_RAW) * 100;
+
+            // Resolve token account → wallet owner address.
+            // getTokenLargestAccounts returns token account addresses, not wallet addresses.
+            // One additional RPC call to resolve the owner.
+            try {
+              const parsedAcct = await this.connection.getParsedAccountInfo(
+                realHolders[0].address
+              );
+              const parsed = parsedAcct?.value?.data;
+              if (parsed && typeof parsed === 'object' && 'parsed' in parsed) {
+                result.devWalletAddress = (parsed as any).parsed?.info?.owner;
+              }
+            } catch (walletErr) {
+              logger.debug(
+                { mint: mint.slice(0, 8) },
+                'Failed to resolve dev wallet address: %s',
+                walletErr instanceof Error ? walletErr.message : String(walletErr)
+              );
+            }
           }
         }
       }
@@ -191,20 +238,29 @@ export class HolderEnrichment {
       );
     }
 
-    // Token age: always attempt independently of holder enrichment success/failure.
-    // This is required for the velocity filter (bc_velocity_sol_per_min).
-    // We query the bonding curve address (not the mint) — the BC is closed at
-    // graduation so its signature list is finite and much smaller than the mint's.
+    // Token age + creator wallet: always attempt independently of holder enrichment.
+    // Token age is required for the velocity filter (bc_velocity_sol_per_min).
+    // Creator wallet is extracted from the oldest bonding curve transaction.
     if (graduationBlockTime && bondingCurveAddress) {
       try {
-        const creationTime = await this.getBondingCurveCreationTime(new PublicKey(bondingCurveAddress));
-        if (creationTime !== null) {
+        const bcResult = await this.getBondingCurveCreationTime(new PublicKey(bondingCurveAddress));
+        if (bcResult !== null) {
           // Minimum 1s: tokens sniped in the same block as creation have diff=0.
-          result.tokenAgeSeconds = Math.max(1, graduationBlockTime - creationTime);
+          result.tokenAgeSeconds = Math.max(1, graduationBlockTime - bcResult.blockTime);
           logger.info(
             { mint: mint.slice(0, 8), tokenAgeSeconds: result.tokenAgeSeconds },
             'Token age resolved from bonding curve history'
           );
+
+          // Resolve creator wallet from the oldest BC transaction (1 extra RPC call)
+          const creator = await this.getCreatorWallet(bcResult.oldestSignature);
+          if (creator) {
+            result.creatorWalletAddress = creator;
+            logger.info(
+              { mint: mint.slice(0, 8), creator: creator.slice(0, 8) },
+              'Creator wallet resolved'
+            );
+          }
         } else {
           logger.warn({ mint: mint.slice(0, 8) }, 'Could not determine bonding curve creation time');
         }
@@ -224,6 +280,8 @@ export class HolderEnrichment {
         holderCountCapped: result.holderCountCapped,
         top5Pct: result.top5WalletPct.toFixed(1),
         devPct: result.devWalletPct.toFixed(1),
+        devAddr: result.devWalletAddress?.slice(0, 8) ?? 'unknown',
+        creator: result.creatorWalletAddress?.slice(0, 8) ?? 'unknown',
         ageSecs: result.tokenAgeSeconds ?? 'unknown',
       },
       'Holder enrichment complete'

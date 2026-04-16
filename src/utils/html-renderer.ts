@@ -3264,6 +3264,13 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'whale_pct < 30%', configs: [{ field: 'buy_pressure_whale_pct', operator: '<', value: 30, label: 'whale<30%' }] },
     { name: 'whale_pct < 50%', configs: [{ field: 'buy_pressure_whale_pct', operator: '<', value: 50, label: 'whale<50%' }] },
   ]},
+  { group: 'Creator Reputation', filters: [
+    { name: 'fresh_dev (0 prior)', configs: [{ field: 'creator_prior_token_count', operator: '==', value: 0, label: 'fresh_dev' }] },
+    { name: 'repeat_dev >= 3', configs: [{ field: 'creator_prior_token_count', operator: '>=', value: 3, label: 'repeat>=3' }] },
+    { name: 'clean_dev (rug < 30%)', configs: [{ field: 'creator_prior_rug_rate', operator: '<', value: 0.3, label: 'clean_dev' }] },
+    { name: 'serial_rugger (rug >= 70%)', configs: [{ field: 'creator_prior_rug_rate', operator: '>=', value: 0.7, label: 'rugger' }] },
+    { name: 'rapid_fire (< 1hr gap)', configs: [{ field: 'creator_last_token_age_hours', operator: '<', value: 1, label: 'rapid_fire' }] },
+  ]},
   { group: 'T+30 Entry', filters: [
     { name: 't30 > 0%', configs: [{ field: 'pct_t30', operator: '>', value: 0, label: 't30>0%' }] },
     { name: 't30 +5% to +50%', configs: [{ field: 'pct_t30', operator: '>=', value: 5, label: 't30>=5%' }, { field: 'pct_t30', operator: '<=', value: 50, label: 't30<=50%' }] },

@@ -347,14 +347,18 @@ export function updateMomentumEnrichment(
     top5_wallet_pct?: number;
     dev_wallet_pct?: number;
     token_age_seconds?: number;
+    dev_wallet_address?: string;
+    creator_wallet_address?: string;
   }
 ): void {
   db.prepare(`
     UPDATE graduation_momentum SET
-      holder_count      = COALESCE(@holder_count,      holder_count),
-      top5_wallet_pct   = COALESCE(@top5_wallet_pct,   top5_wallet_pct),
-      dev_wallet_pct    = COALESCE(@dev_wallet_pct,     dev_wallet_pct),
-      token_age_seconds = COALESCE(@token_age_seconds,  token_age_seconds)
+      holder_count           = COALESCE(@holder_count,           holder_count),
+      top5_wallet_pct        = COALESCE(@top5_wallet_pct,        top5_wallet_pct),
+      dev_wallet_pct         = COALESCE(@dev_wallet_pct,         dev_wallet_pct),
+      token_age_seconds      = COALESCE(@token_age_seconds,      token_age_seconds),
+      dev_wallet_address     = COALESCE(@dev_wallet_address,     dev_wallet_address),
+      creator_wallet_address = COALESCE(@creator_wallet_address, creator_wallet_address)
     WHERE graduation_id = @graduation_id
   `).run({
     graduation_id: graduationId,
@@ -362,6 +366,8 @@ export function updateMomentumEnrichment(
     top5_wallet_pct: data.top5_wallet_pct ?? null,
     dev_wallet_pct: data.dev_wallet_pct ?? null,
     token_age_seconds: data.token_age_seconds ?? null,
+    dev_wallet_address: data.dev_wallet_address ?? null,
+    creator_wallet_address: data.creator_wallet_address ?? null,
   });
 }
 
@@ -474,14 +480,23 @@ export function computeBuyPressureAggregates(
 export function updateGraduationEnrichment(
   db: Database.Database,
   graduationId: number,
-  data: { holder_count?: number; top5_wallet_pct?: number; dev_wallet_pct?: number; token_age_seconds?: number }
+  data: {
+    holder_count?: number;
+    top5_wallet_pct?: number;
+    dev_wallet_pct?: number;
+    token_age_seconds?: number;
+    dev_wallet_address?: string;
+    creator_wallet_address?: string;
+  }
 ): void {
   db.prepare(`
     UPDATE graduations SET
       holder_count = @holder_count,
       top5_wallet_pct = @top5_wallet_pct,
       dev_wallet_pct = @dev_wallet_pct,
-      token_age_seconds = @token_age_seconds
+      token_age_seconds = @token_age_seconds,
+      dev_wallet_address = @dev_wallet_address,
+      creator_wallet_address = @creator_wallet_address
     WHERE id = @id
   `).run({
     id: graduationId,
@@ -489,6 +504,77 @@ export function updateGraduationEnrichment(
     top5_wallet_pct: data.top5_wallet_pct ?? null,
     dev_wallet_pct: data.dev_wallet_pct ?? null,
     token_age_seconds: data.token_age_seconds ?? null,
+    dev_wallet_address: data.dev_wallet_address ?? null,
+    creator_wallet_address: data.creator_wallet_address ?? null,
+  });
+}
+
+// ==================== Creator reputation queries ====================
+
+export interface CreatorReputation {
+  priorCount: number;
+  rugRate: number | null;
+  avgReturn: number | null;
+  lastTokenAgeHours: number | null;
+}
+
+/**
+ * Compute creator reputation by looking up all prior graduations from the same
+ * creator wallet. Only considers tokens with completed T+300 price data.
+ */
+export function computeCreatorReputation(
+  db: Database.Database,
+  creatorWallet: string,
+  currentGradTimestamp: number
+): CreatorReputation {
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) as prior_count,
+      AVG(CASE WHEN pct_t300 < -50 THEN 1.0 ELSE 0.0 END) as rug_rate,
+      AVG(pct_t300) as avg_return,
+      MAX(gm.created_at) as last_created_at
+    FROM graduation_momentum gm
+    JOIN graduations g ON g.id = gm.graduation_id
+    WHERE gm.creator_wallet_address = @creator
+      AND g.timestamp < @ts
+      AND gm.pct_t300 IS NOT NULL
+  `).get({ creator: creatorWallet, ts: currentGradTimestamp }) as any;
+
+  const priorCount = row?.prior_count ?? 0;
+  const lastCreatedAt = row?.last_created_at;
+  const lastTokenAgeHours = (priorCount > 0 && lastCreatedAt)
+    ? (currentGradTimestamp - lastCreatedAt) / 3600
+    : null;
+
+  return {
+    priorCount,
+    rugRate: priorCount > 0 ? (row.rug_rate ?? null) : null,
+    avgReturn: priorCount > 0 ? (row.avg_return ?? null) : null,
+    lastTokenAgeHours,
+  };
+}
+
+/**
+ * Write creator reputation scores to an existing graduation_momentum row.
+ */
+export function updateMomentumReputation(
+  db: Database.Database,
+  graduationId: number,
+  rep: CreatorReputation
+): void {
+  db.prepare(`
+    UPDATE graduation_momentum SET
+      creator_prior_token_count    = @prior_count,
+      creator_prior_rug_rate       = @rug_rate,
+      creator_prior_avg_return     = @avg_return,
+      creator_last_token_age_hours = @last_token_age_hours
+    WHERE graduation_id = @graduation_id
+  `).run({
+    graduation_id: graduationId,
+    prior_count: rep.priorCount,
+    rug_rate: rep.rugRate,
+    avg_return: rep.avgReturn,
+    last_token_age_hours: rep.lastTokenAgeHours,
   });
 }
 

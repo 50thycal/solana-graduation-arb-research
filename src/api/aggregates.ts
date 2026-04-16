@@ -334,6 +334,12 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'buyers >= 10',       group: 'Buy Pressure', where: 'buy_pressure_unique_buyers >= 10' },
   { name: 'whale < 30%',        group: 'Buy Pressure', where: 'buy_pressure_whale_pct < 30' },
   { name: 'whale < 50%',        group: 'Buy Pressure', where: 'buy_pressure_whale_pct < 50' },
+  // Creator reputation
+  { name: 'fresh_dev',          group: 'Creator Rep', where: 'creator_prior_token_count IS NOT NULL AND creator_prior_token_count = 0' },
+  { name: 'repeat_dev >= 3',    group: 'Creator Rep', where: 'creator_prior_token_count >= 3' },
+  { name: 'clean_dev',          group: 'Creator Rep', where: 'creator_prior_rug_rate IS NOT NULL AND creator_prior_rug_rate < 0.3' },
+  { name: 'serial_rugger',      group: 'Creator Rep', where: 'creator_prior_rug_rate >= 0.7' },
+  { name: 'rapid_fire',         group: 'Creator Rep', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1' },
 ];
 
 /** Entry gate shared by all candidates — matches the baseline. */
