@@ -41,6 +41,10 @@ export type RegimeRow = {
   buy_pressure_buy_ratio: number | null;
   buy_pressure_unique_buyers: number | null;
   buy_pressure_whale_pct: number | null;
+  creator_prior_token_count: number | null;
+  creator_prior_rug_rate: number | null;
+  creator_prior_avg_return: number | null;
+  creator_last_token_age_hours: number | null;
 };
 
 // Entry gate predicate — mirrors /api/best-combos
@@ -92,6 +96,12 @@ export const CATALOG_PREDICATES = new Map<string, (r: RegimeRow) => boolean>([
   ['buyers >= 10',    (r) => r.buy_pressure_unique_buyers != null && r.buy_pressure_unique_buyers >= 10],
   ['whale < 30%',     (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 30],
   ['whale < 50%',     (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 50],
+  // Creator reputation
+  ['fresh_dev',       (r) => r.creator_prior_token_count != null && r.creator_prior_token_count === 0],
+  ['repeat_dev >= 3', (r) => r.creator_prior_token_count != null && r.creator_prior_token_count >= 3],
+  ['clean_dev',       (r) => r.creator_prior_rug_rate != null && r.creator_prior_rug_rate < 0.3],
+  ['serial_rugger',   (r) => r.creator_prior_rug_rate != null && r.creator_prior_rug_rate >= 0.7],
+  ['rapid_fire',      (r) => r.creator_last_token_age_hours != null && r.creator_last_token_age_hours < 1],
 ]);
 
 export function loadRegimeRows(db: Database.Database): RegimeRow[] {
@@ -102,7 +112,9 @@ export function loadRegimeRows(db: Database.Database): RegimeRow[] {
            dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
            monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
            early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
-           buy_pressure_whale_pct
+           buy_pressure_whale_pct,
+           creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
+           creator_last_token_age_hours
     FROM graduation_momentum
     WHERE label IS NOT NULL
       AND pct_t30 IS NOT NULL
