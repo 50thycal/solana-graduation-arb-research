@@ -71,13 +71,13 @@ const STYLES = `
   .p4-controls select{background:#0f0f1a;color:#e2e8f0;border:1px solid #334155;padding:4px 8px;margin-left:4px;border-radius:4px;font-size:12px;cursor:pointer}
   .p4-controls select:hover{border-color:#60a5fa}
   .p4-controls .desc{margin-bottom:0;margin-left:auto}
-  /* Panel 4 horizon tabs */
+  /* Panel 4 / Panel 6 horizon tabs */
   .p4-tabs{display:flex;gap:4px;margin:12px 0 8px}
-  .p4-tab{background:#1f2a44;color:#94a3b8;border:1px solid #334155;padding:6px 14px;border-radius:4px 4px 0 0;font-size:12px;cursor:pointer;font-family:inherit}
-  .p4-tab:hover{background:#262640;color:#e2e8f0}
-  .p4-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6;font-weight:600}
-  .p4-horizon-panel{display:none}
-  .p4-horizon-panel.active{display:block}
+  .p4-tab,.p6-tab{background:#1f2a44;color:#94a3b8;border:1px solid #334155;padding:6px 14px;border-radius:4px 4px 0 0;font-size:12px;cursor:pointer;font-family:inherit}
+  .p4-tab:hover,.p6-tab:hover{background:#262640;color:#e2e8f0}
+  .p4-tab.active,.p6-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6;font-weight:600}
+  .p4-horizon-panel,.p6-horizon-panel{display:none}
+  .p4-horizon-panel.active,.p6-horizon-panel.active{display:block}
 `;
 
 function nav(currentPath: string): string {
@@ -2045,11 +2045,19 @@ export function renderFilterV2Html(data: any): string {
       </table>`;
     }
 
-    const topPairsRows = topPairs.length === 0
-      ? '<tr><td colspan="8" style="color:#64748b;text-align:center"><em>No two-filter intersections meet the criteria (n ≥ 30 and lift &gt; 0). Collect more data.</em></td></tr>'
-      : topPairs.map(p => {
-          const tpSl = `${p.opt_tp}/${p.opt_sl}`;
-          return `<tr>
+    const topPairsByHorizon: Array<{ key: 't300' | 't120' | 't60'; label: string; pairs: FilterV2Panel6PairRow[] }> = [
+      { key: 't300', label: '5 min (T+300)', pairs: topPairs },
+      { key: 't120', label: '2 min (T+120)', pairs: (panel6.top_pairs_t120 || []) as FilterV2Panel6PairRow[] },
+      { key: 't60',  label: '1 min (T+60)',  pairs: (panel6.top_pairs_t60  || []) as FilterV2Panel6PairRow[] },
+    ];
+
+    const buildTopPairsRows = (rows: FilterV2Panel6PairRow[]): string => {
+      if (rows.length === 0) {
+        return '<tr><td colspan="8" style="color:#64748b;text-align:center"><em>No two-filter intersections meet the criteria (n ≥ 30 and lift &gt; 0) at this horizon. Collect more data.</em></td></tr>';
+      }
+      return rows.map(p => {
+        const tpSl = `${p.opt_tp}/${p.opt_sl}`;
+        return `<tr>
             <td><code>${escHtml(p.filter_a)}</code></td>
             <td><code>${escHtml(p.filter_b)}</code></td>
             <td>${p.n}</td>
@@ -2059,27 +2067,41 @@ export function renderFilterV2Html(data: any): string {
             <td>${p4OptAvgRetCell(p.single_a_opt)} / ${p4OptAvgRetCell(p.single_b_opt)}</td>
             <td>${liftCell(p.lift)}</td>
           </tr>`;
-        }).join('\n        ');
+      }).join('\n        ');
+    };
+
+    const p6Tabs = topPairsByHorizon
+      .map(h => `<button type="button" class="p6-tab${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}" onclick="setPanel6Horizon('${h.key}')">${h.label}</button>`)
+      .join('');
+
+    const p6HorizonTables = topPairsByHorizon.map(h => {
+      const tableId = `panel6-pairs-table-${h.key}`;
+      return `
+      <div class="p6-horizon-panel${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}">
+        <table id="${tableId}" class="panel6-pairs-table" data-horizon="${h.key}">
+          <thead>
+            <tr>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',0,'str')">Filter A <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',1,'str')">Filter B <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',2,'num')">n <span class="arrow">⇅</span></th>
+              <th>Opt TP/SL</th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',4,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',5,'num')">Opt Win % <span class="arrow">⇅</span></th>
+              <th>Singles (A / B)</th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',7,'num')">Lift <span class="arrow">⇅</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${buildTopPairsRows(h.pairs)}
+          </tbody>
+        </table>
+      </div>`;
+    }).join('');
 
     const topPairsTable = `
     <h3 style="margin-top:20px;color:#e2e8f0;font-size:14px">Top 20 two-filter intersections (n ≥ 30, lift &gt; 0, sorted by Opt Avg Ret)</h3>
-    <table id="panel6-pairs-table">
-      <thead>
-        <tr>
-          <th class="sortable" onclick="sortPanel6Pairs(0,'str')">Filter A <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel6Pairs(1,'str')">Filter B <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel6Pairs(2,'num')">n <span class="arrow">⇅</span></th>
-          <th>Opt TP/SL</th>
-          <th class="sortable" onclick="sortPanel6Pairs(4,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel6Pairs(5,'num')">Opt Win % <span class="arrow">⇅</span></th>
-          <th>Singles (A / B)</th>
-          <th class="sortable" onclick="sortPanel6Pairs(7,'num')">Lift <span class="arrow">⇅</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${topPairsRows}
-      </tbody>
-    </table>`;
+    <div class="p4-tabs">${p6Tabs}</div>
+    ${p6HorizonTables}`;
 
     const legend6 = `
     <div class="desc" style="margin-top:10px">
@@ -2637,9 +2659,10 @@ export function renderFilterV2Html(data: any): string {
   function sortPanel10(col, type) { v2GenericSort('panel10-table', col, type); }
 
   // Panel 6 top-pairs table has NO baseline row — use a simpler sort that treats
-  // every row as data.
-  function sortPanel6Pairs(col, type) {
-    var table = document.getElementById('panel6-pairs-table');
+  // every row as data. sortPanel6PairsTable takes an explicit table ID so it
+  // works across horizon variants; sortPanel6Pairs is a back-compat shim.
+  function sortPanel6PairsTable(tableId, col, type) {
+    var table = document.getElementById(tableId);
     if (!table) return;
     var tbody = table.tBodies[0];
     var rows = Array.from(tbody.rows).filter(function(r){ return r.cells.length >= 2; });
@@ -2657,6 +2680,23 @@ export function renderFilterV2Html(data: any): string {
     });
     while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
     rows.forEach(function(r){ tbody.appendChild(r); });
+  }
+  function sortPanel6Pairs(col, type) {
+    var active = document.querySelector('.p6-horizon-panel.active');
+    var horizon = active ? active.getAttribute('data-horizon') : 't300';
+    sortPanel6PairsTable('panel6-pairs-table-' + horizon, col, type);
+  }
+  function setPanel6Horizon(h) {
+    var tabs = document.querySelectorAll('.p6-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].getAttribute('data-horizon') === h) tabs[i].classList.add('active');
+      else tabs[i].classList.remove('active');
+    }
+    var panels = document.querySelectorAll('.p6-horizon-panel');
+    for (var j = 0; j < panels.length; j++) {
+      if (panels[j].getAttribute('data-horizon') === h) panels[j].classList.add('active');
+      else panels[j].classList.remove('active');
+    }
   }
 
   // Panel 6 dropdowns reload the page with a new ?p6= query param. Server
