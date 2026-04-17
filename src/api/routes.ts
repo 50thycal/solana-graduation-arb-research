@@ -38,8 +38,8 @@ import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
 import { computeFilterV2Data } from './filter-v2-data';
-import { computePricePathData } from './price-path-data';
 import { computeTradingData } from './trading-data';
+import { getHeavyData } from './heavy-cache';
 import type { LogBuffer } from '../utils/log-buffer';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { vaultPriceCacheStats } from '../trading/executor';
@@ -173,17 +173,21 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // ── /api/filter-v2 ──
   // Full FilterV2Data object (all 11 panels) — the same payload that backs
   // /filter-analysis-v2 and the bot-status sync. Use /api/panelN for a slice.
+  // Served from the shared 24h heavy cache (src/api/heavy-cache.ts); the
+  // `?p6=` power-user slice bypasses the cache since it depends on URL input.
   app.get('/api/filter-v2', wrap((req, res) => {
-    const data = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const data = req.query.p6 !== undefined
+      ? computeFilterV2Data(db, { p6Raw: req.query.p6 })
+      : getHeavyData(db, sm).v2;
     res.json(data);
   }));
 
   // ── /api/panel1 .. /api/panel10 ──
-  // Per-panel slices of FilterV2Data. Each hit re-runs computeFilterV2Data once.
-  // Fine at gist-sync scale (every 2 min); if direct HTTP hits ever become hot,
-  // add in-memory TTL caching.
-  app.get('/api/panel1', wrap((req, res) => {
-    const d = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+  // Per-panel slices of FilterV2Data — all served from the 24h heavy cache.
+  app.get('/api/panel1', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
     res.json({
       generated_at: d.generated_at,
       panel1: d.panel1,
@@ -191,12 +195,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       panel1_t120: d.panel1_t120,
     });
   }));
-  app.get('/api/panel2', wrap((req, res) => {
-    const d = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+  app.get('/api/panel2', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
     res.json({ generated_at: d.generated_at, panel2: d.panel2 });
   }));
-  app.get('/api/panel4', wrap((req, res) => {
-    const d = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+  app.get('/api/panel4', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
     res.json({
       generated_at: d.generated_at,
       panel4: d.panel4,
@@ -204,12 +210,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       panel4_t120: d.panel4_t120,
     });
   }));
-  app.get('/api/panel5', wrap((req, res) => {
-    const d = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+  app.get('/api/panel5', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
     res.json({ generated_at: d.generated_at, panel5: d.panel5 });
   }));
-  app.get('/api/panel6', wrap((req, res) => {
-    const d = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+  app.get('/api/panel6', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
     // Expose only the static auto-scanned leaderboard; the URL-driven "dynamic"
     // slice requires user selection and is skipped in the JSON view.
     res.json({
@@ -225,20 +233,24 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       },
     });
   }));
-  app.get('/api/panel7', wrap((req, res) => {
-    const d = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+  app.get('/api/panel7', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
     res.json({ generated_at: d.generated_at, panel7: d.panel7 });
   }));
-  app.get('/api/panel8', wrap((req, res) => {
-    const d = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+  app.get('/api/panel8', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
     res.json({ generated_at: d.generated_at, panel8: d.panel8 });
   }));
-  app.get('/api/panel9', wrap((req, res) => {
-    const d = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+  app.get('/api/panel9', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
     res.json({ generated_at: d.generated_at, panel9: d.panel9 });
   }));
-  app.get('/api/panel10', wrap((req, res) => {
-    const d = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+  app.get('/api/panel10', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
     res.json({ generated_at: d.generated_at, panel10: d.panel10 });
   }));
 
@@ -246,8 +258,10 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Full price-path dashboard data: overlay (≤200 raw token paths), mean paths
   // by label with ±1 SD, vel 5-20 vs all, derived metrics (Cohen's d),
   // acceleration histogram, entry timing heatmap, monotonicity buckets.
+  // Served from the 24h heavy cache.
   app.get('/api/price-path-detail', wrap((_req, res) => {
-    res.json(computePricePathData(db));
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    res.json(getHeavyData(db, sm).pricePathDetail);
   }));
 
   // ── /api/trading ──
