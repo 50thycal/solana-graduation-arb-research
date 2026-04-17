@@ -602,6 +602,22 @@ async function main() {
       const pumpCount = labels.find((l: any) => l.label === 'PUMP')?.count || 0;
       const winRate = totalLabeled > 0 ? (pumpCount / totalLabeled * 100).toFixed(1) : '—';
 
+      // Multi-horizon counts (PUMP rate at T+60 and T+120). label is T+300.
+      const horizonCounts = db.prepare(`
+        SELECT
+          SUM(CASE WHEN label_t60  = 'PUMP' THEN 1 ELSE 0 END) AS pump_t60,
+          SUM(CASE WHEN label_t60  IS NOT NULL THEN 1 ELSE 0 END) AS total_t60,
+          SUM(CASE WHEN label_t120 = 'PUMP' THEN 1 ELSE 0 END) AS pump_t120,
+          SUM(CASE WHEN label_t120 IS NOT NULL THEN 1 ELSE 0 END) AS total_t120
+        FROM graduation_momentum
+      `).get() as { pump_t60: number; total_t60: number; pump_t120: number; total_t120: number };
+      const winRateT60 = horizonCounts.total_t60 > 0
+        ? (horizonCounts.pump_t60 / horizonCounts.total_t60 * 100).toFixed(1)
+        : '—';
+      const winRateT120 = horizonCounts.total_t120 > 0
+        ? (horizonCounts.pump_t120 / horizonCounts.total_t120 * 100).toFixed(1)
+        : '—';
+
       // Dynamic best filter — same candidate list as the thesis page, ranked by T+30 profitable rate
       const dashFilterTests = [
         { name: 'bc_age>30min',                   sql: "token_age_seconds > 1800" },
@@ -692,7 +708,9 @@ async function main() {
     <h3>Thesis Scorecard</h3>
     <div class="stat"><span class="label">Total Labeled</span><span class="value">${totalLabeled}</span></div>
     <div class="stat"><span class="label">PUMP / DUMP</span><span class="value">${pumpCount} / ${labels.find((l: any) => l.label === 'DUMP')?.count || 0}</span></div>
-    <div class="stat"><span class="label">Raw Win Rate (T+0)</span><span class="value ${+winRate > 50 ? 'green' : 'yellow'}">${winRate}%</span></div>
+    <div class="stat"><span class="label">Raw Win Rate T+60</span><span class="value ${typeof winRateT60 === 'string' && winRateT60 !== '—' && +winRateT60 > 50 ? 'green' : 'yellow'}">${winRateT60}% (n=${horizonCounts.total_t60 ?? 0})</span></div>
+    <div class="stat"><span class="label">Raw Win Rate T+120</span><span class="value ${typeof winRateT120 === 'string' && winRateT120 !== '—' && +winRateT120 > 50 ? 'green' : 'yellow'}">${winRateT120}% (n=${horizonCounts.total_t120 ?? 0})</span></div>
+    <div class="stat"><span class="label">Raw Win Rate T+300</span><span class="value ${+winRate > 50 ? 'green' : 'yellow'}">${winRate}% (n=${totalLabeled})</span></div>
     <div class="stat"><span class="label">Best Filter T+30 Profit%</span><span class="value ${+bestWr > 50 ? 'green' : 'yellow'}">${bestWr}% (n=${bestWrN}) [${bestFilterName}]</span></div>
   </div>
   <div class="card">
@@ -788,6 +806,23 @@ async function main() {
       ).get() as any;
       const rawWinRate = totalLabeled > 0 ? +(pumpCount / totalLabeled * 100).toFixed(1) : null;
       const samplesRemaining = Math.max(0, 30 - totalLabeled);
+
+      // Multi-horizon PUMP rates for the scorecard (T+60 and T+120). label is T+300.
+      const snapshotHorizonCounts = db.prepare(`
+        SELECT
+          SUM(CASE WHEN label_t60  = 'PUMP' THEN 1 ELSE 0 END) AS pump_t60,
+          SUM(CASE WHEN label_t60  IS NOT NULL THEN 1 ELSE 0 END) AS total_t60,
+          SUM(CASE WHEN label_t120 = 'PUMP' THEN 1 ELSE 0 END) AS pump_t120,
+          SUM(CASE WHEN label_t120 IS NOT NULL THEN 1 ELSE 0 END) AS total_t120
+        FROM graduation_momentum
+        WHERE total_sol_raised >= 50
+      `).get() as { pump_t60: number; total_t60: number; pump_t120: number; total_t120: number };
+      const rawWinRateT60 = snapshotHorizonCounts.total_t60 > 0
+        ? +(snapshotHorizonCounts.pump_t60 / snapshotHorizonCounts.total_t60 * 100).toFixed(1)
+        : null;
+      const rawWinRateT120 = snapshotHorizonCounts.total_t120 > 0
+        ? +(snapshotHorizonCounts.pump_t120 / snapshotHorizonCounts.total_t120 * 100).toFixed(1)
+        : null;
 
       const totalLabeledFiltered = labelsFiltered.reduce((s: number, l: any) => s + l.count, 0);
       const pumpFiltered = labelsFiltered.find((l: any) => l.label === 'PUMP')?.count || 0;
@@ -1014,6 +1049,14 @@ async function main() {
           DUMP: dumpCount,
           STABLE: stableCount,
           raw_win_rate_pct: rawWinRate,
+          raw_win_rate_t60_pct: rawWinRateT60,
+          raw_win_rate_t120_pct: rawWinRateT120,
+          raw_win_rate_t300_pct: rawWinRate,
+          horizon_labeled_counts: {
+            t60: snapshotHorizonCounts.total_t60 ?? 0,
+            t120: snapshotHorizonCounts.total_t120 ?? 0,
+            t300: totalLabeled,
+          },
           best_filter: bestFilter,
           samples_remaining: samplesRemaining,
           // Quality filter: excludes self-graduated scam tokens (sol_raised < 50 SOL)
@@ -2616,13 +2659,31 @@ async function main() {
           AND pct_t300 IS NOT NULL
       `).all() as Panel4Row[];
 
-      // Simulate one token at one (tp, sl). Byte-for-byte mirror of simulateWithTP.
-      // Returns { ret, tpHit } — ret is already cost-adjusted.
-      const simulateInMemory = (r: Panel4Row, tp: number, sl: number): { ret: number; tpHit: boolean } => {
+      type Panel4Horizon = 'pct_t60' | 'pct_t120' | 'pct_t300';
+
+      // Simulate one token at one (tp, sl). Byte-for-byte mirror of simulateWithTP
+      // when maxCheckpoint === 'pct_t300' (default). For shorter horizons the
+      // checkpoint scan is truncated at maxCheckpoint and the fall-through uses
+      // that column's value (e.g. pct_t60). Returns { ret, tpHit } — ret is
+      // already cost-adjusted.
+      const simulateInMemory = (
+        r: Panel4Row,
+        tp: number,
+        sl: number,
+        maxCheckpoint: Panel4Horizon = 'pct_t300',
+      ): { ret: number; tpHit: boolean } => {
         const entryRatio = 1 + r.pct_t30 / 100;
         const stopLevelPct = (entryRatio * (1 - sl / 100) - 1) * 100;
         const tpLevelPct   = (entryRatio * (1 + tp / 100) - 1) * 100;
-        for (const cp of PANEL_4_CHECKPOINTS) {
+
+        // Truncate checkpoint scan at maxCheckpoint. For 'pct_t300' the
+        // indexOf is -1 (not in PANEL_4_CHECKPOINTS) → scan everything.
+        const maxIdx = (PANEL_4_CHECKPOINTS as readonly string[]).indexOf(maxCheckpoint);
+        const cps = maxIdx >= 0
+          ? PANEL_4_CHECKPOINTS.slice(0, maxIdx + 1)
+          : PANEL_4_CHECKPOINTS;
+
+        for (const cp of cps) {
           const v = r[cp];
           if (v == null) continue;
           if (v <= stopLevelPct) {
@@ -2633,12 +2694,19 @@ async function main() {
           }
           if (v >= tpLevelPct)   return { ret:  (tp * (1 - PANEL_4_TP_GAP_PENALTY)) - r.cost_pct, tpHit: true };
         }
-        // Fall-through: exit at T+300 (non-null by eligibility predicate)
-        const fallRet = ((1 + r.pct_t300 / 100) / entryRatio - 1) * 100 - r.cost_pct;
+        // Fall-through: exit at maxCheckpoint. For 'pct_t300' the eligibility
+        // predicate guarantees non-null; for shorter horizons we guard against
+        // missing checkpoints on partial observations.
+        const fallVal = r[maxCheckpoint as keyof Panel4Row] as number | null | undefined;
+        if (fallVal == null) return { ret: -100 - r.cost_pct, tpHit: false };
+        const fallRet = ((1 + fallVal / 100) / entryRatio - 1) * 100 - r.cost_pct;
         return { ret: fallRet, tpHit: false };
       };
 
-      const runFilterPanel4 = (predicate: (r: Panel4Row) => boolean) => {
+      const runFilterPanel4 = (
+        predicate: (r: Panel4Row) => boolean,
+        maxCheckpoint: Panel4Horizon = 'pct_t300',
+      ) => {
         const filtered = panel4Rows.filter(predicate);
         const n = filtered.length;
         const comboCount = PANEL_4_TP_GRID.length * PANEL_4_SL_GRID.length;
@@ -2662,7 +2730,7 @@ async function main() {
             let wins = 0;
             let sum = 0;
             for (let k = 0; k < n; k++) {
-              const out = simulateInMemory(filtered[k], tp, sl);
+              const out = simulateInMemory(filtered[k], tp, sl, maxCheckpoint);
               returns[k] = out.ret;
               if (out.tpHit) tpHit++;
               if (out.ret > 0) wins++;
@@ -2710,6 +2778,30 @@ async function main() {
         filter: f.name,
         group: f.group,
         ...runFilterPanel4(f.predicate as (r: Panel4Row) => boolean),
+      }));
+
+      // Horizon variants: same predicate + grid, but simulation falls through
+      // at T+60 / T+120 instead of T+300. Used by the Panel 4 horizon tabs.
+      const baseline4_t60 = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterPanel4(() => true, 'pct_t60'),
+      };
+      const filters4_t60 = PANEL_1_FILTERS.map(f => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterPanel4(f.predicate as (r: Panel4Row) => boolean, 'pct_t60'),
+      }));
+
+      const baseline4_t120 = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterPanel4(() => true, 'pct_t120'),
+      };
+      const filters4_t120 = PANEL_1_FILTERS.map(f => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterPanel4(f.predicate as (r: Panel4Row) => boolean, 'pct_t120'),
       }));
 
       // Shared type alias for Panel 4 optimum — mirrors the shape returned
@@ -3332,6 +3424,61 @@ async function main() {
         panel6TopPairs.push(...pairResults.slice(0, 20));
       }
 
+      // Panel 6 top-pairs at shorter horizons. Same scan, different fall-through.
+      // Single-filter optima are re-derived from the corresponding filters4_tN so
+      // "lift vs best single" reflects performance at the same horizon.
+      const computeTopPairsAtHorizon = (
+        horizon: Panel4Horizon,
+        singleFilterRows: Array<{ filter: string; optimal: Panel4Optimal }>,
+      ): Panel6PairRow[] => {
+        const out: Panel6PairRow[] = [];
+        for (let i = 0; i < PANEL_1_FILTERS.length; i++) {
+          const a = PANEL_1_FILTERS[i];
+          const aOpt = singleFilterRows[i].optimal;
+          for (let j = i + 1; j < PANEL_1_FILTERS.length; j++) {
+            const b = PANEL_1_FILTERS[j];
+            const bOpt = singleFilterRows[j].optimal;
+            const combinedPredicate = (r: Panel4Row) =>
+              (a.predicate as (r: Panel4Row) => boolean)(r) &&
+              (b.predicate as (r: Panel4Row) => boolean)(r);
+            const res = runFilterPanel4(combinedPredicate, horizon);
+            if (res.n < PANEL_4_MIN_N_FOR_OPTIMUM) continue;
+            if (!res.optimal) continue;
+            const bestSingle = Math.max(
+              aOpt ? aOpt.avg_ret : -Infinity,
+              bOpt ? bOpt.avg_ret : -Infinity,
+            );
+            const lift = Number.isFinite(bestSingle)
+              ? +(res.optimal.avg_ret - bestSingle).toFixed(1)
+              : res.optimal.avg_ret;
+            if (lift <= 0) continue;
+            out.push({
+              filter_a: a.name,
+              filter_b: b.name,
+              n: res.n,
+              opt_tp: res.optimal.tp,
+              opt_sl: res.optimal.sl,
+              opt_avg_ret: res.optimal.avg_ret,
+              opt_win_rate: res.optimal.win_rate,
+              single_a_opt: aOpt ? aOpt.avg_ret : null,
+              single_b_opt: bOpt ? bOpt.avg_ret : null,
+              lift,
+            });
+          }
+        }
+        out.sort((x, y) => y.opt_avg_ret - x.opt_avg_ret);
+        return out.slice(0, 20);
+      };
+
+      const panel6TopPairs_t60 = computeTopPairsAtHorizon(
+        'pct_t60',
+        filters4_t60.map(f => ({ filter: f.filter, optimal: (f as any).optimal as Panel4Optimal })),
+      );
+      const panel6TopPairs_t120 = computeTopPairsAtHorizon(
+        'pct_t120',
+        filters4_t120.map(f => ({ filter: f.filter, optimal: (f as any).optimal as Panel4Optimal })),
+      );
+
       // Cache for use by /trading route
       cachedTopPairs = panel6TopPairs;
 
@@ -3762,6 +3909,58 @@ async function main() {
             strong_n_threshold: 100,
           },
         },
+        panel4_t60: {
+          title: 'TP/SL EV Simulator — T+30 Entry, 60s Hold',
+          description:
+            'Same grid and predicate as Panel 4, but the checkpoint scan truncates at pct_t60 and falls through at pct_t60 instead of pct_t300. Use this to see whether a filter captures its edge inside a 60-second window.',
+          grid: {
+            tp_levels: PANEL_4_TP_GRID,
+            sl_levels: PANEL_4_SL_GRID,
+            default_tp: PANEL_4_DEFAULT_TP,
+            default_sl: PANEL_4_DEFAULT_SL,
+          },
+          constants: {
+            sl_gap_penalty_pct: PANEL_4_SL_GAP_PENALTY * 100,
+            tp_gap_penalty_pct: PANEL_4_TP_GAP_PENALTY * 100,
+            cost_pct_fallback: ROUND_TRIP_COST_PCT_V2,
+            checkpoints: ['pct_t40', 'pct_t50', 'pct_t60'],
+            fall_through_column: 'pct_t60',
+            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
+            min_tp_hits_for_optimum: PANEL_4_MIN_TP_HITS_FOR_OPTIMUM,
+          },
+          baseline: baseline4_t60,
+          filters: filters4_t60,
+          flags: {
+            low_n_threshold: 20,
+            strong_n_threshold: 100,
+          },
+        },
+        panel4_t120: {
+          title: 'TP/SL EV Simulator — T+30 Entry, 120s Hold',
+          description:
+            'Same grid and predicate as Panel 4, but the checkpoint scan truncates at pct_t120 and falls through at pct_t120 instead of pct_t300.',
+          grid: {
+            tp_levels: PANEL_4_TP_GRID,
+            sl_levels: PANEL_4_SL_GRID,
+            default_tp: PANEL_4_DEFAULT_TP,
+            default_sl: PANEL_4_DEFAULT_SL,
+          },
+          constants: {
+            sl_gap_penalty_pct: PANEL_4_SL_GAP_PENALTY * 100,
+            tp_gap_penalty_pct: PANEL_4_TP_GAP_PENALTY * 100,
+            cost_pct_fallback: ROUND_TRIP_COST_PCT_V2,
+            checkpoints: ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120'],
+            fall_through_column: 'pct_t120',
+            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
+            min_tp_hits_for_optimum: PANEL_4_MIN_TP_HITS_FOR_OPTIMUM,
+          },
+          baseline: baseline4_t120,
+          filters: filters4_t120,
+          flags: {
+            low_n_threshold: 20,
+            strong_n_threshold: 100,
+          },
+        },
         panel5: {
           title: 'Statistical Significance — Wilson CI on Win Rate + Bootstrap CI on Opt Avg Return',
           description:
@@ -3780,6 +3979,8 @@ async function main() {
           filter_names: PANEL_1_FILTERS.map(f => ({ name: f.name, group: f.group })),
           dynamic: panel6Dynamic,
           top_pairs: panel6TopPairs,
+          top_pairs_t60: panel6TopPairs_t60,
+          top_pairs_t120: panel6TopPairs_t120,
           flags: {
             low_n_threshold: 30,
             strong_n_threshold: 100,

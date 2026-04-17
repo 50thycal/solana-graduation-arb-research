@@ -403,12 +403,20 @@ export function updateMomentumOpenPrice(
   ).run(openPrice, graduationId);
 }
 
+export type MomentumLabel = 'PUMP' | 'DUMP' | 'STABLE';
+
 export function labelMomentum(
   db: Database.Database,
   graduationId: number,
-  label: 'PUMP' | 'DUMP' | 'STABLE'
+  labels: {
+    t300: MomentumLabel;
+    t60: MomentumLabel | null;
+    t120: MomentumLabel | null;
+  }
 ): void {
-  db.prepare('UPDATE graduation_momentum SET label = ? WHERE graduation_id = ?').run(label, graduationId);
+  db.prepare(
+    'UPDATE graduation_momentum SET label = ?, label_t60 = ?, label_t120 = ? WHERE graduation_id = ?'
+  ).run(labels.t300, labels.t60, labels.t120, graduationId);
 }
 
 export function getMomentumRow(db: Database.Database, graduationId: number) {

@@ -157,7 +157,7 @@ function runMigrations(db: Database.Database): void {
       pct_t120 REAL,
       pct_t300 REAL,
       pct_t600 REAL,
-      -- Label
+      -- Label (T+300 horizon; label_t60 / label_t120 added via migration below)
       label TEXT,
       created_at INTEGER DEFAULT (unixepoch())
     );
@@ -224,6 +224,9 @@ function runMigrations(db: Database.Database): void {
       ['creator_prior_rug_rate', 'REAL'],          // fraction of prior tokens that dumped >50% by T+300
       ['creator_prior_avg_return', 'REAL'],        // avg pct_t300 of their prior tokens
       ['creator_last_token_age_hours', 'REAL'],    // hours since their last graduation
+      // Multi-horizon labels (existing `label` column is the T+300 horizon).
+      ['label_t60', 'TEXT'],                        // PUMP/DUMP/STABLE at T+60
+      ['label_t120', 'TEXT'],                       // PUMP/DUMP/STABLE at T+120
     ];
     for (const [col, type] of newMomCols) {
       if (!momExisting.has(col)) {
@@ -288,6 +291,30 @@ function runMigrations(db: Database.Database): void {
       });
       tx(backfillRows);
     }
+
+    // Backfill multi-horizon labels from pct_t60 / pct_t120.
+    // Thresholds mirror src/analysis/momentum-labeler.ts: >=10% PUMP, <=-10% DUMP, else STABLE.
+    db.exec(`
+      UPDATE graduation_momentum
+      SET label_t60 = CASE
+            WHEN pct_t60 >= 10  THEN 'PUMP'
+            WHEN pct_t60 <= -10 THEN 'DUMP'
+            ELSE 'STABLE'
+          END
+      WHERE pct_t60 IS NOT NULL AND label_t60 IS NULL
+    `);
+    db.exec(`
+      UPDATE graduation_momentum
+      SET label_t120 = CASE
+            WHEN pct_t120 >= 10  THEN 'PUMP'
+            WHEN pct_t120 <= -10 THEN 'DUMP'
+            ELSE 'STABLE'
+          END
+      WHERE pct_t120 IS NOT NULL AND label_t120 IS NULL
+    `);
+
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_grad_momentum_label_t60  ON graduation_momentum(label_t60)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_grad_momentum_label_t120 ON graduation_momentum(label_t120)`);
   }
 
   // Add columns to graduations if they don't exist yet (safe migration)
