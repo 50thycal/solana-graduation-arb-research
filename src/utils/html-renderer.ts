@@ -71,13 +71,13 @@ const STYLES = `
   .p4-controls select{background:#0f0f1a;color:#e2e8f0;border:1px solid #334155;padding:4px 8px;margin-left:4px;border-radius:4px;font-size:12px;cursor:pointer}
   .p4-controls select:hover{border-color:#60a5fa}
   .p4-controls .desc{margin-bottom:0;margin-left:auto}
-  /* Panel 4 / Panel 6 horizon tabs */
+  /* Panel 1 / Panel 4 / Panel 6 horizon tabs */
   .p4-tabs{display:flex;gap:4px;margin:12px 0 8px}
-  .p4-tab,.p6-tab{background:#1f2a44;color:#94a3b8;border:1px solid #334155;padding:6px 14px;border-radius:4px 4px 0 0;font-size:12px;cursor:pointer;font-family:inherit}
-  .p4-tab:hover,.p6-tab:hover{background:#262640;color:#e2e8f0}
-  .p4-tab.active,.p6-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6;font-weight:600}
-  .p4-horizon-panel,.p6-horizon-panel{display:none}
-  .p4-horizon-panel.active,.p6-horizon-panel.active{display:block}
+  .p1-tab,.p4-tab,.p6-tab{background:#1f2a44;color:#94a3b8;border:1px solid #334155;padding:6px 14px;border-radius:4px 4px 0 0;font-size:12px;cursor:pointer;font-family:inherit}
+  .p1-tab:hover,.p4-tab:hover,.p6-tab:hover{background:#262640;color:#e2e8f0}
+  .p1-tab.active,.p4-tab.active,.p6-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6;font-weight:600}
+  .p1-horizon-panel,.p4-horizon-panel,.p6-horizon-panel{display:none}
+  .p1-horizon-panel.active,.p4-horizon-panel.active,.p6-horizon-panel.active{display:block}
 `;
 
 function nav(currentPath: string): string {
@@ -1532,39 +1532,56 @@ export function renderFilterV2Html(data: any): string {
   const lowN = panel1.flags?.low_n_threshold ?? 20;
   const strongN = panel1.flags?.strong_n_threshold ?? 100;
 
-  // Group filters by family for visual grouping
-  const groups = new Map<string, FilterV2Row[]>();
-  for (const f of filters) {
-    if (!groups.has(f.group)) groups.set(f.group, []);
-    groups.get(f.group)!.push(f);
-  }
+  // Horizon variants for Panel 1 — same filters, different label column source.
+  const panel1Horizons: Array<{
+    key: 't300' | 't120' | 't60';
+    label: string;
+    baseline: FilterV2Row;
+    filters: FilterV2Row[];
+  }> = [
+    { key: 't300', label: '5 min (T+300)', baseline, filters },
+    ...(data.panel1_t120 ? [{ key: 't120' as const, label: '2 min (T+120)', baseline: data.panel1_t120.baseline as FilterV2Row, filters: (data.panel1_t120.filters || []) as FilterV2Row[] }] : []),
+    ...(data.panel1_t60  ? [{ key: 't60'  as const, label: '1 min (T+60)',  baseline: data.panel1_t60.baseline  as FilterV2Row, filters: (data.panel1_t60.filters  || []) as FilterV2Row[] }] : []),
+  ];
 
-  const baselineRow = v2RowHtml(baseline, lowN, strongN, true);
+  const p1Tabs = panel1Horizons
+    .map(h => `<button type="button" class="p1-tab${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}" onclick="setPanel1Horizon('${h.key}')">${h.label}</button>`)
+    .join('');
 
-  const groupRows: string[] = [];
-  for (const [groupName, rows] of groups) {
-    groupRows.push(`<tr class="row-group-header"><td colspan="7">${groupName}</td></tr>`);
-    for (const r of rows) groupRows.push(v2RowHtml(r, lowN, strongN, false));
-  }
-
-  const tableHtml = `
-  <table id="panel1-table">
-    <thead>
-      <tr>
-        <th class="sortable" onclick="sortPanel1(0,'str')">Filter <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(1,'num')">n (applicable) <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(2,'num')">PUMP <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(3,'num')">DUMP <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(4,'num')">STABLE <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(5,'num')">Win % <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(6,'num')">PUMP:DUMP <span class="arrow">⇅</span></th>
-      </tr>
-    </thead>
-    <tbody>
-      ${baselineRow}
-      ${groupRows.join('\n      ')}
-    </tbody>
-  </table>`;
+  const panel1HorizonPanels = panel1Horizons.map(h => {
+    const groups = new Map<string, FilterV2Row[]>();
+    for (const f of h.filters) {
+      if (!groups.has(f.group)) groups.set(f.group, []);
+      groups.get(f.group)!.push(f);
+    }
+    const baselineRow = v2RowHtml(h.baseline, lowN, strongN, true);
+    const groupRows: string[] = [];
+    for (const [groupName, rows] of groups) {
+      groupRows.push(`<tr class="row-group-header"><td colspan="7">${groupName}</td></tr>`);
+      for (const r of rows) groupRows.push(v2RowHtml(r, lowN, strongN, false));
+    }
+    const tableId = `panel1-table-${h.key}`;
+    return `
+    <div class="p1-horizon-panel${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}">
+      <table id="${tableId}" class="panel1-table" data-horizon="${h.key}">
+        <thead>
+          <tr>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',0,'str')">Filter <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',1,'num')">n (applicable) <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',2,'num')">PUMP <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',3,'num')">DUMP <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',4,'num')">STABLE <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',5,'num')">Win % <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',6,'num')">PUMP:DUMP <span class="arrow">⇅</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${baselineRow}
+          ${groupRows.join('\n          ')}
+        </tbody>
+      </table>
+    </div>`;
+  }).join('');
 
   const legend = `
   <div class="desc" style="margin-top:10px">
@@ -1577,13 +1594,16 @@ export function renderFilterV2Html(data: any): string {
     <span class="red" style="margin-left:6px">&lt; 1.0 (more losers)</span> ·
     <span class="yellow">1.0 - 1.5 (even/slight edge)</span> ·
     <span class="green">≥ 1.5 (strong edge)</span>
+    <br>
+    <strong>Horizons:</strong> all three tabs use the same >=+10% PUMP / <=-10% DUMP thresholds — only the checkpoint differs (pct_t60 / pct_t120 / pct_t300). A filter whose win rate decays T+60 → T+300 is showing mean reversion; one that grows is capturing a slow trend.
   </div>`;
 
   const panel1Html = `
   <div class="card">
     <h2>Panel 1 — ${panel1.title}</h2>
     <div class="desc">${panel1.description}</div>
-    ${tableHtml}
+    <div class="p4-tabs">${p1Tabs}</div>
+    ${panel1HorizonPanels}
     ${legend}
   </div>`;
 
@@ -2648,7 +2668,27 @@ export function renderFilterV2Html(data: any): string {
     tbody.appendChild(baselineRow);
     dataRows.forEach(function(r){ tbody.appendChild(r); });
   }
-  function sortPanel1(col, type) { v2GenericSort('panel1-table', col, type); }
+  // Panel 1 has horizon variants — sortPanel1Table takes an explicit ID so
+  // each horizon's table sorts independently. sortPanel1 is a back-compat
+  // shim that targets the currently-active horizon panel.
+  function sortPanel1Table(tableId, col, type) { v2GenericSort(tableId, col, type); }
+  function sortPanel1(col, type) {
+    var active = document.querySelector('.p1-horizon-panel.active');
+    var horizon = active ? active.getAttribute('data-horizon') : 't300';
+    sortPanel1Table('panel1-table-' + horizon, col, type);
+  }
+  function setPanel1Horizon(h) {
+    var tabs = document.querySelectorAll('.p1-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].getAttribute('data-horizon') === h) tabs[i].classList.add('active');
+      else tabs[i].classList.remove('active');
+    }
+    var panels = document.querySelectorAll('.p1-horizon-panel');
+    for (var j = 0; j < panels.length; j++) {
+      if (panels[j].getAttribute('data-horizon') === h) panels[j].classList.add('active');
+      else panels[j].classList.remove('active');
+    }
+  }
   function sortPanel2(col, type) { v2GenericSort('panel2-table', col, type); }
   function sortPanel3(col, type) { v2GenericSort('panel3-table', col, type); }
   function sortPanel4(col, type) { v2GenericSort('panel4-table', col, type); }
