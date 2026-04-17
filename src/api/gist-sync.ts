@@ -1,9 +1,17 @@
 /**
  * src/api/gist-sync.ts
  *
- * Pushes diagnose.json, snapshot.json, best-combos.json, trades.json, and
- * strategies.json to a dedicated `bot-status` branch every SYNC_INTERVAL_MS
- * so Claude can self-serve via WebFetch / GitHub MCP tools.
+ * Pushes every Claude-facing JSON view to a dedicated `bot-status` branch every
+ * SYNC_INTERVAL_MS so Claude can self-serve via WebFetch / GitHub MCP tools.
+ *
+ * Files published (see buildPayloads for full list):
+ *   - Core: diagnose.json, snapshot.json, best-combos.json, strategies.json
+ *   - Trades/trading: trades.json, trading.json
+ *   - /filter-analysis-v2: panel1.json, panel2.json, panel3.json, panel4.json,
+ *     panel5.json, panel6.json, panel7.json, panel8.json, panel9.json,
+ *     panel10.json, panel11.json
+ *   - /price-path: price-path-stats.json (compact), price-path-detail.json (full)
+ *   - /peak-analysis: peak-analysis.json
  *
  * Also polls for `strategy-commands.json` on the main branch — when found,
  * applies the commands (upsert/delete/toggle strategies) and deletes the file.
@@ -29,6 +37,9 @@ import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
+import { computeFilterV2Data } from './filter-v2-data';
+import { computePricePathData } from './price-path-data';
+import { computeTradingData } from './trading-data';
 import {
   getGraduationCount,
   getLastBotError,
@@ -61,6 +72,19 @@ export interface StatusUrls {
   price_path_stats: string;
   peak_analysis: string;
   strategies: string;
+  // New files (overhaul 2026-04-17): per-panel filter-v2 slices, full price-path
+  // detail with raw overlay paths, and full /trading dashboard data.
+  panel1: string;
+  panel2: string;
+  panel4: string;
+  panel5: string;
+  panel6: string;
+  panel7: string;
+  panel8: string;
+  panel9: string;
+  panel10: string;
+  price_path_detail: string;
+  trading: string;
   branch_html: string;
 }
 
@@ -139,6 +163,17 @@ export class GistSync {
       price_path_stats: `${base}/price-path-stats.json`,
       peak_analysis: `${base}/peak-analysis.json`,
       strategies: `${base}/strategies.json`,
+      panel1: `${base}/panel1.json`,
+      panel2: `${base}/panel2.json`,
+      panel4: `${base}/panel4.json`,
+      panel5: `${base}/panel5.json`,
+      panel6: `${base}/panel6.json`,
+      panel7: `${base}/panel7.json`,
+      panel8: `${base}/panel8.json`,
+      panel9: `${base}/panel9.json`,
+      panel10: `${base}/panel10.json`,
+      price_path_detail: `${base}/price-path-detail.json`,
+      trading: `${base}/trading.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
@@ -295,6 +330,16 @@ export class GistSync {
     const pricePathStats = computePricePathStats(this.db);
     const peakAnalysis = computePeakAnalysis(this.db);
 
+    // Heavy compute: run once, then slice into per-panel payloads below.
+    // Panel 10 is the hottest path (320 DPM combos × ~54 filters × n rows);
+    // typical total runtime ≈ 3–10s at current data volume, well under the
+    // 2-minute sync interval.
+    const v2 = computeFilterV2Data(this.db);
+    const pricePathDetail = computePricePathData(this.db);
+    const tradingData = computeTradingData(this.db, this.strategyManager, {
+      topPairs: v2.panel6.top_pairs,
+    });
+
     // Strategy configs — includes all DPM params per strategy
     const strategyRows = getStrategyConfigs(this.db);
     const strategies = strategyRows.map(row => ({
@@ -304,7 +349,22 @@ export class GistSync {
       params: JSON.parse(row.config_json),
     }));
 
+    const genAt = new Date(nowMs).toISOString();
+
+    // Panel 6 sync shape: omit the URL-driven `dynamic` slice (needs user input)
+    // and keep only the auto-scanned `top_pairs*` leaderboards.
+    const panel6Published = {
+      title: v2.panel6.title,
+      description: v2.panel6.description,
+      filter_names: v2.panel6.filter_names,
+      top_pairs: v2.panel6.top_pairs,
+      top_pairs_t60: v2.panel6.top_pairs_t60,
+      top_pairs_t120: v2.panel6.top_pairs_t120,
+      flags: v2.panel6.flags,
+    };
+
     return {
+      // Existing files — unchanged for backwards compat with stale sessions.
       'diagnose.json': JSON.stringify(diagnose, null, 2),
       'snapshot.json': JSON.stringify(snapshot, null, 2),
       'best-combos.json': JSON.stringify(bestCombos, null, 2),
@@ -314,10 +374,55 @@ export class GistSync {
       'price-path-stats.json': JSON.stringify(pricePathStats, null, 2),
       'peak-analysis.json': JSON.stringify(peakAnalysis, null, 2),
       'strategies.json': JSON.stringify({
-        generated_at: new Date(nowMs).toISOString(),
+        generated_at: genAt,
         count: strategies.length,
         strategies,
       }, null, 2),
+
+      // New files (overhaul 2026-04-17): per-panel slices from /filter-analysis-v2
+      // + full price-path detail with raw overlay + full /trading dashboard data.
+      'panel1.json': JSON.stringify({
+        generated_at: genAt,
+        panel1: v2.panel1,
+        panel1_t60: v2.panel1_t60,
+        panel1_t120: v2.panel1_t120,
+      }, null, 2),
+      'panel2.json': JSON.stringify({
+        generated_at: genAt,
+        panel2: v2.panel2,
+      }, null, 2),
+      'panel4.json': JSON.stringify({
+        generated_at: genAt,
+        panel4: v2.panel4,
+        panel4_t60: v2.panel4_t60,
+        panel4_t120: v2.panel4_t120,
+      }, null, 2),
+      'panel5.json': JSON.stringify({
+        generated_at: genAt,
+        panel5: v2.panel5,
+      }, null, 2),
+      'panel6.json': JSON.stringify({
+        generated_at: genAt,
+        panel6: panel6Published,
+      }, null, 2),
+      'panel7.json': JSON.stringify({
+        generated_at: genAt,
+        panel7: v2.panel7,
+      }, null, 2),
+      'panel8.json': JSON.stringify({
+        generated_at: genAt,
+        panel8: v2.panel8,
+      }, null, 2),
+      'panel9.json': JSON.stringify({
+        generated_at: genAt,
+        panel9: v2.panel9,
+      }, null, 2),
+      'panel10.json': JSON.stringify({
+        generated_at: genAt,
+        panel10: v2.panel10,
+      }, null, 2),
+      'price-path-detail.json': JSON.stringify(pricePathDetail, null, 2),
+      'trading.json': JSON.stringify(tradingData, null, 2),
     };
   }
 
