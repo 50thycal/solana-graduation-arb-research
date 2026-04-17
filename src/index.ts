@@ -7,6 +7,7 @@ import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2
 import { computePeakAnalysis } from './api/peak-analysis';
 import { computeFilterV2Data } from './api/filter-v2-data';
 import { computeTradingData } from './api/trading-data';
+import { getHeavyData } from './api/heavy-cache';
 import { StrategyManager } from './trading';
 import { StrategyParams } from './trading/config';
 import { makeLogger, logBuffer } from './utils/logger';
@@ -2171,7 +2172,13 @@ async function main() {
   // from the bot-status sync. The route just branches on Accept header.
   app.get('/filter-analysis-v2', (req, res) => {
     try {
-      const data = computeFilterV2Data(db, { p6Raw: req.query.p6 });
+      // Default path hits the 24h heavy cache (see src/api/heavy-cache.ts) so
+      // a dashboard load costs ~50ms instead of ~100s. The `?p6=` power-user
+      // slice still computes fresh since its input comes from the URL.
+      const p6Raw = req.query.p6;
+      const data = p6Raw !== undefined
+        ? computeFilterV2Data(db, { p6Raw })
+        : getHeavyData(db, strategyManager).v2;
       cachedTopPairs = data.panel6.top_pairs;
       const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
@@ -2186,10 +2193,13 @@ async function main() {
   });
 
   // ── PRICE PATH ANALYSIS ──────────────────────────────────────────────────
+  // renderPricePathHtml does its own DB scan (~40s at current data volume),
+  // so the HTML output is cached alongside the other heavy payloads.
   app.get('/price-path', (_req, res) => {
     try {
+      const { pricePathHtml } = getHeavyData(db, strategyManager);
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.send(renderPricePathHtml(db));
+      res.send(pricePathHtml);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -2214,12 +2224,17 @@ async function main() {
   });
 
   // ── TRADING DASHBOARD ────────────────────────────────────────────────────
+  // Default view (no ?strategy=) hits the 24h heavy cache alongside the
+  // filter-v2 panels; a strategy-specific filter bypasses the cache.
   app.get('/trading', (req, res) => {
     try {
-      const data = computeTradingData(db, strategyManager, {
-        strategyFilter: (req.query.strategy as string) || '',
-        topPairs: cachedTopPairs || [],
-      });
+      const strategyFilter = (req.query.strategy as string) || '';
+      const data = strategyFilter
+        ? computeTradingData(db, strategyManager, {
+            strategyFilter,
+            topPairs: cachedTopPairs || [],
+          })
+        : getHeavyData(db, strategyManager).tradingData;
       const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');

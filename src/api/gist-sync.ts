@@ -37,9 +37,7 @@ import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
-import { computeFilterV2Data } from './filter-v2-data';
-import { computePricePathData } from './price-path-data';
-import { computeTradingData } from './trading-data';
+import { getHeavyData } from './heavy-cache';
 import {
   getGraduationCount,
   getLastBotError,
@@ -330,15 +328,17 @@ export class GistSync {
     const pricePathStats = computePricePathStats(this.db);
     const peakAnalysis = computePeakAnalysis(this.db);
 
-    // Heavy compute: run once, then slice into per-panel payloads below.
-    // Panel 10 is the hottest path (320 DPM combos × ~54 filters × n rows);
-    // typical total runtime ≈ 3–10s at current data volume, well under the
-    // 2-minute sync interval.
-    const v2 = computeFilterV2Data(this.db);
-    const pricePathDetail = computePricePathData(this.db);
-    const tradingData = computeTradingData(this.db, this.strategyManager, {
-      topPairs: v2.panel6.top_pairs,
-    });
+    // Heavy compute (filter-v2 panels, price-path detail, trading data) is
+    // cached with a 24h TTL — computeFilterV2Data alone is ~100s at current
+    // data volume, and running it every 2-min sync was blocking the Node
+    // event loop long enough to 502 live dashboard requests. Cache refreshes
+    // on boot (first call) and at most once/day after that. Each sync cycle
+    // still re-publishes the cached JSON strings so all files stay on
+    // bot-status.
+    const heavy = getHeavyData(this.db, this.strategyManager);
+    const v2 = heavy.v2;
+    const pricePathDetail = heavy.pricePathDetail;
+    const tradingData = heavy.tradingData;
 
     // Strategy configs — includes all DPM params per strategy
     const strategyRows = getStrategyConfigs(this.db);
