@@ -2367,18 +2367,23 @@ async function main() {
           predicate: (r) => r.pct_t30 >= 10 && r.pct_t30 <= 50 },
       ];
 
-      // Helper: run a single filter query and return normalized stats
-      const runFilterStats = (column: string, whereCond: string) => {
-        const baseWhere = 'label IS NOT NULL';
+      // Helper: run a single filter query and return normalized stats.
+      // labelCol picks the horizon: 'label' (T+300, default), 'label_t60', or 'label_t120'.
+      const runFilterStats = (
+        column: string,
+        whereCond: string,
+        labelCol: 'label' | 'label_t60' | 'label_t120' = 'label',
+      ) => {
+        const baseWhere = `${labelCol} IS NOT NULL`;
         const colCheck = column ? `${column} IS NOT NULL` : '';
         const cond = whereCond || '';
         const fullWhere = [baseWhere, colCheck, cond].filter(Boolean).join(' AND ');
         const row = db.prepare(`
           SELECT
             COUNT(*) as n,
-            SUM(CASE WHEN label='PUMP'   THEN 1 ELSE 0 END) as pump,
-            SUM(CASE WHEN label='DUMP'   THEN 1 ELSE 0 END) as dump,
-            SUM(CASE WHEN label='STABLE' THEN 1 ELSE 0 END) as stable
+            SUM(CASE WHEN ${labelCol}='PUMP'   THEN 1 ELSE 0 END) as pump,
+            SUM(CASE WHEN ${labelCol}='DUMP'   THEN 1 ELSE 0 END) as dump,
+            SUM(CASE WHEN ${labelCol}='STABLE' THEN 1 ELSE 0 END) as stable
           FROM graduation_momentum
           WHERE ${fullWhere}
         `).get() as { n: number; pump: number; dump: number; stable: number };
@@ -2594,6 +2599,29 @@ async function main() {
         filter: f.name,
         group: f.group,
         ...runFilterStats(f.column, f.where),
+      }));
+
+      // Panel 1 horizon variants — same predicates, but PUMP/DUMP/STABLE
+      // counts from label_t60 / label_t120 instead of the T+300 label.
+      const baseline_t60 = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterStats('', '', 'label_t60'),
+      };
+      const filters_t60 = PANEL_1_FILTERS.map(f => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterStats(f.column, f.where, 'label_t60'),
+      }));
+      const baseline_t120 = {
+        filter: 'ALL labeled (no filter)',
+        group: 'Baseline',
+        ...runFilterStats('', '', 'label_t120'),
+      };
+      const filters_t120 = PANEL_1_FILTERS.map(f => ({
+        filter: f.name,
+        group: f.group,
+        ...runFilterStats(f.column, f.where, 'label_t120'),
       }));
 
       // ── Panel 2: T+30-anchored MAE/MFE/Final percentiles + Sharpe-ish ──
@@ -3848,9 +3876,29 @@ async function main() {
         panel1: {
           title: 'Single-Feature Filter Comparison',
           description:
-            'Each row applies ONE filter to the labeled dataset. n is normalized — only tokens where the feature has a non-null value are counted, so monotonicity rows have smaller n than velocity rows. PUMP:DUMP ratio shows asymmetry: >1.0 = more winners than losers, >2.0 = strong asymmetry.',
+            'Each row applies ONE filter to the labeled dataset. n is normalized — only tokens where the feature has a non-null value are counted, so monotonicity rows have smaller n than velocity rows. PUMP:DUMP ratio shows asymmetry: >1.0 = more winners than losers, >2.0 = strong asymmetry. Tabs switch the classification horizon (T+300, T+120, T+60) — same thresholds (>=+10% PUMP, <=-10% DUMP), just applied to the earlier checkpoint.',
           baseline,
           filters,
+          flags: {
+            low_n_threshold: 20,
+            strong_n_threshold: 100,
+          },
+        },
+        panel1_t60: {
+          title: 'Single-Feature Filter Comparison — T+60 Horizon',
+          description: 'Same predicate as Panel 1, but PUMP/DUMP/STABLE counts come from label_t60.',
+          baseline: baseline_t60,
+          filters: filters_t60,
+          flags: {
+            low_n_threshold: 20,
+            strong_n_threshold: 100,
+          },
+        },
+        panel1_t120: {
+          title: 'Single-Feature Filter Comparison — T+120 Horizon',
+          description: 'Same predicate as Panel 1, but PUMP/DUMP/STABLE counts come from label_t120.',
+          baseline: baseline_t120,
+          filters: filters_t120,
           flags: {
             low_n_threshold: 20,
             strong_n_threshold: 100,
