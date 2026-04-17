@@ -71,6 +71,13 @@ const STYLES = `
   .p4-controls select{background:#0f0f1a;color:#e2e8f0;border:1px solid #334155;padding:4px 8px;margin-left:4px;border-radius:4px;font-size:12px;cursor:pointer}
   .p4-controls select:hover{border-color:#60a5fa}
   .p4-controls .desc{margin-bottom:0;margin-left:auto}
+  /* Panel 4 horizon tabs */
+  .p4-tabs{display:flex;gap:4px;margin:12px 0 8px}
+  .p4-tab{background:#1f2a44;color:#94a3b8;border:1px solid #334155;padding:6px 14px;border-radius:4px 4px 0 0;font-size:12px;cursor:pointer;font-family:inherit}
+  .p4-tab:hover{background:#262640;color:#e2e8f0}
+  .p4-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6;font-weight:600}
+  .p4-horizon-panel{display:none}
+  .p4-horizon-panel.active{display:block}
 `;
 
 function nav(currentPath: string): string {
@@ -1764,24 +1771,6 @@ export function renderFilterV2Html(data: any): string {
     const defaultTp: number = panel4.grid.default_tp;
     const defaultSl: number = panel4.grid.default_sl;
 
-    const groups4 = new Map<string, FilterV2Panel4Row[]>();
-    for (const f of filters4) {
-      if (!groups4.has(f.group)) groups4.set(f.group, []);
-      groups4.get(f.group)!.push(f);
-    }
-
-    // Baseline is always row index 0; filter rows start at index 1
-    const baselineRow4 = v2Panel4RowHtml(baseline4, lowN4, strongN4, 0, true);
-    const groupRows4: string[] = [];
-    let rowIdx = 1;
-    for (const [groupName, rows] of groups4) {
-      groupRows4.push(`<tr class="row-group-header"><td colspan="10">${groupName}</td></tr>`);
-      for (const r of rows) {
-        groupRows4.push(v2Panel4RowHtml(r, lowN4, strongN4, rowIdx, false));
-        rowIdx++;
-      }
-    }
-
     const tpOptions = tpLevels.map(v => `<option value="${v}"${v === defaultTp ? ' selected' : ''}>${v}%</option>`).join('');
     const slOptions = slLevels.map(v => `<option value="${v}"${v === defaultSl ? ' selected' : ''}>${v}%</option>`).join('');
 
@@ -1789,34 +1778,95 @@ export function renderFilterV2Html(data: any): string {
     <div class="p4-controls">
       <label>TP %: <select id="p4-tp" onchange="onPanel4Change()">${tpOptions}</select></label>
       <label>SL %: <select id="p4-sl" onchange="onPanel4Change()">${slOptions}</select></label>
-      <span class="desc">SL gap 20% · TP gap 10% · cost: per-token round_trip_slippage_pct (3% fallback)</span>
+      <span class="desc">SL gap ${(panel4.constants.sl_gap_penalty_pct).toFixed(0)}% · TP gap ${(panel4.constants.tp_gap_penalty_pct).toFixed(0)}% · cost: per-token round_trip_slippage_pct (${panel4.constants.cost_pct_fallback}% fallback)</span>
     </div>`;
 
-    const table4Html = `
-    <table id="panel4-table">
-      <thead>
-        <tr>
-          <th class="sortable" onclick="sortPanel4(0,'str')">Filter <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel4(1,'num')">n <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel4(2,'num')">Sel Avg Ret <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel4(3,'num')">Sel Med Ret <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel4(4,'num')">Sel Win % <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel4(5,'num')">Sel vs Base <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel4(6,'num')">Opt TP <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel4(7,'num')">Opt SL <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel4(8,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel4(9,'num')">Opt Win % <span class="arrow">⇅</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${baselineRow4}
-        ${groupRows4.join('\n        ')}
-      </tbody>
-    </table>`;
+    // Horizon variants: 5 min (default, T+300), 2 min (T+120), 1 min (T+60).
+    // Each horizon gets its own table so the Opt* columns reflect that horizon's
+    // per-filter optimum. The TP/SL selector updates Sel* cells in every table
+    // so switching tabs keeps client state consistent.
+    const horizonDefs: Array<{
+      key: 't300' | 't120' | 't60';
+      label: string;
+      data: { baseline: FilterV2Panel4Row; filters: FilterV2Panel4Row[]; constants: typeof panel4.constants } | null;
+    }> = [
+      { key: 't300', label: '5 min (T+300)', data: { baseline: baseline4, filters: filters4, constants: panel4.constants } },
+      { key: 't120', label: '2 min (T+120)', data: data.panel4_t120 ? { baseline: data.panel4_t120.baseline, filters: data.panel4_t120.filters, constants: data.panel4_t120.constants } : null },
+      { key: 't60',  label: '1 min (T+60)',  data: data.panel4_t60  ? { baseline: data.panel4_t60.baseline,  filters: data.panel4_t60.filters,  constants: data.panel4_t60.constants  } : null },
+    ];
+
+    const tabsHtml = horizonDefs
+      .filter(h => h.data != null)
+      .map(h => `<button type="button" class="p4-tab${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}" onclick="setPanel4Horizon('${h.key}')">${h.label}</button>`)
+      .join('');
+
+    // Build one table per horizon. Row index is scoped per-horizon and ties
+    // the DOM row to its entry in window.__PANEL_4_BY_HORIZON[horizon].rows.
+    const horizonPayloads: Record<string, { tp_levels: number[]; sl_levels: number[]; default_tp: number; default_sl: number; rows: Array<{ combos: FilterV2Panel4Combos }> }> = {};
+    const horizonPanelsHtml = horizonDefs.map(h => {
+      if (!h.data) return '';
+      const { baseline, filters, constants } = h.data;
+      const groups = new Map<string, FilterV2Panel4Row[]>();
+      for (const f of filters) {
+        if (!groups.has(f.group)) groups.set(f.group, []);
+        groups.get(f.group)!.push(f);
+      }
+      const baselineRow = v2Panel4RowHtml(baseline, lowN4, strongN4, 0, true);
+      const groupRows: string[] = [];
+      let rIdx = 1;
+      for (const [groupName, rows] of groups) {
+        groupRows.push(`<tr class="row-group-header"><td colspan="10">${groupName}</td></tr>`);
+        for (const r of rows) {
+          groupRows.push(v2Panel4RowHtml(r, lowN4, strongN4, rIdx, false));
+          rIdx++;
+        }
+      }
+      horizonPayloads[h.key] = {
+        tp_levels: tpLevels,
+        sl_levels: slLevels,
+        default_tp: defaultTp,
+        default_sl: defaultSl,
+        rows: [
+          { combos: baseline.combos },
+          ...filters.map(f => ({ combos: f.combos })),
+        ],
+      };
+      const tableId = `panel4-table-${h.key}`;
+      const fallThrough = constants.fall_through_column;
+      const checkpointsList = Array.isArray(constants.checkpoints)
+        ? constants.checkpoints.join(', ')
+        : String(constants.checkpoints);
+      return `
+      <div class="p4-horizon-panel${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}">
+        <div class="desc" style="margin-bottom:8px;color:#94a3b8">
+          <strong>Fall-through:</strong> <code>${fallThrough}</code> · <strong>Exits scanned:</strong> ${checkpointsList}
+        </div>
+        <table id="${tableId}" class="panel4-table" data-horizon="${h.key}">
+          <thead>
+            <tr>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',0,'str')">Filter <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',1,'num')">n <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',2,'num')">Sel Avg Ret <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',3,'num')">Sel Med Ret <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',4,'num')">Sel Win % <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',5,'num')">Sel vs Base <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',6,'num')">Opt TP <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',7,'num')">Opt SL <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',8,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel4Table('${tableId}',9,'num')">Opt Win % <span class="arrow">⇅</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${baselineRow}
+            ${groupRows.join('\n            ')}
+          </tbody>
+        </table>
+      </div>`;
+    }).join('');
 
     const legend4 = `
     <div class="desc" style="margin-top:10px">
-      <strong>Entry:</strong> T+30 (PumpSwap pool price). <strong>Exits scanned:</strong> pct_t40, pct_t50, pct_t60, pct_t90, pct_t120, pct_t150, pct_t180, pct_t240 (SL checked first at each checkpoint, then TP). <strong>Fall-through:</strong> pct_t300.
+      <strong>Entry:</strong> T+30 (PumpSwap pool price). <strong>Horizons:</strong> tabs switch the fall-through checkpoint (T+60 / T+120 / T+300) and truncate the exit scan to that point. SL is checked first at each checkpoint, then TP.
       <br>
       <strong>Gap penalties:</strong> SL fills at −${(panel4.constants.sl_gap_penalty_pct).toFixed(0)}% adverse (e.g., 10% SL → −12% realised); TP fills at −${(panel4.constants.tp_gap_penalty_pct).toFixed(0)}% of TP (e.g., 30% TP → +27% realised). <strong>Cost:</strong> per-token <code>round_trip_slippage_pct</code> with ${panel4.constants.cost_pct_fallback}% fallback subtracted from every exit.
       <br>
@@ -1832,34 +1882,24 @@ export function renderFilterV2Html(data: any): string {
       <span class="yellow">40–49%</span>
       <span class="red">&lt; 40%</span>
       <br>
-      <strong>URL:</strong> current TP/SL selection is mirrored to the URL hash (<code>#p4=tp30,sl10</code>) so reloads and shared links preserve the view.
-      <br>
-      <em>Sort by <strong>Opt Avg Ret</strong> descending to surface the best static per-filter optima. Sort by <strong>Sel Avg Ret</strong> descending to surface the best filters at the currently-selected TP/SL.</em>
+      <strong>URL:</strong> current TP/SL selection and active horizon are mirrored to the URL hash (<code>#p4=tp30,sl10,h=t300</code>) so reloads and shared links preserve the view.
     </div>`;
 
     panel4Html = `
     <div class="card">
       <h2>Panel 4 — ${panel4.title}</h2>
       <div class="desc">${panel4.description}</div>
+      <div class="p4-tabs">${tabsHtml}</div>
       ${controls}
-      ${table4Html}
+      ${horizonPanelsHtml}
       ${legend4}
     </div>`;
 
-    // Client data payload — flat arrays for compact encoding
-    const clientRows = [
-      { combos: baseline4.combos },
-      ...filters4.map(f => ({ combos: f.combos })),
-    ];
     panel4DataScript = `
   <script>
-    window.__PANEL_4 = ${JSON.stringify({
-      tp_levels: tpLevels,
-      sl_levels: slLevels,
-      default_tp: defaultTp,
-      default_sl: defaultSl,
-      rows: clientRows,
-    })};
+    window.__PANEL_4_BY_HORIZON = ${JSON.stringify(horizonPayloads)};
+    // Back-compat alias for any code that still reads __PANEL_4.
+    window.__PANEL_4 = window.__PANEL_4_BY_HORIZON.t300;
   </script>`;
   }
 
@@ -2657,15 +2697,17 @@ export function renderFilterV2Html(data: any): string {
     var sign = v > 0 ? '+' : '';
     return '<span class="' + cls + '">' + sign + v.toFixed(1) + '%</span>';
   }
-  function updatePanel4(tp, sl) {
-    if (!window.__PANEL_4) return;
-    var P = window.__PANEL_4;
+  // Update one horizon's Panel 4 table in place at (tp, sl).
+  function updatePanel4Table(horizon, tp, sl) {
+    var all = window.__PANEL_4_BY_HORIZON;
+    if (!all || !all[horizon]) return;
+    var P = all[horizon];
     var ti = P.tp_levels.indexOf(tp);
     var si = P.sl_levels.indexOf(sl);
     if (ti === -1 || si === -1) return;
     var idx = ti * P.sl_levels.length + si;
     var baselineAvg = P.rows[0].combos.avg_ret[idx];
-    var table = document.getElementById('panel4-table');
+    var table = document.getElementById('panel4-table-' + horizon);
     if (!table) return;
     var rows = table.tBodies[0].rows;
     for (var i = 0; i < rows.length; i++) {
@@ -2688,6 +2730,40 @@ export function renderFilterV2Html(data: any): string {
       if (sDiff) sDiff.innerHTML = row.getAttribute('data-baseline') === '1' ? '<span class="yellow">+0.0%</span>' : p4ColorDiff(diff);
     }
   }
+  function updatePanel4(tp, sl) {
+    var all = window.__PANEL_4_BY_HORIZON;
+    if (!all) return;
+    for (var h in all) {
+      if (Object.prototype.hasOwnProperty.call(all, h)) updatePanel4Table(h, tp, sl);
+    }
+  }
+  // Sort a single horizon's table. Wraps v2GenericSort so we can pass a
+  // table ID instead of the hardcoded 'panel4-table'.
+  function sortPanel4Table(tableId, col, type) { v2GenericSort(tableId, col, type); }
+  // Back-compat shim for any inline handler that still calls sortPanel4
+  // (older references): default to the active horizon's table.
+  function sortPanel4(col, type) {
+    var active = document.querySelector('.p4-horizon-panel.active');
+    var horizon = active ? active.getAttribute('data-horizon') : 't300';
+    sortPanel4Table('panel4-table-' + horizon, col, type);
+  }
+  function currentPanel4Horizon() {
+    var active = document.querySelector('.p4-tab.active');
+    return active ? active.getAttribute('data-horizon') : 't300';
+  }
+  function setPanel4Horizon(h) {
+    var tabs = document.querySelectorAll('.p4-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].getAttribute('data-horizon') === h) tabs[i].classList.add('active');
+      else tabs[i].classList.remove('active');
+    }
+    var panels = document.querySelectorAll('.p4-horizon-panel');
+    for (var j = 0; j < panels.length; j++) {
+      if (panels[j].getAttribute('data-horizon') === h) panels[j].classList.add('active');
+      else panels[j].classList.remove('active');
+    }
+    onPanel4Change();
+  }
   function onPanel4Change() {
     var tpSel = document.getElementById('p4-tp');
     var slSel = document.getElementById('p4-sl');
@@ -2695,25 +2771,29 @@ export function renderFilterV2Html(data: any): string {
     var tp = parseFloat(tpSel.value);
     var sl = parseFloat(slSel.value);
     updatePanel4(tp, sl);
-    try { history.replaceState(null, '', '#p4=tp' + tp + ',sl' + sl); } catch (e) {}
+    try { history.replaceState(null, '', '#p4=tp' + tp + ',sl' + sl + ',h=' + currentPanel4Horizon()); } catch (e) {}
   }
   function readPanel4Hash() {
-    if (!window.__PANEL_4) return;
-    var P = window.__PANEL_4;
+    var all = window.__PANEL_4_BY_HORIZON;
+    if (!all) return;
+    var P = all.t300 || all[Object.keys(all)[0]];
+    if (!P) return;
     var tp = P.default_tp;
     var sl = P.default_sl;
-    var m = (location.hash || '').match(/p4=tp([0-9.]+),sl([0-9.]+)/);
+    var horizon = 't300';
+    var m = (location.hash || '').match(/p4=tp([0-9.]+),sl([0-9.]+)(?:,h=(t60|t120|t300))?/);
     if (m) {
       var ht = parseFloat(m[1]);
       var hs = parseFloat(m[2]);
       if (P.tp_levels.indexOf(ht) !== -1) tp = ht;
       if (P.sl_levels.indexOf(hs) !== -1) sl = hs;
+      if (m[3] && all[m[3]]) horizon = m[3];
     }
     var tpSel = document.getElementById('p4-tp');
     var slSel = document.getElementById('p4-sl');
     if (tpSel) tpSel.value = String(tp);
     if (slSel) slSel.value = String(sl);
-    updatePanel4(tp, sl);
+    setPanel4Horizon(horizon);
   }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', readPanel4Hash);
