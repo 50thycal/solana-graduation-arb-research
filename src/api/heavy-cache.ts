@@ -5,7 +5,6 @@
  * seconds on the current data volume:
  *   - computeFilterV2Data  (~100s @ 3k rows; feeds panels 1,2,4-10)
  *   - computePricePathData (feeds /api/price-path-detail + price-path-detail.json)
- *   - computeTradingData   (feeds /trading + trading.json)
  *   - renderPricePathHtml  (~40s; backs the /price-path HTML page)
  *
  * Why: before this cache, every /filter-analysis-v2 request AND every 2-min
@@ -16,12 +15,15 @@
  * Contract: recompute on boot (first call), then at most once every TTL_MS.
  * The 2-min gist-sync still pushes all JSON files every cycle, but it re-uses
  * the cached heavy payloads instead of recomputing them.
+ *
+ * Note: trading data is NOT cached here — strategies/config must reflect the
+ * live strategyManager, and computeTradingData is fast enough (<100ms) to run
+ * fresh every request / sync cycle.
  */
 
 import type Database from 'better-sqlite3';
 import { computeFilterV2Data, type FilterV2Data } from './filter-v2-data';
 import { computePricePathData } from './price-path-data';
-import { computeTradingData } from './trading-data';
 import { renderPricePathHtml } from '../utils/html-renderer';
 import type { StrategyManager } from '../trading/strategy-manager';
 
@@ -30,7 +32,6 @@ const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 interface HeavyData {
   v2: FilterV2Data;
   pricePathDetail: ReturnType<typeof computePricePathData>;
-  tradingData: ReturnType<typeof computeTradingData>;
   pricePathHtml: string;
   computedAt: number;
 }
@@ -47,18 +48,14 @@ export function getHeavyData(
 
 export function refreshHeavyData(
   db: Database.Database,
-  strategyManager: StrategyManager | null,
+  _strategyManager: StrategyManager | null,
 ): HeavyData {
   const v2 = computeFilterV2Data(db);
   const pricePathDetail = computePricePathData(db);
-  const tradingData = computeTradingData(db, strategyManager, {
-    topPairs: v2.panel6.top_pairs,
-  });
   const pricePathHtml = renderPricePathHtml(db);
   cache = {
     v2,
     pricePathDetail,
-    tradingData,
     pricePathHtml,
     computedAt: Date.now(),
   };
