@@ -37,6 +37,7 @@ import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
+import { computeTradingData } from './trading-data';
 import { getHeavyData } from './heavy-cache';
 import {
   getGraduationCount,
@@ -338,7 +339,13 @@ export class GistSync {
     const heavy = getHeavyData(this.db, this.strategyManager);
     const v2 = heavy.v2;
     const pricePathDetail = heavy.pricePathDetail;
-    const tradingData = heavy.tradingData;
+    // Don't reuse heavy.tradingData — strategies/config can drift from what
+    // was captured at the last heavy cache refresh (up to 24h old). Recompute
+    // fresh each sync cycle so trading.json on bot-status reflects live
+    // strategy state. The queries inside computeTradingData are all <100ms.
+    const tradingData = computeTradingData(this.db, this.strategyManager, {
+      topPairs: v2.panel6.top_pairs,
+    });
 
     // Strategy configs — includes all DPM params per strategy
     const strategyRows = getStrategyConfigs(this.db);

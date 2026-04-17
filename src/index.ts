@@ -2224,17 +2224,19 @@ async function main() {
   });
 
   // ── TRADING DASHBOARD ────────────────────────────────────────────────────
-  // Default view (no ?strategy=) hits the 24h heavy cache alongside the
-  // filter-v2 panels; a strategy-specific filter bypasses the cache.
+  // Always computed fresh so the header strategy count + "DISABLED/PAPER"
+  // mode reflect the live strategyManager. The heavy-cache pathway baked in
+  // empty strategies/config at boot time, which left the dashboard stuck at
+  // "DISABLED 0 strategies" even after strategies were upserted via
+  // strategy-commands.json. computeTradingData's queries are all fast (<100ms
+  // total); only top_pairs comes from the cached filter-v2 pass.
   app.get('/trading', (req, res) => {
     try {
       const strategyFilter = (req.query.strategy as string) || '';
-      const data = strategyFilter
-        ? computeTradingData(db, strategyManager, {
-            strategyFilter,
-            topPairs: cachedTopPairs || [],
-          })
-        : getHeavyData(db, strategyManager).tradingData;
+      const data = computeTradingData(db, strategyManager, {
+        strategyFilter,
+        topPairs: cachedTopPairs || [],
+      });
       const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
