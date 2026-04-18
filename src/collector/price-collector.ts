@@ -488,9 +488,11 @@ export class PriceCollector {
           }
         }
 
-        // Compute derived path shape metrics at T+60 (pct_t60 is now in DB)
-        if (targetSec === 60) {
-          this.computeT60PathMetrics(graduationId);
+        // Compute derived path shape metrics at each fixed horizon (window = targetSec).
+        // T+60 uses the same formulas as T+120/180/300. T+30 has its own method because
+        // it also writes dip_and_recover_flag (scoped to the 0-30 window).
+        if (targetSec === 60 || targetSec === 120 || targetSec === 180 || targetSec === 300) {
+          this.computePathMetricsForWindow(graduationId, targetSec);
         }
       }
     } catch (err) {
@@ -735,60 +737,68 @@ export class PriceCollector {
     }
   }
 
-  /** Compute and persist path shape metrics based on T+0 – T+60 pct snapshots. */
-  private computeT60PathMetrics(graduationId: number): void {
+  /**
+   * Compute and persist path shape metrics over [0, windowSec]. windowSec must
+   * be a multiple of 10 so early_vs_late splits cleanly at windowSec / 2.
+   * Used for T+60, T+120, T+180, T+300. T+30 has its own method because it
+   * also computes dip_and_recover_flag, which is only defined on the 0-30 window.
+   */
+  private computePathMetricsForWindow(graduationId: number, windowSec: number): void {
     try {
-      const row = this.db.prepare(`
-        SELECT pct_t5, pct_t10, pct_t15, pct_t20, pct_t25, pct_t30,
-               pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60
-        FROM graduation_momentum WHERE graduation_id = ?
-      `).get(graduationId) as any;
+      const cols: string[] = [];
+      for (let s = 5; s <= windowSec; s += 5) cols.push(`pct_t${s}`);
+      const row = this.db.prepare(
+        `SELECT ${cols.join(', ')} FROM graduation_momentum WHERE graduation_id = ?`,
+      ).get(graduationId) as Record<string, number | null> | undefined;
 
-      if (!row || row.pct_t60 == null) return;
+      if (!row || row[`pct_t${windowSec}`] == null) return;
 
-      const allPcts: (number | null)[] = [
-        0,
-        row.pct_t5,  row.pct_t10, row.pct_t15, row.pct_t20, row.pct_t25, row.pct_t30,
-        row.pct_t35, row.pct_t40, row.pct_t45, row.pct_t50, row.pct_t55, row.pct_t60,
-      ];
+      const allPcts: (number | null)[] = [0];
+      for (let s = 5; s <= windowSec; s += 5) allPcts.push(row[`pct_t${s}`] ?? null);
       const valid = allPcts.filter(p => p !== null) as number[];
       if (valid.length < 5) return;
 
-      const acceleration_t60 =
-        row.pct_t55 != null && row.pct_t50 != null
-          ? (row.pct_t60 - row.pct_t55) - (row.pct_t55 - row.pct_t50)
+      const last = row[`pct_t${windowSec}`]!;
+      const penult = row[`pct_t${windowSec - 5}`];
+      const antepenult = row[`pct_t${windowSec - 10}`];
+      const acceleration =
+        penult != null && antepenult != null
+          ? (last - penult) - (penult - antepenult)
           : null;
 
-      const monotonicity_0_60   = computeMonotonicity(valid);
-      const path_smoothness_0_60 = computePathSmoothness(valid);
-      const max_drawdown_0_60   = computeMaxDrawdown(valid);
+      const monotonicity   = computeMonotonicity(valid);
+      const path_smoothness = computePathSmoothness(valid);
+      const max_drawdown   = computeMaxDrawdown(valid);
 
-      // Front half (0→30) vs back half (30→60)
-      const early_vs_late_0_60 =
-        row.pct_t30 != null
-          ? row.pct_t30 - (row.pct_t60 - row.pct_t30)
-          : null;
+      // early vs late: first-half gain minus second-half gain
+      const midSec = windowSec / 2;
+      const midPct = row[`pct_t${midSec}`];
+      const early_vs_late =
+        midPct != null ? midPct - (last - midPct) : null;
 
       this.db.prepare(`
         UPDATE graduation_momentum
-        SET acceleration_t60     = ?,
-            monotonicity_0_60    = ?,
-            path_smoothness_0_60 = ?,
-            max_drawdown_0_60    = ?,
-            early_vs_late_0_60   = ?
+        SET acceleration_t${windowSec}      = ?,
+            monotonicity_0_${windowSec}     = ?,
+            path_smoothness_0_${windowSec}  = ?,
+            max_drawdown_0_${windowSec}     = ?,
+            early_vs_late_0_${windowSec}    = ?
         WHERE graduation_id = ?
       `).run(
-        acceleration_t60 != null ? +acceleration_t60.toFixed(3) : null,
-        +monotonicity_0_60.toFixed(3),
-        +path_smoothness_0_60.toFixed(3),
-        +max_drawdown_0_60.toFixed(3),
-        early_vs_late_0_60 != null ? +early_vs_late_0_60.toFixed(3) : null,
+        acceleration != null ? +acceleration.toFixed(3) : null,
+        +monotonicity.toFixed(3),
+        +path_smoothness.toFixed(3),
+        +max_drawdown.toFixed(3),
+        early_vs_late != null ? +early_vs_late.toFixed(3) : null,
         graduationId,
       );
 
-      logger.debug({ graduationId, acceleration_t60, monotonicity_0_60: +monotonicity_0_60.toFixed(3) }, 'T+60 path metrics computed');
+      logger.debug(
+        { graduationId, windowSec, acceleration, monotonicity: +monotonicity.toFixed(3) },
+        `T+${windowSec} path metrics computed`,
+      );
     } catch (err) {
-      logger.warn('Failed to compute T+60 path metrics for grad %d: %s', graduationId,
+      logger.warn('Failed to compute T+%d path metrics for grad %d: %s', windowSec, graduationId,
         err instanceof Error ? err.message : String(err));
     }
   }
