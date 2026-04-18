@@ -4322,19 +4322,125 @@ export function renderExitSimHtml(data: any): string {
     </div>
   `;
 
-  const stubCard = (name: string, status: string, extra = ''): string => `
+  // Generic strategy-grid card builder
+  const paramCols = (c: any, keys: string[]): string =>
+    keys.map((k) => `<td>${c.params[k]}${typeof c.params[k] === 'number' && k.endsWith('_pct') ? '%' : ''}</td>`).join('');
+
+  const gridCard = (
+    title: string, desc: string, strat: any, paramKeys: { key: string; label: string }[],
+  ): string => {
+    const isBest = (c: any) =>
+      strat.best && paramKeys.every(({ key }) => c.params[key] === strat.best.params[key]);
+    const rows = (strat.grid as any[])
+      .slice()
+      .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+      .map((c) => {
+        const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+        const best = isBest(c);
+        return `
+          <tr class="${best ? 'row-baseline' : ''}">
+            ${paramCols(c, paramKeys.map((p) => p.key))}
+            <td>${c.n}${best ? ' ★' : ''}</td>
+            <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+            <td>${fmtWr(c.win_rate_pct)}</td>
+            <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+            <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+          </tr>`;
+      })
+      .join('');
+    const headerCols = paramKeys.map((p) => `<th>${p.label}</th>`).join('');
+    return `
+      <div class="card">
+        <h2>${title}</h2>
+        <div class="desc">${desc}</div>
+        <table>
+          <thead><tr>${headerCols}<th>n</th><th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  };
+
+  const va = d.strategies.vol_adaptive;
+  const scaleOutCard = gridCard(
+    'Strategy 2 — Scale-out / partial exits',
+    'Sell <strong>size_pct</strong> of position at first checkpoint where price ≥ <strong>first_tp</strong>%. ' +
+    'Runner trails <strong>runner_trail</strong>% below its post-partial HWM. Fixed 10% floor SL. ' +
+    'Cost applied once. ★ = optimum (n≥30).',
+    d.strategies.scale_out,
+    [
+      { key: 'first_tp_pct', label: 'First TP' },
+      { key: 'size_pct', label: 'Size %' },
+      { key: 'runner_trail_pct', label: 'Runner trail' },
+    ],
+  );
+
+  const volCard = `
     <div class="card">
-      <h2>${name}</h2>
-      <div class="desc"><span class="yellow">${status}</span>${extra ? ' — ' + extra : ''}</div>
+      <h2>Strategy 3 — Volatility-adaptive trailing</h2>
+      <div class="desc">Trail distance = <strong>k × path_smoothness_0_30</strong>. Activates once price ≥ entry.
+        Rows missing <code>path_smoothness_0_30</code> are skipped: ${va.rows_with_vol}/${d.universe.n_rows} usable.
+        ★ = optimum (n≥30).
+      </div>
+      <table>
+        <thead><tr><th>k</th><th>n</th><th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th></tr></thead>
+        <tbody>
+          ${(va.grid as any[])
+            .slice()
+            .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+            .map((c) => {
+              const best = va.best && c.params.k === va.best.params.k;
+              const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+              return `
+                <tr class="${best ? 'row-baseline' : ''}">
+                  <td>${c.params.k}${best ? ' ★' : ''}</td>
+                  <td>${c.n}</td>
+                  <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+                  <td>${fmtWr(c.win_rate_pct)}</td>
+                  <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+                  <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+                </tr>`;
+            })
+            .join('')}
+        </tbody>
+      </table>
     </div>
   `;
 
-  const scaleOutCard = stubCard('Strategy 2 — Scale-out / partial exits', 'NOT_IMPLEMENTED',
-    'Next follow-up commit. Will land as a multi-leg sim (partial + runner).');
-  const volCard = stubCard('Strategy 3 — Volatility-adaptive trailing', 'NOT_IMPLEMENTED',
-    'Trail distance = k × path_smoothness_0_30. Uses pre-computed column.');
-  const timeCard = stubCard('Strategy 5 — Time-decayed TP ladder', 'NOT_IMPLEMENTED',
-    'Stepped TP targets keyed to available checkpoint times.');
+  const td = d.strategies.time_decayed_tp;
+  const timeCard = `
+    <div class="card">
+      <h2>Strategy 5 — Time-decayed TP ladder</h2>
+      <div class="desc">TP target shrinks with elapsed seconds since entry (T+30). Four preset curves:
+        aggressive · linear · exponential · conservative. Fixed 10% floor SL. ★ = optimum (n≥30).
+      </div>
+      <table>
+        <thead><tr><th>Preset</th><th>Ladder</th><th>n</th><th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th></tr></thead>
+        <tbody>
+          ${(td.grid as any[])
+            .slice()
+            .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+            .map((c) => {
+              const best = td.best && c.params.preset === td.best.params.preset;
+              const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+              const ladder = JSON.parse(c.params.ladder)
+                .map((s: any) => `${s.seconds}s→${s.tpPct}%`).join(', ');
+              return `
+                <tr class="${best ? 'row-baseline' : ''}">
+                  <td>${c.params.preset}${best ? ' ★' : ''}</td>
+                  <td><span class="desc">${ladder}</span></td>
+                  <td>${c.n}</td>
+                  <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+                  <td>${fmtWr(c.win_rate_pct)}</td>
+                  <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+                  <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+                </tr>`;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
 
   const wl = d.strategies.whale_liq;
   const whaleCard = `
