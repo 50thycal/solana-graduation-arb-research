@@ -3,8 +3,9 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml, renderPeakAnalysisHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml } from './utils/html-renderer';
 import { computePeakAnalysis } from './api/peak-analysis';
+import { computeExitSim } from './api/exit-sim';
 import { computeFilterV2Data } from './api/filter-v2-data';
 import { computeTradingData } from './api/trading-data';
 import { getHeavyData } from './api/heavy-cache';
@@ -2215,6 +2216,25 @@ async function main() {
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(renderPeakAnalysisHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── EXIT-SIM (dynamic exit strategy dashboard) ───────────────────────────
+  // Replays alternative exit logic (momentum reversal today; scale-out,
+  // vol-trail, time-decayed TP in follow-ups) vs static 10%SL/50%TP on the
+  // vel<20 + top5<10% universe.
+  app.get('/exit-sim', (req, res) => {
+    try {
+      const data = computeExitSim(db);
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderExitSimHtml(data));
       } else {
         res.json(data);
       }

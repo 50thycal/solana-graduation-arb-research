@@ -37,6 +37,7 @@ import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
+import { computeExitSim } from './exit-sim';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
 import { getHeavyData } from './heavy-cache';
@@ -283,6 +284,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     res.json(computePeakAnalysis(db));
   }));
 
+  // ── /api/exit-sim ──
+  // Dynamic-exit strategy simulator. Evaluates alternative exit logic
+  // (momentum reversal today; scale-out, vol-trail, time-decayed TP in
+  // follow-ups) against the baseline 10%SL/50%TP on a filter universe.
+  // Default universe = vel<20 + top5<10% (current +6.44% baseline).
+  app.get('/api/exit-sim', wrap((_req, res) => {
+    res.json(computeExitSim(db));
+  }));
+
   // ── /api/filter-catalog ──
   // The filter definitions used by /api/best-combos. Useful for Claude to
   // enumerate the search space before proposing new candidates.
@@ -440,6 +450,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
         { path: '/api/panel8',             description: 'Panel 8 (loss tail & risk metrics)' },
         { path: '/api/panel9',             description: 'Panel 9 (equity curve & drawdown simulation)' },
         { path: '/api/panel10',            description: 'Panel 10 (DPM optimizer — optima + top-N tail + aggregates)' },
+        { path: '/api/exit-sim',           description: 'Dynamic-exit strategy simulator (momentum, scale-out, vol-trail, time-decayed TP)' },
         { path: '/api/trading',            description: 'Full /trading data: open positions, performance, trades, skips' },
         { path: '/api/filter-catalog',     description: 'Filter definitions used by best-combos' },
         { path: '/api/trades',         description: 'Recent trades (query: limit, status)' },
