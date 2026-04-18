@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { path: '/filter-analysis', label: 'Filters' },
   { path: '/filter-analysis-v2', label: 'Filters V2' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
+  { path: '/exit-sim', label: 'Exit Sim' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/trading', label: 'Trading' },
@@ -4236,4 +4237,115 @@ export function renderPeakAnalysisHtml(data: any): string {
 
   const body = headerCards + panelA + panelB + panelC + panelD;
   return shell('Peak Analysis', '/peak-analysis', body, d);
+}
+
+// ── EXIT-SIM PAGE ────────────────────────────────────────────────────
+
+export function renderExitSimHtml(data: any): string {
+  const d = data;
+
+  const fmtPct = (v: number | null | undefined): string => {
+    if (v === null || v === undefined) return '<span class="yellow">—</span>';
+    const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+    const sign = v > 0 ? '+' : '';
+    return `<span class="${cls}">${sign}${v.toFixed(2)}%</span>`;
+  };
+
+  const fmtWr = (v: number | null | undefined): string => {
+    if (v === null || v === undefined) return '<span class="yellow">—</span>';
+    const cls = v >= 60 ? 'green' : v >= 50 ? 'yellow' : 'red';
+    return `<span class="${cls}">${v.toFixed(1)}%</span>`;
+  };
+
+  const exitBreakdown = (bd: any): string => {
+    if (!bd) return '';
+    const parts: string[] = [];
+    for (const k of Object.keys(bd)) if (bd[k] > 0) parts.push(`${k}:${bd[k]}`);
+    return parts.join(' · ');
+  };
+
+  // Baseline + universe header
+  const bs = d.baseline_static;
+  const headerCards = `
+    <div class="grid">
+      <div class="card">
+        <h2>Universe</h2>
+        <div class="stat"><span class="label">Label</span><span class="value">${d.universe.label}</span></div>
+        <div class="stat"><span class="label">n rows (post-gate)</span><span class="value">${d.universe.n_rows}</span></div>
+      </div>
+      <div class="card">
+        <h2>Static baseline (10% SL / 50% TP)</h2>
+        <div class="stat"><span class="label">Avg return</span><span class="value">${fmtPct(bs.avg_return_pct)}</span></div>
+        <div class="stat"><span class="label">Win rate</span><span class="value">${fmtWr(bs.win_rate_pct)}</span></div>
+        <div class="stat"><span class="label">n</span><span class="value">${bs.n}</span></div>
+        <div class="desc">Exit mix: ${exitBreakdown(bs.exit_reason_breakdown)}</div>
+      </div>
+    </div>
+  `;
+
+  // Momentum reversal grid
+  const mr = d.strategies.momentum_reversal;
+  const mrRows = (mr.grid as any[])
+    .slice()
+    .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+    .map((c) => {
+      const isBest = mr.best && c.params.drop_from_hwm_pct === mr.best.params.drop_from_hwm_pct
+        && c.params.min_hwm_pct === mr.best.params.min_hwm_pct;
+      const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+      return `
+        <tr class="${isBest ? 'row-baseline' : ''}">
+          <td>${c.params.drop_from_hwm_pct}%${isBest ? ' ★' : ''}</td>
+          <td>${c.params.min_hwm_pct}%</td>
+          <td>${c.n}</td>
+          <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+          <td>${fmtWr(c.win_rate_pct)}</td>
+          <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+          <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+        </tr>`;
+    })
+    .join('');
+
+  const momentumCard = `
+    <div class="card">
+      <h2>Strategy 1 — Momentum reversal</h2>
+      <div class="desc">Exit when price drops <strong>drop_from_hwm</strong>% from the high-water mark in a single
+        checkpoint, but only if HWM is at least <strong>min_hwm</strong>% above entry. Fixed 10% floor SL.
+        Grid sorted by avg return. ★ = optimum (gated by n≥30).
+      </div>
+      <table>
+        <thead><tr>
+          <th>Drop from HWM</th><th>Min HWM above entry</th><th>n</th>
+          <th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th>
+        </tr></thead>
+        <tbody>${mrRows}</tbody>
+      </table>
+    </div>
+  `;
+
+  const stubCard = (name: string, status: string, extra = ''): string => `
+    <div class="card">
+      <h2>${name}</h2>
+      <div class="desc"><span class="yellow">${status}</span>${extra ? ' — ' + extra : ''}</div>
+    </div>
+  `;
+
+  const scaleOutCard = stubCard('Strategy 2 — Scale-out / partial exits', 'NOT_IMPLEMENTED',
+    'Next follow-up commit. Will land as a multi-leg sim (partial + runner).');
+  const volCard = stubCard('Strategy 3 — Volatility-adaptive trailing', 'NOT_IMPLEMENTED',
+    'Trail distance = k × path_smoothness_0_30. Uses pre-computed column.');
+  const timeCard = stubCard('Strategy 5 — Time-decayed TP ladder', 'NOT_IMPLEMENTED',
+    'Stepped TP targets keyed to available checkpoint times.');
+
+  const wl = d.strategies.whale_liq;
+  const whaleCard = `
+    <div class="card">
+      <h2>Strategy 4 — Whale-sell / liquidity drop</h2>
+      <div class="desc"><span class="yellow">DATA_PENDING</span> — requires new collectors:
+        <ul>${(wl.required_data as string[]).map((s) => `<li>${s}</li>`).join('')}</ul>
+      </div>
+    </div>
+  `;
+
+  const body = headerCards + momentumCard + scaleOutCard + volCard + timeCard + whaleCard;
+  return shell('Exit Strategy Simulator', '/exit-sim', body, d);
 }
