@@ -14,33 +14,22 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('price-collector');
 
-// Momentum research schedule: T+0 for open price, then checkpoints for price tracking.
-// Every 5s for the first 60s (for price path shape analysis), then every 30s until T+300,
-// then T+600 for final state.
-const SNAPSHOT_SCHEDULE = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 90, 120, 150, 180, 240, 300, 600];
+// Momentum research schedule: T+0 for open price, then every 5s through T+300
+// (full 5-minute monitoring window, 60 snapshots), plus T+600 for final state.
+const SNAPSHOT_SCHEDULE: number[] = (() => {
+  const s: number[] = [];
+  for (let sec = 0; sec <= 300; sec += 5) s.push(sec);
+  s.push(600);
+  return s;
+})();
 
 // Map snapshot seconds to momentum checkpoint column names
-const CHECKPOINT_MAP: Record<number, string> = {
-  5:  't5',
-  10: 't10',
-  15: 't15',
-  20: 't20',
-  25: 't25',
-  30: 't30',
-  35: 't35',
-  40: 't40',
-  45: 't45',
-  50: 't50',
-  55: 't55',
-  60: 't60',
-  90: 't90',
-  120: 't120',
-  150: 't150',
-  180: 't180',
-  240: 't240',
-  300: 't300',
-  600: 't600',
-};
+const CHECKPOINT_MAP: Record<number, string> = (() => {
+  const m: Record<number, string> = {};
+  for (let sec = 5; sec <= 300; sec += 5) m[sec] = `t${sec}`;
+  m[600] = 't600';
+  return m;
+})();
 
 const LAMPORTS_PER_SOL = new BN(1_000_000_000);
 const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);

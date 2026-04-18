@@ -228,6 +228,17 @@ function runMigrations(db: Database.Database): void {
       ['label_t60', 'TEXT'],                        // PUMP/DUMP/STABLE at T+60
       ['label_t120', 'TEXT'],                       // PUMP/DUMP/STABLE at T+120
     ];
+    // Every-5s price snapshots across the full 300s monitoring window — dedupes against
+    // explicit entries above (t5, t10, ..., t60, t90, t120, t150, t180, t240, t300).
+    {
+      const planned = new Set(newMomCols.map(([c]) => c));
+      for (let sec = 5; sec <= 300; sec += 5) {
+        const priceCol = `price_t${sec}`;
+        const pctCol = `pct_t${sec}`;
+        if (!planned.has(priceCol)) newMomCols.push([priceCol, 'REAL']);
+        if (!planned.has(pctCol)) newMomCols.push([pctCol, 'REAL']);
+      }
+    }
     for (const [col, type] of newMomCols) {
       if (!momExisting.has(col)) {
         db.exec(`ALTER TABLE graduation_momentum ADD COLUMN ${col} ${type}`);
