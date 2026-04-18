@@ -37,6 +37,7 @@ import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
+import { computeExitSim } from './exit-sim';
 import type { LogBuffer } from '../utils/log-buffer';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { vaultPriceCacheStats } from '../trading/executor';
@@ -166,6 +167,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // NOT a tradable filter — kept off /api/best-combos by design.
   app.get('/api/peak-analysis', wrap((_req, res) => {
     res.json(computePeakAnalysis(db));
+  }));
+
+  // ── /api/exit-sim ──
+  // Dynamic-exit strategy simulator. Evaluates alternative exit logic
+  // (momentum reversal today; scale-out, vol-trail, time-decayed TP in
+  // follow-ups) against the baseline 10%SL/50%TP on a filter universe.
+  // Default universe = vel<20 + top5<10% (current +6.44% baseline).
+  app.get('/api/exit-sim', wrap((_req, res) => {
+    res.json(computeExitSim(db));
   }));
 
   // ── /api/filter-catalog ──
