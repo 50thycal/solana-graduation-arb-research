@@ -139,13 +139,28 @@ export function computeBucketBoundaries(rows: RegimeRow[]): { start: number; end
   return boundaries;
 }
 
-export function runFilterRegime(
-  predicate: (r: RegimeRow) => boolean,
-  rows: RegimeRow[],
+/** Default return formula for runFilterRegime — raw T+30 to T+300 after round-trip cost. */
+export const DEFAULT_REGIME_RETURN_FN = (r: RegimeRow): number =>
+  ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100 - r.cost_pct;
+
+/** Default win predicate — Panel 11 uses raw PUMP label. */
+export const DEFAULT_REGIME_WIN_FN = (r: RegimeRow): boolean => r.label === 'PUMP';
+
+/**
+ * Bucket rows into time windows and compute WR / avg return / WR std-dev per bucket.
+ * `returnFn` and `winFn` let callers (e.g. /api/exit-sim) plug in dynamic-exit-aware
+ * logic while reusing the same time-bucket + stability framework. Defaults preserve
+ * Panel 11 behavior: raw T+30→T+300 return after cost, win_rate = PUMP-label rate.
+ */
+export function runFilterRegime<R extends RegimeRow = RegimeRow>(
+  predicate: (r: R) => boolean,
+  rows: R[],
   boundaries: { start: number; end: number }[],
+  returnFn: (r: R) => number = DEFAULT_REGIME_RETURN_FN as (r: R) => number,
+  winFn: (r: R) => boolean = DEFAULT_REGIME_WIN_FN as (r: R) => boolean,
 ) {
-  const buckets: { n: number; pump: number; returns: number[] }[] =
-    Array.from({ length: boundaries.length }, () => ({ n: 0, pump: 0, returns: [] }));
+  const buckets: { n: number; wins: number; returns: number[] }[] =
+    Array.from({ length: boundaries.length }, () => ({ n: 0, wins: 0, returns: [] }));
 
   for (const r of rows) {
     if (!predicate(r)) continue;
@@ -157,14 +172,13 @@ export function runFilterRegime(
     if (bucketIdx < 0) continue;
     const b = buckets[bucketIdx];
     b.n++;
-    if (r.label === 'PUMP') b.pump++;
-    const ret = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100 - r.cost_pct;
-    b.returns.push(ret);
+    if (winFn(r)) b.wins++;
+    b.returns.push(returnFn(r));
   }
 
   const perBucket = buckets.map(b => {
     if (b.n < MIN_BUCKET_N) return { n: b.n, win_rate_pct: null as number | null, avg_return_pct: null as number | null };
-    const wr = +(b.pump / b.n * 100).toFixed(1);
+    const wr = +(b.wins / b.n * 100).toFixed(1);
     const avgRet = +(b.returns.reduce((s, v) => s + v, 0) / b.returns.length).toFixed(1);
     return { n: b.n, win_rate_pct: wr, avg_return_pct: avgRet };
   });
