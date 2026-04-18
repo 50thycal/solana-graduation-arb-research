@@ -373,10 +373,13 @@ export function updateMomentumEnrichment(
 
 // Fix Issue 4: whitelist prevents SQL column-name injection if a future caller
 // passes unsanitized input. All current callers use values from CHECKPOINT_MAP.
-const VALID_MOMENTUM_CHECKPOINTS = new Set([
-  't5','t10','t15','t20','t25','t30','t35','t40','t45','t50','t55',
-  't60','t90','t120','t150','t180','t240','t300','t600',
-]);
+// Every 5s from t5 through t300 (5-min monitoring window) + t600 final-state snapshot.
+const VALID_MOMENTUM_CHECKPOINTS: Set<string> = (() => {
+  const s = new Set<string>();
+  for (let sec = 5; sec <= 300; sec += 5) s.add(`t${sec}`);
+  s.add('t600');
+  return s;
+})();
 
 export function updateMomentumPrice(
   db: Database.Database,
