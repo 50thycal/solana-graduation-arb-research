@@ -186,6 +186,12 @@ export interface GridCell {
 
 const MIN_N_FOR_BEST = 30;
 
+const emptyBreakdown = (): Record<ExitReason, number> => ({
+  stop_loss: 0, momentum_reversal: 0,
+  scale_out_partial_plus_sl: 0, scale_out_partial_plus_trail: 0, scale_out_partial_plus_timeout: 0,
+  vol_trail: 0, time_decayed_tp: 0, timeout: 0,
+});
+
 export function evaluateMomentumReversalGrid(
   rows: ExitSimRow[],
   universe: UniversePredicate,
@@ -202,7 +208,7 @@ export function evaluateMomentumReversalGrid(
         stopLossPct: fixedSlPct,
         momentumReversal: { dropFromHwmPct: drop, minHwmPct: minHwm },
       };
-      const breakdown: Record<ExitReason, number> = { stop_loss: 0, momentum_reversal: 0, timeout: 0 };
+      const breakdown: Record<ExitReason, number> = emptyBreakdown();
       let sum = 0;
       let wins = 0;
       const n = filtered.length;
@@ -323,11 +329,7 @@ export function evaluateScaleOutGrid(
   const cells: GridCell[] = [];
 
   for (const tp of firstTpGrid) for (const size of sizeGrid) for (const trail of trailGrid) {
-    const bd: Record<ExitReason, number> = {
-      stop_loss: 0, momentum_reversal: 0,
-      scale_out_partial_plus_sl: 0, scale_out_partial_plus_trail: 0, scale_out_partial_plus_timeout: 0,
-      vol_trail: 0, time_decayed_tp: 0, timeout: 0,
-    };
+    const bd = emptyBreakdown();
     let sum = 0, wins = 0;
     for (const r of filtered) {
       const out = simulateScaleOut(r, { stopLossPct: fixedSlPct, scaleOut: { firstTpPct: tp, firstTpSizePct: size, runnerTrailPct: trail } });
@@ -411,11 +413,7 @@ export function evaluateVolAdaptiveGrid(
   const cells: GridCell[] = [];
 
   for (const k of kGrid) {
-    const bd: Record<ExitReason, number> = {
-      stop_loss: 0, momentum_reversal: 0,
-      scale_out_partial_plus_sl: 0, scale_out_partial_plus_trail: 0, scale_out_partial_plus_timeout: 0,
-      vol_trail: 0, time_decayed_tp: 0, timeout: 0,
-    };
+    const bd = emptyBreakdown();
     let sum = 0, wins = 0, n = 0;
     for (const r of filtered) {
       const out = simulateVolAdaptive(r, { stopLossPct: fixedSlPct, vol: { k } });
@@ -501,11 +499,7 @@ export function evaluateTimeDecayedTpGrid(
   const cells: GridCell[] = [];
 
   for (const preset of TP_LADDER_PRESETS) {
-    const bd: Record<ExitReason, number> = {
-      stop_loss: 0, momentum_reversal: 0,
-      scale_out_partial_plus_sl: 0, scale_out_partial_plus_trail: 0, scale_out_partial_plus_timeout: 0,
-      vol_trail: 0, time_decayed_tp: 0, timeout: 0,
-    };
+    const bd = emptyBreakdown();
     let sum = 0, wins = 0;
     for (const r of filtered) {
       const out = simulateTimeDecayedTp(r, { stopLossPct: fixedSlPct, ladder: preset.ladder });
@@ -550,11 +544,7 @@ export interface ExitSimReport {
 /** Static 10%SL/50%TP baseline cell — recomputed inline to keep this file self-contained. */
 function computeStaticBaseline(rows: ExitSimRow[], universe: UniversePredicate): GridCell {
   const filtered = rows.filter(universe);
-  const breakdown: Record<ExitReason, number> = {
-    stop_loss: 0, momentum_reversal: 0,
-    scale_out_partial_plus_sl: 0, scale_out_partial_plus_trail: 0, scale_out_partial_plus_timeout: 0,
-    vol_trail: 0, time_decayed_tp: 0, timeout: 0,
-  };
+  const breakdown = emptyBreakdown();
   let sum = 0;
   let wins = 0;
   const SL = 10, TP = 50;
