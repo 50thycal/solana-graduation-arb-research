@@ -1,4 +1,4 @@
-# CLAUDE.md — Mission & Operating Instructions
+# CLAUDE.md — Mission & Operating Instructions 
 
 ## MISSION
 
@@ -233,6 +233,18 @@ Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These
 6. **`price-path-stats.json`** → mean price paths by label, Cohen's d effect sizes for path features, entry timing optimization.
 7. **`trades.json`** → paper trading performance: stats, by-strategy breakdown, recent trades.
 
+#### Drill-down files (consult when a specific question comes up)
+
+- **`panel1.json` / `panel2.json` / `panel5.json`** — single-feature filter comparison (with T+60/T+120 variants), return percentiles (MAE/MFE/Final), Wilson CI + bootstrap significance. Use when evaluating whether an apparent edge is statistically real.
+- **`panel4.json`** — TP/SL EV simulator with 12×10 grid + T+60/T+120 hold variants. Use when tuning TP/SL for a promising filter.
+- **`panel6.json`** — auto-scanned top pairs leaderboard (1378 two-way combos, plus T+60/T+120). Use when hunting for cross-dimension combos beyond `/api/best-combos`.
+- **`panel7.json`** — walk-forward validation (train 70% / test 30%). Use to check whether a filter's optimum is robust or overfit.
+- **`panel8.json`** — loss tail & risk metrics (CVaR, worst trade, max consecutive losses). Use when a candidate has a suspicious win-rate vs avg-return profile.
+- **`panel9.json`** — equity curve & drawdown simulation. Use for the portfolio-level view of a filter.
+- **`panel10.json`** — DPM optimizer results: per-filter optimum + top 10 runners-up + category/overall aggregates. Use when tuning trailing SL, breakeven, SL delay etc. on top of fixed 30/10 base TP/SL.
+- **`price-path-detail.json`** — full `/price-path` data: overlay (≤200 raw token paths), mean paths ±1 SD, Cohen's d, acceleration histogram, entry-timing heatmap, monotonicity buckets. Use when designing path-shape filters.
+- **`trading.json`** — full `/trading` dashboard: open positions, performance by strategy, recent trades (50), skips + reasons, active configs. Use to monitor live paper trading.
+
 #### Example: reading trades data via GitHub MCP + python3
 ```
 # 1. Fetch via MCP (result saved to a temp file when large)
@@ -279,16 +291,45 @@ This pattern works reliably. The file path comes from the MCP error message — 
 
 ### File catalogue (on `bot-status` branch)
 
+Core / session-start:
+
 | File | Corresponding API | Description |
 |---|---|---|
 | `diagnose.json` | `/api/diagnose` | Level 1–4 bug triage verdict |
 | `snapshot.json` | `/api/snapshot` | Dashboard summary: counts, scorecard, data quality, recent graduations |
 | `best-combos.json` | `/api/best-combos` | Filter + combo leaderboard ranked by sim return |
-| `panel3.json` | `/api/panel3` | Single-filter regime stability |
-| `panel11.json` | `/api/panel11` | Combo regime stability |
-| `price-path-stats.json` | `/api/price-path-stats` | Mean price paths by label, Cohen's d, entry timing |
 | `trades.json` | `/api/trades` | Paper trading: stats, by-strategy breakdown, recent trades |
 | `strategies.json` | `/api/strategies` | All strategy configs incl. DPM params (TP/SL, trailing SL, breakeven, etc.) |
+
+Filter-analysis-v2 panels (one file per panel family; variants like T+60/T+120 grouped into the parent panel file):
+
+| File | Corresponding API | Description |
+|---|---|---|
+| `panel1.json` | `/api/panel1` | Single-feature filter comparison + T+60 and T+120 horizon variants |
+| `panel2.json` | `/api/panel2` | T+30-anchored return percentiles (MAE / MFE / Final) + Sharpe-ish |
+| `panel3.json` | `/api/panel3` | Single-filter regime stability across time buckets |
+| `panel4.json` | `/api/panel4` | TP/SL EV simulator (12×10 grid) + T+60 / T+120 hold variants |
+| `panel5.json` | `/api/panel5` | Wilson CI + bootstrap significance at per-filter optimum |
+| `panel6.json` | `/api/panel6` | Multi-filter intersection — top pairs (auto-scanned) for T+300, T+60, T+120 |
+| `panel7.json` | `/api/panel7` | Walk-forward validation — train 70% / test 30% |
+| `panel8.json` | `/api/panel8` | Loss tail & risk metrics at per-filter optimum (CVaR, worst trade, max loss streak) |
+| `panel9.json` | `/api/panel9` | Equity curve & drawdown simulation (sparkline, max DD, Sharpe, Kelly) |
+| `panel10.json` | `/api/panel10` | DPM optimizer — per-filter optimum + top 10 runners-up + category/overall aggregates |
+| `panel11.json` | `/api/panel11` | Combo filter regime stability (cross-group pairs) |
+
+Price-path dashboard:
+
+| File | Corresponding API | Description |
+|---|---|---|
+| `price-path-stats.json` | `/api/price-path-stats` | Compact price path stats: mean paths by label, Cohen's d, entry timing |
+| `price-path-detail.json` | `/api/price-path-detail` | Full /price-path data: overlay (≤200 raw token paths), mean paths ±1 SD, derived metrics, acceleration histogram, entry-timing heatmap, monotonicity buckets |
+
+Peak analysis and trading:
+
+| File | Corresponding API | Description |
+|---|---|---|
+| `peak-analysis.json` | `/api/peak-analysis` | Peak CDF, peak time histogram, per-filter peak bucket, suggested TP |
+| `trading.json` | `/api/trading` | Full /trading dashboard: open positions, per-strategy performance, recent trades (50), skip reasons + recent skips, active strategy configs, top filter combos |
 
 ### Pushing strategy commands (create/update/delete strategies remotely)
 
