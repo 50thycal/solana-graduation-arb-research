@@ -239,6 +239,15 @@ function runMigrations(db: Database.Database): void {
         if (!planned.has(pctCol)) newMomCols.push([pctCol, 'REAL']);
       }
     }
+    // Path-shape metrics over longer horizons (0-120, 0-180, 0-300). Only populated
+    // for graduations with the full every-5s snapshot grid — pre-rollout rows stay NULL.
+    for (const win of [120, 180, 300] as const) {
+      newMomCols.push([`acceleration_t${win}`, 'REAL']);
+      newMomCols.push([`monotonicity_0_${win}`, 'REAL']);
+      newMomCols.push([`path_smoothness_0_${win}`, 'REAL']);
+      newMomCols.push([`max_drawdown_0_${win}`, 'REAL']);
+      newMomCols.push([`early_vs_late_0_${win}`, 'REAL']);
+    }
     for (const [col, type] of newMomCols) {
       if (!momExisting.has(col)) {
         db.exec(`ALTER TABLE graduation_momentum ADD COLUMN ${col} ${type}`);

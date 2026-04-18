@@ -26,13 +26,15 @@ import {
 const ENTRY_GATE_SQL =
   'pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100 AND pct_t300 IS NOT NULL';
 
-// Checkpoints walked AFTER entry at T+30. Includes the 5s-granular
-// 30-60s checkpoints that Panel 4 currently skips (it starts at t40).
+// Checkpoints walked AFTER entry at T+30 — every 5s from T+35 through T+295.
+// Rows from before the every-5s collection rollout have NULLs for t65-t295;
+// the walk tolerates this via `if (v == null) continue`.
 // Final fall-through is at pct_t300.
-const CHECKPOINTS = [
-  'pct_t35','pct_t40','pct_t45','pct_t50','pct_t55','pct_t60',
-  'pct_t90','pct_t120','pct_t150','pct_t180','pct_t240',
-] as const;
+const CHECKPOINTS: readonly `pct_t${number}`[] = (() => {
+  const cps: `pct_t${number}`[] = [];
+  for (let sec = 35; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
+  return cps;
+})();
 type Checkpoint = typeof CHECKPOINTS[number];
 
 // ── Row type ──────────────────────────────────────────────────────────
@@ -41,17 +43,13 @@ export type ExitSimRow = {
   created_at: number;
   label: string;
   pct_t30: number;
-  pct_t35: number | null; pct_t40: number | null; pct_t45: number | null;
-  pct_t50: number | null; pct_t55: number | null; pct_t60: number | null;
-  pct_t90: number | null; pct_t120: number | null; pct_t150: number | null;
-  pct_t180: number | null; pct_t240: number | null;
   pct_t300: number;
   cost_pct: number;
   path_smoothness_0_30: number | null;
   // filter columns for universe selection
   bc_velocity_sol_per_min: number | null;
   top5_wallet_pct: number | null;
-};
+} & { [K in Checkpoint]: number | null };
 
 // ── Strategy params ────────────────────────────────────────────────────
 
@@ -84,11 +82,16 @@ export interface SimResult {
   net_return_pct: number;       // cost-adjusted
 }
 
-const CHECKPOINT_SECONDS: Record<Checkpoint | 'pct_t300', number> = {
-  pct_t35: 5,   pct_t40: 10,  pct_t45: 15,  pct_t50: 20,
-  pct_t55: 25,  pct_t60: 30,  pct_t90: 60,  pct_t120: 90,
-  pct_t150: 120, pct_t180: 150, pct_t240: 210, pct_t300: 270,
-};
+// pct_tN → seconds since T+30 entry (N - 30). pct_t300 → 270.
+const CHECKPOINT_SECONDS: Record<Checkpoint | 'pct_t300', number> = (() => {
+  const m = {} as Record<Checkpoint | 'pct_t300', number>;
+  for (const cp of CHECKPOINTS) {
+    const sec = Number(cp.slice('pct_t'.length));
+    m[cp] = sec - 30;
+  }
+  m['pct_t300'] = 270;
+  return m;
+})();
 
 // ── Core sim ───────────────────────────────────────────────────────────
 
@@ -150,11 +153,12 @@ export function simulateDynamicExit(r: ExitSimRow, p: DynamicExitParams): SimRes
 // ── DB loader ─────────────────────────────────────────────────────────
 
 export function loadExitSimRows(db: Database.Database): ExitSimRow[] {
+  // pct_t30 / pct_t300 are entry + timeout; CHECKPOINTS are the walk (t35…t295).
+  const walkCols = CHECKPOINTS.join(', ');
   return db.prepare(`
     SELECT
       created_at, label,
-      pct_t30, pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60,
-      pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
+      pct_t30, ${walkCols}, pct_t300,
       COALESCE(round_trip_slippage_pct, ${SIM_DEFAULT_COST_PCT}) as cost_pct,
       path_smoothness_0_30,
       bc_velocity_sol_per_min, top5_wallet_pct

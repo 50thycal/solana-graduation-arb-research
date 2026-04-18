@@ -839,7 +839,13 @@ async function main() {
       let bestFilter: { name: string; rule: string; win_rate: number; sim_avg_return: number | null; sample_size: number } | null = null;
       if (totalLabeled >= 5) {
         const SL_G = 0.30, TP_G = 0.10, DEF_COST = 3.0;  // SL gap recalibrated 2026-04-15
-        const simCols = ['pct_t60','pct_t90','pct_t120','pct_t150','pct_t180','pct_t240','pct_t300'] as const;
+        // Every 5s from T+60 through T+295 (then pct_t300 fall-through). Pre-rollout
+        // rows have NULLs past the old sparse set; the walk skips NULLs at line 880.
+        const simCols: readonly `pct_t${number}`[] = (() => {
+          const cps: `pct_t${number}`[] = [];
+          for (let sec = 60; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
+          return cps;
+        })();
         const filterTests = [
           // Current baseline + top candidates (per CLAUDE.md research state)
           { name: 'vel<20 + top5<10%',        sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
@@ -858,7 +864,7 @@ async function main() {
         for (const ft of filterTests) {
           // Fetch tokens matching filter + T+30 entry gate with price checkpoints
           const rows = db.prepare(`
-            SELECT pct_t30, pct_t60, pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
+            SELECT pct_t30, ${simCols.join(', ')}, pct_t300,
                    round_trip_slippage_pct, label
             FROM graduation_momentum
             WHERE label IS NOT NULL
@@ -1120,14 +1126,16 @@ async function main() {
           let bestRet: number | null = null;
           const SL_G = 0.30, TP_G = 0.10, DEF_COST = 3.0;  // SL gap recalibrated 2026-04-15
           const entryTimes = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] as const;
-          const checkCols = ['pct_t5','pct_t10','pct_t15','pct_t20','pct_t25','pct_t30',
-            'pct_t35','pct_t40','pct_t45','pct_t50','pct_t55','pct_t60',
-            'pct_t90','pct_t120','pct_t150','pct_t180','pct_t240'] as const;
+          // Entry points: T+5..T+60. Exit walk: every 5s through T+295 so post-entry
+          // simulation uses the full grid on new-schema rows (pre-rollout rows skip NULLs).
+          const checkCols: readonly `pct_t${number}`[] = (() => {
+            const cps: `pct_t${number}`[] = [];
+            for (let sec = 5; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
+            return cps;
+          })();
           const allSim = db.prepare(`
             SELECT round_trip_slippage_pct,
-                   pct_t5, pct_t10, pct_t15, pct_t20, pct_t25, pct_t30,
-                   pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60,
-                   pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300
+                   ${checkCols.join(', ')}, pct_t300
             FROM graduation_momentum
             WHERE label IS NOT NULL AND pct_t5 IS NOT NULL
           `).all() as any[];
@@ -1517,8 +1525,12 @@ async function main() {
         // Limitation: intra-checkpoint dips are invisible → slightly optimistic.
         stop_loss_simulation: (() => {
           // simulate(minPct, maxPct, stopPct, extraWhere?, label?) — enter at T+30, stop out at stopPct loss
-          // Uses granular checkpoints T+40/T+50/T+60/T+90/T+120/T+150/T+180/T+240 for accurate stop detection
-          const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
+          // Every 5s from T+40 to T+295. Pre-rollout rows have NULL past the old sparse set; walk skips NULLs.
+          const stopCheckpoints: readonly `pct_t${number}`[] = (() => {
+            const cps: `pct_t${number}`[] = [];
+            for (let sec = 40; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
+            return cps;
+          })();
           // Gap penalties for thin-pool execution reality
           // Recalibrated 2026-04-15: live SL fills realize at -34% to -40% vs -28% (10*1.2) sim estimate
           const SL_GAP_PENALTY_PCT = 0.30; // SL fills 30% worse than target (adverse gap-through)
@@ -1704,7 +1716,12 @@ async function main() {
         // Monotonicity-based entry filters. Only tokens with 5s snapshots have this field.
         // n is smaller than the main cohort — flag clearly in the UI.
         path_shape_filters: (() => {
-          const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
+          // Every 5s from T+40 to T+295 (pre-rollout rows skipped via null-check).
+          const stopCheckpoints: readonly `pct_t${number}`[] = (() => {
+            const cps: `pct_t${number}`[] = [];
+            for (let sec = 40; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
+            return cps;
+          })();
           const SL_GAP_PENALTY_PCT = 0.30; // recalibrated 2026-04-15
           const TP_GAP_PENALTY_PCT = 0.10;
 

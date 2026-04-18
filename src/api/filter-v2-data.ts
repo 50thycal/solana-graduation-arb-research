@@ -47,18 +47,10 @@ export function computeFilterV2Data(
         max_relret_0_300: number | null;
       };
 
-      // ── Panel 4 row type: RegimeRow + TP/SL checkpoints and fall-through column ──
-      type Panel4Row = RegimeRow & {
-        pct_t40: number | null;
-        pct_t50: number | null;
-        pct_t60: number | null;
-        pct_t90: number | null;
-        pct_t120: number | null;
-        pct_t150: number | null;
-        pct_t180: number | null;
-        pct_t240: number | null;
-        // pct_t300 already on RegimeRow (number, non-null for eligible rows)
-      };
+      // ── Panel 4 row type: RegimeRow + TP/SL checkpoint walk (every 5s, t40-t295).
+      // pct_t300 already on RegimeRow (number, non-null for eligible rows). ──
+      type Panel4Checkpoint = `pct_t${number}`;
+      type Panel4Row = RegimeRow & { [K in Panel4Checkpoint]?: number | null };
 
       type FilterDef = {
         name: string;
@@ -261,11 +253,13 @@ export function computeFilterV2Data(
         return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
       };
 
-      // Snapshot columns scanned for MAE/MFE (T+30 through T+300 inclusive)
-      const SNAPSHOT_COLS = [
-        'price_t30', 'price_t35', 'price_t40', 'price_t45', 'price_t50', 'price_t55', 'price_t60',
-        'price_t90', 'price_t120', 'price_t150', 'price_t180', 'price_t240', 'price_t300',
-      ];
+      // Snapshot columns scanned for MAE/MFE — every 5s from T+30 through T+300 inclusive.
+      // Pre-rollout rows have NULL for t65-t295; the window builder skips them.
+      const SNAPSHOT_COLS: string[] = (() => {
+        const cols: string[] = [];
+        for (let sec = 30; sec <= 300; sec += 5) cols.push(`price_t${sec}`);
+        return cols;
+      })();
 
       type SnapshotRow = Record<string, number | null>;
 
@@ -506,7 +500,13 @@ export function computeFilterV2Data(
       // SL gap recalibrated 2026-04-15 from 0.20 -> 0.30 (live SL fills observed at -34% to -40%)
       const PANEL_4_SL_GAP_PENALTY = 0.30;
       const PANEL_4_TP_GAP_PENALTY = 0.10;
-      const PANEL_4_CHECKPOINTS = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
+      // Every 5s from T+40 to T+295. Pre-rollout rows have NULL past t60 / sparse 60-300;
+      // the walk skips them via `if (v == null) continue`.
+      const PANEL_4_CHECKPOINTS: readonly `pct_t${number}`[] = (() => {
+        const cps: `pct_t${number}`[] = [];
+        for (let sec = 40; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
+        return cps;
+      })();
       const PANEL_4_TP_GRID = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150] as const;
       const PANEL_4_SL_GRID = [3, 4, 5, 7.5, 10, 12.5, 15, 20, 25, 30] as const;
       const PANEL_4_DEFAULT_TP = 30;
@@ -516,10 +516,11 @@ export function computeFilterV2Data(
 
       // Single load: all eligible rows for Panel 4.
       // Stricter than regimeRows: also guards against pct_t30 <= -99 (division pathology).
+      const panel4WalkCols = PANEL_4_CHECKPOINTS.join(', ');
       const panel4Rows = db.prepare(`
         SELECT
           created_at, label,
-          pct_t30, pct_t40, pct_t50, pct_t60, pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
+          pct_t30, ${panel4WalkCols}, pct_t300,
           COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT_V2}) as cost_pct,
           bc_velocity_sol_per_min, token_age_seconds, holder_count, top5_wallet_pct,
           dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,

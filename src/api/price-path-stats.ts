@@ -15,17 +15,17 @@
 
 import Database from 'better-sqlite3';
 
-const CHECKPOINTS = ['t5','t10','t15','t20','t25','t30','t35','t40','t45','t50','t55','t60','t90','t120','t150','t180','t240','t300'] as const;
+// Every 5s from T+5 through T+300. Pre-rollout rows have NULL for t65-t295;
+// the mean-path aggregator filters NULLs per checkpoint before averaging.
+const CHECKPOINTS: readonly `t${number}`[] = (() => {
+  const cps: `t${number}`[] = [];
+  for (let sec = 5; sec <= 300; sec += 5) cps.push(`t${sec}` as const);
+  return cps;
+})();
 type Checkpoint = typeof CHECKPOINTS[number];
 
 type RawRow = {
   label: 'PUMP' | 'DUMP' | 'STABLE';
-  pct_t5: number | null; pct_t10: number | null; pct_t15: number | null;
-  pct_t20: number | null; pct_t25: number | null; pct_t30: number | null;
-  pct_t35: number | null; pct_t40: number | null; pct_t45: number | null;
-  pct_t50: number | null; pct_t55: number | null; pct_t60: number | null;
-  pct_t90: number | null; pct_t120: number | null; pct_t150: number | null;
-  pct_t180: number | null; pct_t240: number | null; pct_t300: number | null;
   acceleration_t30: number | null;
   monotonicity_0_30: number | null;
   path_smoothness_0_30: number | null;
@@ -34,7 +34,7 @@ type RawRow = {
   early_vs_late_0_30: number | null;
   bc_velocity_sol_per_min: number | null;
   round_trip_slippage_pct: number | null;
-};
+} & { [K in `pct_${Checkpoint}`]?: number | null };
 
 function mean(vals: number[]): number {
   if (vals.length === 0) return 0;
@@ -91,11 +91,10 @@ export interface PricePathStats {
 }
 
 export function computePricePathStats(db: Database.Database): PricePathStats {
+  const pctCols = CHECKPOINTS.map(cp => `pct_${cp}`).join(', ');
   const rows = db.prepare(`
     SELECT label,
-      pct_t5, pct_t10, pct_t15, pct_t20, pct_t25, pct_t30,
-      pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60,
-      pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
+      ${pctCols},
       acceleration_t30, monotonicity_0_30, path_smoothness_0_30,
       max_drawdown_0_30, dip_and_recover_flag, early_vs_late_0_30,
       bc_velocity_sol_per_min,
