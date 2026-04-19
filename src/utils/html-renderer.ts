@@ -312,6 +312,8 @@ export function renderThesisHtml(data: any): string {
     <div class="stat"><span class="label">Null Fields</span><span class="value">${typeof dq.null_fields_in_last_10 === 'string' ? `<span class="green">${dq.null_fields_in_last_10}</span>` : `<span class="yellow">${dq.null_fields_in_last_10.length} fields</span>`}</span></div>
     <div class="stat"><span class="label">Stale Data</span><span class="value ${dq.last_grad_stale ? 'yellow' : 'green'}">${dq.last_grad_stale ? 'YES' : 'NO'}</span></div>
     <div class="stat"><span class="label">WS Connected</span><span class="value ${dq.listener_connected ? 'green' : 'red'}">${dq.listener_connected ? 'YES' : 'NO'}</span></div>
+    <div class="stat"><span class="label">Full 5s Grid Coverage</span><span class="value ${(dq.full_5s_grid_pct ?? 0) >= 50 ? 'green' : 'yellow'}">${dq.full_5s_grid_count ?? 0} / ${dq.complete_observations_count ?? 0}${dq.full_5s_grid_pct != null ? ` (${dq.full_5s_grid_pct}%)` : ''}</span></div>
+    <div class="desc" style="font-size:11px;margin-top:4px">Complete observations (pct_t300 present) with every pct_tN from t5..t300 populated.</div>
   </div>`;
 
   const pd = d.path_data_summary;

@@ -1108,12 +1108,31 @@ async function main() {
         last_10: last10,
 
         // ── DATA QUALITY ──
-        data_quality: {
-          price_source_pumpswap: allHavePumpswapPool,
-          null_fields_in_last_10: nullsInLast10.length > 0 ? nullsInLast10 : 'CLEAN',
-          last_grad_seconds_ago: lastGradSecondsAgo,
-          listener_connected: listenerStats?.wsConnected ?? false,
-        },
+        data_quality: (() => {
+          // Full 5s grid coverage — what share of complete observations have every
+          // pct_tN from t5..t300 populated? Pre-rollout rows miss t65..t295.
+          const gridNotNull = (() => {
+            const parts: string[] = [];
+            for (let sec = 5; sec <= 300; sec += 5) parts.push(`pct_t${sec} IS NOT NULL`);
+            return parts.join(' AND ');
+          })();
+          const fullGrid = (db.prepare(
+            `SELECT COUNT(*) AS n FROM graduation_momentum WHERE ${gridNotNull}`,
+          ).get() as { n: number }).n;
+          const completeObs = (db.prepare(
+            'SELECT COUNT(*) AS n FROM graduation_momentum WHERE pct_t300 IS NOT NULL',
+          ).get() as { n: number }).n;
+          const fullGridPct = completeObs > 0 ? +(fullGrid / completeObs * 100).toFixed(1) : null;
+          return {
+            price_source_pumpswap: allHavePumpswapPool,
+            null_fields_in_last_10: nullsInLast10.length > 0 ? nullsInLast10 : 'CLEAN',
+            last_grad_seconds_ago: lastGradSecondsAgo,
+            listener_connected: listenerStats?.wsConnected ?? false,
+            full_5s_grid_count: fullGrid,
+            complete_observations_count: completeObs,
+            full_5s_grid_pct: fullGridPct,
+          };
+        })(),
 
         // ── PATH DATA SUMMARY ──
         path_data_summary: (() => {
