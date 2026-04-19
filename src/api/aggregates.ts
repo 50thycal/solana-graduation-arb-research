@@ -50,6 +50,12 @@ export interface DataQualityFlags {
   last_graduation_seconds_ago: number | null;
   stalled: boolean;
   timestamp_drift_detected: boolean;
+  /** Rows where every pct_t5..pct_t300 (60 checkpoints, every 5s) is non-null. */
+  full_5s_grid_count: number;
+  /** Rows with pct_t300 non-null (complete 300s observation). Denominator for full_5s_grid_pct. */
+  complete_observations_count: number;
+  /** full_5s_grid_count / complete_observations_count, as percentage. Null if no complete obs. */
+  full_5s_grid_pct: number | null;
 }
 
 export interface EnrichedGraduation {
@@ -201,12 +207,31 @@ export function computeDataQualityFlags(db: Database.Database): DataQualityFlags
   // (skip for now — return false; the v2 panel regime check is richer, handle there)
   const timestampDrift = false;
 
+  // Full 5s grid coverage — what % of complete observations have every pct_tN populated?
+  // Pre-rollout rows have NULLs for t65..t295; this surfaces how much of the collected
+  // dataset can be used by the widened simulators and new long-horizon path metrics.
+  const gridCols: string[] = [];
+  for (let sec = 5; sec <= 300; sec += 5) gridCols.push(`pct_t${sec}`);
+  const gridNotNull = gridCols.map(c => `${c} IS NOT NULL`).join(' AND ');
+  const fullGridCount = (db.prepare(
+    `SELECT COUNT(*) AS n FROM graduation_momentum WHERE ${gridNotNull}`
+  ).get() as { n: number }).n;
+  const completeObsCount = (db.prepare(
+    'SELECT COUNT(*) AS n FROM graduation_momentum WHERE pct_t300 IS NOT NULL'
+  ).get() as { n: number }).n;
+  const fullGridPct = completeObsCount > 0
+    ? +(fullGridCount / completeObsCount * 100).toFixed(1)
+    : null;
+
   return {
     price_source_pumpswap_all_last_10: allHavePumpswap,
     null_fields_in_last_10: nullFields,
     last_graduation_seconds_ago: lastGradSecondsAgo,
     stalled: lastGradSecondsAgo !== null && lastGradSecondsAgo > 600,
     timestamp_drift_detected: timestampDrift,
+    full_5s_grid_count: fullGridCount,
+    complete_observations_count: completeObsCount,
+    full_5s_grid_pct: fullGridPct,
   };
 }
 
