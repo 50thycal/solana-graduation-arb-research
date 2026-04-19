@@ -38,6 +38,7 @@ import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
 import { computeExitSim } from './exit-sim';
+import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
 import { getHeavyData } from './heavy-cache';
@@ -148,6 +149,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       include_pairs: includePairs,
     });
     res.json(leaderboard);
+  }));
+
+  // ── /api/wallet-rep-analysis ──
+  // Top 20 combos × creator-wallet-rep filters: matrix of sim-return deltas
+  // and a "best rep filter overall" summary. Reuses simulateCombo() from
+  // aggregates.ts so the cost/gap model matches /api/best-combos exactly.
+  app.get('/api/wallet-rep-analysis', wrap((_req, res) => {
+    res.json(computeWalletRepAnalysis(db));
   }));
 
   // ── /api/panel3 ──

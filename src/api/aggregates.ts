@@ -368,7 +368,125 @@ export const FILTER_CATALOG: FilterDef[] = [
 ];
 
 /** Entry gate shared by all candidates — matches the baseline. */
-const ENTRY_GATE = 'pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100 AND pct_t300 IS NOT NULL';
+export const ENTRY_GATE = 'pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100 AND pct_t300 IS NOT NULL';
+
+export interface SimulateComboResult {
+  n: number;
+  pump: number;
+  avg_return_t30_to_t300_pct: number | null;
+  sim_avg_return_pct: number | null;
+  sim_win_rate_pct: number | null;
+}
+
+/**
+ * Run the 10%SL/50%TP simulation against `graduation_momentum` restricted to
+ * rows matching `whereClause` (combined with the shared ENTRY_GATE + label gate).
+ * Factored out so /api/wallet-rep-analysis can reuse the same cost/gap model
+ * that powers /api/best-combos. Pass a trusted WHERE clause (no user input).
+ */
+export function simulateCombo(
+  db: Database.Database,
+  whereClause: string,
+): SimulateComboResult {
+  const stats = db.prepare(`
+    SELECT
+      COUNT(*) as n,
+      SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pump,
+      AVG((1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) * 100.0 - 100.0) as avg_return
+    FROM graduation_momentum
+    WHERE label IS NOT NULL
+      AND ${ENTRY_GATE}
+      AND (${whereClause})
+  `).get() as { n: number; pump: number; avg_return: number | null };
+
+  if (stats.n === 0) {
+    return {
+      n: 0,
+      pump: 0,
+      avg_return_t30_to_t300_pct: null,
+      sim_avg_return_pct: null,
+      sim_win_rate_pct: null,
+    };
+  }
+
+  const simRows = db.prepare(`
+    SELECT
+      pct_t30, pct_t40, pct_t50, pct_t60, pct_t90,
+      pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
+      round_trip_slippage_pct
+    FROM graduation_momentum
+    WHERE label IS NOT NULL
+      AND ${ENTRY_GATE}
+      AND (${whereClause})
+  `).all() as Array<{
+    pct_t30: number;
+    pct_t40: number | null;
+    pct_t50: number | null;
+    pct_t60: number | null;
+    pct_t90: number | null;
+    pct_t120: number | null;
+    pct_t150: number | null;
+    pct_t180: number | null;
+    pct_t240: number | null;
+    pct_t300: number;
+    round_trip_slippage_pct: number | null;
+  }>;
+
+  let simSum = 0;
+  let simWins = 0;
+  let simN = 0;
+  const SL_GAP = 0.30;   // adverse gap on stop-loss exits — price-multiplier model, mirrors trade-logger.ts:112
+  const TP_GAP = 0.10;   // adverse gap on take-profit exits
+  const DEFAULT_COST = 3.0;
+  const checkpoints: Array<'pct_t40'|'pct_t50'|'pct_t60'|'pct_t90'|'pct_t120'|'pct_t150'|'pct_t180'|'pct_t240'|'pct_t300'> =
+    ['pct_t40','pct_t50','pct_t60','pct_t90','pct_t120','pct_t150','pct_t180','pct_t240','pct_t300'];
+
+  for (const r of simRows) {
+    const ep = r.pct_t30;
+    const openM = 1 + ep / 100;
+    const slLvl = (openM * 0.9 - 1) * 100;      // 10% SL from entry
+    const tpLvl = (openM * 1.5 - 1) * 100;      // 50% TP from entry
+    const cost = r.round_trip_slippage_pct ?? DEFAULT_COST;
+
+    let exit: number | null = null;
+    for (const cp of checkpoints) {
+      const cv = r[cp];
+      if (cv === null) continue;
+      if (cv <= slLvl) {
+        const exitRatio = (1 + cv / 100) * (1 - SL_GAP);
+        exit = (exitRatio / openM - 1) * 100;
+        break;
+      }
+      if (cv >= tpLvl) { exit = 50 * (1 - TP_GAP); break; }
+    }
+    if (exit === null) {
+      exit = ((1 + r.pct_t300 / 100) / (1 + ep / 100) - 1) * 100;
+    }
+    const net = exit - cost;
+    simSum += net;
+    if (net > 0) simWins++;
+    simN++;
+  }
+
+  return {
+    n: stats.n,
+    pump: stats.pump,
+    avg_return_t30_to_t300_pct: stats.avg_return !== null ? +stats.avg_return.toFixed(2) : null,
+    sim_avg_return_pct: simN > 0 ? +(simSum / simN).toFixed(2) : null,
+    sim_win_rate_pct: simN > 0 ? +(simWins / simN * 100).toFixed(1) : null,
+  };
+}
+
+/** Reconstruct the combined SQL WHERE for a list of filter names in FILTER_CATALOG. */
+export function whereForFilterNames(names: string[]): string | null {
+  const clauses: string[] = [];
+  for (const name of names) {
+    const f = FILTER_CATALOG.find((x) => x.name === name);
+    if (!f) return null;
+    clauses.push(`(${f.where})`);
+  }
+  return clauses.length > 0 ? clauses.join(' AND ') : null;
+}
 
 export interface BestComboRow {
   filter_spec: string;        // e.g. "vel 5-20 + holders >= 10"
@@ -420,93 +538,18 @@ export function computeBestCombos(
   // Evaluate each candidate via SQL aggregation
   const rows: BestComboRow[] = [];
   for (const c of candidates) {
-    const stats = db.prepare(`
-      SELECT
-        COUNT(*) as n,
-        SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pump,
-        AVG((1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) * 100.0 - 100.0) as avg_return
-      FROM graduation_momentum
-      WHERE label IS NOT NULL
-        AND ${ENTRY_GATE}
-        AND (${c.where})
-    `).get() as { n: number; pump: number; avg_return: number | null };
-
-    if (stats.n < minN) continue;
-
-    // Simulate 10% SL / 50% TP over the rows (pct_t40 .. pct_t300 fall-through).
-    const simRows = db.prepare(`
-      SELECT
-        pct_t30, pct_t40, pct_t50, pct_t60, pct_t90,
-        pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
-        round_trip_slippage_pct
-      FROM graduation_momentum
-      WHERE label IS NOT NULL
-        AND ${ENTRY_GATE}
-        AND (${c.where})
-    `).all() as Array<{
-      pct_t30: number;
-      pct_t40: number | null;
-      pct_t50: number | null;
-      pct_t60: number | null;
-      pct_t90: number | null;
-      pct_t120: number | null;
-      pct_t150: number | null;
-      pct_t180: number | null;
-      pct_t240: number | null;
-      pct_t300: number;
-      round_trip_slippage_pct: number | null;
-    }>;
-
-    let simSum = 0;
-    let simWins = 0;
-    let simN = 0;
-    const SL_GAP = 0.30;   // adverse gap on stop-loss exits — price-multiplier model, mirrors trade-logger.ts:112
-    const TP_GAP = 0.10;   // adverse gap on take-profit exits
-    const DEFAULT_COST = 3.0;
-    const checkpoints: Array<'pct_t40'|'pct_t50'|'pct_t60'|'pct_t90'|'pct_t120'|'pct_t150'|'pct_t180'|'pct_t240'|'pct_t300'> =
-      ['pct_t40','pct_t50','pct_t60','pct_t90','pct_t120','pct_t150','pct_t180','pct_t240','pct_t300'];
-
-    for (const r of simRows) {
-      const ep = r.pct_t30;
-      const openM = 1 + ep / 100;
-      const slLvl = (openM * 0.9 - 1) * 100;      // 10% SL from entry
-      const tpLvl = (openM * 1.5 - 1) * 100;      // 50% TP from entry
-      const cost = r.round_trip_slippage_pct ?? DEFAULT_COST;
-
-      let exit: number | null = null;
-      for (const cp of checkpoints) {
-        const cv = r[cp];
-        if (cv === null) continue;
-        if (cv <= slLvl) {
-          // Price-multiplier gap: observed price * (1 - SL_GAP), return vs entry
-          const exitRatio = (1 + cv / 100) * (1 - SL_GAP);
-          exit = (exitRatio / openM - 1) * 100;
-          break;
-        }
-        if (cv >= tpLvl) { exit = 50 * (1 - TP_GAP); break; }
-      }
-      if (exit === null) {
-        // Fall through to T+300 — compute return from entry to T+300
-        exit = ((1 + r.pct_t300 / 100) / (1 + ep / 100) - 1) * 100;
-      }
-      const net = exit - cost;
-      simSum += net;
-      if (net > 0) simWins++;
-      simN++;
-    }
-
-    const simAvg = simN > 0 ? +(simSum / simN).toFixed(2) : null;
-    const simWr = simN > 0 ? +(simWins / simN * 100).toFixed(1) : null;
+    const result = simulateCombo(db, c.where);
+    if (result.n < minN) continue;
 
     rows.push({
       filter_spec: c.name,
       filters: c.filters,
-      n: stats.n,
-      win_rate_pct: stats.n > 0 ? +(stats.pump / stats.n * 100).toFixed(1) : null,
-      avg_return_t30_to_t300_pct: stats.avg_return !== null ? +stats.avg_return.toFixed(2) : null,
-      sim_avg_return_10sl_50tp_pct: simAvg,
-      sim_win_rate_10sl_50tp_pct: simWr,
-      beats_baseline: simAvg !== null && stats.n >= 100 && simAvg > baseline + 0.3,
+      n: result.n,
+      win_rate_pct: result.n > 0 ? +(result.pump / result.n * 100).toFixed(1) : null,
+      avg_return_t30_to_t300_pct: result.avg_return_t30_to_t300_pct,
+      sim_avg_return_10sl_50tp_pct: result.sim_avg_return_pct,
+      sim_win_rate_10sl_50tp_pct: result.sim_win_rate_pct,
+      beats_baseline: result.sim_avg_return_pct !== null && result.n >= 100 && result.sim_avg_return_pct > baseline + 0.3,
     });
   }
 

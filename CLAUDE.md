@@ -244,6 +244,7 @@ Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These
 - **`panel10.json`** — DPM optimizer results: per-filter optimum + top 10 runners-up + category/overall aggregates. Use when tuning trailing SL, breakeven, SL delay etc. on top of fixed 30/10 base TP/SL.
 - **`price-path-detail.json`** — full `/price-path` data: overlay (≤200 raw token paths), mean paths ±1 SD, Cohen's d, acceleration histogram, entry-timing heatmap, monotonicity buckets. Use when designing path-shape filters.
 - **`trading.json`** — full `/trading` dashboard: open positions, performance by strategy, recent trades (50), skips + reasons, active configs. Use to monitor live paper trading.
+- **`wallet-rep-analysis.json`** — top 20 combos × creator-wallet-rep modifiers (clean_dev, fresh_dev, repeat_dev_3plus, profitable_dev, not_rapid_fire, …). Each cell = sim-return delta in pp with n retention; `summary[]` ranks rep filters by mean Δ. Use after a combo is identified in `/api/best-combos` to see whether a creator-rep overlay improves profitability enough to justify the sample-size hit.
 
 #### Example: reading trades data via GitHub MCP + python3
 ```
@@ -330,6 +331,7 @@ Peak analysis and trading:
 |---|---|---|
 | `peak-analysis.json` | `/api/peak-analysis` | Peak CDF, peak time histogram, per-filter peak bucket, suggested TP |
 | `trading.json` | `/api/trading` | Full /trading dashboard: open positions, per-strategy performance, recent trades (50), skip reasons + recent skips, active strategy configs, top filter combos |
+| `wallet-rep-analysis.json` | `/api/wallet-rep-analysis` | Top 20 combos × creator-wallet-rep modifiers: matrix of sim-return deltas + rep filter leaderboard ranked by mean Δ. Use to pick a creator-rep modifier that improves profitability without collapsing sample size. |
 
 ### Pushing strategy commands (create/update/delete strategies remotely)
 
