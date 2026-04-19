@@ -38,6 +38,7 @@ import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
 import { computeExitSim } from './exit-sim';
+import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeTradingData } from './trading-data';
 import { getHeavyData } from './heavy-cache';
 import {
@@ -86,6 +87,7 @@ export interface StatusUrls {
   panel10: string;
   price_path_detail: string;
   trading: string;
+  wallet_rep_analysis: string;
   branch_html: string;
 }
 
@@ -176,6 +178,7 @@ export class GistSync {
       panel10: `${base}/panel10.json`,
       price_path_detail: `${base}/price-path-detail.json`,
       trading: `${base}/trading.json`,
+      wallet_rep_analysis: `${base}/wallet-rep-analysis.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
@@ -332,6 +335,7 @@ export class GistSync {
     const pricePathStats = computePricePathStats(this.db);
     const peakAnalysis = computePeakAnalysis(this.db);
     const exitSim = computeExitSim(this.db);
+    const walletRepAnalysis = computeWalletRepAnalysis(this.db);
 
     // Heavy compute (filter-v2 panels, price-path detail, trading data) is
     // cached with a 24h TTL — computeFilterV2Data alone is ~100s at current
@@ -385,6 +389,7 @@ export class GistSync {
       'price-path-stats.json': JSON.stringify(pricePathStats, null, 2),
       'peak-analysis.json': JSON.stringify(peakAnalysis, null, 2),
       'exit-sim.json': JSON.stringify(exitSim, null, 2),
+      'wallet-rep-analysis.json': JSON.stringify(walletRepAnalysis, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,
         count: strategies.length,

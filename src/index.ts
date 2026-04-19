@@ -3,9 +3,10 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderWalletRepAnalysisHtml } from './utils/html-renderer';
 import { computePeakAnalysis } from './api/peak-analysis';
 import { computeExitSim } from './api/exit-sim';
+import { computeWalletRepAnalysis } from './api/wallet-rep-analysis';
 import { computeFilterV2Data } from './api/filter-v2-data';
 import { computeTradingData } from './api/trading-data';
 import { getHeavyData } from './api/heavy-cache';
@@ -2252,6 +2253,25 @@ async function main() {
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(renderPeakAnalysisHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── WALLET REP ANALYSIS ──────────────────────────────────────────────────
+  // Takes the top 20 combos from /api/best-combos and layers each of a
+  // curated set of creator-wallet-reputation filters on top, to see which
+  // rep filters consistently improve sim return (and which collapse n).
+  app.get('/wallet-rep-analysis', (req, res) => {
+    try {
+      const data = computeWalletRepAnalysis(db);
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderWalletRepAnalysisHtml(data));
       } else {
         res.json(data);
       }

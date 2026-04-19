@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
   { path: '/filter-analysis-v2', label: 'Filters V2' },
+  { path: '/wallet-rep-analysis', label: 'Wallet Rep' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/exit-sim', label: 'Exit Sim' },
   { path: '/price-path', label: 'Price Path' },
@@ -4456,4 +4457,135 @@ export function renderExitSimHtml(data: any): string {
 
   const body = headerCards + momentumCard + scaleOutCard + volCard + timeCard + whaleCard;
   return shell('Exit Strategy Simulator', '/exit-sim', body, d);
+}
+
+// ── WALLET REP ANALYSIS PAGE ─────────────────────────────────────────
+
+export function renderWalletRepAnalysisHtml(data: any): string {
+  const d = data;
+  const repFilters: Array<{ name: string; description: string }> = d.rep_filters ?? [];
+
+  const fmtSim = (v: number | null): string => {
+    if (v === null || v === undefined) return '<span class="yellow">—</span>';
+    const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+    return `<span class="${cls}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
+  };
+
+  const fmtDelta = (v: number | null, n: number): string => {
+    if (v === null || v === undefined) {
+      return n < (d.notes?.min_n_for_valid_delta ?? 20)
+        ? `<span class="n-insuf">n=${n}</span>`
+        : '<span class="yellow">—</span>';
+    }
+    const cls = v > 0.3 ? 'green' : v < -0.3 ? 'red' : 'yellow';
+    const sign = v >= 0 ? '+' : '';
+    return `<span class="${cls}"><strong>${sign}${v.toFixed(2)}pp</strong></span>`;
+  };
+
+  const fmtRetention = (v: number | null): string => {
+    if (v === null || v === undefined) return '—';
+    const cls = v >= 70 ? 'green' : v >= 40 ? 'yellow' : 'red';
+    return `<span class="${cls}">${v.toFixed(1)}%</span>`;
+  };
+
+  const summaryCard = `
+    <div class="card">
+      <h2>Rep Filter Leaderboard — avg impact across the top 20 combos</h2>
+      <div class="desc">
+        For each wallet-rep filter, we layer it on top of each of the top 20 combos from
+        <code>/api/best-combos</code> and measure the change in 10%SL/50%TP sim return.
+        Deltas are only counted when the filtered cell has n ≥ ${d.notes?.min_n_for_valid_delta ?? 20}.
+        Ranked by mean Δ (best first).
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Rep filter</th>
+            <th>Condition</th>
+            <th>Mean Δ pp</th>
+            <th>Median Δ pp</th>
+            <th>Combos improved</th>
+            <th>Combos worsened</th>
+            <th>Evaluated (n≥${d.notes?.min_n_for_valid_delta ?? 20})</th>
+            <th>Mean n retention</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(d.summary as any[]).map((s, idx) => {
+            const best = idx === 0 && s.mean_delta_pp !== null && s.mean_delta_pp > 0;
+            return `
+            <tr class="${best ? 'row-baseline' : ''}">
+              <td><strong>${s.rep_filter}${best ? ' ★' : ''}</strong></td>
+              <td><span class="desc">${s.description}</span></td>
+              <td>${fmtDelta(s.mean_delta_pp, s.combos_evaluated >= 1 ? 999 : 0)}</td>
+              <td>${fmtDelta(s.median_delta_pp, s.combos_evaluated >= 1 ? 999 : 0)}</td>
+              <td class="green">${s.combos_improved}</td>
+              <td class="red">${s.combos_worsened}</td>
+              <td>${s.combos_evaluated} / ${d.rows.length}</td>
+              <td>${fmtRetention(s.mean_n_retention_pct)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const repCols = repFilters.map(r => `<th title="${r.description}">${r.name}<br><span class="desc" style="font-weight:400">Δ pp</span></th>`).join('');
+
+  const matrixCard = `
+    <div class="card">
+      <h2>Matrix — top 20 combos × wallet-rep filters</h2>
+      <div class="desc">
+        Each cell shows the sim-return delta (percentage points) vs the base combo when the
+        rep filter is layered on. Cell hover shows filtered n. Grey cells are below the n≥${d.notes?.min_n_for_valid_delta ?? 20} threshold.
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="min-width:220px">Combo</th>
+            <th>Base n</th>
+            <th>Base sim%</th>
+            ${repCols}
+          </tr>
+        </thead>
+        <tbody>
+          ${(d.rows as any[]).map((row) => {
+            const cells = repFilters.map(rep => {
+              const cell = row.cells[rep.name];
+              if (!cell) return '<td>—</td>';
+              const title = `n=${cell.n} (retention ${cell.n_retention_pct ?? '—'}%) · sim ${cell.sim_avg_return_pct ?? '—'}% · wr ${cell.sim_win_rate_pct ?? '—'}%`;
+              return `<td title="${title}">${fmtDelta(cell.delta_sim_return_pp, cell.n)}</td>`;
+            }).join('');
+            return `
+            <tr>
+              <td><strong>${row.filter_spec}</strong></td>
+              <td>${row.base.n}</td>
+              <td>${fmtSim(row.base.sim_avg_return_pct)}</td>
+              ${cells}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const notesCard = `
+    <div class="card">
+      <h2>How to read</h2>
+      <div class="desc">
+        <strong>Δ pp</strong> = filtered combo sim return minus base combo sim return, in percentage points.<br>
+        Positive (green) means the wallet-rep filter improves profitability on that combo.<br>
+        Negative (red) means it hurts (usually because it drops too many winners alongside losers).<br>
+        <strong>n retention</strong> = filtered sample size as a percentage of the base combo's n. A rep filter
+        that improves Δ but cuts n by 80% is a lot less useful than one that improves Δ at 50%+ retention.<br><br>
+        <strong>Rep source:</strong> creator wallet reputation only, using
+        <code>creator_prior_token_count</code>, <code>creator_prior_rug_rate</code>,
+        <code>creator_prior_avg_return</code>, and <code>creator_last_token_age_hours</code>
+        from <code>graduation_momentum</code>.
+      </div>
+    </div>
+  `;
+
+  const body = summaryCard + matrixCard + notesCard;
+  return shell('Wallet Rep Analysis', '/wallet-rep-analysis', body, d);
 }
