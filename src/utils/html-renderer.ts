@@ -4759,18 +4759,24 @@ export function renderExitSimMatrixHtml(data: any): string {
     <div class="card">
       <h2>How to read</h2>
       <div class="desc">
-        <strong>Static 10/50</strong>: return at the global 10%SL/50%TP default — matches
-        /api/best-combos' leaderboard value so you can sanity-check.<br>
-        <strong>Opt. Static</strong>: the best cell in a 4×4 (SL × TP) grid sized for this combo.
-        This is the FAIR baseline — each combo has its own natural TP/SL pair, and comparing every
-        combo against a fixed 10/50 undersells the combos 10/50 wasn't tuned for.<br><br>
+        <strong>Static 10/50</strong>: return at the global 10%SL/50%TP default — sanity-check
+        column so you can spot any drift from /api/best-combos' leaderboard value.<br>
+        <strong>Opt. Static</strong>: the best cell in a 10×12 (SL × TP) grid mirroring
+        Panel 6's (SL ∈ 3–30, TP ∈ 10–150). This is the FAIR baseline — each combo has its
+        own natural TP/SL pair, and comparing every combo against a fixed 10/50 undersells
+        combos 10/50 wasn't tuned for.<br><br>
         Each strategy cell shows <strong>Δ vs Opt. Static</strong> in pp (top), then the best
         dynamic-cell's raw avg return and n (bottom). ★ = the winning strategy for that row.<br>
         <span class="green">Green</span> = Δ > +0.3 pp (meaningful lift over opt. static).
         <span class="yellow">Yellow</span> = Δ within ±0.3 pp (noise).
         <span class="red">Red</span> = Δ < -0.3 pp (dynamic exit hurts vs this combo's own optimum).<br><br>
         <code>n&lt;${d.min_n_per_cell}</code> means that strategy's grid has no cell with enough samples
-        for this combo to rank — wait for more data.
+        for this combo to rank — wait for more data.<br><br>
+        <strong>Why n differs from Panel 6:</strong> this matrix enforces the live-trading
+        entry gate (<code>pct_t30 ∈ [5%, 100%]</code>) — a real bot only enters positions that
+        are modestly up at T+30. Panel 6 explores all labeled rows regardless of entry state.
+        Same combo, different universes by design. Opt. (SL, TP) values should be comparable;
+        raw returns will differ.
       </div>
     </div>
   `;
