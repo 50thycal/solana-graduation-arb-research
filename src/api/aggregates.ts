@@ -346,6 +346,14 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'liq > 50',           group: 'Liquidity', where: 'liquidity_sol_t30 > 50' },
   { name: 'liq > 100',          group: 'Liquidity', where: 'liquidity_sol_t30 > 100' },
   { name: 'liq > 150',          group: 'Liquidity', where: 'liquidity_sol_t30 > 150' },
+  // Liquidity at T+300 — presence of these filters unlocks "pool stayed deep
+  // through the full hold" as a candidate dimension. Whale-sell / liq-drop
+  // exit strategies can use the ratio liquidity_sol_t300 / liquidity_sol_t30.
+  { name: 'liq_t300 > 50',      group: 'Liquidity', where: 'liquidity_sol_t300 > 50' },
+  { name: 'liq_t300 > 100',     group: 'Liquidity', where: 'liquidity_sol_t300 > 100' },
+  { name: 'liq_t300 > 150',     group: 'Liquidity', where: 'liquidity_sol_t300 > 150' },
+  { name: 'liq_retained > 0.8', group: 'Liquidity',
+    where: 'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t300 IS NOT NULL AND liquidity_sol_t30 > 0 AND (liquidity_sol_t300 / liquidity_sol_t30) > 0.8' },
   // Path shape
   { name: 'mono > 0.5',         group: 'Path Mono', where: 'monotonicity_0_30 > 0.5' },
   { name: 'mono > 0.66',        group: 'Path Mono', where: 'monotonicity_0_30 > 0.66' },

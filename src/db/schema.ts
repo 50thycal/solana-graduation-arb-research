@@ -67,6 +67,26 @@ function runMigrations(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_pool_obs_grad ON pool_observations(graduation_id);
 
+    -- Per-swap log across the post-graduation window (0..300s). Populated via
+    -- T+305 backfill from getSignaturesForAddress(poolAddress). Used by the
+    -- whale-sell / liquidity-drop exit strategy (see api/exit-sim.ts whale_liq).
+    CREATE TABLE IF NOT EXISTS post_grad_swaps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      graduation_id INTEGER NOT NULL REFERENCES graduations(id),
+      tx_signature TEXT NOT NULL,
+      block_time INTEGER NOT NULL,
+      seconds_since_graduation INTEGER NOT NULL,
+      wallet_address TEXT,
+      action TEXT,
+      amount_sol REAL,
+      amount_token REAL,
+      pool_sol_after REAL,
+      UNIQUE(graduation_id, tx_signature)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_post_grad_swaps_grad_time
+      ON post_grad_swaps(graduation_id, seconds_since_graduation);
+
     CREATE TABLE IF NOT EXISTS price_comparisons (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       graduation_id INTEGER NOT NULL REFERENCES graduations(id),
@@ -230,13 +250,17 @@ function runMigrations(db: Database.Database): void {
     ];
     // Every-5s price snapshots across the full 300s monitoring window — dedupes against
     // explicit entries above (t5, t10, ..., t60, t90, t120, t150, t180, t240, t300).
+    // Liquidity snapshots use the same grid — whale-sell / pool-drop exit rules need
+    // sub-30s resolution because dumps usually complete in seconds, not minutes.
     {
       const planned = new Set(newMomCols.map(([c]) => c));
       for (let sec = 5; sec <= 300; sec += 5) {
         const priceCol = `price_t${sec}`;
         const pctCol = `pct_t${sec}`;
+        const liqCol = `liquidity_sol_t${sec}`;
         if (!planned.has(priceCol)) newMomCols.push([priceCol, 'REAL']);
         if (!planned.has(pctCol)) newMomCols.push([pctCol, 'REAL']);
+        if (!planned.has(liqCol)) newMomCols.push([liqCol, 'REAL']);
       }
     }
     // Path-shape metrics over longer horizons (0-120, 0-180, 0-300). Only populated
