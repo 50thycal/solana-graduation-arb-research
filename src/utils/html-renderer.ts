@@ -4629,3 +4629,130 @@ export function renderWalletRepAnalysisHtml(data: any): string {
   const body = summaryCard + matrixCard + notesCard;
   return shell('Wallet Rep Analysis', '/wallet-rep-analysis', body, d);
 }
+
+// ── EXIT-SIM MATRIX PAGE ─────────────────────────────────────────────
+// Top 20 filter combos × 5 dynamic-exit strategies. Each cell = best-cell
+// Δ vs that combo's own static 10%SL/50%TP baseline. Answers "which
+// combo lifts most from dynamic exits?".
+
+export function renderExitSimMatrixHtml(data: any): string {
+  const d = data;
+
+  const fmtPct = (v: number | null | undefined): string => {
+    if (v == null) return '<span class="yellow">—</span>';
+    const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+    const sign = v > 0 ? '+' : '';
+    return `<span class="${cls}">${sign}${v.toFixed(2)}%</span>`;
+  };
+
+  const fmtDelta = (v: number | null | undefined): string => {
+    if (v == null) return '<span class="yellow">—</span>';
+    const cls = v > 0.3 ? 'green' : v < -0.3 ? 'red' : 'yellow';
+    const sign = v >= 0 ? '+' : '';
+    return `<span class="${cls}"><strong>${sign}${v.toFixed(2)}pp</strong></span>`;
+  };
+
+  const strategyLabels: Record<string, string> = {
+    momentum_reversal: 'Mom. reversal',
+    scale_out: 'Scale-out',
+    vol_adaptive: 'Vol. trail',
+    time_decayed_tp: 'Time-decay TP',
+    whale_liq: 'Whale / liq',
+  };
+
+  const overviewCard = `
+    <div class="card">
+      <h2>Exit Strategy × Combo Matrix</h2>
+      <div class="desc">
+        Each row is one of the top 20 filter combos from <code>/api/best-combos</code>.
+        For each combo we re-run the full 5-strategy exit-simulation grid, pick the
+        highest-return cell per strategy (n ≥ ${d.min_n_per_cell}), and show its Δ
+        vs the combo's OWN static 10%SL/50%TP baseline.
+        <br><br>
+        <strong>Sort order:</strong> by best Δ across all 5 strategies, descending.
+        Combos near the top gain the most from dynamic exits; combos at the bottom
+        are already at their static optimum (or have too-thin grids to rank).
+      </div>
+    </div>
+  `;
+
+  const matrixCard = (() => {
+    if (!d.rows || d.rows.length === 0) {
+      return `
+        <div class="card">
+          <h2>Matrix</h2>
+          <div class="desc"><span class="yellow">No combos found</span> — is <code>/api/best-combos</code> empty?</div>
+        </div>`;
+    }
+
+    const strategyCols = ['momentum_reversal', 'scale_out', 'vol_adaptive', 'time_decayed_tp', 'whale_liq'];
+
+    const headerCells = strategyCols
+      .map((s) => `<th>${strategyLabels[s]}</th>`)
+      .join('');
+
+    const rowsHtml = (d.rows as any[]).map((r, i) => {
+      const strategyByName = new Map<string, any>();
+      for (const c of r.strategies) strategyByName.set(c.strategy, c);
+
+      const strategyCells = strategyCols.map((name) => {
+        const c = strategyByName.get(name);
+        if (!c || c.delta_vs_static_pp == null) {
+          return `<td><span class="desc">n<${d.min_n_per_cell}</span></td>`;
+        }
+        const isBest = r.best_strategy === name;
+        return `
+          <td class="${isBest ? 'row-baseline' : ''}">
+            ${fmtDelta(c.delta_vs_static_pp)}
+            <div class="desc">${fmtPct(c.best_avg_return_pct)} · n=${c.best_n}${isBest ? ' ★' : ''}</div>
+          </td>`;
+      }).join('');
+
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td><code>${r.filter_spec}</code></td>
+          <td>${r.n_rows}</td>
+          <td>${fmtPct(r.static_baseline_return_pct)}</td>
+          ${strategyCells}
+          <td>${fmtDelta(r.best_delta_pp)}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+      <div class="card">
+        <h2>Matrix — top 20 combos × 5 strategies</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Combo</th>
+              <th>n</th>
+              <th>Static (10SL/50TP)</th>
+              ${headerCells}
+              <th>Best Δ</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>`;
+  })();
+
+  const notesCard = `
+    <div class="card">
+      <h2>How to read</h2>
+      <div class="desc">
+        Each strategy cell shows <strong>Δ vs static baseline</strong> in pp (top), then the best
+        cell's raw avg return and n (bottom). ★ marks the winning strategy for that row.<br>
+        <span class="green">Green</span> = Δ > +0.3 pp (meaningful lift over static baseline).
+        <span class="yellow">Yellow</span> = Δ within ±0.3 pp (noise).
+        <span class="red">Red</span> = Δ < -0.3 pp (dynamic exit hurts this combo).<br><br>
+        <code>n&lt;${d.min_n_per_cell}</code> means that strategy's grid has no cell with enough samples
+        for this combo to rank — wait for more data.
+      </div>
+    </div>
+  `;
+
+  const body = overviewCard + matrixCard + notesCard;
+  return shell('Exit Strategy Matrix', '/exit-sim-matrix', body, d);
+}
