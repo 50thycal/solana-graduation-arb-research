@@ -4446,14 +4446,54 @@ export function renderExitSimHtml(data: any): string {
   `;
 
   const wl = d.strategies.whale_liq;
-  const whaleCard = `
-    <div class="card">
-      <h2>Strategy 4 — Whale-sell / liquidity drop</h2>
-      <div class="desc"><span class="yellow">DATA_PENDING</span> — requires new collectors:
-        <ul>${(wl.required_data as string[]).map((s) => `<li>${s}</li>`).join('')}</ul>
+  const whaleDesc =
+    'Exit early on adverse pool signals: <strong>liq_drop</strong>% drop in pool SOL from entry ' +
+    'OR a single sell swap of ≥ <strong>whale_sell</strong> SOL. Fixed 10% SL + 50% TP still active — ' +
+    'whale/liq triggers are ADDED on top of the baseline. ' +
+    `Rows with entry liquidity captured: ${wl.rows_with_data}/${d.universe.n_rows}. ★ = optimum (n≥30).`;
+  const whaleCard = (() => {
+    if (!wl.grid || wl.grid.length === 0 || wl.rows_with_data === 0) {
+      return `
+        <div class="card">
+          <h2>Strategy 4 — Whale-sell / liquidity drop</h2>
+          <div class="desc">
+            <span class="yellow">COLLECTING</span> — 0 rows have entry liquidity / swap data yet.
+            ${wl.rows_with_data === 0 ? 'Waiting for new graduations after the 2026-04-20 data-collection rollout.' : ''}
+          </div>
+        </div>
+      `;
+    }
+    const rowsHtml = (wl.grid as any[])
+      .slice()
+      .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+      .map((c) => {
+        const best = wl.best
+          && c.params.liq_drop_pct === wl.best.params.liq_drop_pct
+          && c.params.whale_sell_sol === wl.best.params.whale_sell_sol;
+        const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+        return `
+          <tr class="${best ? 'row-baseline' : ''}">
+            <td>${c.params.liq_drop_pct}%${best ? ' ★' : ''}</td>
+            <td>${c.params.whale_sell_sol} SOL</td>
+            <td>${c.n}</td>
+            <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+            <td>${fmtWr(c.win_rate_pct)}</td>
+            <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+            <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+          </tr>`;
+      })
+      .join('');
+    return `
+      <div class="card">
+        <h2>Strategy 4 — Whale-sell / liquidity drop</h2>
+        <div class="desc">${whaleDesc}</div>
+        <table>
+          <thead><tr><th>Liq drop</th><th>Whale sell</th><th>n</th><th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
       </div>
-    </div>
-  `;
+    `;
+  })();
 
   const body = headerCards + momentumCard + scaleOutCard + volCard + timeCard + whaleCard;
   return shell('Exit Strategy Simulator', '/exit-sim', body, d);
