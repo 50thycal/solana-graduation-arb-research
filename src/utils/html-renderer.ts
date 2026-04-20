@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { path: '/wallet-rep-analysis', label: 'Wallet Rep' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/exit-sim', label: 'Exit Sim' },
+  { path: '/exit-sim-matrix', label: 'Exit Matrix' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/trading', label: 'Trading' },
@@ -4269,6 +4270,15 @@ export function renderExitSimHtml(data: any): string {
 
   // Baseline + universe header
   const bs = d.baseline_static;
+  const matrixBanner = `
+    <div class="card" style="border-left:3px solid #2563eb">
+      <div class="desc">
+        <strong>Single-universe view.</strong> This page evaluates all 5 dynamic-exit strategies
+        only on <code>${d.universe.label}</code>. To see which of the top 20 filter combos gains
+        the most from dynamic exits, jump to <a href="/exit-sim-matrix" style="color:#60a5fa"><strong>/exit-sim-matrix</strong></a>.
+      </div>
+    </div>
+  `;
   const headerCards = `
     <div class="grid">
       <div class="card">
@@ -4495,7 +4505,7 @@ export function renderExitSimHtml(data: any): string {
     `;
   })();
 
-  const body = headerCards + momentumCard + scaleOutCard + volCard + timeCard + whaleCard;
+  const body = matrixBanner + headerCards + momentumCard + scaleOutCard + volCard + timeCard + whaleCard;
   return shell('Exit Strategy Simulator', '/exit-sim', body, d);
 }
 
