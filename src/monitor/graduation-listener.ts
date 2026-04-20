@@ -16,6 +16,23 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('graduation-listener');
 
+// Rejects after `ms` if `p` hasn't settled. Note: the underlying promise keeps
+// running — there's no way to cancel an in-flight await in JS. That's fine
+// here: the old subscription/connection is about to be replaced anyway, so a
+// dangling promise holding a dead socket handle is a GC problem, not a bug.
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 // pump.fun program ID
 const PUMP_FUN_PROGRAM_ID = new PublicKey(
   process.env.PUMP_FUN_PROGRAM_ID || '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'
@@ -65,6 +82,22 @@ const RECONNECT_BACKOFF_MULTIPLIER = 2;
 const WS_SILENCE_TIMEOUT_MS = 2 * 60 * 1000;
 const WS_HEALTH_CHECK_INTERVAL_MS = 30_000;
 
+// Secondary health check: if no migrate candidates in this long, force a
+// reconnect even if other pump.fun logs are still flowing. Defends against
+// "WS half-alive" — connected, routing chatter, but not routing migrations.
+// Historical grad rate is 30-150/day, so one every ~30 min on the low end.
+// 60 min without a single candidate is suspicious enough to reset the pipe.
+const NO_CANDIDATE_SILENCE_MS = 60 * 60 * 1000;
+
+// Hard caps on reconnect sub-steps. If unsubscribe or subscribe hangs
+// indefinitely (Helius WS occasionally does this), the outer reconnect()
+// never exits its try block, `finally { reconnecting = false }` never runs,
+// and the health check's `if (reconnecting) return` early-outs forever.
+// Wrap each step with a timeout so a hang surfaces as a throw → the catch
+// block schedules another reconnect and the finally flips the flag back.
+const RECONNECT_UNSUBSCRIBE_TIMEOUT_MS = 10_000;
+const RECONNECT_SUBSCRIBE_TIMEOUT_MS = 20_000;
+
 export interface GraduationEvent {
   mint: string;
   bondingCurveAddress: string;
@@ -102,6 +135,7 @@ export class GraduationListener {
   private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private lastEventTime = Date.now();
+  private lastCandidateTime = Date.now();
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private totalLogsReceived = 0;
   private totalCandidatesDetected = 0;
@@ -180,6 +214,7 @@ export class GraduationListener {
       lastVaultFailReasons: this.lastVaultFailReasons.slice(-5),
       lastMintFailReasons: this.lastMintFailReasons.slice(-5),
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
+      lastCandidateSecondsAgo: Math.floor((Date.now() - this.lastCandidateTime) / 1000),
       wsConnected: this.subscriptionId !== null,
       reconnecting: this.reconnecting,
       poolTracker: this.poolTracker.getStats(),
@@ -220,6 +255,24 @@ export class GraduationListener {
           { silentSeconds: silentSec },
           'WS appears dead (no events received), forcing reconnect'
         );
+        this.reconnect();
+        return;
+      }
+
+      // WS half-alive detector: pump.fun logs still flowing but no migrate
+      // instructions routed for 60+ minutes. The primary silence check above
+      // won't catch this because lastEventTime is bumped on every log, not
+      // only migrations.
+      const candidateSilentMs = Date.now() - this.lastCandidateTime;
+      if (candidateSilentMs > NO_CANDIDATE_SILENCE_MS) {
+        logger.warn(
+          {
+            candidateSilentSeconds: Math.floor(candidateSilentMs / 1000),
+            recentLogs: this.totalLogsReceived,
+          },
+          'No graduation candidates for 60+ min but logs still flowing — forcing reconnect'
+        );
+        this.lastCandidateTime = Date.now(); // avoid re-firing every health tick
         this.reconnect();
       }
     }, WS_HEALTH_CHECK_INTERVAL_MS);
@@ -326,7 +379,11 @@ export class GraduationListener {
 
     try {
       logger.info('Reconnecting WebSocket...');
-      await this.unsubscribe();
+      await withTimeout(
+        this.unsubscribe(),
+        RECONNECT_UNSUBSCRIBE_TIMEOUT_MS,
+        'unsubscribe',
+      );
 
       const rpcUrl = process.env.HELIUS_RPC_URL!;
       const wsUrl = process.env.HELIUS_WS_URL!;
@@ -352,7 +409,11 @@ export class GraduationListener {
         }
       }
 
-      await this.subscribe();
+      await withTimeout(
+        this.subscribe(),
+        RECONNECT_SUBSCRIBE_TIMEOUT_MS,
+        'subscribe',
+      );
       logger.info('WebSocket reconnected successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -378,6 +439,7 @@ export class GraduationListener {
     if (!graduationLog) return;
 
     this.totalCandidatesDetected++;
+    this.lastCandidateTime = Date.now();
 
     // Process: extract mint + bonding curve, then VERIFY before recording
     const event = await this.processAndVerifyGraduation(logs.signature, ctx.slot, graduationLog);
