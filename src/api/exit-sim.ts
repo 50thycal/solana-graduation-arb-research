@@ -155,9 +155,10 @@ export function simulateDynamicExit(r: ExitSimRow, p: DynamicExitParams): SimRes
 
 // ── DB loader ─────────────────────────────────────────────────────────
 
-export function loadExitSimRows(db: Database.Database): ExitSimRow[] {
+export function loadExitSimRows(db: Database.Database, extraWhere?: string): ExitSimRow[] {
   // pct_t30 / pct_t300 are entry + timeout; CHECKPOINTS are the walk (t35…t295).
   const walkCols = CHECKPOINTS.join(', ');
+  const extra = extraWhere && extraWhere.trim().length > 0 ? ` AND (${extraWhere})` : '';
   return db.prepare(`
     SELECT
       created_at, label,
@@ -168,7 +169,7 @@ export function loadExitSimRows(db: Database.Database): ExitSimRow[] {
     FROM graduation_momentum
     WHERE label IS NOT NULL
       AND ${ENTRY_GATE_SQL}
-      AND created_at IS NOT NULL
+      AND created_at IS NOT NULL${extra}
     ORDER BY created_at ASC
   `).all() as ExitSimRow[];
 }
@@ -639,13 +640,14 @@ function simulateWhaleLiq(
  * for the whale-liq simulator. Only returns rows with `liquidity_sol_t30`
  * present (pre-rollout rows are silently filtered out).
  */
-export function loadWhaleLiqRows(db: Database.Database): WhaleLiqRow[] {
+export function loadWhaleLiqRows(db: Database.Database, extraWhere?: string): WhaleLiqRow[] {
   const walkCols = CHECKPOINTS.join(', ');
   // liquidity_sol_t{30..300} every 5s — mirrors the CHECKPOINTS grid plus entry (t30).
   const liqCols: string[] = ['liquidity_sol_t30'];
   for (let sec = 35; sec <= 295; sec += 5) liqCols.push(`liquidity_sol_t${sec}`);
   liqCols.push('liquidity_sol_t300');
 
+  const extra = extraWhere && extraWhere.trim().length > 0 ? ` AND (${extraWhere})` : '';
   const baseRows = db.prepare(`
     SELECT
       graduation_id,
@@ -659,7 +661,7 @@ export function loadWhaleLiqRows(db: Database.Database): WhaleLiqRow[] {
     WHERE label IS NOT NULL
       AND ${ENTRY_GATE_SQL}
       AND created_at IS NOT NULL
-      AND liquidity_sol_t30 IS NOT NULL
+      AND liquidity_sol_t30 IS NOT NULL${extra}
     ORDER BY created_at ASC
   `).all() as Array<Record<string, number | string | null>>;
 
@@ -822,11 +824,19 @@ function computeStaticBaseline(rows: ExitSimRow[], universe: UniversePredicate):
 
 export function computeExitSim(
   db: Database.Database,
-  opts: { universe?: UniversePredicate; universeLabel?: string } = {},
+  opts: { universe?: UniversePredicate; universeLabel?: string; extraWhere?: string } = {},
 ): ExitSimReport {
-  const universe = opts.universe ?? BASELINE_UNIVERSE;
-  const universeLabel = opts.universeLabel ?? 'vel<20 + top5<10% (current baseline)';
-  const rows = loadExitSimRows(db);
+  // When `extraWhere` is given, we pre-filter at SQL level and pass a no-op
+  // JS predicate to the evaluators. Callers (e.g. /api/exit-sim-matrix) use
+  // this to scope the whole report to a single filter-combo universe without
+  // duplicating FILTER_CATALOG's SQL as JS predicates.
+  const hasExtraWhere = !!(opts.extraWhere && opts.extraWhere.trim().length > 0);
+  const universe: UniversePredicate = hasExtraWhere
+    ? (() => true)
+    : (opts.universe ?? BASELINE_UNIVERSE);
+  const universeLabel = opts.universeLabel
+    ?? (hasExtraWhere ? 'custom' : 'vel<20 + top5<10% (current baseline)');
+  const rows = loadExitSimRows(db, opts.extraWhere);
   const filtered = rows.filter(universe);
 
   return {
@@ -838,7 +848,7 @@ export function computeExitSim(
       scale_out:         evaluateScaleOutGrid(rows, universe),
       vol_adaptive:      evaluateVolAdaptiveGrid(rows, universe),
       time_decayed_tp:   evaluateTimeDecayedTpGrid(rows, universe),
-      whale_liq:         evaluateWhaleLiqGrid(loadWhaleLiqRows(db), universe),
+      whale_liq:         evaluateWhaleLiqGrid(loadWhaleLiqRows(db, opts.extraWhere), universe),
     },
   };
 }

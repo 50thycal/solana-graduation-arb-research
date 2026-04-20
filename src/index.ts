@@ -3,9 +3,10 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderWalletRepAnalysisHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml } from './utils/html-renderer';
 import { computePeakAnalysis } from './api/peak-analysis';
 import { computeExitSim } from './api/exit-sim';
+import { computeExitSimMatrix } from './api/exit-sim-matrix';
 import { computeWalletRepAnalysis } from './api/wallet-rep-analysis';
 import { computeFilterV2Data } from './api/filter-v2-data';
 import { computeTradingData } from './api/trading-data';
@@ -2291,6 +2292,23 @@ async function main() {
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(renderExitSimHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Matrix version of /exit-sim — top 20 filter combos × 5 dynamic-exit
+  // strategies. See src/api/exit-sim-matrix.ts.
+  app.get('/exit-sim-matrix', (req, res) => {
+    try {
+      const data = computeExitSimMatrix(db);
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderExitSimMatrixHtml(data));
       } else {
         res.json(data);
       }

@@ -38,6 +38,7 @@ import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
 import { computeExitSim } from './exit-sim';
+import { computeExitSimMatrix } from './exit-sim-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
@@ -300,6 +301,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Default universe = vel<20 + top5<10% (current +6.44% baseline).
   app.get('/api/exit-sim', wrap((_req, res) => {
     res.json(computeExitSim(db));
+  }));
+
+  // ── /api/exit-sim-matrix ──
+  // Cross-combo view: re-runs the full 5-strategy grid against each of the
+  // top 20 filter combos and surfaces the best-cell-per-strategy + Δ vs the
+  // combo's own static 10%SL/50%TP baseline. Sorted by best delta so the
+  // combos that gain the most from dynamic exits surface first.
+  app.get('/api/exit-sim-matrix', wrap((_req, res) => {
+    res.json(computeExitSimMatrix(db));
   }));
 
   // ── /api/filter-catalog ──
