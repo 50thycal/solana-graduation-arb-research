@@ -30,13 +30,16 @@ import {
 
 const MIN_N_FOR_COMBO = 30;
 
-// Per-combo static TP/SL grid. Small enough to run 20x per sync cycle without
-// noticeable cost. Covers the common trader ranges — tight/loose SL × modest/
-// aggressive TP. Picking the optimal cell gives each combo its own fair
-// baseline instead of forcing the global 10/50 default onto combos it wasn't
-// tuned for.
-const STATIC_SL_GRID = [5, 10, 15, 20] as const;
-const STATIC_TP_GRID = [25, 50, 75, 100] as const;
+// Per-combo static TP/SL grid. Mirrors Panel 6's (PANEL_4_SL_GRID /
+// PANEL_4_TP_GRID in filter-v2-data.ts) so a combo's optimum cell here
+// lines up with the Panel 6 "Opt TP/SL" column. Earlier 4x4 grid capped
+// at SL=20 which was too tight — many combos find their real optimum
+// at SL=25 or 30.
+// Note: row counts (n) will still differ from Panel 6 because this
+// simulator enforces the live-trading entry gate (pct_t30 ∈ [5%, 100%])
+// while Panel 6 explores all labeled rows.
+const STATIC_SL_GRID = [3, 4, 5, 7.5, 10, 12.5, 15, 20, 25, 30] as const;
+const STATIC_TP_GRID = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150] as const;
 
 export interface MatrixStrategyCell {
   strategy: 'momentum_reversal' | 'scale_out' | 'vol_adaptive' | 'time_decayed_tp' | 'whale_liq';
