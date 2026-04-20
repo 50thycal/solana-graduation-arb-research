@@ -5,10 +5,12 @@ import {
   insertPoolObservation,
   markObservationComplete,
   updateMomentumPrice,
+  updateMomentumLiquidity,
   updateMomentumOpenPrice,
 } from '../db/queries';
 import { MomentumLabeler } from '../analysis/momentum-labeler';
 import { CompetitionDetector } from './competition-detector';
+import { SwapLogger } from './swap-logger';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 
@@ -143,6 +145,7 @@ export class PriceCollector {
   private active: Map<number, ActiveObservation> = new Map();
   private momentumLabeler: MomentumLabeler;
   private competitionDetector: CompetitionDetector;
+  private swapLogger: SwapLogger;
   private totalObservationsStarted = 0;
   private totalObservationsCompleted = 0;
   private totalSnapshots = 0;
@@ -172,11 +175,13 @@ export class PriceCollector {
     this.connection = connection;
     this.momentumLabeler = new MomentumLabeler(db);
     this.competitionDetector = new CompetitionDetector(db, connection);
+    this.swapLogger = new SwapLogger(db, connection);
   }
 
   updateConnection(connection: Connection): void {
     this.connection = connection;
     this.competitionDetector.updateConnection(connection);
+    this.swapLogger.updateConnection(connection);
   }
 
   getStats() {
@@ -429,6 +434,19 @@ export class PriceCollector {
         const openRef = observation.openPoolPrice;
         const pctChange = ((poolState.price - openRef) / openRef) * 100;
         updateMomentumPrice(this.db, graduationId, checkpoint, poolState.price, pctChange);
+
+        // Write pool SOL reserves for every 5s checkpoint in 0-300s.
+        // Feeds the whale-sell / liquidity-drop exit strategy: strategies can
+        // inspect the rolling liquidity series at backtest time to detect
+        // sharp drops that precede a dump.
+        if (checkpoint !== 't600') {
+          try {
+            updateMomentumLiquidity(this.db, graduationId, checkpoint, +poolState.solReserves.toFixed(4));
+          } catch (err) {
+            logger.warn('Failed to write liquidity_sol_%s for grad %d: %s',
+              checkpoint, graduationId, err instanceof Error ? err.message : String(err));
+          }
+        }
 
         // Track peak and max drawdown
         if (pctChange > observation.peakPricePct) {
@@ -870,6 +888,15 @@ export class PriceCollector {
     // After each labeled graduation, sweep for any completed tokens that still
     // have null velocity (covers restarts, missed observations, etc.)
     this.runVelocityRecoverySweep().catch(() => {});
+
+    // Backfill per-swap rows for the 30-300s window — feeds the whale-sell /
+    // liquidity-drop exit strategy (api/exit-sim.ts whale_liq). Fire-and-forget:
+    // RPC failures or throttling are logged inside SwapLogger but never block
+    // observation completion.
+    this.swapLogger.backfillSwaps(observation.ctx).catch((err) => {
+      logger.warn('Swap backfill rejected for grad %d: %s', graduationId,
+        err instanceof Error ? err.message : String(err));
+    });
 
     logger.info(
       {
