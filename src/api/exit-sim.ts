@@ -822,6 +822,80 @@ function computeStaticBaseline(rows: ExitSimRow[], universe: UniversePredicate):
   };
 }
 
+/**
+ * Static SL/TP simulator parameterised on (SL%, TP%). Same cost model as
+ * `computeStaticBaseline`, but:
+ *   (a) SL/TP are inputs, not hard-coded 10/50
+ *   (b) walk INCLUDES pct_t300 — matches `simulateCombo` in aggregates.ts
+ *       so matrix cells reconcile with the /api/best-combos leaderboard.
+ *       The original computeStaticBaseline stopped at pct_t295 which let
+ *       late-breach SL hits fall through to unprotected timeouts.
+ *
+ * Used by `/api/exit-sim-matrix` to find the per-combo optimal static cell
+ * instead of comparing every combo against the global 10/50 default.
+ */
+export function simulateStaticOnRows(
+  rows: ExitSimRow[],
+  slPct: number,
+  tpPct: number,
+): GridCell {
+  const breakdown = emptyBreakdown();
+  let sum = 0;
+  let wins = 0;
+
+  for (const r of rows) {
+    const entryRatio = 1 + r.pct_t30 / 100;
+    const slLvl = (entryRatio * (1 - slPct / 100) - 1) * 100;
+    const tpLvl = (entryRatio * (1 + tpPct / 100) - 1) * 100;
+    let exitPct: number | null = null;
+    let isSl = false;
+    let isTp = false;
+
+    // Walk CHECKPOINTS + pct_t300 so SL/TP at the final checkpoint also trips.
+    for (const cp of CHECKPOINTS) {
+      const v = r[cp];
+      if (v == null) continue;
+      if (v <= slLvl) {
+        const exitRatio = (1 + v / 100) * (1 - SIM_SL_GAP_PENALTY);
+        exitPct = (exitRatio / entryRatio - 1) * 100;
+        isSl = true;
+        break;
+      }
+      if (v >= tpLvl) { exitPct = tpPct * (1 - SIM_TP_GAP_PENALTY); isTp = true; break; }
+    }
+    // Check pct_t300 too before timeout fall-through.
+    if (exitPct === null && r.pct_t300 != null) {
+      if (r.pct_t300 <= slLvl) {
+        const exitRatio = (1 + r.pct_t300 / 100) * (1 - SIM_SL_GAP_PENALTY);
+        exitPct = (exitRatio / entryRatio - 1) * 100;
+        isSl = true;
+      } else if (r.pct_t300 >= tpLvl) {
+        exitPct = tpPct * (1 - SIM_TP_GAP_PENALTY);
+        isTp = true;
+      }
+    }
+    if (exitPct === null) {
+      exitPct = ((1 + r.pct_t300 / 100) / entryRatio - 1) * 100;
+      breakdown.timeout++;
+    } else if (isSl) {
+      breakdown.stop_loss++;
+    } else if (isTp) {
+      breakdown.take_profit++;
+    }
+    const net = exitPct - r.cost_pct;
+    sum += net;
+    if (net > 0) wins++;
+  }
+  const n = rows.length;
+  return {
+    params: { sl_pct: slPct, tp_pct: tpPct, type: 'static' },
+    n,
+    avg_return_pct: n > 0 ? +(sum / n).toFixed(2) : null,
+    win_rate_pct: n > 0 ? +(wins / n * 100).toFixed(1) : null,
+    exit_reason_breakdown: breakdown,
+  };
+}
+
 export function computeExitSim(
   db: Database.Database,
   opts: { universe?: UniversePredicate; universeLabel?: string; extraWhere?: string } = {},

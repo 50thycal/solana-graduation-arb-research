@@ -4675,13 +4675,14 @@ export function renderExitSimMatrixHtml(data: any): string {
       <h2>Exit Strategy × Combo Matrix</h2>
       <div class="desc">
         Each row is one of the top 20 filter combos from <code>/api/best-combos</code>.
-        For each combo we re-run the full 5-strategy exit-simulation grid, pick the
-        highest-return cell per strategy (n ≥ ${d.min_n_per_cell}), and show its Δ
-        vs the combo's OWN static 10%SL/50%TP baseline.
+        For each combo we (1) find its own best static (SL × TP) cell across a 4×4 grid,
+        (2) re-run the full 5-strategy dynamic-exit grid, and (3) report the best dynamic
+        cell's Δ vs the combo's own OPTIMAL static baseline — not the global 10/50 default.
         <br><br>
         <strong>Sort order:</strong> by best Δ across all 5 strategies, descending.
-        Combos near the top gain the most from dynamic exits; combos at the bottom
-        are already at their static optimum (or have too-thin grids to rank).
+        Combos near the top gain the most from dynamic exits on top of their own optimal
+        static tuning; combos at the bottom are already at their optimum (or have too-thin
+        grids to rank).
       </div>
     </div>
   `;
@@ -4718,12 +4719,17 @@ export function renderExitSimMatrixHtml(data: any): string {
           </td>`;
       }).join('');
 
+      const optParams = (r.static_optimal_sl_pct != null && r.static_optimal_tp_pct != null)
+        ? `<div class="desc">${r.static_optimal_sl_pct}SL / ${r.static_optimal_tp_pct}TP</div>`
+        : '';
+
       return `
         <tr>
           <td>${i + 1}</td>
           <td><code>${r.filter_spec}</code></td>
           <td>${r.n_rows}</td>
-          <td>${fmtPct(r.static_baseline_return_pct)}</td>
+          <td>${fmtPct(r.static_10_50_return_pct)}</td>
+          <td><strong>${fmtPct(r.static_optimal_return_pct)}</strong>${optParams}</td>
           ${strategyCells}
           <td>${fmtDelta(r.best_delta_pp)}</td>
         </tr>`;
@@ -4738,7 +4744,8 @@ export function renderExitSimMatrixHtml(data: any): string {
               <th>#</th>
               <th>Combo</th>
               <th>n</th>
-              <th>Static (10SL/50TP)</th>
+              <th>Static 10/50</th>
+              <th>Opt. Static</th>
               ${headerCells}
               <th>Best Δ</th>
             </tr>
@@ -4752,11 +4759,16 @@ export function renderExitSimMatrixHtml(data: any): string {
     <div class="card">
       <h2>How to read</h2>
       <div class="desc">
-        Each strategy cell shows <strong>Δ vs static baseline</strong> in pp (top), then the best
-        cell's raw avg return and n (bottom). ★ marks the winning strategy for that row.<br>
-        <span class="green">Green</span> = Δ > +0.3 pp (meaningful lift over static baseline).
+        <strong>Static 10/50</strong>: return at the global 10%SL/50%TP default — matches
+        /api/best-combos' leaderboard value so you can sanity-check.<br>
+        <strong>Opt. Static</strong>: the best cell in a 4×4 (SL × TP) grid sized for this combo.
+        This is the FAIR baseline — each combo has its own natural TP/SL pair, and comparing every
+        combo against a fixed 10/50 undersells the combos 10/50 wasn't tuned for.<br><br>
+        Each strategy cell shows <strong>Δ vs Opt. Static</strong> in pp (top), then the best
+        dynamic-cell's raw avg return and n (bottom). ★ = the winning strategy for that row.<br>
+        <span class="green">Green</span> = Δ > +0.3 pp (meaningful lift over opt. static).
         <span class="yellow">Yellow</span> = Δ within ±0.3 pp (noise).
-        <span class="red">Red</span> = Δ < -0.3 pp (dynamic exit hurts this combo).<br><br>
+        <span class="red">Red</span> = Δ < -0.3 pp (dynamic exit hurts vs this combo's own optimum).<br><br>
         <code>n&lt;${d.min_n_per_cell}</code> means that strategy's grid has no cell with enough samples
         for this combo to rank — wait for more data.
       </div>

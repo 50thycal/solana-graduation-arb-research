@@ -20,9 +20,23 @@
 
 import type Database from 'better-sqlite3';
 import { computeBestCombos, whereForFilterNames } from './aggregates';
-import { computeExitSim, type GridCell, type ExitReason } from './exit-sim';
+import {
+  computeExitSim,
+  loadExitSimRows,
+  simulateStaticOnRows,
+  type GridCell,
+  type ExitReason,
+} from './exit-sim';
 
 const MIN_N_FOR_COMBO = 30;
+
+// Per-combo static TP/SL grid. Small enough to run 20x per sync cycle without
+// noticeable cost. Covers the common trader ranges — tight/loose SL × modest/
+// aggressive TP. Picking the optimal cell gives each combo its own fair
+// baseline instead of forcing the global 10/50 default onto combos it wasn't
+// tuned for.
+const STATIC_SL_GRID = [5, 10, 15, 20] as const;
+const STATIC_TP_GRID = [25, 50, 75, 100] as const;
 
 export interface MatrixStrategyCell {
   strategy: 'momentum_reversal' | 'scale_out' | 'vol_adaptive' | 'time_decayed_tp' | 'whale_liq';
@@ -41,11 +55,18 @@ export interface MatrixRow {
   filter_spec: string;
   filters: string[];
   n_rows: number;
-  static_baseline_return_pct: number | null;
-  static_baseline_win_rate_pct: number | null;
+  /** Return at the GLOBAL 10%SL/50%TP — what /api/best-combos ranks on. */
+  static_10_50_return_pct: number | null;
+  /** Per-combo best static cell across the (SL × TP) grid. This combo's own
+   *  natural fit, and the fair baseline for Δ comparisons. */
+  static_optimal_return_pct: number | null;
+  static_optimal_win_rate_pct: number | null;
+  static_optimal_sl_pct: number | null;
+  static_optimal_tp_pct: number | null;
   leaderboard_sim_return_pct: number | null;   // from /api/best-combos — sanity check
   strategies: MatrixStrategyCell[];
-  /** Best Δ across all 5 strategies — used as the row-level sort key. */
+  /** Best Δ across all 5 strategies — used as the row-level sort key.
+   *  Compared against `static_optimal_return_pct`, not 10/50. */
   best_delta_pp: number | null;
   best_strategy: string | null;
 }
@@ -122,20 +143,42 @@ export function computeExitSimMatrix(db: Database.Database): ExitSimMatrixData {
     const where = whereForFilterNames(lb.filters);
     if (!where) continue;
 
+    // Load rows once per combo for the static-grid sweep. computeExitSim()
+    // below will re-query but that's OK — SQLite is fast and this keeps the
+    // static sweep decoupled from the evaluator pipeline.
+    const staticRows = loadExitSimRows(db, where);
+
+    // Find the per-combo optimal static cell across the (SL × TP) grid.
+    let optimalStatic: GridCell | null = null;
+    for (const sl of STATIC_SL_GRID) {
+      for (const tp of STATIC_TP_GRID) {
+        const cell = simulateStaticOnRows(staticRows, sl, tp);
+        if (cell.avg_return_pct == null) continue;
+        if (!optimalStatic || optimalStatic.avg_return_pct == null
+            || cell.avg_return_pct > optimalStatic.avg_return_pct) {
+          optimalStatic = cell;
+        }
+      }
+    }
+
+    // Static at the global default — kept as a reference column so the matrix
+    // row reconciles with /api/best-combos' leaderboard value.
+    const static10_50 = simulateStaticOnRows(staticRows, 10, 50);
+
     const sim = computeExitSim(db, {
       extraWhere: where,
       universeLabel: lb.filter_spec,
     });
 
-    const staticReturn = sim.baseline_static.avg_return_pct;
+    const baseline = optimalStatic?.avg_return_pct ?? null;
     const s = sim.strategies;
 
     const cells: MatrixStrategyCell[] = [
-      cellFrom('momentum_reversal', pickBestCell(s.momentum_reversal.grid), staticReturn),
-      cellFrom('scale_out',         pickBestCell(s.scale_out.grid),         staticReturn),
-      cellFrom('vol_adaptive',      pickBestCell(s.vol_adaptive.grid),      staticReturn),
-      cellFrom('time_decayed_tp',   pickBestCell(s.time_decayed_tp.grid),   staticReturn),
-      cellFrom('whale_liq',         pickBestCell(s.whale_liq.grid),         staticReturn),
+      cellFrom('momentum_reversal', pickBestCell(s.momentum_reversal.grid), baseline),
+      cellFrom('scale_out',         pickBestCell(s.scale_out.grid),         baseline),
+      cellFrom('vol_adaptive',      pickBestCell(s.vol_adaptive.grid),      baseline),
+      cellFrom('time_decayed_tp',   pickBestCell(s.time_decayed_tp.grid),   baseline),
+      cellFrom('whale_liq',         pickBestCell(s.whale_liq.grid),         baseline),
     ];
 
     let bestDelta: number | null = null;
@@ -152,8 +195,11 @@ export function computeExitSimMatrix(db: Database.Database): ExitSimMatrixData {
       filter_spec: lb.filter_spec,
       filters: lb.filters,
       n_rows: sim.universe.n_rows,
-      static_baseline_return_pct: staticReturn,
-      static_baseline_win_rate_pct: sim.baseline_static.win_rate_pct,
+      static_10_50_return_pct: static10_50.avg_return_pct,
+      static_optimal_return_pct: optimalStatic?.avg_return_pct ?? null,
+      static_optimal_win_rate_pct: optimalStatic?.win_rate_pct ?? null,
+      static_optimal_sl_pct: (optimalStatic?.params.sl_pct as number | undefined) ?? null,
+      static_optimal_tp_pct: (optimalStatic?.params.tp_pct as number | undefined) ?? null,
       leaderboard_sim_return_pct: lb.sim_avg_return_10sl_50tp_pct,
       strategies: cells,
       best_delta_pp: bestDelta,
