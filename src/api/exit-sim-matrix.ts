@@ -58,7 +58,8 @@ export interface MatrixRow {
   filter_spec: string;
   filters: string[];
   n_rows: number;
-  /** Return at the GLOBAL 10%SL/50%TP — what /api/best-combos ranks on. */
+  /** Return at the reference GLOBAL 10%SL/50%TP — kept as a reconciliation column now that
+   *  /api/best-combos ranks on per-combo opt TP/SL instead. */
   static_10_50_return_pct: number | null;
   /** Per-combo best static cell across the (SL × TP) grid. This combo's own
    *  natural fit, and the fair baseline for Δ comparisons. */
@@ -66,7 +67,9 @@ export interface MatrixRow {
   static_optimal_win_rate_pct: number | null;
   static_optimal_sl_pct: number | null;
   static_optimal_tp_pct: number | null;
-  leaderboard_sim_return_pct: number | null;   // from /api/best-combos — sanity check
+  /** opt_avg_ret as reported by /api/best-combos — sanity check that this page's
+   *  sweep aligns with the leaderboard numbers. */
+  leaderboard_opt_return_pct: number | null;
   strategies: MatrixStrategyCell[];
   /** Best Δ across all 5 strategies — used as the row-level sort key.
    *  Compared against `static_optimal_return_pct`, not 10/50. */
@@ -203,7 +206,7 @@ export function computeExitSimMatrix(db: Database.Database): ExitSimMatrixData {
       static_optimal_win_rate_pct: optimalStatic?.win_rate_pct ?? null,
       static_optimal_sl_pct: (optimalStatic?.params.sl_pct as number | undefined) ?? null,
       static_optimal_tp_pct: (optimalStatic?.params.tp_pct as number | undefined) ?? null,
-      leaderboard_sim_return_pct: lb.sim_avg_return_10sl_50tp_pct,
+      leaderboard_opt_return_pct: lb.opt_avg_ret,
       strategies: cells,
       best_delta_pp: bestDelta,
       best_strategy: bestStrategy,

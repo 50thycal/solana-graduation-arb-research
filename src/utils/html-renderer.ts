@@ -4594,7 +4594,7 @@ export function renderWalletRepAnalysisHtml(data: any): string {
           <tr>
             <th style="min-width:220px">Combo</th>
             <th>Base n</th>
-            <th>Base sim%</th>
+            <th>Base opt%</th>
             ${repCols}
           </tr>
         </thead>
@@ -4603,14 +4603,14 @@ export function renderWalletRepAnalysisHtml(data: any): string {
             const cells = repFilters.map(rep => {
               const cell = row.cells[rep.name];
               if (!cell) return '<td>—</td>';
-              const title = `n=${cell.n} (retention ${cell.n_retention_pct ?? '—'}%) · sim ${cell.sim_avg_return_pct ?? '—'}% · wr ${cell.sim_win_rate_pct ?? '—'}%`;
-              return `<td title="${title}">${fmtDelta(cell.delta_sim_return_pp, cell.n)}</td>`;
+              const title = `n=${cell.n} (retention ${cell.n_retention_pct ?? '—'}%) · opt ${cell.opt_avg_ret ?? '—'}% @ tp${cell.opt_tp ?? '—'}/sl${cell.opt_sl ?? '—'} · wr ${cell.opt_win_rate ?? '—'}%`;
+              return `<td title="${title}">${fmtDelta(cell.delta_opt_ret_pp, cell.n)}</td>`;
             }).join('');
             return `
             <tr>
               <td><strong>${row.filter_spec}</strong></td>
               <td>${row.base.n}</td>
-              <td>${fmtSim(row.base.sim_avg_return_pct)}</td>
+              <td>${fmtSim(row.base.opt_avg_ret)}</td>
               ${cells}
             </tr>`;
           }).join('')}

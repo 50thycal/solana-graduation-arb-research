@@ -294,11 +294,13 @@ export class GistSync {
       include_pairs: true,
     });
 
-    // Find the best combo with n≥100 that beats the old baseline — this becomes
-    // the live best_known_baseline shown in snapshot.json.
+    // Find the best combo with n≥100 that beats the rolling entry-gated
+    // baseline — this becomes the live best_known_baseline shown in
+    // snapshot.json. Ranking is by opt_avg_ret (per-combo TP/SL optimum),
+    // matching Panel 6's top_pairs approach.
     const liveLeader = bestCombos.rows
-      .filter(r => r.n >= 100 && r.beats_baseline && r.sim_avg_return_10sl_50tp_pct != null)
-      .sort((a, b) => (b.sim_avg_return_10sl_50tp_pct ?? 0) - (a.sim_avg_return_10sl_50tp_pct ?? 0))[0];
+      .filter(r => r.n >= 100 && r.beats_baseline && r.opt_avg_ret != null)
+      .sort((a, b) => (b.opt_avg_ret ?? 0) - (a.opt_avg_ret ?? 0))[0];
 
     const scorecard = computeThesisScorecard(this.db, liveLeader);
     const quality = computeDataQualityFlags(this.db);
