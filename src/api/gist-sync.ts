@@ -38,6 +38,7 @@ import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
 import { computeExitSim } from './exit-sim';
+import { computeExitSimMatrix } from './exit-sim-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeTradingData } from './trading-data';
 import { getHeavyData } from './heavy-cache';
@@ -88,6 +89,7 @@ export interface StatusUrls {
   price_path_detail: string;
   trading: string;
   wallet_rep_analysis: string;
+  exit_sim_matrix: string;
   branch_html: string;
 }
 
@@ -167,6 +169,7 @@ export class GistSync {
       peak_analysis: `${base}/peak-analysis.json`,
       strategies: `${base}/strategies.json`,
       exit_sim: `${base}/exit-sim.json`,
+      exit_sim_matrix: `${base}/exit-sim-matrix.json`,
       panel1: `${base}/panel1.json`,
       panel2: `${base}/panel2.json`,
       panel4: `${base}/panel4.json`,
@@ -291,11 +294,13 @@ export class GistSync {
       include_pairs: true,
     });
 
-    // Find the best combo with n≥100 that beats the old baseline — this becomes
-    // the live best_known_baseline shown in snapshot.json.
+    // Find the best combo with n≥100 that beats the rolling entry-gated
+    // baseline — this becomes the live best_known_baseline shown in
+    // snapshot.json. Ranking is by opt_avg_ret (per-combo TP/SL optimum),
+    // matching Panel 6's top_pairs approach.
     const liveLeader = bestCombos.rows
-      .filter(r => r.n >= 100 && r.beats_baseline && r.sim_avg_return_10sl_50tp_pct != null)
-      .sort((a, b) => (b.sim_avg_return_10sl_50tp_pct ?? 0) - (a.sim_avg_return_10sl_50tp_pct ?? 0))[0];
+      .filter(r => r.n >= 100 && r.beats_baseline && r.opt_avg_ret != null)
+      .sort((a, b) => (b.opt_avg_ret ?? 0) - (a.opt_avg_ret ?? 0))[0];
 
     const scorecard = computeThesisScorecard(this.db, liveLeader);
     const quality = computeDataQualityFlags(this.db);
@@ -335,6 +340,7 @@ export class GistSync {
     const pricePathStats = computePricePathStats(this.db);
     const peakAnalysis = computePeakAnalysis(this.db);
     const exitSim = computeExitSim(this.db);
+    const exitSimMatrix = computeExitSimMatrix(this.db);
     const walletRepAnalysis = computeWalletRepAnalysis(this.db);
 
     // Heavy compute (filter-v2 panels, price-path detail, trading data) is
@@ -389,6 +395,7 @@ export class GistSync {
       'price-path-stats.json': JSON.stringify(pricePathStats, null, 2),
       'peak-analysis.json': JSON.stringify(peakAnalysis, null, 2),
       'exit-sim.json': JSON.stringify(exitSim, null, 2),
+      'exit-sim-matrix.json': JSON.stringify(exitSimMatrix, null, 2),
       'wallet-rep-analysis.json': JSON.stringify(walletRepAnalysis, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,

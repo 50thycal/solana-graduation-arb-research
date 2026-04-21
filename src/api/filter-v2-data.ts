@@ -1742,7 +1742,15 @@ export function computeFilterV2Data(
       // genuinely improbable vs. baseline.
 
       // ── Shared v3 constants ──────────────────────────────────────────────
-      const V3_BASELINE_SIM_RETURN = 6.44; // promoted 2026-04-12, CLAUDE.md
+      //
+      // 2026-04-21: the old fixed +6.44% reference is retired. Main's
+      // refactor moved the promotion bar to the rolling all-labeled
+      // Panel 4 optimum (baseline4.optimal.avg_ret). Combos qualify when
+      // their opt_avg_ret exceeds that rolling baseline. A null optimum
+      // (insufficient baseline n) falls through to 0 so the flag remains
+      // usable.
+      const V3_BASELINE_SIM_RETURN: number =
+        ((baseline4 as any).optimal as Panel4Optimal)?.avg_ret ?? 0;
 
       // Look up FilterDef by name (used by Panels 1 & 2 to rehydrate pair
       // components from panel6TopPairs, which only stores filter names).
@@ -2440,7 +2448,7 @@ export function computeFilterV2Data(
         panelv3_1: {
           title: 'Top 20 Three-Filter Combos — Focused Scan Around Panel 6 Top Pairs',
           description:
-            'For each of the top 20 two-filter pairs from Panel 6 (at T+300), this scan tries every remaining single filter as a third component, skipping candidates whose group matches either parent-pair member to avoid within-group conflicts. Each triple is run through Panel 4\'s 12×10 TP/SL grid; rows are kept only if n ≥ 30 AND the triple\'s optimum beats the parent pair\'s optimum (lift_vs_pair > 0). Top 20 surfaced per horizon (T+300 / T+120 / T+60), ranked by opt_avg_ret. beats_baseline = opt_avg_ret > +6.44% (CLAUDE.md baseline).',
+            'For each of the top 20 two-filter pairs from Panel 6 (at T+300), this scan tries every remaining single filter as a third component, skipping candidates whose group matches either parent-pair member to avoid within-group conflicts. Each triple is run through Panel 4\'s 12×10 TP/SL grid; rows are kept only if n ≥ 30 AND the triple\'s optimum beats the parent pair\'s optimum (lift_vs_pair > 0). Top 20 surfaced per horizon (T+300 / T+120 / T+60), ranked by opt_avg_ret. beats_baseline = opt_avg_ret > rolling ALL-labeled Panel 4 optimum (see constants.baseline_sim_return).',
           constants: {
             baseline_sim_return: V3_BASELINE_SIM_RETURN,
             min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
@@ -2478,7 +2486,7 @@ export function computeFilterV2Data(
         panelv3_4: {
           title: 'max_tick_drop_0_30 — New Filter Dimension',
           description:
-            'max_tick_drop_0_30 is the worst single 5s-interval price drop in the 0–30s pre-entry window, measured in percentage points. Values are ≤ 0; closer to 0 = smoother early path, more negative = a sudden flush before T+30. This panel tests it standalone and stacked on the current baseline (`vel<20 + top5<10%`) across thresholds {> −3, > −5, > −8, > −10, > −15}. Hypothesis: a large early tick-drop signals coordinated dumping that tends to continue post-entry. beats_baseline = opt_avg_ret > +6.44%.',
+            'max_tick_drop_0_30 is the worst single 5s-interval price drop in the 0–30s pre-entry window, measured in percentage points. Values are ≤ 0; closer to 0 = smoother early path, more negative = a sudden flush before T+30. This panel tests it standalone and stacked on the legacy baseline composite (`vel<20 + top5<10%`) across thresholds {> −3, > −5, > −8, > −10, > −15}. Hypothesis: a large early tick-drop signals coordinated dumping that tends to continue post-entry. beats_baseline = opt_avg_ret > rolling ALL-labeled Panel 4 optimum (see constants.baseline_sim_return).',
           constants: {
             baseline_sim_return: V3_BASELINE_SIM_RETURN,
             thresholds: PANEL_V3_4_THRESHOLDS,
@@ -2490,7 +2498,7 @@ export function computeFilterV2Data(
         panelv3_5: {
           title: 'Velocity × Liquidity Interaction Heatmap',
           description:
-            'Are current edges regime-specific? 5 velocity buckets × 4 liquidity buckets = 20 cells. Each cell re-runs Panel 4\'s TP/SL optimizer on the intersection and reports opt_avg_ret. Look for: (a) whether `vel<20` beats baseline everywhere or only in certain liquidity bands; (b) whether high-liquidity tokens (>150 SOL) offer a better risk/reward than the low-liquidity long tail. beats_baseline = opt_avg_ret > +6.44%. Cells with n < 30 have opt_avg_ret = null.',
+            'Are current edges regime-specific? 5 velocity buckets × 4 liquidity buckets = 20 cells. Each cell re-runs Panel 4\'s TP/SL optimizer on the intersection and reports opt_avg_ret. Look for: (a) whether `vel<20` beats the rolling baseline everywhere or only in certain liquidity bands; (b) whether high-liquidity tokens (>150 SOL) offer a better risk/reward than the low-liquidity long tail. beats_baseline = opt_avg_ret > rolling ALL-labeled Panel 4 optimum (see constants.baseline_sim_return). Cells with n < 30 have opt_avg_ret = null.',
           constants: {
             baseline_sim_return: V3_BASELINE_SIM_RETURN,
             vel_buckets: velBuckets.map(b => b.name),

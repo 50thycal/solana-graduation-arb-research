@@ -15,6 +15,7 @@ const NAV_LINKS = [
   { path: '/wallet-rep-analysis', label: 'Wallet Rep' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/exit-sim', label: 'Exit Sim' },
+  { path: '/exit-sim-matrix', label: 'Exit Matrix' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/trading', label: 'Trading' },
@@ -224,10 +225,12 @@ export function renderThesisHtml(data: any): string {
         <div class="stat"><span class="label">Raw Win Rate</span><span class="value">${wr(sc.raw_win_rate_pct)}</span></div>
       </div>
       <div>
-        <div class="stat"><span class="label">Best Filter (sim)</span><span class="value blue">${sc.best_filter?.name || '—'}</span></div>
-        <div class="stat"><span class="label">Sim Avg Return</span><span class="value ${(sc.best_filter?.sim_avg_return ?? 0) >= 6.44 ? 'green' : (sc.best_filter?.sim_avg_return ?? 0) > 0 ? 'yellow' : 'red'}">${sc.best_filter?.sim_avg_return != null ? (sc.best_filter.sim_avg_return > 0 ? '+' : '') + sc.best_filter.sim_avg_return + '%' : '—'}</span></div>
-        <div class="stat"><span class="label">Win Rate</span><span class="value">${wr(sc.best_filter?.win_rate)}</span></div>
+        <div class="stat"><span class="label">Best Filter (opt)</span><span class="value blue">${sc.best_filter?.name || '—'}</span></div>
+        <div class="stat"><span class="label">Opt Avg Return</span><span class="value ${(sc.best_filter?.opt_avg_ret ?? 0) > (sc.rolling_baseline_opt_avg_ret ?? 0) + 0.3 ? 'green' : (sc.best_filter?.opt_avg_ret ?? 0) > (sc.rolling_baseline_opt_avg_ret ?? 0) ? 'yellow' : 'red'}">${sc.best_filter?.opt_avg_ret != null ? (sc.best_filter.opt_avg_ret > 0 ? '+' : '') + sc.best_filter.opt_avg_ret + '%' : '—'}</span></div>
+        <div class="stat"><span class="label">Opt TP / SL</span><span class="value">${sc.best_filter?.opt_tp != null ? `${sc.best_filter.opt_tp}% / ${sc.best_filter.opt_sl}%` : '—'}</span></div>
+        <div class="stat"><span class="label">Win Rate</span><span class="value">${wr(sc.best_filter?.opt_win_rate)}</span></div>
         <div class="stat"><span class="label">Sample Size (n)</span><span class="value">${sc.best_filter?.sample_size || '—'}</span></div>
+        <div class="stat"><span class="label">Rolling Baseline</span><span class="value">${sc.rolling_baseline_opt_avg_ret != null ? (sc.rolling_baseline_opt_avg_ret > 0 ? '+' : '') + sc.rolling_baseline_opt_avg_ret + '%' : '—'}</span></div>
         <div class="stat"><span class="label">Unlabeled</span><span class="value">${sc.unlabeled}</span></div>
       </div>
     </div>
@@ -1102,13 +1105,15 @@ function v2RegimeRowHtml(r: FilterV2RegimeRow, lowN: number, strongN: number, is
   </tr>`;
 }
 
-// Panel 11 row type — extends base regime row with sim return from best-combos leaderboard
+// Panel 11 row type — extends base regime row with opt return from best-combos leaderboard
 type FilterV2ComboRegimeRow = FilterV2RegimeRow & {
-  sim_avg_return: number | null;
+  opt_tp: number | null;
+  opt_sl: number | null;
+  opt_avg_ret: number | null;
   beats_baseline: boolean;
 };
 
-// Panel 11 row renderer — same as v2RegimeRowHtml but with Sim Ret + Beats? columns after n
+// Panel 11 row renderer — same as v2RegimeRowHtml but with Opt Ret + Beats? columns after n
 function v2ComboRegimeRowHtml(r: FilterV2ComboRegimeRow, lowN: number, strongN: number, isBaseline = false): string {
   const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
   const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
@@ -1116,12 +1121,15 @@ function v2ComboRegimeRowHtml(r: FilterV2ComboRegimeRow, lowN: number, strongN: 
   while (buckets.length < 4) buckets.push({ n: 0, win_rate_pct: null, avg_return_pct: null });
 
   let simRetHtml: string;
-  if (isBaseline || r.sim_avg_return === null) {
+  if (isBaseline || r.opt_avg_ret === null) {
     simRetHtml = '<span style="color:#64748b">—</span>';
   } else {
-    const sc = r.sim_avg_return > 5 ? 'green' : r.sim_avg_return > 0 ? 'yellow' : 'red';
-    const sign = r.sim_avg_return > 0 ? '+' : '';
-    simRetHtml = `<span class="${sc}">${sign}${r.sim_avg_return.toFixed(2)}%</span>`;
+    const sc = r.opt_avg_ret > 5 ? 'green' : r.opt_avg_ret > 0 ? 'yellow' : 'red';
+    const sign = r.opt_avg_ret > 0 ? '+' : '';
+    const tpSl = (r.opt_tp != null && r.opt_sl != null)
+      ? `<span style="color:#64748b;font-size:0.85em"> @ tp${r.opt_tp}/sl${r.opt_sl}</span>`
+      : '';
+    simRetHtml = `<span class="${sc}">${sign}${r.opt_avg_ret.toFixed(2)}%</span>${tpSl}`;
   }
   const beatsHtml = isBaseline
     ? '<span style="color:#64748b">—</span>'
@@ -3009,7 +3017,7 @@ export function renderFilterV3Html(data: any): string {
         <thead><tr>
           <th>Filter A</th><th>Filter B</th><th>Filter C</th>
           <th>n</th><th>TP/SL</th><th>Opt Avg Ret</th><th>WR</th>
-          <th>Parent Pair Opt</th><th>Lift vs Pair</th><th>Beats +6.44%</th>
+          <th>Parent Pair Opt</th><th>Lift vs Pair</th><th>Beats Baseline</th>
         </tr></thead>
         <tbody>${body}</tbody>
       </table>
@@ -3059,7 +3067,7 @@ export function renderFilterV3Html(data: any): string {
         <th>Base</th><th>Kind</th><th>DD Threshold</th>
         <th>Base n</th><th>Base Opt</th>
         <th>Gated n</th><th>Gated TP/SL</th><th>Gated Opt</th><th>Gated WR</th>
-        <th>Retention</th><th>Δ vs Base</th><th>Beats +6.44%</th>
+        <th>Retention</th><th>Δ vs Base</th><th>Beats Baseline</th>
       </tr></thead>
       <tbody>${p2RowsHtml || '<tr><td colspan="12" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
     </table>
@@ -3142,7 +3150,7 @@ export function renderFilterV3Html(data: any): string {
     <table>
       <thead><tr>
         <th>Tick Drop Threshold</th><th>Mode</th><th>n</th><th>Opt TP/SL</th>
-        <th>Opt Avg Ret</th><th>WR</th><th>Beats +6.44%</th>
+        <th>Opt Avg Ret</th><th>WR</th><th>Beats Baseline</th>
       </tr></thead>
       <tbody>${p4RowsHtml || '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
     </table>
@@ -3162,7 +3170,7 @@ export function renderFilterV3Html(data: any): string {
   const cellByKey = new Map<string, P5Cell>();
   for (const c of p5Cells) cellByKey.set(`${c.vel}||${c.liq}`, c);
 
-  const baselineSim: number = p5.constants?.baseline_sim_return ?? 6.44;
+  const baselineSim: number = p5.constants?.baseline_sim_return ?? 0;
   const headerCells = liqBuckets.map(l => `<th style="text-align:center">${escHtml(l)}</th>`).join('');
   const heatmapRows = velBuckets.map(v => {
     const cells = liqBuckets.map(l => {
@@ -3188,7 +3196,7 @@ export function renderFilterV3Html(data: any): string {
       <thead><tr><th></th>${headerCells}</tr></thead>
       <tbody>${heatmapRows}</tbody>
     </table>
-    <div class="desc">Cell coloring: darker green = well above baseline (+${baselineSim.toFixed(2)}%), darker red = well below. Empty dash = n &lt; 30 or no data.</div>
+    <div class="desc">Cell coloring: darker green = well above rolling baseline (${baselineSim >= 0 ? '+' : ''}${baselineSim.toFixed(2)}%), darker red = well below. Empty dash = n &lt; 30 or no data.</div>
   </div>`;
 
   // ── Panel 6 — sum_abs_returns ──
@@ -3221,7 +3229,7 @@ export function renderFilterV3Html(data: any): string {
     <table>
       <thead><tr>
         <th>Threshold</th><th>Mode</th><th>n</th><th>Opt TP/SL</th>
-        <th>Opt Avg Ret</th><th>WR</th><th>Beats +6.44%</th>
+        <th>Opt Avg Ret</th><th>WR</th><th>Beats Baseline</th>
       </tr></thead>
       <tbody>${p6RowsHtml || '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
     </table>
@@ -4635,6 +4643,15 @@ export function renderExitSimHtml(data: any): string {
 
   // Baseline + universe header
   const bs = d.baseline_static;
+  const matrixBanner = `
+    <div class="card" style="border-left:3px solid #2563eb">
+      <div class="desc">
+        <strong>Single-universe view.</strong> This page evaluates all 5 dynamic-exit strategies
+        only on <code>${d.universe.label}</code>. To see which of the top 20 filter combos gains
+        the most from dynamic exits, jump to <a href="/exit-sim-matrix" style="color:#60a5fa"><strong>/exit-sim-matrix</strong></a>.
+      </div>
+    </div>
+  `;
   const headerCards = `
     <div class="grid">
       <div class="card">
@@ -4812,16 +4829,56 @@ export function renderExitSimHtml(data: any): string {
   `;
 
   const wl = d.strategies.whale_liq;
-  const whaleCard = `
-    <div class="card">
-      <h2>Strategy 4 — Whale-sell / liquidity drop</h2>
-      <div class="desc"><span class="yellow">DATA_PENDING</span> — requires new collectors:
-        <ul>${(wl.required_data as string[]).map((s) => `<li>${s}</li>`).join('')}</ul>
+  const whaleDesc =
+    'Exit early on adverse pool signals: <strong>liq_drop</strong>% drop in pool SOL from entry ' +
+    'OR a single sell swap of ≥ <strong>whale_sell</strong> SOL. Fixed 10% SL + 50% TP still active — ' +
+    'whale/liq triggers are ADDED on top of the baseline. ' +
+    `Rows with entry liquidity captured: ${wl.rows_with_data}/${d.universe.n_rows}. ★ = optimum (n≥30).`;
+  const whaleCard = (() => {
+    if (!wl.grid || wl.grid.length === 0 || wl.rows_with_data === 0) {
+      return `
+        <div class="card">
+          <h2>Strategy 4 — Whale-sell / liquidity drop</h2>
+          <div class="desc">
+            <span class="yellow">COLLECTING</span> — 0 rows have entry liquidity / swap data yet.
+            ${wl.rows_with_data === 0 ? 'Waiting for new graduations after the 2026-04-20 data-collection rollout.' : ''}
+          </div>
+        </div>
+      `;
+    }
+    const rowsHtml = (wl.grid as any[])
+      .slice()
+      .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+      .map((c) => {
+        const best = wl.best
+          && c.params.liq_drop_pct === wl.best.params.liq_drop_pct
+          && c.params.whale_sell_sol === wl.best.params.whale_sell_sol;
+        const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+        return `
+          <tr class="${best ? 'row-baseline' : ''}">
+            <td>${c.params.liq_drop_pct}%${best ? ' ★' : ''}</td>
+            <td>${c.params.whale_sell_sol} SOL</td>
+            <td>${c.n}</td>
+            <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+            <td>${fmtWr(c.win_rate_pct)}</td>
+            <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+            <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+          </tr>`;
+      })
+      .join('');
+    return `
+      <div class="card">
+        <h2>Strategy 4 — Whale-sell / liquidity drop</h2>
+        <div class="desc">${whaleDesc}</div>
+        <table>
+          <thead><tr><th>Liq drop</th><th>Whale sell</th><th>n</th><th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
       </div>
-    </div>
-  `;
+    `;
+  })();
 
-  const body = headerCards + momentumCard + scaleOutCard + volCard + timeCard + whaleCard;
+  const body = matrixBanner + headerCards + momentumCard + scaleOutCard + volCard + timeCard + whaleCard;
   return shell('Exit Strategy Simulator', '/exit-sim', body, d);
 }
 
@@ -4910,7 +4967,7 @@ export function renderWalletRepAnalysisHtml(data: any): string {
           <tr>
             <th style="min-width:220px">Combo</th>
             <th>Base n</th>
-            <th>Base sim%</th>
+            <th>Base opt%</th>
             ${repCols}
           </tr>
         </thead>
@@ -4919,14 +4976,14 @@ export function renderWalletRepAnalysisHtml(data: any): string {
             const cells = repFilters.map(rep => {
               const cell = row.cells[rep.name];
               if (!cell) return '<td>—</td>';
-              const title = `n=${cell.n} (retention ${cell.n_retention_pct ?? '—'}%) · sim ${cell.sim_avg_return_pct ?? '—'}% · wr ${cell.sim_win_rate_pct ?? '—'}%`;
-              return `<td title="${title}">${fmtDelta(cell.delta_sim_return_pp, cell.n)}</td>`;
+              const title = `n=${cell.n} (retention ${cell.n_retention_pct ?? '—'}%) · opt ${cell.opt_avg_ret ?? '—'}% @ tp${cell.opt_tp ?? '—'}/sl${cell.opt_sl ?? '—'} · wr ${cell.opt_win_rate ?? '—'}%`;
+              return `<td title="${title}">${fmtDelta(cell.delta_opt_ret_pp, cell.n)}</td>`;
             }).join('');
             return `
             <tr>
               <td><strong>${row.filter_spec}</strong></td>
               <td>${row.base.n}</td>
-              <td>${fmtSim(row.base.sim_avg_return_pct)}</td>
+              <td>${fmtSim(row.base.opt_avg_ret)}</td>
               ${cells}
             </tr>`;
           }).join('')}
@@ -4954,4 +5011,149 @@ export function renderWalletRepAnalysisHtml(data: any): string {
 
   const body = summaryCard + matrixCard + notesCard;
   return shell('Wallet Rep Analysis', '/wallet-rep-analysis', body, d);
+}
+
+// ── EXIT-SIM MATRIX PAGE ─────────────────────────────────────────────
+// Top 20 filter combos × 5 dynamic-exit strategies. Each cell = best-cell
+// Δ vs that combo's own static 10%SL/50%TP baseline. Answers "which
+// combo lifts most from dynamic exits?".
+
+export function renderExitSimMatrixHtml(data: any): string {
+  const d = data;
+
+  const fmtPct = (v: number | null | undefined): string => {
+    if (v == null) return '<span class="yellow">—</span>';
+    const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+    const sign = v > 0 ? '+' : '';
+    return `<span class="${cls}">${sign}${v.toFixed(2)}%</span>`;
+  };
+
+  const fmtDelta = (v: number | null | undefined): string => {
+    if (v == null) return '<span class="yellow">—</span>';
+    const cls = v > 0.3 ? 'green' : v < -0.3 ? 'red' : 'yellow';
+    const sign = v >= 0 ? '+' : '';
+    return `<span class="${cls}"><strong>${sign}${v.toFixed(2)}pp</strong></span>`;
+  };
+
+  const strategyLabels: Record<string, string> = {
+    momentum_reversal: 'Mom. reversal',
+    scale_out: 'Scale-out',
+    vol_adaptive: 'Vol. trail',
+    time_decayed_tp: 'Time-decay TP',
+    whale_liq: 'Whale / liq',
+  };
+
+  const overviewCard = `
+    <div class="card">
+      <h2>Exit Strategy × Combo Matrix</h2>
+      <div class="desc">
+        Each row is one of the top 20 filter combos from <code>/api/best-combos</code>.
+        For each combo we (1) find its own best static (SL × TP) cell across a 4×4 grid,
+        (2) re-run the full 5-strategy dynamic-exit grid, and (3) report the best dynamic
+        cell's Δ vs the combo's own OPTIMAL static baseline — not the global 10/50 default.
+        <br><br>
+        <strong>Sort order:</strong> by best Δ across all 5 strategies, descending.
+        Combos near the top gain the most from dynamic exits on top of their own optimal
+        static tuning; combos at the bottom are already at their optimum (or have too-thin
+        grids to rank).
+      </div>
+    </div>
+  `;
+
+  const matrixCard = (() => {
+    if (!d.rows || d.rows.length === 0) {
+      return `
+        <div class="card">
+          <h2>Matrix</h2>
+          <div class="desc"><span class="yellow">No combos found</span> — is <code>/api/best-combos</code> empty?</div>
+        </div>`;
+    }
+
+    const strategyCols = ['momentum_reversal', 'scale_out', 'vol_adaptive', 'time_decayed_tp', 'whale_liq'];
+
+    const headerCells = strategyCols
+      .map((s) => `<th>${strategyLabels[s]}</th>`)
+      .join('');
+
+    const rowsHtml = (d.rows as any[]).map((r, i) => {
+      const strategyByName = new Map<string, any>();
+      for (const c of r.strategies) strategyByName.set(c.strategy, c);
+
+      const strategyCells = strategyCols.map((name) => {
+        const c = strategyByName.get(name);
+        if (!c || c.delta_vs_static_pp == null) {
+          return `<td><span class="desc">n<${d.min_n_per_cell}</span></td>`;
+        }
+        const isBest = r.best_strategy === name;
+        return `
+          <td class="${isBest ? 'row-baseline' : ''}">
+            ${fmtDelta(c.delta_vs_static_pp)}
+            <div class="desc">${fmtPct(c.best_avg_return_pct)} · n=${c.best_n}${isBest ? ' ★' : ''}</div>
+          </td>`;
+      }).join('');
+
+      const optParams = (r.static_optimal_sl_pct != null && r.static_optimal_tp_pct != null)
+        ? `<div class="desc">${r.static_optimal_sl_pct}SL / ${r.static_optimal_tp_pct}TP</div>`
+        : '';
+
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td><code>${r.filter_spec}</code></td>
+          <td>${r.n_rows}</td>
+          <td>${fmtPct(r.static_10_50_return_pct)}</td>
+          <td><strong>${fmtPct(r.static_optimal_return_pct)}</strong>${optParams}</td>
+          ${strategyCells}
+          <td>${fmtDelta(r.best_delta_pp)}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+      <div class="card">
+        <h2>Matrix — top 20 combos × 5 strategies</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Combo</th>
+              <th>n</th>
+              <th>Static 10/50</th>
+              <th>Opt. Static</th>
+              ${headerCells}
+              <th>Best Δ</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>`;
+  })();
+
+  const notesCard = `
+    <div class="card">
+      <h2>How to read</h2>
+      <div class="desc">
+        <strong>Static 10/50</strong>: return at the global 10%SL/50%TP default — sanity-check
+        column so you can spot any drift from /api/best-combos' leaderboard value.<br>
+        <strong>Opt. Static</strong>: the best cell in a 10×12 (SL × TP) grid mirroring
+        Panel 6's (SL ∈ 3–30, TP ∈ 10–150). This is the FAIR baseline — each combo has its
+        own natural TP/SL pair, and comparing every combo against a fixed 10/50 undersells
+        combos 10/50 wasn't tuned for.<br><br>
+        Each strategy cell shows <strong>Δ vs Opt. Static</strong> in pp (top), then the best
+        dynamic-cell's raw avg return and n (bottom). ★ = the winning strategy for that row.<br>
+        <span class="green">Green</span> = Δ > +0.3 pp (meaningful lift over opt. static).
+        <span class="yellow">Yellow</span> = Δ within ±0.3 pp (noise).
+        <span class="red">Red</span> = Δ < -0.3 pp (dynamic exit hurts vs this combo's own optimum).<br><br>
+        <code>n&lt;${d.min_n_per_cell}</code> means that strategy's grid has no cell with enough samples
+        for this combo to rank — wait for more data.<br><br>
+        <strong>Why n differs from Panel 6:</strong> this matrix enforces the live-trading
+        entry gate (<code>pct_t30 ∈ [5%, 100%]</code>) — a real bot only enters positions that
+        are modestly up at T+30. Panel 6 explores all labeled rows regardless of entry state.
+        Same combo, different universes by design. Opt. (SL, TP) values should be comparable;
+        raw returns will differ.
+      </div>
+    </div>
+  `;
+
+  const body = overviewCard + matrixCard + notesCard;
+  return shell('Exit Strategy Matrix', '/exit-sim-matrix', body, d);
 }

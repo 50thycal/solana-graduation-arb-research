@@ -300,6 +300,54 @@ export function getCompetitionCount10s(db: Database.Database, graduationId: numb
   return row.count;
 }
 
+// ==================== Post-graduation swaps ====================
+
+export interface PostGradSwapInsert {
+  graduation_id: number;
+  tx_signature: string;
+  block_time: number;
+  seconds_since_graduation: number;
+  wallet_address?: string | null;
+  action?: string | null;
+  amount_sol?: number | null;
+  amount_token?: number | null;
+  pool_sol_after?: number | null;
+}
+
+export function insertPostGradSwap(db: Database.Database, data: PostGradSwapInsert): number {
+  // ON CONFLICT ignores duplicates — backfill can safely re-run without
+  // creating duplicate rows for the same (graduation_id, tx_signature) pair.
+  const result = db.prepare(`
+    INSERT INTO post_grad_swaps (
+      graduation_id, tx_signature, block_time, seconds_since_graduation,
+      wallet_address, action, amount_sol, amount_token, pool_sol_after
+    ) VALUES (
+      @graduation_id, @tx_signature, @block_time, @seconds_since_graduation,
+      @wallet_address, @action, @amount_sol, @amount_token, @pool_sol_after
+    )
+    ON CONFLICT(graduation_id, tx_signature) DO NOTHING
+  `).run({
+    graduation_id: data.graduation_id,
+    tx_signature: data.tx_signature,
+    block_time: data.block_time,
+    seconds_since_graduation: data.seconds_since_graduation,
+    wallet_address: data.wallet_address ?? null,
+    action: data.action ?? null,
+    amount_sol: data.amount_sol ?? null,
+    amount_token: data.amount_token ?? null,
+    pool_sol_after: data.pool_sol_after ?? null,
+  });
+
+  return result.lastInsertRowid as number;
+}
+
+export function getPostGradSwapsCount(db: Database.Database, graduationId: number): number {
+  const row = db.prepare(
+    'SELECT COUNT(*) as count FROM post_grad_swaps WHERE graduation_id = ?'
+  ).get(graduationId) as { count: number };
+  return row.count;
+}
+
 // ==================== Graduation momentum ====================
 
 export interface MomentumInsert {
@@ -394,6 +442,27 @@ export function updateMomentumPrice(
   db.prepare(
     `UPDATE graduation_momentum SET price_${checkpoint} = ?, pct_${checkpoint} = ? WHERE graduation_id = ?`
   ).run(price, pctChange, graduationId);
+}
+
+// t600 is not in the liquidity grid (we stop tracking pool reserves at T+300).
+const VALID_LIQUIDITY_CHECKPOINTS: Set<string> = (() => {
+  const s = new Set<string>();
+  for (let sec = 5; sec <= 300; sec += 5) s.add(`t${sec}`);
+  return s;
+})();
+
+export function updateMomentumLiquidity(
+  db: Database.Database,
+  graduationId: number,
+  checkpoint: string,
+  solReserves: number
+): void {
+  if (!VALID_LIQUIDITY_CHECKPOINTS.has(checkpoint)) {
+    throw new Error(`Invalid liquidity checkpoint: ${checkpoint}`);
+  }
+  db.prepare(
+    `UPDATE graduation_momentum SET liquidity_sol_${checkpoint} = ? WHERE graduation_id = ?`
+  ).run(solReserves, graduationId);
 }
 
 export function updateMomentumOpenPrice(

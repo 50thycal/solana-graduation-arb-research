@@ -73,9 +73,16 @@ export const WALLET_REP_FILTERS: WalletRepFilterDef[] = [
 
 export interface WalletRepCell {
   n: number;
-  sim_avg_return_pct: number | null;
-  sim_win_rate_pct: number | null;
-  delta_sim_return_pp: number | null;
+  /** Per-combo optimal TP (% from entry) for this rep-modified subset — null if n < SIM_MIN_N_FOR_OPTIMUM. */
+  opt_tp: number | null;
+  /** Per-combo optimal SL (% from entry). */
+  opt_sl: number | null;
+  /** Avg cost-adjusted return at the optimum cell. */
+  opt_avg_ret: number | null;
+  /** Win rate at the optimum cell. */
+  opt_win_rate: number | null;
+  /** Δ opt_avg_ret between this cell and the rep-unmodified base (positive = rep helps). Null when either side lacks n. */
+  delta_opt_ret_pp: number | null;
   delta_n: number;
   n_retention_pct: number | null;
 }
@@ -113,21 +120,23 @@ export interface WalletRepAnalysisData {
 const MIN_N_FOR_DELTA = 20;
 
 function makeCell(
-  base: { n: number; sim: number | null },
+  base: { n: number; opt_avg_ret: number | null },
   filtered: ReturnType<typeof simulateCombo>,
 ): WalletRepCell {
   const delta =
-    base.sim !== null && filtered.sim_avg_return_pct !== null && filtered.n >= MIN_N_FOR_DELTA
-      ? +(filtered.sim_avg_return_pct - base.sim).toFixed(2)
+    base.opt_avg_ret !== null && filtered.opt_avg_ret !== null && filtered.n >= MIN_N_FOR_DELTA
+      ? +(filtered.opt_avg_ret - base.opt_avg_ret).toFixed(2)
       : null;
   const retention =
     base.n > 0 ? +((filtered.n / base.n) * 100).toFixed(1) : null;
 
   return {
     n: filtered.n,
-    sim_avg_return_pct: filtered.sim_avg_return_pct,
-    sim_win_rate_pct: filtered.sim_win_rate_pct,
-    delta_sim_return_pp: delta,
+    opt_tp: filtered.opt_tp,
+    opt_sl: filtered.opt_sl,
+    opt_avg_ret: filtered.opt_avg_ret,
+    opt_win_rate: filtered.opt_win_rate,
+    delta_opt_ret_pp: delta,
     delta_n: filtered.n - base.n,
     n_retention_pct: retention,
   };
@@ -162,9 +171,11 @@ export function computeWalletRepAnalysis(
     const baseResult = simulateCombo(db, baseWhere);
     const baseCell: WalletRepCell = {
       n: baseResult.n,
-      sim_avg_return_pct: baseResult.sim_avg_return_pct,
-      sim_win_rate_pct: baseResult.sim_win_rate_pct,
-      delta_sim_return_pp: 0,
+      opt_tp: baseResult.opt_tp,
+      opt_sl: baseResult.opt_sl,
+      opt_avg_ret: baseResult.opt_avg_ret,
+      opt_win_rate: baseResult.opt_win_rate,
+      delta_opt_ret_pp: 0,
       delta_n: 0,
       n_retention_pct: 100,
     };
@@ -174,7 +185,7 @@ export function computeWalletRepAnalysis(
       const combinedWhere = `(${baseWhere}) AND (${rep.where})`;
       const result = simulateCombo(db, combinedWhere);
       cells[rep.name] = makeCell(
-        { n: baseResult.n, sim: baseResult.sim_avg_return_pct },
+        { n: baseResult.n, opt_avg_ret: baseResult.opt_avg_ret },
         result,
       );
     }
@@ -196,10 +207,10 @@ export function computeWalletRepAnalysis(
 
     for (const row of rows) {
       const cell = row.cells[rep.name];
-      if (cell.delta_sim_return_pp !== null) {
-        deltas.push(cell.delta_sim_return_pp);
-        if (cell.delta_sim_return_pp > 0) improved++;
-        else if (cell.delta_sim_return_pp < 0) worsened++;
+      if (cell.delta_opt_ret_pp !== null) {
+        deltas.push(cell.delta_opt_ret_pp);
+        if (cell.delta_opt_ret_pp > 0) improved++;
+        else if (cell.delta_opt_ret_pp < 0) worsened++;
       }
       if (cell.n_retention_pct !== null) retentions.push(cell.n_retention_pct);
     }

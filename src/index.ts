@@ -4,9 +4,10 @@ import { initDatabase } from './db/schema';
 import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderWalletRepAnalysisHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml } from './utils/html-renderer';
 import { computePeakAnalysis } from './api/peak-analysis';
 import { computeExitSim } from './api/exit-sim';
+import { computeExitSimMatrix } from './api/exit-sim-matrix';
 import { computeWalletRepAnalysis } from './api/wallet-rep-analysis';
 import { computeFilterV2Data } from './api/filter-v2-data';
 import { computeTradingData } from './api/trading-data';
@@ -841,79 +842,37 @@ async function main() {
       const pumpFiltered = labelsFiltered.find((l: any) => l.label === 'PUMP')?.count || 0;
       const filteredWinRate = totalLabeledFiltered > 0 ? +(pumpFiltered / totalLabeledFiltered * 100).toFixed(1) : null;
 
-      // ── BEST FILTER (ranked by sim return: 10%SL/50%TP from T+30 entry gate) ──
-      // Same cost model as /api/best-combos: enter at T+30 (+5%→+100% gate), 10%SL/50%TP,
-      // 30% SL gap penalty (recalibrated 2026-04-15), 10% TP gap penalty, per-token round-trip slippage (fallback 3%).
-      let bestFilter: { name: string; rule: string; win_rate: number; sim_avg_return: number | null; sample_size: number } | null = null;
+      // ── BEST FILTER (ranked by per-combo opt TP/SL across SIM_TP_GRID × SIM_SL_GRID) ──
+      // Delegates to computeBestCombos — exact same leaderboard that powers
+      // /api/best-combos and best-combos.json on the bot-status branch. Each
+      // candidate is run through the 12×10 grid and reported at its own best
+      // cell, matching Panel 6's top_pairs approach. Replaced 2026-04-21
+      // (was a hand-rolled fixed 10%SL/50%TP sweep across 11 hard-coded
+      // filters — see git history if you need the old shape).
+      let bestFilter: {
+        name: string;
+        rule: string;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        opt_avg_ret: number | null;
+        opt_win_rate: number | null;
+        sample_size: number;
+      } | null = null;
+      let bestCombosBaseline: number | null = null;
       if (totalLabeled >= 5) {
-        const SL_G = 0.30, TP_G = 0.10, DEF_COST = 3.0;  // SL gap recalibrated 2026-04-15
-        // Every 5s from T+60 through T+295 (then pct_t300 fall-through). Pre-rollout
-        // rows have NULLs past the old sparse set; the walk skips NULLs at line 880.
-        const simCols: readonly `pct_t${number}`[] = (() => {
-          const cps: `pct_t${number}`[] = [];
-          for (let sec = 60; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
-          return cps;
-        })();
-        const filterTests = [
-          // Current baseline + top candidates (per CLAUDE.md research state)
-          { name: 'vel<20 + top5<10%',        sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
-          { name: 'vel 10-20 + top5<10%',     sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
-          { name: 'holders>=18 + top5<10%',   sql: "holder_count IS NOT NULL AND holder_count >= 18 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
-          { name: 'vel 10-20 + buy_ratio>0.6', sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20 AND buy_pressure_buy_ratio IS NOT NULL AND buy_pressure_buy_ratio > 0.6" },
-          // Single filters and legacy candidates
-          { name: 'top5<10%',                 sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
-          { name: 'top5<20%',                 sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 20" },
-          { name: 'vel 5-20',                 sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20" },
-          { name: 'vel<20',                   sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20" },
-          { name: 'holders>=18',              sql: "holder_count IS NOT NULL AND holder_count >= 18" },
-          { name: 'bc_age>30min',             sql: "token_age_seconds > 1800" },
-          { name: 'dev_wallet_pct<5%',        sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5" },
-        ];
-        for (const ft of filterTests) {
-          // Fetch tokens matching filter + T+30 entry gate with price checkpoints
-          const rows = db.prepare(`
-            SELECT pct_t30, ${simCols.join(', ')}, pct_t300,
-                   round_trip_slippage_pct, label
-            FROM graduation_momentum
-            WHERE label IS NOT NULL
-              AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100
-              AND ${ft.sql}
-          `).all() as any[];
-          if (rows.length < 3) continue;
-          let simTotal = 0, simN = 0, pumps = 0;
-          for (const r of rows) {
-            if (r.label === 'PUMP') pumps++;
-            const ep: number = r.pct_t30;
-            const cost: number = r.round_trip_slippage_pct ?? DEF_COST;
-            const openM = 1 + ep / 100;
-            const slLvl = (openM * 0.9 - 1) * 100;
-            const tpLvl = (openM * 1.5 - 1) * 100;
-            let exit: number | null = null;
-            for (const col of simCols) {
-              const cv: number | null = r[col];
-              if (cv == null) continue;
-              if (cv <= slLvl) {
-                // Price-multiplier SL (mirrors trade-logger.ts:112)
-                const exitRatio = (1 + cv / 100) * (1 - SL_G);
-                exit = (exitRatio / openM - 1) * 100;
-                break;
-              }
-              if (cv >= tpLvl) { exit = 50 * (1 - TP_G); break; }
-            }
-            if (exit == null) {
-              exit = r.pct_t300 != null
-                ? ((1 + r.pct_t300 / 100) / (1 + ep / 100) - 1) * 100
-                : -100;
-            }
-            simTotal += exit - cost;
-            simN++;
-          }
-          if (simN < 3) continue;
-          const wr = +(pumps / rows.length * 100).toFixed(1);
-          const simAvgReturn = +(simTotal / simN).toFixed(2);
-          if (!bestFilter || simAvgReturn > (bestFilter.sim_avg_return ?? -Infinity)) {
-            bestFilter = { name: ft.name, rule: ft.sql, win_rate: wr, sim_avg_return: simAvgReturn, sample_size: simN };
-          }
+        const cb = computeBestCombos(db, { min_n: 20, top: 1, include_pairs: true });
+        bestCombosBaseline = cb.baseline_avg_return_pct;
+        const top = cb.rows[0];
+        if (top) {
+          bestFilter = {
+            name: top.filter_spec,
+            rule: top.filters.join(' + '),
+            opt_tp: top.opt_tp,
+            opt_sl: top.opt_sl,
+            opt_avg_ret: top.opt_avg_ret,
+            opt_win_rate: top.opt_win_rate,
+            sample_size: top.n,
+          };
         }
       }
 
@@ -1014,24 +973,30 @@ async function main() {
       const t30WinRate = t30Signal.n > 0 ? +(t30Signal.pump / t30Signal.n * 100).toFixed(1) : null;
 
       // ── VERDICT ──
-      // Current baseline: vel<20 + top5<10%, sim +6.44%, n=111, win rate 72.1%, STABLE (promoted 2026-04-12)
-      const BASELINE_SIM_RETURN = 6.44;
-      const BASELINE_FILTER = 'vel<20 + top5<10%';
-      const bestSimReturn = bestFilter?.sim_avg_return ?? null;
+      // Baseline is now rolling — `bestCombosBaseline` is the entry-gated
+      // ALL-population opt_avg_ret (re-computed every snapshot). Promotion
+      // bar: opt_avg_ret > baseline + 0.3 pp on n ≥ 100.
+      const bestOptRet = bestFilter?.opt_avg_ret ?? null;
+      const baseFmt = bestCombosBaseline !== null
+        ? `${bestCombosBaseline >= 0 ? '+' : ''}${bestCombosBaseline.toFixed(2)}%`
+        : '—';
+      const promotionBar = bestCombosBaseline !== null
+        ? `${(bestCombosBaseline + 0.3).toFixed(2)}%`
+        : '—';
       const verdict = totalLabeled < 10
         ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)`
         : totalLabeled < 30
         ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%`
-        : (bestSimReturn !== null && (bestFilter?.sample_size ?? 0) >= 100 && bestSimReturn > BASELINE_SIM_RETURN + 0.3)
-        ? `NEW LEADER — ${bestFilter!.name} sim ${bestSimReturn > 0 ? '+' : ''}${bestSimReturn}% (n=${bestFilter!.sample_size}, win rate ${bestFilter!.win_rate}%) beats baseline +${BASELINE_SIM_RETURN}% by +${(bestSimReturn - BASELINE_SIM_RETURN).toFixed(2)}pp. Run regime check (/filter-analysis-v2 Panel 11).`
-        : `BASELINE ESTABLISHED — ${BASELINE_FILTER} sim +${BASELINE_SIM_RETURN}%, n=111, win rate 72.1%, STABLE regime (promoted 2026-04-12). Promotion bar: beat +${(BASELINE_SIM_RETURN + 0.3).toFixed(2)}% on n≥100 with regime std-dev < 15%.${bestSimReturn !== null ? ` Live best: ${bestFilter!.name} sim ${bestSimReturn > 0 ? '+' : ''}${bestSimReturn}% (n=${bestFilter!.sample_size})` : ''}`;
+        : (bestOptRet !== null && bestCombosBaseline !== null && (bestFilter?.sample_size ?? 0) >= 100 && bestOptRet > bestCombosBaseline + 0.3)
+        ? `NEW LEADER — ${bestFilter!.name} opt ${bestOptRet > 0 ? '+' : ''}${bestOptRet}% @ tp${bestFilter!.opt_tp}/sl${bestFilter!.opt_sl} (n=${bestFilter!.sample_size}, win rate ${bestFilter!.opt_win_rate}%) beats rolling baseline ${baseFmt} by +${(bestOptRet - bestCombosBaseline).toFixed(2)}pp. Run regime check (/filter-analysis-v2 Panel 11).`
+        : `SEARCHING — rolling baseline ${baseFmt} (entry-gated ALL @ own opt TP/SL). Promotion bar: beat ${promotionBar} on n ≥ 100 with Panel 11 STABLE and Panel 7 NOT OVERFIT.${bestOptRet !== null ? ` Live best: ${bestFilter!.name} opt ${bestOptRet > 0 ? '+' : ''}${bestOptRet}% @ tp${bestFilter!.opt_tp}/sl${bestFilter!.opt_sl} (n=${bestFilter!.sample_size})` : ''}`;
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'thesis-page-v2-baseline-reflect',
-        thesis: 'Baseline established: vel<20 + top5<10% sim +6.44%, n=111, win rate 72.1%, STABLE regime (promoted 2026-04-12). Next candidates: vel 10-20 + top5<10% (n=51, sim +8.08%), vel 10-20 + buy_ratio>0.6 (n=33, sim +8.90%). Need n≥100 + sim>+6.74% + STABLE regime to promote.',
-        last_change: 'Thesis page now reflects actual research state: (1) Best Filter ranked by sim return (10%SL/50%TP + costs) instead of raw T+30 profitable rate. (2) filterTests updated with current baseline combo (vel<20+top5<10%) and top candidates. (3) T+30 signal card now shows live stats for baseline filter instead of holders>=10. (4) Verdict logic reflects BASELINE ESTABLISHED vs searching for improvement.',
-        watch_for: 'Best Filter on scorecard should show vel<20+top5<10% with sim return near +6.44% (or higher if a candidate is now beating it). Baseline Signal card should show n growing as more data is collected. If sim return deviates significantly from +6.44%, check /api/best-combos for the authoritative leaderboard.',
+        version: 'thesis-page-v3-opt-grid',
+        thesis: 'Leaderboard now ranks combos by opt_avg_ret (per-combo TP/SL optimum across SIM_TP_GRID × SIM_SL_GRID), matching Panel 6 / /api/best-combos. Baseline is rolling — entry-gated ALL-population opt_avg_ret, recomputed every snapshot. Promotion bar: beat rolling baseline by +0.3 pp on n ≥ 100 with Panel 11 STABLE and Panel 7 NOT OVERFIT.',
+        last_change: 'Retired legacy fixed-10%SL/50%TP scorecard loop (and its 11 hard-coded filter tests) in favor of computeBestCombos. Removed stale +6.44% / +1.4% anchors. best_filter now carries opt_tp / opt_sl / opt_avg_ret / opt_win_rate, and the scorecard shows the live rolling baseline alongside the current leader.',
+        watch_for: 'Best Filter card should show whichever combo leads /api/best-combos — with its own opt TP/SL (not fixed 10/50). Rolling Baseline card should track the entry-gated ALL-population opt_avg_ret. If Best Filter opt_avg_ret diverges from best-combos.json top row, the HTML cache is stale.',
       };
 
       // Detection pipeline stats (shows how many raw events → real graduations)
@@ -1077,6 +1042,7 @@ async function main() {
             t300: totalLabeled,
           },
           best_filter: bestFilter,
+          rolling_baseline_opt_avg_ret: bestCombosBaseline,
           samples_remaining: samplesRemaining,
           // Quality filter: excludes self-graduated scam tokens (sol_raised < 50 SOL)
           quality_filtered: {
@@ -2327,6 +2293,23 @@ async function main() {
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(renderExitSimHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Matrix version of /exit-sim — top 20 filter combos × 5 dynamic-exit
+  // strategies. See src/api/exit-sim-matrix.ts.
+  app.get('/exit-sim-matrix', (req, res) => {
+    try {
+      const data = computeExitSimMatrix(db);
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderExitSimMatrixHtml(data));
       } else {
         res.json(data);
       }
