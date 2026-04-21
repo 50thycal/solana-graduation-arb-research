@@ -280,6 +280,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       panelv3_4: d.panelv3_4,
       panelv3_5: d.panelv3_5,
       panelv3_6: d.panelv3_6,
+      panelv3_7: d.panelv3_7,
     });
   }));
 
@@ -313,6 +314,11 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     const sm = getStrategyManager ? getStrategyManager() : null;
     const d = getHeavyData(db, sm).v2;
     res.json({ generated_at: d.generated_at, panelv3_6: d.panelv3_6 });
+  }));
+  app.get('/api/panelv3_7', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
+    res.json({ generated_at: d.generated_at, panelv3_7: d.panelv3_7 });
   }));
 
   // ── /api/price-path-detail ──
@@ -526,6 +532,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
         { path: '/api/panelv3_4',          description: 'v3 Panel 4 (max_tick_drop_0_30 — new filter dim)' },
         { path: '/api/panelv3_5',          description: 'v3 Panel 5 (velocity × liquidity heatmap)' },
         { path: '/api/panelv3_6',          description: 'v3 Panel 6 (sum_abs_returns_0_30 — pre-entry realized vol)' },
+        { path: '/api/panelv3_7',          description: 'v3 Panel 7 (regime + walk-forward on v3 leaders — stability check)' },
         { path: '/api/exit-sim',           description: 'Dynamic-exit strategy simulator (momentum, scale-out, vol-trail, time-decayed TP)' },
         { path: '/api/trading',            description: 'Full /trading data: open positions, performance, trades, skips' },
         { path: '/api/filter-catalog',     description: 'Filter definitions used by best-combos' },

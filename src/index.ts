@@ -2225,6 +2225,7 @@ async function main() {
           panelv3_4: data.panelv3_4,
           panelv3_5: data.panelv3_5,
           panelv3_6: data.panelv3_6,
+          panelv3_7: data.panelv3_7,
         });
       }
     } catch (err) {

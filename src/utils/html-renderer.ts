@@ -3235,6 +3235,109 @@ export function renderFilterV3Html(data: any): string {
     </table>
   </div>`;
 
+  // ── Panel 7 — regime + walk-forward on v3 leaders ──
+  type P7Row = {
+    name: string;
+    kind: 'pair' | 'triple';
+    n_total: number;
+    opt_tp: number | null;
+    opt_sl: number | null;
+    opt_avg_ret: number | null;
+    n_train: number;
+    n_test: number;
+    train_tp: number | null;
+    train_sl: number | null;
+    train_avg_ret: number | null;
+    test_avg_ret: number | null;
+    degradation: number | null;
+    wf_verdict: 'ROBUST' | 'DEGRADED' | 'OVERFIT' | 'INSUFFICIENT';
+    buckets: { n: number; win_rate_pct: number | null; avg_return_pct: number | null }[];
+    wr_std_dev: number | null;
+    regime_stability: 'STABLE' | 'MODERATE' | 'CLUSTERED' | 'INSUFFICIENT';
+  };
+  const p7 = data.panelv3_7 ?? {};
+  const p7Rows: P7Row[] = p7.rows ?? [];
+
+  const wfBadge = (v: P7Row['wf_verdict']): string => {
+    const cls = v === 'ROBUST'      ? 'badge-pump'
+              : v === 'DEGRADED'    ? 'badge-stable'
+              : v === 'OVERFIT'     ? 'badge-dump'
+              : '';
+    const bg = v === 'INSUFFICIENT' ? 'background:#334155;color:#94a3b8' : '';
+    return `<span class="badge ${cls}" style="font-size:10px;${bg}">${v}</span>`;
+  };
+  const regBadge = (v: P7Row['regime_stability']): string => {
+    const cls = v === 'STABLE'     ? 'badge-pump'
+              : v === 'MODERATE'   ? 'badge-stable'
+              : v === 'CLUSTERED'  ? 'badge-dump'
+              : '';
+    const bg = v === 'INSUFFICIENT' ? 'background:#334155;color:#94a3b8' : '';
+    return `<span class="badge ${cls}" style="font-size:10px;${bg}">${v}</span>`;
+  };
+  const bucketCell = (b: { n: number; win_rate_pct: number | null; avg_return_pct: number | null }): string => {
+    if (b.win_rate_pct == null || b.avg_return_pct == null) {
+      return `<td style="color:#4b5563;font-size:11px">n=${b.n}<br>—</td>`;
+    }
+    const wrCls = b.win_rate_pct >= 50 ? 'green' : b.win_rate_pct >= 40 ? 'yellow' : 'red';
+    const retCls = b.avg_return_pct > 0 ? 'green' : 'red';
+    return `<td style="font-size:11px">
+      <span class="${wrCls}">${b.win_rate_pct}%</span>
+      <span style="color:#64748b">/${b.n}</span><br>
+      <span class="${retCls}">${b.avg_return_pct > 0 ? '+' : ''}${b.avg_return_pct}%</span>
+    </td>`;
+  };
+
+  const p7RowsHtml = p7Rows.map((r: P7Row) => {
+    const kindTag = `<span class="badge" style="background:${r.kind === 'triple' ? '#1f2a44' : '#334155'};color:${r.kind === 'triple' ? '#60a5fa' : '#94a3b8'};font-size:10px">${r.kind}</span>`;
+    const optCell = r.opt_tp != null
+      ? `<span>${r.opt_tp}/${r.opt_sl}</span><br>${v3Pct(r.opt_avg_ret, 2)}`
+      : '—';
+    const wfCell = r.train_tp != null
+      ? `train=${r.train_tp}/${r.train_sl}<br>${v3Pct(r.train_avg_ret, 2)} → ${v3Pct(r.test_avg_ret, 2)}<br>deg=${r.degradation != null ? r.degradation.toFixed(2) + 'pp' : '—'}`
+      : '—';
+    const bucketCells = r.buckets.map(bucketCell).join('');
+    const paddedBucketCells = bucketCells + '<td></td>'.repeat(Math.max(0, 4 - r.buckets.length));
+    const stdDev = r.wr_std_dev != null ? r.wr_std_dev.toFixed(1) : '—';
+    return `<tr>
+      <td>${escHtml(r.name)}</td>
+      <td>${kindTag}</td>
+      <td>${r.n_total}</td>
+      <td style="font-size:11px">${optCell}</td>
+      <td style="font-size:11px">n=${r.n_train}/${r.n_test}<br>${wfCell}</td>
+      <td>${wfBadge(r.wf_verdict)}</td>
+      ${paddedBucketCells}
+      <td>${stdDev}</td>
+      <td>${regBadge(r.regime_stability)}</td>
+    </tr>`;
+  }).join('');
+
+  const panelV37Html = `<div class="card">
+    <h2>v3 Panel 7 — ${escHtml(p7.title ?? 'Regime Stability & Walk-Forward')}</h2>
+    <div class="desc">${escHtml(p7.description ?? '')}</div>
+    <table>
+      <thead><tr>
+        <th>Filter</th><th>Kind</th><th>n</th><th>Opt (TP/SL)<br>Avg Ret</th>
+        <th>Walk-Forward<br>train → test</th><th>WF Verdict</th>
+        <th>B1 WR/n<br>Ret</th><th>B2</th><th>B3</th><th>B4</th>
+        <th>WR σ</th><th>Regime</th>
+      </tr></thead>
+      <tbody>${p7RowsHtml || '<tr><td colspan="12" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
+    </table>
+    <div class="desc" style="margin-top:10px">
+      <strong>Walk-forward verdict colors:</strong>
+      <span class="badge badge-pump" style="font-size:10px">ROBUST</span> (&lt; 2pp degradation) ·
+      <span class="badge badge-stable" style="font-size:10px">DEGRADED</span> (2–5pp) ·
+      <span class="badge badge-dump" style="font-size:10px">OVERFIT</span> (&gt; 5pp).
+      <br>
+      <strong>Regime stability:</strong>
+      <span class="badge badge-pump" style="font-size:10px">STABLE</span> (σ &lt; 8) ·
+      <span class="badge badge-stable" style="font-size:10px">MODERATE</span> (8–15) ·
+      <span class="badge badge-dump" style="font-size:10px">CLUSTERED</span> (≥ 15).
+      <br>
+      <em>A promotion candidate must be both NOT OVERFIT and NOT CLUSTERED.</em>
+    </div>
+  </div>`;
+
   const script = `<script>
   function v3SetP1Horizon(h) {
     var tabs = document.querySelectorAll('.p4-tab');
@@ -3258,9 +3361,10 @@ export function renderFilterV3Html(data: any): string {
     panelv3_4: data.panelv3_4,
     panelv3_5: data.panelv3_5,
     panelv3_6: data.panelv3_6,
+    panelv3_7: data.panelv3_7,
   };
 
-  const body = panelV31Html + panelV32Html + panelV33Html + panelV34Html + panelV35Html + panelV36Html + script;
+  const body = panelV31Html + panelV32Html + panelV33Html + panelV34Html + panelV35Html + panelV36Html + panelV37Html + script;
   return shell('Filter Analysis V3', '/filter-analysis-v3', body, v3Data);
 }
 
