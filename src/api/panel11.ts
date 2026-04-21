@@ -208,7 +208,9 @@ export interface Panel11Data {
   baseline: {
     filter: string;
     group: string;
-    sim_avg_return: number | null;
+    opt_tp: number | null;
+    opt_sl: number | null;
+    opt_avg_ret: number | null;
     beats_baseline: boolean;
     n: number;
     buckets: { n: number; win_rate_pct: number | null; avg_return_pct: number | null }[];
@@ -218,7 +220,9 @@ export interface Panel11Data {
   filters: Array<{
     filter: string;
     group: string;
-    sim_avg_return: number | null;
+    opt_tp: number | null;
+    opt_sl: number | null;
+    opt_avg_ret: number | null;
     beats_baseline: boolean;
     n: number;
     buckets: { n: number; win_rate_pct: number | null; avg_return_pct: number | null }[];
@@ -235,7 +239,9 @@ export function computePanel11(db: Database.Database): Panel11Data {
   const baseline = {
     filter: 'ALL labeled (entry gate only)',
     group: 'Baseline',
-    sim_avg_return: null as number | null,
+    opt_tp: null as number | null,
+    opt_sl: null as number | null,
+    opt_avg_ret: null as number | null,
     beats_baseline: false,
     ...runFilterRegime(ENTRY_GATE_PRED, rows, boundaries),
   };
@@ -253,7 +259,9 @@ export function computePanel11(db: Database.Database): Panel11Data {
       return {
         filter: row.filter_spec,
         group: `${FILTER_CATALOG.find(f => f.name === row.filters[0])?.group ?? ''} × ${FILTER_CATALOG.find(f => f.name === row.filters[1])?.group ?? ''}`,
-        sim_avg_return: row.sim_avg_return_10sl_50tp_pct,
+        opt_tp: row.opt_tp,
+        opt_sl: row.opt_sl,
+        opt_avg_ret: row.opt_avg_ret,
         beats_baseline: row.beats_baseline,
         ...regime,
       };
@@ -270,7 +278,7 @@ export function computePanel11(db: Database.Database): Panel11Data {
     generated_at: new Date().toISOString(),
     title: 'Combo Filter Regime Stability — Cross-Group Filter Pairs',
     description:
-      'Regime check for every cross-group two-filter combination in the catalog, with the T+30 entry gate (+5% to +100%) applied. Rows are the EXACT same combos as /api/best-combos, ordered by sim return descending. Use this to validate that a high-sim-return combo also holds up across time buckets.',
+      'Regime check for every cross-group two-filter combination in the catalog, with the T+30 entry gate (+5% to +100%) applied. Rows are the EXACT same combos as /api/best-combos, ordered by opt_avg_ret descending (each combo at its own TP/SL optimum). Use this to validate that a high-opt-return combo also holds up across time buckets.',
     bucket_windows,
     baseline,
     filters,

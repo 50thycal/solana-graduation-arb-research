@@ -8,7 +8,9 @@ The open research question is:
 
 > **Which single filter or combination of filters — from the full v2 filter search space — yields a profitable bot after all costs (gap penalties, round-trip slippage), on n ≥ 100 samples, with regime-stable edge?**
 
-Velocity 5–20 sol/min + 10% SL / 30–50% TP was the old baseline (+1.4% avg return, n=80). **The current baseline is `vel < 20 + top5 < 10%` — promoted at sim +6.44% (n=111, STABLE regime, 2026-04-12); live sim return drifts as data grows, check `/api/best-combos` for the current value.** Any new filter or combination is fair game — single filters, pairs, triples, cross-dimension combos — as long as each candidate is evaluated against the baseline and the same rigor (sample size, regime stability, cost modeling).
+**Ranking framework (updated 2026-04-21):** `/api/best-combos` and `wallet-rep-analysis` no longer evaluate every combo at a fixed 10% SL / 50% TP. They now run each candidate through the same 12×10 TP×SL grid Panel 4/Panel 6 use and report the combo at its own **opt TP / opt SL / opt avg return**. This mirrors Panel 6's `top_pairs` logic and matches how we'd actually deploy each filter — every combo exits at its own best-fit TP/SL, not a one-size-fits-all point. The fixed-10/50 framework is retired.
+
+**Current baseline:** rolling "all labeled rows (entry-gated only)" at its own optimal TP/SL. Live value lives in `best-combos.json → baseline_avg_return_pct`. Any combo that beats it by ≥ +0.3 pp on n ≥ 100 with regime-stable WR is a promotion candidate. Any new filter or combination is fair game — single filters, pairs, triples, cross-dimension combos — as long as each candidate is evaluated against the rolling baseline and the same rigor (sample size, regime stability, cost modeling).
 
 The bot is free to hypothesize, test, and adopt new filters without asking permission. The only rules are: beat the baseline, survive regime checks, and never claim victory on small n.
 
@@ -28,37 +30,37 @@ These are prior results. They are **starting knowledge**, not constraints. If ne
 - **Raw top5 wallet concentration filters**: Actively negative in isolation — higher concentration = worse. (Same caveat: may have value in combos.)
 - **Momentum continuation** (T+300 > T+30): Only 47%. Not a signal.
 
-### Current Best-Known Baseline
-- **`vel < 20 + top5 < 10%` + T+30 gate (+5% to +100%) + 10% SL / 50% TP**: sim **+6.44%** avg return at promotion (n=111, win rate 72.1%), regime **STABLE** (WR StdDev < 8). Promoted 2026-04-12. **This is the floor to beat.**
-- **Note on sim return drift**: The recorded +6.44% was the value at the moment of promotion. As more data accumulates, the live sim return will drift (up or down) — this is expected and not a bug. `snapshot.json` always shows the live value from the leaderboard. Use the promotion value (+6.44%, n=111) as the historical anchor for CLAUDE.md; the live `/api/best-combos` value is what matters for current decisions.
-- Former baseline: vel 5-20 @ 10% SL / 50% TP: +1.4% avg return (n=80, 2026-04). Retired.
-- Former baseline sim returns for reference: vel 5-20 @ 30% TP: +0.8%; vel 5-20 @ 75% TP: +1.0%; BC age >10min + vel<20 @ 10%SL: +0.8% (n=103)
+### Current Best-Known Baseline (per-combo opt framework)
+- **Baseline**: rolling ALL-entry-gated population at its own grid optimum — i.e. `/api/best-combos → baseline_avg_return_pct`. Reported afresh every sync. As of the 2026-04-21 refactor it's negative (~−12% range) — the raw graduation population is unprofitable even at its best TP/SL.
+- **Promotion bar**: a combo qualifies for promotion when `opt_avg_ret > baseline_avg_return_pct + 0.3 pp` on n ≥ 100 with regime std-dev < 15% (Panel 11). Positive returns are not required — beating the rolling floor is.
+- **Retired 2026-04-21**: the fixed 10% SL / 50% TP ranking, the +6.44% promotion value for `vel<20 + top5<10%`, and the +1.4% vel 5-20 anchor. None of these reference points are used anymore. The fields `sim_avg_return_10sl_50tp_pct` / `sim_win_rate_10sl_50tp_pct` no longer exist on best-combos rows — use `opt_tp`, `opt_sl`, `opt_avg_ret`, `opt_win_rate`.
 
-### Leaderboard Leaders (as of 1,964 total grads, 2026-04-12)
-All results below include the T+30 entry gate (+5% to +100%) and model 10% SL / 50% TP with per-token round-trip slippage. Source: `/api/best-combos`. Regime stability now available via Panel 11 on `/filter-analysis-v2`.
+### Leaderboard Leaders (snapshot at 2026-04-21 refactor cutover, n~3,378 labeled)
+Panel 6 `top_pairs` (which computeBestCombos now mirrors) shows these at their own opt TP/SL. These are the candidates to watch as n grows.
 
-**Best single filter with n ≥ 100:** No single filter currently appears in the top 20 — all are dominated by two-filter combos.
+**Best with n ≥ 100 (all are negative — bar to beat is the rolling baseline, not zero):**
+1. `top5 < 10% + dev > 5%` — n=50 (still under 100, watching) opt_tp=50, opt_sl=20, opt_avg_ret **+12.6%** — highest-return pair in the catalog; needs ~50 more samples
+2. `holders >= 18 + top5 < 10%` — n=352, opt_tp=50, opt_sl=30, opt_avg_ret −0.6% (but lift +11.1 pp over single-filter optima)
+3. `vel < 20 + top5 < 10%` — n=293, opt_tp=150, opt_sl=30, opt_avg_ret −1.1% (lift +8.6 pp)
+4. `holders >= 15/10/5 + top5 < 10%` cluster — n=360–373, opt ~150/30, opt_avg_ret in the −0.5 to −3 pp range
 
-**Best combos with n ≥ 100:**
-1. `vel < 20 + top5 < 10%` — n=111, sim +6.44%, win rate 72.1% — **STABLE regime — CURRENT BASELINE (promoted 2026-04-12)**
-2. `holders >= 18 + top5 < 10%` — n=127, sim +5.68%, win rate 69.3% — **regime check pending (use Panel 11)**
+**Top combos with positive opt return (insufficient n — watch):**
+1. `top5 < 10% + dev > 5%` — n=50, opt @ 50/20 → **+12.6%**, 70% WR
+2. `vel 20-50 + max_dd > -10%` — n=71, opt @ 100/30 → +6.4%, 54% WR
+3. `bc_age > 1 day + max_dd > -10%` — n=66, opt @ 100/30 → +3.7%, 45% WR
+4. `liq > 150 + vol > 60%` — n=45, opt @ 150/30 → +3.5%, 33% WR (but extremely high variance)
+5. `vel 20-50 + liq > 100` — n=61, opt @ 75/30 → +2.1%, 56% WR
 
-**Top combos by sim return (insufficient n — watch for n=100):**
-1. `vel 10-20 + buy_ratio > 0.6` — n=33, sim +8.90%, win rate 72.7% — needs ~67 more samples
-2. `vel 20-50 + dd > -10%` — n=24, sim +8.67%, win rate 70.8% — new entrant; avg raw return +54% (pump-heavy)
-3. `vel 10-20 + top5 < 10%` — n=51, sim +8.08%, win rate 74.5% — subset of #1 leader, higher return
-4. `vel 5-20 + top5 < 10%` — n=76, sim +7.07%, win rate 75.0% — needs ~24 more samples
+**Interpretation (post-refactor):** `top5 < 10%` is still the most repeated component across the top pairs, but the optimal TP/SL for it in combination is often 50/20 or 150/30 — NOT the old 10%SL/50%TP the fixed framework assumed. `dev > 5%` as a co-filter (against the grain of earlier "dev < 3%" hypotheses) keeps surfacing at the top — likely because insider-held tokens run harder when they work. Watch `top5<10% + dev>5%` toward n=100.
 
-**Interpretation:** `vel < 20 + top5 < 10%` is the only n≥100 combo with beats_baseline=true AND the highest sim return at that sample size. `top5 < 10%` appears in 3 of the top 4 combos by sim return — it is the strongest individual signal component. The `vel 10-20` narrowing consistently outperforms `vel 5-20` when paired with `top5 < 10%` (sim +8.08% vs +7.07%), suggesting the lower velocity floor is noise. Regime checks for the two n≥100 leaders are the next required step before promoting either as the new baseline.
-
-### Promising Leads (priority order — beat +6.44% on n ≥ 100 with STABLE regime)
-1. **`vel 10-20 + top5 < 10%`** (n=51, sim +8.08%): Best sim return of the top5<10% family. ~49 samples from n=100. If it holds, it supersedes the new baseline.
-2. **`vel 5-20 + top5 < 10%`** (n=76, sim +7.07%): ~24 samples from n=100. Should validate or refine #1 above.
-3. **`vel 10-20 + buy_ratio > 0.6`** (n=33, sim +8.90%): Highest sim return in catalog. ~67 samples from n=100.
-4. **`vel 20-50 + dd > -10%`** (n=24, sim +8.67%): Extreme raw return (+54%) suggests pump-outlier bias; monitor as n grows.
-5. **`holders >= 18 + top5 < 10%`** (n=127, sim +5.68%): Already at n≥100. Regime check via Panel 11 — if STABLE, compare against new baseline.
-- **Regime stability**: Panel 11 now live on `/filter-analysis-v2` — use it for regime checks. New baseline `vel < 20 + top5 < 10%` confirmed STABLE (WR StdDev < 8).
-- **Tail risk**: 10% SL is mandatory for any strategy. Do not run without it.
+### Promising Leads (priority order — beat the rolling baseline on n ≥ 100 with STABLE regime)
+1. **`top5 < 10% + dev > 5%`** (n=50, opt @ 50/20, +12.6%): Highest opt_avg_ret in the catalog. ~50 more samples to n=100. If it holds it's the first positive-EV combo at n≥100 since the framework changed.
+2. **`vel 20-50 + max_dd > -10%`** (n=71, opt @ 100/30, +6.4%): Second-highest opt. ~29 samples from n=100.
+3. **`vel 20-50 + mono > 0.5/0.66`** (n=120 each, opt @ 150/30, +1.2%): Already n≥100 but marginal vs baseline — regime-check in Panel 11 before promotion.
+4. **`holders >= 18 + top5 < 10%`** (n=352, opt @ 50/30, −0.6%): Close to the baseline and the widest-n candidate — if baseline drifts lower this one clears the promotion bar without new data.
+5. **Everything with `top5 < 10%` in it**: strongest repeated component. Check Panels 7 (walk-forward) + 11 (regime) before claiming an edge.
+- **Regime stability**: Panel 11 remains the check for combo stability. Panel 7 walk-forward still uses the same SIM_TP_GRID / SIM_SL_GRID — an "OVERFIT" verdict on test means the opt TP/SL is train-dependent.
+- **Tail risk**: SL in the 10–30% range is mandatory. `opt_sl` will tell you which level fits each combo; do not run without one.
 
 ## SEARCH SPACE
 
@@ -168,10 +170,11 @@ Every candidate filter or combo passes, fails, or is inconclusive on these rules
 
 ### CANDIDATE VALID (adopt as new baseline)
 - n ≥ 100 samples
-- Avg return beats current baseline by at least +0.3 percentage points after all costs (gap penalties + round-trip slippage)
-- Regime std-dev < 15% across available time windows
+- `opt_avg_ret` beats `baseline_avg_return_pct` (from best-combos.json) by at least +0.3 percentage points, each evaluated at its own grid optimum (per-combo TP/SL)
+- Regime std-dev < 15% across available time windows (Panel 11)
+- Walk-forward (Panel 7) verdict is ROBUST or DEGRADED, NOT OVERFIT
 - `/api/diagnose` returns `HEALTHY`
-- Output: "NEW BASELINE — `<filter spec>` beats `<old baseline>` by `<delta>` on n=`<n>`. Updating CLAUDE.md baseline section and promoting in `/api/best-combos`."
+- Output: "NEW BASELINE — `<filter spec>` at tp=`<opt_tp>` sl=`<opt_sl>` beats `<baseline>` by `<delta>` on n=`<n>`. Updating CLAUDE.md baseline section and promoting in `/api/best-combos`."
 
 ### CANDIDATE INVALID (drop and try next)
 - n ≥ 100 and avg return ≤ baseline − 0 pp, OR
@@ -195,16 +198,17 @@ Never declare victory on n < 100. Never keep a candidate running past a clear in
 |---|---|
 | Entry timing | T+30 post-graduation on PumpSwap pool |
 | Entry gate | T+30 price between +5% and +100% from open |
-| Filter | `vel < 20 + top5 < 10%` — **CURRENT BASELINE** (promoted 2026-04-12) |
-| Stop-loss | 10% from entry (with 20% adverse gap penalty modeled) |
-| Take-profit | 50% from entry (with 10% adverse gap penalty modeled) |
-| Round-trip costs | Per-token measured slippage, fallback 3% |
-| Baseline avg return | **+6.44%** per trade sim (n=111, 10%SL/50%TP, STABLE regime) — replaces +1.4% (vel 5-20, n=80) |
-| Next candidates | `vel 10-20 + top5 < 10%` sim +8.08% (n=51); `vel 10-20 + buy_ratio > 0.6` sim +8.90% (n=33) |
-| Promotion bar | Beat **+6.44%** by ≥ +0.3 pp on n ≥ 100 with regime std-dev < 15% |
+| Filter | No n≥100 combo currently beats the rolling baseline — searching. Watch `top5 < 10% + dev > 5%` at n=50 (opt +12.6% @ 50/20) and `vel 20-50 + max_dd > -10%` at n=71 (opt +6.4% @ 100/30). |
+| Stop-loss | Per-combo `opt_sl` from `SIM_SL_GRID = [3, 4, 5, 7.5, 10, 12.5, 15, 20, 25, 30]` — no longer fixed. 30% adverse gap penalty modeled on SL fills. |
+| Take-profit | Per-combo `opt_tp` from `SIM_TP_GRID = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150]` — no longer fixed. 10% adverse gap penalty modeled on TP fills. |
+| Round-trip costs | Per-token measured slippage, fallback 3% (`SIM_DEFAULT_COST_PCT`) |
+| Baseline avg return | **Rolling** — published live as `baseline_avg_return_pct` in `best-combos.json`. Recomputed every 2 min against the current entry-gated labeled population at its own opt TP/SL. |
+| Promotion bar | Beat `baseline_avg_return_pct` by ≥ +0.3 pp on n ≥ 100 with Panel 11 regime std-dev < 15% AND Panel 7 walk-forward NOT OVERFIT |
 | Price source | PumpSwap pool ONLY (not bonding curve) |
 | Execution | Research only — no live trades |
 | Monthly revenue target | ~$490/month at 0.5 SOL position size (covers AI/infra costs) |
+
+Simulator constants are exported from `src/api/sim-constants.ts` and shared across `computeBestCombos` (aggregates.ts), Panel 4 / Panel 6 / Panel 10 (filter-v2-data.ts), and the wallet-rep analysis. Changes to grid or gap penalties there propagate everywhere — do not re-hardcode values in new code paths.
 
 ### Filter dimensions currently exposed in the search:
 See `SEARCH SPACE` section above. Any dimension there is fair game; add new ones freely.
@@ -226,12 +230,13 @@ Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These
 ### Session-start protocol (do this first, every time)
 
 1. **`diagnose.json`** → confirm `verdict: "HEALTHY"`. If not, fix the reported level before doing anything else.
-2. **`snapshot.json`** → read counts, scorecard, data quality, last 10 graduations, last error.
-3. **`best-combos.json`** → leaderboard ranked by sim return. Pick the next hypothesis.
-4. **`panel11.json`** → regime stability for the top combos — check `stability` and `wr_std_dev` alongside sim return.
+2. **`snapshot.json`** → read counts, scorecard, data quality, last 10 graduations, last error. Note `best_known_baseline` now carries `opt_tp_pct` / `opt_sl_pct` (per-combo) instead of fixed 10/50.
+3. **`best-combos.json`** → leaderboard ranked by `opt_avg_ret` at each combo's own TP/SL optimum (mirrors Panel 6 `top_pairs`). `baseline_avg_return_pct` is the rolling entry-gated floor the top row has to beat by +0.3 pp on n≥100 to promote. Pick the next hypothesis from here.
+4. **`panel11.json`** → regime stability for the top combos — check `stability` and `wr_std_dev` alongside `opt_avg_ret`.
 5. **`panel3.json`** → regime stability for individual filters — useful when evaluating single-dimension signals.
 6. **`price-path-stats.json`** → mean price paths by label, Cohen's d effect sizes for path features, entry timing optimization.
 7. **`trades.json`** → paper trading performance: stats, by-strategy breakdown, recent trades.
+8. **`exit-sim-matrix.json`** → when you have a promising combo from step 3, check here to see whether any dynamic exit strategy (momentum_reversal / scale_out / vol_adaptive / time_decayed_tp / whale_liq) beats the combo's own static optimum. A positive `best_delta_pp` is the promotion signal for a live dynamic-exit strategy.
 
 #### Drill-down files (consult when a specific question comes up)
 
@@ -244,7 +249,16 @@ Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These
 - **`panel10.json`** — DPM optimizer results: per-filter optimum + top 10 runners-up + category/overall aggregates. Use when tuning trailing SL, breakeven, SL delay etc. on top of fixed 30/10 base TP/SL.
 - **`price-path-detail.json`** — full `/price-path` data: overlay (≤200 raw token paths), mean paths ±1 SD, Cohen's d, acceleration histogram, entry-timing heatmap, monotonicity buckets. Use when designing path-shape filters.
 - **`trading.json`** — full `/trading` dashboard: open positions, performance by strategy, recent trades (50), skips + reasons, active configs. Use to monitor live paper trading.
-- **`wallet-rep-analysis.json`** — top 20 combos × creator-wallet-rep modifiers (clean_dev, fresh_dev, repeat_dev_3plus, profitable_dev, not_rapid_fire, …). Each cell = sim-return delta in pp with n retention; `summary[]` ranks rep filters by mean Δ. Use after a combo is identified in `/api/best-combos` to see whether a creator-rep overlay improves profitability enough to justify the sample-size hit.
+- **`wallet-rep-analysis.json`** — top 20 combos × creator-wallet-rep modifiers (clean_dev, fresh_dev, repeat_dev_3plus, profitable_dev, not_rapid_fire, …). Each cell = `opt_avg_ret` delta in pp (`delta_opt_ret_pp`) with n retention; `summary[]` ranks rep filters by mean Δ. Both the base and rep-modified subsets are evaluated at their own per-combo TP/SL optimum — use after a combo is identified in `/api/best-combos` to see whether a creator-rep overlay improves profitability enough to justify the sample-size hit.
+- **`exit-sim.json`** — single-universe dynamic-exit simulator (pinned to `vel<20 + top5<10%` as a reference universe — NOT the current baseline). Shape: `{universe: {label, n_rows}, baseline_static: {params:{sl_pct:10, tp_pct:50}, avg_return_pct, win_rate_pct, exit_reason_breakdown}, strategies: {momentum_reversal, scale_out, vol_adaptive, time_decayed_tp, whale_liq}}`. Each strategy carries `grid[]` (all param permutations) + `best` (top cell by avg_return_pct). The 5 strategies and their param grids:
+  - `momentum_reversal` — drop_from_hwm_pct (3/5/7/10) × min_hwm_pct (10/20/30), fixed sl_pct=10. Exits when price drops `drop_from_hwm_pct%` from the high-water mark after crossing `min_hwm_pct%`.
+  - `scale_out` — first_tp_pct (15/25/35) × size_pct (0.5/0.67) × runner_trail_pct (5/10), fixed sl_pct=10. Partial exit at first_tp, runner trails by runner_trail_pct.
+  - `vol_adaptive` — k (1/1.5/2/2.5/3), fixed sl_pct=10. Trailing SL at k × path_smoothness. Skips rows missing path_smoothness.
+  - `time_decayed_tp` — preset (aggressive/linear/exponential/conservative) × sl_pct=10. TP ladder decays over time — aggressive starts at 50% and drops fast, conservative holds 75% for 90s.
+  - `whale_liq` — liq_drop_pct (20/30/40) × whale_sell_sol (0.5/1/2), fixed sl_pct=10, tp_pct=50. Exit on liquidity drop or whale sell event. Skips rows missing whale/liq event data.
+
+  Use to pick a dynamic exit shape for the reference universe. For a different universe pass `?universe=...` to /exit-sim, or use exit-sim-matrix below for the top 20 combos at once.
+- **`exit-sim-matrix.json`** — top 20 combos × 5 dynamic-exit strategies. Shape: `{min_n_per_cell, rows[]}`. Each row carries the combo's `filter_spec`, `n_rows`, `static_10_50_return_pct` (reference 10%SL/50%TP reconciliation column — same value as the old leaderboard), `static_optimal_return_pct / _win_rate / _sl / _tp` (per-combo best static cell across SIM_TP_GRID × SIM_SL_GRID — this IS the opt baseline), `leaderboard_opt_return_pct` (opt_avg_ret from /api/best-combos — sanity check), `strategies[5]` with each strategy's best cell and `delta_vs_static_pp` (Δ vs the combo's own static optimum — the fair baseline), plus overall `best_delta_pp` and `best_strategy`. A positive `best_delta_pp` means dynamic exits beat the combo's own static optimum — that's the signal you're looking for when designing trailing/momentum/vol-based exits on top of a promising combo.
 
 #### Example: reading trades data via GitHub MCP + python3
 ```
@@ -287,6 +301,36 @@ for t in data.get('trades', [])[-5:]:
     print(json.dumps({k: t[k] for k in ['id','strategy_id','exit_reason','net_return_pct','net_profit_sol']}, indent=2))
 "
 ```
+
+#### IMPORTANT: panel4.json curl + python workaround (1.2MB+)
+
+`panel4.json` is too large for the MCP tool to save locally — instead of a temp-file redirect, MCP returns a `raw.githubusercontent.com` URL. The same is true for any other file that exceeds MCP's save threshold in the future. Fetch these with `curl` (NOT WebFetch — WebFetch passes content through a summarizer and drops detail on large JSON files), then parse with python3:
+
+```bash
+# 1. Download via curl — URL comes from the MCP "too large to display" error message.
+curl -sL "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/refs/heads/bot-status/panel4.json" -o /tmp/panel4.json
+
+# 2. Extract only the fields you need. Panel 4 shape:
+#    data.panel4.grid                — {tp_levels, sl_levels, default_tp, default_sl}
+#    data.panel4.constants           — cost/gap model constants
+#    data.panel4.baseline            — {n, combos, optimal}
+#    data.panel4.filters[]           — each filter's {n, combos: {avg_ret, med_ret, win_rate}, optimal: {tp, sl, avg_ret, win_rate}}
+#    data.panel4_t60 / data.panel4_t120  — same shape, T+60 / T+120 hold horizons
+python3 -c "
+import json
+with open('/tmp/panel4.json') as f: data = json.load(f)
+p = data['panel4']
+print('Grid:', p['grid'])
+# Top 10 single filters by opt avg_ret
+rows = [(f['filter'], f['n'], f['optimal']) for f in p['filters']
+        if f.get('optimal') and f['optimal'].get('avg_ret') is not None]
+rows.sort(key=lambda x: x[2]['avg_ret'], reverse=True)
+for name, n, opt in rows[:10]:
+    print(f'{name:30s} n={n:4d} tp={opt[\"tp\"]:3d} sl={opt[\"sl\"]:3d} avg_ret={opt[\"avg_ret\"]:+.2f} wr={opt[\"win_rate\"]:.0f}')
+"
+```
+
+`panel4.filters[i].combos` is a dict of flat arrays (`avg_ret`, `med_ret`, `win_rate`), each length 120, indexed `[ti * 10 + si]` where `ti` is the TP index into `grid.tp_levels` and `si` is the SL index into `grid.sl_levels`. Only pull the combo row(s) you need — iterating all 120 cells per filter across 59 filters is what blew the MCP inline limit in the first place. Same `curl → python3` pattern works for `panel9.json`, `panel10.json`, `price-path-detail.json`, and `trading.json` when they grow past the MCP inline threshold.
 
 This pattern works reliably. The file path comes from the MCP error message — copy it exactly.
 
@@ -331,7 +375,14 @@ Peak analysis and trading:
 |---|---|---|
 | `peak-analysis.json` | `/api/peak-analysis` | Peak CDF, peak time histogram, per-filter peak bucket, suggested TP |
 | `trading.json` | `/api/trading` | Full /trading dashboard: open positions, per-strategy performance, recent trades (50), skip reasons + recent skips, active strategy configs, top filter combos |
-| `wallet-rep-analysis.json` | `/api/wallet-rep-analysis` | Top 20 combos × creator-wallet-rep modifiers: matrix of sim-return deltas + rep filter leaderboard ranked by mean Δ. Use to pick a creator-rep modifier that improves profitability without collapsing sample size. |
+| `wallet-rep-analysis.json` | `/api/wallet-rep-analysis` | Top 20 combos × creator-wallet-rep modifiers: matrix of opt_avg_ret deltas + rep filter leaderboard ranked by mean Δ. Use to pick a creator-rep modifier that improves profitability without collapsing sample size. |
+
+Exit-strategy simulators (dynamic exits: trailing, scale-out, vol-adaptive, time-decayed TP, whale/liq-drop):
+
+| File | Corresponding API | Description |
+|---|---|---|
+| `exit-sim.json` | `/api/exit-sim` | Single-universe view — evaluates all 5 dynamic-exit strategies on one filter (default: `vel<20 + top5<10%` as a fixed reference universe, NOT the current baseline). Each strategy carries `grid[]` of param permutations + `best` cell. Use to pick a dynamic exit shape for the reference universe. |
+| `exit-sim-matrix.json` | `/api/exit-sim-matrix` | Top 20 combos × 5 strategies matrix — for each combo, reports `static_10_50_return_pct` (reference), `static_optimal_{return,win_rate,sl,tp}` (combo's own static opt), `leaderboard_opt_return_pct` (sanity-check vs /api/best-combos), and each strategy's `best` cell + `delta_vs_static_pp`. `best_delta_pp > 0` means dynamic exits beat the combo's own static optimum — the signal you want before promoting a filter to a live dynamic-exit strategy. |
 
 ### Pushing strategy commands (create/update/delete strategies remotely)
 
