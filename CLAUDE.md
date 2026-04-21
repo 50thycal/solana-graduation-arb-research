@@ -318,6 +318,17 @@ Filter-analysis-v2 panels (one file per panel family; variants like T+60/T+120 g
 | `panel10.json` | `/api/panel10` | DPM optimizer — per-filter optimum + top 10 runners-up + category/overall aggregates |
 | `panel11.json` | `/api/panel11` | Combo filter regime stability (cross-group pairs) |
 
+Filter-analysis-v3 panels (extension of v2 — crash-prediction research):
+
+| File | Corresponding API | Description |
+|---|---|---|
+| `panelv3_1.json` | `/api/panelv3_1` | v3 Panel 1 — top 20 three-filter combos (focused scan around Panel 6 top pairs), per horizon (T+300 / T+120 / T+60) |
+| `panelv3_2.json` | `/api/panelv3_2` | v3 Panel 2 — max_dd_0_30 gate stacked on top 5 singles + top 5 pairs across {−5, −10, −15, −20, −25} thresholds |
+| `panelv3_3.json` | `/api/panelv3_3` | v3 Panel 3 — crash survival curves: P(min rel-ret > {−5, −10, −20}%) at 8 timepoints T+30→T+300, for top 10 pairs + top 10 triples |
+| `panelv3_4.json` | `/api/panelv3_4` | v3 Panel 4 — max_tick_drop_0_30 (worst single 5s pre-entry drop), standalone + stacked on baseline |
+| `panelv3_5.json` | `/api/panelv3_5` | v3 Panel 5 — velocity × liquidity heatmap (5×4 buckets) showing opt_avg_ret per cell |
+| `panelv3_6.json` | `/api/panelv3_6` | v3 Panel 6 — sum_abs_returns_0_30 (pre-entry realized vol proxy), < and > thresholds standalone + stacked on baseline |
+
 Price-path dashboard:
 
 | File | Corresponding API | Description |

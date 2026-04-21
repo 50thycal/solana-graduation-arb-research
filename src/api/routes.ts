@@ -264,6 +264,56 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     res.json({ generated_at: d.generated_at, panel10: d.panel10 });
   }));
 
+  // ── /api/filter-v3 ──
+  // Six v3 panels (triple-filter combos, drawdown-gate stacking, crash-survival
+  // curves, max_tick_drop, velocity × liquidity heatmap, sum_abs_returns).
+  // Same 24h heavy cache as the v2 panels.
+  app.get('/api/filter-v3', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
+    res.json({
+      generated_at: d.generated_at,
+      panelv3_1: d.panelv3_1,
+      panelv3_2: d.panelv3_2,
+      panelv3_3: d.panelv3_3,
+      panelv3_4: d.panelv3_4,
+      panelv3_5: d.panelv3_5,
+      panelv3_6: d.panelv3_6,
+    });
+  }));
+
+  // Per-panel v3 slices.
+  app.get('/api/panelv3_1', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
+    res.json({ generated_at: d.generated_at, panelv3_1: d.panelv3_1 });
+  }));
+  app.get('/api/panelv3_2', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
+    res.json({ generated_at: d.generated_at, panelv3_2: d.panelv3_2 });
+  }));
+  app.get('/api/panelv3_3', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
+    res.json({ generated_at: d.generated_at, panelv3_3: d.panelv3_3 });
+  }));
+  app.get('/api/panelv3_4', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
+    res.json({ generated_at: d.generated_at, panelv3_4: d.panelv3_4 });
+  }));
+  app.get('/api/panelv3_5', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
+    res.json({ generated_at: d.generated_at, panelv3_5: d.panelv3_5 });
+  }));
+  app.get('/api/panelv3_6', wrap((_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = getHeavyData(db, sm).v2;
+    res.json({ generated_at: d.generated_at, panelv3_6: d.panelv3_6 });
+  }));
+
   // ── /api/price-path-detail ──
   // Full price-path dashboard data: overlay (≤200 raw token paths), mean paths
   // by label with ±1 SD, vel 5-20 vs all, derived metrics (Cohen's d),
@@ -459,6 +509,13 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
         { path: '/api/panel8',             description: 'Panel 8 (loss tail & risk metrics)' },
         { path: '/api/panel9',             description: 'Panel 9 (equity curve & drawdown simulation)' },
         { path: '/api/panel10',            description: 'Panel 10 (DPM optimizer — optima + top-N tail + aggregates)' },
+        { path: '/api/filter-v3',          description: 'All 6 v3 panels (triples, dd-gate, survival, tick-drop, heatmap, sum-abs)' },
+        { path: '/api/panelv3_1',          description: 'v3 Panel 1 (top 20 three-filter combos, per horizon)' },
+        { path: '/api/panelv3_2',          description: 'v3 Panel 2 (max_dd_0_30 gate stacking on best singles/pairs)' },
+        { path: '/api/panelv3_3',          description: 'v3 Panel 3 (crash survival curves — time-to-threshold-breach)' },
+        { path: '/api/panelv3_4',          description: 'v3 Panel 4 (max_tick_drop_0_30 — new filter dim)' },
+        { path: '/api/panelv3_5',          description: 'v3 Panel 5 (velocity × liquidity heatmap)' },
+        { path: '/api/panelv3_6',          description: 'v3 Panel 6 (sum_abs_returns_0_30 — pre-entry realized vol)' },
         { path: '/api/exit-sim',           description: 'Dynamic-exit strategy simulator (momentum, scale-out, vol-trail, time-decayed TP)' },
         { path: '/api/trading',            description: 'Full /trading data: open positions, performance, trades, skips' },
         { path: '/api/filter-catalog',     description: 'Filter definitions used by best-combos' },

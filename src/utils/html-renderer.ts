@@ -11,6 +11,7 @@ const NAV_LINKS = [
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
   { path: '/filter-analysis-v2', label: 'Filters V2' },
+  { path: '/filter-analysis-v3', label: 'Filters V3' },
   { path: '/wallet-rep-analysis', label: 'Wallet Rep' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/exit-sim', label: 'Exit Sim' },
@@ -2888,6 +2889,371 @@ export function renderFilterV2Html(data: any): string {
 
   const body = panel1Html + panel2Html + panel3Html + panel4Html + panel5Html + panel6Html + panel7Html + panel8Html + panel9Html + panel10Html + panel11Html + panel4DataScript + sortScript;
   return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
+}
+
+// ── FILTER ANALYSIS V3 ───────────────────────────────────────────────
+// Six panels extending v2 with triple-filter combos, drawdown-gate
+// stacking, crash-survival curves, two new filter dimensions, and a
+// velocity × liquidity heatmap. Reuses shell()/STYLES from the V2
+// page so the visual language stays consistent.
+
+function v3Pct(v: number | null | undefined, digits = 2): string {
+  if (v == null) return '<span style="color:#4b5563">—</span>';
+  const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(digits)}%</span>`;
+}
+
+function v3Num(v: number | null | undefined, digits = 0): string {
+  if (v == null) return '<span style="color:#4b5563">—</span>';
+  return v.toFixed(digits);
+}
+
+function v3BaselineBadge(beats: boolean): string {
+  return beats
+    ? '<span class="badge badge-pump" style="font-size:10px">BEATS</span>'
+    : '<span class="badge badge-dump" style="font-size:10px">NO</span>';
+}
+
+function v3HeatCellColor(v: number | null, baseline: number): string {
+  if (v == null) return '#1a1a30';
+  const delta = v - baseline;
+  // Heatmap colors: green scale above baseline, red scale below
+  if (delta >= 4) return '#166534';
+  if (delta >= 2) return '#1e7a42';
+  if (delta >= 0) return '#2a2a4a';
+  if (delta >= -2) return '#4a2a2a';
+  if (delta >= -5) return '#7f1d1d';
+  return '#5a0e0e';
+}
+
+// Build an SVG line chart for one filter's survival curves.
+// 3 lines (one per threshold), each plotting survival fraction vs timepoint.
+function v3SurvivalChart(curves: number[][], timepoints: readonly number[], thresholds: readonly number[]): string {
+  const W = 260;
+  const H = 120;
+  const padL = 30;
+  const padR = 8;
+  const padT = 8;
+  const padB = 20;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const minT = timepoints[0];
+  const maxT = timepoints[timepoints.length - 1];
+  const tRange = maxT - minT;
+  const colorFor = (threshold: number) =>
+    threshold === -5 ? '#facc15' : threshold === -10 ? '#f59e0b' : '#ef4444';
+  const x = (t: number) => padL + ((t - minT) / tRange) * plotW;
+  const y = (v: number) => padT + (1 - v) * plotH;
+
+  const gridLines: string[] = [];
+  for (const yv of [0.25, 0.5, 0.75, 1.0]) {
+    gridLines.push(`<line x1="${padL}" y1="${y(yv)}" x2="${W - padR}" y2="${y(yv)}" stroke="#262640" stroke-width="1" />`);
+    gridLines.push(`<text x="${padL - 4}" y="${y(yv) + 3}" fill="#64748b" font-size="8" text-anchor="end">${(yv * 100).toFixed(0)}%</text>`);
+  }
+  for (const t of timepoints) {
+    gridLines.push(`<text x="${x(t)}" y="${H - 4}" fill="#64748b" font-size="8" text-anchor="middle">${t}</text>`);
+  }
+
+  const lines = curves.map((curve, idx) => {
+    const threshold = thresholds[idx];
+    const path = curve.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(timepoints[i]).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    return `<path d="${path}" fill="none" stroke="${colorFor(threshold)}" stroke-width="1.5" />`;
+  }).join('');
+
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    ${gridLines.join('\n    ')}
+    ${lines}
+  </svg>`;
+}
+
+export function renderFilterV3Html(data: any): string {
+  // ── Panel 1 — top 20 three-filter combos ──
+  type TripleRow = {
+    filter_a: string; filter_b: string; filter_c: string;
+    n: number;
+    opt_tp: number; opt_sl: number;
+    opt_avg_ret: number; opt_win_rate: number;
+    parent_pair_opt: number;
+    lift_vs_pair: number;
+    beats_baseline: boolean;
+  };
+  const p1 = data.panelv3_1 ?? {};
+  const horizons: Array<{ key: string; label: string; rows: TripleRow[] }> = [
+    { key: 't300', label: '5 min (T+300)', rows: p1.top_triples_t300 ?? [] },
+    { key: 't120', label: '2 min (T+120)', rows: p1.top_triples_t120 ?? [] },
+    { key: 't60',  label: '1 min (T+60)',  rows: p1.top_triples_t60  ?? [] },
+  ];
+  const p1Tabs = horizons
+    .map((h, i) => `<button type="button" class="p4-tab${i === 0 ? ' active' : ''}" data-horizon="${h.key}" onclick="v3SetP1Horizon('${h.key}')">${h.label}</button>`)
+    .join('');
+  const p1Panels = horizons.map((h, i) => {
+    const rows = h.rows.map((r: TripleRow) => `
+      <tr>
+        <td>${escHtml(r.filter_a)}</td>
+        <td>${escHtml(r.filter_b)}</td>
+        <td>${escHtml(r.filter_c)}</td>
+        <td>${r.n}</td>
+        <td>${r.opt_tp}/${r.opt_sl}</td>
+        <td>${v3Pct(r.opt_avg_ret, 2)}</td>
+        <td>${r.opt_win_rate}%</td>
+        <td>${v3Pct(r.parent_pair_opt, 2)}</td>
+        <td>${v3Pct(r.lift_vs_pair, 2)}</td>
+        <td>${v3BaselineBadge(r.beats_baseline)}</td>
+      </tr>`).join('');
+    const body = rows.length === 0
+      ? `<tr><td colspan="10" style="text-align:center;color:#64748b;padding:20px">No triples with n ≥ 30 and lift > 0 at this horizon.</td></tr>`
+      : rows;
+    return `<div class="p4-horizon-panel${i === 0 ? ' active' : ''}" data-horizon="${h.key}">
+      <table>
+        <thead><tr>
+          <th>Filter A</th><th>Filter B</th><th>Filter C</th>
+          <th>n</th><th>TP/SL</th><th>Opt Avg Ret</th><th>WR</th>
+          <th>Parent Pair Opt</th><th>Lift vs Pair</th><th>Beats +6.44%</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+  const panelV31Html = `<div class="card">
+    <h2>v3 Panel 1 — ${escHtml(p1.title ?? 'Top 20 Three-Filter Combos')}</h2>
+    <div class="desc">${escHtml(p1.description ?? '')}</div>
+    <div class="p4-tabs">${p1Tabs}</div>
+    ${p1Panels}
+  </div>`;
+
+  // ── Panel 2 — drawdown gate stacking ──
+  type P2Row = {
+    base: string; base_kind: string; threshold: number;
+    base_n: number; base_opt_avg_ret: number | null;
+    gated_n: number;
+    gated_opt_tp: number | null; gated_opt_sl: number | null;
+    gated_opt_avg_ret: number | null; gated_opt_win_rate: number | null;
+    n_retention_pct: number | null; delta_vs_base: number | null;
+    beats_baseline: boolean;
+  };
+  const p2 = data.panelv3_2 ?? {};
+  const p2Rows: P2Row[] = p2.rows ?? [];
+  const p2RowsHtml = p2Rows.map((r: P2Row) => {
+    const tp = r.gated_opt_tp != null ? `${r.gated_opt_tp}/${r.gated_opt_sl}` : '—';
+    return `<tr>
+      <td>${escHtml(r.base)}</td>
+      <td><span class="badge" style="background:#334155;color:#94a3b8;font-size:10px">${r.base_kind}</span></td>
+      <td>${r.threshold > 0 ? '> ' : '> '}${r.threshold}%</td>
+      <td>${r.base_n}</td>
+      <td>${r.base_opt_avg_ret != null ? v3Pct(r.base_opt_avg_ret, 2) : '—'}</td>
+      <td>${r.gated_n}</td>
+      <td>${tp}</td>
+      <td>${r.gated_opt_avg_ret != null ? v3Pct(r.gated_opt_avg_ret, 2) : '—'}</td>
+      <td>${r.gated_opt_win_rate != null ? r.gated_opt_win_rate + '%' : '—'}</td>
+      <td>${r.n_retention_pct != null ? r.n_retention_pct.toFixed(1) + '%' : '—'}</td>
+      <td>${r.delta_vs_base != null ? v3Pct(r.delta_vs_base, 2) : '—'}</td>
+      <td>${v3BaselineBadge(r.beats_baseline)}</td>
+    </tr>`;
+  }).join('');
+  const panelV32Html = `<div class="card">
+    <h2>v3 Panel 2 — ${escHtml(p2.title ?? 'max_dd_0_30 Gate Stacking')}</h2>
+    <div class="desc">${escHtml(p2.description ?? '')}</div>
+    <table>
+      <thead><tr>
+        <th>Base</th><th>Kind</th><th>DD Threshold</th>
+        <th>Base n</th><th>Base Opt</th>
+        <th>Gated n</th><th>Gated TP/SL</th><th>Gated Opt</th><th>Gated WR</th>
+        <th>Retention</th><th>Δ vs Base</th><th>Beats +6.44%</th>
+      </tr></thead>
+      <tbody>${p2RowsHtml || '<tr><td colspan="12" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+
+  // ── Panel 3 — survival curves ──
+  type P3Filter = { name: string; kind: string; n: number; curves: number[][] };
+  const p3 = data.panelv3_3 ?? {};
+  const p3Filters: P3Filter[] = p3.filters ?? [];
+  const p3Timepoints: readonly number[] = p3.constants?.timepoints_sec ?? [30, 45, 60, 90, 120, 180, 240, 300];
+  const p3Thresholds: readonly number[] = p3.constants?.thresholds_pct ?? [-5, -10, -20];
+  const p3BaselineFilter: P3Filter | null = p3.baseline ?? null;
+
+  const renderP3Cell = (f: P3Filter) => {
+    if (f.n < 30) {
+      return `<div class="grid" style="grid-template-columns:1fr;padding:10px;background:#1a1a30;border-radius:6px">
+        <div style="font-weight:600;color:#e2e8f0">${escHtml(f.name)}</div>
+        <div class="n-insuf">n=${f.n} &lt; 30 (insufficient)</div>
+      </div>`;
+    }
+    const chart = v3SurvivalChart(f.curves, p3Timepoints, p3Thresholds);
+    const finals = f.curves.map((c, i) => {
+      const t = p3Thresholds[i];
+      const finalVal = c[c.length - 1];
+      const colorForThreshold = t === -5 ? '#facc15' : t === -10 ? '#f59e0b' : '#ef4444';
+      return `<span style="color:${colorForThreshold};margin-right:10px">&gt;${t}%: ${(finalVal * 100).toFixed(1)}%</span>`;
+    }).join('');
+    return `<div style="padding:10px;background:#1a1a30;border-radius:6px">
+      <div style="font-weight:600;color:#e2e8f0;margin-bottom:4px">${escHtml(f.name)}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">n=${f.n} · kind=${f.kind}</div>
+      ${chart}
+      <div style="font-size:11px;margin-top:4px">P(survive at T+300): ${finals}</div>
+    </div>`;
+  };
+
+  const baselineBlock = p3BaselineFilter ? `<div style="margin-bottom:14px">${renderP3Cell(p3BaselineFilter)}</div>` : '';
+  const p3Grid = p3Filters.map(renderP3Cell).join('\n      ');
+  const panelV33Html = `<div class="card">
+    <h2>v3 Panel 3 — ${escHtml(p3.title ?? 'Crash Survival Curves')}</h2>
+    <div class="desc">${escHtml(p3.description ?? '')}</div>
+    <div class="desc"><strong>Legend (line colors):</strong>
+      <span style="color:#facc15;margin-left:6px">&gt; −5%</span>
+      <span style="color:#f59e0b;margin-left:10px">&gt; −10%</span>
+      <span style="color:#ef4444;margin-left:10px">&gt; −20%</span>.
+      X-axis = seconds since graduation (entry at T+30). Y-axis = fraction of tokens whose running min-rel-return has not yet breached the threshold.
+    </div>
+    ${baselineBlock}
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
+      ${p3Grid || '<div class="n-insuf">No filters available.</div>'}
+    </div>
+  </div>`;
+
+  // ── Panel 4 — max_tick_drop ──
+  type P4Row = {
+    threshold: number; mode: string; n: number;
+    opt_tp: number | null; opt_sl: number | null;
+    opt_avg_ret: number | null; opt_win_rate: number | null;
+    beats_baseline: boolean;
+  };
+  const p4 = data.panelv3_4 ?? {};
+  const p4Rows: P4Row[] = p4.rows ?? [];
+  const p4RowsHtml = p4Rows.map((r: P4Row) => {
+    const tp = r.opt_tp != null ? `${r.opt_tp}/${r.opt_sl}` : '—';
+    const modeTag = r.mode === 'standalone'
+      ? '<span class="badge" style="background:#334155;color:#94a3b8;font-size:10px">standalone</span>'
+      : '<span class="badge" style="background:#1f2a44;color:#60a5fa;font-size:10px">+ baseline</span>';
+    return `<tr>
+      <td>&gt; ${r.threshold}%</td>
+      <td>${modeTag}</td>
+      <td>${r.n}</td>
+      <td>${tp}</td>
+      <td>${r.opt_avg_ret != null ? v3Pct(r.opt_avg_ret, 2) : '—'}</td>
+      <td>${r.opt_win_rate != null ? r.opt_win_rate + '%' : '—'}</td>
+      <td>${v3BaselineBadge(r.beats_baseline)}</td>
+    </tr>`;
+  }).join('');
+  const panelV34Html = `<div class="card">
+    <h2>v3 Panel 4 — ${escHtml(p4.title ?? 'max_tick_drop_0_30')}</h2>
+    <div class="desc">${escHtml(p4.description ?? '')}</div>
+    <table>
+      <thead><tr>
+        <th>Tick Drop Threshold</th><th>Mode</th><th>n</th><th>Opt TP/SL</th>
+        <th>Opt Avg Ret</th><th>WR</th><th>Beats +6.44%</th>
+      </tr></thead>
+      <tbody>${p4RowsHtml || '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+
+  // ── Panel 5 — vel × liq heatmap ──
+  type P5Cell = {
+    vel: string; liq: string; n: number;
+    opt_tp: number | null; opt_sl: number | null;
+    opt_avg_ret: number | null; opt_win_rate: number | null;
+    beats_baseline: boolean;
+  };
+  const p5 = data.panelv3_5 ?? {};
+  const p5Cells: P5Cell[] = p5.cells ?? [];
+  const velBuckets: string[] = p5.constants?.vel_buckets ?? [];
+  const liqBuckets: string[] = p5.constants?.liq_buckets ?? [];
+  const cellByKey = new Map<string, P5Cell>();
+  for (const c of p5Cells) cellByKey.set(`${c.vel}||${c.liq}`, c);
+
+  const baselineSim: number = p5.constants?.baseline_sim_return ?? 6.44;
+  const headerCells = liqBuckets.map(l => `<th style="text-align:center">${escHtml(l)}</th>`).join('');
+  const heatmapRows = velBuckets.map(v => {
+    const cells = liqBuckets.map(l => {
+      const c = cellByKey.get(`${v}||${l}`);
+      if (!c || c.n === 0) return `<td style="background:#111;text-align:center;color:#4b5563">—</td>`;
+      const bgColor = c.opt_avg_ret != null ? v3HeatCellColor(c.opt_avg_ret, baselineSim) : '#1a1a30';
+      const retStr = c.opt_avg_ret != null
+        ? `${c.opt_avg_ret > 0 ? '+' : ''}${c.opt_avg_ret.toFixed(2)}%`
+        : `n&lt;30`;
+      const tp = c.opt_tp != null ? `${c.opt_tp}/${c.opt_sl}` : '';
+      const wr = c.opt_win_rate != null ? `${c.opt_win_rate}%` : '';
+      return `<td style="background:${bgColor};text-align:center;padding:8px">
+        <div style="font-weight:600;color:${c.opt_avg_ret != null && c.opt_avg_ret > 0 ? '#4ade80' : '#ef4444'}">${retStr}</div>
+        <div style="font-size:10px;color:#94a3b8">n=${c.n}${tp ? ' · ' + tp : ''}${wr ? ' · ' + wr : ''}</div>
+      </td>`;
+    }).join('');
+    return `<tr><th style="text-align:right">${escHtml(v)}</th>${cells}</tr>`;
+  }).join('');
+  const panelV35Html = `<div class="card">
+    <h2>v3 Panel 5 — ${escHtml(p5.title ?? 'Velocity × Liquidity Heatmap')}</h2>
+    <div class="desc">${escHtml(p5.description ?? '')}</div>
+    <table style="margin:16px 0">
+      <thead><tr><th></th>${headerCells}</tr></thead>
+      <tbody>${heatmapRows}</tbody>
+    </table>
+    <div class="desc">Cell coloring: darker green = well above baseline (+${baselineSim.toFixed(2)}%), darker red = well below. Empty dash = n &lt; 30 or no data.</div>
+  </div>`;
+
+  // ── Panel 6 — sum_abs_returns ──
+  type P6Row = {
+    op: string; threshold: number; mode: string; n: number;
+    opt_tp: number | null; opt_sl: number | null;
+    opt_avg_ret: number | null; opt_win_rate: number | null;
+    beats_baseline: boolean;
+  };
+  const p6 = data.panelv3_6 ?? {};
+  const p6Rows: P6Row[] = p6.rows ?? [];
+  const p6RowsHtml = p6Rows.map((r: P6Row) => {
+    const tp = r.opt_tp != null ? `${r.opt_tp}/${r.opt_sl}` : '—';
+    const modeTag = r.mode === 'standalone'
+      ? '<span class="badge" style="background:#334155;color:#94a3b8;font-size:10px">standalone</span>'
+      : '<span class="badge" style="background:#1f2a44;color:#60a5fa;font-size:10px">+ baseline</span>';
+    return `<tr>
+      <td>${r.op} ${r.threshold}</td>
+      <td>${modeTag}</td>
+      <td>${r.n}</td>
+      <td>${tp}</td>
+      <td>${r.opt_avg_ret != null ? v3Pct(r.opt_avg_ret, 2) : '—'}</td>
+      <td>${r.opt_win_rate != null ? r.opt_win_rate + '%' : '—'}</td>
+      <td>${v3BaselineBadge(r.beats_baseline)}</td>
+    </tr>`;
+  }).join('');
+  const panelV36Html = `<div class="card">
+    <h2>v3 Panel 6 — ${escHtml(p6.title ?? 'sum_abs_returns_0_30')}</h2>
+    <div class="desc">${escHtml(p6.description ?? '')}</div>
+    <table>
+      <thead><tr>
+        <th>Threshold</th><th>Mode</th><th>n</th><th>Opt TP/SL</th>
+        <th>Opt Avg Ret</th><th>WR</th><th>Beats +6.44%</th>
+      </tr></thead>
+      <tbody>${p6RowsHtml || '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+
+  const script = `<script>
+  function v3SetP1Horizon(h) {
+    var tabs = document.querySelectorAll('.p4-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].getAttribute('data-horizon') === h) tabs[i].classList.add('active');
+      else tabs[i].classList.remove('active');
+    }
+    var panels = document.querySelectorAll('.p4-horizon-panel');
+    for (var j = 0; j < panels.length; j++) {
+      if (panels[j].getAttribute('data-horizon') === h) panels[j].classList.add('active');
+      else panels[j].classList.remove('active');
+    }
+  }
+  </script>`;
+
+  const v3Data = {
+    generated_at: data.generated_at,
+    panelv3_1: data.panelv3_1,
+    panelv3_2: data.panelv3_2,
+    panelv3_3: data.panelv3_3,
+    panelv3_4: data.panelv3_4,
+    panelv3_5: data.panelv3_5,
+    panelv3_6: data.panelv3_6,
+  };
+
+  const body = panelV31Html + panelV32Html + panelV33Html + panelV34Html + panelV35Html + panelV36Html + script;
+  return shell('Filter Analysis V3', '/filter-analysis-v3', body, v3Data);
 }
 
 export function renderPricePathHtml(db: Database.Database): string {
