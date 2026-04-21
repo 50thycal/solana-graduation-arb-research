@@ -372,6 +372,7 @@ Filter-analysis-v3 panels (extension of v2 — crash-prediction research):
 | `panelv3_4.json` | `/api/panelv3_4` | v3 Panel 4 — max_tick_drop_0_30 (worst single 5s pre-entry drop), standalone + stacked on baseline |
 | `panelv3_5.json` | `/api/panelv3_5` | v3 Panel 5 — velocity × liquidity heatmap (5×4 buckets) showing opt_avg_ret per cell |
 | `panelv3_6.json` | `/api/panelv3_6` | v3 Panel 6 — sum_abs_returns_0_30 (pre-entry realized vol proxy), < and > thresholds standalone + stacked on baseline |
+| `panelv3_7.json` | `/api/panelv3_7` | v3 Panel 7 — regime stability + walk-forward validation for top 10 pairs + top 10 triples from v3 leaderboards. Each row has `wf_verdict` (ROBUST/DEGRADED/OVERFIT/INSUFFICIENT) and `regime_stability` (STABLE/MODERATE/CLUSTERED/INSUFFICIENT). Promote only when both are green. |
 
 Price-path dashboard:
 

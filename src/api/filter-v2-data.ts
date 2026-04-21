@@ -2181,6 +2181,101 @@ export function computeFilterV2Data(
       for (const t of PANEL_V3_6_THRESHOLDS_LT) pushV3_6('<', t);
       for (const t of PANEL_V3_6_THRESHOLDS_GT) pushV3_6('>', t);
 
+      // ── v3 Panel 7: Regime stability + walk-forward on v3 leaders ────────
+      // For each of the top 10 pairs (Panel 6 top_pairs) and top 10 triples
+      // (v3 Panel 1 top_triples_t300), run BOTH:
+      //   (a) walk-forward on panel4Rows — train opt on first 70% by time,
+      //       evaluate same (TP, SL) on last 30%; degradation + verdict.
+      //   (b) regime buckets — same 4 time-quartile buckets Panel 3/11 use;
+      //       per-bucket n/WR/avg_return, WR std-dev + stability label.
+      // This answers the "is the leaderboard edge stable or overfit?" question
+      // for v3 specifically, before we promote any triple to a live strategy.
+      type PanelV3_7_Row = {
+        name: string;
+        kind: 'pair' | 'triple';
+        n_total: number;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        opt_avg_ret: number | null;
+        // Walk-forward
+        n_train: number;
+        n_test: number;
+        train_tp: number | null;
+        train_sl: number | null;
+        train_avg_ret: number | null;
+        test_avg_ret: number | null;
+        degradation: number | null;
+        wf_verdict: Panel7Row['verdict'];
+        // Regime (time-bucketed WR + avg return)
+        buckets: { n: number; win_rate_pct: number | null; avg_return_pct: number | null }[];
+        wr_std_dev: number | null;
+        regime_stability: 'STABLE' | 'MODERATE' | 'CLUSTERED' | 'INSUFFICIENT';
+      };
+
+      const buildV3_7Row = (
+        name: string,
+        kind: 'pair' | 'triple',
+        predicate: (r: Panel4Row) => boolean,
+      ): PanelV3_7_Row => {
+        const filtered = panel4Rows.filter(predicate);
+        const nTotal = filtered.length;
+        const optRes = runFilterPanel4(predicate);
+        const opt = optRes.optimal;
+
+        const wf = runFilterPanel7(predicate);
+        const regime = runFilterRegime(predicate as (r: RegimeRow) => boolean);
+
+        return {
+          name,
+          kind,
+          n_total: nTotal,
+          opt_tp: opt ? opt.tp : null,
+          opt_sl: opt ? opt.sl : null,
+          opt_avg_ret: opt ? opt.avg_ret : null,
+          n_train: wf.n_train,
+          n_test: wf.n_test,
+          train_tp: wf.train_tp,
+          train_sl: wf.train_sl,
+          train_avg_ret: wf.train_avg_ret,
+          test_avg_ret: wf.test_avg_ret,
+          degradation: wf.degradation,
+          wf_verdict: wf.verdict,
+          buckets: regime.buckets,
+          wr_std_dev: regime.wr_std_dev,
+          regime_stability: regime.stability,
+        };
+      };
+
+      const panelV3_7_rows: PanelV3_7_Row[] = [];
+
+      // Top 10 pairs
+      for (const p of panel6TopPairs.slice(0, 10)) {
+        const defA = findFilterDef(p.filter_a);
+        const defB = findFilterDef(p.filter_b);
+        if (!defA || !defB) continue;
+        const pred = (r: Panel4Row) =>
+          (defA.predicate as (r: Panel4Row) => boolean)(r) &&
+          (defB.predicate as (r: Panel4Row) => boolean)(r);
+        panelV3_7_rows.push(
+          buildV3_7Row(`${p.filter_a} + ${p.filter_b}`, 'pair', pred),
+        );
+      }
+
+      // Top 10 triples
+      for (const t of panelV3_1_topTriples_t300.slice(0, 10)) {
+        const defA = findFilterDef(t.filter_a);
+        const defB = findFilterDef(t.filter_b);
+        const defC = findFilterDef(t.filter_c);
+        if (!defA || !defB || !defC) continue;
+        const pred = (r: Panel4Row) =>
+          (defA.predicate as (r: Panel4Row) => boolean)(r) &&
+          (defB.predicate as (r: Panel4Row) => boolean)(r) &&
+          (defC.predicate as (r: Panel4Row) => boolean)(r);
+        panelV3_7_rows.push(
+          buildV3_7Row(`${t.filter_a} + ${t.filter_b} + ${t.filter_c}`, 'triple', pred),
+        );
+      }
+
       const filterV2Data = {
         generated_at: new Date().toISOString(),
         panel1: {
@@ -2518,6 +2613,18 @@ export function computeFilterV2Data(
             min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
           },
           rows: panelV3_6_rows,
+          flags: { low_n_threshold: 30, strong_n_threshold: 100 },
+        },
+        panelv3_7: {
+          title: 'Regime Stability & Walk-Forward Validation — v3 Leaders',
+          description:
+            'For each of the top 10 pairs (Panel 6) and top 10 triples (v3 Panel 1 T+300), runs TWO stability checks: (a) walk-forward — train Panel 4\'s TP/SL optimum on the first 70% of rows by created_at, then evaluate THAT SAME coordinate (no re-optimization) on the held-out last 30%. Degradation = train_avg − test_avg. Verdict: ROBUST (<2pp), DEGRADED (2–5pp), OVERFIT (>5pp), INSUFFICIENT (train or test n<20). (b) Regime buckets — same 4 time-quartile buckets Panel 3/11 use. Per-bucket WR and avg return (T+30-anchored, cost-adjusted, no TP/SL). WR StdDev < 8 = STABLE, < 15 = MODERATE, ≥ 15 = CLUSTERED. A v3 leader that\'s both ROBUST and STABLE/MODERATE is a genuine promotion candidate; one that\'s OVERFIT or CLUSTERED is leaderboard noise.',
+          constants: {
+            wf_train_frac: PANEL_7_TRAIN_FRAC,
+            wf_min_n_half: PANEL_7_MIN_N_HALF,
+            regime_bucket_count: PANEL_3_BUCKET_COUNT,
+          },
+          rows: panelV3_7_rows,
           flags: { low_n_threshold: 30, strong_n_threshold: 100 },
         },
       };
