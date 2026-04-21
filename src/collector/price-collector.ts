@@ -118,6 +118,25 @@ function computeMaxDrawdown(pcts: number[]): number {
   return maxDD;
 }
 
+/** Biggest single 5s-interval drop, pct points (always ≤ 0). */
+export function computeMaxTickDrop(pcts: number[]): number {
+  if (pcts.length < 2) return 0;
+  let worst = 0;
+  for (let i = 1; i < pcts.length; i++) {
+    const drop = pcts[i] - pcts[i - 1];
+    if (drop < worst) worst = drop;
+  }
+  return worst;
+}
+
+/** Sum of absolute 5s-interval changes — realized volatility proxy. */
+export function computeSumAbsReturns(pcts: number[]): number {
+  if (pcts.length < 2) return 0;
+  let acc = 0;
+  for (let i = 1; i < pcts.length; i++) acc += Math.abs(pcts[i] - pcts[i - 1]);
+  return acc;
+}
+
 /**
  * Returns 1 if price dropped more than `threshold`% from a running peak
  * and then subsequently recovered above that same peak; 0 otherwise.
@@ -722,6 +741,8 @@ export class PriceCollector {
       const path_smoothness_0_30 = computePathSmoothness(valid);
       const max_drawdown_0_30   = computeMaxDrawdown(valid);
       const dip_and_recover_flag = computeDipAndRecover(valid);
+      const max_tick_drop_0_30  = computeMaxTickDrop(valid);
+      const sum_abs_returns_0_30 = computeSumAbsReturns(valid);
 
       // Front-loaded (+) vs back-loaded (-): first half gain minus second half gain
       const early_vs_late_0_30 =
@@ -736,7 +757,9 @@ export class PriceCollector {
             path_smoothness_0_30 = ?,
             max_drawdown_0_30    = ?,
             dip_and_recover_flag = ?,
-            early_vs_late_0_30   = ?
+            early_vs_late_0_30   = ?,
+            max_tick_drop_0_30   = ?,
+            sum_abs_returns_0_30 = ?
         WHERE graduation_id = ?
       `).run(
         acceleration_t30 != null ? +acceleration_t30.toFixed(3) : null,
@@ -745,6 +768,8 @@ export class PriceCollector {
         +max_drawdown_0_30.toFixed(3),
         dip_and_recover_flag,
         early_vs_late_0_30 != null ? +early_vs_late_0_30.toFixed(3) : null,
+        +max_tick_drop_0_30.toFixed(3),
+        +sum_abs_returns_0_30.toFixed(3),
         graduationId,
       );
 

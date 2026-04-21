@@ -227,6 +227,8 @@ function runMigrations(db: Database.Database): void {
       ['path_smoothness_0_60', 'REAL'],// same for 0-60s
       ['max_drawdown_0_30', 'REAL'],   // max peak-to-trough % drop within 0-30s (negative)
       ['max_drawdown_0_60', 'REAL'],   // same for 0-60s
+      ['max_tick_drop_0_30', 'REAL'],  // worst single 5s-interval drop in pct points within 0-30s (≤ 0)
+      ['sum_abs_returns_0_30', 'REAL'],// sum of |Δpct| across 5s intervals in 0-30s — realized vol proxy
       ['dip_and_recover_flag', 'INTEGER'], // 1 if price dropped >10% from running peak then recovered
       ['early_vs_late_0_30', 'REAL'],  // (pct_t15-pct_t0) - (pct_t30-pct_t15): positive = front-loaded
       ['early_vs_late_0_60', 'REAL'],  // (pct_t30-pct_t0) - (pct_t60-pct_t30): same for full window

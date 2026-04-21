@@ -37,6 +37,8 @@ export function computeFilterV2Data(
         dip_and_recover_flag: number | null;
         acceleration_t30: number | null;
         early_vs_late_0_30: number | null;
+        max_tick_drop_0_30: number | null;
+        sum_abs_returns_0_30: number | null;
         buy_pressure_buy_ratio: number | null;
         buy_pressure_unique_buyers: number | null;
         buy_pressure_whale_pct: number | null;
@@ -361,7 +363,8 @@ export function computeFilterV2Data(
                buy_pressure_whale_pct,
                creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
                creator_last_token_age_hours,
-               max_relret_0_300
+               max_relret_0_300,
+               max_tick_drop_0_30, sum_abs_returns_0_30
         FROM graduation_momentum
         WHERE label IS NOT NULL
           AND pct_t30 IS NOT NULL
@@ -529,7 +532,8 @@ export function computeFilterV2Data(
           buy_pressure_whale_pct,
           creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
           creator_last_token_age_hours,
-          max_relret_0_300
+          max_relret_0_300,
+          max_tick_drop_0_30, sum_abs_returns_0_30
         FROM graduation_momentum
         WHERE label IS NOT NULL
           AND pct_t30 IS NOT NULL
@@ -1720,6 +1724,463 @@ export function computeFilterV2Data(
         ),
       }));
 
+      // ══════════════════════════════════════════════════════════════════════
+      // ── FILTER-ANALYSIS-V3 PANELS ─────────────────────────────────────────
+      // ══════════════════════════════════════════════════════════════════════
+      //
+      // v3 extends v2 with: triple-filter combos (Panel 1), drawdown-gate
+      // stacking on best singles/pairs (Panel 2), crash-survival curves (Panel
+      // 3), two new filter dimensions backed by schema columns — max_tick_drop
+      // and sum_abs_returns (Panels 4 & 6), and a velocity × liquidity
+      // interaction heatmap (Panel 5). Reuses panel4Rows, PANEL_1_FILTERS,
+      // runFilterPanel4, filters4, and panel6TopPairs — no extra DB loads.
+      //
+      // Crash-prediction thesis: current baseline `vel<20 + top5<10%` has a
+      // 59% live SL-hit rate. v3 panels are designed to surface filters or
+      // combos that push the time-to-SL-trigger out beyond the typical
+      // 60–180s window, or to identify entry conditions where the SL is
+      // genuinely improbable vs. baseline.
+
+      // ── Shared v3 constants ──────────────────────────────────────────────
+      //
+      // 2026-04-21: the old fixed +6.44% reference is retired. Main's
+      // refactor moved the promotion bar to the rolling all-labeled
+      // Panel 4 optimum (baseline4.optimal.avg_ret). Combos qualify when
+      // their opt_avg_ret exceeds that rolling baseline. A null optimum
+      // (insufficient baseline n) falls through to 0 so the flag remains
+      // usable.
+      const V3_BASELINE_SIM_RETURN: number =
+        ((baseline4 as any).optimal as Panel4Optimal)?.avg_ret ?? 0;
+
+      // Look up FilterDef by name (used by Panels 1 & 2 to rehydrate pair
+      // components from panel6TopPairs, which only stores filter names).
+      const findFilterDef = (name: string): FilterDef | undefined =>
+        PANEL_1_FILTERS.find(f => f.name === name);
+
+      // ── v3 Panel 1: Top 20 three-filter combos (focused scan) ────────────
+      // For each of the top-20 pairs from Panel 6 (at T+300), iterate through
+      // the remaining PANEL_1_FILTERS. Skip candidates whose group matches
+      // either parent-pair member (no within-group conflicts). That yields
+      // up to 20 × ~50 = ~1000 triple evaluations per horizon.
+      type PanelV3_1_Row = {
+        filter_a: string;
+        filter_b: string;
+        filter_c: string;
+        n: number;
+        opt_tp: number;
+        opt_sl: number;
+        opt_avg_ret: number;
+        opt_win_rate: number;
+        parent_pair_opt: number;
+        lift_vs_pair: number;
+        beats_baseline: boolean;
+      };
+
+      const computeTopTriplesAtHorizon = (
+        horizon: Panel4Horizon,
+        parentPairs: Panel6PairRow[],
+      ): PanelV3_1_Row[] => {
+        const out: PanelV3_1_Row[] = [];
+        for (const pair of parentPairs) {
+          const defA = findFilterDef(pair.filter_a);
+          const defB = findFilterDef(pair.filter_b);
+          if (!defA || !defB) continue;
+          const parentOpt = pair.opt_avg_ret;
+          const excludedGroups = new Set([defA.group, defB.group]);
+          for (const defC of PANEL_1_FILTERS) {
+            if (excludedGroups.has(defC.group)) continue;
+            if (defC.name === defA.name || defC.name === defB.name) continue;
+            const combined = (r: Panel4Row) =>
+              (defA.predicate as (r: Panel4Row) => boolean)(r) &&
+              (defB.predicate as (r: Panel4Row) => boolean)(r) &&
+              (defC.predicate as (r: Panel4Row) => boolean)(r);
+            const res = runFilterPanel4(combined, horizon);
+            if (res.n < PANEL_4_MIN_N_FOR_OPTIMUM) continue;
+            if (!res.optimal) continue;
+            const lift = +(res.optimal.avg_ret - parentOpt).toFixed(2);
+            if (lift <= 0) continue;
+            out.push({
+              filter_a: defA.name,
+              filter_b: defB.name,
+              filter_c: defC.name,
+              n: res.n,
+              opt_tp: res.optimal.tp,
+              opt_sl: res.optimal.sl,
+              opt_avg_ret: res.optimal.avg_ret,
+              opt_win_rate: res.optimal.win_rate,
+              parent_pair_opt: parentOpt,
+              lift_vs_pair: lift,
+              beats_baseline: res.optimal.avg_ret > V3_BASELINE_SIM_RETURN,
+            });
+          }
+        }
+        out.sort((x, y) => y.opt_avg_ret - x.opt_avg_ret);
+        return out.slice(0, 20);
+      };
+
+      const panelV3_1_topTriples_t300 = computeTopTriplesAtHorizon('pct_t300', panel6TopPairs);
+      const panelV3_1_topTriples_t120 = computeTopTriplesAtHorizon('pct_t120', panel6TopPairs_t120);
+      const panelV3_1_topTriples_t60  = computeTopTriplesAtHorizon('pct_t60',  panel6TopPairs_t60);
+
+      // ── v3 Panel 2: max_dd_0_30 gate stacked on best singles and pairs ───
+      // For each base filter × threshold, compute the combined-predicate
+      // Panel 4 optimum. "Unconditional" section = max_dd_0_30 alone across
+      // thresholds. Retention % = gated_n / base_n × 100.
+      const PANEL_V3_2_DD_THRESHOLDS = [-5, -10, -15, -20, -25] as const;
+
+      type PanelV3_2_Row = {
+        base: string;        // e.g. "vel < 20 sol/min" or "vel<20 + top5<10%"
+        base_kind: 'single' | 'pair' | 'unconditional';
+        threshold: number;   // e.g. -10 (max_dd_0_30 > -10)
+        base_n: number;
+        base_opt_avg_ret: number | null;
+        gated_n: number;
+        gated_opt_tp: number | null;
+        gated_opt_sl: number | null;
+        gated_opt_avg_ret: number | null;
+        gated_opt_win_rate: number | null;
+        n_retention_pct: number | null;
+        delta_vs_base: number | null; // gated - base (pp)
+        beats_baseline: boolean;
+      };
+
+      const ddPredicate = (threshold: number) =>
+        (r: Panel4Row) => r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > threshold;
+
+      const buildPanelV3_2_Row = (
+        baseName: string,
+        baseKind: PanelV3_2_Row['base_kind'],
+        basePredicate: (r: Panel4Row) => boolean,
+        baseN: number,
+        baseOpt: number | null,
+        threshold: number,
+      ): PanelV3_2_Row => {
+        const combined = (r: Panel4Row) => basePredicate(r) && ddPredicate(threshold)(r);
+        const res = runFilterPanel4(combined);
+        const gatedN = res.n;
+        const gatedOpt = res.optimal;
+        return {
+          base: baseName,
+          base_kind: baseKind,
+          threshold,
+          base_n: baseN,
+          base_opt_avg_ret: baseOpt,
+          gated_n: gatedN,
+          gated_opt_tp: gatedOpt ? gatedOpt.tp : null,
+          gated_opt_sl: gatedOpt ? gatedOpt.sl : null,
+          gated_opt_avg_ret: gatedOpt ? gatedOpt.avg_ret : null,
+          gated_opt_win_rate: gatedOpt ? gatedOpt.win_rate : null,
+          n_retention_pct: baseN > 0 ? +((gatedN / baseN) * 100).toFixed(1) : null,
+          delta_vs_base: (gatedOpt && baseOpt != null)
+            ? +(gatedOpt.avg_ret - baseOpt).toFixed(2)
+            : null,
+          beats_baseline: gatedOpt != null && gatedOpt.avg_ret > V3_BASELINE_SIM_RETURN,
+        };
+      };
+
+      // Pick top 5 singles by Panel 4 optimum (must have an optimum).
+      const panelV3_2_topSingles = (filters4 as Array<{ filter: string; group: string; n: number; optimal: Panel4Optimal }>)
+        .map((f, idx) => ({ def: PANEL_1_FILTERS[idx], n: f.n, optimal: f.optimal }))
+        .filter(x => x.optimal != null)
+        .sort((a, b) => (b.optimal!.avg_ret) - (a.optimal!.avg_ret))
+        .slice(0, 5);
+
+      const panelV3_2_topPairs = panel6TopPairs.slice(0, 5);
+
+      const panelV3_2_rows: PanelV3_2_Row[] = [];
+
+      // Unconditional: max_dd_0_30 alone across thresholds
+      for (const t of PANEL_V3_2_DD_THRESHOLDS) {
+        panelV3_2_rows.push(
+          buildPanelV3_2_Row(`unconditional`, 'unconditional', () => true, panel4Rows.length, null, t),
+        );
+      }
+
+      // Top singles × thresholds
+      for (const s of panelV3_2_topSingles) {
+        const basePred = s.def.predicate as (r: Panel4Row) => boolean;
+        const baseOpt = s.optimal ? s.optimal.avg_ret : null;
+        for (const t of PANEL_V3_2_DD_THRESHOLDS) {
+          panelV3_2_rows.push(
+            buildPanelV3_2_Row(s.def.name, 'single', basePred, s.n, baseOpt, t),
+          );
+        }
+      }
+
+      // Top pairs × thresholds
+      for (const p of panelV3_2_topPairs) {
+        const defA = findFilterDef(p.filter_a);
+        const defB = findFilterDef(p.filter_b);
+        if (!defA || !defB) continue;
+        const basePred = (r: Panel4Row) =>
+          (defA.predicate as (r: Panel4Row) => boolean)(r) &&
+          (defB.predicate as (r: Panel4Row) => boolean)(r);
+        const baseName = `${p.filter_a} + ${p.filter_b}`;
+        const baseOpt = p.opt_avg_ret;
+        for (const t of PANEL_V3_2_DD_THRESHOLDS) {
+          panelV3_2_rows.push(
+            buildPanelV3_2_Row(baseName, 'pair', basePred, p.n, baseOpt, t),
+          );
+        }
+      }
+
+      // ── v3 Panel 3: Crash survival curves ────────────────────────────────
+      // For each selected filter, compute P(return > threshold | held through t)
+      // at each of 8 timepoints and 3 thresholds. "Alive at t" = min rel_ret
+      // over the [T+30, t] window is strictly greater than threshold.
+      // Rel_ret_t = ((1 + pct_t/100) / (1 + pct_t30/100) - 1) * 100.
+      const PANEL_V3_3_TIMEPOINTS = [30, 45, 60, 90, 120, 180, 240, 300] as const;
+      const PANEL_V3_3_THRESHOLDS = [-5, -10, -20] as const;
+
+      type PanelV3_3_Filter = {
+        name: string;
+        kind: 'pair' | 'triple';
+        n: number;
+        // Two-level array: curves[thresholdIdx][timepointIdx] = survival fraction
+        curves: number[][];
+      };
+
+      const computeSurvivalCurve = (
+        rows: Panel4Row[],
+      ): number[][] => {
+        const n = rows.length;
+        const curves: number[][] = PANEL_V3_3_THRESHOLDS.map(() =>
+          new Array<number>(PANEL_V3_3_TIMEPOINTS.length).fill(0),
+        );
+        if (n === 0) return curves;
+
+        // For each token, precompute rel_ret at each timepoint, then the
+        // running min through each timepoint. Count survivors per threshold.
+        for (const r of rows) {
+          const entryRatio = 1 + r.pct_t30 / 100;
+          if (entryRatio <= 0) continue;
+          let runningMin = 0; // rel_ret at t=30 is 0 by construction
+          for (let ti = 0; ti < PANEL_V3_3_TIMEPOINTS.length; ti++) {
+            const sec = PANEL_V3_3_TIMEPOINTS[ti];
+            let relRet: number;
+            if (sec === 30) {
+              relRet = 0;
+            } else {
+              const key = `pct_t${sec}` as keyof Panel4Row;
+              const v = r[key] as number | null | undefined;
+              if (v == null) {
+                // Missing checkpoint — hold runningMin constant for this token
+                // (don't count as a breach; curve still reflects last known state).
+                for (let thi = 0; thi < PANEL_V3_3_THRESHOLDS.length; thi++) {
+                  if (runningMin > PANEL_V3_3_THRESHOLDS[thi]) curves[thi][ti]++;
+                }
+                continue;
+              }
+              relRet = ((1 + v / 100) / entryRatio - 1) * 100;
+            }
+            if (relRet < runningMin) runningMin = relRet;
+            for (let thi = 0; thi < PANEL_V3_3_THRESHOLDS.length; thi++) {
+              if (runningMin > PANEL_V3_3_THRESHOLDS[thi]) curves[thi][ti]++;
+            }
+          }
+        }
+
+        // Normalize to fractions.
+        return curves.map(counts =>
+          counts.map(c => +(c / n).toFixed(4)),
+        );
+      };
+
+      const panelV3_3_filters: PanelV3_3_Filter[] = [];
+
+      // Top 10 pairs from Panel 6
+      for (const p of panel6TopPairs.slice(0, 10)) {
+        const defA = findFilterDef(p.filter_a);
+        const defB = findFilterDef(p.filter_b);
+        if (!defA || !defB) continue;
+        const predicate = (r: Panel4Row) =>
+          (defA.predicate as (r: Panel4Row) => boolean)(r) &&
+          (defB.predicate as (r: Panel4Row) => boolean)(r);
+        const filtered = panel4Rows.filter(predicate);
+        panelV3_3_filters.push({
+          name: `${p.filter_a} + ${p.filter_b}`,
+          kind: 'pair',
+          n: filtered.length,
+          curves: computeSurvivalCurve(filtered),
+        });
+      }
+
+      // Top 10 triples from v3 Panel 1 (T+300)
+      for (const t of panelV3_1_topTriples_t300.slice(0, 10)) {
+        const defA = findFilterDef(t.filter_a);
+        const defB = findFilterDef(t.filter_b);
+        const defC = findFilterDef(t.filter_c);
+        if (!defA || !defB || !defC) continue;
+        const predicate = (r: Panel4Row) =>
+          (defA.predicate as (r: Panel4Row) => boolean)(r) &&
+          (defB.predicate as (r: Panel4Row) => boolean)(r) &&
+          (defC.predicate as (r: Panel4Row) => boolean)(r);
+        const filtered = panel4Rows.filter(predicate);
+        panelV3_3_filters.push({
+          name: `${t.filter_a} + ${t.filter_b} + ${t.filter_c}`,
+          kind: 'triple',
+          n: filtered.length,
+          curves: computeSurvivalCurve(filtered),
+        });
+      }
+
+      // Baseline curve (all eligible tokens, no filter) for reference.
+      const panelV3_3_baseline: PanelV3_3_Filter = {
+        name: 'ALL eligible (no filter)',
+        kind: 'pair', // arbitrary — not displayed
+        n: panel4Rows.length,
+        curves: computeSurvivalCurve(panel4Rows),
+      };
+
+      // ── v3 Panel 4: max_tick_drop_0_30 (new filter dimension) ────────────
+      // Standalone across thresholds + stacked on current baseline.
+      const PANEL_V3_4_THRESHOLDS = [-3, -5, -8, -10, -15] as const;
+
+      type PanelV3_4_Row = {
+        threshold: number;
+        mode: 'standalone' | 'stacked_baseline';
+        n: number;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        opt_avg_ret: number | null;
+        opt_win_rate: number | null;
+        beats_baseline: boolean;
+      };
+
+      const tickDropPredicate = (threshold: number) =>
+        (r: Panel4Row) => r.max_tick_drop_0_30 != null && r.max_tick_drop_0_30 > threshold;
+
+      // Baseline composite predicate: vel<20 AND top5<10%
+      const defVelLt20 = findFilterDef('vel < 20 sol/min');
+      const defTop5Lt10 = findFilterDef('top5 < 10%');
+      const baselineCompositePredicate = (r: Panel4Row): boolean => {
+        if (!defVelLt20 || !defTop5Lt10) return true;
+        return (defVelLt20.predicate as (r: Panel4Row) => boolean)(r)
+            && (defTop5Lt10.predicate as (r: Panel4Row) => boolean)(r);
+      };
+
+      const panelV3_4_rows: PanelV3_4_Row[] = [];
+      for (const t of PANEL_V3_4_THRESHOLDS) {
+        const standalone = runFilterPanel4(tickDropPredicate(t));
+        panelV3_4_rows.push({
+          threshold: t,
+          mode: 'standalone',
+          n: standalone.n,
+          opt_tp: standalone.optimal ? standalone.optimal.tp : null,
+          opt_sl: standalone.optimal ? standalone.optimal.sl : null,
+          opt_avg_ret: standalone.optimal ? standalone.optimal.avg_ret : null,
+          opt_win_rate: standalone.optimal ? standalone.optimal.win_rate : null,
+          beats_baseline: standalone.optimal != null && standalone.optimal.avg_ret > V3_BASELINE_SIM_RETURN,
+        });
+
+        const stacked = runFilterPanel4((r) => baselineCompositePredicate(r) && tickDropPredicate(t)(r));
+        panelV3_4_rows.push({
+          threshold: t,
+          mode: 'stacked_baseline',
+          n: stacked.n,
+          opt_tp: stacked.optimal ? stacked.optimal.tp : null,
+          opt_sl: stacked.optimal ? stacked.optimal.sl : null,
+          opt_avg_ret: stacked.optimal ? stacked.optimal.avg_ret : null,
+          opt_win_rate: stacked.optimal ? stacked.optimal.win_rate : null,
+          beats_baseline: stacked.optimal != null && stacked.optimal.avg_ret > V3_BASELINE_SIM_RETURN,
+        });
+      }
+
+      // ── v3 Panel 5: Velocity × Liquidity heatmap ─────────────────────────
+      // 5 velocity buckets × 4 liquidity buckets = 20 cells.
+      const velBuckets = [
+        { name: 'vel < 5',       pred: (r: Panel4Row) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 5 },
+        { name: 'vel 5-20',      pred: (r: Panel4Row) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 5  && r.bc_velocity_sol_per_min < 20 },
+        { name: 'vel 20-50',     pred: (r: Panel4Row) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 20 && r.bc_velocity_sol_per_min < 50 },
+        { name: 'vel 50-200',    pred: (r: Panel4Row) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 50 && r.bc_velocity_sol_per_min < 200 },
+        { name: 'vel >= 200',    pred: (r: Panel4Row) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 200 },
+      ] as const;
+      const liqBuckets = [
+        { name: 'liq < 50',     pred: (r: Panel4Row) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 < 50 },
+        { name: 'liq 50-100',   pred: (r: Panel4Row) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 >= 50  && r.liquidity_sol_t30 < 100 },
+        { name: 'liq 100-150',  pred: (r: Panel4Row) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 >= 100 && r.liquidity_sol_t30 < 150 },
+        { name: 'liq >= 150',   pred: (r: Panel4Row) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 >= 150 },
+      ] as const;
+
+      type PanelV3_5_Cell = {
+        vel: string;
+        liq: string;
+        n: number;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        opt_avg_ret: number | null;
+        opt_win_rate: number | null;
+        beats_baseline: boolean;
+      };
+
+      const panelV3_5_cells: PanelV3_5_Cell[] = [];
+      for (const v of velBuckets) {
+        for (const l of liqBuckets) {
+          const res = runFilterPanel4((r) => v.pred(r) && l.pred(r));
+          panelV3_5_cells.push({
+            vel: v.name,
+            liq: l.name,
+            n: res.n,
+            opt_tp: res.optimal ? res.optimal.tp : null,
+            opt_sl: res.optimal ? res.optimal.sl : null,
+            opt_avg_ret: res.optimal ? res.optimal.avg_ret : null,
+            opt_win_rate: res.optimal ? res.optimal.win_rate : null,
+            beats_baseline: res.optimal != null && res.optimal.avg_ret > V3_BASELINE_SIM_RETURN,
+          });
+        }
+      }
+
+      // ── v3 Panel 6: sum_abs_returns_0_30 (pre-entry realized vol) ────────
+      // Smaller sum_abs_returns = smoother path pre-entry.
+      // Larger = choppier. Explore both directions with < thresholds and > thresholds.
+      const PANEL_V3_6_THRESHOLDS_LT = [20, 40, 60, 100] as const;
+      const PANEL_V3_6_THRESHOLDS_GT = [20, 40, 60] as const;
+
+      type PanelV3_6_Row = {
+        op: '<' | '>';
+        threshold: number;
+        mode: 'standalone' | 'stacked_baseline';
+        n: number;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        opt_avg_ret: number | null;
+        opt_win_rate: number | null;
+        beats_baseline: boolean;
+      };
+
+      const sumAbsPredicate = (op: '<' | '>', threshold: number) =>
+        (r: Panel4Row) => {
+          if (r.sum_abs_returns_0_30 == null) return false;
+          return op === '<' ? r.sum_abs_returns_0_30 < threshold : r.sum_abs_returns_0_30 > threshold;
+        };
+
+      const panelV3_6_rows: PanelV3_6_Row[] = [];
+      const pushV3_6 = (op: '<' | '>', threshold: number) => {
+        const standalone = runFilterPanel4(sumAbsPredicate(op, threshold));
+        panelV3_6_rows.push({
+          op, threshold, mode: 'standalone',
+          n: standalone.n,
+          opt_tp: standalone.optimal ? standalone.optimal.tp : null,
+          opt_sl: standalone.optimal ? standalone.optimal.sl : null,
+          opt_avg_ret: standalone.optimal ? standalone.optimal.avg_ret : null,
+          opt_win_rate: standalone.optimal ? standalone.optimal.win_rate : null,
+          beats_baseline: standalone.optimal != null && standalone.optimal.avg_ret > V3_BASELINE_SIM_RETURN,
+        });
+
+        const stacked = runFilterPanel4((r) => baselineCompositePredicate(r) && sumAbsPredicate(op, threshold)(r));
+        panelV3_6_rows.push({
+          op, threshold, mode: 'stacked_baseline',
+          n: stacked.n,
+          opt_tp: stacked.optimal ? stacked.optimal.tp : null,
+          opt_sl: stacked.optimal ? stacked.optimal.sl : null,
+          opt_avg_ret: stacked.optimal ? stacked.optimal.avg_ret : null,
+          opt_win_rate: stacked.optimal ? stacked.optimal.win_rate : null,
+          beats_baseline: stacked.optimal != null && stacked.optimal.avg_ret > V3_BASELINE_SIM_RETURN,
+        });
+      };
+      for (const t of PANEL_V3_6_THRESHOLDS_LT) pushV3_6('<', t);
+      for (const t of PANEL_V3_6_THRESHOLDS_GT) pushV3_6('>', t);
+
       const filterV2Data = {
         generated_at: new Date().toISOString(),
         panel1: {
@@ -1982,6 +2443,82 @@ export function computeFilterV2Data(
             low_n_threshold: 30,
             strong_n_threshold: 100,
           },
+        },
+        // ── FILTER-ANALYSIS-V3 PANELS ──
+        panelv3_1: {
+          title: 'Top 20 Three-Filter Combos — Focused Scan Around Panel 6 Top Pairs',
+          description:
+            'For each of the top 20 two-filter pairs from Panel 6 (at T+300), this scan tries every remaining single filter as a third component, skipping candidates whose group matches either parent-pair member to avoid within-group conflicts. Each triple is run through Panel 4\'s 12×10 TP/SL grid; rows are kept only if n ≥ 30 AND the triple\'s optimum beats the parent pair\'s optimum (lift_vs_pair > 0). Top 20 surfaced per horizon (T+300 / T+120 / T+60), ranked by opt_avg_ret. beats_baseline = opt_avg_ret > rolling ALL-labeled Panel 4 optimum (see constants.baseline_sim_return).',
+          constants: {
+            baseline_sim_return: V3_BASELINE_SIM_RETURN,
+            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
+            horizons: ['pct_t300', 'pct_t120', 'pct_t60'],
+          },
+          top_triples_t300: panelV3_1_topTriples_t300,
+          top_triples_t120: panelV3_1_topTriples_t120,
+          top_triples_t60:  panelV3_1_topTriples_t60,
+          flags: { low_n_threshold: 30, strong_n_threshold: 100 },
+        },
+        panelv3_2: {
+          title: 'Drawdown Gate Stacking — max_dd_0_30 Layered on Top Singles & Pairs',
+          description:
+            'How much does adding a max_drawdown_0_30 gate improve each of the top 5 single filters and top 5 pairs? Each base is combined with max_dd_0_30 > {−5, −10, −15, −20, −25} and re-optimized through Panel 4\'s grid. n_retention_pct tells you how many tokens survive the gate (tighter threshold = fewer survivors). delta_vs_base is the pp improvement in opt_avg_ret. "unconditional" rows = max_dd_0_30 alone (no base filter). Thesis: crashes often have a tell in the 0–30s window, and pre-entry drawdown may predict which tokens keep dumping post-entry.',
+          constants: {
+            baseline_sim_return: V3_BASELINE_SIM_RETURN,
+            dd_thresholds: PANEL_V3_2_DD_THRESHOLDS,
+            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
+          },
+          rows: panelV3_2_rows,
+          flags: { low_n_threshold: 30, strong_n_threshold: 100 },
+        },
+        panelv3_3: {
+          title: 'Crash Survival Curves — Time-to-Threshold-Breach by Filter',
+          description:
+            'For each of ~20 selected combos (top 10 pairs + top 10 triples), this panel walks the 5s grid from T+30 to T+300 and tracks the fraction of tokens whose rel-return (vs T+30 entry) has NOT yet breached {−5%, −10%, −20%} by each checkpoint. curves[threshold_idx][timepoint_idx] = survival fraction. A filter whose P(return > −10%) stays high for longer is one where the SL is genuinely less likely to fire in the typical 60–180s window — which is the core crash-prediction question for this branch. A flat curve = tokens that survive 30s tend to survive 300s; a falling curve = steady attrition; a cliff at t=60 = the 60s crash bucket.',
+          constants: {
+            timepoints_sec: PANEL_V3_3_TIMEPOINTS,
+            thresholds_pct: PANEL_V3_3_THRESHOLDS,
+          },
+          baseline: panelV3_3_baseline,
+          filters: panelV3_3_filters,
+          flags: { low_n_threshold: 30, strong_n_threshold: 100 },
+        },
+        panelv3_4: {
+          title: 'max_tick_drop_0_30 — New Filter Dimension',
+          description:
+            'max_tick_drop_0_30 is the worst single 5s-interval price drop in the 0–30s pre-entry window, measured in percentage points. Values are ≤ 0; closer to 0 = smoother early path, more negative = a sudden flush before T+30. This panel tests it standalone and stacked on the legacy baseline composite (`vel<20 + top5<10%`) across thresholds {> −3, > −5, > −8, > −10, > −15}. Hypothesis: a large early tick-drop signals coordinated dumping that tends to continue post-entry. beats_baseline = opt_avg_ret > rolling ALL-labeled Panel 4 optimum (see constants.baseline_sim_return).',
+          constants: {
+            baseline_sim_return: V3_BASELINE_SIM_RETURN,
+            thresholds: PANEL_V3_4_THRESHOLDS,
+            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
+          },
+          rows: panelV3_4_rows,
+          flags: { low_n_threshold: 30, strong_n_threshold: 100 },
+        },
+        panelv3_5: {
+          title: 'Velocity × Liquidity Interaction Heatmap',
+          description:
+            'Are current edges regime-specific? 5 velocity buckets × 4 liquidity buckets = 20 cells. Each cell re-runs Panel 4\'s TP/SL optimizer on the intersection and reports opt_avg_ret. Look for: (a) whether `vel<20` beats the rolling baseline everywhere or only in certain liquidity bands; (b) whether high-liquidity tokens (>150 SOL) offer a better risk/reward than the low-liquidity long tail. beats_baseline = opt_avg_ret > rolling ALL-labeled Panel 4 optimum (see constants.baseline_sim_return). Cells with n < 30 have opt_avg_ret = null.',
+          constants: {
+            baseline_sim_return: V3_BASELINE_SIM_RETURN,
+            vel_buckets: velBuckets.map(b => b.name),
+            liq_buckets: liqBuckets.map(b => b.name),
+          },
+          cells: panelV3_5_cells,
+          flags: { low_n_threshold: 30, strong_n_threshold: 100 },
+        },
+        panelv3_6: {
+          title: 'sum_abs_returns_0_30 — Pre-Entry Realized Volatility',
+          description:
+            'sum_abs_returns_0_30 = Σ|Δpct| over the 5s intervals through T+30. Proxy for how much distance the price covered before entry, regardless of direction. Complements monotonicity: a token can be smooth-and-up (low sum_abs, monotonic) or chop-and-up (high sum_abs, non-monotonic). Tested with < thresholds {20, 40, 60, 100} (calm paths) and > thresholds {20, 40, 60} (choppy paths), standalone and stacked on `vel<20 + top5<10%`. Hypothesis: calmer pre-entry paths are more predictable post-entry.',
+          constants: {
+            baseline_sim_return: V3_BASELINE_SIM_RETURN,
+            thresholds_lt: PANEL_V3_6_THRESHOLDS_LT,
+            thresholds_gt: PANEL_V3_6_THRESHOLDS_GT,
+            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
+          },
+          rows: panelV3_6_rows,
+          flags: { low_n_threshold: 30, strong_n_threshold: 100 },
         },
       };
 

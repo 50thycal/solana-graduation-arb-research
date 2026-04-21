@@ -445,6 +445,13 @@ export class GistSync {
         generated_at: genAt,
         panel10: v2.panel10,
       }, null, 2),
+      // ── v3 panels ──
+      'panelv3_1.json': JSON.stringify({ generated_at: genAt, panelv3_1: v2.panelv3_1 }, null, 2),
+      'panelv3_2.json': JSON.stringify({ generated_at: genAt, panelv3_2: v2.panelv3_2 }, null, 2),
+      'panelv3_3.json': JSON.stringify({ generated_at: genAt, panelv3_3: v2.panelv3_3 }, null, 2),
+      'panelv3_4.json': JSON.stringify({ generated_at: genAt, panelv3_4: v2.panelv3_4 }, null, 2),
+      'panelv3_5.json': JSON.stringify({ generated_at: genAt, panelv3_5: v2.panelv3_5 }, null, 2),
+      'panelv3_6.json': JSON.stringify({ generated_at: genAt, panelv3_6: v2.panelv3_6 }, null, 2),
       'price-path-detail.json': JSON.stringify(pricePathDetail, null, 2),
       'trading.json': JSON.stringify(tradingData, null, 2),
     };

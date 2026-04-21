@@ -1,9 +1,10 @@
 import express from 'express';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
+import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml } from './utils/html-renderer';
 import { computePeakAnalysis } from './api/peak-analysis';
 import { computeExitSim } from './api/exit-sim';
 import { computeExitSimMatrix } from './api/exit-sim-matrix';
@@ -107,6 +108,12 @@ async function main() {
   // Initialize database
   const dataDir = process.env.DATA_DIR || './data';
   const db = initDatabase(dataDir);
+
+  // One-shot backfill for v3 derived metrics (max_tick_drop_0_30,
+  // sum_abs_returns_0_30). Idempotent — only touches rows where the new
+  // columns are NULL. Runs in-memory over the T+0–T+30 pct grid on existing
+  // graduation_momentum rows; <1s at current data volume.
+  backfillV3Metrics(db);
 
   // Start health/API server first so we can always debug via /health
   const healthPort = parseInt(process.env.PORT || process.env.HEALTH_PORT || '8080', 10);
@@ -2190,6 +2197,35 @@ async function main() {
         res.send(renderFilterV2Html(data));
       } else {
         res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── FILTER ANALYSIS V3 ───────────────────────────────────────────────────
+  // Six new panels built on top of the same computeFilterV2Data pipeline:
+  // triple-filter combos, drawdown-gate stacking, crash-survival curves,
+  // two new filter dimensions (max_tick_drop_0_30, sum_abs_returns_0_30),
+  // and a velocity × liquidity heatmap. Served from the 24h heavy cache.
+  app.get('/filter-analysis-v3', (req, res) => {
+    try {
+      const data = getHeavyData(db, strategyManager).v2;
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderFilterV3Html(data));
+      } else {
+        // JSON view: just the six v3 panels
+        res.json({
+          generated_at: data.generated_at,
+          panelv3_1: data.panelv3_1,
+          panelv3_2: data.panelv3_2,
+          panelv3_3: data.panelv3_3,
+          panelv3_4: data.panelv3_4,
+          panelv3_5: data.panelv3_5,
+          panelv3_6: data.panelv3_6,
+        });
       }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
