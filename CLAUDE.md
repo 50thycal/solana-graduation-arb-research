@@ -236,6 +236,7 @@ Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These
 5. **`panel3.json`** → regime stability for individual filters — useful when evaluating single-dimension signals.
 6. **`price-path-stats.json`** → mean price paths by label, Cohen's d effect sizes for path features, entry timing optimization.
 7. **`trades.json`** → paper trading performance: stats, by-strategy breakdown, recent trades.
+8. **`exit-sim-matrix.json`** → when you have a promising combo from step 3, check here to see whether any dynamic exit strategy (momentum_reversal / scale_out / vol_adaptive / time_decayed_tp / whale_liq) beats the combo's own static optimum. A positive `best_delta_pp` is the promotion signal for a live dynamic-exit strategy.
 
 #### Drill-down files (consult when a specific question comes up)
 
@@ -249,6 +250,15 @@ Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These
 - **`price-path-detail.json`** — full `/price-path` data: overlay (≤200 raw token paths), mean paths ±1 SD, Cohen's d, acceleration histogram, entry-timing heatmap, monotonicity buckets. Use when designing path-shape filters.
 - **`trading.json`** — full `/trading` dashboard: open positions, performance by strategy, recent trades (50), skips + reasons, active configs. Use to monitor live paper trading.
 - **`wallet-rep-analysis.json`** — top 20 combos × creator-wallet-rep modifiers (clean_dev, fresh_dev, repeat_dev_3plus, profitable_dev, not_rapid_fire, …). Each cell = `opt_avg_ret` delta in pp (`delta_opt_ret_pp`) with n retention; `summary[]` ranks rep filters by mean Δ. Both the base and rep-modified subsets are evaluated at their own per-combo TP/SL optimum — use after a combo is identified in `/api/best-combos` to see whether a creator-rep overlay improves profitability enough to justify the sample-size hit.
+- **`exit-sim.json`** — single-universe dynamic-exit simulator (pinned to `vel<20 + top5<10%` as a reference universe — NOT the current baseline). Shape: `{universe: {label, n_rows}, baseline_static: {params:{sl_pct:10, tp_pct:50}, avg_return_pct, win_rate_pct, exit_reason_breakdown}, strategies: {momentum_reversal, scale_out, vol_adaptive, time_decayed_tp, whale_liq}}`. Each strategy carries `grid[]` (all param permutations) + `best` (top cell by avg_return_pct). The 5 strategies and their param grids:
+  - `momentum_reversal` — drop_from_hwm_pct (3/5/7/10) × min_hwm_pct (10/20/30), fixed sl_pct=10. Exits when price drops `drop_from_hwm_pct%` from the high-water mark after crossing `min_hwm_pct%`.
+  - `scale_out` — first_tp_pct (15/25/35) × size_pct (0.5/0.67) × runner_trail_pct (5/10), fixed sl_pct=10. Partial exit at first_tp, runner trails by runner_trail_pct.
+  - `vol_adaptive` — k (1/1.5/2/2.5/3), fixed sl_pct=10. Trailing SL at k × path_smoothness. Skips rows missing path_smoothness.
+  - `time_decayed_tp` — preset (aggressive/linear/exponential/conservative) × sl_pct=10. TP ladder decays over time — aggressive starts at 50% and drops fast, conservative holds 75% for 90s.
+  - `whale_liq` — liq_drop_pct (20/30/40) × whale_sell_sol (0.5/1/2), fixed sl_pct=10, tp_pct=50. Exit on liquidity drop or whale sell event. Skips rows missing whale/liq event data.
+
+  Use to pick a dynamic exit shape for the reference universe. For a different universe pass `?universe=...` to /exit-sim, or use exit-sim-matrix below for the top 20 combos at once.
+- **`exit-sim-matrix.json`** — top 20 combos × 5 dynamic-exit strategies. Shape: `{min_n_per_cell, rows[]}`. Each row carries the combo's `filter_spec`, `n_rows`, `static_10_50_return_pct` (reference 10%SL/50%TP reconciliation column — same value as the old leaderboard), `static_optimal_return_pct / _win_rate / _sl / _tp` (per-combo best static cell across SIM_TP_GRID × SIM_SL_GRID — this IS the opt baseline), `leaderboard_opt_return_pct` (opt_avg_ret from /api/best-combos — sanity check), `strategies[5]` with each strategy's best cell and `delta_vs_static_pp` (Δ vs the combo's own static optimum — the fair baseline), plus overall `best_delta_pp` and `best_strategy`. A positive `best_delta_pp` means dynamic exits beat the combo's own static optimum — that's the signal you're looking for when designing trailing/momentum/vol-based exits on top of a promising combo.
 
 #### Example: reading trades data via GitHub MCP + python3
 ```
@@ -365,7 +375,14 @@ Peak analysis and trading:
 |---|---|---|
 | `peak-analysis.json` | `/api/peak-analysis` | Peak CDF, peak time histogram, per-filter peak bucket, suggested TP |
 | `trading.json` | `/api/trading` | Full /trading dashboard: open positions, per-strategy performance, recent trades (50), skip reasons + recent skips, active strategy configs, top filter combos |
-| `wallet-rep-analysis.json` | `/api/wallet-rep-analysis` | Top 20 combos × creator-wallet-rep modifiers: matrix of sim-return deltas + rep filter leaderboard ranked by mean Δ. Use to pick a creator-rep modifier that improves profitability without collapsing sample size. |
+| `wallet-rep-analysis.json` | `/api/wallet-rep-analysis` | Top 20 combos × creator-wallet-rep modifiers: matrix of opt_avg_ret deltas + rep filter leaderboard ranked by mean Δ. Use to pick a creator-rep modifier that improves profitability without collapsing sample size. |
+
+Exit-strategy simulators (dynamic exits: trailing, scale-out, vol-adaptive, time-decayed TP, whale/liq-drop):
+
+| File | Corresponding API | Description |
+|---|---|---|
+| `exit-sim.json` | `/api/exit-sim` | Single-universe view — evaluates all 5 dynamic-exit strategies on one filter (default: `vel<20 + top5<10%` as a fixed reference universe, NOT the current baseline). Each strategy carries `grid[]` of param permutations + `best` cell. Use to pick a dynamic exit shape for the reference universe. |
+| `exit-sim-matrix.json` | `/api/exit-sim-matrix` | Top 20 combos × 5 strategies matrix — for each combo, reports `static_10_50_return_pct` (reference), `static_optimal_{return,win_rate,sl,tp}` (combo's own static opt), `leaderboard_opt_return_pct` (sanity-check vs /api/best-combos), and each strategy's `best` cell + `delta_vs_static_pp`. `best_delta_pp > 0` means dynamic exits beat the combo's own static optimum — the signal you want before promoting a filter to a live dynamic-exit strategy. |
 
 ### Pushing strategy commands (create/update/delete strategies remotely)
 

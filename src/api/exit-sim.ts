@@ -174,7 +174,15 @@ export function loadExitSimRows(db: Database.Database, extraWhere?: string): Exi
   `).all() as ExitSimRow[];
 }
 
-// ── Universe predicates (default = current baseline) ───────────────────
+// ── Universe predicates (default = reference universe) ────────────────
+//
+// `BASELINE_UNIVERSE` is the pinned reference universe for the single-
+// universe /exit-sim page. It's no longer "the baseline" in the research
+// sense — best-combos.json ranks every candidate at its own opt TP/SL and
+// the rolling baseline is the entry-gated ALL-population opt_avg_ret —
+// but this universe is kept as a fixed comparison anchor so /exit-sim
+// stays stable when the live leader rotates. For multi-combo comparisons
+// use /exit-sim-matrix.
 
 export type UniversePredicate = (r: ExitSimRow) => boolean;
 
@@ -909,7 +917,7 @@ export function computeExitSim(
     ? (() => true)
     : (opts.universe ?? BASELINE_UNIVERSE);
   const universeLabel = opts.universeLabel
-    ?? (hasExtraWhere ? 'custom' : 'vel<20 + top5<10% (current baseline)');
+    ?? (hasExtraWhere ? 'custom' : 'vel<20 + top5<10% (reference universe)');
   const rows = loadExitSimRows(db, opts.extraWhere);
   const filtered = rows.filter(universe);
 
