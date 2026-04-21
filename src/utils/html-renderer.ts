@@ -224,10 +224,12 @@ export function renderThesisHtml(data: any): string {
         <div class="stat"><span class="label">Raw Win Rate</span><span class="value">${wr(sc.raw_win_rate_pct)}</span></div>
       </div>
       <div>
-        <div class="stat"><span class="label">Best Filter (sim)</span><span class="value blue">${sc.best_filter?.name || '—'}</span></div>
-        <div class="stat"><span class="label">Sim Avg Return</span><span class="value ${(sc.best_filter?.sim_avg_return ?? 0) >= 6.44 ? 'green' : (sc.best_filter?.sim_avg_return ?? 0) > 0 ? 'yellow' : 'red'}">${sc.best_filter?.sim_avg_return != null ? (sc.best_filter.sim_avg_return > 0 ? '+' : '') + sc.best_filter.sim_avg_return + '%' : '—'}</span></div>
-        <div class="stat"><span class="label">Win Rate</span><span class="value">${wr(sc.best_filter?.win_rate)}</span></div>
+        <div class="stat"><span class="label">Best Filter (opt)</span><span class="value blue">${sc.best_filter?.name || '—'}</span></div>
+        <div class="stat"><span class="label">Opt Avg Return</span><span class="value ${(sc.best_filter?.opt_avg_ret ?? 0) > (sc.rolling_baseline_opt_avg_ret ?? 0) + 0.3 ? 'green' : (sc.best_filter?.opt_avg_ret ?? 0) > (sc.rolling_baseline_opt_avg_ret ?? 0) ? 'yellow' : 'red'}">${sc.best_filter?.opt_avg_ret != null ? (sc.best_filter.opt_avg_ret > 0 ? '+' : '') + sc.best_filter.opt_avg_ret + '%' : '—'}</span></div>
+        <div class="stat"><span class="label">Opt TP / SL</span><span class="value">${sc.best_filter?.opt_tp != null ? `${sc.best_filter.opt_tp}% / ${sc.best_filter.opt_sl}%` : '—'}</span></div>
+        <div class="stat"><span class="label">Win Rate</span><span class="value">${wr(sc.best_filter?.opt_win_rate)}</span></div>
         <div class="stat"><span class="label">Sample Size (n)</span><span class="value">${sc.best_filter?.sample_size || '—'}</span></div>
+        <div class="stat"><span class="label">Rolling Baseline</span><span class="value">${sc.rolling_baseline_opt_avg_ret != null ? (sc.rolling_baseline_opt_avg_ret > 0 ? '+' : '') + sc.rolling_baseline_opt_avg_ret + '%' : '—'}</span></div>
         <div class="stat"><span class="label">Unlabeled</span><span class="value">${sc.unlabeled}</span></div>
       </div>
     </div>
@@ -1102,13 +1104,15 @@ function v2RegimeRowHtml(r: FilterV2RegimeRow, lowN: number, strongN: number, is
   </tr>`;
 }
 
-// Panel 11 row type — extends base regime row with sim return from best-combos leaderboard
+// Panel 11 row type — extends base regime row with opt return from best-combos leaderboard
 type FilterV2ComboRegimeRow = FilterV2RegimeRow & {
-  sim_avg_return: number | null;
+  opt_tp: number | null;
+  opt_sl: number | null;
+  opt_avg_ret: number | null;
   beats_baseline: boolean;
 };
 
-// Panel 11 row renderer — same as v2RegimeRowHtml but with Sim Ret + Beats? columns after n
+// Panel 11 row renderer — same as v2RegimeRowHtml but with Opt Ret + Beats? columns after n
 function v2ComboRegimeRowHtml(r: FilterV2ComboRegimeRow, lowN: number, strongN: number, isBaseline = false): string {
   const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
   const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
@@ -1116,12 +1120,15 @@ function v2ComboRegimeRowHtml(r: FilterV2ComboRegimeRow, lowN: number, strongN: 
   while (buckets.length < 4) buckets.push({ n: 0, win_rate_pct: null, avg_return_pct: null });
 
   let simRetHtml: string;
-  if (isBaseline || r.sim_avg_return === null) {
+  if (isBaseline || r.opt_avg_ret === null) {
     simRetHtml = '<span style="color:#64748b">—</span>';
   } else {
-    const sc = r.sim_avg_return > 5 ? 'green' : r.sim_avg_return > 0 ? 'yellow' : 'red';
-    const sign = r.sim_avg_return > 0 ? '+' : '';
-    simRetHtml = `<span class="${sc}">${sign}${r.sim_avg_return.toFixed(2)}%</span>`;
+    const sc = r.opt_avg_ret > 5 ? 'green' : r.opt_avg_ret > 0 ? 'yellow' : 'red';
+    const sign = r.opt_avg_ret > 0 ? '+' : '';
+    const tpSl = (r.opt_tp != null && r.opt_sl != null)
+      ? `<span style="color:#64748b;font-size:0.85em"> @ tp${r.opt_tp}/sl${r.opt_sl}</span>`
+      : '';
+    simRetHtml = `<span class="${sc}">${sign}${r.opt_avg_ret.toFixed(2)}%</span>${tpSl}`;
   }
   const beatsHtml = isBaseline
     ? '<span style="color:#64748b">—</span>'
