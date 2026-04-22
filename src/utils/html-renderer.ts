@@ -3893,6 +3893,22 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'max_dd > -10% (shallow)', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -10, label: 'dd>-10%' }] },
     { name: 'max_dd > -20%', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -20, label: 'dd>-20%' }] },
   ]},
+  { group: 'Path: Tick Drop', filters: [
+    { name: 'max_tick_drop > -3%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -3,  label: 'tick>-3%' }] },
+    { name: 'max_tick_drop > -5%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -5,  label: 'tick>-5%' }] },
+    { name: 'max_tick_drop > -8%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -8,  label: 'tick>-8%' }] },
+    { name: 'max_tick_drop > -10%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -10, label: 'tick>-10%' }] },
+    { name: 'max_tick_drop > -15%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -15, label: 'tick>-15%' }] },
+  ]},
+  { group: 'Path: Realized Vol', filters: [
+    { name: 'sum_abs < 20',  configs: [{ field: 'sum_abs_returns_0_30', operator: '<', value: 20,  label: 'sum_abs<20'  }] },
+    { name: 'sum_abs < 40',  configs: [{ field: 'sum_abs_returns_0_30', operator: '<', value: 40,  label: 'sum_abs<40'  }] },
+    { name: 'sum_abs < 60',  configs: [{ field: 'sum_abs_returns_0_30', operator: '<', value: 60,  label: 'sum_abs<60'  }] },
+    { name: 'sum_abs < 100', configs: [{ field: 'sum_abs_returns_0_30', operator: '<', value: 100, label: 'sum_abs<100' }] },
+    { name: 'sum_abs > 20',  configs: [{ field: 'sum_abs_returns_0_30', operator: '>', value: 20,  label: 'sum_abs>20'  }] },
+    { name: 'sum_abs > 40',  configs: [{ field: 'sum_abs_returns_0_30', operator: '>', value: 40,  label: 'sum_abs>40'  }] },
+    { name: 'sum_abs > 60',  configs: [{ field: 'sum_abs_returns_0_30', operator: '>', value: 60,  label: 'sum_abs>60'  }] },
+  ]},
   { group: 'Path: Other', filters: [
     { name: 'dip_and_recover = 1', configs: [{ field: 'dip_and_recover_flag', operator: '==', value: 1, label: 'dip_recover' }] },
     { name: 'acceleration > 0', configs: [{ field: 'acceleration_t30', operator: '>', value: 0, label: 'accel>0' }] },
@@ -3967,27 +3983,49 @@ function findPresetName(configs: any[]): string {
 }
 
 /**
- * Split a FilterConfig array into up to 3 filter preset slots.
- * Returns array of preset names (some may be '' for unmatched configs).
+ * Split a FilterConfig array into filter preset slots, one per preset.
+ *
+ * Walks the config array left-to-right; at each position, tries every preset
+ * across every group (NOT just the next one in group-iteration order) and
+ * picks the first match, preferring longer presets (e.g. "vel 20-50" which
+ * consumes two configs) over shorter ones at the same position. If no preset
+ * matches, emits an empty slot and advances by one config so the renderer
+ * still shows a placeholder the user can fix. Returns at least 2 slots.
  */
 function splitFiltersToPresets(allConfigs: any[]): string[] {
   if (!allConfigs || allConfigs.length === 0) return ['', ''];
-  // Try to greedily match presets
-  const matched: string[] = [];
-  let remaining = [...allConfigs];
+
+  // Flatten all presets into one list, sorted by config-length DESC so a
+  // 2-config preset (e.g. "vel 20-50") wins over a 1-config accidental
+  // prefix match when both exist at the same position.
+  type Preset = { name: string; configs: any[] };
+  const allPresets: Preset[] = [];
   for (const g of FILTER_PRESET_GROUPS) {
-    for (const f of g.filters) {
-      if (remaining.length === 0) break;
-      // Check if f.configs is a prefix of remaining
-      if (f.configs.length > remaining.length) continue;
-      const isMatch = f.configs.every((fc, i) => {
-        const c = remaining[i];
+    for (const f of g.filters) allPresets.push({ name: f.name, configs: f.configs });
+  }
+  allPresets.sort((a, b) => b.configs.length - a.configs.length);
+
+  const matched: string[] = [];
+  let i = 0;
+  while (i < allConfigs.length) {
+    const remaining = allConfigs.slice(i);
+    let bestMatch: Preset | null = null;
+    for (const p of allPresets) {
+      if (p.configs.length > remaining.length) continue;
+      const isMatch = p.configs.every((fc, j) => {
+        const c = remaining[j];
         return c && fc.field === c.field && fc.operator === c.operator && fc.value === c.value;
       });
-      if (isMatch) {
-        matched.push(f.name);
-        remaining = remaining.slice(f.configs.length);
-      }
+      if (isMatch) { bestMatch = p; break; } // first match wins (longest-first ordering)
+    }
+    if (bestMatch) {
+      matched.push(bestMatch.name);
+      i += bestMatch.configs.length;
+    } else {
+      // Config at position i has no matching preset — emit a placeholder slot
+      // and advance one step so unmatched filters don't vanish silently.
+      matched.push('');
+      i += 1;
     }
   }
   while (matched.length < 2) matched.push('');
