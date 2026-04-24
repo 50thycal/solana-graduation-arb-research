@@ -118,10 +118,19 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   //                                              pool from the bot's DB
   //   GET /api/verify-pumpswap?sig=<txSig>     → verifies a specific tx
   //   GET /api/verify-pumpswap?sig=...&ixIndex=N → N-th ix in that tx
+  //   GET /api/verify-pumpswap?...&pretty=1    → 2-space indented JSON
   app.get('/api/verify-pumpswap', wrap(async (req, res) => {
+    // Pretty-print on demand. Browser-pasted output is unreadable as a single
+    // line; jq isn't always handy. Indent applies to every response branch.
+    const pretty = req.query.pretty === '1' || req.query.pretty === 'true';
+    const send = (status: number, payload: unknown) => {
+      res.status(status).type('application/json')
+        .send(JSON.stringify(payload, null, pretty ? 2 : 0));
+    };
+
     const rpcUrl = process.env.HELIUS_RPC_URL;
     if (!rpcUrl) {
-      res.status(500).json({ error: 'HELIUS_RPC_URL not set on server' });
+      send(500, { error: 'HELIUS_RPC_URL not set on server' });
       return;
     }
     const connection = new Connection(rpcUrl, 'confirmed');
@@ -137,7 +146,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       try {
         const pick = await findRecentPumpSwapSwap(connection, db);
         if (!pick) {
-          res.status(404).json({
+          send(404, {
             error: 'no recent PumpSwap swap found in last 5 graduated pools',
             hint: 'pass ?sig=<txSignature> explicitly, or wait for new graduations',
           });
@@ -147,7 +156,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
         ixIndex = pick.ixIndex;
         autoPicked = { poolAddress: pick.poolAddress, direction: pick.direction };
       } catch (err) {
-        res.status(502).json({
+        send(502, {
           error: 'auto-pick failed',
           detail: err instanceof Error ? err.message : String(err),
         });
@@ -157,9 +166,9 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
 
     try {
       const report = await verifyPumpswapSwap(connection, sig, { ixIndex });
-      res.status(report.matched ? 200 : 409).json({ ...report, autoPicked });
+      send(report.matched ? 200 : 409, { ...report, autoPicked });
     } catch (err) {
-      res.status(502).json({
+      send(502, {
         error: err instanceof Error ? err.message : String(err),
         sig, ixIndex, autoPicked,
       });
