@@ -43,6 +43,8 @@ import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
+import { verifyPumpswapSwap } from '../trading/pumpswap-verify';
+import { Connection } from '@solana/web3.js';
 import { getHeavyData } from './heavy-cache';
 import type { LogBuffer } from '../utils/log-buffer';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -105,6 +107,40 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // vs assumed slippage. Claude reads this to decide rollout-phase promotion.
   app.get('/api/live-execution-stats', wrap((_req, res) => {
     res.json(computeLiveExecutionStats(db));
+  }));
+
+  // ── /api/verify-pumpswap ──
+  // Byte-equality check: fetch a real PumpSwap swap tx, rebuild the buy/sell
+  // ix with our builder, diff. This is the gate before flipping any strategy
+  // into shadow mode. One-off ops endpoint — creates a fresh Connection per
+  // call from HELIUS_RPC_URL (the bot's own connection isn't in scope here).
+  //   GET /api/verify-pumpswap?sig=<txSignature>&ixIndex=<n>
+  app.get('/api/verify-pumpswap', wrap(async (req, res) => {
+    const sig = String(req.query.sig ?? '').trim();
+    if (!sig) {
+      res.status(400).json({ error: 'missing required query param: sig' });
+      return;
+    }
+    const ixIndexRaw = req.query.ixIndex;
+    const ixIndex = ixIndexRaw != null && ixIndexRaw !== ''
+      ? parseInt(String(ixIndexRaw), 10)
+      : undefined;
+
+    const rpcUrl = process.env.HELIUS_RPC_URL;
+    if (!rpcUrl) {
+      res.status(500).json({ error: 'HELIUS_RPC_URL not set on server' });
+      return;
+    }
+    const connection = new Connection(rpcUrl, 'confirmed');
+    try {
+      const report = await verifyPumpswapSwap(connection, sig, { ixIndex });
+      res.status(report.matched ? 200 : 409).json(report);
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : String(err),
+        sig, ixIndex,
+      });
+    }
   }));
 
   // ── /api/snapshot ──
