@@ -124,12 +124,12 @@ export class StrategyManager {
         if (pos.mode !== 'live') continue;
         // Fire the exit event with the last known price — the sell path will
         // re-quote live price before submitting, so this is a safe approximation.
-        const fakeEvent = {
+        const killEvent: ExitEvent = {
           position: pos,
-          exitReason: 'killswitch' as never,
+          exitReason: 'killswitch',
           exitPriceSol: pos.highWaterMark || pos.entryPriceSol,
         };
-        this.handleExit(fakeEvent as ExitEvent, instance.config).catch(err => {
+        this.handleExit(killEvent, instance.config).catch(err => {
           logger.error(
             'Killswitch force-close failed for trade %d: %s',
             pos.tradeId, err instanceof Error ? err.message : String(err),

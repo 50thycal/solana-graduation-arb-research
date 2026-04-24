@@ -24,6 +24,15 @@ import { buildJitoTipIx, submitBundle } from './jito';
 
 const logger = makeLogger('trading-executor');
 
+// ── Fill-attribution constants ──────────────────────────────────────────────
+// Tx signatures cost 5000 lamports per signer. Our buy/sell txs have one signer.
+const TX_FEE_LAMPORTS = 5_000;
+// SPL token account rent-exempt minimum (165-byte account). This is what the
+// idempotent create-ATA ix pays when the ATA doesn't already exist — and it
+// stays locked up in the account until we close it. To keep per-trade slippage
+// measurement honest we subtract this from solSpent on any fresh-ATA buy.
+const TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
+
 export interface PoolPriceResult {
   priceSol: number;
   solReserves: number;
@@ -398,7 +407,13 @@ export class Executor {
     const minBaseOutRaw = (expectedBaseOutRaw * 95n) / 100n;
     const maxQuoteInLamports = (solInLamports * 105n) / 100n;
 
-    // Pre-fill token balance (for fill attribution)
+    // Pre-fill snapshot for fill attribution:
+    //   baseBalBefore       — raw u64 tokens already in wallet (0 if fresh)
+    //   baseAtaExistsBefore — was the ATA already paid-for? drives rent subtraction
+    //   walletSolBefore     — lamports before tx
+    const baseAta = getAssociatedTokenAddress(mintPk, this.wallet.pubkey);
+    const baseAtaInfoBefore = await this.connection.getAccountInfo(baseAta, 'confirmed').catch(() => null);
+    const baseAtaExistsBefore = !!baseAtaInfoBefore;
     const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
     const walletSolBefore = await this.wallet.getSolBalance(this.connection);
 
@@ -448,25 +463,35 @@ export class Executor {
     const walletSolAfter = await this.wallet.getSolBalance(this.connection);
     const tokensReceivedRaw = baseBalAfter - baseBalBefore;
     const tokensReceived = tokensReceivedRaw / 1e6;
+    // walletSolBefore - walletSolAfter includes everything that left the wallet:
+    //   (a) actual swap payment into quote_vault  ← what we want
+    //   (b) Jito tip (separate ix, same tx)
+    //   (c) 5000 lamports tx fee
+    //   (d) token-account rent if the baseMint ATA was freshly created
+    // wSOL ATA is created AND closed in the same tx, so its rent nets to 0.
+    // Subtracting (b–d) gives us the isolated swap cost for slippage attribution.
+    const overheadLamports =
+      jitoTipLamports + TX_FEE_LAMPORTS + (baseAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS);
     const solSpentLamports = walletSolBefore - walletSolAfter;
-    const solSpent = solSpentLamports / 1e9;
-    if (tokensReceived <= 0 || solSpent <= 0) {
+    const swapCostLamports = solSpentLamports - overheadLamports;
+    const swapCostSol = swapCostLamports / 1e9;
+    if (tokensReceived <= 0 || swapCostLamports <= 0) {
       return {
         success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
         dryRun: false, executionMode: mode,
-        errorMessage: `live: landed but no balance delta (tokens=${tokensReceivedRaw}, solΔ=${solSpentLamports})`,
+        errorMessage: `live: landed but no balance delta (tokens=${tokensReceivedRaw}, swapΔ=${swapCostLamports})`,
         txSignature: submission.txSignature,
         txLandMs: submission.latencyMs,
         jitoTipSol,
       };
     }
-    const effectivePrice = solSpent / tokensReceived;
+    const effectivePrice = swapCostSol / tokensReceived;
     const measuredSlippagePct = (effectivePrice / pool.priceSol - 1) * 100;
 
     logger.info(
       {
         mint, mode, path: submission.path, tokensReceived,
-        solSpent, effectivePrice,
+        swapCostSol, overheadLamports, effectivePrice,
         measuredSlippagePct: measuredSlippagePct.toFixed(3),
         latencyMs: submission.latencyMs,
       },
@@ -579,7 +604,12 @@ export class Executor {
 
     await this.sleep(800);
     const walletSolAfter = await this.wallet.getSolBalance(this.connection);
-    const solReceivedLamports = walletSolAfter - walletSolBefore + jitoTipLamports;
+    // (walletSolAfter - walletSolBefore) is net SOL into the wallet (swap gain
+    // minus tip, tx fee; plus any wSOL ATA rent refund — we create+close it
+    // in the same tx so it nets to 0). Add back the tip + fee to isolate the
+    // swap proceeds for slippage attribution.
+    const solReceivedLamports =
+      walletSolAfter - walletSolBefore + jitoTipLamports + TX_FEE_LAMPORTS;
     const solReceived = solReceivedLamports / 1e9;
     const effectivePrice = solReceived > 0 ? solReceived / tokensHeld : exitPriceSol;
     const measuredSlippagePct = (1 - effectivePrice / pool.priceSol) * 100;

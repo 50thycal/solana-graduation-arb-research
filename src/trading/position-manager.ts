@@ -47,7 +47,7 @@ export interface ActivePosition {
   slippageEstPct?: number;
 }
 
-export type ExitReason = 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout';
+export type ExitReason = 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout' | 'killswitch';
 
 /** Dynamic monitoring parameters — subset of strategy params needed by PositionManager */
 export interface DynamicMonitorParams {
