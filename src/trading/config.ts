@@ -2,6 +2,34 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('trading-config');
 
+/**
+ * Phased rollout for a strategy.
+ *   paper      — simulate fills with gap penalties (no chain interaction)
+ *   shadow     — read pool state at entry/exit, record what the fill WOULD have been
+ *                (measured slippage), but never submit a tx. Still persists as a
+ *                trade row with execution_mode='shadow' for comparison to paper.
+ *   live_micro — submit real txs at MICRO_TRADE_SIZE_SOL (hard override)
+ *   live_full  — submit real txs at the strategy's configured tradeSizeSol
+ */
+export type ExecutionMode = 'paper' | 'shadow' | 'live_micro' | 'live_full';
+
+// ── Live execution constants (shared by executor, safety, jito) ──────────────
+/** Hard cap on live trading losses per UTC day. Circuit breaker trips at ≤ -DAILY_MAX_LOSS_SOL. */
+export const DAILY_MAX_LOSS_SOL = parseFloat(process.env.DAILY_MAX_LOSS_SOL || '1.0');
+/** Position size used in the live_micro rollout phase — overrides strategy's tradeSizeSol. */
+export const MICRO_TRADE_SIZE_SOL = parseFloat(process.env.MICRO_TRADE_SIZE_SOL || '0.05');
+/** Default Jito tip when a strategy doesn't specify one. 100k lamports ≈ 0.0001 SOL. */
+export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL || '0.0001');
+/** Max acceptable expected slippage at entry. 500 = 5%. */
+export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAGE_BPS || '500', 10);
+/** SOL kept as buffer above tradeSize for tx fees + ATA rent. */
+export const WALLET_SOL_BUFFER = parseFloat(process.env.WALLET_SOL_BUFFER || '0.02');
+/** Regional Jito block engine endpoint. Frankfurt/NY/Amsterdam/Tokyo also available. */
+export const JITO_BLOCK_ENGINE_URL =
+  process.env.JITO_BLOCK_ENGINE_URL || 'https://mainnet.block-engine.jito.wtf';
+/** File path — presence trips the killswitch. Checked on every safety cycle. */
+export const KILLSWITCH_FILE = process.env.TRADING_KILLSWITCH_FILE || '.trading-kill';
+
 export interface FilterConfig {
   /** Column name from graduation_momentum table */
   field: string;
@@ -56,6 +84,14 @@ export interface StrategyParams {
   tightenSlTargetPct2: number;
   /** Move SL to entry price once price reaches this % above entry. 0 = disabled. */
   breakevenStopPct: number;
+
+  // ── Live execution (phase + per-strategy knobs) ───────────────────────
+  /** Phased rollout — default 'paper'. Promote via strategy-commands.json. */
+  executionMode?: ExecutionMode;
+  /** Jito priority tip in SOL. Undefined = DEFAULT_JITO_TIP_SOL. */
+  jitoTipSol?: number;
+  /** Reject entry if expected slippage > this (bps). Undefined = DEFAULT_MAX_SLIPPAGE_BPS. */
+  maxSlippageBps?: number;
 }
 
 export interface TradingConfig {
@@ -107,6 +143,11 @@ export interface TradingConfig {
   /** base58 private key — loaded from env, never logged */
   walletPrivateKey?: string;
 
+  // ── Live execution (global defaults — overridden per-strategy) ──────────
+  executionMode: ExecutionMode;
+  jitoTipSol: number;
+  maxSlippageBps: number;
+
   // ── Filter pipeline ──────────────────────────────────────────────────────
   /** All filters must pass (AND logic) before entry is triggered */
   filters: FilterConfig[];
@@ -154,6 +195,9 @@ export function loadTradingConfig(): TradingConfig {
     slippageBps: parseInt(process.env.SLIPPAGE_BPS || '300', 10),
     priorityFeeMicroLamports: parseInt(process.env.PRIORITY_FEE_MICRO_LAMPORTS || '100000', 10),
     walletPrivateKey: process.env.WALLET_PRIVATE_KEY,
+    executionMode: ((process.env.EXECUTION_MODE as ExecutionMode) || 'paper'),
+    jitoTipSol: parseFloat(process.env.JITO_TIP_SOL || String(DEFAULT_JITO_TIP_SOL)),
+    maxSlippageBps: parseInt(process.env.MAX_SLIPPAGE_BPS || String(DEFAULT_MAX_SLIPPAGE_BPS), 10),
     filters,
   };
 
@@ -201,6 +245,9 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     tightenSlAtPctTime2: cfg.tightenSlAtPctTime2 ?? 0,
     tightenSlTargetPct2: cfg.tightenSlTargetPct2 ?? 5,
     breakevenStopPct: cfg.breakevenStopPct ?? 0,
+    executionMode: cfg.executionMode ?? 'paper',
+    jitoTipSol: cfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
+    maxSlippageBps: cfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
   };
 }
 
@@ -229,5 +276,8 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     tightenSlAtPctTime2: params.tightenSlAtPctTime2 ?? 0,
     tightenSlTargetPct2: params.tightenSlTargetPct2 ?? 5,
     breakevenStopPct: params.breakevenStopPct ?? 0,
+    executionMode: params.executionMode ?? globalCfg.executionMode ?? 'paper',
+    jitoTipSol: params.jitoTipSol ?? globalCfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
+    maxSlippageBps: params.maxSlippageBps ?? globalCfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
   };
 }

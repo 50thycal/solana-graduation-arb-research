@@ -25,6 +25,8 @@ export interface ActivePosition {
   maxExitTimestamp: number;    // unix seconds
   tokensHeld: number;          // 0 in paper mode
   mode: 'paper' | 'live';
+  /** Full execution phase at entry — drives exit dispatch in Executor.sell(). */
+  executionMode?: 'paper' | 'shadow' | 'live_micro' | 'live_full';
   /** Unix seconds of graduation detection — used by match_collection mode to
    *  align price checks with SNAPSHOT_SCHEDULE. Falls back to entryTimestamp-30. */
   graduationDetectedAt: number;
@@ -45,7 +47,7 @@ export interface ActivePosition {
   slippageEstPct?: number;
 }
 
-export type ExitReason = 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout';
+export type ExitReason = 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout' | 'killswitch';
 
 /** Dynamic monitoring parameters — subset of strategy params needed by PositionManager */
 export interface DynamicMonitorParams {

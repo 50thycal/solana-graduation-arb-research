@@ -41,6 +41,7 @@ import { computeExitSim } from './exit-sim';
 import { computeExitSimMatrix } from './exit-sim-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeTradingData } from './trading-data';
+import { computeLiveExecutionStats } from './live-execution-stats';
 import { getHeavyData } from './heavy-cache';
 import {
   getGraduationCount,
@@ -360,6 +361,7 @@ export class GistSync {
     const tradingData = computeTradingData(this.db, this.strategyManager, {
       topPairs: v2.panel6.top_pairs,
     });
+    const liveExecutionStats = computeLiveExecutionStats(this.db);
 
     // Strategy configs — includes all DPM params per strategy
     const strategyRows = getStrategyConfigs(this.db);
@@ -455,6 +457,7 @@ export class GistSync {
       'panelv3_7.json': JSON.stringify({ generated_at: genAt, panelv3_7: v2.panelv3_7 }, null, 2),
       'price-path-detail.json': JSON.stringify(pricePathDetail, null, 2),
       'trading.json': JSON.stringify(tradingData, null, 2),
+      'live-execution.json': JSON.stringify(liveExecutionStats, null, 2),
     };
   }
 

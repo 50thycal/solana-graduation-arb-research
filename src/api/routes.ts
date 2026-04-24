@@ -42,6 +42,9 @@ import { computeExitSimMatrix } from './exit-sim-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
+import { computeLiveExecutionStats } from './live-execution-stats';
+import { verifyPumpswapSwap, findRecentPumpSwapSwap } from '../trading/pumpswap-verify';
+import { Connection } from '@solana/web3.js';
 import { getHeavyData } from './heavy-cache';
 import type { LogBuffer } from '../utils/log-buffer';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -93,10 +96,74 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   };
 
   // ── /api/diagnose ──
-  // Runs the CLAUDE.md Level 1-4 bug triage and returns a verdict.
+  // Runs the CLAUDE.md Level 1-5 bug triage and returns a verdict.
   app.get('/api/diagnose', wrap((_req, res) => {
     const report = runDiagnosis(db, logBuffer);
     res.json(report);
+  }));
+
+  // ── /api/live-execution-stats ──
+  // Live-mode execution health: tx land rate, latency, Jito spend, measured
+  // vs assumed slippage. Claude reads this to decide rollout-phase promotion.
+  app.get('/api/live-execution-stats', wrap((_req, res) => {
+    res.json(computeLiveExecutionStats(db));
+  }));
+
+  // ── /api/verify-pumpswap ──
+  // Byte-equality check: rebuild a real PumpSwap swap ix with our builder
+  // and diff against the on-chain bytes. This is the gate before flipping
+  // any strategy into shadow mode.
+  //   GET /api/verify-pumpswap                 → auto-picks the most recent
+  //                                              swap on a freshly-graduated
+  //                                              pool from the bot's DB
+  //   GET /api/verify-pumpswap?sig=<txSig>     → verifies a specific tx
+  //   GET /api/verify-pumpswap?sig=...&ixIndex=N → N-th ix in that tx
+  app.get('/api/verify-pumpswap', wrap(async (req, res) => {
+    const rpcUrl = process.env.HELIUS_RPC_URL;
+    if (!rpcUrl) {
+      res.status(500).json({ error: 'HELIUS_RPC_URL not set on server' });
+      return;
+    }
+    const connection = new Connection(rpcUrl, 'confirmed');
+
+    let sig = String(req.query.sig ?? '').trim();
+    let ixIndex = req.query.ixIndex != null && req.query.ixIndex !== ''
+      ? parseInt(String(req.query.ixIndex), 10)
+      : undefined;
+    let autoPicked: { poolAddress: string; direction: 'buy' | 'sell' } | null = null;
+
+    // Auto-pick a recent swap if caller didn't provide one.
+    if (!sig) {
+      try {
+        const pick = await findRecentPumpSwapSwap(connection, db);
+        if (!pick) {
+          res.status(404).json({
+            error: 'no recent PumpSwap swap found in last 5 graduated pools',
+            hint: 'pass ?sig=<txSignature> explicitly, or wait for new graduations',
+          });
+          return;
+        }
+        sig = pick.sig;
+        ixIndex = pick.ixIndex;
+        autoPicked = { poolAddress: pick.poolAddress, direction: pick.direction };
+      } catch (err) {
+        res.status(502).json({
+          error: 'auto-pick failed',
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+    }
+
+    try {
+      const report = await verifyPumpswapSwap(connection, sig, { ixIndex });
+      res.status(report.matched ? 200 : 409).json({ ...report, autoPicked });
+    } catch (err) {
+      res.status(502).json({
+        error: err instanceof Error ? err.message : String(err),
+        sig, ixIndex, autoPicked,
+      });
+    }
   }));
 
   // ── /api/snapshot ──

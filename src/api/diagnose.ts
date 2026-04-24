@@ -17,6 +17,8 @@
 
 import Database from 'better-sqlite3';
 import type { LogBuffer } from '../utils/log-buffer';
+import { isKillswitchTripped, getDailyLiveNetProfitSol } from '../trading/safety';
+import { DAILY_MAX_LOSS_SOL } from '../trading/config';
 
 export interface LevelResult {
   pass: boolean;
@@ -32,12 +34,14 @@ export interface DiagnosisReport {
     | 'LEVEL2_FAIL'
     | 'LEVEL3_FAIL'
     | 'LEVEL4_FAIL'
+    | 'LEVEL5_FAIL'
     | 'NO_DATA';
   next_action: string;
   level1_bot_running: LevelResult;
   level2_price_capture: LevelResult;
   level3_timestamps: LevelResult;
   level4_label_logic: LevelResult;
+  level5_live_ready: LevelResult;
   recent_errors: Array<{ ts: string; level: string; name: string; msg: string }>;
 }
 
@@ -208,6 +212,56 @@ export function runDiagnosis(
         : 'Label logic matches expected rule on recent rows.',
   };
 
+  // ── LEVEL 5: Live-mode readiness (circuit breaker, killswitch, balance) ──
+  // Only checked for strategies actually configured for live modes. For
+  // paper-only deployments this always passes.
+  const liveStrategies = db.prepare(`
+    SELECT id, config_json FROM strategy_configs WHERE enabled = 1
+  `).all() as Array<{ id: string; config_json: string }>;
+  const liveIds: string[] = [];
+  for (const s of liveStrategies) {
+    try {
+      const cfg = JSON.parse(s.config_json);
+      if (cfg.executionMode === 'live_micro' || cfg.executionMode === 'live_full') {
+        liveIds.push(s.id);
+      }
+    } catch { /* ignore parse errors */ }
+  }
+
+  let level5: LevelResult;
+  if (liveIds.length === 0) {
+    level5 = {
+      pass: true,
+      evidence: { live_strategy_count: 0 },
+      notes: 'No strategies in live mode — live-readiness not applicable.',
+    };
+  } else {
+    const killswitch = isKillswitchTripped();
+    const dailyPnl = getDailyLiveNetProfitSol(db);
+    const walletEnvSet = !!process.env.WALLET_PRIVATE_KEY;
+    const circuitTripped = dailyPnl <= -DAILY_MAX_LOSS_SOL;
+    const allOk = !killswitch && !circuitTripped && walletEnvSet;
+    level5 = {
+      pass: allOk,
+      evidence: {
+        live_strategy_count: liveIds.length,
+        live_strategies: liveIds,
+        killswitch_tripped: killswitch,
+        daily_live_net_profit_sol: +dailyPnl.toFixed(4),
+        daily_max_loss_sol: DAILY_MAX_LOSS_SOL,
+        circuit_breaker_tripped: circuitTripped,
+        wallet_env_set: walletEnvSet,
+      },
+      notes: !walletEnvSet
+        ? 'Live strategies configured but WALLET_PRIVATE_KEY not set — entries will fail.'
+        : killswitch
+          ? 'Killswitch tripped — new live entries blocked and open positions force-closed.'
+          : circuitTripped
+            ? `Daily circuit breaker tripped — live entries blocked for the rest of UTC day (P&L ${dailyPnl.toFixed(4)} SOL ≤ -${DAILY_MAX_LOSS_SOL}).`
+            : 'Live-mode prerequisites satisfied.',
+    };
+  }
+
   // ── Recent errors from the log ring buffer ──
   const recent_errors: DiagnosisReport['recent_errors'] = [];
   if (logBuffer) {
@@ -241,6 +295,9 @@ export function runDiagnosis(
   } else if (!level4.pass) {
     verdict = 'LEVEL4_FAIL';
     next_action = level4.notes ?? 'Fix label logic before looking at signals.';
+  } else if (!level5.pass) {
+    verdict = 'LEVEL5_FAIL';
+    next_action = level5.notes ?? 'Fix live-mode prerequisites before enabling live strategies.';
   }
 
   return {
@@ -251,6 +308,7 @@ export function runDiagnosis(
     level2_price_capture: level2,
     level3_timestamps: level3,
     level4_label_logic: level4,
+    level5_live_ready: level5,
     recent_errors,
   };
 }

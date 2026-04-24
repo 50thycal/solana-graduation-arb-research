@@ -38,6 +38,25 @@ export function computeTradingData(
     FROM trades_v2 GROUP BY mode
   `).all() as any[];
 
+  // Finer-grained rollout split: paper / shadow / live_micro / live_full.
+  // Use this panel to compare measured vs assumed slippage during the rollout.
+  const performanceByExecutionMode = db.prepare(`
+    SELECT
+      COALESCE(execution_mode, 'paper') as execution_mode,
+      COUNT(*) as total,
+      COUNT(CASE WHEN status='closed' THEN 1 END) as closed,
+      COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
+      COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
+      ROUND(AVG(CASE WHEN status='closed' THEN net_return_pct END), 2) as avg_net_return_pct,
+      ROUND(AVG(CASE WHEN status='closed' THEN shadow_measured_entry_slippage_pct END), 3) as avg_shadow_entry_slip_pct,
+      ROUND(AVG(CASE WHEN status='closed' THEN shadow_measured_exit_slippage_pct END), 3) as avg_shadow_exit_slip_pct,
+      ROUND(AVG(CASE WHEN status='closed' THEN measured_exit_slippage_pct END), 3) as avg_measured_exit_slip_pct,
+      ROUND(AVG(CASE WHEN status='closed' THEN tx_land_ms END), 0) as avg_tx_land_ms,
+      ROUND(SUM(CASE WHEN status='closed' THEN jito_tip_sol ELSE 0 END), 4) as total_jito_tip_sol,
+      ROUND(SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END), 4) as total_net_profit_sol
+    FROM trades_v2 GROUP BY COALESCE(execution_mode, 'paper')
+  `).all() as any[];
+
   const tradesQuery = strategyFilter
     ? `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
         t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
@@ -109,6 +128,7 @@ export function computeTradingData(
     } : null,
     open_positions: openPositions,
     performance_summary: performanceByMode,
+    performance_by_execution_mode: performanceByExecutionMode,
     strategy_stats: strategyStats,
     recent_trades: recentTrades,
     skip_reason_counts: skipReasons,
