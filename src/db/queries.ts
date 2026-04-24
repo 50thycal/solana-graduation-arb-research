@@ -679,6 +679,7 @@ export interface TradeInsert {
   filter_results_json?: string;
   filter_config_json?: string;
   strategy_id?: string;
+  execution_mode?: string;
 }
 
 export function insertTrade(db: Database.Database, data: TradeInsert): number {
@@ -690,13 +691,13 @@ export function insertTrade(db: Database.Database, data: TradeInsert): number {
       entry_timestamp, entry_price_sol, entry_pct_from_open, entry_liquidity_sol,
       entry_slippage_pct,
       trade_size_sol, take_profit_pct, stop_loss_pct, max_hold_seconds,
-      filter_results_json, filter_config_json, strategy_id
+      filter_results_json, filter_config_json, strategy_id, execution_mode
     ) VALUES (
       @graduation_id, @mode, 'open', @mint, @pool_address, @base_vault, @quote_vault,
       @entry_timestamp, @entry_price_sol, @entry_pct_from_open, @entry_liquidity_sol,
       @entry_slippage_pct,
       @trade_size_sol, @take_profit_pct, @stop_loss_pct, @max_hold_seconds,
-      @filter_results_json, @filter_config_json, @strategy_id
+      @filter_results_json, @filter_config_json, @strategy_id, @execution_mode
     )
   `).run({
     graduation_id: data.graduation_id,
@@ -717,6 +718,7 @@ export function insertTrade(db: Database.Database, data: TradeInsert): number {
     filter_results_json: data.filter_results_json ?? null,
     filter_config_json: data.filter_config_json ?? null,
     strategy_id: data.strategy_id ?? 'default',
+    execution_mode: data.execution_mode ?? 'paper',
   });
   return result.lastInsertRowid as number;
 }
@@ -732,6 +734,10 @@ export interface TradeClose {
   net_profit_sol: number;
   net_return_pct: number;
   exit_tx_signature?: string;
+  measured_exit_slippage_pct?: number;
+  shadow_measured_exit_slippage_pct?: number;
+  jito_tip_sol?: number;
+  tx_land_ms?: number;
 }
 
 export function closeTrade(db: Database.Database, tradeId: number, data: TradeClose): void {
@@ -747,7 +753,11 @@ export function closeTrade(db: Database.Database, tradeId: number, data: TradeCl
       gap_adjusted_return_pct = @gap_adjusted_return_pct,
       estimated_fees_sol = @estimated_fees_sol,
       net_profit_sol = @net_profit_sol,
-      net_return_pct = @net_return_pct
+      net_return_pct = @net_return_pct,
+      measured_exit_slippage_pct = COALESCE(@measured_exit_slippage_pct, measured_exit_slippage_pct),
+      shadow_measured_exit_slippage_pct = COALESCE(@shadow_measured_exit_slippage_pct, shadow_measured_exit_slippage_pct),
+      jito_tip_sol = COALESCE(jito_tip_sol, 0) + COALESCE(@jito_tip_sol, 0),
+      tx_land_ms = COALESCE(@tx_land_ms, tx_land_ms)
     WHERE id = @tradeId
   `).run({
     tradeId,
@@ -761,6 +771,10 @@ export function closeTrade(db: Database.Database, tradeId: number, data: TradeCl
     estimated_fees_sol: data.estimated_fees_sol,
     net_profit_sol: data.net_profit_sol,
     net_return_pct: data.net_return_pct,
+    measured_exit_slippage_pct: data.measured_exit_slippage_pct ?? null,
+    shadow_measured_exit_slippage_pct: data.shadow_measured_exit_slippage_pct ?? null,
+    jito_tip_sol: data.jito_tip_sol ?? null,
+    tx_land_ms: data.tx_land_ms ?? null,
   });
 }
 
@@ -781,19 +795,28 @@ export function updateTradeEntryFill(
     entry_effective_price: number;
     entry_tokens_received: number;
     entry_tx_signature?: string;
+    shadow_measured_entry_slippage_pct?: number;
+    jito_tip_sol?: number;
+    tx_land_ms?: number;
   }
 ): void {
   db.prepare(`
     UPDATE trades_v2 SET
       entry_effective_price = @entry_effective_price,
       entry_tokens_received = @entry_tokens_received,
-      entry_tx_signature    = @entry_tx_signature
+      entry_tx_signature    = @entry_tx_signature,
+      shadow_measured_entry_slippage_pct = COALESCE(@shadow_measured_entry_slippage_pct, shadow_measured_entry_slippage_pct),
+      jito_tip_sol          = COALESCE(@jito_tip_sol, jito_tip_sol),
+      tx_land_ms            = COALESCE(@tx_land_ms, tx_land_ms)
     WHERE id = @tradeId
   `).run({
     tradeId,
     entry_effective_price: data.entry_effective_price,
     entry_tokens_received: data.entry_tokens_received,
     entry_tx_signature: data.entry_tx_signature ?? null,
+    shadow_measured_entry_slippage_pct: data.shadow_measured_entry_slippage_pct ?? null,
+    jito_tip_sol: data.jito_tip_sol ?? null,
+    tx_land_ms: data.tx_land_ms ?? null,
   });
 }
 

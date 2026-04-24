@@ -42,6 +42,7 @@ import { computeExitSimMatrix } from './exit-sim-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
+import { computeLiveExecutionStats } from './live-execution-stats';
 import { getHeavyData } from './heavy-cache';
 import type { LogBuffer } from '../utils/log-buffer';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -93,10 +94,17 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   };
 
   // ── /api/diagnose ──
-  // Runs the CLAUDE.md Level 1-4 bug triage and returns a verdict.
+  // Runs the CLAUDE.md Level 1-5 bug triage and returns a verdict.
   app.get('/api/diagnose', wrap((_req, res) => {
     const report = runDiagnosis(db, logBuffer);
     res.json(report);
+  }));
+
+  // ── /api/live-execution-stats ──
+  // Live-mode execution health: tx land rate, latency, Jito spend, measured
+  // vs assumed slippage. Claude reads this to decide rollout-phase promotion.
+  app.get('/api/live-execution-stats', wrap((_req, res) => {
+    res.json(computeLiveExecutionStats(db));
   }));
 
   // ── /api/snapshot ──

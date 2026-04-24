@@ -518,6 +518,33 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Live-execution columns on trades_v2 (safe migration).
+  // execution_mode is the per-phase rollout flag (paper/shadow/live_micro/live_full).
+  // shadow_measured_* capture on-chain pool state at entry/exit in shadow mode —
+  // we never submit a tx but record what the fill would have been so paper gap
+  // penalties can be compared to reality. jito_tip_sol and tx_land_ms are only
+  // populated in live_micro/live_full.
+  {
+    const tradeColsLive = db.prepare("PRAGMA table_info(trades_v2)").all() as Array<{ name: string }>;
+    const tradeExistingLive = new Set(tradeColsLive.map(c => c.name));
+    const newTradeCols: Array<[string, string]> = [
+      ['execution_mode', `TEXT DEFAULT 'paper'`],
+      ['shadow_measured_entry_slippage_pct', 'REAL'],
+      ['shadow_measured_exit_slippage_pct', 'REAL'],
+      ['measured_exit_slippage_pct', 'REAL'],
+      ['jito_tip_sol', 'REAL'],
+      ['tx_land_ms', 'INTEGER'],
+    ];
+    for (const [col, type] of newTradeCols) {
+      if (!tradeExistingLive.has(col)) {
+        db.exec(`ALTER TABLE trades_v2 ADD COLUMN ${col} ${type}`);
+      }
+    }
+    // Backfill legacy rows: anything already in DB pre-migration was paper.
+    db.exec(`UPDATE trades_v2 SET execution_mode = 'paper' WHERE execution_mode IS NULL`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_trades_v2_execution_mode ON trades_v2(execution_mode)`);
+  }
+
   // Add archived column to trades_v2 — backfill legacy strategy trades so they
   // stay queryable but are excluded from dashboard/snapshot by default.
   {

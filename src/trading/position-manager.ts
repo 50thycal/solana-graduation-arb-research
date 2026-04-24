@@ -25,6 +25,8 @@ export interface ActivePosition {
   maxExitTimestamp: number;    // unix seconds
   tokensHeld: number;          // 0 in paper mode
   mode: 'paper' | 'live';
+  /** Full execution phase at entry — drives exit dispatch in Executor.sell(). */
+  executionMode?: 'paper' | 'shadow' | 'live_micro' | 'live_full';
   /** Unix seconds of graduation detection — used by match_collection mode to
    *  align price checks with SNAPSHOT_SCHEDULE. Falls back to entryTimestamp-30. */
   graduationDetectedAt: number;

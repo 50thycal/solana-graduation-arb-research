@@ -8,7 +8,7 @@ import {
   backfillTradeMomentum,
   updateTradeEntryFill,
 } from '../db/queries';
-import { TradingConfig } from './config';
+import { TradingConfig, ExecutionMode } from './config';
 import { FilterStageResult } from './filter-pipeline';
 
 const logger = makeLogger('trade-logger');
@@ -25,19 +25,29 @@ export interface OpenTradeParams {
   filterStages: FilterStageResult[];
   config: TradingConfig;
   strategyId?: string;
+  executionMode?: ExecutionMode;
 }
 
 export interface CloseTradeParams {
   tradeId: number;
   entryPriceSol: number;
   exitPriceSol: number;
-  exitReason: 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout' | 'manual';
+  exitReason: 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout' | 'manual' | 'killswitch';
   tradeSizeSol: number;
   takeProfitPct: number;
   stopLossPct: number;
   slGapPenaltyPct: number;
   tpGapPenaltyPct: number;
   exitTxSignature?: string;
+  /** When provided (live modes), replaces the assumed gap penalty with the
+   *  actual slippage measured at fill time. */
+  measuredExitSlippagePct?: number;
+  /** Shadow-only: what the measured slippage would have been. Persists for
+   *  paper-vs-shadow comparison; does NOT change net_return_pct arithmetic. */
+  shadowMeasuredExitSlippagePct?: number;
+  jitoTipSol?: number;
+  txLandMs?: number;
+  executionMode?: ExecutionMode;
 }
 
 export class TradeLogger {
@@ -59,9 +69,13 @@ export class TradeLogger {
       }
     } catch { /* non-critical */ }
 
+    const executionMode = params.executionMode ?? 'paper';
     const tradeId = insertTrade(this.db, {
       graduation_id: params.graduationId,
-      mode: params.config.mode,
+      // Legacy `mode` column kept for back-compat — 'paper' for anything that
+      // doesn't submit a tx, 'live' for live_micro/live_full. execution_mode
+      // carries the full phase.
+      mode: (executionMode === 'live_micro' || executionMode === 'live_full') ? 'live' : 'paper',
       mint: params.mint,
       pool_address: params.poolAddress,
       base_vault: params.baseVault,
@@ -78,6 +92,7 @@ export class TradeLogger {
       filter_results_json: JSON.stringify(params.filterStages),
       filter_config_json: JSON.stringify(params.config.filters),
       strategy_id: params.strategyId,
+      execution_mode: executionMode,
     });
 
     logger.info(
@@ -101,14 +116,15 @@ export class TradeLogger {
 
     const grossReturnPct = ((exitPriceSol - entryPriceSol) / entryPriceSol) * 100;
 
-    // Apply gap penalty matching Panel 4 methodology:
-    // SL exits: modelled as gapping 20% worse than trigger price
-    // TP exits: modelled as gapping 10% worse than trigger price
-    // DPM trailing_stop/breakeven_stop exits in profit territory use TP gap penalty
-    // (the token isn't in freefall — it's pulling back from a peak, so fill quality
-    //  is closer to a TP exit than a dump-triggered SL)
+    // In live_micro / live_full we have the actual measured slippage from the
+    // on-chain fill — use it directly. Paper and shadow keep the Panel-4 gap
+    // penalty model so backtest/sim comparisons stay apples-to-apples.
     let effectiveExitPrice = exitPriceSol;
-    if (exitReason === 'stop_loss') {
+    const isLiveFill = params.measuredExitSlippagePct != null &&
+      (params.executionMode === 'live_micro' || params.executionMode === 'live_full');
+    if (isLiveFill) {
+      effectiveExitPrice = exitPriceSol * (1 - (params.measuredExitSlippagePct as number) / 100);
+    } else if (exitReason === 'stop_loss') {
       effectiveExitPrice = exitPriceSol * (1 - params.slGapPenaltyPct / 100);
     } else if (exitReason === 'trailing_stop' || exitReason === 'breakeven_stop') {
       // Use TP gap penalty when exiting in profit, SL gap penalty when exiting at a loss
@@ -147,6 +163,10 @@ export class TradeLogger {
       estimated_fees_sol: estimatedFeesSol,
       net_profit_sol: netProfitSol,
       net_return_pct: netReturnPct,
+      measured_exit_slippage_pct: isLiveFill ? params.measuredExitSlippagePct : undefined,
+      shadow_measured_exit_slippage_pct: params.shadowMeasuredExitSlippagePct,
+      jito_tip_sol: params.jitoTipSol,
+      tx_land_ms: params.txLandMs,
     });
 
     logger.info(
@@ -177,11 +197,19 @@ export class TradeLogger {
     effectivePrice: number,
     tokensReceived: number,
     txSignature?: string,
+    extras?: {
+      shadowMeasuredEntrySlippagePct?: number;
+      jitoTipSol?: number;
+      txLandMs?: number;
+    },
   ): void {
     updateTradeEntryFill(this.db, tradeId, {
       entry_effective_price: effectivePrice,
       entry_tokens_received: tokensReceived,
       entry_tx_signature: txSignature,
+      shadow_measured_entry_slippage_pct: extras?.shadowMeasuredEntrySlippagePct,
+      jito_tip_sol: extras?.jitoTipSol,
+      tx_land_ms: extras?.txLandMs,
     });
     logger.debug(
       { tradeId, effectivePrice, tokensReceived, hasTx: !!txSignature },

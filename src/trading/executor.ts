@@ -1,7 +1,26 @@
-import { Connection, PublicKey } from '@solana/web3.js';
+import {
+  Connection,
+  PublicKey,
+  Transaction,
+  ComputeBudgetProgram,
+  SystemProgram,
+} from '@solana/web3.js';
 import BN from 'bn.js';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
+import type { ExecutionMode } from './config';
+import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL } from './config';
+import { Wallet, WSOL_MINT, getAssociatedTokenAddress } from './wallet';
+import {
+  buildBuyIx,
+  buildSellIx,
+  buildAtaCreateIdempotentIx,
+  buildSyncNativeIx,
+  buildCloseAccountIx,
+  computeExpectedBaseOut,
+  computeExpectedQuoteOut,
+} from './pumpswap-swap';
+import { buildJitoTipIx, submitBundle } from './jito';
 
 const logger = makeLogger('trading-executor');
 
@@ -11,6 +30,15 @@ export interface PoolPriceResult {
   tokenReserves: number;
 }
 
+/** Pool + creator context needed to build a PumpSwap swap. Resolved by the
+ *  evaluator (buy) / position manager (sell) from existing ObservationContext
+ *  / ActivePosition state. Creator is looked up lazily from the pool account. */
+export interface PoolContext {
+  poolAddress: string;
+  baseVault: string;
+  quoteVault: string;
+}
+
 export interface ExecutionResult {
   success: boolean;
   effectivePrice: number;
@@ -18,6 +46,14 @@ export interface ExecutionResult {
   txSignature?: string;
   errorMessage?: string;
   dryRun: boolean;
+  /** Execution phase this fill came from — drives downstream accounting. */
+  executionMode?: ExecutionMode;
+  /** Measured slippage at fill vs spot price at submission (%). Live + shadow only. */
+  measuredSlippagePct?: number;
+  /** Jito tip actually paid (SOL). Undefined in paper/shadow. */
+  jitoTipSol?: number;
+  /** Submit → confirm latency in ms. Undefined in paper/shadow. */
+  txLandMs?: number;
 }
 
 /**
@@ -149,101 +185,439 @@ async function fetchVaultPriceRpc(
 }
 
 export class Executor {
-  private readonly mode: 'paper' | 'live';
-
-  constructor(mode: 'paper' | 'live') {
-    this.mode = mode;
-  }
+  private readonly globalMode: ExecutionMode;
+  private readonly wallet: Wallet | null;
+  private readonly connection: Connection | null;
 
   /**
-   * Simulate or execute a buy.
-   *
-   * Paper mode: uses per-token slippage estimate when available (from
-   * graduation_momentum.slippage_est_05sol), falling back to 1.75%.
-   * Live mode: execute via Jupiter aggregator (Phase 3).
+   * @param globalMode  Global fallback mode (from env). Per-call `mode` overrides it.
+   * @param connection  Solana RPC connection (null → live/shadow unavailable)
+   * @param wallet      Signer keypair (null → live unavailable; shadow still works)
+   */
+  constructor(
+    globalMode: ExecutionMode = 'paper',
+    connection: Connection | null = null,
+    wallet: Wallet | null = null,
+  ) {
+    this.globalMode = globalMode;
+    this.connection = connection;
+    this.wallet = wallet;
+  }
+
+  /** Simulate or execute a buy. Dispatch by execution mode:
+   *   paper      — compute effective price from slippage estimate, no chain read
+   *   shadow     — read live pool reserves, compute measured slippage, no tx
+   *   live_micro — override amount to MICRO_TRADE_SIZE_SOL, then live path
+   *   live_full  — live path at provided amount
    */
   async buy(
     mint: string,
     amountSol: number,
     expectedPriceSol: number,
     slippageEstPct?: number,
+    poolCtx?: PoolContext,
+    mode?: ExecutionMode,
   ): Promise<ExecutionResult> {
-    if (this.mode === 'paper') {
-      // Use per-token slippage estimate if available, otherwise fall back to 1.75%
+    const effectiveMode = mode ?? this.globalMode;
+
+    if (effectiveMode === 'paper') {
       const slippagePct = (slippageEstPct != null && slippageEstPct > 0) ? slippageEstPct : 1.75;
       const effectivePrice = expectedPriceSol * (1 + slippagePct / 100);
       const tokensReceived = amountSol / effectivePrice;
-      return { success: true, effectivePrice, tokensReceived, dryRun: true };
+      return {
+        success: true, effectivePrice, tokensReceived, dryRun: true, executionMode: 'paper',
+      };
     }
 
-    // Live mode — Phase 3
-    return this.jupiterBuy(mint, amountSol, expectedPriceSol);
+    if (effectiveMode === 'shadow') {
+      return this.shadowBuy(mint, amountSol, expectedPriceSol, poolCtx);
+    }
+
+    // Hard override to micro size on live_micro, regardless of strategy config.
+    const actualAmount = effectiveMode === 'live_micro' ? MICRO_TRADE_SIZE_SOL : amountSol;
+    return this.liveBuy(mint, actualAmount, expectedPriceSol, poolCtx, effectiveMode);
   }
 
-  /**
-   * Simulate or execute a sell.
-   *
-   * Paper mode: applies estimated exit slippage (AMM impact + fees) to model
-   * realistic fill quality. Uses the same slippage estimate as entry when available.
-   * Live mode: sell all held tokens via Jupiter (Phase 3).
-   */
+  /** Simulate or execute a sell — same mode dispatch as buy. */
   async sell(
     mint: string,
     tokensHeld: number,
     exitPriceSol: number,
     slippageEstPct?: number,
+    poolCtx?: PoolContext,
+    mode?: ExecutionMode,
   ): Promise<ExecutionResult> {
-    if (this.mode === 'paper') {
-      // Apply exit slippage: sell fills worse than the observed price.
-      // Use per-token estimate if available, otherwise fall back to 1.75%.
+    const effectiveMode = mode ?? this.globalMode;
+
+    if (effectiveMode === 'paper') {
       const slippagePct = (slippageEstPct != null && slippageEstPct > 0) ? slippageEstPct : 1.75;
       const effectivePrice = exitPriceSol * (1 - slippagePct / 100);
-      return { success: true, effectivePrice, tokensReceived: 0, dryRun: true };
+      return {
+        success: true, effectivePrice, tokensReceived: 0, dryRun: true, executionMode: 'paper',
+      };
     }
 
-    // Live mode — Phase 3
-    return this.jupiterSell(mint, tokensHeld, exitPriceSol);
+    if (effectiveMode === 'shadow') {
+      return this.shadowSell(mint, tokensHeld, exitPriceSol, poolCtx);
+    }
+
+    return this.liveSell(mint, tokensHeld, exitPriceSol, poolCtx, effectiveMode);
   }
 
-  // ── Phase 3: Jupiter execution ────────────────────────────────────────────
+  // ── Shadow: quote on-chain, don't submit ─────────────────────────────────
 
-  private async jupiterBuy(
+  private async shadowBuy(
     mint: string,
     amountSol: number,
     expectedPriceSol: number,
+    poolCtx?: PoolContext,
   ): Promise<ExecutionResult> {
-    // TODO Phase 3: implement Jupiter Quote+Swap
-    // 1. GET https://quote-api.jup.ag/v6/quote
-    //    inputMint=So111...  outputMint={mint}  amount={lamports}  slippageBps={config}
-    // 2. POST https://quote-api.jup.ag/v6/swap  with quoteResponse + wallet pubkey
-    // 3. Deserialize → sign with wallet → sendRawTransaction → confirmTransaction
-    // 4. Compute effectivePrice from post-tx token balance delta
-    //
-    // NOTE: use mint (not poolAddress) — Jupiter discovers PumpSwap route by mint.
-    // If Jupiter returns "no routes", log and return success:false — do not throw.
-    logger.warn({ mint }, 'Jupiter buy not yet implemented (Phase 3)');
+    if (!this.connection || !poolCtx?.baseVault || !poolCtx?.quoteVault) {
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: true, executionMode: 'shadow',
+        errorMessage: 'shadow: missing pool context',
+      };
+    }
+    const pool = await fetchVaultPrice(this.connection, poolCtx.baseVault, poolCtx.quoteVault, true);
+    if (!pool) {
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: true, executionMode: 'shadow',
+        errorMessage: 'shadow: pool read failed',
+      };
+    }
+    const solInLamports = BigInt(Math.floor(amountSol * 1e9));
+    const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
+    const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
+    const baseOut = computeExpectedBaseOut(solRes, tokRes, solInLamports);
+    const tokensReceived = Number(baseOut) / 1e6;
+    const effectivePrice = amountSol / tokensReceived;
+    const measuredSlippagePct = (effectivePrice / pool.priceSol - 1) * 100;
+    logger.info(
+      { mint, amountSol, spotPrice: pool.priceSol, measuredSlippagePct: measuredSlippagePct.toFixed(3) },
+      'Shadow buy quote'
+    );
     return {
-      success: false,
-      effectivePrice: expectedPriceSol,
-      tokensReceived: 0,
-      errorMessage: 'Jupiter execution not yet implemented',
-      dryRun: false,
+      success: true, effectivePrice, tokensReceived,
+      dryRun: true, executionMode: 'shadow', measuredSlippagePct,
     };
   }
 
-  private async jupiterSell(
+  private async shadowSell(
     mint: string,
     tokensHeld: number,
-    expectedPriceSol: number,
+    exitPriceSol: number,
+    poolCtx?: PoolContext,
   ): Promise<ExecutionResult> {
-    // TODO Phase 3: implement Jupiter sell
-    logger.warn({ mint }, 'Jupiter sell not yet implemented (Phase 3)');
+    if (!this.connection || !poolCtx?.baseVault || !poolCtx?.quoteVault) {
+      return {
+        success: true, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: true, executionMode: 'shadow',
+      };
+    }
+    const pool = await fetchVaultPrice(this.connection, poolCtx.baseVault, poolCtx.quoteVault, true);
+    if (!pool) {
+      return {
+        success: true, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: true, executionMode: 'shadow',
+      };
+    }
+    const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
+    const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
+    const baseIn = BigInt(Math.floor(tokensHeld * 1e6));
+    const solOut = computeExpectedQuoteOut(solRes, tokRes, baseIn);
+    const solReceived = Number(solOut) / 1e9;
+    const effectivePrice = solReceived / tokensHeld;
+    // Exit slippage is measured the same way — how much worse our fill is vs spot.
+    const measuredSlippagePct = (1 - effectivePrice / pool.priceSol) * 100;
+    logger.info(
+      { mint, tokensHeld, spotPrice: pool.priceSol, measuredSlippagePct: measuredSlippagePct.toFixed(3) },
+      'Shadow sell quote'
+    );
     return {
-      success: false,
-      effectivePrice: expectedPriceSol,
-      tokensReceived: 0,
-      errorMessage: 'Jupiter execution not yet implemented',
-      dryRun: false,
+      success: true, effectivePrice, tokensReceived: 0,
+      dryRun: true, executionMode: 'shadow', measuredSlippagePct,
     };
+  }
+
+  // ── Live: build, sign, submit, measure ────────────────────────────────────
+
+  private async liveBuy(
+    mint: string,
+    amountSol: number,
+    expectedPriceSol: number,
+    poolCtx: PoolContext | undefined,
+    mode: ExecutionMode,
+  ): Promise<ExecutionResult> {
+    if (!this.connection || !this.wallet) {
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: 'live: connection or wallet not initialized',
+      };
+    }
+    if (!poolCtx?.baseVault || !poolCtx?.quoteVault || !poolCtx?.poolAddress) {
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: 'live: pool context incomplete',
+      };
+    }
+
+    const mintPk = new PublicKey(mint);
+    const poolPk = new PublicKey(poolCtx.poolAddress);
+    const baseVault = new PublicKey(poolCtx.baseVault);
+    const quoteVault = new PublicKey(poolCtx.quoteVault);
+
+    // Read creator from pool account data (offset 11–43 per pump.fun AMM layout).
+    const creator = await this.readPoolCreator(poolPk);
+    if (!creator) {
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: 'live: failed to read pool creator',
+      };
+    }
+
+    // Measure spot + quote expected output for slippage attribution post-fill.
+    const pool = await fetchVaultPrice(this.connection, poolCtx.baseVault, poolCtx.quoteVault, true);
+    if (!pool) {
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: 'live: pool reserves read failed',
+      };
+    }
+    const solInLamports = BigInt(Math.floor(amountSol * 1e9));
+    const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
+    const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
+    const expectedBaseOutRaw = computeExpectedBaseOut(solRes, tokRes, solInLamports);
+    // 5% slippage tolerance on the on-chain guardrail — our safety preflight
+    // has already enforced a tighter bound, this is the last-resort backstop.
+    const minBaseOutRaw = (expectedBaseOutRaw * 95n) / 100n;
+    const maxQuoteInLamports = (solInLamports * 105n) / 100n;
+
+    // Pre-fill token balance (for fill attribution)
+    const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
+    const walletSolBefore = await this.wallet.getSolBalance(this.connection);
+
+    // Assemble tx: compute-budget → create-ATA × 2 → wrap+sync wSOL → buy → close wSOL → jito tip
+    const jitoTipSol = DEFAULT_JITO_TIP_SOL;
+    const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
+    const walletPk = this.wallet.pubkey;
+    const wsolAta = getAssociatedTokenAddress(WSOL_MINT, walletPk);
+
+    const ixs = [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
+      buildAtaCreateIdempotentIx(walletPk, walletPk, WSOL_MINT),
+      buildAtaCreateIdempotentIx(walletPk, walletPk, mintPk),
+      SystemProgram.transfer({ fromPubkey: walletPk, toPubkey: wsolAta, lamports: Number(maxQuoteInLamports) }),
+      buildSyncNativeIx(wsolAta),
+      buildBuyIx({
+        pool: poolPk, baseMint: mintPk, quoteMint: WSOL_MINT,
+        baseVault, quoteVault, creator, wallet: walletPk,
+        baseAmountOut: minBaseOutRaw,
+        maxQuoteAmountIn: maxQuoteInLamports,
+      }),
+      buildCloseAccountIx(wsolAta, walletPk, walletPk),
+      buildJitoTipIx(walletPk, jitoTipLamports),
+    ];
+
+    const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
+    const tx = new Transaction({ feePayer: walletPk, recentBlockhash: blockhash }).add(...ixs);
+    this.wallet.sign(tx);
+
+    const submission = await submitBundle(this.connection, [tx.serialize()]);
+    this.wallet.invalidateSolBalance();
+
+    if (!submission.landed) {
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: `live: tx did not land (${submission.path}): ${submission.errorMessage ?? 'unknown'}`,
+        txLandMs: submission.latencyMs,
+      };
+    }
+
+    // Measure fill: token balance delta in → tokens received; SOL delta out → actual cost.
+    // Poll briefly — balance updates can lag confirmation by a few hundred ms.
+    await this.sleep(800);
+    const baseBalAfter = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
+    const walletSolAfter = await this.wallet.getSolBalance(this.connection);
+    const tokensReceivedRaw = baseBalAfter - baseBalBefore;
+    const tokensReceived = tokensReceivedRaw / 1e6;
+    const solSpentLamports = walletSolBefore - walletSolAfter;
+    const solSpent = solSpentLamports / 1e9;
+    if (tokensReceived <= 0 || solSpent <= 0) {
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: `live: landed but no balance delta (tokens=${tokensReceivedRaw}, solΔ=${solSpentLamports})`,
+        txSignature: submission.txSignature,
+        txLandMs: submission.latencyMs,
+        jitoTipSol,
+      };
+    }
+    const effectivePrice = solSpent / tokensReceived;
+    const measuredSlippagePct = (effectivePrice / pool.priceSol - 1) * 100;
+
+    logger.info(
+      {
+        mint, mode, path: submission.path, tokensReceived,
+        solSpent, effectivePrice,
+        measuredSlippagePct: measuredSlippagePct.toFixed(3),
+        latencyMs: submission.latencyMs,
+      },
+      'Live buy filled'
+    );
+
+    return {
+      success: true, effectivePrice, tokensReceived,
+      txSignature: submission.txSignature,
+      dryRun: false, executionMode: mode,
+      measuredSlippagePct, jitoTipSol,
+      txLandMs: submission.latencyMs,
+    };
+  }
+
+  private async liveSell(
+    mint: string,
+    tokensHeld: number,
+    exitPriceSol: number,
+    poolCtx: PoolContext | undefined,
+    mode: ExecutionMode,
+  ): Promise<ExecutionResult> {
+    if (!this.connection || !this.wallet) {
+      return {
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: 'live: connection or wallet not initialized',
+      };
+    }
+    if (!poolCtx?.baseVault || !poolCtx?.quoteVault || !poolCtx?.poolAddress) {
+      return {
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: 'live: pool context incomplete',
+      };
+    }
+
+    const mintPk = new PublicKey(mint);
+    const poolPk = new PublicKey(poolCtx.poolAddress);
+    const baseVault = new PublicKey(poolCtx.baseVault);
+    const quoteVault = new PublicKey(poolCtx.quoteVault);
+    const walletPk = this.wallet.pubkey;
+
+    const creator = await this.readPoolCreator(poolPk);
+    if (!creator) {
+      return {
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: 'live: failed to read pool creator',
+      };
+    }
+
+    // Re-read actual token balance — tokensHeld may drift from DB (should be tight)
+    const actualBaseRaw = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
+    if (actualBaseRaw <= 0) {
+      return {
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: 'live: no tokens in wallet to sell',
+      };
+    }
+    const pool = await fetchVaultPrice(this.connection, poolCtx.baseVault, poolCtx.quoteVault, true);
+    if (!pool) {
+      return {
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: 'live: pool reserves read failed',
+      };
+    }
+    const baseInRaw = BigInt(actualBaseRaw);
+    const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
+    const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
+    const expectedSolOut = computeExpectedQuoteOut(solRes, tokRes, baseInRaw);
+    const minQuoteOut = (expectedSolOut * 95n) / 100n;
+
+    const jitoTipSol = DEFAULT_JITO_TIP_SOL;
+    const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
+    const wsolAta = getAssociatedTokenAddress(WSOL_MINT, walletPk);
+
+    const ixs = [
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
+      buildAtaCreateIdempotentIx(walletPk, walletPk, WSOL_MINT),
+      buildSellIx({
+        pool: poolPk, baseMint: mintPk, quoteMint: WSOL_MINT,
+        baseVault, quoteVault, creator, wallet: walletPk,
+        baseAmountIn: baseInRaw,
+        minQuoteAmountOut: minQuoteOut,
+      }),
+      buildCloseAccountIx(wsolAta, walletPk, walletPk),
+      buildJitoTipIx(walletPk, jitoTipLamports),
+    ];
+
+    const walletSolBefore = await this.wallet.getSolBalance(this.connection);
+    const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
+    const tx = new Transaction({ feePayer: walletPk, recentBlockhash: blockhash }).add(...ixs);
+    this.wallet.sign(tx);
+
+    const submission = await submitBundle(this.connection, [tx.serialize()]);
+    this.wallet.invalidateSolBalance();
+
+    if (!submission.landed) {
+      return {
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: `live sell: tx did not land: ${submission.errorMessage ?? 'unknown'}`,
+        txLandMs: submission.latencyMs,
+      };
+    }
+
+    await this.sleep(800);
+    const walletSolAfter = await this.wallet.getSolBalance(this.connection);
+    const solReceivedLamports = walletSolAfter - walletSolBefore + jitoTipLamports;
+    const solReceived = solReceivedLamports / 1e9;
+    const effectivePrice = solReceived > 0 ? solReceived / tokensHeld : exitPriceSol;
+    const measuredSlippagePct = (1 - effectivePrice / pool.priceSol) * 100;
+
+    logger.info(
+      {
+        mint, mode, path: submission.path, solReceived, effectivePrice,
+        measuredSlippagePct: measuredSlippagePct.toFixed(3),
+        latencyMs: submission.latencyMs,
+      },
+      'Live sell filled'
+    );
+
+    return {
+      success: true, effectivePrice, tokensReceived: 0,
+      txSignature: submission.txSignature,
+      dryRun: false, executionMode: mode,
+      measuredSlippagePct, jitoTipSol,
+      txLandMs: submission.latencyMs,
+    };
+  }
+
+  /** Read the creator pubkey from a PumpSwap pool account (offset 11-43). */
+  private async readPoolCreator(pool: PublicKey): Promise<PublicKey | null> {
+    if (!this.connection) return null;
+    try {
+      await globalRpcLimiter.throttle();
+      const info = await this.connection.getAccountInfo(pool, 'confirmed');
+      if (!info?.data) return null;
+      const data = info.data as Buffer;
+      if (data.length < 43) return null;
+      return new PublicKey(data.subarray(11, 43));
+    } catch {
+      return null;
+    }
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((r) => setTimeout(r, ms));
   }
 }

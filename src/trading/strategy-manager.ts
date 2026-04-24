@@ -13,6 +13,8 @@ import { Executor } from './executor';
 import { PositionManager, ExitEvent, DynamicMonitorParams } from './position-manager';
 import { TradeEvaluator } from './trade-evaluator';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
+import { Wallet } from './wallet';
+import { isKillswitchTripped, maybeLogKillswitchTripped } from './safety';
 import {
   getStrategyConfigs,
   upsertStrategyConfig,
@@ -49,7 +51,9 @@ export class StrategyManager {
   private strategies: Map<string, StrategyInstance> = new Map();
   private tradeLogger: TradeLogger;
   private executor: Executor;
+  private wallet: Wallet | null;
   private backfillTimer: NodeJS.Timeout | null = null;
+  private safetyTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private db: Database.Database,
@@ -57,7 +61,11 @@ export class StrategyManager {
   ) {
     this.globalConfig = loadTradingConfig();
     this.tradeLogger = new TradeLogger(db);
-    this.executor = new Executor(this.globalConfig.mode);
+    this.wallet = Wallet.fromEnv();
+    // Executor gets connection + wallet so it can build live txs. Paper-only
+    // deployments (no WALLET_PRIVATE_KEY set) still work — shadow/live modes
+    // will return success:false with a clear error message.
+    this.executor = new Executor(this.globalConfig.executionMode, this.connection, this.wallet);
   }
 
   initialize(): void {
@@ -97,8 +105,39 @@ export class StrategyManager {
     }, BACKFILL_INTERVAL_MS);
     this.tradeLogger.backfillMomentum();
 
+    // Safety watchdog: every 10s check the killswitch and force-close open
+    // live positions if tripped mid-session. Paper / shadow positions aren't
+    // force-closed (they're harmless — no real exposure).
+    this.safetyTimer = setInterval(() => this.safetyTick(), 10_000);
+
     const enabledCount = Array.from(this.strategies.values()).filter(s => s.enabled).length;
     logger.info({ total: this.strategies.size, enabled: enabledCount }, 'StrategyManager initialized');
+  }
+
+  private safetyTick(): void {
+    if (!isKillswitchTripped()) return;
+    maybeLogKillswitchTripped();
+    // Force-close any open live positions. We route them through handleExit so
+    // the normal sell path fires and net_profit_sol is computed consistently.
+    for (const instance of this.strategies.values()) {
+      for (const pos of instance.positionManager.getPositions()) {
+        if (pos.mode !== 'live') continue;
+        // Fire the exit event with the last known price — the sell path will
+        // re-quote live price before submitting, so this is a safe approximation.
+        const fakeEvent = {
+          position: pos,
+          exitReason: 'killswitch' as never,
+          exitPriceSol: pos.highWaterMark || pos.entryPriceSol,
+        };
+        this.handleExit(fakeEvent as ExitEvent, instance.config).catch(err => {
+          logger.error(
+            'Killswitch force-close failed for trade %d: %s',
+            pos.tradeId, err instanceof Error ? err.message : String(err),
+          );
+        });
+        instance.positionManager.removePosition(pos.tradeId);
+      }
+    }
   }
 
   attachToPriceCollector(priceCollector: PriceCollector): void {
@@ -332,6 +371,7 @@ export class StrategyManager {
     this.connection = connection;
     for (const instance of this.strategies.values()) {
       instance.positionManager.updateConnection(connection);
+      instance.evaluator.updateConnection(connection);
     }
   }
 
@@ -342,6 +382,10 @@ export class StrategyManager {
     if (this.backfillTimer) {
       clearInterval(this.backfillTimer);
       this.backfillTimer = null;
+    }
+    if (this.safetyTimer) {
+      clearInterval(this.safetyTimer);
+      this.safetyTimer = null;
     }
   }
 
@@ -426,6 +470,23 @@ export class StrategyManager {
     if (!isFinite(bp) || bp < 0 || bp > 1000) {
       errors.push('breakevenStopPct must be between 0 and 1000');
     }
+    // ── Live-execution params ────────────────────────────────────────────
+    if (p.executionMode != null) {
+      const valid = ['paper', 'shadow', 'live_micro', 'live_full'];
+      if (!valid.includes(p.executionMode)) {
+        errors.push(`executionMode must be one of ${valid.join(', ')}`);
+      }
+    }
+    if (p.jitoTipSol != null) {
+      if (!isFinite(p.jitoTipSol) || p.jitoTipSol < 0 || p.jitoTipSol > 0.1) {
+        errors.push('jitoTipSol must be between 0 and 0.1');
+      }
+    }
+    if (p.maxSlippageBps != null) {
+      if (!Number.isInteger(p.maxSlippageBps) || p.maxSlippageBps < 1 || p.maxSlippageBps > 10_000) {
+        errors.push('maxSlippageBps must be an integer between 1 and 10000');
+      }
+    }
     if (errors.length > 0) {
       throw new Error(`Invalid strategy params: ${errors.join('; ')}`);
     }
@@ -460,6 +521,8 @@ export class StrategyManager {
       this.executor,
       positionManager,
       id,
+      this.connection,
+      this.wallet,
     );
 
     // Wire position exits → close trade in DB
@@ -483,20 +546,31 @@ export class StrategyManager {
   private async handleExit(event: ExitEvent, config: TradingConfig): Promise<void> {
     const { position: pos, exitReason, exitPriceSol } = event;
 
+    const executionMode = pos.executionMode ?? config.executionMode ?? 'paper';
+    const poolCtx = (pos.baseVault && pos.quoteVault)
+      ? { poolAddress: pos.poolAddress, baseVault: pos.baseVault, quoteVault: pos.quoteVault }
+      : undefined;
+
     let sellResult;
     try {
-      sellResult = await this.executor.sell(pos.mint, pos.tokensHeld, exitPriceSol, pos.slippageEstPct);
+      sellResult = await this.executor.sell(
+        pos.mint, pos.tokensHeld, exitPriceSol, pos.slippageEstPct, poolCtx, executionMode,
+      );
     } catch (err) {
       logger.error({ tradeId: pos.tradeId }, 'Sell execution threw: %s', err instanceof Error ? err.message : String(err));
-      sellResult = { success: true, effectivePrice: exitPriceSol, tokensReceived: 0, dryRun: pos.mode === 'paper' };
+      sellResult = {
+        success: true, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: executionMode === 'paper' || executionMode === 'shadow',
+      } as Awaited<ReturnType<typeof this.executor.sell>>;
     }
 
-    const effectiveExitPrice = sellResult.effectivePrice ?? exitPriceSol;
-
+    // closeTrade applies either measured slippage (live modes) or gap
+    // penalty (paper/shadow) on top of this raw spot price — do NOT
+    // pre-discount here or the live path double-counts.
     this.tradeLogger.closeTrade({
       tradeId: pos.tradeId,
       entryPriceSol: pos.entryPriceSol,
-      exitPriceSol: effectiveExitPrice,
+      exitPriceSol,
       exitReason,
       tradeSizeSol: config.tradeSizeSol,
       takeProfitPct: config.takeProfitPct,
@@ -504,6 +578,11 @@ export class StrategyManager {
       slGapPenaltyPct: config.slGapPenaltyPct,
       tpGapPenaltyPct: config.tpGapPenaltyPct,
       exitTxSignature: sellResult.txSignature,
+      measuredExitSlippagePct: sellResult.measuredSlippagePct,
+      shadowMeasuredExitSlippagePct: executionMode === 'shadow' ? sellResult.measuredSlippagePct : undefined,
+      jitoTipSol: sellResult.jitoTipSol,
+      txLandMs: sellResult.txLandMs,
+      executionMode,
     });
   }
 
@@ -572,6 +651,7 @@ export class StrategyManager {
         maxExitTimestamp: trade.entry_timestamp + trade.max_hold_seconds,
         tokensHeld: trade.entry_tokens_received ?? 0,
         mode: 'live',
+        executionMode: (trade.execution_mode as any) ?? 'live_full',
         // graduation_timestamp not stored on trades_v2; approximate from entry
         graduationDetectedAt: trade.entry_timestamp - 30,
         // Dynamic monitoring runtime state — initialize conservatively on recovery
