@@ -22,6 +22,7 @@
 
 import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
 import BN from 'bn.js';
+import type Database from 'better-sqlite3';
 import {
   PUMPSWAP_PROGRAM_ID,
   buildBuyIx,
@@ -59,6 +60,70 @@ export interface VerifyReport {
 
 const DISC_BUY_HEX = '66063d1201daebea';
 const DISC_SELL_HEX = '33e685a4017f83ad';
+
+/**
+ * Walk recent graduations in the DB and fetch signatures on each pool until
+ * we find one whose tx contains a PumpSwap buy/sell ix. Returns {sig, pool,
+ * ixIndex} for the first match, or null if nothing in the search window.
+ *
+ * Search budget: up to 5 pools × 10 signatures = 50 getTransaction calls in
+ * the worst case. In practice the first graduated pool almost always has a
+ * swap in its first few signatures — a hot PumpSwap pool gets dozens per
+ * minute during the T+30 window that matters.
+ */
+export async function findRecentPumpSwapSwap(
+  connection: Connection,
+  db: Database.Database,
+): Promise<{ sig: string; poolAddress: string; ixIndex: number; direction: 'buy' | 'sell' } | null> {
+  const pools = db.prepare(`
+    SELECT new_pool_address FROM graduations
+    WHERE new_pool_address IS NOT NULL
+      AND new_pool_dex = 'pumpswap'
+    ORDER BY timestamp DESC
+    LIMIT 5
+  `).all() as Array<{ new_pool_address: string }>;
+
+  for (const { new_pool_address: poolAddr } of pools) {
+    let sigs;
+    try {
+      sigs = await connection.getSignaturesForAddress(
+        new PublicKey(poolAddr),
+        { limit: 10 },
+        'confirmed',
+      );
+    } catch {
+      continue;
+    }
+    for (const { signature } of sigs) {
+      let tx;
+      try {
+        tx = await connection.getTransaction(signature, {
+          maxSupportedTransactionVersion: 0,
+          commitment: 'confirmed',
+        });
+      } catch {
+        continue;
+      }
+      if (!tx) continue;
+      const msg = tx.transaction.message;
+      const loadedAddrs = tx.meta?.loadedAddresses;
+      const accountKeys = msg.getAccountKeys({ accountKeysFromLookups: loadedAddrs });
+      for (let i = 0; i < msg.compiledInstructions.length; i++) {
+        const ix = msg.compiledInstructions[i];
+        const pid = accountKeys.get(ix.programIdIndex);
+        if (!pid || !pid.equals(PUMPSWAP_PROGRAM_ID)) continue;
+        const disc = Buffer.from(ix.data).subarray(0, 8).toString('hex');
+        if (disc === DISC_BUY_HEX) {
+          return { sig: signature, poolAddress: poolAddr, ixIndex: i, direction: 'buy' };
+        }
+        if (disc === DISC_SELL_HEX) {
+          return { sig: signature, poolAddress: poolAddr, ixIndex: i, direction: 'sell' };
+        }
+      }
+    }
+  }
+  return null;
+}
 
 export async function verifyPumpswapSwap(
   connection: Connection,
