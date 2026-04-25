@@ -17,9 +17,16 @@ import type { StrategyManager } from '../trading/strategy-manager';
 export function computeTradingData(
   db: Database.Database,
   strategyManager: StrategyManager | null,
-  opts?: { strategyFilter?: string; topPairs?: any[] },
+  opts?: { strategyFilter?: string; executionModeFilter?: string; topPairs?: any[] },
 ) {
   const strategyFilter = opts?.strategyFilter ?? '';
+  // Whitelist the execution_mode filter to one of the known values — anything
+  // else falls back to "no filter". Avoids accidental SQL injection via the
+  // query string and keeps the URL bookmarkable to a known view.
+  const KNOWN_EXEC_MODES = new Set(['paper', 'shadow', 'live_micro', 'live_full']);
+  const executionModeFilter = opts?.executionModeFilter && KNOWN_EXEC_MODES.has(opts.executionModeFilter)
+    ? opts.executionModeFilter
+    : '';
 
   const strategyStats = getTradeStatsByStrategy(db);
 
@@ -57,36 +64,35 @@ export function computeTradingData(
     FROM trades_v2 GROUP BY COALESCE(execution_mode, 'paper')
   `).all() as any[];
 
-  const tradesQuery = strategyFilter
-    ? `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
+  // Recent trades: optional strategy + execution_mode filter compose. Both go
+  // through bound parameters; execution_mode is also whitelisted above.
+  const whereClauses: string[] = [];
+  const whereParams: string[] = [];
+  if (strategyFilter) {
+    whereClauses.push('t.strategy_id = ?');
+    whereParams.push(strategyFilter);
+  }
+  if (executionModeFilter) {
+    whereClauses.push("COALESCE(t.execution_mode, 'paper') = ?");
+    whereParams.push(executionModeFilter);
+  }
+  const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  const tradesQuery = `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
+        COALESCE(t.execution_mode, 'paper') as execution_mode,
         t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
         t.exit_price_sol, t.exit_reason, t.net_return_pct, t.gap_adjusted_return_pct,
         t.take_profit_pct, t.stop_loss_pct,
         t.momentum_pct_t300, t.momentum_label,
+        t.shadow_measured_entry_slippage_pct, t.shadow_measured_exit_slippage_pct,
         datetime(t.entry_timestamp, 'unixepoch') as entry_dt,
         datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
         CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
              THEN t.exit_timestamp - t.entry_timestamp END as held_seconds,
         t.filter_results_json
-      FROM trades_v2 t WHERE t.strategy_id = ?
-      ORDER BY t.created_at DESC LIMIT 50`
-    : `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
-        t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
-        t.exit_price_sol, t.exit_reason, t.net_return_pct, t.gap_adjusted_return_pct,
-        t.take_profit_pct, t.stop_loss_pct,
-        t.momentum_pct_t300, t.momentum_label,
-        datetime(t.entry_timestamp, 'unixepoch') as entry_dt,
-        datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
-        CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
-             THEN t.exit_timestamp - t.entry_timestamp END as held_seconds,
-        t.filter_results_json
-      FROM trades_v2 t
+      FROM trades_v2 t ${whereSql}
       ORDER BY t.created_at DESC LIMIT 50`;
 
-  const recentTrades = (strategyFilter
-    ? db.prepare(tradesQuery).all(strategyFilter) as any[]
-    : db.prepare(tradesQuery).all() as any[]
-  ).map(t => ({
+  const recentTrades = (db.prepare(tradesQuery).all(...whereParams) as any[]).map(t => ({
     ...t,
     filter_results: t.filter_results_json ? JSON.parse(t.filter_results_json) : null,
     filter_results_json: undefined,
@@ -116,6 +122,7 @@ export function computeTradingData(
     global_mode: config?.mode ?? 'paper',
     strategies,
     selected_strategy: strategyFilter,
+    selected_execution_mode: executionModeFilter,
     config: config ? {
       mode: config.mode,
       trade_size_sol: config.tradeSizeSol,
