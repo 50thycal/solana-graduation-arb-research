@@ -60,20 +60,22 @@ const DISC_BUY_HEX = '66063d1201daebea';
 const DISC_SELL_HEX = '33e685a4017f83ad';
 
 /**
- * Walk recent graduations in the DB and fetch signatures on each pool until
- * we find a PumpSwap swap we can simulate reliably. Returns {sig, pool,
- * ixIndex, direction} for the first match, or null if nothing in the search
- * window.
+ * Walk recent graduations in the DB and collect every PumpSwap swap we find
+ * across the search window. Returns up to {limit} candidates ordered with
+ * BUYs first (most reliable for sim — buyers retain SOL longer than sellers
+ * retain a specific SPL balance), then sells as fallback.
  *
- * Prefers BUYs over sells: a buy sim only needs the source user to still
- * have SOL in the wallet (usually yes), while a sell sim needs the base ATA
- * to still exist with tokens (usually no — traders close ATAs after exits).
- * Falls back to sell only if no buy was found across the whole search.
+ * The route hits each in turn until a simulation succeeds — historical user
+ * wallets can drift (drained SOL, closed ATAs), so a single try is too noisy
+ * to be useful. Five tries is enough that flakiness drops below 1% in
+ * practice while still bounding the RPC cost (≤5 × getSignaturesForAddress +
+ * ≤50 × getTransaction).
  */
-export async function findRecentPumpSwapSwap(
+export async function findRecentPumpSwapCandidates(
   connection: Connection,
   db: Database.Database,
-): Promise<{ sig: string; poolAddress: string; ixIndex: number; direction: 'buy' | 'sell' } | null> {
+  limit = 5,
+): Promise<Array<{ sig: string; poolAddress: string; ixIndex: number; direction: 'buy' | 'sell' }>> {
   const pools = db.prepare(`
     SELECT new_pool_address FROM graduations
     WHERE new_pool_address IS NOT NULL
@@ -82,9 +84,11 @@ export async function findRecentPumpSwapSwap(
     LIMIT 5
   `).all() as Array<{ new_pool_address: string }>;
 
-  let sellFallback: { sig: string; poolAddress: string; ixIndex: number; direction: 'sell' } | null = null;
+  const buys: Array<{ sig: string; poolAddress: string; ixIndex: number; direction: 'buy' }> = [];
+  const sells: Array<{ sig: string; poolAddress: string; ixIndex: number; direction: 'sell' }> = [];
 
   for (const { new_pool_address: poolAddr } of pools) {
+    if (buys.length >= limit) break;
     let sigs;
     try {
       sigs = await connection.getSignaturesForAddress(
@@ -96,6 +100,7 @@ export async function findRecentPumpSwapSwap(
       continue;
     }
     for (const { signature } of sigs) {
+      if (buys.length >= limit) break;
       let tx;
       try {
         tx = await connection.getTransaction(signature, {
@@ -115,16 +120,15 @@ export async function findRecentPumpSwapSwap(
         if (!pid || !pid.equals(PUMPSWAP_PROGRAM_ID)) continue;
         const disc = Buffer.from(ix.data).subarray(0, 8).toString('hex');
         if (disc === DISC_BUY_HEX) {
-          // Buys sim reliably — return immediately.
-          return { sig: signature, poolAddress: poolAddr, ixIndex: i, direction: 'buy' };
-        }
-        if (disc === DISC_SELL_HEX && sellFallback === null) {
-          sellFallback = { sig: signature, poolAddress: poolAddr, ixIndex: i, direction: 'sell' };
+          buys.push({ sig: signature, poolAddress: poolAddr, ixIndex: i, direction: 'buy' });
+        } else if (disc === DISC_SELL_HEX) {
+          sells.push({ sig: signature, poolAddress: poolAddr, ixIndex: i, direction: 'sell' });
         }
       }
     }
   }
-  return sellFallback;
+
+  return [...buys.slice(0, limit), ...sells.slice(0, Math.max(1, limit - buys.length))];
 }
 
 export async function verifyPumpswapSwap(
@@ -251,6 +255,14 @@ function explainSimFailure(
     return 'simulation failed: source wallet closed its base ATA after the source sell — not an SDK issue. '
       + 'Re-run the endpoint (auto-pick prefers buys; this means no recent buys were available). '
       + `Raw err: ${JSON.stringify(err)}`;
+  }
+  // SystemProgram error 1 = insufficient lamports. The source wallet has
+  // drained SOL since the source tx — not an SDK bug. Same as above: env, not code.
+  if (joined.includes('insufficient lamports')) {
+    const m = joined.match(/insufficient lamports (\d+), need (\d+)/);
+    const detail = m ? ` (had ${m[1]}, needed ${m[2]} lamports)` : '';
+    return `simulation failed: source wallet has drained SOL since the source ${direction}${detail} — `
+      + `not an SDK issue. Re-run the endpoint to try a different recent buyer. Raw err: ${JSON.stringify(err)}`;
   }
   if (joined.includes('Error Code: AccountNotInitialized')) {
     return `simulation failed: AccountNotInitialized — source wallet state has drifted since the source tx. Raw err: ${JSON.stringify(err)}`;
