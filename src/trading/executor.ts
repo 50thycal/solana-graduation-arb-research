@@ -417,7 +417,11 @@ export class Executor {
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
 
     const ixs = [
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      // 200k CU limit covers the ~123k buy / ~111k sell measured via
+      // /api/verify-pumpswap simulation against live chain (2026-04-25),
+      // with ~80k headroom for the Jito tip ix + live-blockhash variance.
+      // Was 400k — cut for priority-fee savings before shadow rollout.
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
       ...swapIxs,
       buildJitoTipIx(walletPk, jitoTipLamports),
@@ -553,7 +557,9 @@ export class Executor {
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
 
     const ixs = [
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
+      // Same 200k limit as buy — measured ~111k via verify-pumpswap sim,
+      // ~80k headroom for tip + variance. Was 300k.
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
       ...swapIxs,
       buildJitoTipIx(walletPk, jitoTipLamports),
