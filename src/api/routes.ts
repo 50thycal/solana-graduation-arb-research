@@ -164,13 +164,16 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   }));
 
   // ── /api/verify-pumpswap ──
-  // Byte-equality check: rebuild a real PumpSwap swap ix with our builder
-  // and diff against the on-chain bytes. This is the gate before flipping
-  // any strategy into shadow mode.
+  // Simulation gate: rebuild a swap with @pump-fun/pump-swap-sdk (the same
+  // builder the executor uses), wrap it in a v0 tx, and run simulateTransaction
+  // against the current chain. Source amounts + user wallet from a real
+  // recent on-chain swap so the user has funds at sim time — the only thing
+  // being tested is whether the SDK ix is accepted by the on-chain program.
   //   GET /api/verify-pumpswap                 → auto-picks the most recent
   //                                              swap on a freshly-graduated
   //                                              pool from the bot's DB
-  //   GET /api/verify-pumpswap?sig=<txSig>     → verifies a specific tx
+  //   GET /api/verify-pumpswap?sig=<txSig>     → simulates the SDK rebuild
+  //                                              of that specific tx
   //   GET /api/verify-pumpswap?sig=...&ixIndex=N → N-th ix in that tx
   //   GET /api/verify-pumpswap?...&pretty=1    → 2-space indented JSON
   //
