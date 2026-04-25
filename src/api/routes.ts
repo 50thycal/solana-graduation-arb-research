@@ -43,7 +43,7 @@ import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
-import { verifyPumpswapSwap, findRecentPumpSwapSwap } from '../trading/pumpswap-verify';
+import { verifyPumpswapSwap, findRecentPumpSwapCandidates } from '../trading/pumpswap-verify';
 import { Connection } from '@solana/web3.js';
 import { getHeavyData } from './heavy-cache';
 import type { LogBuffer } from '../utils/log-buffer';
@@ -199,44 +199,79 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     }
     const connection = new Connection(rpcUrl, 'confirmed');
 
-    let sig = String(req.query.sig ?? '').trim();
-    let ixIndex = req.query.ixIndex != null && req.query.ixIndex !== ''
+    const explicitSig = String(req.query.sig ?? '').trim();
+    const explicitIxIndex = req.query.ixIndex != null && req.query.ixIndex !== ''
       ? parseInt(String(req.query.ixIndex), 10)
       : undefined;
-    let autoPicked: { poolAddress: string; direction: 'buy' | 'sell' } | null = null;
 
-    // Auto-pick a recent swap if caller didn't provide one.
-    if (!sig) {
+    // Caller-supplied sig: single attempt, surface whatever the sim returns.
+    if (explicitSig) {
       try {
-        const pick = await findRecentPumpSwapSwap(connection, db);
-        if (!pick) {
-          send(404, {
-            error: 'no recent PumpSwap swap found in last 5 graduated pools',
-            hint: 'pass ?sig=<txSignature> explicitly, or wait for new graduations',
+        const report = await verifyPumpswapSwap(connection, explicitSig, { ixIndex: explicitIxIndex });
+        send(report.matched ? 200 : 409, { ...report, autoPicked: null, attempts: 1 });
+      } catch (err) {
+        send(502, {
+          error: err instanceof Error ? err.message : String(err),
+          sig: explicitSig, ixIndex: explicitIxIndex, autoPicked: null,
+        });
+      }
+      return;
+    }
+
+    // Auto-pick path: collect up to 5 candidates (buys first, sell fallback)
+    // and try each until one simulates green. Historical user wallets drift
+    // (drained SOL, closed ATAs); single-shot was 50/50 on greens. Returning
+    // the first green keeps the endpoint a useful pre-shadow gate; if all
+    // tries are red, returns the last attempt + the count for context.
+    let candidates;
+    try {
+      candidates = await findRecentPumpSwapCandidates(connection, db, 5);
+    } catch (err) {
+      send(502, {
+        error: 'auto-pick failed',
+        detail: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+    if (candidates.length === 0) {
+      send(404, {
+        error: 'no recent PumpSwap swap found in last 5 graduated pools',
+        hint: 'pass ?sig=<txSignature> explicitly, or wait for new graduations',
+      });
+      return;
+    }
+
+    let lastReport: Awaited<ReturnType<typeof verifyPumpswapSwap>> | null = null;
+    let lastAutoPicked: { poolAddress: string; direction: 'buy' | 'sell' } | null = null;
+    let attempts = 0;
+    for (const pick of candidates) {
+      attempts++;
+      try {
+        const report = await verifyPumpswapSwap(connection, pick.sig, { ixIndex: pick.ixIndex });
+        lastReport = report;
+        lastAutoPicked = { poolAddress: pick.poolAddress, direction: pick.direction };
+        if (report.matched) break;
+      } catch (err) {
+        // Per-candidate fetch/decode failure — skip this one, try the next.
+        // Only fall through to the 502 path if we exhaust everything.
+        if (attempts === candidates.length && lastReport === null) {
+          send(502, {
+            error: err instanceof Error ? err.message : String(err),
+            sig: pick.sig, ixIndex: pick.ixIndex, autoPicked: lastAutoPicked,
           });
           return;
         }
-        sig = pick.sig;
-        ixIndex = pick.ixIndex;
-        autoPicked = { poolAddress: pick.poolAddress, direction: pick.direction };
-      } catch (err) {
-        send(502, {
-          error: 'auto-pick failed',
-          detail: err instanceof Error ? err.message : String(err),
-        });
-        return;
       }
     }
 
-    try {
-      const report = await verifyPumpswapSwap(connection, sig, { ixIndex });
-      send(report.matched ? 200 : 409, { ...report, autoPicked });
-    } catch (err) {
+    if (!lastReport) {
       send(502, {
-        error: err instanceof Error ? err.message : String(err),
-        sig, ixIndex, autoPicked,
+        error: 'all auto-picked candidates failed to fetch/decode',
+        attempts,
       });
+      return;
     }
+    send(lastReport.matched ? 200 : 409, { ...lastReport, autoPicked: lastAutoPicked, attempts });
   }));
 
   // ── /api/snapshot ──
