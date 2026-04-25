@@ -2329,8 +2329,10 @@ async function main() {
   app.get('/trading', (req, res) => {
     try {
       const strategyFilter = (req.query.strategy as string) || '';
+      const executionModeFilter = (req.query.execution_mode as string) || '';
       const data = computeTradingData(db, strategyManager, {
         strategyFilter,
+        executionModeFilter,
         topPairs: cachedTopPairs || [],
       });
       const wantHtml = (req.headers.accept || '').includes('text/html');

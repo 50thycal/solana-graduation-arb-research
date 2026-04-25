@@ -209,7 +209,10 @@ export async function verifyPumpswapSwap(
     payerKey: user,
     recentBlockhash: placeholderBlockhash,
     instructions: [
-      ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
+      // Mirror the executor's 200k limit so a green sim directly proves the
+      // tx the executor will send fits — not just that 400k was enough. If
+      // the SDK ever emits a heavier ix, this fails first and loudly.
+      ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
       ...sdkIxs,
     ],

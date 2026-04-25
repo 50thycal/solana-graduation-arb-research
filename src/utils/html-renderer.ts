@@ -4036,23 +4036,63 @@ export function renderTradingHtml(data: any): string {
   const navHtml = nav('/trading');
   const strategies: any[] = data.strategies || [];
   const selected = data.selected_strategy || '';
+  const selectedExec = data.selected_execution_mode || '';
   const modeColor = !data.trading_enabled ? '#94a3b8' : data.global_mode === 'live' ? '#f59e0b' : '#22d3ee';
   const modeLabel = !data.trading_enabled ? 'DISABLED' : (data.global_mode ?? 'paper').toUpperCase();
+
+  // Color/short-label per execution_mode — used by the badges in Recent Trades
+  // and the Performance by Execution Mode card. Distinct from the global
+  // `mode` (paper/live) which only has two values.
+  const execModeStyle = (m: string): { color: string; label: string } => {
+    switch (m) {
+      case 'shadow':     return { color: '#a78bfa', label: 'SHADOW' };
+      case 'live_micro': return { color: '#f59e0b', label: 'LIVE μ' };
+      case 'live_full':  return { color: '#ef4444', label: 'LIVE' };
+      case 'paper':
+      default:           return { color: '#64748b', label: 'PAPER' };
+    }
+  };
 
   // ── Strategy tabs ─────────────────────────────────────────────────────────
   const tabStyle = (active: boolean) => active
     ? 'background:#2563eb;color:#fff;pointer-events:none'
     : 'background:#334155;color:#94a3b8';
   const tabsHtml = `
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
-      <a href="/trading" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(!selected)}">All</a>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+      <a href="/trading${selectedExec ? '?execution_mode=' + selectedExec : ''}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(!selected)}">All</a>
       ${strategies.map((s: any) => `
-        <a href="/trading?strategy=${s.id}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(selected === s.id)}">
+        <a href="/trading?strategy=${s.id}${selectedExec ? '&execution_mode=' + selectedExec : ''}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(selected === s.id)}">
           ${escHtml(s.label)}${!s.enabled ? ' (off)' : ''}
           <span style="font-size:10px;color:#64748b;margin-left:4px">${s.activePositions}pos</span>
         </a>
       `).join('')}
       <button onclick="document.getElementById('new-strategy-form').style.display='block'" style="padding:6px 14px;border-radius:4px;font-size:12px;background:#065f46;color:#fff;border:none;cursor:pointer">+ New Strategy</button>
+    </div>`;
+
+  // Execution-mode filter pills. Compose with the strategy filter — clicking
+  // a mode pill keeps the current strategy in the URL, and vice versa. Default
+  // = "All" so the historical paper-trade view is unchanged unless explicitly
+  // narrowed.
+  const stratQs = selected ? `strategy=${selected}` : '';
+  const buildExecHref = (mode: string) => {
+    const parts = [stratQs, mode ? `execution_mode=${mode}` : ''].filter(Boolean);
+    return `/trading${parts.length ? '?' + parts.join('&') : ''}`;
+  };
+  const execPill = (mode: string, label: string, color: string) => {
+    const active = selectedExec === mode;
+    const bg = active ? color : '#1e293b';
+    const fg = active ? '#0f172a' : color;
+    const cursor = active ? 'pointer-events:none;' : '';
+    return `<a href="${buildExecHref(mode)}" style="padding:4px 12px;border-radius:4px;font-size:11px;text-decoration:none;background:${bg};color:${fg};border:1px solid ${color};font-weight:600;${cursor}">${label}</a>`;
+  };
+  const execTabsHtml = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
+      <span style="color:#64748b;font-size:11px;margin-right:4px">Mode:</span>
+      <a href="${buildExecHref('')}" style="padding:4px 12px;border-radius:4px;font-size:11px;text-decoration:none;${selectedExec === '' ? 'background:#2563eb;color:#fff;pointer-events:none' : 'background:#334155;color:#94a3b8'}">All</a>
+      ${execPill('paper', 'PAPER', '#64748b')}
+      ${execPill('shadow', 'SHADOW', '#a78bfa')}
+      ${execPill('live_micro', 'LIVE μ', '#f59e0b')}
+      ${execPill('live_full', 'LIVE', '#ef4444')}
     </div>`;
 
   // ── Shared select style ────────────────────────────────────────────────────
@@ -4296,15 +4336,96 @@ export function renderTradingHtml(data: any): string {
       </script>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
 
+  // ── Performance by Execution Mode ────────────────────────────────────────
+  // Mirrors Performance by Strategy but bucketed by paper / shadow / live_*.
+  // Surfaces measured slippage (only meaningful for shadow/live) so we can
+  // compare against paper's static gap-penalty assumption during rollout.
+  const execModeData = data.performance_by_execution_mode || [];
+  const execModeRows = execModeData.map((m: any) => {
+    const ret = m.avg_net_return_pct;
+    const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
+    const exec = execModeStyle(m.execution_mode);
+    const fmt = (v: any, suffix = '') => v == null ? '-' : v + suffix;
+    return `<tr>
+      <td><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${exec.label}</span></td>
+      <td>${m.total}</td><td>${m.closed}</td><td>${m.open_count}</td><td>${m.failed}</td>
+      <td style="color:${retColor}" data-sort="${ret ?? -999}">${ret != null ? ret + '%' : '-'}</td>
+      <td style="color:#94a3b8" data-sort="${m.avg_shadow_entry_slip_pct ?? -999}">${fmt(m.avg_shadow_entry_slip_pct, '%')}</td>
+      <td style="color:#94a3b8" data-sort="${m.avg_shadow_exit_slip_pct ?? -999}">${fmt(m.avg_shadow_exit_slip_pct, '%')}</td>
+      <td style="color:#94a3b8" data-sort="${m.avg_tx_land_ms ?? -999}">${fmt(m.avg_tx_land_ms, 'ms')}</td>
+      <td style="color:#94a3b8" data-sort="${m.total_jito_tip_sol ?? 0}">${fmt(m.total_jito_tip_sol, ' SOL')}</td>
+      <td data-sort="${m.total_net_profit_sol ?? -999}">${m.total_net_profit_sol != null ? m.total_net_profit_sol + ' SOL' : '-'}</td>
+    </tr>`;
+  }).join('');
+
+  const execModeHtml = `
+    <div class="card">
+      <div class="card-title">Performance by Execution Mode</div>
+      ${execModeRows ? `<div style="overflow-x:auto"><table class="table sortable" id="exec-mode-table">
+        <thead><tr>
+          <th data-col="0">Mode</th><th data-col="1">Total</th>
+          <th data-col="2">Closed</th><th data-col="3">Open</th><th data-col="4">Failed</th>
+          <th data-col="5">Avg Net Ret%</th>
+          <th data-col="6">Shadow Entry Slip%</th><th data-col="7">Shadow Exit Slip%</th>
+          <th data-col="8">Avg Land ms</th><th data-col="9">Jito Tips</th>
+          <th data-col="10">Net P&L</th>
+        </tr></thead>
+        <tbody>${execModeRows}</tbody>
+      </table></div>
+      <p style="color:#64748b;font-size:11px;margin-top:6px">
+        Slippage / land-time / Jito columns are only populated for shadow and live modes.
+        Shadow uses real measured slippage; paper uses static gap-penalty assumption.
+      </p>
+      <script>
+      (function(){
+        const table = document.getElementById('exec-mode-table');
+        if (!table) return;
+        const headers = table.querySelectorAll('th[data-col]');
+        let sortCol = -1, sortAsc = true;
+        headers.forEach(th => {
+          th.style.cursor = 'pointer';
+          th.style.userSelect = 'none';
+          th.addEventListener('click', () => {
+            const col = parseInt(th.getAttribute('data-col'));
+            if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
+            headers.forEach(h => h.textContent = h.textContent.replace(/ [▲▼]$/, ''));
+            th.textContent += sortAsc ? ' ▲' : ' ▼';
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            rows.sort((a, b) => {
+              const aCell = a.children[col]; const bCell = b.children[col];
+              const aSort = aCell.getAttribute('data-sort');
+              const bSort = bCell.getAttribute('data-sort');
+              let aVal, bVal;
+              if (aSort !== null && bSort !== null) {
+                aVal = parseFloat(aSort); bVal = parseFloat(bSort);
+              } else {
+                aVal = (aCell.textContent || '').trim(); bVal = (bCell.textContent || '').trim();
+                const aNum = parseFloat(aVal); const bNum = parseFloat(bVal);
+                if (!isNaN(aNum) && !isNaN(bNum)) { aVal = aNum; bVal = bNum; }
+              }
+              if (aVal < bVal) return sortAsc ? -1 : 1;
+              if (aVal > bVal) return sortAsc ? 1 : -1;
+              return 0;
+            });
+            rows.forEach(r => tbody.appendChild(r));
+          });
+        });
+      })();
+      </script>` : '<p style="color:#94a3b8">No trades yet</p>'}
+    </div>`;
+
   // ── Recent trades table ───────────────────────────────────────────────────
   const tradeRows = (data.recent_trades || []).map((t: any) => {
     const ret = t.net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
     const reasonColor = (t.exit_reason === 'take_profit' || t.exit_reason === 'trailing_tp') ? '#22d3ee' : t.exit_reason === 'trailing_stop' ? '#fb923c' : t.exit_reason === 'breakeven_stop' ? '#fbbf24' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
     const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
+    const exec = execModeStyle(t.execution_mode || 'paper');
     return `<tr>
       <td>${t.id}</td>
       <td style="color:#a78bfa;font-size:11px">${t.strategy_id ?? 'default'}</td>
+      <td><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600">${exec.label}</span></td>
       <td style="color:${t.status === 'open' ? '#a78bfa' : t.status === 'failed' ? '#f87171' : '#94a3b8'}">${t.status}</td>
       <td style="font-family:monospace;font-size:11px">${(t.mint || '').slice(0,8)}…</td>
       <td>${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
@@ -4316,11 +4437,15 @@ export function renderTradingHtml(data: any): string {
     </tr>`;
   }).join('');
 
+  const tradesTitleSuffix = [
+    selected ? selected : '',
+    selectedExec ? execModeStyle(selectedExec).label : '',
+  ].filter(Boolean).join(' · ');
   const tradesHtml = `
     <div class="card">
-      <div class="card-title">Recent Trades (last 50)${selected ? ` — ${selected}` : ''}</div>
+      <div class="card-title">Recent Trades (last 50)${tradesTitleSuffix ? ` — ${tradesTitleSuffix}` : ''}</div>
       ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
-        <thead><tr><th>ID</th><th>Strategy</th><th>Status</th><th>Mint</th><th>Entry%</th>
+        <thead><tr><th>ID</th><th>Strategy</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
           <th>Exit Reason</th><th>Net Ret%</th><th>Held</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
         <tbody>${tradeRows}</tbody>
       </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
@@ -4597,11 +4722,13 @@ export function renderTradingHtml(data: any): string {
   </h1>
   <p style="color:#64748b;font-size:11px;margin:0 0 16px">Manual refresh · Generated ${generatedCT} CT</p>
   ${tabsHtml}
+  ${execTabsHtml}
   ${presetsHtml}
   ${newFormHtml}
   ${editorHtml}
   ${openHtml}
   ${perfHtml}
+  ${execModeHtml}
   ${tradesHtml}
   ${skipsHtml}
 </div>
