@@ -76,6 +76,60 @@ export interface RegisterApiOptions {
   getStrategyManager?: () => StrategyManager | null;
 }
 
+/** HTML escape for embedding strings inside <pre>. Pubkeys are base58 so they're
+ * safe, but error messages may contain anything. */
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/** Browser-friendly wrapper for the verify-pumpswap report. Includes a copy-all
+ * button, a matched/mismatched badge derived from the payload, and the JSON in
+ * a wrap-friendly <pre>. Kept inline (no template engine) — single endpoint. */
+function renderVerifyHtml(payload: unknown, prettyJson: string): string {
+  const p = payload as { matched?: boolean; notes?: string; error?: string };
+  const matched = p?.matched === true;
+  const errored = typeof p?.error === 'string';
+  const badge = errored
+    ? { label: 'ERROR', cls: 'err' }
+    : matched
+    ? { label: 'MATCHED', cls: 'ok' }
+    : { label: 'MISMATCH', cls: 'bad' };
+  const notes = p?.notes ?? p?.error ?? '';
+  return `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>verify-pumpswap</title>
+<style>
+  body{font-family:ui-monospace,Menlo,Consolas,monospace;margin:0;padding:14px;background:#1e1e1e;color:#d4d4d4}
+  .bar{display:flex;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  button{font:inherit;padding:6px 14px;cursor:pointer;background:#2d2d2d;color:#d4d4d4;border:1px solid #555;border-radius:4px}
+  button:hover{background:#3a3a3a}
+  .badge{padding:3px 9px;border-radius:4px;font-weight:700;font-size:12px;letter-spacing:0.5px}
+  .ok{background:#1f6f1f;color:#fff}
+  .bad{background:#b04040;color:#fff}
+  .err{background:#7a5a1a;color:#fff}
+  .notes{color:#aaa;font-size:13px}
+  pre{white-space:pre-wrap;word-break:break-all;margin:0;padding:10px;background:#252525;border:1px solid #333;border-radius:4px}
+</style></head><body>
+<div class="bar">
+  <button id="cp">Copy all</button>
+  <span class="badge ${badge.cls}">${badge.label}</span>
+  <span class="notes">${escapeHtml(notes)}</span>
+</div>
+<pre id="payload">${escapeHtml(prettyJson)}</pre>
+<script>
+  document.getElementById('cp').addEventListener('click', function(){
+    var btn = this;
+    navigator.clipboard.writeText(document.getElementById('payload').textContent).then(function(){
+      btn.textContent = '✓ Copied';
+      setTimeout(function(){ btn.textContent = 'Copy all'; }, 1500);
+    });
+  });
+</script>
+</body></html>`;
+}
+
 export function registerApiRoutes(opts: RegisterApiOptions): void {
   const { app, db, logBuffer, startTime, getListenerStats, getStrategyManager } = opts;
 
@@ -110,22 +164,32 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   }));
 
   // ── /api/verify-pumpswap ──
-  // Byte-equality check: rebuild a real PumpSwap swap ix with our builder
-  // and diff against the on-chain bytes. This is the gate before flipping
-  // any strategy into shadow mode.
+  // Simulation gate: rebuild a swap with @pump-fun/pump-swap-sdk (the same
+  // builder the executor uses), wrap it in a v0 tx, and run simulateTransaction
+  // against the current chain. Source amounts + user wallet from a real
+  // recent on-chain swap so the user has funds at sim time — the only thing
+  // being tested is whether the SDK ix is accepted by the on-chain program.
   //   GET /api/verify-pumpswap                 → auto-picks the most recent
   //                                              swap on a freshly-graduated
   //                                              pool from the bot's DB
-  //   GET /api/verify-pumpswap?sig=<txSig>     → verifies a specific tx
+  //   GET /api/verify-pumpswap?sig=<txSig>     → simulates the SDK rebuild
+  //                                              of that specific tx
   //   GET /api/verify-pumpswap?sig=...&ixIndex=N → N-th ix in that tx
   //   GET /api/verify-pumpswap?...&pretty=1    → 2-space indented JSON
+  //
+  // Browser default (Accept: text/html) is an HTML page with the JSON in a
+  // <pre> + a Copy-all button + matched/mismatched badge — convenient when
+  // pasting findings into chat. Curl / fetch get JSON.
   app.get('/api/verify-pumpswap', wrap(async (req, res) => {
-    // Pretty-print on demand. Browser-pasted output is unreadable as a single
-    // line; jq isn't always handy. Indent applies to every response branch.
-    const pretty = req.query.pretty === '1' || req.query.pretty === 'true';
+    const wantsHtml = req.accepts(['html', 'json']) === 'html';
+    const pretty = wantsHtml || req.query.pretty === '1' || req.query.pretty === 'true';
     const send = (status: number, payload: unknown) => {
-      res.status(status).type('application/json')
-        .send(JSON.stringify(payload, null, pretty ? 2 : 0));
+      const json = JSON.stringify(payload, null, pretty ? 2 : 0);
+      if (wantsHtml) {
+        res.status(status).type('text/html').send(renderVerifyHtml(payload, json));
+      } else {
+        res.status(status).type('application/json').send(json);
+      }
     };
 
     const rpcUrl = process.env.HELIUS_RPC_URL;
