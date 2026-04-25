@@ -10,6 +10,7 @@
     "verify-pumpswap": "ts-node src/trading/pumpswap-verify.ts"
   },
   "dependencies": {
+    "@pump-fun/pump-swap-sdk": "^1.15.0",
     "@solana/web3.js": "^1.95.0",
     "axios": "^1.7.0",
     "better-sqlite3": "^11.0.0",
