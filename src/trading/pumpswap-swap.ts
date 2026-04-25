@@ -34,6 +34,17 @@ import {
 
 export const PUMPSWAP_PROGRAM_ID = new PublicKey('pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
 
+// Standalone fee-config program — PumpSwap delegates per-pool fee tiers to it.
+// See pump_amm IDL: `fee_program` constant + `fee_config` PDA owned by this program.
+export const FEE_PROGRAM_ID = new PublicKey('pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ');
+
+// Constant pubkey used as the second seed of `fee_config`. Lifted byte-for-byte
+// from the published IDL — there is no human-readable derivation.
+const FEE_CONFIG_SEED_PUBKEY = new PublicKey(Buffer.from([
+  12, 20, 222, 252, 130, 94, 198, 118, 148, 37, 8, 24, 187, 101, 64, 101,
+  244, 41, 141, 49, 86, 213, 113, 180, 212, 248, 9, 12, 24, 233, 168, 99,
+]));
+
 // Anchor discriminators, precomputed via `sha256("global:<name>")[:8]`.
 const DISC_BUY = Buffer.from([0x66, 0x06, 0x3d, 0x12, 0x01, 0xda, 0xeb, 0xea]);
 const DISC_SELL = Buffer.from([0x33, 0xe6, 0x85, 0xa4, 0x01, 0x7f, 0x83, 0xad]);
@@ -61,6 +72,33 @@ function getCreatorVaultAuthorityPda(creator: PublicKey): PublicKey {
   const [addr] = PublicKey.findProgramAddressSync(
     [Buffer.from('creator_vault'), creator.toBuffer()],
     PUMPSWAP_PROGRAM_ID,
+  );
+  return addr;
+}
+
+/** Buy-only: protocol-wide volume accumulator (seed = "global_volume_accumulator"). */
+function getGlobalVolumeAccumulatorPda(): PublicKey {
+  const [addr] = PublicKey.findProgramAddressSync(
+    [Buffer.from('global_volume_accumulator')],
+    PUMPSWAP_PROGRAM_ID,
+  );
+  return addr;
+}
+
+/** Buy-only: per-user volume accumulator (seeds = "user_volume_accumulator" + user). */
+function getUserVolumeAccumulatorPda(user: PublicKey): PublicKey {
+  const [addr] = PublicKey.findProgramAddressSync(
+    [Buffer.from('user_volume_accumulator'), user.toBuffer()],
+    PUMPSWAP_PROGRAM_ID,
+  );
+  return addr;
+}
+
+/** Fee-config PDA — owned by FEE_PROGRAM_ID, seeded with a constant pubkey from the IDL. */
+function getFeeConfigPda(): PublicKey {
+  const [addr] = PublicKey.findProgramAddressSync(
+    [Buffer.from('fee_config'), FEE_CONFIG_SEED_PUBKEY.toBuffer()],
+    FEE_PROGRAM_ID,
   );
   return addr;
 }
@@ -148,9 +186,13 @@ export function buildSellIx(p: BuildSellParams): TransactionInstruction {
 }
 
 /**
- * Account ordering for PumpSwap buy/sell. Pulled from the pump.fun AMM IDL.
- * Writable/signer flags below match the expected layout; the verification step
- * will byte-compare this against a real on-chain swap.
+ * Account ordering for PumpSwap buy/sell. Layout pulled from pump_amm IDL
+ * (https://github.com/pump-fun/pump-public-docs/tree/main/idl).
+ *
+ * Buy = 23 accounts, sell = 21. The first 19 are shared; buy appends two
+ * volume-accumulator PDAs that don't exist on sell, then both append
+ * fee_config + fee_program. `pool` is writable on both (we had it read-only —
+ * that was the writability mismatch the verifier caught).
  */
 function commonSwapKeys(p: BuildSwapParams, isBuy: boolean) {
   const userBaseAta = getAssociatedTokenAddress(p.baseMint, p.wallet);
@@ -159,8 +201,8 @@ function commonSwapKeys(p: BuildSwapParams, isBuy: boolean) {
   const creatorVaultAuth = getCreatorVaultAuthorityPda(p.creator);
   const creatorVaultAta = getAssociatedTokenAddress(p.quoteMint, creatorVaultAuth);
 
-  return [
-    { pubkey: p.pool, isSigner: false, isWritable: false },
+  const shared = [
+    { pubkey: p.pool, isSigner: false, isWritable: true },
     { pubkey: p.wallet, isSigner: true, isWritable: true },
     { pubkey: getGlobalConfigPda(), isSigner: false, isWritable: false },
     { pubkey: p.baseMint, isSigner: false, isWritable: false },
@@ -179,10 +221,19 @@ function commonSwapKeys(p: BuildSwapParams, isBuy: boolean) {
     { pubkey: PUMPSWAP_PROGRAM_ID, isSigner: false, isWritable: false },
     { pubkey: creatorVaultAta, isSigner: false, isWritable: true },
     { pubkey: creatorVaultAuth, isSigner: false, isWritable: false },
-    // `isBuy` not used in the account list — buy and sell share the same 19-key
-    // layout. We keep the parameter for symmetry with any future divergence.
-    ...(isBuy ? [] : []),
   ];
+
+  const buyOnlyTail = isBuy ? [
+    { pubkey: getGlobalVolumeAccumulatorPda(), isSigner: false, isWritable: false },
+    { pubkey: getUserVolumeAccumulatorPda(p.wallet), isSigner: false, isWritable: true },
+  ] : [];
+
+  const feeTail = [
+    { pubkey: getFeeConfigPda(), isSigner: false, isWritable: false },
+    { pubkey: FEE_PROGRAM_ID, isSigner: false, isWritable: false },
+  ];
+
+  return [...shared, ...buyOnlyTail, ...feeTail];
 }
 
 // ── Token-program helper instructions (inlined to avoid @solana/spl-token) ──
