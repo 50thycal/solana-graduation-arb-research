@@ -3,7 +3,6 @@ import {
   PublicKey,
   Transaction,
   ComputeBudgetProgram,
-  SystemProgram,
 } from '@solana/web3.js';
 import BN from 'bn.js';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -12,11 +11,8 @@ import type { ExecutionMode } from './config';
 import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL } from './config';
 import { Wallet, WSOL_MINT, getAssociatedTokenAddress } from './wallet';
 import {
-  buildBuyIx,
-  buildSellIx,
-  buildAtaCreateIdempotentIx,
-  buildSyncNativeIx,
-  buildCloseAccountIx,
+  buildBuyInstructions,
+  buildSellInstructions,
   computeExpectedBaseOut,
   computeExpectedQuoteOut,
 } from './pumpswap-swap';
@@ -376,18 +372,6 @@ export class Executor {
 
     const mintPk = new PublicKey(mint);
     const poolPk = new PublicKey(poolCtx.poolAddress);
-    const baseVault = new PublicKey(poolCtx.baseVault);
-    const quoteVault = new PublicKey(poolCtx.quoteVault);
-
-    // Read creator from pool account data (offset 11–43 per pump.fun AMM layout).
-    const creator = await this.readPoolCreator(poolPk);
-    if (!creator) {
-      return {
-        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
-        dryRun: false, executionMode: mode,
-        errorMessage: 'live: failed to read pool creator',
-      };
-    }
 
     // Measure spot + quote expected output for slippage attribution post-fill.
     const pool = await fetchVaultPrice(this.connection, poolCtx.baseVault, poolCtx.quoteVault, true);
@@ -411,32 +395,31 @@ export class Executor {
     //   baseBalBefore       — raw u64 tokens already in wallet (0 if fresh)
     //   baseAtaExistsBefore — was the ATA already paid-for? drives rent subtraction
     //   walletSolBefore     — lamports before tx
-    const baseAta = getAssociatedTokenAddress(mintPk, this.wallet.pubkey);
+    const walletPk = this.wallet.pubkey;
+    const baseAta = getAssociatedTokenAddress(mintPk, walletPk);
     const baseAtaInfoBefore = await this.connection.getAccountInfo(baseAta, 'confirmed').catch(() => null);
     const baseAtaExistsBefore = !!baseAtaInfoBefore;
     const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
     const walletSolBefore = await this.wallet.getSolBalance(this.connection);
 
-    // Assemble tx: compute-budget → create-ATA × 2 → wrap+sync wSOL → buy → close wSOL → jito tip
+    // SDK returns the full swap sequence: ATA-create-idempotent (base + wSOL),
+    // wSOL wrap+sync to maxQuoteIn, the swap with all IDL accounts + cashback /
+    // poolV2 / buyback remaining accounts, and wSOL close. We frame it with
+    // compute-budget on the front and a Jito tip at the back.
+    const swapIxs = await buildBuyInstructions(this.connection, {
+      pool: poolPk,
+      wallet: walletPk,
+      baseAmountOut: minBaseOutRaw,
+      maxQuoteAmountIn: maxQuoteInLamports,
+    });
+
     const jitoTipSol = DEFAULT_JITO_TIP_SOL;
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
-    const walletPk = this.wallet.pubkey;
-    const wsolAta = getAssociatedTokenAddress(WSOL_MINT, walletPk);
 
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
-      buildAtaCreateIdempotentIx(walletPk, walletPk, WSOL_MINT),
-      buildAtaCreateIdempotentIx(walletPk, walletPk, mintPk),
-      SystemProgram.transfer({ fromPubkey: walletPk, toPubkey: wsolAta, lamports: Number(maxQuoteInLamports) }),
-      buildSyncNativeIx(wsolAta),
-      buildBuyIx({
-        pool: poolPk, baseMint: mintPk, quoteMint: WSOL_MINT,
-        baseVault, quoteVault, creator, wallet: walletPk,
-        baseAmountOut: minBaseOutRaw,
-        maxQuoteAmountIn: maxQuoteInLamports,
-      }),
-      buildCloseAccountIx(wsolAta, walletPk, walletPk),
+      ...swapIxs,
       buildJitoTipIx(walletPk, jitoTipLamports),
     ];
 
@@ -531,18 +514,7 @@ export class Executor {
 
     const mintPk = new PublicKey(mint);
     const poolPk = new PublicKey(poolCtx.poolAddress);
-    const baseVault = new PublicKey(poolCtx.baseVault);
-    const quoteVault = new PublicKey(poolCtx.quoteVault);
     const walletPk = this.wallet.pubkey;
-
-    const creator = await this.readPoolCreator(poolPk);
-    if (!creator) {
-      return {
-        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
-        dryRun: false, executionMode: mode,
-        errorMessage: 'live: failed to read pool creator',
-      };
-    }
 
     // Re-read actual token balance — tokensHeld may drift from DB (should be tight)
     const actualBaseRaw = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
@@ -567,21 +539,23 @@ export class Executor {
     const expectedSolOut = computeExpectedQuoteOut(solRes, tokRes, baseInRaw);
     const minQuoteOut = (expectedSolOut * 95n) / 100n;
 
+    // SDK builds the full sell sequence: ATA-create-idempotent for wSOL, the
+    // sell ix (with cashback / poolV2 / buyback remaining accounts), and the
+    // wSOL close to reclaim rent + receive proceeds.
+    const swapIxs = await buildSellInstructions(this.connection, {
+      pool: poolPk,
+      wallet: walletPk,
+      baseAmountIn: baseInRaw,
+      minQuoteAmountOut: minQuoteOut,
+    });
+
     const jitoTipSol = DEFAULT_JITO_TIP_SOL;
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
-    const wsolAta = getAssociatedTokenAddress(WSOL_MINT, walletPk);
 
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 300_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
-      buildAtaCreateIdempotentIx(walletPk, walletPk, WSOL_MINT),
-      buildSellIx({
-        pool: poolPk, baseMint: mintPk, quoteMint: WSOL_MINT,
-        baseVault, quoteVault, creator, wallet: walletPk,
-        baseAmountIn: baseInRaw,
-        minQuoteAmountOut: minQuoteOut,
-      }),
-      buildCloseAccountIx(wsolAta, walletPk, walletPk),
+      ...swapIxs,
       buildJitoTipIx(walletPk, jitoTipLamports),
     ];
 
@@ -630,21 +604,6 @@ export class Executor {
       measuredSlippagePct, jitoTipSol,
       txLandMs: submission.latencyMs,
     };
-  }
-
-  /** Read the creator pubkey from a PumpSwap pool account (offset 11-43). */
-  private async readPoolCreator(pool: PublicKey): Promise<PublicKey | null> {
-    if (!this.connection) return null;
-    try {
-      await globalRpcLimiter.throttle();
-      const info = await this.connection.getAccountInfo(pool, 'confirmed');
-      if (!info?.data) return null;
-      const data = info.data as Buffer;
-      if (data.length < 43) return null;
-      return new PublicKey(data.subarray(11, 43));
-    } catch {
-      return null;
-    }
   }
 
   private sleep(ms: number): Promise<void> {

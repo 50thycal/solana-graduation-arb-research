@@ -1,148 +1,66 @@
 /**
- * PumpSwap AMM swap instruction builder.
+ * PumpSwap AMM swap instruction builder — thin wrapper over `@pump-fun/pump-swap-sdk`.
  *
  * Program: pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA
  *
- * The two instructions we care about are `buy` (quote → base) and `sell`
- * (base → quote). This file encodes both as raw TransactionInstructions so we
- * can compose them with compute-budget + Jito tip transfers in a single tx.
+ * We previously hand-rolled the buy/sell ix from the published IDL, but
+ * PumpSwap evolves quickly (Token-2022 base mints, dynamic protocol fee
+ * recipient rotation, fee_program CPIs, cashback-coin trailing accounts).
+ * Maintaining a private IDL snapshot was a losing battle — `/api/verify-pumpswap`
+ * caught real drift. Switching to the official SDK lets the upstream package
+ * track changes; we keep the verifier endpoint as a regression gate over
+ * whatever the SDK produces.
  *
- * Account ordering and Anchor discriminator below follow the pump.fun AMM
- * IDL as publicly documented. Because we can't verify the IDL against a
- * live devnet (PumpSwap is mainnet-only), the live-execution rollout plan
- * mandates a byte-equality test against a known on-chain swap before flipping
- * from paper → shadow. See the plan file's Verification step 1.
+ * Public surface:
+ *   - buildBuyInstructions(connection, params)  → TransactionInstruction[]
+ *   - buildSellInstructions(connection, params) → TransactionInstruction[]
  *
- * Discriminators (Anchor = sha256("global:<name>")[:8]):
- *   buy  → 66 06 3d 12 01 da eb ea
- *   sell → 33 e6 85 a4 01 7f 83 ad
+ * The arrays come pre-composed with ATA-create-idempotent for the base mint,
+ * wSOL wrap+sync (buy side) / unwrap (sell side), the swap itself with all
+ * IDL accounts + remaining_accounts, and the close instruction. Splice them
+ * into a tx between compute-budget and Jito-tip ixs.
+ *
+ * AMM math helpers (computeExpectedBaseOut / computeExpectedQuoteOut) are
+ * kept locally — the safety preflight reaches for them and they're trivial
+ * constant-product formulas that don't need the SDK.
  */
 
-import {
-  PublicKey,
-  TransactionInstruction,
-  SystemProgram,
-  SYSVAR_RENT_PUBKEY,
-} from '@solana/web3.js';
+import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
 import BN from 'bn.js';
 import {
-  TOKEN_PROGRAM_ID,
-  ASSOCIATED_TOKEN_PROGRAM_ID,
-  WSOL_MINT,
-  getAssociatedTokenAddress,
-} from './wallet';
+  OnlinePumpAmmSdk,
+  PumpAmmSdk,
+  PUMP_AMM_PROGRAM_ID,
+} from '@pump-fun/pump-swap-sdk';
+import { WSOL_MINT } from './wallet';
 
-export const PUMPSWAP_PROGRAM_ID = new PublicKey('pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
+export const PUMPSWAP_PROGRAM_ID = PUMP_AMM_PROGRAM_ID;
+export { WSOL_MINT };
 
-// Standalone fee-config program — PumpSwap delegates per-pool fee tiers to it.
-// See pump_amm IDL: `fee_program` constant + `fee_config` PDA owned by this program.
-export const FEE_PROGRAM_ID = new PublicKey('pfeeUxB6jkeY1Hxd7CsFCAjcbHA9rWtchMGdZ6VojVZ');
+// `OnlinePumpAmmSdk` wraps a Connection — keep one per Connection instance so
+// repeated buys/sells don't reconstruct the underlying Anchor Program.
+let onlineSdkCache: { connection: Connection; sdk: OnlinePumpAmmSdk } | null = null;
+const offlineSdk = new PumpAmmSdk();
 
-// Constant pubkey used as the second seed of `fee_config`. Lifted byte-for-byte
-// from the published IDL — there is no human-readable derivation.
-const FEE_CONFIG_SEED_PUBKEY = new PublicKey(Buffer.from([
-  12, 20, 222, 252, 130, 94, 198, 118, 148, 37, 8, 24, 187, 101, 64, 101,
-  244, 41, 141, 49, 86, 213, 113, 180, 212, 248, 9, 12, 24, 233, 168, 99,
-]));
-
-// Anchor discriminators, precomputed via `sha256("global:<name>")[:8]`.
-const DISC_BUY = Buffer.from([0x66, 0x06, 0x3d, 0x12, 0x01, 0xda, 0xeb, 0xea]);
-const DISC_SELL = Buffer.from([0x33, 0xe6, 0x85, 0xa4, 0x01, 0x7f, 0x83, 0xad]);
-
-/** Derive global config PDA (seed = "global_config"). */
-function getGlobalConfigPda(): PublicKey {
-  const [addr] = PublicKey.findProgramAddressSync(
-    [Buffer.from('global_config')],
-    PUMPSWAP_PROGRAM_ID,
-  );
-  return addr;
+function getOnlineSdk(connection: Connection): OnlinePumpAmmSdk {
+  if (!onlineSdkCache || onlineSdkCache.connection !== connection) {
+    onlineSdkCache = { connection, sdk: new OnlinePumpAmmSdk(connection) };
+  }
+  return onlineSdkCache.sdk;
 }
 
-/** Derive the program's self-referential event authority PDA. */
-function getEventAuthorityPda(): PublicKey {
-  const [addr] = PublicKey.findProgramAddressSync(
-    [Buffer.from('__event_authority')],
-    PUMPSWAP_PROGRAM_ID,
-  );
-  return addr;
-}
-
-/** Derive the creator vault authority PDA (seed "creator_vault" + creator). */
-function getCreatorVaultAuthorityPda(creator: PublicKey): PublicKey {
-  const [addr] = PublicKey.findProgramAddressSync(
-    [Buffer.from('creator_vault'), creator.toBuffer()],
-    PUMPSWAP_PROGRAM_ID,
-  );
-  return addr;
-}
-
-/** Buy-only: protocol-wide volume accumulator (seed = "global_volume_accumulator"). */
-function getGlobalVolumeAccumulatorPda(): PublicKey {
-  const [addr] = PublicKey.findProgramAddressSync(
-    [Buffer.from('global_volume_accumulator')],
-    PUMPSWAP_PROGRAM_ID,
-  );
-  return addr;
-}
-
-/** Buy-only: per-user volume accumulator (seeds = "user_volume_accumulator" + user). */
-function getUserVolumeAccumulatorPda(user: PublicKey): PublicKey {
-  const [addr] = PublicKey.findProgramAddressSync(
-    [Buffer.from('user_volume_accumulator'), user.toBuffer()],
-    PUMPSWAP_PROGRAM_ID,
-  );
-  return addr;
-}
-
-/** Fee-config PDA — owned by FEE_PROGRAM_ID, seeded with a constant pubkey from the IDL. */
-function getFeeConfigPda(): PublicKey {
-  const [addr] = PublicKey.findProgramAddressSync(
-    [Buffer.from('fee_config'), FEE_CONFIG_SEED_PUBKEY.toBuffer()],
-    FEE_PROGRAM_ID,
-  );
-  return addr;
-}
-
-/** Encode a u64 little-endian. */
-function u64LE(n: number | bigint | BN): Buffer {
-  return new BN(typeof n === 'bigint' ? n.toString() : n).toArrayLike(Buffer, 'le', 8);
-}
-
-/**
- * Derive the protocol fee recipient. This is a fixed set of accounts maintained
- * by PumpSwap — the live protocol rotates between them. We ship a known-good
- * recipient pulled from a recent PumpSwap swap tx and accept that this may
- * need refreshing if PumpSwap rotates the set. The recipient is selected at
- * swap-build time from the global_config account's `protocol_fee_recipients`
- * array; for now we hardcode the first entry.
- *
- * If the IDL structure changes, the verification step (byte-compare to a
- * known tx) will catch it.
- */
-export const PROTOCOL_FEE_RECIPIENT = new PublicKey(
-  '62qc2CNXwrYqQScmEdiZFFAnJR262PxWEuNQtxfafNgV',
-);
-
-export interface BuildSwapParams {
+export interface BuildBuyParams {
   pool: PublicKey;
-  baseMint: PublicKey;
-  /** quoteMint is wSOL for graduated pump.fun tokens — pass WSOL_MINT */
-  quoteMint: PublicKey;
-  baseVault: PublicKey;
-  quoteVault: PublicKey;
-  /** Token creator (needed for creator_vault PDA). Read from pool metadata. */
-  creator: PublicKey;
   wallet: PublicKey;
-}
-
-export interface BuildBuyParams extends BuildSwapParams {
-  /** Exact base (token) amount we want out, in raw u64 (not decimal-adjusted). */
+  /** Exact base (token) amount we want out, in raw u64. */
   baseAmountOut: bigint;
-  /** Max quote (lamports) we're willing to pay — slippage guardrail. */
+  /** Max quote (lamports) we'll spend — slippage guardrail. */
   maxQuoteAmountIn: bigint;
 }
 
-export interface BuildSellParams extends BuildSwapParams {
+export interface BuildSellParams {
+  pool: PublicKey;
+  wallet: PublicKey;
   /** Exact base (token) amount we're selling, raw u64. */
   baseAmountIn: bigint;
   /** Min quote (lamports) we'll accept — slippage guardrail. */
@@ -150,140 +68,35 @@ export interface BuildSellParams extends BuildSwapParams {
 }
 
 /**
- * Build the PumpSwap `buy` instruction. The caller is responsible for:
- *   - pre-creating/idempotent-creating the user's base ATA (see `buildAtaCreateIx`)
- *   - pre-creating/funding the user's quote (wSOL) ATA and calling `syncNative`
- *     so the pool can pull exactly `maxQuoteAmountIn` lamports
- *   - closing the wSOL ATA post-swap to recover rent + leftover lamports
+ * Build the full ix sequence for a PumpSwap buy. Returns the SDK's instruction
+ * array verbatim — caller is responsible for prepending compute-budget ixs and
+ * appending a Jito tip.
  */
-export function buildBuyIx(p: BuildBuyParams): TransactionInstruction {
-  const data = Buffer.concat([
-    DISC_BUY,
-    u64LE(p.baseAmountOut),
-    u64LE(p.maxQuoteAmountIn),
-  ]);
-
-  return new TransactionInstruction({
-    programId: PUMPSWAP_PROGRAM_ID,
-    keys: commonSwapKeys(p, /* isBuy */ true),
-    data,
-  });
+export async function buildBuyInstructions(
+  connection: Connection,
+  p: BuildBuyParams,
+): Promise<TransactionInstruction[]> {
+  const online = getOnlineSdk(connection);
+  const swapState = await online.swapSolanaState(p.pool, p.wallet);
+  return offlineSdk.buyInstructions(
+    swapState,
+    new BN(p.baseAmountOut.toString()),
+    new BN(p.maxQuoteAmountIn.toString()),
+  );
 }
 
-/** Build the PumpSwap `sell` instruction. Quote (wSOL) lands in the user's wSOL ATA. */
-export function buildSellIx(p: BuildSellParams): TransactionInstruction {
-  const data = Buffer.concat([
-    DISC_SELL,
-    u64LE(p.baseAmountIn),
-    u64LE(p.minQuoteAmountOut),
-  ]);
-
-  return new TransactionInstruction({
-    programId: PUMPSWAP_PROGRAM_ID,
-    keys: commonSwapKeys(p, /* isBuy */ false),
-    data,
-  });
-}
-
-/**
- * Account ordering for PumpSwap buy/sell. Layout pulled from pump_amm IDL
- * (https://github.com/pump-fun/pump-public-docs/tree/main/idl).
- *
- * Buy = 23 accounts, sell = 21. The first 19 are shared; buy appends two
- * volume-accumulator PDAs that don't exist on sell, then both append
- * fee_config + fee_program. `pool` is writable on both (we had it read-only —
- * that was the writability mismatch the verifier caught).
- */
-function commonSwapKeys(p: BuildSwapParams, isBuy: boolean) {
-  const userBaseAta = getAssociatedTokenAddress(p.baseMint, p.wallet);
-  const userQuoteAta = getAssociatedTokenAddress(p.quoteMint, p.wallet);
-  const protocolFeeRecipientAta = getAssociatedTokenAddress(p.quoteMint, PROTOCOL_FEE_RECIPIENT);
-  const creatorVaultAuth = getCreatorVaultAuthorityPda(p.creator);
-  const creatorVaultAta = getAssociatedTokenAddress(p.quoteMint, creatorVaultAuth);
-
-  const shared = [
-    { pubkey: p.pool, isSigner: false, isWritable: true },
-    { pubkey: p.wallet, isSigner: true, isWritable: true },
-    { pubkey: getGlobalConfigPda(), isSigner: false, isWritable: false },
-    { pubkey: p.baseMint, isSigner: false, isWritable: false },
-    { pubkey: p.quoteMint, isSigner: false, isWritable: false },
-    { pubkey: userBaseAta, isSigner: false, isWritable: true },
-    { pubkey: userQuoteAta, isSigner: false, isWritable: true },
-    { pubkey: p.baseVault, isSigner: false, isWritable: true },
-    { pubkey: p.quoteVault, isSigner: false, isWritable: true },
-    { pubkey: PROTOCOL_FEE_RECIPIENT, isSigner: false, isWritable: false },
-    { pubkey: protocolFeeRecipientAta, isSigner: false, isWritable: true },
-    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // base token program
-    { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false }, // quote token program
-    { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-    { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: getEventAuthorityPda(), isSigner: false, isWritable: false },
-    { pubkey: PUMPSWAP_PROGRAM_ID, isSigner: false, isWritable: false },
-    { pubkey: creatorVaultAta, isSigner: false, isWritable: true },
-    { pubkey: creatorVaultAuth, isSigner: false, isWritable: false },
-  ];
-
-  const buyOnlyTail = isBuy ? [
-    { pubkey: getGlobalVolumeAccumulatorPda(), isSigner: false, isWritable: false },
-    { pubkey: getUserVolumeAccumulatorPda(p.wallet), isSigner: false, isWritable: true },
-  ] : [];
-
-  const feeTail = [
-    { pubkey: getFeeConfigPda(), isSigner: false, isWritable: false },
-    { pubkey: FEE_PROGRAM_ID, isSigner: false, isWritable: false },
-  ];
-
-  return [...shared, ...buyOnlyTail, ...feeTail];
-}
-
-// ── Token-program helper instructions (inlined to avoid @solana/spl-token) ──
-
-/** Build a createAssociatedTokenAccountIdempotent instruction (byte 0x01). */
-export function buildAtaCreateIdempotentIx(
-  payer: PublicKey,
-  owner: PublicKey,
-  mint: PublicKey,
-): TransactionInstruction {
-  const ata = getAssociatedTokenAddress(mint, owner);
-  return new TransactionInstruction({
-    programId: ASSOCIATED_TOKEN_PROGRAM_ID,
-    keys: [
-      { pubkey: payer, isSigner: true, isWritable: true },
-      { pubkey: ata, isSigner: false, isWritable: true },
-      { pubkey: owner, isSigner: false, isWritable: false },
-      { pubkey: mint, isSigner: false, isWritable: false },
-      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
-      { pubkey: SYSVAR_RENT_PUBKEY, isSigner: false, isWritable: false },
-    ],
-    data: Buffer.from([0x01]),
-  });
-}
-
-/** SPL token instruction 0x11 = SyncNative (updates wSOL amount after SOL transfer). */
-export function buildSyncNativeIx(wsolAta: PublicKey): TransactionInstruction {
-  return new TransactionInstruction({
-    programId: TOKEN_PROGRAM_ID,
-    keys: [{ pubkey: wsolAta, isSigner: false, isWritable: true }],
-    data: Buffer.from([0x11]),
-  });
-}
-
-/** SPL token instruction 0x09 = CloseAccount (returns rent + drains lamports to dest). */
-export function buildCloseAccountIx(
-  account: PublicKey,
-  destination: PublicKey,
-  owner: PublicKey,
-): TransactionInstruction {
-  return new TransactionInstruction({
-    programId: TOKEN_PROGRAM_ID,
-    keys: [
-      { pubkey: account, isSigner: false, isWritable: true },
-      { pubkey: destination, isSigner: false, isWritable: true },
-      { pubkey: owner, isSigner: true, isWritable: false },
-    ],
-    data: Buffer.from([0x09]),
-  });
+/** Build the full ix sequence for a PumpSwap sell. Mirrors buildBuyInstructions. */
+export async function buildSellInstructions(
+  connection: Connection,
+  p: BuildSellParams,
+): Promise<TransactionInstruction[]> {
+  const online = getOnlineSdk(connection);
+  const swapState = await online.swapSolanaState(p.pool, p.wallet);
+  return offlineSdk.sellInstructions(
+    swapState,
+    new BN(p.baseAmountIn.toString()),
+    new BN(p.minQuoteAmountOut.toString()),
+  );
 }
 
 /**
@@ -322,5 +135,3 @@ export function computeExpectedQuoteOut(
   if (denominator === 0n) return 0n;
   return numerator / denominator;
 }
-
-export { WSOL_MINT };

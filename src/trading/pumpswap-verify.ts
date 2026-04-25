@@ -1,32 +1,33 @@
 /**
- * PumpSwap IDL byte-equality verifier.
+ * PumpSwap byte-equality verifier.
  *
- * Fetches a known-good PumpSwap swap transaction from mainnet, extracts its
- * `buy` or `sell` instruction, and rebuilds the same instruction with our
- * builder in pumpswap-swap.ts. Reports any byte-level diff in the
- * discriminator, args, or account list (addresses + writable/signer flags).
+ * Fetches a known-good PumpSwap swap transaction from mainnet, finds its
+ * `buy` or `sell` ix, and rebuilds the same ix via the official
+ * `@pump-fun/pump-swap-sdk` (the same builder used by the executor). Reports
+ * any byte-level diff in the discriminator, args, or account list (addresses
+ * + writable/signer flags).
  *
- * This is the verification step the rollout plan mandates before flipping
- * the first strategy to shadow mode: our builder ships with an IDL layout
- * that matches public documentation, but we can't compile-time-check it
- * against the live program.
+ * This is the regression gate the live-execution rollout plan mandates before
+ * flipping any strategy to shadow mode. We previously hand-rolled the ix from
+ * the published IDL — that drifted (Token-2022, fee_program CPIs, cashback
+ * trailing accounts) and the verifier caught it. Switching the builder to the
+ * SDK lets the upstream package track the program; this file just diffs.
  *
  * Usage:
- *   HELIUS_RPC_URL=https://... npx ts-node src/trading/pumpswap-verify.ts <txSignature> [--ixIndex=N]
+ *   HELIUS_RPC_URL=https://... npx ts-node src/trading/pumpswap-verify.ts <txSig> [--ixIndex=N]
  *
  * Or programmatically:
- *   import { verifyPumpswapSwap } from './pumpswap-verify';
  *   const report = await verifyPumpswapSwap(connection, '<sig>');
  *   if (!report.matched) console.error(report);
  */
 
-import { Connection, PublicKey, TransactionInstruction } from '@solana/web3.js';
-import BN from 'bn.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import type Database from 'better-sqlite3';
+import BN from 'bn.js';
 import {
   PUMPSWAP_PROGRAM_ID,
-  buildBuyIx,
-  buildSellIx,
+  buildBuyInstructions,
+  buildSellInstructions,
 } from './pumpswap-swap';
 
 export interface InstructionSnapshot {
@@ -65,11 +66,6 @@ const DISC_SELL_HEX = '33e685a4017f83ad';
  * Walk recent graduations in the DB and fetch signatures on each pool until
  * we find one whose tx contains a PumpSwap buy/sell ix. Returns {sig, pool,
  * ixIndex} for the first match, or null if nothing in the search window.
- *
- * Search budget: up to 5 pools × 10 signatures = 50 getTransaction calls in
- * the worst case. In practice the first graduated pool almost always has a
- * swap in its first few signatures — a hot PumpSwap pool gets dozens per
- * minute during the T+30 window that matters.
  */
 export async function findRecentPumpSwapSwap(
   connection: Connection,
@@ -139,16 +135,13 @@ export async function verifyPumpswapSwap(
   }
 
   // Resolve the account list — for v0 txs with address lookup tables, message
-  // accountKeys() must be called with loaded addresses. getAccountKeys returns
-  // static + loaded in order.
+  // accountKeys() must be called with loaded addresses.
   const msg = tx.transaction.message;
   const loadedAddrs = tx.meta?.loadedAddresses;
   const accountKeys = msg.getAccountKeys({ accountKeysFromLookups: loadedAddrs });
-
-  // Each compiled instruction has: programIdIndex, accountKeyIndexes[], data.
   const compiledIxs = msg.compiledInstructions;
 
-  // Pick the target ix — default to first PumpSwap-program ix; user can
+  // Pick the target ix — default to the first PumpSwap-program ix; caller can
   // override by index.
   const pumpswapIxIndex = opts.ixIndex ?? compiledIxs.findIndex(
     (ix) => accountKeys.get(ix.programIdIndex)?.equals(PUMPSWAP_PROGRAM_ID),
@@ -166,7 +159,7 @@ export async function verifyPumpswapSwap(
   const direction: 'buy' | 'sell' | 'unknown' =
     onDisc === DISC_BUY_HEX ? 'buy' : onDisc === DISC_SELL_HEX ? 'sell' : 'unknown';
 
-  const onAccounts = onIx.accountKeyIndexes.map((idx, i) => {
+  const onAccounts = onIx.accountKeyIndexes.map((idx) => {
     const pk = accountKeys.get(idx)!;
     return {
       pubkey: pk.toBase58(),
@@ -198,49 +191,31 @@ export async function verifyPumpswapSwap(
     };
   }
 
-  // Extract swap args from ix data. Both buy and sell are (u64, u64) after
-  // the 8-byte discriminator.
+  // Args (u64, u64) live after the 8-byte discriminator. Rebuilding requires
+  // only pool + user — the SDK derives every other account from the pool struct.
   const arg1 = new BN(onIxData.subarray(8, 16), 'le');
   const arg2 = new BN(onIxData.subarray(16, 24), 'le');
+  const pool = new PublicKey(onAccounts[0].pubkey);
+  const wallet = new PublicKey(onAccounts[1].pubkey);
 
-  // Extract the accounts we need to rebuild from the on-chain ix. Index
-  // positions below mirror the layout in pumpswap-swap.ts commonSwapKeys().
-  const IDX = {
-    pool: 0,
-    wallet: 1,
-    baseMint: 3,
-    quoteMint: 4,
-    baseVault: 7,
-    quoteVault: 8,
-    creatorVaultAuthority: 18,
-  };
+  // SDK returns the full sequence (ATA-create, wSOL prep, swap, close). We
+  // only diff the swap ix — the rest are SPL-program ixs that aren't part of
+  // PumpSwap's account list.
+  const allIxs = direction === 'buy'
+    ? await buildBuyInstructions(connection, {
+        pool, wallet,
+        baseAmountOut: BigInt(arg1.toString()),
+        maxQuoteAmountIn: BigInt(arg2.toString()),
+      })
+    : await buildSellInstructions(connection, {
+        pool, wallet,
+        baseAmountIn: BigInt(arg1.toString()),
+        minQuoteAmountOut: BigInt(arg2.toString()),
+      });
 
-  // Rebuild with our builder.
-  const rebuiltParams = {
-    pool: new PublicKey(onAccounts[IDX.pool].pubkey),
-    baseMint: new PublicKey(onAccounts[IDX.baseMint].pubkey),
-    quoteMint: new PublicKey(onAccounts[IDX.quoteMint].pubkey),
-    baseVault: new PublicKey(onAccounts[IDX.baseVault].pubkey),
-    quoteVault: new PublicKey(onAccounts[IDX.quoteVault].pubkey),
-    // Creator isn't directly on the ix — the creator_vault_authority PDA is.
-    // Read creator from the pool account data (offset 11-43).
-    creator: await readPoolCreator(connection, new PublicKey(onAccounts[IDX.pool].pubkey)),
-    wallet: new PublicKey(onAccounts[IDX.wallet].pubkey),
-  };
-
-  let rebuiltIx: TransactionInstruction;
-  if (direction === 'buy') {
-    rebuiltIx = buildBuyIx({
-      ...rebuiltParams,
-      baseAmountOut: BigInt(arg1.toString()),
-      maxQuoteAmountIn: BigInt(arg2.toString()),
-    });
-  } else {
-    rebuiltIx = buildSellIx({
-      ...rebuiltParams,
-      baseAmountIn: BigInt(arg1.toString()),
-      minQuoteAmountOut: BigInt(arg2.toString()),
-    });
+  const rebuiltIx = allIxs.find((ix) => ix.programId.equals(PUMPSWAP_PROGRAM_ID));
+  if (!rebuiltIx) {
+    throw new Error('SDK did not produce a PumpSwap-program ix in its output array');
   }
 
   const rebuiltData = rebuiltIx.data;
@@ -295,17 +270,9 @@ export async function verifyPumpswapSwap(
     onChain: onSnapshot,
     rebuilt: rebuiltSnapshot,
     notes: matched
-      ? 'OK — on-chain ix bytes match our builder.'
+      ? 'OK — SDK-rebuilt ix bytes match on-chain.'
       : `${accountMismatches.length} account mismatch(es); data match=${argsMatch}`,
   };
-}
-
-async function readPoolCreator(connection: Connection, pool: PublicKey): Promise<PublicKey> {
-  const info = await connection.getAccountInfo(pool, 'confirmed');
-  if (!info?.data) throw new Error('Pool account not found');
-  const data = info.data as Buffer;
-  if (data.length < 43) throw new Error(`Pool account too small: ${data.length} bytes`);
-  return new PublicKey(data.subarray(11, 43));
 }
 
 // ── CLI entry point ─────────────────────────────────────────────────────────
