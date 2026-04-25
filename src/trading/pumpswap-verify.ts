@@ -61,8 +61,14 @@ const DISC_SELL_HEX = '33e685a4017f83ad';
 
 /**
  * Walk recent graduations in the DB and fetch signatures on each pool until
- * we find one whose tx contains a PumpSwap buy/sell ix. Returns {sig, pool,
- * ixIndex} for the first match, or null if nothing in the search window.
+ * we find a PumpSwap swap we can simulate reliably. Returns {sig, pool,
+ * ixIndex, direction} for the first match, or null if nothing in the search
+ * window.
+ *
+ * Prefers BUYs over sells: a buy sim only needs the source user to still
+ * have SOL in the wallet (usually yes), while a sell sim needs the base ATA
+ * to still exist with tokens (usually no — traders close ATAs after exits).
+ * Falls back to sell only if no buy was found across the whole search.
  */
 export async function findRecentPumpSwapSwap(
   connection: Connection,
@@ -75,6 +81,8 @@ export async function findRecentPumpSwapSwap(
     ORDER BY timestamp DESC
     LIMIT 5
   `).all() as Array<{ new_pool_address: string }>;
+
+  let sellFallback: { sig: string; poolAddress: string; ixIndex: number; direction: 'sell' } | null = null;
 
   for (const { new_pool_address: poolAddr } of pools) {
     let sigs;
@@ -107,15 +115,16 @@ export async function findRecentPumpSwapSwap(
         if (!pid || !pid.equals(PUMPSWAP_PROGRAM_ID)) continue;
         const disc = Buffer.from(ix.data).subarray(0, 8).toString('hex');
         if (disc === DISC_BUY_HEX) {
+          // Buys sim reliably — return immediately.
           return { sig: signature, poolAddress: poolAddr, ixIndex: i, direction: 'buy' };
         }
-        if (disc === DISC_SELL_HEX) {
-          return { sig: signature, poolAddress: poolAddr, ixIndex: i, direction: 'sell' };
+        if (disc === DISC_SELL_HEX && sellFallback === null) {
+          sellFallback = { sig: signature, poolAddress: poolAddr, ixIndex: i, direction: 'sell' };
         }
       }
     }
   }
-  return null;
+  return sellFallback;
 }
 
 export async function verifyPumpswapSwap(
@@ -222,8 +231,31 @@ export async function verifyPumpswapSwap(
     unitsConsumed: sim.value.unitsConsumed ?? null,
     notes: matched
       ? `OK — SDK-built ${direction} ix simulated successfully (${sim.value.unitsConsumed ?? '?'} CU).`
-      : `simulation failed: ${JSON.stringify(sim.value.err)}`,
+      : explainSimFailure(direction, sim.value.err, sim.value.logs ?? []),
   };
+}
+
+/** Human-readable notes for common simulation failures. Falls back to raw JSON. */
+function explainSimFailure(
+  direction: 'buy' | 'sell',
+  err: unknown,
+  logs: readonly string[],
+): string {
+  const joined = logs.join('\n');
+  // Anchor error 3012 = AccountNotInitialized. On a sell, it's almost always
+  // the source wallet having closed the base ATA after exiting — not an SDK
+  // bug. Re-run to auto-pick a newer swap (or a buy instead of a sell).
+  if (joined.includes('Error Code: AccountNotInitialized') &&
+      joined.includes('user_base_token_account') &&
+      direction === 'sell') {
+    return 'simulation failed: source wallet closed its base ATA after the source sell — not an SDK issue. '
+      + 'Re-run the endpoint (auto-pick prefers buys; this means no recent buys were available). '
+      + `Raw err: ${JSON.stringify(err)}`;
+  }
+  if (joined.includes('Error Code: AccountNotInitialized')) {
+    return `simulation failed: AccountNotInitialized — source wallet state has drifted since the source tx. Raw err: ${JSON.stringify(err)}`;
+  }
+  return `simulation failed: ${JSON.stringify(err)}`;
 }
 
 // ── CLI entry point ─────────────────────────────────────────────────────────
