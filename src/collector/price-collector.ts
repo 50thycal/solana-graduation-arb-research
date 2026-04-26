@@ -63,6 +63,10 @@ interface ActiveObservation {
   scheduledSnapshots: number[];
   completedSnapshots: number[];
   timers: NodeJS.Timeout[];
+  // Set true once the T+30 onT30Callback has fired successfully. Drives the
+  // T+35 deadline timer's "did the snapshot land?" check — if false at T+35,
+  // we abandon the observation rather than holding the slot for ~10 minutes.
+  t30CallbackFired: boolean;
   // Cached after first successful pool decode — avoids re-fetching pool account on every snapshot
   baseVault?: string;
   quoteVault?: string;
@@ -169,6 +173,13 @@ export class PriceCollector {
   private totalObservationsCompleted = 0;
   private totalSnapshots = 0;
   private totalSnapshotFailures = 0;
+  // Observations whose T+30 snapshot never landed by the T+35 deadline.
+  // High count vs totalObservationsStarted = RPC pressure or pool not ready.
+  private totalT30Timeouts = 0;
+  // Observations dropped at the MAX_CONCURRENT_OBSERVATIONS gate. Surfacing
+  // this lets the operator see when the slot pool is saturated — previously
+  // the gate was logger.debug only and silently lost graduations.
+  private totalSlotsRejected = 0;
   private lastSnapshotFailures: Array<{ graduationId: number; targetSec: number; reason: string; time: string }> = [];
   private onT30Callback?: (
     graduationId: number,
@@ -210,6 +221,14 @@ export class PriceCollector {
       totalCompleted: this.totalObservationsCompleted,
       totalSnapshots: this.totalSnapshots,
       totalSnapshotFailures: this.totalSnapshotFailures,
+      // Observations whose T+30 snapshot never landed by T+35. High count vs
+      // totalStarted = RPC pressure or pool not yet decodable at T+30.
+      totalT30Timeouts: this.totalT30Timeouts,
+      // Graduations dropped at the MAX_CONCURRENT_OBSERVATIONS gate. Non-zero
+      // value here means the observation pool is saturated — either raise
+      // the limit or fix whatever is keeping observations alive longer than
+      // they should be.
+      totalSlotsRejected: this.totalSlotsRejected,
       lastSnapshotFailures: this.lastSnapshotFailures.slice(-5),
     };
   }
@@ -237,9 +256,24 @@ export class PriceCollector {
     // MAX_CONCURRENT_OBSERVATIONS limits active price observation sessions.
     // Each active session fires RPC calls on a schedule (T+0, T+5, T+10, T+30, T+60, T+120, T+300).
     // At 8 RPS budget, 20 concurrent = ~0.5 RPS from snapshots alone — well within limits.
+    //
+    // The T+35 deadline timer (added below) frees slots within ~35s of any
+    // observation whose T+30 snapshot fails, instead of holding the slot for
+    // the full 605s lifetime. Previously, a burst of RPC failures could
+    // saturate all 20 slots and silently drop every subsequent graduation
+    // for ~10 minutes — which is exactly the cascade that stalled trades
+    // overnight on 2026-04-25/26.
     const maxActive = parseInt(process.env.MAX_CONCURRENT_OBSERVATIONS || '20', 10);
     if (this.active.size >= maxActive) {
-      logger.debug({ graduationId: ctx.graduationId, active: this.active.size }, 'Max active observations');
+      this.totalSlotsRejected++;
+      // Log first hit per burst at warn so saturation is visible without
+      // spamming. After 1, 21, 41, … just keep counting.
+      if (this.totalSlotsRejected % 20 === 1) {
+        logger.warn(
+          { graduationId: ctx.graduationId, active: this.active.size, totalSlotsRejected: this.totalSlotsRejected },
+          'Max active observations — graduation dropped without observation',
+        );
+      }
       return;
     }
 
@@ -258,6 +292,7 @@ export class PriceCollector {
       scheduledSnapshots: remaining,
       completedSnapshots: [],
       timers: [],
+      t30CallbackFired: false,
       peakPricePct: 0,
       peakPriceSec: 0,
       maxDrawdownPct: 0,
@@ -342,6 +377,35 @@ export class PriceCollector {
     }, Math.max(completionDelay, 5000));
 
     observation.timers.push(completionTimer);
+
+    // T+35 deadline: if the T+30 snapshot didn't land (RPC throttled, pool
+    // not yet decodable, vault read empty, etc.), abandon the observation
+    // and free the slot. Without this, a 76% snapshot failure rate (observed
+    // in production) saturated all 20 slots within minutes and silently
+    // dropped every subsequent graduation for ~10 minutes per stuck slot —
+    // the exact cascade that froze the trading pipeline overnight.
+    //
+    // We do NOT fire a fake onT30Callback with null price — TradeEvaluator
+    // would have to special-case it. The watchdog (StrategyManager.lastT30
+    // CallbackAt) already detects "no callback in N min" and the new
+    // totalT30Timeouts counter exposes the failure rate explicitly.
+    const t30DeadlineMs = Math.max((35 - elapsedSec) * 1000, 1000);
+    const deadlineTimer = setTimeout(() => {
+      const obs = this.active.get(ctx.graduationId);
+      if (!obs) return;            // already cleaned up by completion path
+      if (obs.t30CallbackFired) return; // T+30 success — leave observation running
+      this.totalT30Timeouts++;
+      if (this.totalT30Timeouts % 10 === 1) {
+        logger.warn(
+          { graduationId: ctx.graduationId, totalT30Timeouts: this.totalT30Timeouts, active: this.active.size },
+          'T+30 deadline hit — abandoning observation to free slot',
+        );
+      }
+      for (const t of obs.timers) clearTimeout(t);
+      this.active.delete(ctx.graduationId);
+    }, t30DeadlineMs);
+
+    observation.timers.push(deadlineTimer);
   }
 
   stop(): void {
@@ -519,7 +583,11 @@ export class PriceCollector {
             ctx.graduationTimestamp,
             ctx.bondingCurveAddress,
           );
-          // Fire trading engine callback — all T+30 momentum fields are now written
+          // Fire trading engine callback — all T+30 momentum fields are now written.
+          // Mark the observation so the T+35 deadline timer (set in startObservation)
+          // knows to leave it running for the rest of the snapshot grid instead of
+          // aborting it as a stuck observation.
+          observation.t30CallbackFired = true;
           if (this.onT30Callback) {
             this.onT30Callback(graduationId, ctx, poolState.price, pctChange, poolState.solReserves);
           }
