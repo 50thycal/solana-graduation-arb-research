@@ -26,6 +26,24 @@ export interface LevelResult {
   notes?: string;
 }
 
+export interface PipelineHealth {
+  ws_connected: boolean | null;
+  last_graduation_sec_ago: number | null;
+  last_t30_callback_sec_ago: number | null;
+  last_paper_trade_sec_ago: number | null;
+  last_shadow_trade_sec_ago: number | null;
+  enabled_strategies: number;
+  verdict:
+    | 'HEALTHY'
+    | 'WS_DOWN'
+    | 'NO_GRADS'
+    | 'T30_STALLED'
+    | 'TRADES_STALLED'
+    | 'NO_STRATEGIES'
+    | 'NOT_APPLICABLE';
+  notes: string;
+}
+
 export interface DiagnosisReport {
   generated_at: string;
   verdict:
@@ -35,6 +53,7 @@ export interface DiagnosisReport {
     | 'LEVEL3_FAIL'
     | 'LEVEL4_FAIL'
     | 'LEVEL5_FAIL'
+    | 'PIPELINE_STALLED'
     | 'NO_DATA';
   next_action: string;
   level1_bot_running: LevelResult;
@@ -42,8 +61,19 @@ export interface DiagnosisReport {
   level3_timestamps: LevelResult;
   level4_label_logic: LevelResult;
   level5_live_ready: LevelResult;
+  pipeline_health: PipelineHealth;
   recent_errors: Array<{ ts: string; level: string; name: string; msg: string }>;
 }
+
+export interface PipelineSignals {
+  wsConnected?: boolean | null;
+  lastT30CallbackAt?: number | null;
+  enabledStrategies?: number;
+}
+
+// Stall thresholds. Conservative defaults — tune via env if needed.
+const T30_STALL_SEC = 10 * 60;        // 10 min without a T+30 callback while WS up = pipeline broken
+const TRADES_STALL_SEC = 30 * 60;     // 30 min without a paper/shadow entry (with strategies enabled) = entry pipeline broken
 
 const NULL_RATE_FAIL = 0.5; // >50% of critical fields null on recent rows = fail
 const SAMPLE_SIZE_FOR_LEVEL4 = 20;
@@ -51,6 +81,7 @@ const SAMPLE_SIZE_FOR_LEVEL4 = 20;
 export function runDiagnosis(
   db: Database.Database,
   logBuffer?: LogBuffer,
+  pipelineSignals?: PipelineSignals,
 ): DiagnosisReport {
   const generated_at = new Date().toISOString();
 
@@ -262,6 +293,88 @@ export function runDiagnosis(
     };
   }
 
+  // ── Pipeline health (paper + shadow flow watchdog) ──
+  // Distinct from Levels 1-5: those check that data + labels are correct.
+  // This checks that the LIVE trade-entry pipeline (WS → graduation →
+  // T+30 callback → strategy fan-out → trade open) is actively flowing.
+  // Without it, the user can't tell from the dashboard whether trades have
+  // stopped because of a code bug, an enabled-strategies-of-zero state, or
+  // simply a quiet period on pump.fun.
+  const enabledStrategies = pipelineSignals?.enabledStrategies ?? 0;
+  const wsConnected = pipelineSignals?.wsConnected ?? null;
+  const lastT30Ms = pipelineSignals?.lastT30CallbackAt ?? null;
+  const lastT30SecAgo = lastT30Ms !== null
+    ? Math.floor((Date.now() - lastT30Ms) / 1000)
+    : null;
+
+  // Last paper/shadow entry from trades_v2 — table may not exist on first
+  // boot before any strategy ever fired, hence the try/catch.
+  let lastPaperSecAgo: number | null = null;
+  let lastShadowSecAgo: number | null = null;
+  try {
+    const tradeRows = db.prepare(`
+      SELECT execution_mode, MAX(opened_at) AS last_open
+      FROM trades_v2
+      WHERE execution_mode IN ('paper', 'shadow')
+      GROUP BY execution_mode
+    `).all() as Array<{ execution_mode: string; last_open: number | null }>;
+    for (const r of tradeRows) {
+      if (r.last_open === null) continue;
+      const ageSec = Math.floor((Date.now() - r.last_open) / 1000);
+      if (r.execution_mode === 'paper') lastPaperSecAgo = ageSec;
+      if (r.execution_mode === 'shadow') lastShadowSecAgo = ageSec;
+    }
+  } catch { /* table missing or migration in progress — leave as null */ }
+
+  let pipelineVerdict: PipelineHealth['verdict'] = 'NOT_APPLICABLE';
+  let pipelineNotes = 'Trading not enabled or no strategies configured.';
+
+  if (enabledStrategies === 0) {
+    pipelineVerdict = 'NO_STRATEGIES';
+    pipelineNotes = 'No enabled strategies — trade pipeline intentionally idle.';
+  } else if (wsConnected === false) {
+    pipelineVerdict = 'WS_DOWN';
+    pipelineNotes = 'WebSocket reports disconnected. Reconnect loop should be running — check graduation-listener logs.';
+  } else if (secondsSinceLast !== null && secondsSinceLast > T30_STALL_SEC) {
+    // Use Level 1's existing graduation-recency check as a proxy.
+    pipelineVerdict = 'NO_GRADS';
+    pipelineNotes = `No graduations in ${secondsSinceLast}s. Either pump.fun is quiet (rare) or the WS subscription is broken.`;
+  } else if (lastT30SecAgo !== null && lastT30SecAgo > T30_STALL_SEC) {
+    pipelineVerdict = 'T30_STALLED';
+    pipelineNotes = `Last T+30 callback was ${lastT30SecAgo}s ago. Graduations arriving but PriceCollector → StrategyManager wiring is silent.`;
+  } else if (
+    lastPaperSecAgo !== null && lastPaperSecAgo > TRADES_STALL_SEC
+    && lastShadowSecAgo !== null && lastShadowSecAgo > TRADES_STALL_SEC
+  ) {
+    pipelineVerdict = 'TRADES_STALLED';
+    pipelineNotes = `No paper or shadow entries in ${TRADES_STALL_SEC}s — every recent T+30 candidate is being filtered/rejected. Check entry gates and skips.`;
+  } else if (lastT30SecAgo === null && enabledStrategies > 0) {
+    // Strategies enabled but T+30 callback never fired since boot. Could be
+    // legitimate (early uptime) — only flag if we've been up long enough to
+    // have heard from at least one graduation.
+    if (secondsSinceLast !== null && secondsSinceLast < 600) {
+      pipelineVerdict = 'HEALTHY'; // recent grad — wait for next one
+      pipelineNotes = 'Recent graduation present; awaiting next T+30 callback.';
+    } else {
+      pipelineVerdict = 'T30_STALLED';
+      pipelineNotes = 'StrategyManager has never received a T+30 callback. Verify attachToPriceCollector() ran at boot.';
+    }
+  } else {
+    pipelineVerdict = 'HEALTHY';
+    pipelineNotes = 'Pipeline active — graduations, T+30 callbacks, and entries within thresholds.';
+  }
+
+  const pipeline_health: PipelineHealth = {
+    ws_connected: wsConnected,
+    last_graduation_sec_ago: secondsSinceLast,
+    last_t30_callback_sec_ago: lastT30SecAgo,
+    last_paper_trade_sec_ago: lastPaperSecAgo,
+    last_shadow_trade_sec_ago: lastShadowSecAgo,
+    enabled_strategies: enabledStrategies,
+    verdict: pipelineVerdict,
+    notes: pipelineNotes,
+  };
+
   // ── Recent errors from the log ring buffer ──
   const recent_errors: DiagnosisReport['recent_errors'] = [];
   if (logBuffer) {
@@ -298,6 +411,15 @@ export function runDiagnosis(
   } else if (!level5.pass) {
     verdict = 'LEVEL5_FAIL';
     next_action = level5.notes ?? 'Fix live-mode prerequisites before enabling live strategies.';
+  } else if (
+    pipeline_health.verdict === 'WS_DOWN'
+    || pipeline_health.verdict === 'T30_STALLED'
+    || pipeline_health.verdict === 'TRADES_STALLED'
+  ) {
+    // NO_GRADS and NO_STRATEGIES are not actionable bot bugs (quiet market /
+    // intentional state) — only flip the top-level verdict for real stalls.
+    verdict = 'PIPELINE_STALLED';
+    next_action = pipeline_health.notes;
   }
 
   return {
@@ -309,6 +431,7 @@ export function runDiagnosis(
     level3_timestamps: level3,
     level4_label_logic: level4,
     level5_live_ready: level5,
+    pipeline_health,
     recent_errors,
   };
 }

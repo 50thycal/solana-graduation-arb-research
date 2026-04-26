@@ -22,11 +22,16 @@
  * on a recompute — the next request after the refresh completes gets the
  * fresh data.
  *
- * The refresh itself is async (`computeFilterV2Data` yields between hot loops
- * via `await new Promise(r => setImmediate(r))`), so other endpoints stay
- * responsive while it runs. /health doesn't get blocked.
+ * The refresh runs in a worker_threads Worker (heavy-cache-worker.ts) so the
+ * main event loop keeps serving /health, /trading, gist-sync, and the WS
+ * handler while the ~100s aggregation churns. The previous in-process design
+ * yielded only between major phases; in production /health was queueing for
+ * 35–50s behind it. Falls back to in-process compute if the worker fails to
+ * spawn (dev / missing dist build).
  */
 
+import path from 'path';
+import { Worker } from 'worker_threads';
 import type Database from 'better-sqlite3';
 import { computeFilterV2Data, type FilterV2Data } from './filter-v2-data';
 import { computePricePathData } from './price-path-data';
@@ -93,24 +98,106 @@ function saveToDisk(db: Database.Database, data: HeavyData): void {
   }
 }
 
+interface WorkerResult {
+  ok: boolean;
+  error?: string;
+  stack?: string;
+  v2?: FilterV2Data;
+  pricePathDetail?: ReturnType<typeof computePricePathData>;
+  pricePathHtml?: string;
+}
+
+function resolveDbPath(db: Database.Database): string {
+  // better-sqlite3 exposes the filename as `.name` on the Database instance.
+  // Fall back to `:memory:` only if undefined — that would be a misconfig
+  // (we always init with a real path in db/schema.ts).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const filename = (db as any).name as string | undefined;
+  if (!filename) throw new Error('Cannot resolve DB path from better-sqlite3 handle');
+  return filename;
+}
+
+function resolveWorkerPath(): string | null {
+  // After tsc, this file lives at dist/api/heavy-cache.js, so __dirname is
+  // dist/api/. The worker compiles to dist/api/heavy-cache-worker.js.
+  // Under ts-node (dev), __dirname is src/api/ and a .ts worker won't load
+  // cleanly via new Worker() — return null so the caller falls back to
+  // in-process compute.
+  const here = __dirname;
+  // path.sep is '/' on Linux/Railway and '\' on Windows. We only ship Node
+  // builds via Railway today; this still works on dev macOS.
+  const isCompiled = here.endsWith(`${path.sep}dist${path.sep}api`);
+  if (!isCompiled) return null;
+  return path.join(here, 'heavy-cache-worker.js');
+}
+
+function runInWorker(dbPath: string): Promise<Omit<HeavyData, 'computedAt'>> {
+  const workerFile = resolveWorkerPath();
+  if (!workerFile) {
+    return Promise.reject(new Error('Worker file path unresolved (dev mode?)'));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const worker = new Worker(workerFile, { workerData: { dbPath } });
+    worker.once('message', (msg: WorkerResult) => {
+      if (settled) return;
+      settled = true;
+      if (msg.ok && msg.v2 && msg.pricePathDetail !== undefined && msg.pricePathHtml !== undefined) {
+        resolve({
+          v2: msg.v2,
+          pricePathDetail: msg.pricePathDetail,
+          pricePathHtml: msg.pricePathHtml,
+        });
+      } else {
+        reject(new Error(`Worker reported failure: ${msg.error || 'unknown'}`));
+      }
+      worker.terminate().catch(() => { /* ignore */ });
+    });
+    worker.once('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    worker.once('exit', (code) => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`Worker exited with code ${code} before posting result`));
+    });
+  });
+}
+
+async function doRefreshInProcess(db: Database.Database): Promise<Omit<HeavyData, 'computedAt'>> {
+  const v2 = await computeFilterV2Data(db);
+  const pricePathDetail = computePricePathData(db);
+  const pricePathHtml = renderPricePathHtml(db);
+  return { v2, pricePathDetail, pricePathHtml };
+}
+
 async function doRefresh(
   db: Database.Database,
   _strategyManager: StrategyManager | null,
 ): Promise<HeavyData> {
   const start = Date.now();
   logger.info('Heavy cache refresh starting');
-  const v2 = await computeFilterV2Data(db);
-  const pricePathDetail = computePricePathData(db);
-  const pricePathHtml = renderPricePathHtml(db);
-  const result: HeavyData = {
-    v2,
-    pricePathDetail,
-    pricePathHtml,
-    computedAt: Date.now(),
-  };
+
+  let payload: Omit<HeavyData, 'computedAt'>;
+  let mode: 'worker' | 'in-process-fallback' = 'worker';
+  try {
+    const dbPath = resolveDbPath(db);
+    payload = await runInWorker(dbPath);
+  } catch (err) {
+    mode = 'in-process-fallback';
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'Heavy compute worker unavailable — falling back to in-process (will block event loop)',
+    );
+    payload = await doRefreshInProcess(db);
+  }
+
+  const result: HeavyData = { ...payload, computedAt: Date.now() };
   cache = result;
   saveToDisk(db, result);
-  logger.info({ elapsedMs: Date.now() - start }, 'Heavy cache refresh complete');
+  logger.info({ elapsedMs: Date.now() - start, mode }, 'Heavy cache refresh complete');
   return result;
 }
 
@@ -148,7 +235,8 @@ export async function getHeavyData(
   }
 
   // No cache, no disk — must compute now and await. Concurrent callers
-  // dedupe on the `refreshing` promise.
+  // dedupe on the `refreshing` promise. The compute itself runs off-thread
+  // (worker), so other endpoints (incl. /health) stay responsive while we wait.
   if (!refreshing) {
     refreshing = doRefresh(db, strategyManager).finally(() => {
       refreshing = null;

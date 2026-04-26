@@ -54,6 +54,11 @@ export class StrategyManager {
   private wallet: Wallet | null;
   private backfillTimer: NodeJS.Timeout | null = null;
   private safetyTimer: NodeJS.Timeout | null = null;
+  // Watchdog telemetry: when the last T+30 callback fired across all strategies.
+  // Used by /api/diagnose and snapshot.json to surface a stalled-pipeline state
+  // (graduations arriving but callbacks not firing → PriceCollector wiring bug,
+  // or no graduations at all → WS subscription dead).
+  private lastT30CallbackAt: number | null = null;
 
   constructor(
     private db: Database.Database,
@@ -162,6 +167,7 @@ export class StrategyManager {
     pctT30: number,
     solReserves: number,
   ): void {
+    this.lastT30CallbackAt = Date.now();
     const promises: Promise<void>[] = [];
 
     for (const instance of this.strategies.values()) {
@@ -209,6 +215,24 @@ export class StrategyManager {
 
     // Fire and forget — don't block the price collector
     Promise.allSettled(promises);
+  }
+
+  // ── Watchdog telemetry ─────────────────────────────────────────────────────
+  /**
+   * Wall-clock ms of the last T+30 callback dispatched (across any strategy).
+   * Null until the PriceCollector first fires. Used by /api/diagnose +
+   * snapshot.json to detect stalled pipelines.
+   */
+  getLastT30CallbackAt(): number | null {
+    return this.lastT30CallbackAt;
+  }
+
+  /** True if at least one strategy is currently enabled. */
+  hasEnabledStrategies(): boolean {
+    for (const s of this.strategies.values()) {
+      if (s.enabled) return true;
+    }
+    return false;
   }
 
   // ── Strategy CRUD ──────────────────────────────────────────────────────────
