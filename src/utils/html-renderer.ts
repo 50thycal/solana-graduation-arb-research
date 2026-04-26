@@ -18,6 +18,7 @@ const NAV_LINKS = [
   { path: '/exit-sim-matrix', label: 'Exit Matrix' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
+  { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
@@ -5425,4 +5426,115 @@ export function renderExitSimMatrixHtml(data: any): string {
 
   const body = overviewCard + matrixCard + notesCard;
   return shell('Exit Strategy Matrix', '/exit-sim-matrix', body, d);
+}
+
+// ── PIPELINE PAGE ────────────────────────────────────────────────────────────
+
+export function renderPipelineHtml(data: any): string {
+  const grads: any[] = data.grads || [];
+  const ss = data.session_stats;
+  const activeCount: number = data.active_strategy_count || 0;
+
+  const fmt  = (v: any, dec = 1) => v == null ? '—' : Number(v).toFixed(dec);
+  const fmtP = (v: any) => v == null ? '—' : `${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(1)}%`;
+
+  const chip = (text: string, color: string) =>
+    `<span style="background:${color}22;color:${color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">${text}</span>`;
+
+  const statusChip = (s: string) => {
+    if (s === 'TRADED')   return chip('TRADED',   '#22c55e');
+    if (s === 'FILTERED') return chip('FILTERED', '#f59e0b');
+    return chip('NO EVAL', '#f87171');
+  };
+
+  const labelChip = (l: string | null) => {
+    if (!l) return '<span style="color:#475569">—</span>';
+    const c = l === 'PUMP' ? '#22c55e' : l === 'DUMP' ? '#f87171' : '#94a3b8';
+    return `<span style="color:${c}">${l}</span>`;
+  };
+
+  // Session funnel cards
+  const fCard = (label: string, val: any, color: string, note?: string) => `
+    <div style="background:#1e293b;border-radius:6px;padding:12px 16px;min-width:120px;flex:1">
+      <div style="color:${color};font-size:22px;font-weight:bold;line-height:1">${val ?? '—'}</div>
+      <div style="color:#94a3b8;font-size:11px;margin-top:4px">${label}</div>
+      ${note ? `<div style="color:#475569;font-size:10px;margin-top:2px">${note}</div>` : ''}
+    </div>`;
+
+  const funnelHtml = ss ? `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+      ${fCard('Verified Grads',        ss.verified_graduations, '#60a5fa', 'listener')}
+      ${fCard('Observations Started',  ss.observations_started,  '#22d3ee', 'price collector')}
+      ${fCard('Stale / No Eval',       ss.stale_graduations,     '#f87171', 'arrived > T+25')}
+      ${fCard('T+30 Fired',            ss.t30_callbacks_fired,   '#a3e635', 'strategies ran')}
+      ${fCard('T+30 Timeouts',         ss.t30_timeouts,          '#f59e0b', 'pool fetch failed')}
+    </div>
+  ` : `<div style="color:#64748b;margin-bottom:20px">No session stats (listener not running or just restarted)</div>`;
+
+  const rows = grads.map(g => {
+    const noEvalNote = g.status === 'NO_EVAL'
+      ? `<span style="color:#475569;font-size:10px"> stale or T+30 timeout</span>`
+      : '';
+    const reasons = g.skip_reasons
+      ? g.skip_reasons.split(',').map((r: string) =>
+          `<span style="color:#94a3b8;font-size:10px;margin-right:4px">${escHtml(r.trim())}</span>`
+        ).join('')
+      : (g.status === 'NO_EVAL' ? `<span style="color:#475569;font-size:10px">not evaluated</span>` : '—');
+
+    return `<tr style="border-bottom:1px solid #1e293b">
+      <td style="color:#60a5fa;font-weight:bold">#${g.id}</td>
+      <td style="font-family:monospace;font-size:10px;color:#64748b">${g.mint ? g.mint.slice(0,8) + '…' : '—'}</td>
+      <td style="color:#475569;font-size:11px">${g.grad_time ? g.grad_time.replace('T',' ').slice(0,19) : '—'}</td>
+      <td style="text-align:right">${fmt(g.vel)}</td>
+      <td style="text-align:right">${fmt(g.top5)}</td>
+      <td style="text-align:right">${fmt(g.dev_pct)}</td>
+      <td style="text-align:right">${fmtP(g.pct_t30)}</td>
+      <td style="text-align:right">${fmtP(g.pct_t300)}</td>
+      <td>${labelChip(g.label)}</td>
+      <td>${statusChip(g.status)}${noEvalNote}</td>
+      <td>${reasons}</td>
+      <td style="text-align:center;color:${g.trade_count > 0 ? '#22c55e' : '#475569'}">${g.trade_count}</td>
+      <td style="text-align:center;color:#94a3b8">${g.skip_count}</td>
+    </tr>`;
+  }).join('');
+
+  const body = `
+    <h2 style="margin:0 0 4px;color:#60a5fa">Graduation Pipeline</h2>
+    <p style="margin:0 0 20px;color:#64748b">
+      Session funnel: graduation → price observation → T+30 → strategy evaluation → trade/skip.<br>
+      Active strategies: <strong style="color:#e2e8f0">${activeCount}</strong> —
+      so each graduation should produce ${activeCount} trade or skip records when it passes T+30.
+    </p>
+
+    ${funnelHtml}
+
+    <div style="background:#172033;border:1px solid #334155;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#64748b">
+      <strong style="color:#94a3b8">Status key:</strong>
+      ${chip('TRADED','#22c55e')} at least 1 strategy entered &nbsp;·&nbsp;
+      ${chip('FILTERED','#f59e0b')} all ${activeCount} strategies ran and rejected (see Skip Reasons) &nbsp;·&nbsp;
+      ${chip('NO EVAL','#f87171')} price collector rejected before strategies ran — stale arrival (&gt;T+25) or T+30 pool-fetch timeout
+    </div>
+
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="color:#475569;font-size:11px;text-align:left;border-bottom:2px solid #334155;padding-bottom:4px">
+        <th style="padding:6px 8px">ID</th>
+        <th style="padding:6px 8px">Mint</th>
+        <th style="padding:6px 8px">Grad Time (UTC)</th>
+        <th style="padding:6px 8px;text-align:right">vel</th>
+        <th style="padding:6px 8px;text-align:right">top5%</th>
+        <th style="padding:6px 8px;text-align:right">dev%</th>
+        <th style="padding:6px 8px;text-align:right">pct_t30</th>
+        <th style="padding:6px 8px;text-align:right">pct_t300</th>
+        <th style="padding:6px 8px">Label</th>
+        <th style="padding:6px 8px">Status</th>
+        <th style="padding:6px 8px">Skip Reasons</th>
+        <th style="padding:6px 8px;text-align:center">Trades</th>
+        <th style="padding:6px 8px;text-align:center">Skips</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+
+  return shell('Graduation Pipeline', '/pipeline', body, data);
 }
