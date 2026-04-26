@@ -145,6 +145,23 @@ export class GraduationListener {
   private totalCandidatesDetected = 0;
   private totalVerifiedGraduations = 0;
   private totalGraduationsRecorded = 0;
+  // Helius's logs subscription delivers the same migration tx multiple times
+  // — observed 4-5x in production. Without dedupe, each redelivery burns:
+  //   - getTransaction RPC (in processAndVerifyGraduation)
+  //   - getAccountInfo RPC (bonding curve verify)
+  //   - vault extraction RPC
+  // ... before INSERT OR IGNORE rejects it. That wasted budget then starves
+  // the priority-lane T+30 vault fetch, which is what kept timing out at
+  // 100% even after the priority-lane patch.
+  //
+  // Bounded Map: signature → wall-clock ms when first seen. Map preserves
+  // insertion order so we can drop the oldest in O(1).
+  private seenSignatures: Map<string, number> = new Map();
+  private static readonly SEEN_SIG_MAX = 2048;          // ~3 hours of grads
+  private static readonly SEEN_SIG_TTL_MS = 30 * 60_000; // 30 min — Helius
+                                                          // re-delivery windows
+                                                          // are seconds, not min
+  private totalDuplicateLogs = 0;
   private totalFalsePositives = 0;
   private totalBundlerFalsePositives = 0;
   private totalMintExtractionFails = 0;
@@ -202,10 +219,35 @@ export class GraduationListener {
     this.reconnectSubscribers.push(cb);
   }
 
+  /**
+   * Returns true when this signature has already been processed within the
+   * TTL window. Side effect: prunes expired entries opportunistically and
+   * caps the map size at SEEN_SIG_MAX (oldest dropped first via insertion
+   * order).
+   */
+  private isDuplicateSignature(signature: string): boolean {
+    const now = Date.now();
+    const seenAt = this.seenSignatures.get(signature);
+    if (seenAt !== undefined && now - seenAt < GraduationListener.SEEN_SIG_TTL_MS) {
+      return true;
+    }
+    // Mark seen (overwrites stale entry if expired).
+    this.seenSignatures.set(signature, now);
+    if (this.seenSignatures.size > GraduationListener.SEEN_SIG_MAX) {
+      const oldest = this.seenSignatures.keys().next().value;
+      if (oldest !== undefined) this.seenSignatures.delete(oldest);
+    }
+    return false;
+  }
+
   getStats() {
     return {
       totalLogsReceived: this.totalLogsReceived,
       totalCandidatesDetected: this.totalCandidatesDetected,
+      // Migrate logs filtered out as Helius redeliveries before any RPC
+      // call. Healthy ratio is roughly 4× duplicates for every unique
+      // candidate (so this should be ~80% of (candidates + duplicates)).
+      totalDuplicateLogs: this.totalDuplicateLogs,
       totalVerifiedGraduations: this.totalVerifiedGraduations,
       totalGraduationsRecorded: this.totalGraduationsRecorded,
       totalFalsePositives: this.totalFalsePositives,
@@ -450,6 +492,14 @@ export class GraduationListener {
     );
 
     if (!graduationLog) return;
+
+    // Drop redeliveries before any RPC work. Helius pushes the same
+    // migration tx 4-5× per real graduation — see seenSignatures comment
+    // for the cost we're avoiding here.
+    if (this.isDuplicateSignature(logs.signature)) {
+      this.totalDuplicateLogs++;
+      return;
+    }
 
     this.totalCandidatesDetected++;
     this.lastCandidateTime = Date.now();
