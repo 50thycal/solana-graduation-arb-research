@@ -78,13 +78,13 @@ const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const RECONNECT_BACKOFF_MULTIPLIER = 2;
 
-// How long silence before we consider the WS dead. Helius drops idle sockets
-// fairly aggressively; was 2 minutes but production logs showed 4× cascading
-// reconnects during the heavy-cache compute window because the threshold was
-// too lenient — by the time we noticed, the server-side connection had been
-// dead for a while and we were piling up "socket hang up" errors.
-const WS_SILENCE_TIMEOUT_MS = 30_000;
-const WS_HEALTH_CHECK_INTERVAL_MS = 10_000;
+// How long silence before we consider the WS dead. 2 minutes is the proven
+// production value. A shorter threshold (30 s) caused Helius to replay
+// buffered migration txs on every reconnect, arriving 30-270 s past T+0 and
+// getting rejected as stale by the price collector. Off-thread compute
+// (b07f54d) already removed the original motivation for a shorter value.
+const WS_SILENCE_TIMEOUT_MS = 2 * 60 * 1000;
+const WS_HEALTH_CHECK_INTERVAL_MS = 30_000;
 
 // Secondary health check: if no migrate candidates in this long, force a
 // reconnect even if other pump.fun logs are still flowing. Defends against
@@ -172,6 +172,7 @@ export class GraduationListener {
   private lastMintFailReasons: string[] = [];
   private totalTxFetchFails = 0;
   private reconnecting = false;
+  private totalReconnects = 0;
   /**
    * Subscribers notified after a successful websocket reconnect with the fresh
    * Connection object. TradingEngine registers here so its PositionManager
@@ -263,6 +264,7 @@ export class GraduationListener {
       lastCandidateSecondsAgo: Math.floor((Date.now() - this.lastCandidateTime) / 1000),
       wsConnected: this.subscriptionId !== null,
       reconnecting: this.reconnecting,
+      totalReconnects: this.totalReconnects,
       poolTracker: this.poolTracker.getStats(),
       directPriceCollector: this.priceCollector.getStats(),
     };
@@ -431,6 +433,7 @@ export class GraduationListener {
   private async reconnect(): Promise<void> {
     if (this.stopped || this.reconnecting) return;
     this.reconnecting = true;
+    this.totalReconnects++;
 
     try {
       logger.info('Reconnecting WebSocket...');
