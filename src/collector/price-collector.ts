@@ -712,7 +712,7 @@ export class PriceCollector {
           // completeObservation() runs at T+300+, and every trade that would
           // qualify on velocity fails the filter pipeline's null guard.
           // Safe to call here and again at completeObservation — idempotent UPDATE.
-          this.computeAndStoreVelocity(
+          await this.computeAndStoreVelocity(
             graduationId,
             ctx.mint,
             ctx.graduationTimestamp,
@@ -1167,7 +1167,7 @@ export class PriceCollector {
    * pool was ready, or RPC hiccup), we do ONE direct fallback fetch on the BC address.
    * sol_raised falls back to the known PumpFun graduation threshold (85 SOL).
    */
-  private computeAndStoreVelocity(graduationId: number, mint: string, graduationTimestamp: number, bondingCurveAddress?: string): void {
+  private async computeAndStoreVelocity(graduationId: number, mint: string, graduationTimestamp: number, bondingCurveAddress?: string): Promise<void> {
     try {
       const row = this.db.prepare(
         'SELECT total_sol_raised, token_age_seconds FROM graduation_momentum WHERE graduation_id = ?'
@@ -1192,14 +1192,16 @@ export class PriceCollector {
         return;
       }
 
-      // token_age_seconds still null — do one direct BC lookup as a last-resort fallback
+      // token_age_seconds still null — do one direct BC lookup as a last-resort fallback.
+      // Awaited so velocity is written before onT30Callback fires; without await the
+      // fallback runs in the background and the strategy filter sees null → FAIL.
       if (!bondingCurveAddress) {
         logger.warn({ graduationId, mint: mint.slice(0, 8) }, 'bc_velocity: token_age_seconds null and no bondingCurveAddress for fallback');
         return;
       }
 
-      logger.info({ graduationId, mint: mint.slice(0, 8) }, 'bc_velocity: token_age_seconds null at T+300, doing direct BC age lookup');
-      this.fallbackAgeLookup(graduationId, bondingCurveAddress, graduationTimestamp, solRaised);
+      logger.info({ graduationId, mint: mint.slice(0, 8) }, 'bc_velocity: token_age_seconds null at T+30, doing direct BC age lookup before callback');
+      await this.fallbackAgeLookup(graduationId, bondingCurveAddress, graduationTimestamp, solRaised);
     } catch (err) {
       logger.warn('Failed to compute bc_velocity for grad %d: %s', graduationId,
         err instanceof Error ? err.message : String(err));
