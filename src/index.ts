@@ -4,7 +4,8 @@ import { initDatabase } from './db/schema';
 import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml } from './utils/html-renderer';
+import { computePipelineData } from './api/pipeline-data';
 import { computePeakAnalysis } from './api/peak-analysis';
 import { computeExitSim } from './api/exit-sim';
 import { computeExitSimMatrix } from './api/exit-sim-matrix';
@@ -35,6 +36,7 @@ const NAV_LINKS = [
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
+  { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
@@ -2372,6 +2374,28 @@ async function main() {
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(renderExitSimMatrixHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── GRADUATION PIPELINE ──────────────────────────────────────────────────
+  // Per-graduation funnel: was it stale? did T+30 fire? did strategies trade
+  // or filter? Surfaces the "NO EVAL" gap that the trading dashboard hides.
+  app.get('/pipeline', (req, res) => {
+    try {
+      const listenerStats = listener ? listener.getStats() : null;
+      const activeCount = strategyManager
+        ? strategyManager.getStrategies().filter((s: any) => s.enabled).length
+        : 0;
+      const data = computePipelineData(db, listenerStats, activeCount);
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderPipelineHtml(data));
       } else {
         res.json(data);
       }
