@@ -173,9 +173,35 @@ export class PriceCollector {
   private totalObservationsCompleted = 0;
   private totalSnapshots = 0;
   private totalSnapshotFailures = 0;
-  // Observations whose T+30 snapshot never landed by the T+35 deadline.
+  // Observations whose T+30 snapshot never landed by the T+45 deadline.
   // High count vs totalObservationsStarted = RPC pressure or pool not ready.
   private totalT30Timeouts = 0;
+  // T+30-specific telemetry. If t30AttemptsStarted lags totalT30Timeouts the
+  // T+30 snapshot timer didn't even FIRE before the deadline (RPC bucket
+  // fully drained or event-loop blocked). If t30AttemptsStarted matches
+  // totalT30Timeouts but t30CallbacksFiredCount lags, the snapshot ran but
+  // didn't complete with valid pool data inside the 15s grace window.
+  private t30AttemptsStarted = 0;
+  private t30CallbacksFiredCount = 0;
+  // Ring buffer of recent T+30 timeout details. Each entry captures enough
+  // context to diagnose the root cause without needing live logs:
+  // - vaultsPreExtracted: were vaults available from migration tx (no pool
+  //   decode RPC needed)
+  // - t0Succeeded: did the immediate snapshot return a valid pool state
+  // - snapshotsCompleted: how many of the T+0..T+30 attempts came back ok
+  // - lastFailureReason: most recent recordSnapshotFailure reason for this gradId
+  // - elapsedMsAtDeadline: wall-clock ms from observation start to deadline
+  private lastT30Timeouts: Array<{
+    graduationId: number;
+    mint: string;
+    pool: string;
+    vaultsPreExtracted: boolean;
+    t0Succeeded: boolean;
+    snapshotsCompleted: number;
+    lastFailureReason: string | null;
+    elapsedMsAtDeadline: number;
+    time: string;
+  }> = [];
   // Observations dropped at the MAX_CONCURRENT_OBSERVATIONS gate. Surfacing
   // this lets the operator see when the slot pool is saturated — previously
   // the gate was logger.debug only and silently lost graduations.
@@ -221,15 +247,26 @@ export class PriceCollector {
       totalCompleted: this.totalObservationsCompleted,
       totalSnapshots: this.totalSnapshots,
       totalSnapshotFailures: this.totalSnapshotFailures,
-      // Observations whose T+30 snapshot never landed by T+35. High count vs
+      // Observations whose T+30 snapshot never landed by T+45. High count vs
       // totalStarted = RPC pressure or pool not yet decodable at T+30.
       totalT30Timeouts: this.totalT30Timeouts,
+      // T+30-specific telemetry. Compare these three:
+      //   t30AttemptsStarted < totalT30Timeouts     → snapshot timer never
+      //                                                fired (event-loop or
+      //                                                RPC token starvation)
+      //   t30AttemptsStarted ≈ totalT30Timeouts &&
+      //   t30CallbacksFiredCount < t30AttemptsStarted → snapshot ran but
+      //                                                pool/vault returned
+      //                                                null or arrived late
+      t30AttemptsStarted: this.t30AttemptsStarted,
+      t30CallbacksFired: this.t30CallbacksFiredCount,
+      lastT30Timeouts: this.lastT30Timeouts.slice(-10),
       // Graduations dropped at the MAX_CONCURRENT_OBSERVATIONS gate. Non-zero
       // value here means the observation pool is saturated — either raise
       // the limit or fix whatever is keeping observations alive longer than
       // they should be.
       totalSlotsRejected: this.totalSlotsRejected,
-      lastSnapshotFailures: this.lastSnapshotFailures.slice(-5),
+      lastSnapshotFailures: this.lastSnapshotFailures.slice(-15),
     };
   }
 
@@ -242,8 +279,10 @@ export class PriceCollector {
       time: new Date().toISOString(),
     });
     // Keep only last 20
-    if (this.lastSnapshotFailures.length > 20) {
-      this.lastSnapshotFailures = this.lastSnapshotFailures.slice(-20);
+    // Retain last 50 (was 20) — needed enough history for per-graduation
+    // root-cause analysis on T+30 timeouts. Each entry is small (4 fields).
+    if (this.lastSnapshotFailures.length > 50) {
+      this.lastSnapshotFailures = this.lastSnapshotFailures.slice(-50);
     }
   }
 
@@ -398,12 +437,41 @@ export class PriceCollector {
       if (!obs) return;            // already cleaned up by completion path
       if (obs.t30CallbackFired) return; // T+30 success — leave observation running
       this.totalT30Timeouts++;
-      if (this.totalT30Timeouts % 10 === 1) {
-        logger.warn(
-          { graduationId: ctx.graduationId, totalT30Timeouts: this.totalT30Timeouts, active: this.active.size },
-          'T+30 deadline hit — abandoning observation to free slot',
-        );
+
+      // Capture root-cause snapshot before we delete the observation so
+      // ops can see *why* this one timed out without needing live logs.
+      const lastFailure = [...this.lastSnapshotFailures]
+        .reverse()
+        .find((f) => f.graduationId === ctx.graduationId);
+      this.lastT30Timeouts.push({
+        graduationId: ctx.graduationId,
+        mint: ctx.mint,
+        pool: ctx.poolAddress,
+        vaultsPreExtracted: !!(ctx.baseVault && ctx.quoteVault),
+        t0Succeeded: obs.openPoolPrice !== undefined && obs.openPoolPrice > 0,
+        snapshotsCompleted: obs.completedSnapshots.length,
+        lastFailureReason: lastFailure ? lastFailure.reason : null,
+        elapsedMsAtDeadline: Date.now() - obs.startedAt,
+        time: new Date().toISOString(),
+      });
+      if (this.lastT30Timeouts.length > 50) {
+        this.lastT30Timeouts = this.lastT30Timeouts.slice(-50);
       }
+
+      logger.warn(
+        {
+          graduationId: ctx.graduationId,
+          mint: ctx.mint,
+          totalT30Timeouts: this.totalT30Timeouts,
+          active: this.active.size,
+          vaultsPreExtracted: !!(ctx.baseVault && ctx.quoteVault),
+          t0Succeeded: obs.openPoolPrice !== undefined && obs.openPoolPrice > 0,
+          snapshotsCompleted: obs.completedSnapshots.length,
+          lastFailureReason: lastFailure ? lastFailure.reason : null,
+          elapsedMs: Date.now() - obs.startedAt,
+        },
+        'T+30 deadline hit — abandoning observation to free slot',
+      );
       for (const t of obs.timers) clearTimeout(t);
       this.active.delete(ctx.graduationId);
     }, t30DeadlineMs);
@@ -427,6 +495,12 @@ export class PriceCollector {
     const ctx = observation.ctx;
     const now = Math.floor(Date.now() / 1000);
     const actualSecSinceGraduation = now - ctx.graduationTimestamp;
+
+    // Count every T+30 attempt that survives the active-map check above.
+    // Compared against totalT30Timeouts and t30CallbacksFired, this tells
+    // us whether the timer fired at all (vs RPC bucket starvation) and
+    // whether the snapshot completed in time (vs landed too late).
+    if (targetSec === 30) this.t30AttemptsStarted++;
 
     try {
       // T+30 is the only snapshot that determines whether a trade fires —
@@ -591,10 +665,11 @@ export class PriceCollector {
             ctx.bondingCurveAddress,
           );
           // Fire trading engine callback — all T+30 momentum fields are now written.
-          // Mark the observation so the T+35 deadline timer (set in startObservation)
+          // Mark the observation so the T+45 deadline timer (set in startObservation)
           // knows to leave it running for the rest of the snapshot grid instead of
           // aborting it as a stuck observation.
           observation.t30CallbackFired = true;
+          this.t30CallbacksFiredCount++;
           if (this.onT30Callback) {
             this.onT30Callback(graduationId, ctx, poolState.price, pctChange, poolState.solReserves);
           }
