@@ -1271,12 +1271,13 @@ export async function computeFilterV2Data(
         for (let i = 0; i < PANEL_1_FILTERS.length; i++) {
           const a = PANEL_1_FILTERS[i];
           const aOpt = (filters4[i] as any).optimal as Panel4Optimal;
-          // Yield to the event loop between outer iterations so /health and
-          // other endpoints stay responsive while this ~100s loop runs. Each
-          // outer iteration does ~50 inner pair sims; yielding here gives
-          // ~50 yield points across the full Panel 6 enumeration.
-          if (i % 4 === 0 && i > 0) await new Promise(r => setImmediate(r));
+          // Yield every outer + every 8 inner iterations. Each runFilterPanel4
+          // call is ~50ms; without yielding we'd hold the event loop for
+          // multi-second stretches and Helius's WS heartbeat (5s budget) would
+          // miss its window. Tighter yields = no WS dropouts during refresh.
+          if (i > 0) await new Promise(r => setImmediate(r));
           for (let j = i + 1; j < PANEL_1_FILTERS.length; j++) {
+            if (j > i + 1 && (j - i - 1) % 8 === 0) await new Promise(r => setImmediate(r));
             const b = PANEL_1_FILTERS[j];
             const bOpt = (filters4[j] as any).optimal as Panel4Optimal;
             const combinedPredicate = (r: Panel4Row) =>
@@ -1322,8 +1323,9 @@ export async function computeFilterV2Data(
         for (let i = 0; i < PANEL_1_FILTERS.length; i++) {
           const a = PANEL_1_FILTERS[i];
           const aOpt = singleFilterRows[i].optimal;
-          if (i % 4 === 0 && i > 0) await new Promise(r => setImmediate(r));
+          if (i > 0) await new Promise(r => setImmediate(r));
           for (let j = i + 1; j < PANEL_1_FILTERS.length; j++) {
+            if (j > i + 1 && (j - i - 1) % 8 === 0) await new Promise(r => setImmediate(r));
             const b = PANEL_1_FILTERS[j];
             const bOpt = singleFilterRows[j].optimal;
             const combinedPredicate = (r: Panel4Row) =>
@@ -1789,15 +1791,18 @@ export async function computeFilterV2Data(
         const out: PanelV3_1_Row[] = [];
         let pairIdx = 0;
         for (const pair of parentPairs) {
-          // Yield between top-pairs (~20 outer iterations × ~50 inner sims).
-          if (pairIdx > 0 && pairIdx % 2 === 0) await new Promise(r => setImmediate(r));
+          // Yield between every pair + every 8 inner sims, same budget as Panel 6.
+          if (pairIdx > 0) await new Promise(r => setImmediate(r));
           pairIdx++;
           const defA = findFilterDef(pair.filter_a);
           const defB = findFilterDef(pair.filter_b);
           if (!defA || !defB) continue;
           const parentOpt = pair.opt_avg_ret;
           const excludedGroups = new Set([defA.group, defB.group]);
+          let cIdx = 0;
           for (const defC of PANEL_1_FILTERS) {
+            if (cIdx > 0 && cIdx % 8 === 0) await new Promise(r => setImmediate(r));
+            cIdx++;
             if (excludedGroups.has(defC.group)) continue;
             if (defC.name === defA.name || defC.name === defB.name) continue;
             const combined = (r: Panel4Row) =>

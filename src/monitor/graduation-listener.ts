@@ -78,9 +78,13 @@ const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const RECONNECT_BACKOFF_MULTIPLIER = 2;
 
-// How long silence before we consider the WS dead
-const WS_SILENCE_TIMEOUT_MS = 2 * 60 * 1000;
-const WS_HEALTH_CHECK_INTERVAL_MS = 30_000;
+// How long silence before we consider the WS dead. Helius drops idle sockets
+// fairly aggressively; was 2 minutes but production logs showed 4× cascading
+// reconnects during the heavy-cache compute window because the threshold was
+// too lenient — by the time we noticed, the server-side connection had been
+// dead for a while and we were piling up "socket hang up" errors.
+const WS_SILENCE_TIMEOUT_MS = 30_000;
+const WS_HEALTH_CHECK_INTERVAL_MS = 10_000;
 
 // Secondary health check: if no migrate candidates in this long, force a
 // reconnect even if other pump.fun logs are still flowing. Defends against
@@ -341,15 +345,24 @@ export class GraduationListener {
     }
   }
 
-  private async unsubscribe(): Promise<void> {
+  private async unsubscribe(opts?: { skipServerCall?: boolean }): Promise<void> {
     if (this.subscriptionId !== null) {
-      try {
-        await this.connection.removeOnLogsListener(this.subscriptionId);
-      } catch (err) {
-        logger.warn(
-          'Error removing logs listener: %s',
-          err instanceof Error ? err.message : String(err)
-        );
+      // On a forced reconnect, the WS is already dead and we're about to
+      // throw away `this.connection` anyway. Calling removeOnLogsListener
+      // against a dead socket triggers a `console.warn` inside web3.js
+      // ("Ignored unsubscribe request because an active subscription with id
+      // X could not be found") because its internal cleanup beat us to it.
+      // Skip the server call in that case — the server already cleaned up
+      // when the socket closed. Only the locally-tracked id needs clearing.
+      if (!opts?.skipServerCall) {
+        try {
+          await this.connection.removeOnLogsListener(this.subscriptionId);
+        } catch (err) {
+          logger.warn(
+            'Error removing logs listener: %s',
+            err instanceof Error ? err.message : String(err)
+          );
+        }
       }
       this.subscriptionId = null;
     }
@@ -380,7 +393,7 @@ export class GraduationListener {
     try {
       logger.info('Reconnecting WebSocket...');
       await withTimeout(
-        this.unsubscribe(),
+        this.unsubscribe({ skipServerCall: true }),
         RECONNECT_UNSUBSCRIBE_TIMEOUT_MS,
         'unsubscribe',
       );
