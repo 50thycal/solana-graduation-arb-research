@@ -206,6 +206,19 @@ export class PriceCollector {
   // this lets the operator see when the slot pool is saturated — previously
   // the gate was logger.debug only and silently lost graduations.
   private totalSlotsRejected = 0;
+  // Graduations rejected at startObservation because the migration tx was
+  // already older than T+30 by the time we got here. We literally cannot
+  // capture a T+30 snapshot for these — by the time we begin observing,
+  // the entry window has closed. Surfaces Helius / listener latency:
+  // a high count means migration logs are arriving 30+ seconds late.
+  private totalStaleGraduations = 0;
+  private lastStaleGraduations: Array<{
+    graduationId: number;
+    mint: string;
+    elapsedSecAtStart: number;
+    migrationTimestamp: number;
+    time: string;
+  }> = [];
   private lastSnapshotFailures: Array<{ graduationId: number; targetSec: number; reason: string; time: string }> = [];
   private onT30Callback?: (
     graduationId: number,
@@ -266,6 +279,12 @@ export class PriceCollector {
       // the limit or fix whatever is keeping observations alive longer than
       // they should be.
       totalSlotsRejected: this.totalSlotsRejected,
+      // Graduations rejected because they reached startObservation past the
+      // T+25 threshold. High count = Helius logs subscription is delayed
+      // OR the listener verify path is taking too long. lastStaleGraduations
+      // shows per-event delay so the operator can see the distribution.
+      totalStaleGraduations: this.totalStaleGraduations,
+      lastStaleGraduations: this.lastStaleGraduations.slice(-10),
       lastSnapshotFailures: this.lastSnapshotFailures.slice(-15),
     };
   }
@@ -321,6 +340,41 @@ export class PriceCollector {
     const now = Date.now();
     const migrationTime = ctx.migrationTimestamp * 1000;
     const elapsedSec = (now - migrationTime) / 1000;
+
+    // Bail on stale graduations. If the migration tx is already older than
+    // T+30 by the time we get here, the trade entry window has closed —
+    // SNAPSHOT_SCHEDULE.filter below would drop T+30 entirely, the deadline
+    // timer would fire ~1s later, and we'd waste a slot for nothing. Better
+    // to count + log + skip so the operator sees Helius/listener latency
+    // explicitly instead of as a wave of "T+30 timeout" noise.
+    //
+    // Threshold: T+30 means "snapshot at 30s after migration". If we're
+    // already past that, even a priority-lane fetch can't recover. We give
+    // a 5s grace (elapsedSec > 25) to let near-miss observations still try.
+    const STALE_THRESHOLD_SEC = 25;
+    if (elapsedSec > STALE_THRESHOLD_SEC) {
+      this.totalStaleGraduations++;
+      this.lastStaleGraduations.push({
+        graduationId: ctx.graduationId,
+        mint: ctx.mint,
+        elapsedSecAtStart: +elapsedSec.toFixed(1),
+        migrationTimestamp: ctx.migrationTimestamp,
+        time: new Date().toISOString(),
+      });
+      if (this.lastStaleGraduations.length > 50) {
+        this.lastStaleGraduations = this.lastStaleGraduations.slice(-50);
+      }
+      logger.warn(
+        {
+          graduationId: ctx.graduationId,
+          mint: ctx.mint,
+          elapsedSec: +elapsedSec.toFixed(1),
+          totalStaleGraduations: this.totalStaleGraduations,
+        },
+        'Skipping stale graduation — migration tx older than T+30 by the time it reached startObservation',
+      );
+      return;
+    }
 
     // Filter out snapshots that are already in the past
     const remaining = SNAPSHOT_SCHEDULE.filter((s) => s > elapsedSec - 1);
