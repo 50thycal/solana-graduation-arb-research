@@ -306,7 +306,7 @@ export class GistSync {
 
   // ── private ──────────────────────────────────────────────────
 
-  private buildPayloads(): Record<string, string> {
+  private async buildPayloads(): Promise<Record<string, string>> {
     const nowMs = Date.now();
 
     const diagnose = runDiagnosis(this.db, this.logBuffer);
@@ -374,7 +374,7 @@ export class GistSync {
     // on boot (first call) and at most once/day after that. Each sync cycle
     // still re-publishes the cached JSON strings so all files stay on
     // bot-status.
-    const heavy = getHeavyData(this.db, this.strategyManager);
+    const heavy = await getHeavyData(this.db, this.strategyManager);
     const v2 = heavy.v2;
     const pricePathDetail = heavy.pricePathDetail;
     // Don't reuse heavy.tradingData — strategies/config can drift from what
@@ -500,7 +500,7 @@ export class GistSync {
     // Process any inbound strategy commands before building status
     await this.processInboundCommands();
 
-    const payloads = this.buildPayloads();
+    const payloads = await this.buildPayloads();
 
     try {
       // 1. Create one blob per file.
