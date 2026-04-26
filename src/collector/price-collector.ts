@@ -378,18 +378,21 @@ export class PriceCollector {
 
     observation.timers.push(completionTimer);
 
-    // T+35 deadline: if the T+30 snapshot didn't land (RPC throttled, pool
-    // not yet decodable, vault read empty, etc.), abandon the observation
-    // and free the slot. Without this, a 76% snapshot failure rate (observed
-    // in production) saturated all 20 slots within minutes and silently
-    // dropped every subsequent graduation for ~10 minutes per stuck slot —
-    // the exact cascade that froze the trading pipeline overnight.
+    // T+45 deadline: if the T+30 snapshot didn't land within 15s of its
+    // scheduled time, abandon the observation and free the slot. Originally
+    // T+35 (5s grace) — bumped to T+45 after seeing 67% timeout rate in
+    // production with only 5.5% snapshot failures. Heavy RPC throttling
+    // (~12 throttles/min, 559 in 47min) was pushing T+30 vault fetches past
+    // the 5s window even though they would have eventually landed. The T+30
+    // path also now uses throttlePriority() (see fetchPoolPrice priorityMode)
+    // so it jumps the queue, but the larger deadline gives margin for any
+    // residual stragglers.
     //
     // We do NOT fire a fake onT30Callback with null price — TradeEvaluator
     // would have to special-case it. The watchdog (StrategyManager.lastT30
     // CallbackAt) already detects "no callback in N min" and the new
     // totalT30Timeouts counter exposes the failure rate explicitly.
-    const t30DeadlineMs = Math.max((35 - elapsedSec) * 1000, 1000);
+    const t30DeadlineMs = Math.max((45 - elapsedSec) * 1000, 1000);
     const deadlineTimer = setTimeout(() => {
       const obs = this.active.get(ctx.graduationId);
       if (!obs) return;            // already cleaned up by completion path
@@ -426,8 +429,12 @@ export class PriceCollector {
     const actualSecSinceGraduation = now - ctx.graduationTimestamp;
 
     try {
-      // Fetch pool state to get current price
-      const poolState = await this.fetchPoolPrice(observation);
+      // T+30 is the only snapshot that determines whether a trade fires —
+      // promote it to the priority RPC lane so it bypasses the throttle queue.
+      // Other snapshots (T+5, T+10, T+60, T+120, ...) keep the drop-on-full
+      // path so they don't starve more critical work.
+      const priorityMode = targetSec === 30;
+      const poolState = await this.fetchPoolPrice(observation, priorityMode);
 
       if (!poolState) {
         this.recordSnapshotFailure(graduationId, targetSec, `pool_fetch_null pool=${ctx.poolAddress.slice(0, 8)}`);
@@ -641,7 +648,8 @@ export class PriceCollector {
   private static readonly POOL_QUOTE_VAULT_OFFSET = PriceCollector.POOL_BASE_VAULT_OFFSET + 32; // 171
 
   private async fetchPoolPrice(
-    observation: ActiveObservation
+    observation: ActiveObservation,
+    priorityMode = false,
   ): Promise<{ price: number; solReserves: number; tokenReserves: number } | null> {
     const ctx = observation.ctx;
     try {
@@ -658,10 +666,17 @@ export class PriceCollector {
             'Using vault addresses from migration tx'
           );
         } else {
-        if (!await globalRpcLimiter.throttleOrDrop(15)) {
-          this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_pool_decode');
-          logger.warn({ graduationId: ctx.graduationId }, 'Pool account fetch dropped — RPC queue full');
-          return null;
+        // Pool account decode is one-shot per observation. priorityMode skips
+        // the drop-on-full path because the T+30 snapshot is on the critical
+        // path for trade entry and we'd rather wait than miss the deadline.
+        if (priorityMode) {
+          await globalRpcLimiter.throttlePriority();
+        } else {
+          if (!await globalRpcLimiter.throttleOrDrop(15)) {
+            this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_pool_decode');
+            logger.warn({ graduationId: ctx.graduationId }, 'Pool account fetch dropped — RPC queue full');
+            return null;
+          }
         }
         // Retry once after 400ms — pool account may not yet be available at T+0
         let poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
@@ -705,11 +720,20 @@ export class PriceCollector {
         } // end else (no pre-extracted vaults)
       }
 
-      // Fetch both vault balances in a single RPC call
-      if (!await globalRpcLimiter.throttleOrDrop(15)) {
-        this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_vault_fetch');
-        logger.warn({ graduationId: ctx.graduationId, targetVault: observation.baseVault?.slice(0, 8) }, 'Snapshot dropped — RPC queue full');
-        return null;
+      // Fetch both vault balances in a single RPC call. priorityMode lets the
+      // T+30 snapshot jump the queue — it's the only snapshot that gates a
+      // trade entry, so a 0.5–1s wait is far cheaper than missing the T+30
+      // callback entirely (which is what was timing out 67% of T+30s in
+      // production: 559 throttles/47min meant T+30 vault fetches were
+      // landing past the T+35 deadline).
+      if (priorityMode) {
+        await globalRpcLimiter.throttlePriority();
+      } else {
+        if (!await globalRpcLimiter.throttleOrDrop(15)) {
+          this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_vault_fetch');
+          logger.warn({ graduationId: ctx.graduationId, targetVault: observation.baseVault?.slice(0, 8) }, 'Snapshot dropped — RPC queue full');
+          return null;
+        }
       }
       const vaultAccounts = await this.connection.getMultipleAccountsInfo([
         new PublicKey(observation.baseVault),

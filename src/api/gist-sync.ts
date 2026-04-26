@@ -365,6 +365,18 @@ export class GistSync {
     // climbing = Helius is the bottleneck, not our code.
     const rpcLimiter = globalRpcLimiter.getStats();
 
+    // Listener verified-vs-recorded gap. When totalVerifiedGraduations grows
+    // faster than totalGraduationsRecorded, the listener is processing the
+    // same migration tx multiple times (WS replay or duplicate handleLogs
+    // delivery). Surfacing the ratio here so it doesn't masquerade as a
+    // PriceCollector problem — observations only ever start on a recorded
+    // graduation, so a 78% dupe rate (seen in production after restart)
+    // means 78% of verified graduations get no observation at all.
+    const lst = (listenerStats as { totalVerifiedGraduations?: number; totalGraduationsRecorded?: number } | null) ?? null;
+    const verified = lst?.totalVerifiedGraduations ?? 0;
+    const recorded = lst?.totalGraduationsRecorded ?? 0;
+    const dupePct = verified > 0 ? +(((verified - recorded) / verified) * 100).toFixed(1) : 0;
+
     const snapshot = {
       generated_at: new Date(nowMs).toISOString(),
       uptime_sec: Math.floor((nowMs - this.startTime) / 1000),
@@ -379,6 +391,7 @@ export class GistSync {
       scorecard,
       data_quality: quality,
       listener: listenerStats,
+      listener_dedupe: { verified, recorded, dupe_pct: dupePct },
       rpc_limiter: rpcLimiter,
       // Mirror the trade-pipeline watchdog up to snapshot.json so a glance at
       // bot-status tells the operator whether trades are flowing without
