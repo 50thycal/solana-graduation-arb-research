@@ -150,9 +150,23 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   };
 
   // ── /api/diagnose ──
-  // Runs the CLAUDE.md Level 1-5 bug triage and returns a verdict.
+  // Runs the CLAUDE.md Level 1-5 bug triage and returns a verdict, plus a
+  // pipeline_health watchdog block that surfaces stalled paper/shadow trade
+  // flow (WS down, T+30 callbacks silent, no recent entries).
   app.get('/api/diagnose', wrap(async (_req, res) => {
-    const report = runDiagnosis(db, logBuffer);
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    let wsConnected: boolean | null = null;
+    if (getListenerStats) {
+      try {
+        const stats = getListenerStats() as { wsConnected?: boolean } | null;
+        if (stats && typeof stats.wsConnected === 'boolean') wsConnected = stats.wsConnected;
+      } catch { /* listener may not be initialized yet */ }
+    }
+    const report = runDiagnosis(db, logBuffer, {
+      wsConnected,
+      lastT30CallbackAt: sm?.getLastT30CallbackAt() ?? null,
+      enabledStrategies: sm ? sm.getStrategies().filter(s => s.enabled).length : 0,
+    });
     res.json(report);
   }));
 

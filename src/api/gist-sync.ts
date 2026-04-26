@@ -117,6 +117,11 @@ export class GistSync {
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
+  // Track consecutive sync-cycle failures so transient GitHub network glitches
+  // don't flood Railway logs with identical error stacks. After the first
+  // failure we drop to a single `warn` per cycle until recovery.
+  private consecutiveFailures = 0;
+
   // Ring buffer of recent inbound-command batches. Each entry captures one
   // processInboundCommands() invocation that found a non-empty file. Surfaced
   // as command-results.json on bot-status so callers can see why a strategy
@@ -309,7 +314,28 @@ export class GistSync {
   private async buildPayloads(): Promise<Record<string, string>> {
     const nowMs = Date.now();
 
-    const diagnose = runDiagnosis(this.db, this.logBuffer);
+    // Pull live pipeline signals so /api/diagnose and snapshot.json can
+    // surface a stalled trade pipeline (WS dead, T+30 callbacks silent, no
+    // entries flowing). Listener stats are best-effort — shape varies but
+    // wsConnected is the only field we need for the watchdog.
+    let pipelineWsConnected: boolean | null = null;
+    try {
+      const stats = this.getListenerStats() as { wsConnected?: boolean } | null;
+      if (stats && typeof stats.wsConnected === 'boolean') {
+        pipelineWsConnected = stats.wsConnected;
+      }
+    } catch { /* listener may not be initialized yet */ }
+
+    const enabledStrategies = this.strategyManager
+      ? this.strategyManager.getStrategies().filter(s => s.enabled).length
+      : 0;
+    const lastT30CallbackAt = this.strategyManager?.getLastT30CallbackAt() ?? null;
+
+    const diagnose = runDiagnosis(this.db, this.logBuffer, {
+      wsConnected: pipelineWsConnected,
+      lastT30CallbackAt,
+      enabledStrategies,
+    });
 
     // Compute leaderboard first so we can pass the live leader into the scorecard.
     const bestCombos = computeBestCombos(this.db, {
@@ -346,6 +372,11 @@ export class GistSync {
       scorecard,
       data_quality: quality,
       listener: listenerStats,
+      // Mirror the trade-pipeline watchdog up to snapshot.json so a glance at
+      // bot-status tells the operator whether trades are flowing without
+      // having to cross-reference diagnose.json. See diagnose.PipelineHealth
+      // for verdict semantics.
+      pipeline_health: diagnose.pipeline_health,
       recent_graduations: recent,
       last_error: lastError,
     };
@@ -494,6 +525,48 @@ export class GistSync {
   }
 
   /**
+   * fetch() with retry on transient network failures (TypeError "fetch failed",
+   * ETIMEDOUT, etc.) AND on 5xx responses. Up to 3 attempts with exponential
+   * backoff (1s, 2s, 4s). 4xx responses are returned as-is — those are caller
+   * bugs, not transient.
+   *
+   * Without this, a single GitHub network blip aborted the whole 2-min sync
+   * cycle (dropping 25+ JSON files) and logged a full TypeError stack each
+   * time, flooding Railway logs.
+   */
+  private async fetchWithRetry(
+    url: string,
+    init: RequestInit,
+    opName: string,
+  ): Promise<Response> {
+    const MAX_ATTEMPTS = 3;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      try {
+        const resp = await fetch(url, init);
+        if (resp.status >= 500 && attempt < MAX_ATTEMPTS) {
+          // Transient server-side error — retry.
+          lastErr = new Error(`${opName} got ${resp.status} ${resp.statusText}`);
+          await this.sleep(1000 * Math.pow(2, attempt - 1));
+          continue;
+        }
+        return resp;
+      } catch (err) {
+        lastErr = err;
+        if (attempt < MAX_ATTEMPTS) {
+          await this.sleep(1000 * Math.pow(2, attempt - 1));
+          continue;
+        }
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(`${opName} failed: ${String(lastErr)}`);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  /**
    * Core sync: process inbound commands, build status payloads, push to bot-status.
    */
   private async sync(): Promise<void> {
@@ -506,11 +579,15 @@ export class GistSync {
       // 1. Create one blob per file.
       const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
       for (const [filename, content] of Object.entries(payloads)) {
-        const blobResp = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/git/blobs`, {
-          method: 'POST',
-          headers: this.headers(),
-          body: JSON.stringify({ content: Buffer.from(content).toString('base64'), encoding: 'base64' }),
-        });
+        const blobResp = await this.fetchWithRetry(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/git/blobs`,
+          {
+            method: 'POST',
+            headers: this.headers(),
+            body: JSON.stringify({ content: Buffer.from(content).toString('base64'), encoding: 'base64' }),
+          },
+          `blob-create:${filename}`,
+        );
         if (!blobResp.ok) {
           throw new Error(`Blob create failed for ${filename}: ${blobResp.status} ${await blobResp.text()}`);
         }
@@ -519,26 +596,34 @@ export class GistSync {
       }
 
       // 2. Create a tree (no base_tree → clean root with only our files).
-      const treeResp = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/git/trees`, {
-        method: 'POST',
-        headers: this.headers(),
-        body: JSON.stringify({ tree: treeItems }),
-      });
+      const treeResp = await this.fetchWithRetry(
+        `${GITHUB_API}/repos/${OWNER}/${REPO}/git/trees`,
+        {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({ tree: treeItems }),
+        },
+        'tree-create',
+      );
       if (!treeResp.ok) {
         throw new Error(`Tree create failed: ${treeResp.status} ${await treeResp.text()}`);
       }
       const tree = (await treeResp.json()) as { sha: string };
 
       // 3. Create an orphan commit (no parents).
-      const commitResp = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/git/commits`, {
-        method: 'POST',
-        headers: this.headers(),
-        body: JSON.stringify({
-          message: `bot: status update ${new Date().toISOString()} [skip ci]`,
-          tree: tree.sha,
-          parents: [],
-        }),
-      });
+      const commitResp = await this.fetchWithRetry(
+        `${GITHUB_API}/repos/${OWNER}/${REPO}/git/commits`,
+        {
+          method: 'POST',
+          headers: this.headers(),
+          body: JSON.stringify({
+            message: `bot: status update ${new Date().toISOString()} [skip ci]`,
+            tree: tree.sha,
+            parents: [],
+          }),
+        },
+        'commit-create',
+      );
       if (!commitResp.ok) {
         throw new Error(`Commit create failed: ${commitResp.status} ${await commitResp.text()}`);
       }
@@ -546,19 +631,27 @@ export class GistSync {
 
       // 4. Force-update (or create) the branch ref.
       const refUrl = `${GITHUB_API}/repos/${OWNER}/${REPO}/git/refs/heads/${BRANCH}`;
-      const patchResp = await fetch(refUrl, {
-        method: 'PATCH',
-        headers: this.headers(),
-        body: JSON.stringify({ sha: commit.sha, force: true }),
-      });
+      const patchResp = await this.fetchWithRetry(
+        refUrl,
+        {
+          method: 'PATCH',
+          headers: this.headers(),
+          body: JSON.stringify({ sha: commit.sha, force: true }),
+        },
+        'ref-patch',
+      );
 
       if (patchResp.status === 422 || patchResp.status === 404) {
         // Ref doesn't exist yet — create it.
-        const createResp = await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/git/refs`, {
-          method: 'POST',
-          headers: this.headers(),
-          body: JSON.stringify({ ref: `refs/heads/${BRANCH}`, sha: commit.sha }),
-        });
+        const createResp = await this.fetchWithRetry(
+          `${GITHUB_API}/repos/${OWNER}/${REPO}/git/refs`,
+          {
+            method: 'POST',
+            headers: this.headers(),
+            body: JSON.stringify({ ref: `refs/heads/${BRANCH}`, sha: commit.sha }),
+          },
+          'ref-create',
+        );
         if (!createResp.ok) {
           throw new Error(`Ref create failed: ${createResp.status} ${await createResp.text()}`);
         }
@@ -567,9 +660,28 @@ export class GistSync {
         throw new Error(`Ref update failed: ${patchResp.status} ${await patchResp.text()}`);
       }
 
+      // Recovery from a previous outage — log once when we transition back.
+      if (this.consecutiveFailures > 0) {
+        logger.info(
+          { recoveredAfterFailures: this.consecutiveFailures, branch: BRANCH },
+          'Status sync recovered',
+        );
+        this.consecutiveFailures = 0;
+      }
       logger.debug({ branch: BRANCH, commit: commit.sha.slice(0, 7) }, 'Status updated');
     } catch (err) {
-      logger.error({ err }, 'Status sync error');
+      this.consecutiveFailures += 1;
+      const message = err instanceof Error ? err.message : String(err);
+      // First failure logs at error (with stack) so the cause is visible. Repeat
+      // failures degrade to a single warn line so Railway logs stay readable.
+      if (this.consecutiveFailures === 1) {
+        logger.error({ err }, 'Status sync error');
+      } else {
+        logger.warn(
+          { consecutiveFailures: this.consecutiveFailures, lastError: message },
+          'Status sync still degraded',
+        );
+      }
     }
   }
 

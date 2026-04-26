@@ -15,6 +15,7 @@ import { getHeavyData } from './api/heavy-cache';
 import { StrategyManager } from './trading';
 import { StrategyParams } from './trading/config';
 import { makeLogger, logBuffer } from './utils/logger';
+import { installStderrThrottle } from './utils/stderr-throttle';
 import { registerApiRoutes } from './api/routes';
 import { GistSync } from './api/gist-sync';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
@@ -39,6 +40,33 @@ const NAV_LINKS = [
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
 ];
+
+// ── Response memoization ────────────────────────────────────────────────
+// Tiny per-key TTL cache for HTML pages whose underlying data tolerates
+// sub-minute staleness (/dashboard, /trading, /filter-analysis, /thesis).
+// These pages were taking 6s–1m26s in production because the heavy filter-v2
+// compute was hogging the event loop and even cheap SQL queued behind it.
+// With the heavy compute now off-thread (worker_threads in heavy-cache.ts)
+// AND a 30s memo cache here, warm hits return in <50ms.
+//
+// Keep this cache small and explicit — never auto-cache JSON API responses,
+// which Claude polls for fresh data.
+interface MemoEntry { value: string; contentType: string; expiresAt: number; }
+const responseMemo = new Map<string, MemoEntry>();
+function memoGet(key: string): MemoEntry | null {
+  const e = responseMemo.get(key);
+  if (!e) return null;
+  if (Date.now() >= e.expiresAt) { responseMemo.delete(key); return null; }
+  return e;
+}
+function memoSet(key: string, value: string, contentType: string, ttlMs: number): void {
+  responseMemo.set(key, { value, contentType, expiresAt: Date.now() + ttlMs });
+  // Cap size to avoid leaks on query-param permutations.
+  if (responseMemo.size > 64) {
+    const oldest = responseMemo.keys().next().value;
+    if (oldest !== undefined) responseMemo.delete(oldest);
+  }
+}
 
 function sendJsonOrHtml(req: express.Request, res: express.Response, data: object): void {
   const wantHtml = (req.headers.accept || '').includes('text/html');
@@ -95,6 +123,12 @@ let listenerError: string | null = null;
 let cachedTopPairs: any[] | null = null;
 
 async function main() {
+  // Install stderr throttle BEFORE creating Connection — rpc-websockets writes
+  // its own "ws error:" lines straight to stderr, bypassing our pino logger.
+  // Production was seeing dozens per minute during Helius hiccups, hiding the
+  // real diagnostics. Throttler keeps one per 30s + a periodic summary.
+  installStderrThrottle();
+
   logger.info('Starting solana-graduation-arb-research');
 
   // Log env var presence for debugging (not values — they contain API keys)
@@ -596,6 +630,16 @@ async function main() {
   // DASHBOARD LANDING PAGE
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   app.get('/dashboard', (req, res) => {
+    // Dashboard runs ~16 SQL queries (4 summary + 12 filter probes). They're
+    // each fast (<10ms) but compound to seconds when SQLite is hot, and the
+    // page tolerates 30s staleness. Memoize the rendered HTML.
+    const memoKey = 'dashboard:html';
+    const cached = memoGet(memoKey);
+    if (cached) {
+      res.setHeader('Content-Type', cached.contentType);
+      res.send(cached.value);
+      return;
+    }
     try {
       const stats = listener ? listener.getStats() : null;
       const uptimeMs = Date.now() - startTime;
@@ -678,8 +722,7 @@ async function main() {
         l.path === '/dashboard' ? `<a class="nav-active">${l.label}</a>` : `<a href="${l.path}">${l.label}</a>`
       ).join('');
 
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+      const dashboardHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Graduation Research Dashboard</title>
 <style>
@@ -747,7 +790,10 @@ async function main() {
     </div>
   </div>
 </div>
-</body></html>`);
+</body></html>`;
+      memoSet(memoKey, dashboardHtml, 'text/html; charset=utf-8', 30_000);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(dashboardHtml);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -1256,6 +1302,17 @@ async function main() {
   // Read-only sweep of all filter combinations against the labeled DB.
   // Hit this from a browser to get a full breakdown with copy button.
   app.get('/filter-analysis', (req, res) => {
+    // Heavy page — runs ~30 nested SQL passes (filter scans + econ thresholds).
+    // Memoize for 30s; HTML and JSON keyed separately so API consumers still
+    // get a coherent snapshot.
+    const wantHtml = (req.headers.accept || '').includes('text/html');
+    const memoKey = `filter-analysis:${wantHtml ? 'html' : 'json'}`;
+    const cached = memoGet(memoKey);
+    if (cached) {
+      res.setHeader('Content-Type', cached.contentType);
+      res.send(cached.value);
+      return;
+    }
     try {
       const winRate = (pump: number, total: number) =>
         total === 0 ? null : +(pump / total * 100).toFixed(1);
@@ -2165,12 +2222,16 @@ async function main() {
           : dupes.map((d: any) => ({ mint: d.mint, count: d.cnt })),
       };
 
-      const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
+        const html = renderFilterHtml(filterData);
+        memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.send(renderFilterHtml(filterData));
+        res.send(html);
       } else {
-        res.json(filterData);
+        const json = JSON.stringify(filterData);
+        memoSet(memoKey, json, 'application/json; charset=utf-8', 30_000);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.send(json);
       }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -2330,15 +2391,28 @@ async function main() {
     try {
       const strategyFilter = (req.query.strategy as string) || '';
       const executionModeFilter = (req.query.execution_mode as string) || '';
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      // HTML page tolerates 30s staleness — main page that humans poll. JSON
+      // path stays fresh because Claude / API consumers expect live data.
+      const memoKey = `trading:html:${strategyFilter}:${executionModeFilter}`;
+      if (wantHtml) {
+        const cached = memoGet(memoKey);
+        if (cached) {
+          res.setHeader('Content-Type', cached.contentType);
+          res.send(cached.value);
+          return;
+        }
+      }
       const data = computeTradingData(db, strategyManager, {
         strategyFilter,
         executionModeFilter,
         topPairs: cachedTopPairs || [],
       });
-      const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
+        const html = renderTradingHtml(data);
+        memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.send(renderTradingHtml(data));
+        res.send(html);
       } else {
         res.json(data);
       }
@@ -2701,14 +2775,48 @@ ${rows.map(r => {
     res.send(html);
   });
 
+  // /health must always return fast even when SQLite is contended or the
+  // event loop is recovering from a heavy compute. Production was clocking
+  // 35–50s here because getGraduationCount() queued behind the synchronous
+  // filter-v2 aggregation. Two protections now:
+  //   1. Cache the graduation count for 5s — health pollers don't need a
+  //      fresh COUNT(*) every request, and the SELECT can briefly contend
+  //      with the writer during heavy ingestion bursts.
+  //   2. Wrap the count query in a 250ms timeout so an SQLite stall returns
+  //      `degraded` instead of hanging the response.
+  //
+  // Everything else here is pure in-memory state — no awaits, no SQL.
+  let healthCountCache: { value: number; expiresAt: number } | null = null;
+  function fastGraduationCount(): { count: number | null; degraded: boolean } {
+    if (healthCountCache && Date.now() < healthCountCache.expiresAt) {
+      return { count: healthCountCache.value, degraded: false };
+    }
+    try {
+      const start = Date.now();
+      const c = getGraduationCount(db);
+      const elapsed = Date.now() - start;
+      if (elapsed > 250) {
+        // Slow query — still serve it but flag degraded so external monitors
+        // can detect SQLite contention without us hanging future requests.
+        healthCountCache = { value: c, expiresAt: Date.now() + 5000 };
+        return { count: c, degraded: true };
+      }
+      healthCountCache = { value: c, expiresAt: Date.now() + 5000 };
+      return { count: c, degraded: false };
+    } catch {
+      return { count: healthCountCache?.value ?? null, degraded: true };
+    }
+  }
+
   app.get('/health', (req, res) => {
     const uptimeMs = Date.now() - startTime;
     const uptimeSeconds = Math.floor(uptimeMs / 1000);
-    const graduationCount = getGraduationCount(db);
+    const { count: graduationCount, degraded: countDegraded } = fastGraduationCount();
     const listenerStats = listener ? listener.getStats() : null;
+    const status = countDegraded || listenerStatus !== 'running' ? 'degraded' : 'ok';
 
     sendJsonOrHtml(req, res, {
-      status: listenerStatus === 'running' ? 'ok' : 'degraded',
+      status,
       listener_status: listenerStatus,
       listener_error: listenerError,
       uptime_seconds: uptimeSeconds,
