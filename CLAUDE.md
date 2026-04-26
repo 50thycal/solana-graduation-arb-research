@@ -1,4 +1,4 @@
-# CLAUDE.md — Mission & Operating Instructions 
+# CLAUDE.md — Mission & Operating Instructions
 
 ## MISSION
 
