@@ -43,6 +43,7 @@ import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { getHeavyData } from './heavy-cache';
+import { globalRpcLimiter } from '../utils/rpc-limiter';
 import {
   getGraduationCount,
   getLastBotError,
@@ -358,6 +359,12 @@ export class GistSync {
     const lastError = getLastBotError(this.db);
     const listenerStats = this.getListenerStats();
 
+    // Singleton RPC limiter stats — useful upstream of pipeline_health so the
+    // operator can see whether observations are stalling because the limiter
+    // is dropping requests. tokensAvailable near 0 + queued > 0 + drops/min
+    // climbing = Helius is the bottleneck, not our code.
+    const rpcLimiter = globalRpcLimiter.getStats();
+
     const snapshot = {
       generated_at: new Date(nowMs).toISOString(),
       uptime_sec: Math.floor((nowMs - this.startTime) / 1000),
@@ -372,6 +379,7 @@ export class GistSync {
       scorecard,
       data_quality: quality,
       listener: listenerStats,
+      rpc_limiter: rpcLimiter,
       // Mirror the trade-pipeline watchdog up to snapshot.json so a glance at
       // bot-status tells the operator whether trades are flowing without
       // having to cross-reference diagnose.json. See diagnose.PipelineHealth
