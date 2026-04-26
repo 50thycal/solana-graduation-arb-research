@@ -1,0 +1,975 @@
+{
+  "generated_at": "2026-04-26T00:42:04.466Z",
+  "panel6": {
+    "title": "Multi-Filter Intersection (2-way + 3-way AND) — Drill-Down",
+    "description": "Pick up to 3 filters from the dropdowns. The page reloads with the intersection run through Panel 4's optimum-finder. Lift vs best single component tells you whether the combo improves on its strongest constituent (positive lift = compounding edge; zero or negative = no extra information). Selection is encoded in the URL (?p6=name1,name2,name3) so links are shareable. The Top 20 Pairs table below auto-scans all C(53,2)=1378 two-filter intersections where n≥30 and lift>0, sorted by Opt Avg Ret.",
+    "filter_names": [
+      {
+        "name": "vel < 5 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 5-10 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 5-20 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 10-20 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel < 20 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel < 50 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 20-50 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 50-200 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel > 200 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "bc_age < 10 min",
+        "group": "BC Age"
+      },
+      {
+        "name": "bc_age > 10 min",
+        "group": "BC Age"
+      },
+      {
+        "name": "bc_age > 30 min",
+        "group": "BC Age"
+      },
+      {
+        "name": "bc_age > 1 hr",
+        "group": "BC Age"
+      },
+      {
+        "name": "bc_age > 1 day",
+        "group": "BC Age"
+      },
+      {
+        "name": "holders >= 5",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 10",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 15",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 18",
+        "group": "Holders"
+      },
+      {
+        "name": "top5 < 10%",
+        "group": "Top 5 Concentration"
+      },
+      {
+        "name": "top5 < 15%",
+        "group": "Top 5 Concentration"
+      },
+      {
+        "name": "top5 < 20%",
+        "group": "Top 5 Concentration"
+      },
+      {
+        "name": "top5 > 15%",
+        "group": "Top 5 Concentration"
+      },
+      {
+        "name": "dev < 3%",
+        "group": "Dev Wallet"
+      },
+      {
+        "name": "dev < 5%",
+        "group": "Dev Wallet"
+      },
+      {
+        "name": "dev > 5%",
+        "group": "Dev Wallet"
+      },
+      {
+        "name": "sol >= 70",
+        "group": "SOL Raised"
+      },
+      {
+        "name": "sol >= 80",
+        "group": "SOL Raised"
+      },
+      {
+        "name": "sol >= 84",
+        "group": "SOL Raised"
+      },
+      {
+        "name": "liquidity > 50 SOL",
+        "group": "Liquidity (T+30)"
+      },
+      {
+        "name": "liquidity > 100 SOL",
+        "group": "Liquidity (T+30)"
+      },
+      {
+        "name": "liquidity > 150 SOL",
+        "group": "Liquidity (T+30)"
+      },
+      {
+        "name": "volatility < 10%",
+        "group": "Volatility (0-30s)"
+      },
+      {
+        "name": "volatility 10-30%",
+        "group": "Volatility (0-30s)"
+      },
+      {
+        "name": "volatility 30-60%",
+        "group": "Volatility (0-30s)"
+      },
+      {
+        "name": "volatility > 60%",
+        "group": "Volatility (0-30s)"
+      },
+      {
+        "name": "mono > 0.33",
+        "group": "Path: Monotonicity"
+      },
+      {
+        "name": "mono > 0.5",
+        "group": "Path: Monotonicity"
+      },
+      {
+        "name": "mono > 0.66",
+        "group": "Path: Monotonicity"
+      },
+      {
+        "name": "max_dd > -10% (shallow)",
+        "group": "Path: Drawdown"
+      },
+      {
+        "name": "max_dd > -20%",
+        "group": "Path: Drawdown"
+      },
+      {
+        "name": "dip_and_recover = 1",
+        "group": "Path: Other"
+      },
+      {
+        "name": "acceleration > 0",
+        "group": "Path: Other"
+      },
+      {
+        "name": "front-loaded (early>late)",
+        "group": "Path: Other"
+      },
+      {
+        "name": "back-loaded (late>early)",
+        "group": "Path: Other"
+      },
+      {
+        "name": "buy_ratio > 0.5",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "buy_ratio > 0.6",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "unique_buyers >= 5",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "unique_buyers >= 10",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "whale_pct < 30%",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "whale_pct < 50%",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "fresh_dev",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "repeat_dev >= 3",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "clean_dev",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "serial_rugger",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "rapid_fire",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "t30 > 0%",
+        "group": "T+30 Entry"
+      },
+      {
+        "name": "t30 between +5% and +50%",
+        "group": "T+30 Entry"
+      },
+      {
+        "name": "t30 between +5% and +100%",
+        "group": "T+30 Entry"
+      },
+      {
+        "name": "t30 between +10% and +50%",
+        "group": "T+30 Entry"
+      }
+    ],
+    "top_pairs": [
+      {
+        "filter_a": "top5 < 10%",
+        "filter_b": "dev > 5%",
+        "n": 54,
+        "opt_tp": 50,
+        "opt_sl": 20,
+        "opt_avg_ret": 11.7,
+        "opt_win_rate": 69,
+        "single_a_opt": -11.9,
+        "single_b_opt": -10,
+        "lift": 21.7
+      },
+      {
+        "filter_a": "vel 10-20 sol/min",
+        "filter_b": "liquidity > 100 SOL",
+        "n": 52,
+        "opt_tp": 30,
+        "opt_sl": 25,
+        "opt_avg_ret": 3,
+        "opt_win_rate": 67,
+        "single_a_opt": -11.3,
+        "single_b_opt": -10.9,
+        "lift": 13.9
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "liquidity > 100 SOL",
+        "n": 72,
+        "opt_tp": 75,
+        "opt_sl": 30,
+        "opt_avg_ret": 2.6,
+        "opt_win_rate": 58,
+        "single_a_opt": -12.9,
+        "single_b_opt": -10.9,
+        "lift": 13.5
+      },
+      {
+        "filter_a": "vel < 5 sol/min",
+        "filter_b": "volatility > 60%",
+        "n": 58,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.5,
+        "opt_win_rate": 45,
+        "single_a_opt": -6.2,
+        "single_b_opt": -18.1,
+        "lift": 7.7
+      },
+      {
+        "filter_a": "vel 10-20 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 159,
+        "opt_tp": 40,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.1,
+        "opt_win_rate": 67,
+        "single_a_opt": -11.3,
+        "single_b_opt": -11.9,
+        "lift": 12.4
+      },
+      {
+        "filter_a": "bc_age > 30 min",
+        "filter_b": "volatility > 60%",
+        "n": 48,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 0.9,
+        "opt_win_rate": 44,
+        "single_a_opt": -6.2,
+        "single_b_opt": -18.1,
+        "lift": 7.1
+      },
+      {
+        "filter_a": "vel 5-20 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 222,
+        "opt_tp": 40,
+        "opt_sl": 30,
+        "opt_avg_ret": 0,
+        "opt_win_rate": 66,
+        "single_a_opt": -13.3,
+        "single_b_opt": -11.9,
+        "lift": 11.9
+      },
+      {
+        "filter_a": "bc_age > 1 hr",
+        "filter_b": "top5 < 10%",
+        "n": 46,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": 0,
+        "opt_win_rate": 39,
+        "single_a_opt": -6.2,
+        "single_b_opt": -11.9,
+        "lift": 6.2
+      },
+      {
+        "filter_a": "bc_age > 1 day",
+        "filter_b": "acceleration > 0",
+        "n": 94,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.2,
+        "opt_win_rate": 41,
+        "single_a_opt": -6.1,
+        "single_b_opt": -15,
+        "lift": 5.9
+      },
+      {
+        "filter_a": "dev > 5%",
+        "filter_b": "liquidity > 100 SOL",
+        "n": 179,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.2,
+        "opt_win_rate": 54,
+        "single_a_opt": -10,
+        "single_b_opt": -10.9,
+        "lift": 9.8
+      },
+      {
+        "filter_a": "vel < 20 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 347,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.3,
+        "opt_win_rate": 57,
+        "single_a_opt": -9.3,
+        "single_b_opt": -11.9,
+        "lift": 9
+      },
+      {
+        "filter_a": "vel < 5 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 125,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.5,
+        "opt_win_rate": 49,
+        "single_a_opt": -6.2,
+        "single_b_opt": -11.9,
+        "lift": 5.7
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "volatility > 60%",
+        "n": 50,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.6,
+        "opt_win_rate": 32,
+        "single_a_opt": -11.9,
+        "single_b_opt": -18.1,
+        "lift": 11.3
+      },
+      {
+        "filter_a": "bc_age > 1 day",
+        "filter_b": "max_dd > -10% (shallow)",
+        "n": 84,
+        "opt_tp": 100,
+        "opt_sl": 25,
+        "opt_avg_ret": -0.7,
+        "opt_win_rate": 43,
+        "single_a_opt": -6.1,
+        "single_b_opt": -6.5,
+        "lift": 5.4
+      },
+      {
+        "filter_a": "holders >= 18",
+        "filter_b": "top5 < 10%",
+        "n": 423,
+        "opt_tp": 75,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.7,
+        "opt_win_rate": 58,
+        "single_a_opt": -11.4,
+        "single_b_opt": -11.9,
+        "lift": 10.7
+      },
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "max_dd > -10% (shallow)",
+        "n": 51,
+        "opt_tp": 150,
+        "opt_sl": 20,
+        "opt_avg_ret": -0.8,
+        "opt_win_rate": 49,
+        "single_a_opt": -15.9,
+        "single_b_opt": -6.5,
+        "lift": 5.7
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 78,
+        "opt_tp": 20,
+        "opt_sl": 15,
+        "opt_avg_ret": -0.9,
+        "opt_win_rate": 73,
+        "single_a_opt": -12.9,
+        "single_b_opt": -11.9,
+        "lift": 11
+      },
+      {
+        "filter_a": "holders >= 10",
+        "filter_b": "liquidity > 150 SOL",
+        "n": 44,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": -1.2,
+        "opt_win_rate": 55,
+        "single_a_opt": -11.1,
+        "single_b_opt": -11.9,
+        "lift": 9.9
+      },
+      {
+        "filter_a": "holders >= 15",
+        "filter_b": "top5 < 10%",
+        "n": 433,
+        "opt_tp": 75,
+        "opt_sl": 30,
+        "opt_avg_ret": -1.2,
+        "opt_win_rate": 58,
+        "single_a_opt": -11.2,
+        "single_b_opt": -11.9,
+        "lift": 10
+      },
+      {
+        "filter_a": "bc_age > 10 min",
+        "filter_b": "top5 < 10%",
+        "n": 169,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": -1.3,
+        "opt_win_rate": 51,
+        "single_a_opt": -7.8,
+        "single_b_opt": -11.9,
+        "lift": 6.5
+      }
+    ],
+    "top_pairs_t60": [
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "volatility > 60%",
+        "n": 50,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.9,
+        "opt_win_rate": 44,
+        "single_a_opt": -3.2,
+        "single_b_opt": -14.7,
+        "lift": 5.1
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "buy_ratio > 0.5",
+        "n": 55,
+        "opt_tp": 50,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.2,
+        "opt_win_rate": 55,
+        "single_a_opt": -3.2,
+        "single_b_opt": -5.9,
+        "lift": 4.4
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "t30 between +10% and +50%",
+        "n": 128,
+        "opt_tp": 50,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.1,
+        "opt_win_rate": 51,
+        "single_a_opt": -5.4,
+        "single_b_opt": -4.9,
+        "lift": 4.8
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "whale_pct < 30%",
+        "n": 60,
+        "opt_tp": 50,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.1,
+        "opt_win_rate": 52,
+        "single_a_opt": -3.2,
+        "single_b_opt": -7.1,
+        "lift": 3.1
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "whale_pct < 50%",
+        "n": 60,
+        "opt_tp": 50,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.1,
+        "opt_win_rate": 52,
+        "single_a_opt": -3.2,
+        "single_b_opt": -7.1,
+        "lift": 3.1
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "t30 between +5% and +100%",
+        "n": 113,
+        "opt_tp": 50,
+        "opt_sl": 25,
+        "opt_avg_ret": -0.2,
+        "opt_win_rate": 56,
+        "single_a_opt": -3.2,
+        "single_b_opt": -4.7,
+        "lift": 3
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "volatility 30-60%",
+        "n": 50,
+        "opt_tp": 35,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.5,
+        "opt_win_rate": 54,
+        "single_a_opt": -3.2,
+        "single_b_opt": -7.4,
+        "lift": 2.7
+      },
+      {
+        "filter_a": "vel 10-20 sol/min",
+        "filter_b": "liquidity > 100 SOL",
+        "n": 52,
+        "opt_tp": 40,
+        "opt_sl": 20,
+        "opt_avg_ret": -0.6,
+        "opt_win_rate": 38,
+        "single_a_opt": -4.9,
+        "single_b_opt": -4.7,
+        "lift": 4.1
+      },
+      {
+        "filter_a": "top5 < 10%",
+        "filter_b": "dev > 5%",
+        "n": 54,
+        "opt_tp": 25,
+        "opt_sl": 25,
+        "opt_avg_ret": -0.7,
+        "opt_win_rate": 52,
+        "single_a_opt": -6.6,
+        "single_b_opt": -7.3,
+        "lift": 5.9
+      },
+      {
+        "filter_a": "vel < 5 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 125,
+        "opt_tp": 30,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.8,
+        "opt_win_rate": 34,
+        "single_a_opt": -4.6,
+        "single_b_opt": -6.6,
+        "lift": 3.8
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "unique_buyers >= 10",
+        "n": 53,
+        "opt_tp": 50,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.8,
+        "opt_win_rate": 53,
+        "single_a_opt": -3.2,
+        "single_b_opt": -6.4,
+        "lift": 2.4
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "buy_ratio > 0.6",
+        "n": 50,
+        "opt_tp": 40,
+        "opt_sl": 30,
+        "opt_avg_ret": -1,
+        "opt_win_rate": 54,
+        "single_a_opt": -3.2,
+        "single_b_opt": -6.2,
+        "lift": 2.2
+      },
+      {
+        "filter_a": "vel 10-20 sol/min",
+        "filter_b": "volatility 30-60%",
+        "n": 107,
+        "opt_tp": 50,
+        "opt_sl": 20,
+        "opt_avg_ret": -1.1,
+        "opt_win_rate": 44,
+        "single_a_opt": -4.9,
+        "single_b_opt": -7.4,
+        "lift": 3.8
+      },
+      {
+        "filter_a": "vel < 50 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 425,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -1.2,
+        "opt_win_rate": 40,
+        "single_a_opt": -4.9,
+        "single_b_opt": -6.6,
+        "lift": 3.7
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 78,
+        "opt_tp": 50,
+        "opt_sl": 30,
+        "opt_avg_ret": -1.2,
+        "opt_win_rate": 46,
+        "single_a_opt": -5.4,
+        "single_b_opt": -6.6,
+        "lift": 4.2
+      },
+      {
+        "filter_a": "vel < 20 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 347,
+        "opt_tp": 150,
+        "opt_sl": 25,
+        "opt_avg_ret": -1.3,
+        "opt_win_rate": 38,
+        "single_a_opt": -4.9,
+        "single_b_opt": -6.6,
+        "lift": 3.6
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "unique_buyers >= 5",
+        "n": 54,
+        "opt_tp": 50,
+        "opt_sl": 30,
+        "opt_avg_ret": -1.4,
+        "opt_win_rate": 52,
+        "single_a_opt": -3.2,
+        "single_b_opt": -6.5,
+        "lift": 1.8
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "t30 > 0%",
+        "n": 160,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": -1.4,
+        "opt_win_rate": 51,
+        "single_a_opt": -3.2,
+        "single_b_opt": -4.8,
+        "lift": 1.8
+      },
+      {
+        "filter_a": "bc_age > 1 hr",
+        "filter_b": "top5 < 10%",
+        "n": 46,
+        "opt_tp": 30,
+        "opt_sl": 30,
+        "opt_avg_ret": -1.5,
+        "opt_win_rate": 24,
+        "single_a_opt": -4.9,
+        "single_b_opt": -6.6,
+        "lift": 3.4
+      },
+      {
+        "filter_a": "liquidity > 100 SOL",
+        "filter_b": "dip_and_recover = 1",
+        "n": 101,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": -1.5,
+        "opt_win_rate": 45,
+        "single_a_opt": -4.7,
+        "single_b_opt": -7.4,
+        "lift": 3.2
+      }
+    ],
+    "top_pairs_t120": [
+      {
+        "filter_a": "top5 < 10%",
+        "filter_b": "dev > 5%",
+        "n": 54,
+        "opt_tp": 35,
+        "opt_sl": 25,
+        "opt_avg_ret": 6.9,
+        "opt_win_rate": 78,
+        "single_a_opt": -9.3,
+        "single_b_opt": -6.3,
+        "lift": 13.2
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "buy_ratio > 0.5",
+        "n": 55,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 3.1,
+        "opt_win_rate": 47,
+        "single_a_opt": -7.5,
+        "single_b_opt": -7.7,
+        "lift": 10.6
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "whale_pct < 30%",
+        "n": 60,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.7,
+        "opt_win_rate": 47,
+        "single_a_opt": -7.5,
+        "single_b_opt": -9.8,
+        "lift": 9.2
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "whale_pct < 50%",
+        "n": 60,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.7,
+        "opt_win_rate": 47,
+        "single_a_opt": -7.5,
+        "single_b_opt": -9.8,
+        "lift": 9.2
+      },
+      {
+        "filter_a": "vel 10-20 sol/min",
+        "filter_b": "liquidity > 100 SOL",
+        "n": 52,
+        "opt_tp": 40,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.3,
+        "opt_win_rate": 52,
+        "single_a_opt": -6,
+        "single_b_opt": -7.9,
+        "lift": 7.3
+      },
+      {
+        "filter_a": "top5 < 15%",
+        "filter_b": "dev > 5%",
+        "n": 228,
+        "opt_tp": 75,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.3,
+        "opt_win_rate": 63,
+        "single_a_opt": -8.2,
+        "single_b_opt": -6.3,
+        "lift": 7.6
+      },
+      {
+        "filter_a": "liquidity > 150 SOL",
+        "filter_b": "buy_ratio > 0.6",
+        "n": 50,
+        "opt_tp": 30,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.1,
+        "opt_win_rate": 58,
+        "single_a_opt": -7.5,
+        "single_b_opt": -7,
+        "lift": 8.1
+      },
+      {
+        "filter_a": "holders >= 10",
+        "filter_b": "liquidity > 150 SOL",
+        "n": 44,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 0.8,
+        "opt_win_rate": 59,
+        "single_a_opt": -7.8,
+        "single_b_opt": -7.5,
+        "lift": 8.3
+      },
+      {
+        "filter_a": "vel 10-20 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 159,
+        "opt_tp": 100,
+        "opt_sl": 25,
+        "opt_avg_ret": 0.4,
+        "opt_win_rate": 58,
+        "single_a_opt": -6,
+        "single_b_opt": -9.3,
+        "lift": 6.4
+      },
+      {
+        "filter_a": "vel < 5 sol/min",
+        "filter_b": "volatility > 60%",
+        "n": 58,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 0.3,
+        "opt_win_rate": 53,
+        "single_a_opt": -5.2,
+        "single_b_opt": -17.9,
+        "lift": 5.5
+      },
+      {
+        "filter_a": "holders >= 18",
+        "filter_b": "top5 < 10%",
+        "n": 423,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 0.1,
+        "opt_win_rate": 54,
+        "single_a_opt": -8,
+        "single_b_opt": -9.3,
+        "lift": 8.1
+      },
+      {
+        "filter_a": "holders >= 5",
+        "filter_b": "liquidity > 150 SOL",
+        "n": 47,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.1,
+        "opt_win_rate": 57,
+        "single_a_opt": -7.9,
+        "single_b_opt": -7.5,
+        "lift": 7.4
+      },
+      {
+        "filter_a": "holders >= 15",
+        "filter_b": "top5 < 10%",
+        "n": 433,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.3,
+        "opt_win_rate": 53,
+        "single_a_opt": -7.8,
+        "single_b_opt": -9.3,
+        "lift": 7.5
+      },
+      {
+        "filter_a": "holders >= 15",
+        "filter_b": "liquidity > 150 SOL",
+        "n": 39,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.3,
+        "opt_win_rate": 62,
+        "single_a_opt": -7.8,
+        "single_b_opt": -7.5,
+        "lift": 7.2
+      },
+      {
+        "filter_a": "vel < 20 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 347,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.4,
+        "opt_win_rate": 52,
+        "single_a_opt": -6.2,
+        "single_b_opt": -9.3,
+        "lift": 5.8
+      },
+      {
+        "filter_a": "holders >= 10",
+        "filter_b": "top5 < 10%",
+        "n": 438,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.6,
+        "opt_win_rate": 53,
+        "single_a_opt": -7.8,
+        "single_b_opt": -9.3,
+        "lift": 7.2
+      },
+      {
+        "filter_a": "vel < 50 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 425,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.7,
+        "opt_win_rate": 53,
+        "single_a_opt": -6.8,
+        "single_b_opt": -9.3,
+        "lift": 6.1
+      },
+      {
+        "filter_a": "vel 5-20 sol/min",
+        "filter_b": "top5 < 10%",
+        "n": 222,
+        "opt_tp": 100,
+        "opt_sl": 25,
+        "opt_avg_ret": -1,
+        "opt_win_rate": 57,
+        "single_a_opt": -7.6,
+        "single_b_opt": -9.3,
+        "lift": 6.6
+      },
+      {
+        "filter_a": "bc_age > 1 hr",
+        "filter_b": "top5 < 10%",
+        "n": 46,
+        "opt_tp": 60,
+        "opt_sl": 25,
+        "opt_avg_ret": -1,
+        "opt_win_rate": 35,
+        "single_a_opt": -5.6,
+        "single_b_opt": -9.3,
+        "lift": 4.6
+      },
+      {
+        "filter_a": "bc_age > 1 day",
+        "filter_b": "acceleration > 0",
+        "n": 94,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": -1,
+        "opt_win_rate": 45,
+        "single_a_opt": -6.6,
+        "single_b_opt": -11,
+        "lift": 5.6
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 30,
+      "strong_n_threshold": 100
+    }
+  }
+}

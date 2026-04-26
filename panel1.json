@@ -1,0 +1,1833 @@
+{
+  "generated_at": "2026-04-26T00:42:04.466Z",
+  "panel1": {
+    "title": "Single-Feature Filter Comparison",
+    "description": "Each row applies ONE filter to the labeled dataset. n is normalized — only tokens where the feature has a non-null value are counted, so monotonicity rows have smaller n than velocity rows. PUMP:DUMP ratio shows asymmetry: >1.0 = more winners than losers, >2.0 = strong asymmetry. Tabs switch the classification horizon (T+300, T+120, T+60) — same thresholds (>=+10% PUMP, <=-10% DUMP), just applied to the earlier checkpoint.",
+    "baseline": {
+      "filter": "ALL labeled (no filter)",
+      "group": "Baseline",
+      "n": 4191,
+      "pump": 1627,
+      "dump": 1931,
+      "stable": 633,
+      "win_rate_pct": 38.8,
+      "pump_dump_ratio": 0.84
+    },
+    "filters": [
+      {
+        "filter": "vel < 5 sol/min",
+        "group": "Velocity",
+        "n": 1486,
+        "pump": 565,
+        "dump": 610,
+        "stable": 311,
+        "win_rate_pct": 38,
+        "pump_dump_ratio": 0.93
+      },
+      {
+        "filter": "vel 5-10 sol/min",
+        "group": "Velocity",
+        "n": 472,
+        "pump": 177,
+        "dump": 235,
+        "stable": 60,
+        "win_rate_pct": 37.5,
+        "pump_dump_ratio": 0.75
+      },
+      {
+        "filter": "vel 5-20 sol/min",
+        "group": "Velocity",
+        "n": 1087,
+        "pump": 441,
+        "dump": 490,
+        "stable": 156,
+        "win_rate_pct": 40.6,
+        "pump_dump_ratio": 0.9
+      },
+      {
+        "filter": "vel 10-20 sol/min",
+        "group": "Velocity",
+        "n": 615,
+        "pump": 264,
+        "dump": 255,
+        "stable": 96,
+        "win_rate_pct": 42.9,
+        "pump_dump_ratio": 1.04
+      },
+      {
+        "filter": "vel < 20 sol/min",
+        "group": "Velocity",
+        "n": 2573,
+        "pump": 1006,
+        "dump": 1100,
+        "stable": 467,
+        "win_rate_pct": 39.1,
+        "pump_dump_ratio": 0.91
+      },
+      {
+        "filter": "vel < 50 sol/min",
+        "group": "Velocity",
+        "n": 3090,
+        "pump": 1225,
+        "dump": 1338,
+        "stable": 527,
+        "win_rate_pct": 39.6,
+        "pump_dump_ratio": 0.92
+      },
+      {
+        "filter": "vel 20-50 sol/min",
+        "group": "Velocity",
+        "n": 517,
+        "pump": 219,
+        "dump": 238,
+        "stable": 60,
+        "win_rate_pct": 42.4,
+        "pump_dump_ratio": 0.92
+      },
+      {
+        "filter": "vel 50-200 sol/min",
+        "group": "Velocity",
+        "n": 327,
+        "pump": 118,
+        "dump": 185,
+        "stable": 24,
+        "win_rate_pct": 36.1,
+        "pump_dump_ratio": 0.64
+      },
+      {
+        "filter": "vel > 200 sol/min",
+        "group": "Velocity",
+        "n": 773,
+        "pump": 283,
+        "dump": 408,
+        "stable": 82,
+        "win_rate_pct": 36.6,
+        "pump_dump_ratio": 0.69
+      },
+      {
+        "filter": "bc_age < 10 min",
+        "group": "BC Age",
+        "n": 2345,
+        "pump": 926,
+        "dump": 1146,
+        "stable": 273,
+        "win_rate_pct": 39.5,
+        "pump_dump_ratio": 0.81
+      },
+      {
+        "filter": "bc_age > 10 min",
+        "group": "BC Age",
+        "n": 1845,
+        "pump": 700,
+        "dump": 785,
+        "stable": 360,
+        "win_rate_pct": 37.9,
+        "pump_dump_ratio": 0.89
+      },
+      {
+        "filter": "bc_age > 30 min",
+        "group": "BC Age",
+        "n": 1134,
+        "pump": 418,
+        "dump": 467,
+        "stable": 249,
+        "win_rate_pct": 36.9,
+        "pump_dump_ratio": 0.9
+      },
+      {
+        "filter": "bc_age > 1 hr",
+        "group": "BC Age",
+        "n": 823,
+        "pump": 308,
+        "dump": 328,
+        "stable": 187,
+        "win_rate_pct": 37.4,
+        "pump_dump_ratio": 0.94
+      },
+      {
+        "filter": "bc_age > 1 day",
+        "group": "BC Age",
+        "n": 277,
+        "pump": 92,
+        "dump": 120,
+        "stable": 65,
+        "win_rate_pct": 33.2,
+        "pump_dump_ratio": 0.77
+      },
+      {
+        "filter": "holders >= 5",
+        "group": "Holders",
+        "n": 3547,
+        "pump": 1395,
+        "dump": 1590,
+        "stable": 562,
+        "win_rate_pct": 39.3,
+        "pump_dump_ratio": 0.88
+      },
+      {
+        "filter": "holders >= 10",
+        "group": "Holders",
+        "n": 3532,
+        "pump": 1392,
+        "dump": 1581,
+        "stable": 559,
+        "win_rate_pct": 39.4,
+        "pump_dump_ratio": 0.88
+      },
+      {
+        "filter": "holders >= 15",
+        "group": "Holders",
+        "n": 3513,
+        "pump": 1384,
+        "dump": 1577,
+        "stable": 552,
+        "win_rate_pct": 39.4,
+        "pump_dump_ratio": 0.88
+      },
+      {
+        "filter": "holders >= 18",
+        "group": "Holders",
+        "n": 3401,
+        "pump": 1327,
+        "dump": 1540,
+        "stable": 534,
+        "win_rate_pct": 39,
+        "pump_dump_ratio": 0.86
+      },
+      {
+        "filter": "top5 < 10%",
+        "group": "Top 5 Concentration",
+        "n": 1144,
+        "pump": 502,
+        "dump": 471,
+        "stable": 171,
+        "win_rate_pct": 43.9,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "top5 < 15%",
+        "group": "Top 5 Concentration",
+        "n": 2817,
+        "pump": 1126,
+        "dump": 1257,
+        "stable": 434,
+        "win_rate_pct": 40,
+        "pump_dump_ratio": 0.9
+      },
+      {
+        "filter": "top5 < 20%",
+        "group": "Top 5 Concentration",
+        "n": 3721,
+        "pump": 1433,
+        "dump": 1734,
+        "stable": 554,
+        "win_rate_pct": 38.5,
+        "pump_dump_ratio": 0.83
+      },
+      {
+        "filter": "top5 > 15%",
+        "group": "Top 5 Concentration",
+        "n": 1373,
+        "pump": 500,
+        "dump": 674,
+        "stable": 199,
+        "win_rate_pct": 36.4,
+        "pump_dump_ratio": 0.74
+      },
+      {
+        "filter": "dev < 3%",
+        "group": "Dev Wallet",
+        "n": 1537,
+        "pump": 630,
+        "dump": 705,
+        "stable": 202,
+        "win_rate_pct": 41,
+        "pump_dump_ratio": 0.89
+      },
+      {
+        "filter": "dev < 5%",
+        "group": "Dev Wallet",
+        "n": 3273,
+        "pump": 1229,
+        "dump": 1574,
+        "stable": 470,
+        "win_rate_pct": 37.5,
+        "pump_dump_ratio": 0.78
+      },
+      {
+        "filter": "dev > 5%",
+        "group": "Dev Wallet",
+        "n": 906,
+        "pump": 393,
+        "dump": 350,
+        "stable": 163,
+        "win_rate_pct": 43.4,
+        "pump_dump_ratio": 1.12
+      },
+      {
+        "filter": "sol >= 70",
+        "group": "SOL Raised",
+        "n": 4190,
+        "pump": 1626,
+        "dump": 1931,
+        "stable": 633,
+        "win_rate_pct": 38.8,
+        "pump_dump_ratio": 0.84
+      },
+      {
+        "filter": "sol >= 80",
+        "group": "SOL Raised",
+        "n": 4089,
+        "pump": 1576,
+        "dump": 1896,
+        "stable": 617,
+        "win_rate_pct": 38.5,
+        "pump_dump_ratio": 0.83
+      },
+      {
+        "filter": "sol >= 84",
+        "group": "SOL Raised",
+        "n": 4077,
+        "pump": 1573,
+        "dump": 1889,
+        "stable": 615,
+        "win_rate_pct": 38.6,
+        "pump_dump_ratio": 0.83
+      },
+      {
+        "filter": "liquidity > 50 SOL",
+        "group": "Liquidity (T+30)",
+        "n": 3576,
+        "pump": 1448,
+        "dump": 1584,
+        "stable": 544,
+        "win_rate_pct": 40.5,
+        "pump_dump_ratio": 0.91
+      },
+      {
+        "filter": "liquidity > 100 SOL",
+        "group": "Liquidity (T+30)",
+        "n": 788,
+        "pump": 436,
+        "dump": 268,
+        "stable": 84,
+        "win_rate_pct": 55.3,
+        "pump_dump_ratio": 1.63
+      },
+      {
+        "filter": "liquidity > 150 SOL",
+        "group": "Liquidity (T+30)",
+        "n": 250,
+        "pump": 113,
+        "dump": 100,
+        "stable": 37,
+        "win_rate_pct": 45.2,
+        "pump_dump_ratio": 1.13
+      },
+      {
+        "filter": "volatility < 10%",
+        "group": "Volatility (0-30s)",
+        "n": 488,
+        "pump": 188,
+        "dump": 176,
+        "stable": 124,
+        "win_rate_pct": 38.5,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "volatility 10-30%",
+        "group": "Volatility (0-30s)",
+        "n": 2040,
+        "pump": 788,
+        "dump": 911,
+        "stable": 341,
+        "win_rate_pct": 38.6,
+        "pump_dump_ratio": 0.86
+      },
+      {
+        "filter": "volatility 30-60%",
+        "group": "Volatility (0-30s)",
+        "n": 768,
+        "pump": 334,
+        "dump": 371,
+        "stable": 63,
+        "win_rate_pct": 43.5,
+        "pump_dump_ratio": 0.9
+      },
+      {
+        "filter": "volatility > 60%",
+        "group": "Volatility (0-30s)",
+        "n": 374,
+        "pump": 122,
+        "dump": 243,
+        "stable": 9,
+        "win_rate_pct": 32.6,
+        "pump_dump_ratio": 0.5
+      },
+      {
+        "filter": "mono > 0.33",
+        "group": "Path: Monotonicity",
+        "n": 2791,
+        "pump": 1169,
+        "dump": 1217,
+        "stable": 405,
+        "win_rate_pct": 41.9,
+        "pump_dump_ratio": 0.96
+      },
+      {
+        "filter": "mono > 0.5",
+        "group": "Path: Monotonicity",
+        "n": 1068,
+        "pump": 571,
+        "dump": 342,
+        "stable": 155,
+        "win_rate_pct": 53.5,
+        "pump_dump_ratio": 1.67
+      },
+      {
+        "filter": "mono > 0.66",
+        "group": "Path: Monotonicity",
+        "n": 1032,
+        "pump": 555,
+        "dump": 328,
+        "stable": 149,
+        "win_rate_pct": 53.8,
+        "pump_dump_ratio": 1.69
+      },
+      {
+        "filter": "max_dd > -10% (shallow)",
+        "group": "Path: Drawdown",
+        "n": 1119,
+        "pump": 597,
+        "dump": 316,
+        "stable": 206,
+        "win_rate_pct": 53.4,
+        "pump_dump_ratio": 1.89
+      },
+      {
+        "filter": "max_dd > -20%",
+        "group": "Path: Drawdown",
+        "n": 2154,
+        "pump": 979,
+        "dump": 805,
+        "stable": 370,
+        "win_rate_pct": 45.5,
+        "pump_dump_ratio": 1.22
+      },
+      {
+        "filter": "dip_and_recover = 1",
+        "group": "Path: Other",
+        "n": 370,
+        "pump": 160,
+        "dump": 173,
+        "stable": 37,
+        "win_rate_pct": 43.2,
+        "pump_dump_ratio": 0.92
+      },
+      {
+        "filter": "acceleration > 0",
+        "group": "Path: Other",
+        "n": 1532,
+        "pump": 566,
+        "dump": 743,
+        "stable": 223,
+        "win_rate_pct": 36.9,
+        "pump_dump_ratio": 0.76
+      },
+      {
+        "filter": "front-loaded (early>late)",
+        "group": "Path: Other",
+        "n": 1487,
+        "pump": 639,
+        "dump": 622,
+        "stable": 226,
+        "win_rate_pct": 43,
+        "pump_dump_ratio": 1.03
+      },
+      {
+        "filter": "back-loaded (late>early)",
+        "group": "Path: Other",
+        "n": 1616,
+        "pump": 563,
+        "dump": 840,
+        "stable": 213,
+        "win_rate_pct": 34.8,
+        "pump_dump_ratio": 0.67
+      },
+      {
+        "filter": "buy_ratio > 0.5",
+        "group": "Buy Pressure",
+        "n": 2473,
+        "pump": 1040,
+        "dump": 1034,
+        "stable": 399,
+        "win_rate_pct": 42.1,
+        "pump_dump_ratio": 1.01
+      },
+      {
+        "filter": "buy_ratio > 0.6",
+        "group": "Buy Pressure",
+        "n": 1812,
+        "pump": 778,
+        "dump": 725,
+        "stable": 309,
+        "win_rate_pct": 42.9,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "unique_buyers >= 5",
+        "group": "Buy Pressure",
+        "n": 2864,
+        "pump": 1147,
+        "dump": 1281,
+        "stable": 436,
+        "win_rate_pct": 40,
+        "pump_dump_ratio": 0.9
+      },
+      {
+        "filter": "unique_buyers >= 10",
+        "group": "Buy Pressure",
+        "n": 2543,
+        "pump": 1042,
+        "dump": 1106,
+        "stable": 395,
+        "win_rate_pct": 41,
+        "pump_dump_ratio": 0.94
+      },
+      {
+        "filter": "whale_pct < 30%",
+        "group": "Buy Pressure",
+        "n": 3045,
+        "pump": 1201,
+        "dump": 1387,
+        "stable": 457,
+        "win_rate_pct": 39.4,
+        "pump_dump_ratio": 0.87
+      },
+      {
+        "filter": "whale_pct < 50%",
+        "group": "Buy Pressure",
+        "n": 3045,
+        "pump": 1201,
+        "dump": 1387,
+        "stable": 457,
+        "win_rate_pct": 39.4,
+        "pump_dump_ratio": 0.87
+      },
+      {
+        "filter": "fresh_dev",
+        "group": "Creator Rep",
+        "n": 3349,
+        "pump": 1381,
+        "dump": 1424,
+        "stable": 544,
+        "win_rate_pct": 41.2,
+        "pump_dump_ratio": 0.97
+      },
+      {
+        "filter": "repeat_dev >= 3",
+        "group": "Creator Rep",
+        "n": 372,
+        "pump": 93,
+        "dump": 240,
+        "stable": 39,
+        "win_rate_pct": 25,
+        "pump_dump_ratio": 0.39
+      },
+      {
+        "filter": "clean_dev",
+        "group": "Creator Rep",
+        "n": 407,
+        "pump": 135,
+        "dump": 212,
+        "stable": 60,
+        "win_rate_pct": 33.2,
+        "pump_dump_ratio": 0.64
+      },
+      {
+        "filter": "serial_rugger",
+        "group": "Creator Rep",
+        "n": 176,
+        "pump": 51,
+        "dump": 122,
+        "stable": 3,
+        "win_rate_pct": 29,
+        "pump_dump_ratio": 0.42
+      },
+      {
+        "filter": "rapid_fire",
+        "group": "Creator Rep",
+        "n": 106,
+        "pump": 31,
+        "dump": 71,
+        "stable": 4,
+        "win_rate_pct": 29.2,
+        "pump_dump_ratio": 0.44
+      },
+      {
+        "filter": "t30 > 0%",
+        "group": "T+30 Entry",
+        "n": 1939,
+        "pump": 1076,
+        "dump": 577,
+        "stable": 286,
+        "win_rate_pct": 55.5,
+        "pump_dump_ratio": 1.86
+      },
+      {
+        "filter": "t30 between +5% and +50%",
+        "group": "T+30 Entry",
+        "n": 1372,
+        "pump": 774,
+        "dump": 394,
+        "stable": 204,
+        "win_rate_pct": 56.4,
+        "pump_dump_ratio": 1.96
+      },
+      {
+        "filter": "t30 between +5% and +100%",
+        "group": "T+30 Entry",
+        "n": 1492,
+        "pump": 860,
+        "dump": 423,
+        "stable": 209,
+        "win_rate_pct": 57.6,
+        "pump_dump_ratio": 2.03
+      },
+      {
+        "filter": "t30 between +10% and +50%",
+        "group": "T+30 Entry",
+        "n": 1007,
+        "pump": 603,
+        "dump": 278,
+        "stable": 126,
+        "win_rate_pct": 59.9,
+        "pump_dump_ratio": 2.17
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 20,
+      "strong_n_threshold": 100
+    }
+  },
+  "panel1_t60": {
+    "title": "Single-Feature Filter Comparison — T+60 Horizon",
+    "description": "Same predicate as Panel 1, but PUMP/DUMP/STABLE counts come from label_t60.",
+    "baseline": {
+      "filter": "ALL labeled (no filter)",
+      "group": "Baseline",
+      "n": 4243,
+      "pump": 1469,
+      "dump": 1397,
+      "stable": 1377,
+      "win_rate_pct": 34.6,
+      "pump_dump_ratio": 1.05
+    },
+    "filters": [
+      {
+        "filter": "vel < 5 sol/min",
+        "group": "Velocity",
+        "n": 1501,
+        "pump": 464,
+        "dump": 473,
+        "stable": 564,
+        "win_rate_pct": 30.9,
+        "pump_dump_ratio": 0.98
+      },
+      {
+        "filter": "vel 5-10 sol/min",
+        "group": "Velocity",
+        "n": 481,
+        "pump": 161,
+        "dump": 156,
+        "stable": 164,
+        "win_rate_pct": 33.5,
+        "pump_dump_ratio": 1.03
+      },
+      {
+        "filter": "vel 5-20 sol/min",
+        "group": "Velocity",
+        "n": 1111,
+        "pump": 372,
+        "dump": 348,
+        "stable": 391,
+        "win_rate_pct": 33.5,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "vel 10-20 sol/min",
+        "group": "Velocity",
+        "n": 630,
+        "pump": 211,
+        "dump": 192,
+        "stable": 227,
+        "win_rate_pct": 33.5,
+        "pump_dump_ratio": 1.1
+      },
+      {
+        "filter": "vel < 20 sol/min",
+        "group": "Velocity",
+        "n": 2612,
+        "pump": 836,
+        "dump": 821,
+        "stable": 955,
+        "win_rate_pct": 32,
+        "pump_dump_ratio": 1.02
+      },
+      {
+        "filter": "vel < 50 sol/min",
+        "group": "Velocity",
+        "n": 3128,
+        "pump": 1039,
+        "dump": 971,
+        "stable": 1118,
+        "win_rate_pct": 33.2,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "vel 20-50 sol/min",
+        "group": "Velocity",
+        "n": 516,
+        "pump": 203,
+        "dump": 150,
+        "stable": 163,
+        "win_rate_pct": 39.3,
+        "pump_dump_ratio": 1.35
+      },
+      {
+        "filter": "vel 50-200 sol/min",
+        "group": "Velocity",
+        "n": 330,
+        "pump": 130,
+        "dump": 122,
+        "stable": 78,
+        "win_rate_pct": 39.4,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "vel > 200 sol/min",
+        "group": "Velocity",
+        "n": 776,
+        "pump": 297,
+        "dump": 300,
+        "stable": 179,
+        "win_rate_pct": 38.3,
+        "pump_dump_ratio": 0.99
+      },
+      {
+        "filter": "bc_age < 10 min",
+        "group": "BC Age",
+        "n": 2371,
+        "pump": 879,
+        "dump": 801,
+        "stable": 691,
+        "win_rate_pct": 37.1,
+        "pump_dump_ratio": 1.1
+      },
+      {
+        "filter": "bc_age > 10 min",
+        "group": "BC Age",
+        "n": 1871,
+        "pump": 589,
+        "dump": 596,
+        "stable": 686,
+        "win_rate_pct": 31.5,
+        "pump_dump_ratio": 0.99
+      },
+      {
+        "filter": "bc_age > 30 min",
+        "group": "BC Age",
+        "n": 1149,
+        "pump": 346,
+        "dump": 365,
+        "stable": 438,
+        "win_rate_pct": 30.1,
+        "pump_dump_ratio": 0.95
+      },
+      {
+        "filter": "bc_age > 1 hr",
+        "group": "BC Age",
+        "n": 836,
+        "pump": 258,
+        "dump": 264,
+        "stable": 314,
+        "win_rate_pct": 30.9,
+        "pump_dump_ratio": 0.98
+      },
+      {
+        "filter": "bc_age > 1 day",
+        "group": "BC Age",
+        "n": 280,
+        "pump": 82,
+        "dump": 90,
+        "stable": 108,
+        "win_rate_pct": 29.3,
+        "pump_dump_ratio": 0.91
+      },
+      {
+        "filter": "holders >= 5",
+        "group": "Holders",
+        "n": 3588,
+        "pump": 1218,
+        "dump": 1139,
+        "stable": 1231,
+        "win_rate_pct": 33.9,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "holders >= 10",
+        "group": "Holders",
+        "n": 3570,
+        "pump": 1214,
+        "dump": 1131,
+        "stable": 1225,
+        "win_rate_pct": 34,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "holders >= 15",
+        "group": "Holders",
+        "n": 3552,
+        "pump": 1209,
+        "dump": 1128,
+        "stable": 1215,
+        "win_rate_pct": 34,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "holders >= 18",
+        "group": "Holders",
+        "n": 3438,
+        "pump": 1154,
+        "dump": 1105,
+        "stable": 1179,
+        "win_rate_pct": 33.6,
+        "pump_dump_ratio": 1.04
+      },
+      {
+        "filter": "top5 < 10%",
+        "group": "Top 5 Concentration",
+        "n": 1158,
+        "pump": 456,
+        "dump": 332,
+        "stable": 370,
+        "win_rate_pct": 39.4,
+        "pump_dump_ratio": 1.37
+      },
+      {
+        "filter": "top5 < 15%",
+        "group": "Top 5 Concentration",
+        "n": 2856,
+        "pump": 1003,
+        "dump": 894,
+        "stable": 959,
+        "win_rate_pct": 35.1,
+        "pump_dump_ratio": 1.12
+      },
+      {
+        "filter": "top5 < 20%",
+        "group": "Top 5 Concentration",
+        "n": 3779,
+        "pump": 1279,
+        "dump": 1254,
+        "stable": 1246,
+        "win_rate_pct": 33.8,
+        "pump_dump_ratio": 1.02
+      },
+      {
+        "filter": "top5 > 15%",
+        "group": "Top 5 Concentration",
+        "n": 1386,
+        "pump": 465,
+        "dump": 503,
+        "stable": 418,
+        "win_rate_pct": 33.5,
+        "pump_dump_ratio": 0.92
+      },
+      {
+        "filter": "dev < 3%",
+        "group": "Dev Wallet",
+        "n": 1550,
+        "pump": 582,
+        "dump": 484,
+        "stable": 484,
+        "win_rate_pct": 37.5,
+        "pump_dump_ratio": 1.2
+      },
+      {
+        "filter": "dev < 5%",
+        "group": "Dev Wallet",
+        "n": 3327,
+        "pump": 1128,
+        "dump": 1131,
+        "stable": 1068,
+        "win_rate_pct": 33.9,
+        "pump_dump_ratio": 1
+      },
+      {
+        "filter": "dev > 5%",
+        "group": "Dev Wallet",
+        "n": 903,
+        "pump": 333,
+        "dump": 262,
+        "stable": 308,
+        "win_rate_pct": 36.9,
+        "pump_dump_ratio": 1.27
+      },
+      {
+        "filter": "sol >= 70",
+        "group": "SOL Raised",
+        "n": 4242,
+        "pump": 1468,
+        "dump": 1397,
+        "stable": 1377,
+        "win_rate_pct": 34.6,
+        "pump_dump_ratio": 1.05
+      },
+      {
+        "filter": "sol >= 80",
+        "group": "SOL Raised",
+        "n": 4141,
+        "pump": 1421,
+        "dump": 1370,
+        "stable": 1350,
+        "win_rate_pct": 34.3,
+        "pump_dump_ratio": 1.04
+      },
+      {
+        "filter": "sol >= 84",
+        "group": "SOL Raised",
+        "n": 4129,
+        "pump": 1420,
+        "dump": 1363,
+        "stable": 1346,
+        "win_rate_pct": 34.4,
+        "pump_dump_ratio": 1.04
+      },
+      {
+        "filter": "liquidity > 50 SOL",
+        "group": "Liquidity (T+30)",
+        "n": 3660,
+        "pump": 1361,
+        "dump": 1122,
+        "stable": 1177,
+        "win_rate_pct": 37.2,
+        "pump_dump_ratio": 1.21
+      },
+      {
+        "filter": "liquidity > 100 SOL",
+        "group": "Liquidity (T+30)",
+        "n": 802,
+        "pump": 487,
+        "dump": 139,
+        "stable": 176,
+        "win_rate_pct": 60.7,
+        "pump_dump_ratio": 3.5
+      },
+      {
+        "filter": "liquidity > 150 SOL",
+        "group": "Liquidity (T+30)",
+        "n": 251,
+        "pump": 124,
+        "dump": 46,
+        "stable": 81,
+        "win_rate_pct": 49.4,
+        "pump_dump_ratio": 2.7
+      },
+      {
+        "filter": "volatility < 10%",
+        "group": "Volatility (0-30s)",
+        "n": 492,
+        "pump": 110,
+        "dump": 69,
+        "stable": 313,
+        "win_rate_pct": 22.4,
+        "pump_dump_ratio": 1.59
+      },
+      {
+        "filter": "volatility 10-30%",
+        "group": "Volatility (0-30s)",
+        "n": 2106,
+        "pump": 728,
+        "dump": 656,
+        "stable": 722,
+        "win_rate_pct": 34.6,
+        "pump_dump_ratio": 1.11
+      },
+      {
+        "filter": "volatility 30-60%",
+        "group": "Volatility (0-30s)",
+        "n": 785,
+        "pump": 377,
+        "dump": 303,
+        "stable": 105,
+        "win_rate_pct": 48,
+        "pump_dump_ratio": 1.24
+      },
+      {
+        "filter": "volatility > 60%",
+        "group": "Volatility (0-30s)",
+        "n": 373,
+        "pump": 144,
+        "dump": 220,
+        "stable": 9,
+        "win_rate_pct": 38.6,
+        "pump_dump_ratio": 0.65
+      },
+      {
+        "filter": "mono > 0.33",
+        "group": "Path: Monotonicity",
+        "n": 2852,
+        "pump": 1145,
+        "dump": 829,
+        "stable": 878,
+        "win_rate_pct": 40.1,
+        "pump_dump_ratio": 1.38
+      },
+      {
+        "filter": "mono > 0.5",
+        "group": "Path: Monotonicity",
+        "n": 1091,
+        "pump": 668,
+        "dump": 137,
+        "stable": 286,
+        "win_rate_pct": 61.2,
+        "pump_dump_ratio": 4.88
+      },
+      {
+        "filter": "mono > 0.66",
+        "group": "Path: Monotonicity",
+        "n": 1057,
+        "pump": 650,
+        "dump": 134,
+        "stable": 273,
+        "win_rate_pct": 61.5,
+        "pump_dump_ratio": 4.85
+      },
+      {
+        "filter": "max_dd > -10% (shallow)",
+        "group": "Path: Drawdown",
+        "n": 1124,
+        "pump": 639,
+        "dump": 94,
+        "stable": 391,
+        "win_rate_pct": 56.9,
+        "pump_dump_ratio": 6.8
+      },
+      {
+        "filter": "max_dd > -20%",
+        "group": "Path: Drawdown",
+        "n": 2199,
+        "pump": 996,
+        "dump": 392,
+        "stable": 811,
+        "win_rate_pct": 45.3,
+        "pump_dump_ratio": 2.54
+      },
+      {
+        "filter": "dip_and_recover = 1",
+        "group": "Path: Other",
+        "n": 386,
+        "pump": 193,
+        "dump": 86,
+        "stable": 107,
+        "win_rate_pct": 50,
+        "pump_dump_ratio": 2.24
+      },
+      {
+        "filter": "acceleration > 0",
+        "group": "Path: Other",
+        "n": 1572,
+        "pump": 545,
+        "dump": 531,
+        "stable": 496,
+        "win_rate_pct": 34.7,
+        "pump_dump_ratio": 1.03
+      },
+      {
+        "filter": "front-loaded (early>late)",
+        "group": "Path: Other",
+        "n": 1505,
+        "pump": 628,
+        "dump": 396,
+        "stable": 481,
+        "win_rate_pct": 41.7,
+        "pump_dump_ratio": 1.59
+      },
+      {
+        "filter": "back-loaded (late>early)",
+        "group": "Path: Other",
+        "n": 1653,
+        "pump": 515,
+        "dump": 666,
+        "stable": 472,
+        "win_rate_pct": 31.2,
+        "pump_dump_ratio": 0.77
+      },
+      {
+        "filter": "buy_ratio > 0.5",
+        "group": "Buy Pressure",
+        "n": 2490,
+        "pump": 895,
+        "dump": 759,
+        "stable": 836,
+        "win_rate_pct": 35.9,
+        "pump_dump_ratio": 1.18
+      },
+      {
+        "filter": "buy_ratio > 0.6",
+        "group": "Buy Pressure",
+        "n": 1818,
+        "pump": 666,
+        "dump": 528,
+        "stable": 624,
+        "win_rate_pct": 36.6,
+        "pump_dump_ratio": 1.26
+      },
+      {
+        "filter": "unique_buyers >= 5",
+        "group": "Buy Pressure",
+        "n": 2885,
+        "pump": 1010,
+        "dump": 930,
+        "stable": 945,
+        "win_rate_pct": 35,
+        "pump_dump_ratio": 1.09
+      },
+      {
+        "filter": "unique_buyers >= 10",
+        "group": "Buy Pressure",
+        "n": 2554,
+        "pump": 892,
+        "dump": 807,
+        "stable": 855,
+        "win_rate_pct": 34.9,
+        "pump_dump_ratio": 1.11
+      },
+      {
+        "filter": "whale_pct < 30%",
+        "group": "Buy Pressure",
+        "n": 3070,
+        "pump": 1067,
+        "dump": 998,
+        "stable": 1005,
+        "win_rate_pct": 34.8,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "whale_pct < 50%",
+        "group": "Buy Pressure",
+        "n": 3070,
+        "pump": 1067,
+        "dump": 998,
+        "stable": 1005,
+        "win_rate_pct": 34.8,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "fresh_dev",
+        "group": "Creator Rep",
+        "n": 3396,
+        "pump": 1214,
+        "dump": 1041,
+        "stable": 1141,
+        "win_rate_pct": 35.7,
+        "pump_dump_ratio": 1.17
+      },
+      {
+        "filter": "repeat_dev >= 3",
+        "group": "Creator Rep",
+        "n": 362,
+        "pump": 108,
+        "dump": 159,
+        "stable": 95,
+        "win_rate_pct": 29.8,
+        "pump_dump_ratio": 0.68
+      },
+      {
+        "filter": "clean_dev",
+        "group": "Creator Rep",
+        "n": 408,
+        "pump": 125,
+        "dump": 145,
+        "stable": 138,
+        "win_rate_pct": 30.6,
+        "pump_dump_ratio": 0.86
+      },
+      {
+        "filter": "serial_rugger",
+        "group": "Creator Rep",
+        "n": 185,
+        "pump": 54,
+        "dump": 88,
+        "stable": 43,
+        "win_rate_pct": 29.2,
+        "pump_dump_ratio": 0.61
+      },
+      {
+        "filter": "rapid_fire",
+        "group": "Creator Rep",
+        "n": 104,
+        "pump": 31,
+        "dump": 55,
+        "stable": 18,
+        "win_rate_pct": 29.8,
+        "pump_dump_ratio": 0.56
+      },
+      {
+        "filter": "t30 > 0%",
+        "group": "T+30 Entry",
+        "n": 1992,
+        "pump": 1243,
+        "dump": 159,
+        "stable": 590,
+        "win_rate_pct": 62.4,
+        "pump_dump_ratio": 7.82
+      },
+      {
+        "filter": "t30 between +5% and +50%",
+        "group": "T+30 Entry",
+        "n": 1413,
+        "pump": 962,
+        "dump": 99,
+        "stable": 352,
+        "win_rate_pct": 68.1,
+        "pump_dump_ratio": 9.72
+      },
+      {
+        "filter": "t30 between +5% and +100%",
+        "group": "T+30 Entry",
+        "n": 1535,
+        "pump": 1077,
+        "dump": 103,
+        "stable": 355,
+        "win_rate_pct": 70.2,
+        "pump_dump_ratio": 10.46
+      },
+      {
+        "filter": "t30 between +10% and +50%",
+        "group": "T+30 Entry",
+        "n": 1034,
+        "pump": 794,
+        "dump": 74,
+        "stable": 166,
+        "win_rate_pct": 76.8,
+        "pump_dump_ratio": 10.73
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 20,
+      "strong_n_threshold": 100
+    }
+  },
+  "panel1_t120": {
+    "title": "Single-Feature Filter Comparison — T+120 Horizon",
+    "description": "Same predicate as Panel 1, but PUMP/DUMP/STABLE counts come from label_t120.",
+    "baseline": {
+      "filter": "ALL labeled (no filter)",
+      "group": "Baseline",
+      "n": 4311,
+      "pump": 1662,
+      "dump": 1628,
+      "stable": 1021,
+      "win_rate_pct": 38.6,
+      "pump_dump_ratio": 1.02
+    },
+    "filters": [
+      {
+        "filter": "vel < 5 sol/min",
+        "group": "Velocity",
+        "n": 1531,
+        "pump": 548,
+        "dump": 557,
+        "stable": 426,
+        "win_rate_pct": 35.8,
+        "pump_dump_ratio": 0.98
+      },
+      {
+        "filter": "vel 5-10 sol/min",
+        "group": "Velocity",
+        "n": 486,
+        "pump": 182,
+        "dump": 175,
+        "stable": 129,
+        "win_rate_pct": 37.4,
+        "pump_dump_ratio": 1.04
+      },
+      {
+        "filter": "vel 5-20 sol/min",
+        "group": "Velocity",
+        "n": 1116,
+        "pump": 446,
+        "dump": 365,
+        "stable": 305,
+        "win_rate_pct": 40,
+        "pump_dump_ratio": 1.22
+      },
+      {
+        "filter": "vel 10-20 sol/min",
+        "group": "Velocity",
+        "n": 630,
+        "pump": 264,
+        "dump": 190,
+        "stable": 176,
+        "win_rate_pct": 41.9,
+        "pump_dump_ratio": 1.39
+      },
+      {
+        "filter": "vel < 20 sol/min",
+        "group": "Velocity",
+        "n": 2647,
+        "pump": 994,
+        "dump": 922,
+        "stable": 731,
+        "win_rate_pct": 37.6,
+        "pump_dump_ratio": 1.08
+      },
+      {
+        "filter": "vel < 50 sol/min",
+        "group": "Velocity",
+        "n": 3171,
+        "pump": 1219,
+        "dump": 1116,
+        "stable": 836,
+        "win_rate_pct": 38.4,
+        "pump_dump_ratio": 1.09
+      },
+      {
+        "filter": "vel 20-50 sol/min",
+        "group": "Velocity",
+        "n": 524,
+        "pump": 225,
+        "dump": 194,
+        "stable": 105,
+        "win_rate_pct": 42.9,
+        "pump_dump_ratio": 1.16
+      },
+      {
+        "filter": "vel 50-200 sol/min",
+        "group": "Velocity",
+        "n": 339,
+        "pump": 138,
+        "dump": 156,
+        "stable": 45,
+        "win_rate_pct": 40.7,
+        "pump_dump_ratio": 0.88
+      },
+      {
+        "filter": "vel > 200 sol/min",
+        "group": "Velocity",
+        "n": 793,
+        "pump": 302,
+        "dump": 353,
+        "stable": 138,
+        "win_rate_pct": 38.1,
+        "pump_dump_ratio": 0.86
+      },
+      {
+        "filter": "bc_age < 10 min",
+        "group": "BC Age",
+        "n": 2403,
+        "pump": 973,
+        "dump": 933,
+        "stable": 497,
+        "win_rate_pct": 40.5,
+        "pump_dump_ratio": 1.04
+      },
+      {
+        "filter": "bc_age > 10 min",
+        "group": "BC Age",
+        "n": 1907,
+        "pump": 688,
+        "dump": 695,
+        "stable": 524,
+        "win_rate_pct": 36.1,
+        "pump_dump_ratio": 0.99
+      },
+      {
+        "filter": "bc_age > 30 min",
+        "group": "BC Age",
+        "n": 1170,
+        "pump": 399,
+        "dump": 436,
+        "stable": 335,
+        "win_rate_pct": 34.1,
+        "pump_dump_ratio": 0.92
+      },
+      {
+        "filter": "bc_age > 1 hr",
+        "group": "BC Age",
+        "n": 852,
+        "pump": 295,
+        "dump": 308,
+        "stable": 249,
+        "win_rate_pct": 34.6,
+        "pump_dump_ratio": 0.96
+      },
+      {
+        "filter": "bc_age > 1 day",
+        "group": "BC Age",
+        "n": 288,
+        "pump": 90,
+        "dump": 107,
+        "stable": 91,
+        "win_rate_pct": 31.3,
+        "pump_dump_ratio": 0.84
+      },
+      {
+        "filter": "holders >= 5",
+        "group": "Holders",
+        "n": 3655,
+        "pump": 1410,
+        "dump": 1331,
+        "stable": 914,
+        "win_rate_pct": 38.6,
+        "pump_dump_ratio": 1.06
+      },
+      {
+        "filter": "holders >= 10",
+        "group": "Holders",
+        "n": 3638,
+        "pump": 1406,
+        "dump": 1321,
+        "stable": 911,
+        "win_rate_pct": 38.6,
+        "pump_dump_ratio": 1.06
+      },
+      {
+        "filter": "holders >= 15",
+        "group": "Holders",
+        "n": 3618,
+        "pump": 1400,
+        "dump": 1317,
+        "stable": 901,
+        "win_rate_pct": 38.7,
+        "pump_dump_ratio": 1.06
+      },
+      {
+        "filter": "holders >= 18",
+        "group": "Holders",
+        "n": 3502,
+        "pump": 1341,
+        "dump": 1289,
+        "stable": 872,
+        "win_rate_pct": 38.3,
+        "pump_dump_ratio": 1.04
+      },
+      {
+        "filter": "top5 < 10%",
+        "group": "Top 5 Concentration",
+        "n": 1161,
+        "pump": 513,
+        "dump": 392,
+        "stable": 256,
+        "win_rate_pct": 44.2,
+        "pump_dump_ratio": 1.31
+      },
+      {
+        "filter": "top5 < 15%",
+        "group": "Top 5 Concentration",
+        "n": 2885,
+        "pump": 1160,
+        "dump": 1057,
+        "stable": 668,
+        "win_rate_pct": 40.2,
+        "pump_dump_ratio": 1.1
+      },
+      {
+        "filter": "top5 < 20%",
+        "group": "Top 5 Concentration",
+        "n": 3825,
+        "pump": 1467,
+        "dump": 1459,
+        "stable": 899,
+        "win_rate_pct": 38.4,
+        "pump_dump_ratio": 1.01
+      },
+      {
+        "filter": "top5 > 15%",
+        "group": "Top 5 Concentration",
+        "n": 1425,
+        "pump": 501,
+        "dump": 571,
+        "stable": 353,
+        "win_rate_pct": 35.2,
+        "pump_dump_ratio": 0.88
+      },
+      {
+        "filter": "dev < 3%",
+        "group": "Dev Wallet",
+        "n": 1566,
+        "pump": 644,
+        "dump": 579,
+        "stable": 343,
+        "win_rate_pct": 41.1,
+        "pump_dump_ratio": 1.11
+      },
+      {
+        "filter": "dev < 5%",
+        "group": "Dev Wallet",
+        "n": 3364,
+        "pump": 1254,
+        "dump": 1352,
+        "stable": 758,
+        "win_rate_pct": 37.3,
+        "pump_dump_ratio": 0.93
+      },
+      {
+        "filter": "dev > 5%",
+        "group": "Dev Wallet",
+        "n": 933,
+        "pump": 400,
+        "dump": 271,
+        "stable": 262,
+        "win_rate_pct": 42.9,
+        "pump_dump_ratio": 1.48
+      },
+      {
+        "filter": "sol >= 70",
+        "group": "SOL Raised",
+        "n": 4310,
+        "pump": 1661,
+        "dump": 1628,
+        "stable": 1021,
+        "win_rate_pct": 38.5,
+        "pump_dump_ratio": 1.02
+      },
+      {
+        "filter": "sol >= 80",
+        "group": "SOL Raised",
+        "n": 4208,
+        "pump": 1618,
+        "dump": 1598,
+        "stable": 992,
+        "win_rate_pct": 38.5,
+        "pump_dump_ratio": 1.01
+      },
+      {
+        "filter": "sol >= 84",
+        "group": "SOL Raised",
+        "n": 4196,
+        "pump": 1616,
+        "dump": 1591,
+        "stable": 989,
+        "win_rate_pct": 38.5,
+        "pump_dump_ratio": 1.02
+      },
+      {
+        "filter": "liquidity > 50 SOL",
+        "group": "Liquidity (T+30)",
+        "n": 3652,
+        "pump": 1479,
+        "dump": 1286,
+        "stable": 887,
+        "win_rate_pct": 40.5,
+        "pump_dump_ratio": 1.15
+      },
+      {
+        "filter": "liquidity > 100 SOL",
+        "group": "Liquidity (T+30)",
+        "n": 804,
+        "pump": 466,
+        "dump": 184,
+        "stable": 154,
+        "win_rate_pct": 58,
+        "pump_dump_ratio": 2.53
+      },
+      {
+        "filter": "liquidity > 150 SOL",
+        "group": "Liquidity (T+30)",
+        "n": 253,
+        "pump": 120,
+        "dump": 72,
+        "stable": 61,
+        "win_rate_pct": 47.4,
+        "pump_dump_ratio": 1.67
+      },
+      {
+        "filter": "volatility < 10%",
+        "group": "Volatility (0-30s)",
+        "n": 492,
+        "pump": 176,
+        "dump": 116,
+        "stable": 200,
+        "win_rate_pct": 35.8,
+        "pump_dump_ratio": 1.52
+      },
+      {
+        "filter": "volatility 10-30%",
+        "group": "Volatility (0-30s)",
+        "n": 2099,
+        "pump": 787,
+        "dump": 760,
+        "stable": 552,
+        "win_rate_pct": 37.5,
+        "pump_dump_ratio": 1.04
+      },
+      {
+        "filter": "volatility 30-60%",
+        "group": "Volatility (0-30s)",
+        "n": 780,
+        "pump": 365,
+        "dump": 305,
+        "stable": 110,
+        "win_rate_pct": 46.8,
+        "pump_dump_ratio": 1.2
+      },
+      {
+        "filter": "volatility > 60%",
+        "group": "Volatility (0-30s)",
+        "n": 383,
+        "pump": 134,
+        "dump": 232,
+        "stable": 17,
+        "win_rate_pct": 35,
+        "pump_dump_ratio": 0.58
+      },
+      {
+        "filter": "mono > 0.33",
+        "group": "Path: Monotonicity",
+        "n": 2849,
+        "pump": 1194,
+        "dump": 951,
+        "stable": 704,
+        "win_rate_pct": 41.9,
+        "pump_dump_ratio": 1.26
+      },
+      {
+        "filter": "mono > 0.5",
+        "group": "Path: Monotonicity",
+        "n": 1088,
+        "pump": 635,
+        "dump": 201,
+        "stable": 252,
+        "win_rate_pct": 58.4,
+        "pump_dump_ratio": 3.16
+      },
+      {
+        "filter": "mono > 0.66",
+        "group": "Path: Monotonicity",
+        "n": 1053,
+        "pump": 615,
+        "dump": 195,
+        "stable": 243,
+        "win_rate_pct": 58.4,
+        "pump_dump_ratio": 3.15
+      },
+      {
+        "filter": "max_dd > -10% (shallow)",
+        "group": "Path: Drawdown",
+        "n": 1120,
+        "pump": 616,
+        "dump": 183,
+        "stable": 321,
+        "win_rate_pct": 55,
+        "pump_dump_ratio": 3.37
+      },
+      {
+        "filter": "max_dd > -20%",
+        "group": "Path: Drawdown",
+        "n": 2191,
+        "pump": 1008,
+        "dump": 552,
+        "stable": 631,
+        "win_rate_pct": 46,
+        "pump_dump_ratio": 1.83
+      },
+      {
+        "filter": "dip_and_recover = 1",
+        "group": "Path: Other",
+        "n": 388,
+        "pump": 177,
+        "dump": 112,
+        "stable": 99,
+        "win_rate_pct": 45.6,
+        "pump_dump_ratio": 1.58
+      },
+      {
+        "filter": "acceleration > 0",
+        "group": "Path: Other",
+        "n": 1564,
+        "pump": 581,
+        "dump": 600,
+        "stable": 383,
+        "win_rate_pct": 37.1,
+        "pump_dump_ratio": 0.97
+      },
+      {
+        "filter": "front-loaded (early>late)",
+        "group": "Path: Other",
+        "n": 1500,
+        "pump": 697,
+        "dump": 469,
+        "stable": 334,
+        "win_rate_pct": 46.5,
+        "pump_dump_ratio": 1.49
+      },
+      {
+        "filter": "back-loaded (late>early)",
+        "group": "Path: Other",
+        "n": 1661,
+        "pump": 520,
+        "dump": 723,
+        "stable": 418,
+        "win_rate_pct": 31.3,
+        "pump_dump_ratio": 0.72
+      },
+      {
+        "filter": "buy_ratio > 0.5",
+        "group": "Buy Pressure",
+        "n": 2524,
+        "pump": 1017,
+        "dump": 845,
+        "stable": 662,
+        "win_rate_pct": 40.3,
+        "pump_dump_ratio": 1.2
+      },
+      {
+        "filter": "buy_ratio > 0.6",
+        "group": "Buy Pressure",
+        "n": 1856,
+        "pump": 780,
+        "dump": 593,
+        "stable": 483,
+        "win_rate_pct": 42,
+        "pump_dump_ratio": 1.32
+      },
+      {
+        "filter": "unique_buyers >= 5",
+        "group": "Buy Pressure",
+        "n": 2921,
+        "pump": 1133,
+        "dump": 1058,
+        "stable": 730,
+        "win_rate_pct": 38.8,
+        "pump_dump_ratio": 1.07
+      },
+      {
+        "filter": "unique_buyers >= 10",
+        "group": "Buy Pressure",
+        "n": 2589,
+        "pump": 1016,
+        "dump": 913,
+        "stable": 660,
+        "win_rate_pct": 39.2,
+        "pump_dump_ratio": 1.11
+      },
+      {
+        "filter": "whale_pct < 30%",
+        "group": "Buy Pressure",
+        "n": 3106,
+        "pump": 1199,
+        "dump": 1142,
+        "stable": 765,
+        "win_rate_pct": 38.6,
+        "pump_dump_ratio": 1.05
+      },
+      {
+        "filter": "whale_pct < 50%",
+        "group": "Buy Pressure",
+        "n": 3106,
+        "pump": 1199,
+        "dump": 1142,
+        "stable": 765,
+        "win_rate_pct": 38.6,
+        "pump_dump_ratio": 1.05
+      },
+      {
+        "filter": "fresh_dev",
+        "group": "Creator Rep",
+        "n": 3446,
+        "pump": 1391,
+        "dump": 1178,
+        "stable": 877,
+        "win_rate_pct": 40.4,
+        "pump_dump_ratio": 1.18
+      },
+      {
+        "filter": "repeat_dev >= 3",
+        "group": "Creator Rep",
+        "n": 379,
+        "pump": 112,
+        "dump": 210,
+        "stable": 57,
+        "win_rate_pct": 29.6,
+        "pump_dump_ratio": 0.53
+      },
+      {
+        "filter": "clean_dev",
+        "group": "Creator Rep",
+        "n": 418,
+        "pump": 135,
+        "dump": 192,
+        "stable": 91,
+        "win_rate_pct": 32.3,
+        "pump_dump_ratio": 0.7
+      },
+      {
+        "filter": "serial_rugger",
+        "group": "Creator Rep",
+        "n": 188,
+        "pump": 65,
+        "dump": 109,
+        "stable": 14,
+        "win_rate_pct": 34.6,
+        "pump_dump_ratio": 0.6
+      },
+      {
+        "filter": "rapid_fire",
+        "group": "Creator Rep",
+        "n": 105,
+        "pump": 32,
+        "dump": 60,
+        "stable": 13,
+        "win_rate_pct": 30.5,
+        "pump_dump_ratio": 0.53
+      },
+      {
+        "filter": "t30 > 0%",
+        "group": "T+30 Entry",
+        "n": 1995,
+        "pump": 1189,
+        "dump": 331,
+        "stable": 475,
+        "win_rate_pct": 59.6,
+        "pump_dump_ratio": 3.59
+      },
+      {
+        "filter": "t30 between +5% and +50%",
+        "group": "T+30 Entry",
+        "n": 1413,
+        "pump": 877,
+        "dump": 218,
+        "stable": 318,
+        "win_rate_pct": 62.1,
+        "pump_dump_ratio": 4.02
+      },
+      {
+        "filter": "t30 between +5% and +100%",
+        "group": "T+30 Entry",
+        "n": 1534,
+        "pump": 977,
+        "dump": 229,
+        "stable": 328,
+        "win_rate_pct": 63.7,
+        "pump_dump_ratio": 4.27
+      },
+      {
+        "filter": "t30 between +10% and +50%",
+        "group": "T+30 Entry",
+        "n": 1032,
+        "pump": 693,
+        "dump": 144,
+        "stable": 195,
+        "win_rate_pct": 67.2,
+        "pump_dump_ratio": 4.81
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 20,
+      "strong_n_threshold": 100
+    }
+  }
+}

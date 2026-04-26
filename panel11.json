@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-04-26T00:42:41.084Z",
+  "title": "Combo Filter Regime Stability — Cross-Group Filter Pairs",
+  "description": "Regime check for every cross-group two-filter combination in the catalog, with the T+30 entry gate (+5% to +100%) applied. Rows are the EXACT same combos as /api/best-combos, ordered by opt_avg_ret descending (each combo at its own TP/SL optimum). Use this to validate that a high-opt-return combo also holds up across time buckets.",
+  "bucket_windows": [
+    {
+      "bucket": 1,
+      "start_iso": "2026-03-30T13:31:25.000Z",
+      "end_iso": "2026-04-06T15:06:26.000Z"
+    },
+    {
+      "bucket": 2,
+      "start_iso": "2026-04-06T15:07:45.000Z",
+      "end_iso": "2026-04-13T02:48:22.000Z"
+    },
+    {
+      "bucket": 3,
+      "start_iso": "2026-04-13T02:51:15.000Z",
+      "end_iso": "2026-04-18T06:19:06.000Z"
+    },
+    {
+      "bucket": 4,
+      "start_iso": "2026-04-18T06:19:14.000Z",
+      "end_iso": "2026-04-25T23:54:18.000Z"
+    }
+  ],
+  "baseline": {
+    "filter": "ALL labeled (entry gate only)",
+    "group": "Baseline",
+    "opt_tp": null,
+    "opt_sl": null,
+    "opt_avg_ret": null,
+    "beats_baseline": false,
+    "n": 1481,
+    "buckets": [
+      {
+        "n": 391,
+        "win_rate_pct": 56.8,
+        "avg_return_pct": -5.4
+      },
+      {
+        "n": 386,
+        "win_rate_pct": 60.6,
+        "avg_return_pct": 1
+      },
+      {
+        "n": 372,
+        "win_rate_pct": 53.5,
+        "avg_return_pct": -7.1
+      },
+      {
+        "n": 332,
+        "win_rate_pct": 60.5,
+        "avg_return_pct": -2.9
+      }
+    ],
+    "wr_std_dev": 2.9,
+    "stability": "STABLE"
+  },
+  "filters": [],
+  "flags": {
+    "low_n_threshold": 20,
+    "strong_n_threshold": 100
+  }
+}

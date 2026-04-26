@@ -1,0 +1,229 @@
+{
+  "generated_at": "2026-04-26T00:42:04.466Z",
+  "panelv3_5": {
+    "title": "Velocity × Liquidity Interaction Heatmap",
+    "description": "Are current edges regime-specific? 5 velocity buckets × 4 liquidity buckets = 20 cells. Each cell re-runs Panel 4's TP/SL optimizer on the intersection and reports opt_avg_ret. Look for: (a) whether `vel<20` beats the rolling baseline everywhere or only in certain liquidity bands; (b) whether high-liquidity tokens (>150 SOL) offer a better risk/reward than the low-liquidity long tail. beats_baseline = opt_avg_ret > rolling ALL-labeled Panel 4 optimum (see constants.baseline_sim_return). Cells with n < 30 have opt_avg_ret = null.",
+    "constants": {
+      "baseline_sim_return": -12.4,
+      "vel_buckets": [
+        "vel < 5",
+        "vel 5-20",
+        "vel 20-50",
+        "vel 50-200",
+        "vel >= 200"
+      ],
+      "liq_buckets": [
+        "liq < 50",
+        "liq 50-100",
+        "liq 100-150",
+        "liq >= 150"
+      ]
+    },
+    "cells": [
+      {
+        "vel": "vel < 5",
+        "liq": "liq < 50",
+        "n": 18,
+        "opt_tp": null,
+        "opt_sl": null,
+        "opt_avg_ret": null,
+        "opt_win_rate": null,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel < 5",
+        "liq": "liq 50-100",
+        "n": 1179,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -6.9,
+        "opt_win_rate": 42,
+        "beats_baseline": true
+      },
+      {
+        "vel": "vel < 5",
+        "liq": "liq 100-150",
+        "n": 84,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": -7.1,
+        "opt_win_rate": 46,
+        "beats_baseline": true
+      },
+      {
+        "vel": "vel < 5",
+        "liq": "liq >= 150",
+        "n": 17,
+        "opt_tp": null,
+        "opt_sl": null,
+        "opt_avg_ret": null,
+        "opt_win_rate": null,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 5-20",
+        "liq": "liq < 50",
+        "n": 13,
+        "opt_tp": null,
+        "opt_sl": null,
+        "opt_avg_ret": null,
+        "opt_win_rate": null,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 5-20",
+        "liq": "liq 50-100",
+        "n": 871,
+        "opt_tp": 10,
+        "opt_sl": 30,
+        "opt_avg_ret": -14.2,
+        "opt_win_rate": 69,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 5-20",
+        "liq": "liq 100-150",
+        "n": 79,
+        "opt_tp": 15,
+        "opt_sl": 30,
+        "opt_avg_ret": -1,
+        "opt_win_rate": 73,
+        "beats_baseline": true
+      },
+      {
+        "vel": "vel 5-20",
+        "liq": "liq >= 150",
+        "n": 5,
+        "opt_tp": null,
+        "opt_sl": null,
+        "opt_avg_ret": null,
+        "opt_win_rate": null,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 20-50",
+        "liq": "liq < 50",
+        "n": 13,
+        "opt_tp": null,
+        "opt_sl": null,
+        "opt_avg_ret": null,
+        "opt_win_rate": null,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 20-50",
+        "liq": "liq 50-100",
+        "n": 371,
+        "opt_tp": 10,
+        "opt_sl": 30,
+        "opt_avg_ret": -13.3,
+        "opt_win_rate": 74,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 20-50",
+        "liq": "liq 100-150",
+        "n": 66,
+        "opt_tp": 75,
+        "opt_sl": 30,
+        "opt_avg_ret": 2.2,
+        "opt_win_rate": 59,
+        "beats_baseline": true
+      },
+      {
+        "vel": "vel 20-50",
+        "liq": "liq >= 150",
+        "n": 6,
+        "opt_tp": null,
+        "opt_sl": null,
+        "opt_avg_ret": null,
+        "opt_win_rate": null,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 50-200",
+        "liq": "liq < 50",
+        "n": 23,
+        "opt_tp": null,
+        "opt_sl": null,
+        "opt_avg_ret": null,
+        "opt_win_rate": null,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 50-200",
+        "liq": "liq 50-100",
+        "n": 200,
+        "opt_tp": 10,
+        "opt_sl": 25,
+        "opt_avg_ret": -15.4,
+        "opt_win_rate": 72,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 50-200",
+        "liq": "liq 100-150",
+        "n": 54,
+        "opt_tp": 10,
+        "opt_sl": 20,
+        "opt_avg_ret": -14.7,
+        "opt_win_rate": 67,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel 50-200",
+        "liq": "liq >= 150",
+        "n": 6,
+        "opt_tp": null,
+        "opt_sl": null,
+        "opt_avg_ret": null,
+        "opt_win_rate": null,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel >= 200",
+        "liq": "liq < 50",
+        "n": 75,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": -34.7,
+        "opt_win_rate": 15,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel >= 200",
+        "liq": "liq 50-100",
+        "n": 151,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -22.3,
+        "opt_win_rate": 32,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel >= 200",
+        "liq": "liq 100-150",
+        "n": 250,
+        "opt_tp": 75,
+        "opt_sl": 30,
+        "opt_avg_ret": -14.9,
+        "opt_win_rate": 40,
+        "beats_baseline": false
+      },
+      {
+        "vel": "vel >= 200",
+        "liq": "liq >= 150",
+        "n": 214,
+        "opt_tp": 30,
+        "opt_sl": 30,
+        "opt_avg_ret": -13.4,
+        "opt_win_rate": 47,
+        "beats_baseline": false
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 30,
+      "strong_n_threshold": 100
+    }
+  }
+}

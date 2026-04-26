@@ -1,0 +1,857 @@
+{
+  "generated_at": "2026-04-26T00:42:41.194Z",
+  "disclaimer": "max_relret_0_300 is look-ahead — known only at T+300, not at entry. These panels are DIAGNOSTIC (TP calibration, exit timing, filter quality scoring). Do NOT use peak > X% as a trading filter.",
+  "n_total": 1481,
+  "n_baseline": 176,
+  "cdf": [
+    {
+      "threshold_pct": 10,
+      "all_reach_pct": 71.2,
+      "baseline_reach_pct": 73.3
+    },
+    {
+      "threshold_pct": 20,
+      "all_reach_pct": 54.3,
+      "baseline_reach_pct": 54
+    },
+    {
+      "threshold_pct": 30,
+      "all_reach_pct": 39.9,
+      "baseline_reach_pct": 34.7
+    },
+    {
+      "threshold_pct": 40,
+      "all_reach_pct": 29,
+      "baseline_reach_pct": 23.9
+    },
+    {
+      "threshold_pct": 50,
+      "all_reach_pct": 22.5,
+      "baseline_reach_pct": 13.6
+    },
+    {
+      "threshold_pct": 75,
+      "all_reach_pct": 12.3,
+      "baseline_reach_pct": 6.8
+    },
+    {
+      "threshold_pct": 100,
+      "all_reach_pct": 6.4,
+      "baseline_reach_pct": 2.8
+    },
+    {
+      "threshold_pct": 150,
+      "all_reach_pct": 2.2,
+      "baseline_reach_pct": 1.1
+    }
+  ],
+  "peak_time_histogram": [
+    {
+      "bin": "30-45s",
+      "all_count": 262,
+      "all_pct": 17.7,
+      "baseline_count": 16,
+      "baseline_pct": 9.1
+    },
+    {
+      "bin": "45-60s",
+      "all_count": 142,
+      "all_pct": 9.6,
+      "baseline_count": 13,
+      "baseline_pct": 7.4
+    },
+    {
+      "bin": "60-90s",
+      "all_count": 87,
+      "all_pct": 5.9,
+      "baseline_count": 2,
+      "baseline_pct": 1.1
+    },
+    {
+      "bin": "90-120s",
+      "all_count": 94,
+      "all_pct": 6.3,
+      "baseline_count": 8,
+      "baseline_pct": 4.5
+    },
+    {
+      "bin": "120-180s",
+      "all_count": 199,
+      "all_pct": 13.4,
+      "baseline_count": 23,
+      "baseline_pct": 13.1
+    },
+    {
+      "bin": "180-240s",
+      "all_count": 141,
+      "all_pct": 9.5,
+      "baseline_count": 23,
+      "baseline_pct": 13.1
+    },
+    {
+      "bin": "240-300s",
+      "all_count": 458,
+      "all_pct": 30.9,
+      "baseline_count": 82,
+      "baseline_pct": 46.6
+    }
+  ],
+  "per_filter": [
+    {
+      "filter": "vel < 5",
+      "group": "Velocity",
+      "n": 484,
+      "pct_reach": {
+        "10": 64.3,
+        "20": 48.1,
+        "30": 36.6,
+        "40": 25.6,
+        "50": 20.5,
+        "75": 10.7,
+        "100": 5,
+        "150": 1.4
+      },
+      "median_peak": 18.13,
+      "p25_peak": 5.92,
+      "p75_peak": 42.19,
+      "avg_final_return": 5.87
+    },
+    {
+      "filter": "vel 5-10",
+      "group": "Velocity",
+      "n": 179,
+      "pct_reach": {
+        "10": 69.3,
+        "20": 46.9,
+        "30": 29.6,
+        "40": 20.7,
+        "50": 15.1,
+        "75": 11.7,
+        "100": 6.1,
+        "150": 1.7
+      },
+      "median_peak": 17.61,
+      "p25_peak": 6.33,
+      "p75_peak": 34.79,
+      "avg_final_return": -0.19
+    },
+    {
+      "filter": "vel 5-20",
+      "group": "Velocity",
+      "n": 396,
+      "pct_reach": {
+        "10": 71,
+        "20": 52.3,
+        "30": 33.6,
+        "40": 23.5,
+        "50": 15.7,
+        "75": 9.1,
+        "100": 5.1,
+        "150": 2
+      },
+      "median_peak": 20.86,
+      "p25_peak": 8.06,
+      "p75_peak": 37.26,
+      "avg_final_return": -1.5
+    },
+    {
+      "filter": "vel 10-20",
+      "group": "Velocity",
+      "n": 217,
+      "pct_reach": {
+        "10": 72.4,
+        "20": 56.7,
+        "30": 36.9,
+        "40": 25.8,
+        "50": 16.1,
+        "75": 6.9,
+        "100": 4.1,
+        "150": 2.3
+      },
+      "median_peak": 22.14,
+      "p25_peak": 8.76,
+      "p75_peak": 40.41,
+      "avg_final_return": -2.58
+    },
+    {
+      "filter": "vel < 20",
+      "group": "Velocity",
+      "n": 880,
+      "pct_reach": {
+        "10": 67.3,
+        "20": 50,
+        "30": 35.2,
+        "40": 24.7,
+        "50": 18.3,
+        "75": 10,
+        "100": 5,
+        "150": 1.7
+      },
+      "median_peak": 20.02,
+      "p25_peak": 6.38,
+      "p75_peak": 39.64,
+      "avg_final_return": 2.55
+    },
+    {
+      "filter": "vel 20-50",
+      "group": "Velocity",
+      "n": 194,
+      "pct_reach": {
+        "10": 76.8,
+        "20": 62.4,
+        "30": 44.8,
+        "40": 35.1,
+        "50": 27.8,
+        "75": 16,
+        "100": 9.3,
+        "150": 2.6
+      },
+      "median_peak": 26.89,
+      "p25_peak": 11.73,
+      "p75_peak": 57.41,
+      "avg_final_return": -0.38
+    },
+    {
+      "filter": "vel 50-200",
+      "group": "Velocity",
+      "n": 126,
+      "pct_reach": {
+        "10": 81.7,
+        "20": 61.1,
+        "30": 51.6,
+        "40": 39.7,
+        "50": 30.2,
+        "75": 19,
+        "100": 8.7,
+        "150": 2.4
+      },
+      "median_peak": 31.41,
+      "p25_peak": 14.13,
+      "p75_peak": 60.42,
+      "avg_final_return": -1.2
+    },
+    {
+      "filter": "age < 10min",
+      "group": "BC Age",
+      "n": 861,
+      "pct_reach": {
+        "10": 75.7,
+        "20": 59.5,
+        "30": 43.6,
+        "40": 32.2,
+        "50": 24.5,
+        "75": 13,
+        "100": 7.1,
+        "150": 2.7
+      },
+      "median_peak": 24.82,
+      "p25_peak": 10.78,
+      "p75_peak": 48.69,
+      "avg_final_return": -2.02
+    },
+    {
+      "filter": "age > 10min",
+      "group": "BC Age",
+      "n": 619,
+      "pct_reach": {
+        "10": 64.9,
+        "20": 47,
+        "30": 34.9,
+        "40": 24.7,
+        "50": 19.7,
+        "75": 11.3,
+        "100": 5.5,
+        "150": 1.6
+      },
+      "median_peak": 17.73,
+      "p25_peak": 5.92,
+      "p75_peak": 39.79,
+      "avg_final_return": 4.58
+    },
+    {
+      "filter": "age > 30min",
+      "group": "BC Age",
+      "n": 367,
+      "pct_reach": {
+        "10": 60.5,
+        "20": 45.2,
+        "30": 33.2,
+        "40": 23.4,
+        "50": 19.1,
+        "75": 9,
+        "100": 4.1,
+        "150": 1.1
+      },
+      "median_peak": 16.69,
+      "p25_peak": 4.96,
+      "p75_peak": 38.84,
+      "avg_final_return": 3
+    },
+    {
+      "filter": "age > 1hr",
+      "group": "BC Age",
+      "n": 283,
+      "pct_reach": {
+        "10": 59.7,
+        "20": 43.1,
+        "30": 30.4,
+        "40": 21.2,
+        "50": 17.3,
+        "75": 8.8,
+        "100": 3.9,
+        "150": 1.4
+      },
+      "median_peak": 15.25,
+      "p25_peak": 4.92,
+      "p75_peak": 37.03,
+      "avg_final_return": 2.08
+    },
+    {
+      "filter": "holders >= 5",
+      "group": "Holders",
+      "n": 1244,
+      "pct_reach": {
+        "10": 70.7,
+        "20": 53.7,
+        "30": 39.1,
+        "40": 28.1,
+        "50": 21.3,
+        "75": 12,
+        "100": 6.2,
+        "150": 1.8
+      },
+      "median_peak": 22.05,
+      "p25_peak": 7.7,
+      "p75_peak": 44.57,
+      "avg_final_return": 1.16
+    },
+    {
+      "filter": "holders >= 10",
+      "group": "Holders",
+      "n": 1242,
+      "pct_reach": {
+        "10": 70.6,
+        "20": 53.7,
+        "30": 39.1,
+        "40": 28.1,
+        "50": 21.3,
+        "75": 12,
+        "100": 6.2,
+        "150": 1.9
+      },
+      "median_peak": 22.05,
+      "p25_peak": 7.67,
+      "p75_peak": 44.55,
+      "avg_final_return": 1.12
+    },
+    {
+      "filter": "holders >= 15",
+      "group": "Holders",
+      "n": 1235,
+      "pct_reach": {
+        "10": 71,
+        "20": 54,
+        "30": 39.4,
+        "40": 28.3,
+        "50": 21.5,
+        "75": 12.1,
+        "100": 6.2,
+        "150": 1.9
+      },
+      "median_peak": 22.16,
+      "p25_peak": 7.79,
+      "p75_peak": 44.62,
+      "avg_final_return": 1.23
+    },
+    {
+      "filter": "holders >= 18",
+      "group": "Holders",
+      "n": 1174,
+      "pct_reach": {
+        "10": 70.6,
+        "20": 53.5,
+        "30": 38.7,
+        "40": 27.5,
+        "50": 20.4,
+        "75": 11.5,
+        "100": 5.6,
+        "150": 1.7
+      },
+      "median_peak": 21.77,
+      "p25_peak": 7.76,
+      "p75_peak": 43.92,
+      "avg_final_return": -0.09
+    },
+    {
+      "filter": "top5 < 10%",
+      "group": "Top 5",
+      "n": 454,
+      "pct_reach": {
+        "10": 74,
+        "20": 57,
+        "30": 40.7,
+        "40": 30,
+        "50": 22.2,
+        "75": 11.2,
+        "100": 5.1,
+        "150": 2.4
+      },
+      "median_peak": 23.24,
+      "p25_peak": 9.46,
+      "p75_peak": 46.06,
+      "avg_final_return": 0.85
+    },
+    {
+      "filter": "top5 < 15%",
+      "group": "Top 5",
+      "n": 998,
+      "pct_reach": {
+        "10": 71.2,
+        "20": 54.7,
+        "30": 39.2,
+        "40": 28.9,
+        "50": 21.7,
+        "75": 11.7,
+        "100": 5.9,
+        "150": 1.9
+      },
+      "median_peak": 22.13,
+      "p25_peak": 7.96,
+      "p75_peak": 45.49,
+      "avg_final_return": 0.57
+    },
+    {
+      "filter": "top5 < 20%",
+      "group": "Top 5",
+      "n": 1281,
+      "pct_reach": {
+        "10": 71,
+        "20": 54.1,
+        "30": 39.7,
+        "40": 28.9,
+        "50": 22.2,
+        "75": 12.3,
+        "100": 6.4,
+        "150": 2.2
+      },
+      "median_peak": 21.88,
+      "p25_peak": 7.78,
+      "p75_peak": 45.56,
+      "avg_final_return": 0.75
+    },
+    {
+      "filter": "liq > 50",
+      "group": "Liquidity",
+      "n": 1401,
+      "pct_reach": {
+        "10": 71.2,
+        "20": 54.9,
+        "30": 40.5,
+        "40": 29.3,
+        "50": 22.6,
+        "75": 12.3,
+        "100": 6.6,
+        "150": 2.4
+      },
+      "median_peak": 22.41,
+      "p25_peak": 7.8,
+      "p75_peak": 46.17,
+      "avg_final_return": 1.08
+    },
+    {
+      "filter": "liq > 100",
+      "group": "Liquidity",
+      "n": 471,
+      "pct_reach": {
+        "10": 75.6,
+        "20": 60.1,
+        "30": 46.3,
+        "40": 33.5,
+        "50": 26.3,
+        "75": 13.2,
+        "100": 7.4,
+        "150": 2.3
+      },
+      "median_peak": 26.61,
+      "p25_peak": 11.12,
+      "p75_peak": 52.73,
+      "avg_final_return": 0.48
+    },
+    {
+      "filter": "liq > 150",
+      "group": "Liquidity",
+      "n": 113,
+      "pct_reach": {
+        "10": 79.6,
+        "20": 55.8,
+        "30": 40.7,
+        "40": 25.7,
+        "50": 22.1,
+        "75": 6.2,
+        "100": 1.8,
+        "150": 0.9
+      },
+      "median_peak": 21.8,
+      "p25_peak": 13.12,
+      "p75_peak": 42.84,
+      "avg_final_return": -5.03
+    },
+    {
+      "filter": "mono > 0.5",
+      "group": "Path Mono",
+      "n": 766,
+      "pct_reach": {
+        "10": 71.7,
+        "20": 55.2,
+        "30": 42.7,
+        "40": 29.6,
+        "50": 24.3,
+        "75": 13.4,
+        "100": 7.7,
+        "150": 2.6
+      },
+      "median_peak": 22.65,
+      "p25_peak": 7.97,
+      "p75_peak": 48.51,
+      "avg_final_return": 3.21
+    },
+    {
+      "filter": "mono > 0.66",
+      "group": "Path Mono",
+      "n": 744,
+      "pct_reach": {
+        "10": 71.5,
+        "20": 55.1,
+        "30": 42.7,
+        "40": 29.8,
+        "50": 24.3,
+        "75": 13.6,
+        "100": 7.9,
+        "150": 2.7
+      },
+      "median_peak": 22.65,
+      "p25_peak": 7.92,
+      "p75_peak": 48.71,
+      "avg_final_return": 3.62
+    },
+    {
+      "filter": "dd > -10%",
+      "group": "Path DD",
+      "n": 690,
+      "pct_reach": {
+        "10": 70.7,
+        "20": 53.9,
+        "30": 40.4,
+        "40": 29.1,
+        "50": 22.9,
+        "75": 11.6,
+        "100": 6.7,
+        "150": 2.2
+      },
+      "median_peak": 21.77,
+      "p25_peak": 7.48,
+      "p75_peak": 47.31,
+      "avg_final_return": 4.39
+    },
+    {
+      "filter": "dd > -20%",
+      "group": "Path DD",
+      "n": 1049,
+      "pct_reach": {
+        "10": 71.1,
+        "20": 54.4,
+        "30": 41,
+        "40": 29.8,
+        "50": 23.4,
+        "75": 12.6,
+        "100": 7.2,
+        "150": 2.6
+      },
+      "median_peak": 22.19,
+      "p25_peak": 8.13,
+      "p75_peak": 47.32,
+      "avg_final_return": 2.63
+    },
+    {
+      "filter": "accel > 0",
+      "group": "Path",
+      "n": 587,
+      "pct_reach": {
+        "10": 70.5,
+        "20": 51.4,
+        "30": 39,
+        "40": 27.1,
+        "50": 21.5,
+        "75": 12.4,
+        "100": 5.5,
+        "150": 1.9
+      },
+      "median_peak": 20.83,
+      "p25_peak": 7.57,
+      "p75_peak": 43.41,
+      "avg_final_return": -0.47
+    },
+    {
+      "filter": "buy_ratio > 0.5",
+      "group": "Buy Pressure",
+      "n": 897,
+      "pct_reach": {
+        "10": 71.7,
+        "20": 54.5,
+        "30": 41.7,
+        "40": 30.2,
+        "50": 23.7,
+        "75": 13.4,
+        "100": 7.4,
+        "150": 2.8
+      },
+      "median_peak": 22.41,
+      "p25_peak": 8.32,
+      "p75_peak": 48.07,
+      "avg_final_return": 2.31
+    },
+    {
+      "filter": "buy_ratio > 0.6",
+      "group": "Buy Pressure",
+      "n": 668,
+      "pct_reach": {
+        "10": 73.2,
+        "20": 55.2,
+        "30": 40.6,
+        "40": 28.6,
+        "50": 23.1,
+        "75": 12.7,
+        "100": 7,
+        "150": 2.2
+      },
+      "median_peak": 22.55,
+      "p25_peak": 8.79,
+      "p75_peak": 46.61,
+      "avg_final_return": 0.67
+    },
+    {
+      "filter": "buyers >= 5",
+      "group": "Buy Pressure",
+      "n": 1021,
+      "pct_reach": {
+        "10": 70.7,
+        "20": 54.4,
+        "30": 41.1,
+        "40": 29.7,
+        "50": 23.5,
+        "75": 13.2,
+        "100": 7.3,
+        "150": 2.7
+      },
+      "median_peak": 22.24,
+      "p25_peak": 7.54,
+      "p75_peak": 47.86,
+      "avg_final_return": 1.46
+    },
+    {
+      "filter": "buyers >= 10",
+      "group": "Buy Pressure",
+      "n": 901,
+      "pct_reach": {
+        "10": 70.9,
+        "20": 54.5,
+        "30": 41.2,
+        "40": 29.6,
+        "50": 23.6,
+        "75": 13.4,
+        "100": 7.5,
+        "150": 2.8
+      },
+      "median_peak": 22.41,
+      "p25_peak": 7.29,
+      "p75_peak": 47.97,
+      "avg_final_return": 2.13
+    },
+    {
+      "filter": "whale < 30%",
+      "group": "Buy Pressure",
+      "n": 1076,
+      "pct_reach": {
+        "10": 71.2,
+        "20": 54.4,
+        "30": 41.4,
+        "40": 29.8,
+        "50": 23.7,
+        "75": 13.4,
+        "100": 7.5,
+        "150": 2.7
+      },
+      "median_peak": 22.32,
+      "p25_peak": 7.79,
+      "p75_peak": 47.97,
+      "avg_final_return": 1.26
+    },
+    {
+      "filter": "whale < 50%",
+      "group": "Buy Pressure",
+      "n": 1076,
+      "pct_reach": {
+        "10": 71.2,
+        "20": 54.4,
+        "30": 41.4,
+        "40": 29.8,
+        "50": 23.7,
+        "75": 13.4,
+        "100": 7.5,
+        "150": 2.7
+      },
+      "median_peak": 22.32,
+      "p25_peak": 7.79,
+      "p75_peak": 47.97,
+      "avg_final_return": 1.26
+    },
+    {
+      "filter": "fresh_dev",
+      "group": "Creator Rep",
+      "n": 1245,
+      "pct_reach": {
+        "10": 71.4,
+        "20": 54.2,
+        "30": 39.8,
+        "40": 29.1,
+        "50": 22,
+        "75": 11.6,
+        "100": 6,
+        "150": 2.2
+      },
+      "median_peak": 22.19,
+      "p25_peak": 7.97,
+      "p75_peak": 45.52,
+      "avg_final_return": 2.39
+    },
+    {
+      "filter": "repeat_dev >= 3",
+      "group": "Creator Rep",
+      "n": 100,
+      "pct_reach": {
+        "10": 70,
+        "20": 51,
+        "30": 41,
+        "40": 29,
+        "50": 24,
+        "75": 14,
+        "100": 8,
+        "150": 1
+      },
+      "median_peak": 20.41,
+      "p25_peak": 8.76,
+      "p75_peak": 47.49,
+      "avg_final_return": -13.46
+    },
+    {
+      "filter": "clean_dev",
+      "group": "Creator Rep",
+      "n": 112,
+      "pct_reach": {
+        "10": 70.5,
+        "20": 56.3,
+        "30": 39.3,
+        "40": 27.7,
+        "50": 21.4,
+        "75": 9.8,
+        "100": 3.6,
+        "150": 0.9
+      },
+      "median_peak": 22.75,
+      "p25_peak": 7.17,
+      "p75_peak": 42.45,
+      "avg_final_return": -3.83
+    },
+    {
+      "filter": "baseline: vel<20 + top5<10%",
+      "group": "Baseline",
+      "n": 176,
+      "pct_reach": {
+        "10": 73.3,
+        "20": 54,
+        "30": 34.7,
+        "40": 23.9,
+        "50": 13.6,
+        "75": 6.8,
+        "100": 2.8,
+        "150": 1.1
+      },
+      "median_peak": 21.15,
+      "p25_peak": 8.4,
+      "p75_peak": 37.2,
+      "avg_final_return": 7.74
+    }
+  ],
+  "suggested_tp": [
+    {
+      "tp_pct": 15,
+      "hit_rate_pct": 67,
+      "avg_nonhit_return_pct": -14.61,
+      "expected_return_pct": -0.16
+    },
+    {
+      "tp_pct": 20,
+      "hit_rate_pct": 54,
+      "avg_nonhit_return_pct": -9.4,
+      "expected_return_pct": 1
+    },
+    {
+      "tp_pct": 25,
+      "hit_rate_pct": 42,
+      "avg_nonhit_return_pct": -6.43,
+      "expected_return_pct": 1.34
+    },
+    {
+      "tp_pct": 30,
+      "hit_rate_pct": 34.7,
+      "avg_nonhit_return_pct": -4.77,
+      "expected_return_pct": 1.85
+    },
+    {
+      "tp_pct": 35,
+      "hit_rate_pct": 26.7,
+      "avg_nonhit_return_pct": -3.39,
+      "expected_return_pct": 1.54
+    },
+    {
+      "tp_pct": 40,
+      "hit_rate_pct": 23.9,
+      "avg_nonhit_return_pct": -2.29,
+      "expected_return_pct": 2.46
+    },
+    {
+      "tp_pct": 45,
+      "hit_rate_pct": 19.9,
+      "avg_nonhit_return_pct": -1.79,
+      "expected_return_pct": 2.22
+    },
+    {
+      "tp_pct": 50,
+      "hit_rate_pct": 13.6,
+      "avg_nonhit_return_pct": 1.25,
+      "expected_return_pct": 2.82
+    },
+    {
+      "tp_pct": 60,
+      "hit_rate_pct": 8.5,
+      "avg_nonhit_return_pct": 3.54,
+      "expected_return_pct": 3.45
+    },
+    {
+      "tp_pct": 75,
+      "hit_rate_pct": 6.8,
+      "avg_nonhit_return_pct": 4.55,
+      "expected_return_pct": 4.45
+    },
+    {
+      "tp_pct": 100,
+      "hit_rate_pct": 2.8,
+      "avg_nonhit_return_pct": 6.07,
+      "expected_return_pct": 4.06
+    }
+  ],
+  "recommended_tp": {
+    "tp_pct": 75,
+    "expected_return_pct": 4.45
+  }
+}

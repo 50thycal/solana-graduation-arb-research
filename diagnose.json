@@ -1,0 +1,65 @@
+{
+  "generated_at": "2026-04-26T00:42:04.466Z",
+  "verdict": "HEALTHY",
+  "next_action": "All checks pass. Safe to interpret /api/snapshot and /api/best-combos as real signal.",
+  "level1_bot_running": {
+    "pass": true,
+    "evidence": {
+      "total_graduations": 4428,
+      "last_graduation_seconds_ago": 1408
+    },
+    "notes": "Bot is receiving graduations."
+  },
+  "level2_price_capture": {
+    "pass": true,
+    "evidence": {
+      "sample_size": 50,
+      "null_open_price_count": 0,
+      "null_open_price_rate": 0,
+      "null_pct_t300_count": 15,
+      "no_pumpswap_pool_count": 0,
+      "no_pumpswap_pool_rate": 0,
+      "first_bad_row_id": null
+    },
+    "notes": "Price capture looks clean — PumpSwap pool linked and prices populated on recent rows."
+  },
+  "level3_timestamps": {
+    "pass": true,
+    "evidence": {
+      "sample_size": 20,
+      "missing_price_checkpoints": 0,
+      "first_bad_row_id": null
+    },
+    "notes": "Checkpoint grid is consistent on recent rows."
+  },
+  "level4_label_logic": {
+    "pass": true,
+    "evidence": {
+      "sample_size": 20,
+      "mismatches": [],
+      "mismatch_count": 0
+    },
+    "notes": "Label logic matches expected rule on recent rows."
+  },
+  "level5_live_ready": {
+    "pass": true,
+    "evidence": {
+      "live_strategy_count": 0
+    },
+    "notes": "No strategies in live mode — live-readiness not applicable."
+  },
+  "recent_errors": [
+    {
+      "ts": "2026-04-26T00:39:33.697Z",
+      "level": "error",
+      "name": "gist-sync",
+      "msg": "Status sync error"
+    },
+    {
+      "ts": "2026-04-26T00:39:34.935Z",
+      "level": "error",
+      "name": "graduation-listener",
+      "msg": "Error handling logs for 3B41F6o5kMGfCxzK8xSWk1dz5aqXoPxaLw8FUEjhtQc33B3B2h7EmTfV7Eyom3rBG4Wb1XUzZzvjxBRUG23v7tet: fetch failed"
+    }
+  ]
+}

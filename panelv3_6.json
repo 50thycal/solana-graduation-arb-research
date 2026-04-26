@@ -1,0 +1,182 @@
+{
+  "generated_at": "2026-04-26T00:42:04.466Z",
+  "panelv3_6": {
+    "title": "sum_abs_returns_0_30 — Pre-Entry Realized Volatility",
+    "description": "sum_abs_returns_0_30 = Σ|Δpct| over the 5s intervals through T+30. Proxy for how much distance the price covered before entry, regardless of direction. Complements monotonicity: a token can be smooth-and-up (low sum_abs, monotonic) or chop-and-up (high sum_abs, non-monotonic). Tested with < thresholds {20, 40, 60, 100} (calm paths) and > thresholds {20, 40, 60} (choppy paths), standalone and stacked on `vel<20 + top5<10%`. Hypothesis: calmer pre-entry paths are more predictable post-entry.",
+    "constants": {
+      "baseline_sim_return": -12.4,
+      "thresholds_lt": [
+        20,
+        40,
+        60,
+        100
+      ],
+      "thresholds_gt": [
+        20,
+        40,
+        60
+      ],
+      "min_n_for_optimum": 30
+    },
+    "rows": [
+      {
+        "op": "<",
+        "threshold": 20,
+        "mode": "standalone",
+        "n": 903,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -6.5,
+        "opt_win_rate": 44,
+        "beats_baseline": true
+      },
+      {
+        "op": "<",
+        "threshold": 20,
+        "mode": "stacked_baseline",
+        "n": 111,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": -3.2,
+        "opt_win_rate": 52,
+        "beats_baseline": true
+      },
+      {
+        "op": "<",
+        "threshold": 40,
+        "mode": "standalone",
+        "n": 2308,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -9.5,
+        "opt_win_rate": 43,
+        "beats_baseline": true
+      },
+      {
+        "op": "<",
+        "threshold": 40,
+        "mode": "stacked_baseline",
+        "n": 247,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": -2.3,
+        "opt_win_rate": 56,
+        "beats_baseline": true
+      },
+      {
+        "op": "<",
+        "threshold": 60,
+        "mode": "standalone",
+        "n": 3138,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -10.4,
+        "opt_win_rate": 42,
+        "beats_baseline": true
+      },
+      {
+        "op": "<",
+        "threshold": 60,
+        "mode": "stacked_baseline",
+        "n": 312,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.8,
+        "opt_win_rate": 60,
+        "beats_baseline": true
+      },
+      {
+        "op": "<",
+        "threshold": 100,
+        "mode": "standalone",
+        "n": 3686,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -11.9,
+        "opt_win_rate": 41,
+        "beats_baseline": true
+      },
+      {
+        "op": "<",
+        "threshold": 100,
+        "mode": "stacked_baseline",
+        "n": 341,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 0.1,
+        "opt_win_rate": 57,
+        "beats_baseline": true
+      },
+      {
+        "op": ">",
+        "threshold": 20,
+        "mode": "standalone",
+        "n": 3030,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -14.2,
+        "opt_win_rate": 38,
+        "beats_baseline": false
+      },
+      {
+        "op": ">",
+        "threshold": 20,
+        "mode": "stacked_baseline",
+        "n": 236,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 1.1,
+        "opt_win_rate": 59,
+        "beats_baseline": true
+      },
+      {
+        "op": ">",
+        "threshold": 40,
+        "mode": "standalone",
+        "n": 1624,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -16.6,
+        "opt_win_rate": 35,
+        "beats_baseline": false
+      },
+      {
+        "op": ">",
+        "threshold": 40,
+        "mode": "stacked_baseline",
+        "n": 100,
+        "opt_tp": 40,
+        "opt_sl": 30,
+        "opt_avg_ret": 7,
+        "opt_win_rate": 69,
+        "beats_baseline": true
+      },
+      {
+        "op": ">",
+        "threshold": 60,
+        "mode": "standalone",
+        "n": 795,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -20.3,
+        "opt_win_rate": 29,
+        "beats_baseline": false
+      },
+      {
+        "op": ">",
+        "threshold": 60,
+        "mode": "stacked_baseline",
+        "n": 35,
+        "opt_tp": 40,
+        "opt_sl": 30,
+        "opt_avg_ret": -6.4,
+        "opt_win_rate": 51,
+        "beats_baseline": true
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 30,
+      "strong_n_threshold": 100
+    }
+  }
+}

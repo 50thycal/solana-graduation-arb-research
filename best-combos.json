@@ -1,0 +1,305 @@
+{
+  "generated_at": "2026-04-26T00:42:24.647Z",
+  "baseline_avg_return_pct": -10.26,
+  "rows": [
+    {
+      "filter_spec": "vel < 50 + liq_t300 > 100",
+      "filters": [
+        "vel < 50",
+        "liq_t300 > 100"
+      ],
+      "n": 64,
+      "win_rate_pct": 95.3,
+      "avg_return_t30_to_t300_pct": 43.5,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 32.57,
+      "opt_win_rate": 90.6,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "vel < 20 + liq_t300 > 100",
+      "filters": [
+        "vel < 20",
+        "liq_t300 > 100"
+      ],
+      "n": 53,
+      "win_rate_pct": 94.3,
+      "avg_return_t30_to_t300_pct": 42.74,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 30.56,
+      "opt_win_rate": 88.7,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "liq_t300 > 100 + mono > 0.66",
+      "filters": [
+        "liq_t300 > 100",
+        "mono > 0.66"
+      ],
+      "n": 53,
+      "win_rate_pct": 98.1,
+      "avg_return_t30_to_t300_pct": 41.99,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 28.43,
+      "opt_win_rate": 86.8,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "holders >= 10 + liq_t300 > 100",
+      "filters": [
+        "holders >= 10",
+        "liq_t300 > 100"
+      ],
+      "n": 74,
+      "win_rate_pct": 94.6,
+      "avg_return_t30_to_t300_pct": 42.12,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 27.8,
+      "opt_win_rate": 85.1,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "holders >= 15 + liq_t300 > 100",
+      "filters": [
+        "holders >= 15",
+        "liq_t300 > 100"
+      ],
+      "n": 74,
+      "win_rate_pct": 94.6,
+      "avg_return_t30_to_t300_pct": 42.12,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 27.8,
+      "opt_win_rate": 85.1,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "holders >= 5 + liq_t300 > 100",
+      "filters": [
+        "holders >= 5",
+        "liq_t300 > 100"
+      ],
+      "n": 76,
+      "win_rate_pct": 94.7,
+      "avg_return_t30_to_t300_pct": 41.71,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 27.65,
+      "opt_win_rate": 85.5,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "holders >= 18 + liq_t300 > 100",
+      "filters": [
+        "holders >= 18",
+        "liq_t300 > 100"
+      ],
+      "n": 70,
+      "win_rate_pct": 94.3,
+      "avg_return_t30_to_t300_pct": 42.52,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 27.64,
+      "opt_win_rate": 84.3,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "age > 10min + liq_t300 > 100",
+      "filters": [
+        "age > 10min",
+        "liq_t300 > 100"
+      ],
+      "n": 34,
+      "win_rate_pct": 91.2,
+      "avg_return_t30_to_t300_pct": 36.16,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 26.85,
+      "opt_win_rate": 85.3,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "top5 < 20% + liq_t300 > 100",
+      "filters": [
+        "top5 < 20%",
+        "liq_t300 > 100"
+      ],
+      "n": 82,
+      "win_rate_pct": 95.1,
+      "avg_return_t30_to_t300_pct": 38.85,
+      "opt_tp": 150,
+      "opt_sl": 25,
+      "opt_avg_ret": 25.83,
+      "opt_win_rate": 80.5,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "liq_t300 > 100 + mono > 0.5",
+      "filters": [
+        "liq_t300 > 100",
+        "mono > 0.5"
+      ],
+      "n": 58,
+      "win_rate_pct": 94.8,
+      "avg_return_t30_to_t300_pct": 38,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 25.05,
+      "opt_win_rate": 82.8,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "dev < 5% + liq_t300 > 100",
+      "filters": [
+        "dev < 5%",
+        "liq_t300 > 100"
+      ],
+      "n": 73,
+      "win_rate_pct": 94.5,
+      "avg_return_t30_to_t300_pct": 37.52,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 23.36,
+      "opt_win_rate": 78.1,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "liq_t300 > 100 + whale < 30%",
+      "filters": [
+        "liq_t300 > 100",
+        "whale < 30%"
+      ],
+      "n": 91,
+      "win_rate_pct": 93.4,
+      "avg_return_t30_to_t300_pct": 35.96,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 22.7,
+      "opt_win_rate": 79.1,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "liq_t300 > 100 + whale < 50%",
+      "filters": [
+        "liq_t300 > 100",
+        "whale < 50%"
+      ],
+      "n": 91,
+      "win_rate_pct": 93.4,
+      "avg_return_t30_to_t300_pct": 35.96,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 22.7,
+      "opt_win_rate": 79.1,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "liq_t300 > 100 + fresh_dev",
+      "filters": [
+        "liq_t300 > 100",
+        "fresh_dev"
+      ],
+      "n": 90,
+      "win_rate_pct": 93.3,
+      "avg_return_t30_to_t300_pct": 34.47,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 22.38,
+      "opt_win_rate": 78.9,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "liq_t300 > 100",
+      "filters": [
+        "liq_t300 > 100"
+      ],
+      "n": 102,
+      "win_rate_pct": 93.1,
+      "avg_return_t30_to_t300_pct": 35.87,
+      "opt_tp": 150,
+      "opt_sl": 25,
+      "opt_avg_ret": 22.29,
+      "opt_win_rate": 78.4,
+      "beats_baseline": true
+    },
+    {
+      "filter_spec": "liq_t300 > 100 + buyers >= 5",
+      "filters": [
+        "liq_t300 > 100",
+        "buyers >= 5"
+      ],
+      "n": 83,
+      "win_rate_pct": 92.8,
+      "avg_return_t30_to_t300_pct": 35.9,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 22.08,
+      "opt_win_rate": 77.1,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "liq_t300 > 100 + dd > -20%",
+      "filters": [
+        "liq_t300 > 100",
+        "dd > -20%"
+      ],
+      "n": 96,
+      "win_rate_pct": 93.8,
+      "avg_return_t30_to_t300_pct": 35.57,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 21.81,
+      "opt_win_rate": 79.2,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "liq_t300 > 100 + buy_ratio > 0.5",
+      "filters": [
+        "liq_t300 > 100",
+        "buy_ratio > 0.5"
+      ],
+      "n": 80,
+      "win_rate_pct": 92.5,
+      "avg_return_t30_to_t300_pct": 34.63,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 21.37,
+      "opt_win_rate": 77.5,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "top5 < 15% + liq_t300 > 100",
+      "filters": [
+        "top5 < 15%",
+        "liq_t300 > 100"
+      ],
+      "n": 64,
+      "win_rate_pct": 95.3,
+      "avg_return_t30_to_t300_pct": 33.63,
+      "opt_tp": 100,
+      "opt_sl": 25,
+      "opt_avg_ret": 19.34,
+      "opt_win_rate": 76.6,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "vel 5-20 + liq_retained > 0.8",
+      "filters": [
+        "vel 5-20",
+        "liq_retained > 0.8"
+      ],
+      "n": 45,
+      "win_rate_pct": 82.2,
+      "avg_return_t30_to_t300_pct": 30.42,
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 19.3,
+      "opt_win_rate": 80,
+      "beats_baseline": false
+    }
+  ]
+}
