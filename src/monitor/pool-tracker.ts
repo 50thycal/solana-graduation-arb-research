@@ -297,12 +297,12 @@ export class PoolTracker {
   }
 
   private async resubscribe(): Promise<void> {
-    if (this.pumpSwapSubId !== null) {
-      try {
-        await this.connection.removeOnLogsListener(this.pumpSwapSubId);
-      } catch {}
-      this.pumpSwapSubId = null;
-    }
+    // `this.connection` was just replaced in updateConnection() with a fresh
+    // Connection. The old pumpSwapSubId belongs to the old Connection's
+    // registry and isn't in the new one — calling removeOnLogsListener with
+    // it makes web3.js console.warn about the missing id. The old socket is
+    // dead anyway, so just clear local state and resubscribe on the new one.
+    this.pumpSwapSubId = null;
     await this.subscribeToPumpSwap();
   }
 
