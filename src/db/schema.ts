@@ -573,5 +573,17 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // Persistent cache for heavy precomputed JSON blobs (filter-v2 panels,
+  // price-path detail, etc.). Survives process restarts so a redeploy doesn't
+  // trigger another ~100s blocking recompute. Read on boot, written after
+  // each refreshHeavyData() completes. value_json can be MB-sized.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cache_kv (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      computed_at INTEGER NOT NULL
+    );
+  `);
+
   logger.info('Database migrations complete');
 }

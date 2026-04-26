@@ -13,7 +13,7 @@
 import type Database from 'better-sqlite3';
 import { computePanel11 } from './panel11';
 
-export function computeFilterV2Data(
+export async function computeFilterV2Data(
   db: Database.Database,
   opts?: { p6Raw?: unknown },
 ) {
@@ -1271,6 +1271,11 @@ export function computeFilterV2Data(
         for (let i = 0; i < PANEL_1_FILTERS.length; i++) {
           const a = PANEL_1_FILTERS[i];
           const aOpt = (filters4[i] as any).optimal as Panel4Optimal;
+          // Yield to the event loop between outer iterations so /health and
+          // other endpoints stay responsive while this ~100s loop runs. Each
+          // outer iteration does ~50 inner pair sims; yielding here gives
+          // ~50 yield points across the full Panel 6 enumeration.
+          if (i % 4 === 0 && i > 0) await new Promise(r => setImmediate(r));
           for (let j = i + 1; j < PANEL_1_FILTERS.length; j++) {
             const b = PANEL_1_FILTERS[j];
             const bOpt = (filters4[j] as any).optimal as Panel4Optimal;
@@ -1309,14 +1314,15 @@ export function computeFilterV2Data(
       // Panel 6 top-pairs at shorter horizons. Same scan, different fall-through.
       // Single-filter optima are re-derived from the corresponding filters4_tN so
       // "lift vs best single" reflects performance at the same horizon.
-      const computeTopPairsAtHorizon = (
+      const computeTopPairsAtHorizon = async (
         horizon: Panel4Horizon,
         singleFilterRows: Array<{ filter: string; optimal: Panel4Optimal }>,
-      ): Panel6PairRow[] => {
+      ): Promise<Panel6PairRow[]> => {
         const out: Panel6PairRow[] = [];
         for (let i = 0; i < PANEL_1_FILTERS.length; i++) {
           const a = PANEL_1_FILTERS[i];
           const aOpt = singleFilterRows[i].optimal;
+          if (i % 4 === 0 && i > 0) await new Promise(r => setImmediate(r));
           for (let j = i + 1; j < PANEL_1_FILTERS.length; j++) {
             const b = PANEL_1_FILTERS[j];
             const bOpt = singleFilterRows[j].optimal;
@@ -1352,11 +1358,11 @@ export function computeFilterV2Data(
         return out.slice(0, 20);
       };
 
-      const panel6TopPairs_t60 = computeTopPairsAtHorizon(
+      const panel6TopPairs_t60 = await computeTopPairsAtHorizon(
         'pct_t60',
         filters4_t60.map(f => ({ filter: f.filter, optimal: (f as any).optimal as Panel4Optimal })),
       );
-      const panel6TopPairs_t120 = computeTopPairsAtHorizon(
+      const panel6TopPairs_t120 = await computeTopPairsAtHorizon(
         'pct_t120',
         filters4_t120.map(f => ({ filter: f.filter, optimal: (f as any).optimal as Panel4Optimal })),
       );
@@ -1776,12 +1782,16 @@ export function computeFilterV2Data(
         beats_baseline: boolean;
       };
 
-      const computeTopTriplesAtHorizon = (
+      const computeTopTriplesAtHorizon = async (
         horizon: Panel4Horizon,
         parentPairs: Panel6PairRow[],
-      ): PanelV3_1_Row[] => {
+      ): Promise<PanelV3_1_Row[]> => {
         const out: PanelV3_1_Row[] = [];
+        let pairIdx = 0;
         for (const pair of parentPairs) {
+          // Yield between top-pairs (~20 outer iterations × ~50 inner sims).
+          if (pairIdx > 0 && pairIdx % 2 === 0) await new Promise(r => setImmediate(r));
+          pairIdx++;
           const defA = findFilterDef(pair.filter_a);
           const defB = findFilterDef(pair.filter_b);
           if (!defA || !defB) continue;
@@ -1818,9 +1828,9 @@ export function computeFilterV2Data(
         return out.slice(0, 20);
       };
 
-      const panelV3_1_topTriples_t300 = computeTopTriplesAtHorizon('pct_t300', panel6TopPairs);
-      const panelV3_1_topTriples_t120 = computeTopTriplesAtHorizon('pct_t120', panel6TopPairs_t120);
-      const panelV3_1_topTriples_t60  = computeTopTriplesAtHorizon('pct_t60',  panel6TopPairs_t60);
+      const panelV3_1_topTriples_t300 = await computeTopTriplesAtHorizon('pct_t300', panel6TopPairs);
+      const panelV3_1_topTriples_t120 = await computeTopTriplesAtHorizon('pct_t120', panel6TopPairs_t120);
+      const panelV3_1_topTriples_t60  = await computeTopTriplesAtHorizon('pct_t60',  panel6TopPairs_t60);
 
       // ── v3 Panel 2: max_dd_0_30 gate stacked on best singles and pairs ───
       // For each base filter × threshold, compute the combined-predicate
@@ -2632,4 +2642,4 @@ export function computeFilterV2Data(
   return filterV2Data;
 }
 
-export type FilterV2Data = ReturnType<typeof computeFilterV2Data>;
+export type FilterV2Data = Awaited<ReturnType<typeof computeFilterV2Data>>;

@@ -151,7 +151,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
 
   // ── /api/diagnose ──
   // Runs the CLAUDE.md Level 1-5 bug triage and returns a verdict.
-  app.get('/api/diagnose', wrap((_req, res) => {
+  app.get('/api/diagnose', wrap(async (_req, res) => {
     const report = runDiagnosis(db, logBuffer);
     res.json(report);
   }));
@@ -159,7 +159,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // ── /api/live-execution-stats ──
   // Live-mode execution health: tx land rate, latency, Jito spend, measured
   // vs assumed slippage. Claude reads this to decide rollout-phase promotion.
-  app.get('/api/live-execution-stats', wrap((_req, res) => {
+  app.get('/api/live-execution-stats', wrap(async (_req, res) => {
     res.json(computeLiveExecutionStats(db));
   }));
 
@@ -277,7 +277,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // ── /api/snapshot ──
   // One-call summary: counts, scorecard, data quality, last graduation,
   // last crash, recent graduations. This is the "what's going on" endpoint.
-  app.get('/api/snapshot', wrap((_req, res) => {
+  app.get('/api/snapshot', wrap(async (_req, res) => {
     const nowMs = Date.now();
     const uptimeSec = Math.floor((nowMs - startTime) / 1000);
 
@@ -331,13 +331,13 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Top 20 combos × creator-wallet-rep filters: matrix of sim-return deltas
   // and a "best rep filter overall" summary. Reuses simulateCombo() from
   // aggregates.ts so the cost/gap model matches /api/best-combos exactly.
-  app.get('/api/wallet-rep-analysis', wrap((_req, res) => {
+  app.get('/api/wallet-rep-analysis', wrap(async (_req, res) => {
     res.json(computeWalletRepAnalysis(db));
   }));
 
   // ── /api/panel3 ──
   // Single-filter regime stability — same as Panel 3 on /filter-analysis-v2 as JSON.
-  app.get('/api/panel3', wrap((_req, res) => {
+  app.get('/api/panel3', wrap(async (_req, res) => {
     res.json(computePanel3Summary(db));
   }));
 
@@ -345,14 +345,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Combo filter regime stability — same data as Panel 11 on /filter-analysis-v2
   // but as JSON for Claude self-serve. Includes sim return + beats_baseline from
   // best-combos alongside regime bucket data.
-  app.get('/api/panel11', wrap((_req, res) => {
+  app.get('/api/panel11', wrap(async (_req, res) => {
     res.json(computePanel11(db));
   }));
 
   // ── /api/price-path-stats ──
   // Aggregated price path statistics: mean paths by label, Cohen's d feature effects,
   // entry timing optimization, velocity breakdown. Compact — no raw token rows.
-  app.get('/api/price-path-stats', wrap((_req, res) => {
+  app.get('/api/price-path-stats', wrap(async (_req, res) => {
     res.json(computePricePathStats(db));
   }));
 
@@ -361,19 +361,19 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // /filter-analysis-v2 and the bot-status sync. Use /api/panelN for a slice.
   // Served from the shared 24h heavy cache (src/api/heavy-cache.ts); the
   // `?p6=` power-user slice bypasses the cache since it depends on URL input.
-  app.get('/api/filter-v2', wrap((req, res) => {
+  app.get('/api/filter-v2', wrap(async (req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
     const data = req.query.p6 !== undefined
-      ? computeFilterV2Data(db, { p6Raw: req.query.p6 })
-      : getHeavyData(db, sm).v2;
+      ? await computeFilterV2Data(db, { p6Raw: req.query.p6 })
+      : (await getHeavyData(db, sm)).v2;
     res.json(data);
   }));
 
   // ── /api/panel1 .. /api/panel10 ──
   // Per-panel slices of FilterV2Data — all served from the 24h heavy cache.
-  app.get('/api/panel1', wrap((_req, res) => {
+  app.get('/api/panel1', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({
       generated_at: d.generated_at,
       panel1: d.panel1,
@@ -381,14 +381,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       panel1_t120: d.panel1_t120,
     });
   }));
-  app.get('/api/panel2', wrap((_req, res) => {
+  app.get('/api/panel2', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panel2: d.panel2 });
   }));
-  app.get('/api/panel4', wrap((_req, res) => {
+  app.get('/api/panel4', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({
       generated_at: d.generated_at,
       panel4: d.panel4,
@@ -396,14 +396,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       panel4_t120: d.panel4_t120,
     });
   }));
-  app.get('/api/panel5', wrap((_req, res) => {
+  app.get('/api/panel5', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panel5: d.panel5 });
   }));
-  app.get('/api/panel6', wrap((_req, res) => {
+  app.get('/api/panel6', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     // Expose only the static auto-scanned leaderboard; the URL-driven "dynamic"
     // slice requires user selection and is skipped in the JSON view.
     res.json({
@@ -419,24 +419,24 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       },
     });
   }));
-  app.get('/api/panel7', wrap((_req, res) => {
+  app.get('/api/panel7', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panel7: d.panel7 });
   }));
-  app.get('/api/panel8', wrap((_req, res) => {
+  app.get('/api/panel8', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panel8: d.panel8 });
   }));
-  app.get('/api/panel9', wrap((_req, res) => {
+  app.get('/api/panel9', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panel9: d.panel9 });
   }));
-  app.get('/api/panel10', wrap((_req, res) => {
+  app.get('/api/panel10', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panel10: d.panel10 });
   }));
 
@@ -444,9 +444,9 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Six v3 panels (triple-filter combos, drawdown-gate stacking, crash-survival
   // curves, max_tick_drop, velocity × liquidity heatmap, sum_abs_returns).
   // Same 24h heavy cache as the v2 panels.
-  app.get('/api/filter-v3', wrap((_req, res) => {
+  app.get('/api/filter-v3', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({
       generated_at: d.generated_at,
       panelv3_1: d.panelv3_1,
@@ -460,39 +460,39 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   }));
 
   // Per-panel v3 slices.
-  app.get('/api/panelv3_1', wrap((_req, res) => {
+  app.get('/api/panelv3_1', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panelv3_1: d.panelv3_1 });
   }));
-  app.get('/api/panelv3_2', wrap((_req, res) => {
+  app.get('/api/panelv3_2', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panelv3_2: d.panelv3_2 });
   }));
-  app.get('/api/panelv3_3', wrap((_req, res) => {
+  app.get('/api/panelv3_3', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panelv3_3: d.panelv3_3 });
   }));
-  app.get('/api/panelv3_4', wrap((_req, res) => {
+  app.get('/api/panelv3_4', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panelv3_4: d.panelv3_4 });
   }));
-  app.get('/api/panelv3_5', wrap((_req, res) => {
+  app.get('/api/panelv3_5', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panelv3_5: d.panelv3_5 });
   }));
-  app.get('/api/panelv3_6', wrap((_req, res) => {
+  app.get('/api/panelv3_6', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panelv3_6: d.panelv3_6 });
   }));
-  app.get('/api/panelv3_7', wrap((_req, res) => {
+  app.get('/api/panelv3_7', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    const d = getHeavyData(db, sm).v2;
+    const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panelv3_7: d.panelv3_7 });
   }));
 
@@ -501,9 +501,9 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // by label with ±1 SD, vel 5-20 vs all, derived metrics (Cohen's d),
   // acceleration histogram, entry timing heatmap, monotonicity buckets.
   // Served from the 24h heavy cache.
-  app.get('/api/price-path-detail', wrap((_req, res) => {
+  app.get('/api/price-path-detail', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
-    res.json(getHeavyData(db, sm).pricePathDetail);
+    res.json((await getHeavyData(db, sm)).pricePathDetail);
   }));
 
   // ── /api/trading ──
@@ -521,7 +521,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Diagnostic data for max_relret_0_300 (look-ahead peak from T+30 entry).
   // CDF, peak-time histogram, per-filter peak-bucket table, suggested TP.
   // NOT a tradable filter — kept off /api/best-combos by design.
-  app.get('/api/peak-analysis', wrap((_req, res) => {
+  app.get('/api/peak-analysis', wrap(async (_req, res) => {
     res.json(computePeakAnalysis(db));
   }));
 
@@ -530,7 +530,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // (momentum reversal today; scale-out, vol-trail, time-decayed TP in
   // follow-ups) against the baseline 10%SL/50%TP on a filter universe.
   // Default universe = vel<20 + top5<10% (current +6.44% baseline).
-  app.get('/api/exit-sim', wrap((_req, res) => {
+  app.get('/api/exit-sim', wrap(async (_req, res) => {
     res.json(computeExitSim(db));
   }));
 
@@ -539,14 +539,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // top 20 filter combos and surfaces the best-cell-per-strategy + Δ vs the
   // combo's own static 10%SL/50%TP baseline. Sorted by best delta so the
   // combos that gain the most from dynamic exits surface first.
-  app.get('/api/exit-sim-matrix', wrap((_req, res) => {
+  app.get('/api/exit-sim-matrix', wrap(async (_req, res) => {
     res.json(computeExitSimMatrix(db));
   }));
 
   // ── /api/filter-catalog ──
   // The filter definitions used by /api/best-combos. Useful for Claude to
   // enumerate the search space before proposing new candidates.
-  app.get('/api/filter-catalog', wrap((_req, res) => {
+  app.get('/api/filter-catalog', wrap(async (_req, res) => {
     res.json({
       count: FILTER_CATALOG.length,
       filters: FILTER_CATALOG,

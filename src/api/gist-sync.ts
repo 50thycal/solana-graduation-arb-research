@@ -117,6 +117,18 @@ export class GistSync {
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
+  // Ring buffer of recent inbound-command batches. Each entry captures one
+  // processInboundCommands() invocation that found a non-empty file. Surfaced
+  // as command-results.json on bot-status so callers can see why a strategy
+  // upsert was rejected (e.g. id-length violation) without reading bot logs.
+  // Bounded at 20 batches — enough history to investigate any recent push.
+  private recentCommandBatches: Array<{
+    processed_at: string;
+    command_count: number;
+    results: Array<{ id: string; action: string; ok: boolean; error?: string }>;
+  }> = [];
+  private static readonly COMMAND_BATCH_HISTORY = 20;
+
   constructor(opts: {
     db: Database.Database;
     logBuffer: LogBuffer;
@@ -257,6 +269,17 @@ export class GistSync {
       // Delete the commands file after processing
       await this.deleteCommandsFile(fileInfo.sha);
 
+      // Record into the ring buffer so command-results.json on bot-status
+      // exposes per-command outcomes (rejected ids, validation errors, etc).
+      this.recentCommandBatches.unshift({
+        processed_at: new Date().toISOString(),
+        command_count: commands.commands.length,
+        results,
+      });
+      if (this.recentCommandBatches.length > GistSync.COMMAND_BATCH_HISTORY) {
+        this.recentCommandBatches.length = GistSync.COMMAND_BATCH_HISTORY;
+      }
+
       logger.info(
         { results, commandCount: commands.commands.length },
         'Inbound strategy commands processed',
@@ -283,7 +306,7 @@ export class GistSync {
 
   // ── private ──────────────────────────────────────────────────
 
-  private buildPayloads(): Record<string, string> {
+  private async buildPayloads(): Promise<Record<string, string>> {
     const nowMs = Date.now();
 
     const diagnose = runDiagnosis(this.db, this.logBuffer);
@@ -351,7 +374,7 @@ export class GistSync {
     // on boot (first call) and at most once/day after that. Each sync cycle
     // still re-publishes the cached JSON strings so all files stay on
     // bot-status.
-    const heavy = getHeavyData(this.db, this.strategyManager);
+    const heavy = await getHeavyData(this.db, this.strategyManager);
     const v2 = heavy.v2;
     const pricePathDetail = heavy.pricePathDetail;
     // Don't reuse heavy.tradingData — strategies/config can drift from what
@@ -403,6 +426,15 @@ export class GistSync {
         generated_at: genAt,
         count: strategies.length,
         strategies,
+      }, null, 2),
+      // Per-command outcomes from the last 20 strategy-commands.json batches
+      // the bot processed. Use to debug silently-rejected upserts (ID length
+      // violations, invalid params, missing fields). Fresh push wipes the
+      // file from main but leaves the entry here.
+      'command-results.json': JSON.stringify({
+        generated_at: genAt,
+        batch_count: this.recentCommandBatches.length,
+        batches: this.recentCommandBatches,
       }, null, 2),
 
       // New files (overhaul 2026-04-17): per-panel slices from /filter-analysis-v2
@@ -468,7 +500,7 @@ export class GistSync {
     // Process any inbound strategy commands before building status
     await this.processInboundCommands();
 
-    const payloads = this.buildPayloads();
+    const payloads = await this.buildPayloads();
 
     try {
       // 1. Create one blob per file.

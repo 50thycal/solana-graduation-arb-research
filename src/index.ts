@@ -2181,15 +2181,15 @@ async function main() {
   // All panel data is computed by computeFilterV2Data (src/api/filter-v2-data.ts)
   // so the same payload is served here, from /api/filter-v2 / /api/panelN, and
   // from the bot-status sync. The route just branches on Accept header.
-  app.get('/filter-analysis-v2', (req, res) => {
+  app.get('/filter-analysis-v2', async (req, res) => {
     try {
       // Default path hits the 24h heavy cache (see src/api/heavy-cache.ts) so
       // a dashboard load costs ~50ms instead of ~100s. The `?p6=` power-user
       // slice still computes fresh since its input comes from the URL.
       const p6Raw = req.query.p6;
       const data = p6Raw !== undefined
-        ? computeFilterV2Data(db, { p6Raw })
-        : getHeavyData(db, strategyManager).v2;
+        ? await computeFilterV2Data(db, { p6Raw })
+        : (await getHeavyData(db, strategyManager)).v2;
       cachedTopPairs = data.panel6.top_pairs;
       const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
@@ -2208,9 +2208,9 @@ async function main() {
   // triple-filter combos, drawdown-gate stacking, crash-survival curves,
   // two new filter dimensions (max_tick_drop_0_30, sum_abs_returns_0_30),
   // and a velocity × liquidity heatmap. Served from the 24h heavy cache.
-  app.get('/filter-analysis-v3', (req, res) => {
+  app.get('/filter-analysis-v3', async (req, res) => {
     try {
-      const data = getHeavyData(db, strategyManager).v2;
+      const data = (await getHeavyData(db, strategyManager)).v2;
       const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -2236,9 +2236,9 @@ async function main() {
   // ── PRICE PATH ANALYSIS ──────────────────────────────────────────────────
   // renderPricePathHtml does its own DB scan (~40s at current data volume),
   // so the HTML output is cached alongside the other heavy payloads.
-  app.get('/price-path', (_req, res) => {
+  app.get('/price-path', async (_req, res) => {
     try {
-      const { pricePathHtml } = getHeavyData(db, strategyManager);
+      const { pricePathHtml } = await getHeavyData(db, strategyManager);
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(pricePathHtml);
     } catch (err) {
