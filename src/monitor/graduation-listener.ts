@@ -677,6 +677,7 @@ export class GraduationListener {
     slot: number,
     matchedLog: string
   ): Promise<GraduationEvent | null> {
+    const wsReceivedAt = Date.now();
     await globalRpcLimiter.throttlePriority();
     let tx = await this.connection.getParsedTransaction(signature, {
       commitment: 'confirmed',
@@ -1284,6 +1285,21 @@ export class GraduationListener {
         );
       }
     }
+
+    // Log delivery latency split: WS delay vs RPC fetch time.
+    // wsDeliveryLatencySec = time from on-chain block → WS log received.
+    // rpcFetchMs = time from WS received → getParsedTransaction returned.
+    logger.info(
+      {
+        mint: mint?.slice(0, 8),
+        signature: signature.slice(0, 8),
+        wsDeliveryLatencySec: tx.blockTime
+          ? +((wsReceivedAt - tx.blockTime * 1000) / 1000).toFixed(1)
+          : null,
+        rpcFetchMs: Date.now() - wsReceivedAt,
+      },
+      'Graduation tx timing'
+    );
 
     return {
       mint,
