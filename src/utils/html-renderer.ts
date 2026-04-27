@@ -5472,8 +5472,18 @@ export function renderPipelineHtml(data: any): string {
   ` : `<div style="color:#64748b;margin-bottom:20px">No session stats (listener not running or just restarted)</div>`;
 
   const rows = grads.map(g => {
+    // Pool died = T+30 was reached (strategies evaluated) but T+300 never arrived
+    // and the token is old enough that it should have completed by now (>6 min).
+    const gradMs = g.grad_time ? new Date(g.grad_time + 'Z').getTime() : null;
+    const minsOld = gradMs ? (Date.now() - gradMs) / 60000 : 0;
+    const t30Reached = g.pct_t30 != null || g.skip_count > 0 || g.trade_count > 0;
+    const poolDied = t30Reached && g.pct_t300 == null && minsOld > 6;
+
     const noEvalNote = g.status === 'NO_EVAL'
       ? `<span style="color:#475569;font-size:10px"> stale or T+30 timeout</span>`
+      : '';
+    const poolDiedNote = poolDied
+      ? `<span style="background:#33415522;color:#64748b;padding:1px 6px;border-radius:8px;font-size:10px;margin-left:4px" title="Pool liquidity drained before T+300 — token dumped hard, no 5-min data. Not a bug.">pool dead</span>`
       : '';
     const reasons = g.skip_reasons
       ? g.skip_reasons.split(',').map((r: string) =>
@@ -5491,7 +5501,7 @@ export function renderPipelineHtml(data: any): string {
       <td style="text-align:right">${fmtP(g.pct_t30)}</td>
       <td style="text-align:right">${fmtP(g.pct_t300)}</td>
       <td>${labelChip(g.label)}</td>
-      <td>${statusChip(g.status)}${noEvalNote}</td>
+      <td>${statusChip(g.status)}${noEvalNote}${poolDiedNote}</td>
       <td>${reasons}</td>
       <td style="text-align:center;color:${g.trade_count > 0 ? '#22c55e' : '#475569'}">${g.trade_count}</td>
       <td style="text-align:center;color:#94a3b8">${g.skip_count}</td>
@@ -5512,7 +5522,8 @@ export function renderPipelineHtml(data: any): string {
       <strong style="color:#94a3b8">Status key:</strong>
       ${chip('TRADED','#22c55e')} at least 1 strategy entered &nbsp;·&nbsp;
       ${chip('FILTERED','#f59e0b')} all ${activeCount} strategies ran and rejected (see Skip Reasons) &nbsp;·&nbsp;
-      ${chip('NO EVAL','#f87171')} price collector rejected before strategies ran — stale arrival (&gt;T+25) or T+30 pool-fetch timeout
+      ${chip('NO EVAL','#f87171')} price collector rejected before strategies ran — stale arrival (&gt;T+25) or T+30 pool-fetch timeout &nbsp;·&nbsp;
+      <span style="background:#33415522;color:#64748b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">pool dead</span> T+30 fired but pool drained before T+300 — token dumped hard, not a bug
     </div>
 
     <div style="overflow-x:auto">
