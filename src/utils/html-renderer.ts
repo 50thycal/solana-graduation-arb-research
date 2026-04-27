@@ -5483,7 +5483,7 @@ export function renderPipelineHtml(data: any): string {
 
     return `<tr style="border-bottom:1px solid #1e293b">
       <td style="color:#60a5fa;font-weight:bold">#${g.id}</td>
-      <td style="font-family:monospace;font-size:10px;color:#64748b">${g.mint ? g.mint.slice(0,8) + '…' : '—'}</td>
+      <td style="white-space:nowrap">${g.mint ? `<span style="display:inline-flex;align-items:center;gap:3px"><a href="https://dexscreener.com/solana/${g.mint}" target="_blank" title="${g.mint}" style="font-family:monospace;font-size:10px;color:#64748b;text-decoration:none">${g.mint.slice(0,8)}…</a><button onclick="navigator.clipboard.writeText('${g.mint}').then(()=>{this.textContent='✓';setTimeout(()=>{this.textContent='⎘'},1200)})" title="Copy mint address" style="background:none;border:none;cursor:pointer;color:#475569;font-size:11px;padding:0 2px;line-height:1">⎘</button></span>` : '—'}</td>
       <td style="color:#475569;font-size:11px">${g.grad_time ? g.grad_time.replace('T',' ').slice(0,19) : '—'}</td>
       <td style="text-align:right">${fmt(g.vel)}</td>
       <td style="text-align:right">${fmt(g.top5)}</td>
