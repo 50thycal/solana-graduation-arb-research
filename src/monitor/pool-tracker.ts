@@ -63,8 +63,10 @@ export class PoolTracker {
   private totalSkipped = 0;
   private totalPumpSwapEvents = 0;
   private totalPoolCreationEvents = 0;
+  private totalMigrationCandidatesFired = 0;
   private totalMatched = 0;
   private totalSpeculativeHits = 0;
+  private migrationCandidateCb: ((sig: string, slot: number, wsReceivedAt: number) => Promise<void>) | null = null;
 
   constructor(db: Database.Database, connection: Connection) {
     this.db = db;
@@ -88,11 +90,22 @@ export class PoolTracker {
       totalSkipped: this.totalSkipped,
       totalPumpSwapEvents: this.totalPumpSwapEvents,
       totalPoolCreationEvents: this.totalPoolCreationEvents,
+      totalMigrationCandidatesFired: this.totalMigrationCandidatesFired,
       totalMatched: this.totalMatched,
       totalSpeculativeHits: this.totalSpeculativeHits,
       pumpSwapSubscribed: this.pumpSwapSubId !== null,
       priceCollector: this.priceCollector.getStats(),
     };
+  }
+
+  /**
+   * Register a callback that's invoked for every PumpSwap pool creation event.
+   * GraduationListener uses this to run its full migration processing pipeline
+   * off the PumpSwap WS, which delivers ~5s vs the pump.fun WS's 30-75s for
+   * delayed events. The callback is responsible for dedupe (signature-based).
+   */
+  setMigrationCandidateCallback(cb: (sig: string, slot: number, wsReceivedAt: number) => Promise<void>): void {
+    this.migrationCandidateCb = cb;
   }
 
   async start(): Promise<void> {
@@ -239,13 +252,12 @@ export class PoolTracker {
           this.totalPumpSwapEvents++;
 
           if (logs.err) return;
-          if (this.pendingByMint.size === 0 && this.speculativeByMint.size === 0) return;
 
           // CRITICAL: PumpSwap handles thousands of swap events per minute.
-          // Only fetch the full transaction for pool creation events, not swaps.
-          // Use narrow signals: the pump.fun migration CPI is the most reliable,
-          // plus the explicit "create_pool" instruction name. Avoid broad matches
-          // like "Create"/"Initialize" which fire on every swap that creates an ATA.
+          // Only act on pool creation events. The pump.fun migration CPI is
+          // the most reliable signal, plus the explicit "create_pool"
+          // instruction name. Avoid broad matches like "Create"/"Initialize"
+          // which fire on every swap that creates an ATA.
           const isPoolCreation = logs.logs.some(
             (log) =>
               log.includes('create_pool') ||
@@ -255,6 +267,7 @@ export class PoolTracker {
           if (!isPoolCreation) return;
 
           this.totalPoolCreationEvents++;
+          const wsReceivedAt = Date.now();
 
           // Log first few pool creation events for debugging
           if (this.totalPoolCreationEvents <= 10) {
@@ -270,6 +283,28 @@ export class PoolTracker {
               'PumpSwap pool creation event'
             );
           }
+
+          // PRIMARY DETECTION CHANNEL: fire migration candidate to graduation-listener.
+          // PumpSwap WS typically delivers ~5s after the on-chain block, while
+          // Helius's pump.fun WS delays ~50% of migrations by 30-75s. The listener
+          // dedupes by signature so the slower channel's redelivery is a no-op.
+          // Fire-and-forget: don't block the WS handler on the full processing pipeline.
+          if (this.migrationCandidateCb) {
+            this.totalMigrationCandidatesFired++;
+            this.migrationCandidateCb(logs.signature, ctx.slot, wsReceivedAt).catch((err) => {
+              logger.error(
+                'migrationCandidateCb threw for %s: %s',
+                logs.signature,
+                err instanceof Error ? err.message : String(err)
+              );
+            });
+          }
+
+          // Existing path: fill in pool address for grads where pump.fun WS fired
+          // first (added to pending/speculative) but inline pool extraction failed.
+          // Skip when there's nothing to match — the callback above is the new
+          // primary path and handles its own pool extraction.
+          if (this.pendingByMint.size === 0 && this.speculativeByMint.size === 0) return;
 
           try {
             await this.handlePumpSwapEvent(logs.signature, ctx.slot);
