@@ -1232,6 +1232,10 @@ export class PriceCollector {
       let oldestBlockTime: number | null = null;
 
       for (let page = 0; page < 3; page++) {
+        if (!await globalRpcLimiter.throttleOrDrop(3)) {
+          logger.info({ graduationId }, 'bc_velocity fallback: RPC queue full, skipping page');
+          break;
+        }
         const sigs = await this.connection.getSignaturesForAddress(bcPubkey, { limit: 1000, before });
         if (sigs.length === 0) break;
         const last = sigs[sigs.length - 1];
@@ -1338,6 +1342,10 @@ export class PriceCollector {
           let totalSigsScanned = 0;
 
           for (let page = 0; page < 5; page++) {
+            if (!await globalRpcLimiter.throttleOrDrop(5)) {
+              logger.info({ graduationId: row.graduation_id }, 'Velocity recovery: RPC queue full, skipping page');
+              break;
+            }
             const sigs = await this.connection.getSignaturesForAddress(bcPubkey, { limit: 1000, before });
             totalSigsScanned += sigs.length;
             if (sigs.length === 0) break;
