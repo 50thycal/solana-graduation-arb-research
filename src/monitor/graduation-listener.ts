@@ -159,6 +159,9 @@ export class GraduationListener {
   private totalCandidatesDetected = 0;
   private totalCandidatesFromPumpFun = 0;
   private totalCandidatesFromPumpSwap = 0;
+  private totalPollDupes = 0;        // poller fired but WS already won the race
+  private totalPollSigsFound = 0;    // total sigs returned by getSignaturesForAddress
+  private totalPollTicks = 0;        // how many poll intervals have run
   private totalVerifiedGraduations = 0;
   private totalGraduationsRecorded = 0;
   // Helius's logs subscription delivers the same migration tx multiple times
@@ -272,6 +275,9 @@ export class GraduationListener {
       totalCandidatesFromPumpFun: this.totalCandidatesFromPumpFun,
       totalCandidatesFromPumpSwap: this.totalCandidatesFromPumpSwap,
       totalCandidatesFromPoll: this.totalCandidatesFromPoll,
+      totalPollDupes: this.totalPollDupes,
+      totalPollSigsFound: this.totalPollSigsFound,
+      totalPollTicks: this.totalPollTicks,
       // Migrate logs filtered out as Helius redeliveries before any RPC
       // call. Healthy ratio is roughly 4× duplicates for every unique
       // candidate (so this should be ~80% of (candidates + duplicates)).
@@ -541,6 +547,7 @@ export class GraduationListener {
 
     this.pollInterval = setInterval(async () => {
       if (this.stopped) return;
+      this.totalPollTicks++;
       try {
         await globalRpcLimiter.throttle();
         const sigs = await this.connection.getSignaturesForAddress(
@@ -548,7 +555,12 @@ export class GraduationListener {
           { limit: 20, until: this.pollLastSig }
         );
         if (sigs.length === 0) return;
+        this.totalPollSigsFound += sigs.length;
         this.pollLastSig = sigs[0].signature; // most recent first
+        logger.info(
+          { sigsFound: sigs.length, newestSig: sigs[0].signature.slice(0, 8), lastSig: this.pollLastSig?.slice(0, 8) },
+          'RPC poller found new migration sigs'
+        );
         for (const sig of sigs.reverse()) {   // process oldest-first
           if (!sig.err) {
             this.handleMigrationCandidate(sig.signature, sig.slot ?? 0, 'rpc-poll', Date.now())
@@ -556,7 +568,7 @@ export class GraduationListener {
           }
         }
       } catch (err) {
-        logger.debug('Migration poll error: %s', (err as Error).message);
+        logger.warn('Migration poll error: %s', (err as Error).message);
       }
     }, MIGRATION_POLL_INTERVAL_MS);
   }
@@ -598,6 +610,7 @@ export class GraduationListener {
     // channels, the dedupe also drops the slower channel's first delivery.
     if (this.isDuplicateSignature(signature)) {
       this.totalDuplicateLogs++;
+      if (source === 'rpc-poll') this.totalPollDupes++;
       return;
     }
 
