@@ -131,8 +131,13 @@ interface BondingCurveState {
 // pump.fun withdraw_authority PDA — only present in migrate instructions, not buys/sells.
 // Polling getSignaturesForAddress on this account gives us migrations with <2s latency,
 // bypassing the Helius WS batch-buffering that delays ~43% of grads by 25-75s.
+//
+// Seed is 'withdraw-authority' (kebab-case) — matches pump.fun's IDL convention for
+// other PDAs ('mint-authority', 'bonding-curve'). The previous 'withdraw_authority'
+// (underscore) derived to an address with zero on-chain activity, so the poller
+// returned empty every tick.
 const PUMP_WITHDRAW_AUTHORITY = PublicKey.findProgramAddressSync(
-  [Buffer.from('withdraw_authority')],
+  [Buffer.from('withdraw-authority')],
   PUMP_FUN_PROGRAM_ID
 )[0];
 
@@ -151,6 +156,14 @@ export class GraduationListener {
   private pollInterval: NodeJS.Timeout | null = null;
   private pollLastSig: string | undefined = undefined;
   private totalCandidatesFromPoll = 0;
+  // Captured at runtime from accts[1] of the first verified migrate tx. If our
+  // derived PDA above is wrong (kebab vs snake case again), this is the ground
+  // truth and the poller switches to it on the next tick.
+  private discoveredWithdrawAuthority: PublicKey | null = null;
+  // The address the poller is currently using. Tracked separately from the
+  // derived/discovered values so we can detect a mid-flight target switch and
+  // re-bootstrap pollLastSig instead of burst-processing 20 historical sigs.
+  private pollerCurrentTarget: PublicKey = PUMP_WITHDRAW_AUTHORITY;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private lastEventTime = Date.now();
   private lastCandidateTime = Date.now();
@@ -534,24 +547,42 @@ export class GraduationListener {
       );
       if (initial.length > 0) this.pollLastSig = initial[0].signature;
       logger.info(
-        {
-          withdrawAuthority: PUMP_WITHDRAW_AUTHORITY.toBase58(),
-          bootstrapSig: this.pollLastSig?.slice(0, 8),
-          intervalMs: MIGRATION_POLL_INTERVAL_MS,
-        },
-        'Migration RPC poller started'
+        'Migration RPC poller started — polling ' + PUMP_WITHDRAW_AUTHORITY.toBase58() +
+        ' every ' + MIGRATION_POLL_INTERVAL_MS + 'ms (bootstrap sigs: ' + initial.length +
+        (initial.length > 0 ? ', lastSig=' + initial[0].signature.slice(0, 8) : '') + ')'
       );
     } catch (err) {
       logger.warn('Migration poller bootstrap failed: %s', (err as Error).message);
     }
+
+    this.pollerCurrentTarget = PUMP_WITHDRAW_AUTHORITY;
 
     this.pollInterval = setInterval(async () => {
       if (this.stopped) return;
       this.totalPollTicks++;
       try {
         await globalRpcLimiter.throttle();
+        // Use the runtime-captured address if we have one (ground truth from a
+        // real migrate tx). Otherwise fall back to the derived PDA.
+        const target = this.discoveredWithdrawAuthority ?? PUMP_WITHDRAW_AUTHORITY;
+
+        // If discovery just switched our target, re-bootstrap pollLastSig from
+        // the new address's head and skip processing this tick. Without this,
+        // `until: pollLastSig` would never match (different sig history) and
+        // we'd burst-process 20 historical sigs on the new address.
+        if (!target.equals(this.pollerCurrentTarget)) {
+          const reboot = await this.connection.getSignaturesForAddress(target, { limit: 1 });
+          this.pollLastSig = reboot[0]?.signature;
+          this.pollerCurrentTarget = target;
+          logger.info(
+            'Poller target switched to ' + target.toBase58() +
+            ', rebootstrap lastSig=' + (this.pollLastSig?.slice(0, 8) ?? 'none')
+          );
+          return;
+        }
+
         const sigs = await this.connection.getSignaturesForAddress(
-          PUMP_WITHDRAW_AUTHORITY,
+          target,
           { limit: 20, until: this.pollLastSig }
         );
         if (sigs.length === 0) return;
@@ -1171,6 +1202,24 @@ export class GraduationListener {
       if (accts.length >= 19) {
         poolBaseVault = accts[17];   // pool_base_token_account
         poolQuoteVault = accts[18];  // pool_quote_token_account
+      }
+
+      // Capture the actual withdraw_authority for the RPC poller. accts[1] is
+      // the ground truth from the migrate instruction; if it differs from our
+      // derived PDA the poller switches to the captured address on next tick.
+      if (!this.discoveredWithdrawAuthority && accts[1]) {
+        try {
+          const captured = new PublicKey(accts[1]);
+          this.discoveredWithdrawAuthority = captured;
+          const matchesPda = captured.equals(PUMP_WITHDRAW_AUTHORITY);
+          logger.info(
+            'Discovered withdraw_authority from migrate tx: ' +
+            captured.toBase58() +
+            (matchesPda ? ' (matches derived PDA)' : ' (DIFFERS from derived PDA ' + PUMP_WITHDRAW_AUTHORITY.toBase58() + ' — switching poller target)')
+          );
+        } catch (err) {
+          logger.warn('Could not parse withdraw_authority accts[1]: %s', (err as Error).message);
+        }
       }
 
       logger.debug(
