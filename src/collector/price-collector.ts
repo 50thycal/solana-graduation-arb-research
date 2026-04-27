@@ -351,7 +351,7 @@ export class PriceCollector {
     // Threshold: T+30 means "snapshot at 30s after migration". If we're
     // already past that, even a priority-lane fetch can't recover. We give
     // a 5s grace (elapsedSec > 25) to let near-miss observations still try.
-    const STALE_THRESHOLD_SEC = 25;
+    const STALE_THRESHOLD_SEC = parseInt(process.env.STALE_THRESHOLD_SEC || '25', 10);
     if (elapsedSec > STALE_THRESHOLD_SEC) {
       this.totalStaleGraduations++;
       this.lastStaleGraduations.push({

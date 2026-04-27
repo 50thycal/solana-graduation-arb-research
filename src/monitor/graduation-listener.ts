@@ -128,6 +128,17 @@ interface BondingCurveState {
   isComplete: boolean;
 }
 
+// pump.fun withdraw_authority PDA — only present in migrate instructions, not buys/sells.
+// Polling getSignaturesForAddress on this account gives us migrations with <2s latency,
+// bypassing the Helius WS batch-buffering that delays ~43% of grads by 25-75s.
+const PUMP_WITHDRAW_AUTHORITY = PublicKey.findProgramAddressSync(
+  [Buffer.from('withdraw_authority')],
+  PUMP_FUN_PROGRAM_ID
+)[0];
+
+// How often to poll for new migration signatures via RPC (bypasses WS delivery lag).
+const MIGRATION_POLL_INTERVAL_MS = parseInt(process.env.MIGRATION_POLL_INTERVAL_MS || '2000', 10);
+
 export class GraduationListener {
   private connection: Connection;
   private db: Database.Database;
@@ -137,6 +148,9 @@ export class GraduationListener {
   private subscriptionId: number | null = null;
   private stopped = false;
   private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+  private pollInterval: NodeJS.Timeout | null = null;
+  private pollLastSig: string | undefined = undefined;
+  private totalCandidatesFromPoll = 0;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private lastEventTime = Date.now();
   private lastCandidateTime = Date.now();
@@ -257,6 +271,7 @@ export class GraduationListener {
       totalCandidatesDetected: this.totalCandidatesDetected,
       totalCandidatesFromPumpFun: this.totalCandidatesFromPumpFun,
       totalCandidatesFromPumpSwap: this.totalCandidatesFromPumpSwap,
+      totalCandidatesFromPoll: this.totalCandidatesFromPoll,
       // Migrate logs filtered out as Helius redeliveries before any RPC
       // call. Healthy ratio is roughly 4× duplicates for every unique
       // candidate (so this should be ~80% of (candidates + duplicates)).
@@ -291,6 +306,7 @@ export class GraduationListener {
     await this.subscribe();
     await this.poolTracker.start();
     this.priceCollector.startAutoVelocityRecovery();
+    await this.startMigrationPoller();
 
     this.healthCheckInterval = setInterval(() => {
       const silentMs = Date.now() - this.lastEventTime;
@@ -348,6 +364,10 @@ export class GraduationListener {
     if (this.healthCheckInterval) {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
+    }
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
     }
 
     await this.unsubscribe();
@@ -494,6 +514,53 @@ export class GraduationListener {
     }
   }
 
+  /**
+   * Bootstrap and run an RPC polling loop against the pump.fun withdraw_authority PDA.
+   * Only migrate instructions write to this account, so getSignaturesForAddress returns
+   * only real graduation txs — no false positives. RPC confirms within 1-2s of block
+   * finality, bypassing Helius WS batch-buffering that delays ~43% of migrations 25-75s.
+   */
+  private async startMigrationPoller(): Promise<void> {
+    try {
+      await globalRpcLimiter.throttle();
+      const initial = await this.connection.getSignaturesForAddress(
+        PUMP_WITHDRAW_AUTHORITY, { limit: 1 }
+      );
+      if (initial.length > 0) this.pollLastSig = initial[0].signature;
+      logger.info(
+        {
+          withdrawAuthority: PUMP_WITHDRAW_AUTHORITY.toBase58(),
+          bootstrapSig: this.pollLastSig?.slice(0, 8),
+          intervalMs: MIGRATION_POLL_INTERVAL_MS,
+        },
+        'Migration RPC poller started'
+      );
+    } catch (err) {
+      logger.warn('Migration poller bootstrap failed: %s', (err as Error).message);
+    }
+
+    this.pollInterval = setInterval(async () => {
+      if (this.stopped) return;
+      try {
+        await globalRpcLimiter.throttle();
+        const sigs = await this.connection.getSignaturesForAddress(
+          PUMP_WITHDRAW_AUTHORITY,
+          { limit: 20, until: this.pollLastSig }
+        );
+        if (sigs.length === 0) return;
+        this.pollLastSig = sigs[0].signature; // most recent first
+        for (const sig of sigs.reverse()) {   // process oldest-first
+          if (!sig.err) {
+            this.handleMigrationCandidate(sig.signature, sig.slot ?? 0, 'rpc-poll', Date.now())
+              .catch((err) => logger.error('rpc-poll candidate error: %s', (err as Error).message));
+          }
+        }
+      } catch (err) {
+        logger.debug('Migration poll error: %s', (err as Error).message);
+      }
+    }, MIGRATION_POLL_INTERVAL_MS);
+  }
+
   private async handleLogs(logs: Logs, ctx: Context): Promise<void> {
     if (logs.err) return;
 
@@ -522,7 +589,7 @@ export class GraduationListener {
   async handleMigrationCandidate(
     signature: string,
     slot: number,
-    source: 'pump.fun' | 'pumpswap',
+    source: 'pump.fun' | 'pumpswap' | 'rpc-poll',
     wsReceivedAt: number,
   ): Promise<void> {
     // Drop redeliveries before any RPC work. Helius pushes the same
@@ -536,7 +603,8 @@ export class GraduationListener {
 
     this.totalCandidatesDetected++;
     if (source === 'pump.fun') this.totalCandidatesFromPumpFun++;
-    else this.totalCandidatesFromPumpSwap++;
+    else if (source === 'pumpswap') this.totalCandidatesFromPumpSwap++;
+    else this.totalCandidatesFromPoll++;
     this.lastCandidateTime = Date.now();
 
     // Process: extract mint + bonding curve, then VERIFY before recording
@@ -708,7 +776,7 @@ export class GraduationListener {
     signature: string,
     slot: number,
     matchedLog: string,
-    source: 'pump.fun' | 'pumpswap' = 'pump.fun',
+    source: 'pump.fun' | 'pumpswap' | 'rpc-poll' = 'pump.fun',
     wsReceivedAt: number = Date.now(),
   ): Promise<GraduationEvent | null> {
     await globalRpcLimiter.throttlePriority();
