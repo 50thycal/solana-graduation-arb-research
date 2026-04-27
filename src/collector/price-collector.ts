@@ -341,18 +341,17 @@ export class PriceCollector {
     const migrationTime = ctx.migrationTimestamp * 1000;
     const elapsedSec = (now - migrationTime) / 1000;
 
-    // Helius batches WS events and delivers them 25-75s late for some grads.
-    // A 25s threshold dropped ~43% of all graduations (confirmed by snapshot
-    // data: 6 stale out of 14 grads, delays of 25.7-60.7s). Raising to 75s:
-    //   - T+30 entry window: still missed for delayed grads (no change —
-    //     the entry gate already requires price_t30 to be non-null)
-    //   - T+60 / T+120 / T+300 snapshots: NOW captured for these grads
-    //   - Labels (PUMP/DUMP/STABLE): NOW assigned for the delayed cohort
-    //   - Research throughput: ~2x on affected grads (0 vs 4-6 snapshots/row)
-    // The T+30 "deadline timer" fires at T+30+5s = 35s elapsed. With a 75s
-    // threshold, observations starting at 60s-old would only have scheduled
-    // snapshots for {90, 120, 180, 240, 300} — no deadline waste.
-    const STALE_THRESHOLD_SEC = parseInt(process.env.STALE_THRESHOLD_SEC || '75', 10);
+    // Bail on stale graduations. If the migration tx is already older than
+    // T+30 by the time we get here, the trade entry window has closed —
+    // SNAPSHOT_SCHEDULE.filter below would drop T+30 entirely, the deadline
+    // timer would fire ~1s later, and we'd waste a slot for nothing. Better
+    // to count + log + skip so the operator sees Helius/listener latency
+    // explicitly instead of as a wave of "T+30 timeout" noise.
+    //
+    // Threshold: T+30 means "snapshot at 30s after migration". If we're
+    // already past that, even a priority-lane fetch can't recover. We give
+    // a 5s grace (elapsedSec > 25) to let near-miss observations still try.
+    const STALE_THRESHOLD_SEC = parseInt(process.env.STALE_THRESHOLD_SEC || '25', 10);
     if (elapsedSec > STALE_THRESHOLD_SEC) {
       this.totalStaleGraduations++;
       this.lastStaleGraduations.push({
@@ -371,9 +370,8 @@ export class PriceCollector {
           mint: ctx.mint,
           elapsedSec: +elapsedSec.toFixed(1),
           totalStaleGraduations: this.totalStaleGraduations,
-          thresholdSec: STALE_THRESHOLD_SEC,
         },
-        'Skipping stale graduation — beyond stale threshold',
+        'Skipping stale graduation — migration tx older than T+30 by the time it reached startObservation',
       );
       return;
     }
