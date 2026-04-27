@@ -253,23 +253,24 @@ export class PoolTracker {
 
           if (logs.err) return;
 
-          // CRITICAL: PumpSwap handles thousands of swap events per minute.
-          // Only act on pool creation events. The pump.fun migration CPI is
-          // the most reliable signal, plus the explicit "create_pool"
-          // instruction name. Avoid broad matches like "Create"/"Initialize"
-          // which fire on every swap that creates an ATA.
-          const isPoolCreation = logs.logs.some(
-            (log) =>
-              log.includes('create_pool') ||
-              log.includes('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P') // pump.fun program in migration CPI
+          // Narrow filter: only act on transactions that contain pump.fun's
+          // migrate instruction log. This is the same signal graduation-listener
+          // uses on the pump.fun WS. PumpSwap WS logs carry the full tx log
+          // (including pump.fun's inner "Instruction: Migrate") because
+          // pump.fun calls PumpSwap as a CPI for all graduation migrations.
+          // This replaces the old create_pool / program-ID checks, which had a
+          // ~99% false-positive rate (direct PumpSwap pool creations and any tx
+          // referencing pump.fun were triggering 1100+ wasted RPC calls/25min).
+          const isPumpFunMigration = logs.logs.some(
+            (log) => log.includes('Instruction: Migrate')
           );
 
-          if (!isPoolCreation) return;
+          if (!isPumpFunMigration) return;
 
           this.totalPoolCreationEvents++;
           const wsReceivedAt = Date.now();
 
-          // Log first few pool creation events for debugging
+          // Log first few migration events for debugging
           if (this.totalPoolCreationEvents <= 10) {
             logger.info(
               {
@@ -277,10 +278,10 @@ export class PoolTracker {
                 slot: ctx.slot,
                 logCount: logs.logs.length,
                 logs: logs.logs.slice(0, 8),
-                totalCreationEvents: this.totalPoolCreationEvents,
+                totalMigrationEvents: this.totalPoolCreationEvents,
                 totalSwapEvents: this.totalPumpSwapEvents,
               },
-              'PumpSwap pool creation event'
+              'PumpSwap migration event detected'
             );
           }
 
