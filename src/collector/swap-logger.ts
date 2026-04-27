@@ -7,11 +7,12 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('swap-logger');
 
-// Hard cap on per-graduation tx parses. A busy pool can easily have 500+ swaps
-// in the 30-300s window; parsing all of them floods the RPC queue. 200 covers
-// all but the most bot-heavy tokens, and any signal from the whale-sell exit
-// strategy will be visible well before the 200th swap.
-const MAX_TX_PARSES = 200;
+// Swap backfill is disabled — the whale_liq exit strategy showed negative EV
+// and the 200 getParsedTransaction calls per graduation were saturating the RPC
+// queue. Re-enable by setting SWAP_BACKFILL_ENABLED=true in env vars.
+// When re-enabled, limit is 50 (was 200) to keep RPC cost manageable.
+const SWAP_BACKFILL_ENABLED = process.env.SWAP_BACKFILL_ENABLED === 'true';
+const MAX_TX_PARSES = 50;
 
 // Fetch up to this many signatures per call to getSignaturesForAddress.
 // 1000 is the RPC cap; for a 270s window (30-300s) this is enough unless the
@@ -46,6 +47,8 @@ export class SwapLogger {
    * Fire-and-forget from the caller — failures are logged but never thrown.
    */
   async backfillSwaps(ctx: ObservationContext): Promise<void> {
+    if (!SWAP_BACKFILL_ENABLED) return;
+
     try { new PublicKey(ctx.poolAddress); } catch {
       logger.debug(
         { graduationId: ctx.graduationId, poolAddress: ctx.poolAddress },
