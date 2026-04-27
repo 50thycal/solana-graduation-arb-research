@@ -143,6 +143,8 @@ export class GraduationListener {
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private totalLogsReceived = 0;
   private totalCandidatesDetected = 0;
+  private totalCandidatesFromPumpFun = 0;
+  private totalCandidatesFromPumpSwap = 0;
   private totalVerifiedGraduations = 0;
   private totalGraduationsRecorded = 0;
   // Helius's logs subscription delivers the same migration tx multiple times
@@ -199,6 +201,14 @@ export class GraduationListener {
     this.poolTracker = new PoolTracker(db, this.connection);
     this.priceCollector = new PriceCollector(db, this.connection);
     this.holderEnrichment = new HolderEnrichment(this.connection);
+
+    // Wire pool-tracker's PumpSwap WS as a parallel detection channel.
+    // Helius pump.fun WS delivers ~50% of migrations 30-75s late; PumpSwap WS
+    // delivers them in ~5s. The callback dedupes by signature so the slower
+    // channel's redelivery becomes a no-op.
+    this.poolTracker.setMigrationCandidateCallback((sig, slot, wsReceivedAt) =>
+      this.handleMigrationCandidate(sig, slot, 'pumpswap', wsReceivedAt)
+    );
   }
 
   /** Expose the PriceCollector so the TradingEngine can attach its T+30 callback. */
@@ -245,6 +255,8 @@ export class GraduationListener {
     return {
       totalLogsReceived: this.totalLogsReceived,
       totalCandidatesDetected: this.totalCandidatesDetected,
+      totalCandidatesFromPumpFun: this.totalCandidatesFromPumpFun,
+      totalCandidatesFromPumpSwap: this.totalCandidatesFromPumpSwap,
       // Migrate logs filtered out as Helius redeliveries before any RPC
       // call. Healthy ratio is roughly 4× duplicates for every unique
       // candidate (so this should be ~80% of (candidates + duplicates)).
@@ -496,19 +508,39 @@ export class GraduationListener {
 
     if (!graduationLog) return;
 
+    await this.handleMigrationCandidate(logs.signature, ctx.slot, 'pump.fun', Date.now());
+  }
+
+  /**
+   * Cross-channel entry point for migration candidates. Called from:
+   *   - this.handleLogs (pump.fun WS subscription) — primary in theory, often delayed 30-75s by Helius
+   *   - PoolTracker's PumpSwap WS subscription — typically delivers in ~5s
+   *
+   * Whichever channel fires first wins; the other becomes a no-op via the
+   * shared isDuplicateSignature dedupe.
+   */
+  async handleMigrationCandidate(
+    signature: string,
+    slot: number,
+    source: 'pump.fun' | 'pumpswap',
+    wsReceivedAt: number,
+  ): Promise<void> {
     // Drop redeliveries before any RPC work. Helius pushes the same
     // migration tx 4-5× per real graduation — see seenSignatures comment
-    // for the cost we're avoiding here.
-    if (this.isDuplicateSignature(logs.signature)) {
+    // for the cost we're avoiding here. With two parallel detection
+    // channels, the dedupe also drops the slower channel's first delivery.
+    if (this.isDuplicateSignature(signature)) {
       this.totalDuplicateLogs++;
       return;
     }
 
     this.totalCandidatesDetected++;
+    if (source === 'pump.fun') this.totalCandidatesFromPumpFun++;
+    else this.totalCandidatesFromPumpSwap++;
     this.lastCandidateTime = Date.now();
 
     // Process: extract mint + bonding curve, then VERIFY before recording
-    const event = await this.processAndVerifyGraduation(logs.signature, ctx.slot, graduationLog);
+    const event = await this.processAndVerifyGraduation(signature, slot, 'Instruction: Migrate', source, wsReceivedAt);
     if (!event) return;
 
     const graduationId = this.saveGraduation(event);
@@ -675,9 +707,10 @@ export class GraduationListener {
   private async processAndVerifyGraduation(
     signature: string,
     slot: number,
-    matchedLog: string
+    matchedLog: string,
+    source: 'pump.fun' | 'pumpswap' = 'pump.fun',
+    wsReceivedAt: number = Date.now(),
   ): Promise<GraduationEvent | null> {
-    const wsReceivedAt = Date.now();
     await globalRpcLimiter.throttlePriority();
     let tx = await this.connection.getParsedTransaction(signature, {
       commitment: 'confirmed',
@@ -1289,20 +1322,18 @@ export class GraduationListener {
     // Log delivery latency split: WS delay vs RPC fetch time.
     // wsDeliveryLatencySec = time from on-chain block → WS log received (Helius delivery lag).
     // rpcFetchMs = time from WS received → getParsedTransaction returned (our processing time).
-    // accountKeys[0..5] = first 6 accounts in the migration tx — used to identify a
-    // migration-specific account we can subscribe to instead of all pump.fun logs.
-    const accountKeys = tx.transaction.message.accountKeys.slice(0, 6).map((k) =>
-      typeof k === 'string' ? k : k.pubkey.toBase58()
-    );
+    // source = which channel detected this migration (pump.fun WS or PumpSwap WS).
+    // The PumpSwap channel was added to bypass Helius's pump.fun WS delivery lag,
+    // which delays ~50% of migrations 30-75s and pushes them past the 25s stale gate.
     logger.info(
       {
         mint: mint?.slice(0, 8),
         signature: signature.slice(0, 8),
+        source,
         wsDeliveryLatencySec: tx.blockTime
           ? +((wsReceivedAt - tx.blockTime * 1000) / 1000).toFixed(1)
           : null,
         rpcFetchMs: Date.now() - wsReceivedAt,
-        accountKeys,
       },
       'Graduation tx timing'
     );
