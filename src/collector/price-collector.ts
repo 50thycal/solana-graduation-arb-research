@@ -712,12 +712,23 @@ export class PriceCollector {
           // completeObservation() runs at T+300+, and every trade that would
           // qualify on velocity fails the filter pipeline's null guard.
           // Safe to call here and again at completeObservation — idempotent UPDATE.
-          await this.computeAndStoreVelocity(
-            graduationId,
-            ctx.mint,
-            ctx.graduationTimestamp,
-            ctx.bondingCurveAddress,
-          );
+          //
+          // Use a 10-second cap via Promise.race: when token_age_seconds is null
+          // (e.g. same-block graduation where enrichment sets age=0), the fallback
+          // BC signature walk can take 60-90s and would push the T+30 callback past
+          // the T+45 deadline, causing NO EVAL. 10s gives the fast cases (<1ms when
+          // enrichment already wrote token_age_seconds) their result immediately, and
+          // slow BC lookups time out gracefully — velocity stays null → vel filters
+          // FILTERED (same outcome as before the fix, but no NO EVAL regression).
+          await Promise.race([
+            this.computeAndStoreVelocity(
+              graduationId,
+              ctx.mint,
+              ctx.graduationTimestamp,
+              ctx.bondingCurveAddress,
+            ),
+            new Promise<void>(resolve => setTimeout(resolve, 10_000)),
+          ]);
           // Fire trading engine callback — all T+30 momentum fields are now written.
           // Mark the observation so the T+45 deadline timer (set in startObservation)
           // knows to leave it running for the rest of the snapshot grid instead of
