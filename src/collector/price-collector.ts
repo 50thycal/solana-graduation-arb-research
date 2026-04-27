@@ -351,12 +351,7 @@ export class PriceCollector {
     // Threshold: T+30 means "snapshot at 30s after migration". If we're
     // already past that, even a priority-lane fetch can't recover. We give
     // a 5s grace (elapsedSec > 25) to let near-miss observations still try.
-    //
-    // Default is 70s to tolerate Helius WS delivery lag (~30-70s for ~50% of
-    // pump.fun migration events). Grads arriving 25-70s late skip T+30 (so no
-    // trade entry) but still collect T+60/T+120/T+300 data for research.
-    // Override via STALE_THRESHOLD_SEC env var.
-    const STALE_THRESHOLD_SEC = parseInt(process.env.STALE_THRESHOLD_SEC || '70', 10);
+    const STALE_THRESHOLD_SEC = 25;
     if (elapsedSec > STALE_THRESHOLD_SEC) {
       this.totalStaleGraduations++;
       this.lastStaleGraduations.push({

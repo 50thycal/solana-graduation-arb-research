@@ -1287,8 +1287,13 @@ export class GraduationListener {
     }
 
     // Log delivery latency split: WS delay vs RPC fetch time.
-    // wsDeliveryLatencySec = time from on-chain block → WS log received.
-    // rpcFetchMs = time from WS received → getParsedTransaction returned.
+    // wsDeliveryLatencySec = time from on-chain block → WS log received (Helius delivery lag).
+    // rpcFetchMs = time from WS received → getParsedTransaction returned (our processing time).
+    // accountKeys[0..5] = first 6 accounts in the migration tx — used to identify a
+    // migration-specific account we can subscribe to instead of all pump.fun logs.
+    const accountKeys = tx.transaction.message.accountKeys.slice(0, 6).map((k) =>
+      typeof k === 'string' ? k : k.pubkey.toBase58()
+    );
     logger.info(
       {
         mint: mint?.slice(0, 8),
@@ -1297,6 +1302,7 @@ export class GraduationListener {
           ? +((wsReceivedAt - tx.blockTime * 1000) / 1000).toFixed(1)
           : null,
         rpcFetchMs: Date.now() - wsReceivedAt,
+        accountKeys,
       },
       'Graduation tx timing'
     );
