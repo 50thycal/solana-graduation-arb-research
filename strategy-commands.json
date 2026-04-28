@@ -1,0 +1,98 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v7shadow-vol-open",
+      "label": "v7 shadow vol open (no filters, 25/10, 180s)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 25,
+        "stopLossPct": 10,
+        "maxHoldSeconds": 180,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v7shadow-vol-vel50",
+      "label": "v7 shadow vol vel<50 (25/10, 180s)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 25,
+        "stopLossPct": 10,
+        "maxHoldSeconds": 180,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel<50" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v7shadow-vol-top5-30",
+      "label": "v7 shadow vol top5<30% (25/10, 180s)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 25,
+        "stopLossPct": 10,
+        "maxHoldSeconds": 180,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "top5_wallet_pct", "operator": "<", "value": 30, "label": "top5<30%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    }
+  ]
+}
