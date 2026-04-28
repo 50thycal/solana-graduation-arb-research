@@ -164,6 +164,13 @@ export class GraduationListener {
   // derived/discovered values so we can detect a mid-flight target switch and
   // re-bootstrap pollLastSig instead of burst-processing 20 historical sigs.
   private pollerCurrentTarget: PublicKey = PUMP_WITHDRAW_AUTHORITY;
+  // Circuit breaker: if the poll RPC errors N times in a row, pause polling
+  // for COOLDOWN_MS to avoid log spam and event-loop pressure. Reset on any
+  // successful tick (including ones that find zero new sigs).
+  private pollConsecutiveFailures = 0;
+  private pollPausedUntil = 0;
+  private static readonly POLL_FAILURE_THRESHOLD = 5;
+  private static readonly POLL_COOLDOWN_MS = 60_000;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private lastEventTime = Date.now();
   private lastCandidateTime = Date.now();
@@ -234,8 +241,18 @@ export class GraduationListener {
     });
 
     const pollRpcUrl = process.env.MIGRATION_POLL_RPC_URL;
+    // disableRetryOnRateLimit: true — web3.js's default behaviour on 429 is
+    // to retry up to 4× with exponential backoff (500ms, 1s, 2s, 4s = 7.5s
+    // total per failed call). Public/free RPCs hard-rate-limit the
+    // getSignaturesForAddress endpoint, so without this flag a single rate
+    // limit cascades into overlapping retry storms that flood the logs and
+    // block the event loop. Better to fail fast and let the next 2s poll
+    // tick try again — or trip the circuit breaker.
     this.pollConnection = pollRpcUrl
-      ? new Connection(pollRpcUrl, { commitment: 'confirmed' })
+      ? new Connection(pollRpcUrl, {
+          commitment: 'confirmed',
+          disableRetryOnRateLimit: true,
+        })
       : this.connection;
 
     this.db = db;
@@ -572,6 +589,8 @@ export class GraduationListener {
 
     this.pollInterval = setInterval(async () => {
       if (this.stopped) return;
+      // Circuit breaker: skip if we're in cooldown after repeated failures.
+      if (Date.now() < this.pollPausedUntil) return;
       this.totalPollTicks++;
       try {
         // Use the runtime-captured address if we have one (ground truth from a
@@ -584,6 +603,7 @@ export class GraduationListener {
         // we'd burst-process 20 historical sigs on the new address.
         if (!target.equals(this.pollerCurrentTarget)) {
           const reboot = await this.pollConnection.getSignaturesForAddress(target, { limit: 1 });
+          this.pollConsecutiveFailures = 0;
           this.pollLastSig = reboot[0]?.signature;
           this.pollerCurrentTarget = target;
           logger.info(
@@ -597,6 +617,7 @@ export class GraduationListener {
           target,
           { limit: 20, until: this.pollLastSig }
         );
+        this.pollConsecutiveFailures = 0;
         if (sigs.length === 0) return;
         this.totalPollSigsFound += sigs.length;
         this.pollLastSig = sigs[0].signature; // most recent first
@@ -611,7 +632,24 @@ export class GraduationListener {
           }
         }
       } catch (err) {
-        logger.warn('Migration poll error: %s', (err as Error).message);
+        this.pollConsecutiveFailures++;
+        // Only log the first few failures and the trip event — otherwise a
+        // sustained 429 storm fills the log buffer.
+        if (this.pollConsecutiveFailures <= GraduationListener.POLL_FAILURE_THRESHOLD) {
+          logger.warn(
+            'Migration poll error (' + this.pollConsecutiveFailures + '/' +
+            GraduationListener.POLL_FAILURE_THRESHOLD + '): ' + (err as Error).message
+          );
+        }
+        if (this.pollConsecutiveFailures === GraduationListener.POLL_FAILURE_THRESHOLD) {
+          this.pollPausedUntil = Date.now() + GraduationListener.POLL_COOLDOWN_MS;
+          logger.warn(
+            'Migration poller circuit breaker tripped after ' +
+            GraduationListener.POLL_FAILURE_THRESHOLD +
+            ' consecutive failures — pausing for ' +
+            (GraduationListener.POLL_COOLDOWN_MS / 1000) + 's'
+          );
+        }
       }
     }, MIGRATION_POLL_INTERVAL_MS);
   }
