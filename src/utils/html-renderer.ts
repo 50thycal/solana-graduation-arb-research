@@ -4345,12 +4345,18 @@ export function renderTradingHtml(data: any): string {
   const execModeRows = execModeData.map((m: any) => {
     const ret = m.avg_net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
+    const trueRet = m.avg_true_net_return_pct;
+    const trueRetColor = trueRet == null ? '#94a3b8' : trueRet > 0 ? '#22d3ee' : '#f87171';
+    const trueRetLabel = trueRet == null
+      ? '-'
+      : `${trueRet}% <span style="color:#64748b;font-size:10px">(n=${m.true_net_n ?? 0})</span>`;
     const exec = execModeStyle(m.execution_mode);
     const fmt = (v: any, suffix = '') => v == null ? '-' : v + suffix;
     return `<tr>
       <td><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${exec.label}</span></td>
       <td>${m.total}</td><td>${m.closed}</td><td>${m.open_count}</td><td>${m.failed}</td>
       <td style="color:${retColor}" data-sort="${ret ?? -999}">${ret != null ? ret + '%' : '-'}</td>
+      <td style="color:${trueRetColor}" data-sort="${trueRet ?? -999}">${trueRetLabel}</td>
       <td style="color:#94a3b8" data-sort="${m.avg_shadow_entry_slip_pct ?? -999}">${fmt(m.avg_shadow_entry_slip_pct, '%')}</td>
       <td style="color:#94a3b8" data-sort="${m.avg_shadow_exit_slip_pct ?? -999}">${fmt(m.avg_shadow_exit_slip_pct, '%')}</td>
       <td style="color:#94a3b8" data-sort="${m.avg_tx_land_ms ?? -999}">${fmt(m.avg_tx_land_ms, 'ms')}</td>
@@ -4367,15 +4373,19 @@ export function renderTradingHtml(data: any): string {
           <th data-col="0">Mode</th><th data-col="1">Total</th>
           <th data-col="2">Closed</th><th data-col="3">Open</th><th data-col="4">Failed</th>
           <th data-col="5">Avg Net Ret%</th>
-          <th data-col="6">Shadow Entry Slip%</th><th data-col="7">Shadow Exit Slip%</th>
-          <th data-col="8">Avg Land ms</th><th data-col="9">Jito Tips</th>
-          <th data-col="10">Net P&L</th>
+          <th data-col="6" title="Shadow only: gross_return - shadow_entry_slip - shadow_exit_slip. What the net return would be using measured AMM slippage instead of the modeled gap penalty.">True Net Ret%</th>
+          <th data-col="7">Shadow Entry Slip%</th><th data-col="8">Shadow Exit Slip%</th>
+          <th data-col="9">Avg Land ms</th><th data-col="10">Jito Tips</th>
+          <th data-col="11">Net P&L</th>
         </tr></thead>
         <tbody>${execModeRows}</tbody>
       </table></div>
       <p style="color:#64748b;font-size:11px;margin-top:6px">
+        <b>Avg Net Ret%</b> uses the static gap-penalty model (same for paper and shadow, so they're sim-comparable).
+        <b>True Net Ret%</b> is shadow-only — recomputes net return from the actual measured AMM slippage on each fill
+        (gross − shadow_entry_slip − shadow_exit_slip), no extra round-trip cost. The gap between the two columns is
+        the modeling overcharge: positive means our paper sim is more pessimistic than reality.
         Slippage / land-time / Jito columns are only populated for shadow and live modes.
-        Shadow uses real measured slippage; paper uses static gap-penalty assumption.
       </p>
       <script>
       (function(){
@@ -4416,10 +4426,59 @@ export function renderTradingHtml(data: any): string {
       </script>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
 
+  // ── Shadow Slippage Range ────────────────────────────────────────────────
+  // Distribution of measured AMM slippage on closed shadow trades — gives a
+  // direct read on how wide the real fill range is vs the modeled 1-3% gap
+  // assumption. If max here is small (single-digit %), the gap-penalty model
+  // is overcharging us; if max is large the model may be lenient.
+  const ssr = data.shadow_slippage_range;
+  const ssrFmtRow = (label: string, stats: any, suffix = '%') => {
+    if (!stats) {
+      return `<tr><td>${label}</td><td colspan="7" style="color:#64748b">no shadow trades yet</td></tr>`;
+    }
+    const f = (v: number) => `${v.toFixed(3)}${suffix}`;
+    const colorFor = (v: number) => label.includes('True Net') ? (v > 0 ? '#22d3ee' : '#f87171') : '#e5e7eb';
+    return `<tr>
+      <td style="color:#94a3b8">${label}</td>
+      <td>${stats.n}</td>
+      <td style="color:${colorFor(stats.min)}">${f(stats.min)}</td>
+      <td style="color:${colorFor(stats.p10)}">${f(stats.p10)}</td>
+      <td style="color:${colorFor(stats.p50)}">${f(stats.p50)}</td>
+      <td style="color:${colorFor(stats.p90)}">${f(stats.p90)}</td>
+      <td style="color:${colorFor(stats.max)}">${f(stats.max)}</td>
+      <td style="color:${colorFor(stats.mean)}">${f(stats.mean)}</td>
+    </tr>`;
+  };
+  const ssrHtml = ssr ? `
+    <div class="card">
+      <div class="card-title">Shadow Slippage Range
+        <span style="color:#64748b;font-size:11px;font-weight:400">— measured AMM slippage on closed shadow trades (n=${ssr.n_trades})</span>
+      </div>
+      ${ssr.n_trades > 0 ? `<div style="overflow-x:auto"><table class="table">
+        <thead><tr>
+          <th>Metric</th><th>n</th><th>Min</th><th>P10</th><th>Median</th><th>P90</th><th>Max</th><th>Mean</th>
+        </tr></thead>
+        <tbody>
+          ${ssrFmtRow('Entry slippage', ssr.entry_slippage_pct, '%')}
+          ${ssrFmtRow('Exit slippage', ssr.exit_slippage_pct, '%')}
+          ${ssrFmtRow('Round-trip (entry + exit)', ssr.round_trip_slippage_pct, '%')}
+          ${ssrFmtRow('True Net Ret (gross − round-trip)', ssr.true_net_return_pct, '%')}
+        </tbody>
+      </table></div>
+      <p style="color:#64748b;font-size:11px;margin-top:6px">
+        Compare <b>round-trip</b> here vs the static cost model
+        (slGapPenaltyPct + tpGapPenaltyPct ≈ 30%, default round-trip-cost ≈ 1.75%).
+        If real round-trip slippage is consistently below the modeled gap penalty,
+        paper Net Ret% understates the strategy's true edge.
+      </p>` : '<p style="color:#94a3b8">No closed shadow trades with measured slippage yet.</p>'}
+    </div>` : '';
+
   // ── Recent trades table ───────────────────────────────────────────────────
   const tradeRows = (data.recent_trades || []).map((t: any) => {
     const ret = t.net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
+    const trueRet = t.true_net_return_pct;
+    const trueRetColor = trueRet == null ? '#64748b' : trueRet > 0 ? '#22d3ee' : '#f87171';
     const reasonColor = (t.exit_reason === 'take_profit' || t.exit_reason === 'trailing_tp') ? '#22d3ee' : t.exit_reason === 'trailing_stop' ? '#fb923c' : t.exit_reason === 'breakeven_stop' ? '#fbbf24' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
     const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
     const exec = execModeStyle(t.execution_mode || 'paper');
@@ -4432,6 +4491,7 @@ export function renderTradingHtml(data: any): string {
       <td>${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
       <td style="color:${reasonColor}">${t.exit_reason ?? '-'}</td>
       <td style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
+      <td style="color:${trueRetColor}" title="Shadow-only: gross − measured entry slip − measured exit slip">${trueRet != null ? trueRet.toFixed(2) + '%' : '-'}</td>
       <td>${heldStr}</td>
       <td style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
       <td style="font-size:11px;color:#64748b">${utcToCentral(t.entry_dt)}</td>
@@ -4447,7 +4507,9 @@ export function renderTradingHtml(data: any): string {
       <div class="card-title">Recent Trades (last 50)${tradesTitleSuffix ? ` — ${tradesTitleSuffix}` : ''}</div>
       ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
         <thead><tr><th>ID</th><th>Strategy</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
-          <th>Exit Reason</th><th>Net Ret%</th><th>Held</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
+          <th>Exit Reason</th><th>Net Ret%</th>
+          <th title="Shadow-only — measured AMM slippage applied instead of gap penalty">True Net Ret%</th>
+          <th>Held</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
         <tbody>${tradeRows}</tbody>
       </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
@@ -4730,6 +4792,7 @@ export function renderTradingHtml(data: any): string {
   ${openHtml}
   ${perfHtml}
   ${execModeHtml}
+  ${ssrHtml}
   ${tradesHtml}
   ${skipsHtml}
 </div>
