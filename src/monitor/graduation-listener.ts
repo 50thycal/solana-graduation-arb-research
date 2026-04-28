@@ -128,18 +128,18 @@ interface BondingCurveState {
   isComplete: boolean;
 }
 
-// pump.fun withdraw_authority PDA — only present in migrate instructions, not buys/sells.
-// Polling getSignaturesForAddress on this account gives us migrations with <2s latency,
-// bypassing the Helius WS batch-buffering that delays ~43% of grads by 25-75s.
+// pump.fun's withdraw_authority is a hardcoded constant pubkey baked into the
+// program — NOT a PDA. Both seeds we tried (`withdraw_authority` and
+// `withdraw-authority`) derived to addresses with no on-chain activity. The
+// real address was captured at runtime from accts[1] of a real migrate tx
+// (see comment "Captured at runtime" in the class fields below).
 //
-// Seed is 'withdraw-authority' (kebab-case) — matches pump.fun's IDL convention for
-// other PDAs ('mint-authority', 'bonding-curve'). The previous 'withdraw_authority'
-// (underscore) derived to an address with zero on-chain activity, so the poller
-// returned empty every tick.
-const PUMP_WITHDRAW_AUTHORITY = PublicKey.findProgramAddressSync(
-  [Buffer.from('withdraw-authority')],
-  PUMP_FUN_PROGRAM_ID
-)[0];
+// Polling getSignaturesForAddress on this address gives us migrations as soon
+// as Helius's indexer sees them. The runtime discovery code is kept as a
+// belt-and-suspenders fallback in case pump.fun ever rotates this key.
+const PUMP_WITHDRAW_AUTHORITY = new PublicKey(
+  '39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg'
+);
 
 // How often to poll for new migration signatures via RPC (bypasses WS delivery lag).
 const MIGRATION_POLL_INTERVAL_MS = parseInt(process.env.MIGRATION_POLL_INTERVAL_MS || '2000', 10);
@@ -171,6 +171,16 @@ export class GraduationListener {
   private pollPausedUntil = 0;
   private static readonly POLL_FAILURE_THRESHOLD = 5;
   private static readonly POLL_COOLDOWN_MS = 60_000;
+  // Per-channel ring buffers of (wsReceivedAt - blockTime) in seconds for the
+  // last 100 verified grads. Lets us see whether stale grads are upstream lag
+  // (high p50 from one channel) or consumer-side lag (high p95 across all
+  // channels, suggesting event-loop blocking or DB writes back-pressuring the
+  // socket reader).
+  private deliveryLatencyByPumpFun: number[] = [];
+  private deliveryLatencyByPumpSwap: number[] = [];
+  private deliveryLatencyByPoll: number[] = [];
+  private rpcFetchMsSamples: number[] = [];
+  private static readonly LATENCY_BUFFER_MAX = 100;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private lastEventTime = Date.now();
   private lastCandidateTime = Date.now();
@@ -274,6 +284,32 @@ export class GraduationListener {
     return this.priceCollector;
   }
 
+  /** Push a latency sample (seconds) into the per-channel ring buffer. */
+  private recordDeliveryLatency(source: 'pump.fun' | 'pumpswap' | 'rpc-poll', latencySec: number): void {
+    let buf: number[];
+    if (source === 'pump.fun') buf = this.deliveryLatencyByPumpFun;
+    else if (source === 'pumpswap') buf = this.deliveryLatencyByPumpSwap;
+    else buf = this.deliveryLatencyByPoll;
+    buf.push(latencySec);
+    if (buf.length > GraduationListener.LATENCY_BUFFER_MAX) buf.shift();
+  }
+
+  /** Compute basic distribution stats from a numeric ring buffer. */
+  private static distributionStats(buf: number[]): { n: number; p50: number; p95: number; max: number; mean: number; pctOver25s: number } | null {
+    if (buf.length === 0) return null;
+    const sorted = [...buf].sort((a, b) => a - b);
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    const overGate = sorted.filter((v) => v > 25).length;
+    return {
+      n: sorted.length,
+      p50: +sorted[Math.floor(sorted.length * 0.5)].toFixed(1),
+      p95: +sorted[Math.floor(sorted.length * 0.95)].toFixed(1),
+      max: +sorted[sorted.length - 1].toFixed(1),
+      mean: +(sum / sorted.length).toFixed(1),
+      pctOver25s: +((overGate / sorted.length) * 100).toFixed(1),
+    };
+  }
+
   /** Expose the active Connection for the TradingEngine's position monitor. */
   getConnection(): Connection {
     return this.connection;
@@ -339,6 +375,21 @@ export class GraduationListener {
       wsConnected: this.subscriptionId !== null,
       reconnecting: this.reconnecting,
       totalReconnects: this.totalReconnects,
+      // Per-channel distribution of (wsReceivedAt - blockTime) in seconds.
+      // Compares pump.fun WS, PumpSwap WS, and RPC poll head-to-head — if all
+      // three show similar p50, the lag is upstream (Helius indexer). If
+      // pump.fun WS p95 is much higher than its p50, lag is consumer-side
+      // (event-loop blocking on heavy momentum-checkpoint bursts).
+      // pctOver25s = % of grads in this channel that arrived stale.
+      deliveryLatencySec: {
+        pumpFun: GraduationListener.distributionStats(this.deliveryLatencyByPumpFun),
+        pumpSwap: GraduationListener.distributionStats(this.deliveryLatencyByPumpSwap),
+        rpcPoll: GraduationListener.distributionStats(this.deliveryLatencyByPoll),
+      },
+      // Time spent in our verification pipeline (getParsedTransaction +
+      // PDA derivation + getAccountInfo). Should be <2000ms; if p95 is high,
+      // our pipeline is the lag, not the WS.
+      rpcFetchMs: GraduationListener.distributionStats(this.rpcFetchMsSamples),
       poolTracker: this.poolTracker.getStats(),
       directPriceCollector: this.priceCollector.getStats(),
     };
@@ -1505,15 +1556,26 @@ export class GraduationListener {
     // source = which channel detected this migration (pump.fun WS or PumpSwap WS).
     // The PumpSwap channel was added to bypass Helius's pump.fun WS delivery lag,
     // which delays ~50% of migrations 30-75s and pushes them past the 25s stale gate.
+    const wsDeliveryLatencySec = tx.blockTime
+      ? +((wsReceivedAt - tx.blockTime * 1000) / 1000).toFixed(1)
+      : null;
+    const rpcFetchMs = Date.now() - wsReceivedAt;
+
+    if (wsDeliveryLatencySec !== null) {
+      this.recordDeliveryLatency(source, wsDeliveryLatencySec);
+    }
+    this.rpcFetchMsSamples.push(rpcFetchMs);
+    if (this.rpcFetchMsSamples.length > GraduationListener.LATENCY_BUFFER_MAX) {
+      this.rpcFetchMsSamples.shift();
+    }
+
     logger.info(
       {
         mint: mint?.slice(0, 8),
         signature: signature.slice(0, 8),
         source,
-        wsDeliveryLatencySec: tx.blockTime
-          ? +((wsReceivedAt - tx.blockTime * 1000) / 1000).toFixed(1)
-          : null,
-        rpcFetchMs: Date.now() - wsReceivedAt,
+        wsDeliveryLatencySec,
+        rpcFetchMs,
       },
       'Graduation tx timing'
     );
