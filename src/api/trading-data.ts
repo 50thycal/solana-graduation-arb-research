@@ -47,6 +47,12 @@ export function computeTradingData(
 
   // Finer-grained rollout split: paper / shadow / live_micro / live_full.
   // Use this panel to compare measured vs assumed slippage during the rollout.
+  //
+  // avg_true_net_return_pct: for shadow trades only — what the net return would
+  // have been using the measured AMM slippage instead of the static gap-penalty
+  // model (gross_return - shadow_entry_slip - shadow_exit_slip). The measured
+  // slippages already include LP fee + spread + price impact, so no extra
+  // round-trip cost is subtracted. Null for paper rows.
   const performanceByExecutionMode = db.prepare(`
     SELECT
       COALESCE(execution_mode, 'paper') as execution_mode,
@@ -55,6 +61,15 @@ export function computeTradingData(
       COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
       COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
       ROUND(AVG(CASE WHEN status='closed' THEN net_return_pct END), 2) as avg_net_return_pct,
+      ROUND(AVG(CASE WHEN status='closed'
+                       AND shadow_measured_entry_slippage_pct IS NOT NULL
+                       AND shadow_measured_exit_slippage_pct IS NOT NULL
+                  THEN gross_return_pct - shadow_measured_entry_slippage_pct - shadow_measured_exit_slippage_pct
+                  END), 2) as avg_true_net_return_pct,
+      COUNT(CASE WHEN status='closed'
+                  AND shadow_measured_entry_slippage_pct IS NOT NULL
+                  AND shadow_measured_exit_slippage_pct IS NOT NULL
+                  THEN 1 END) as true_net_n,
       ROUND(AVG(CASE WHEN status='closed' THEN shadow_measured_entry_slippage_pct END), 3) as avg_shadow_entry_slip_pct,
       ROUND(AVG(CASE WHEN status='closed' THEN shadow_measured_exit_slippage_pct END), 3) as avg_shadow_exit_slip_pct,
       ROUND(AVG(CASE WHEN status='closed' THEN measured_exit_slippage_pct END), 3) as avg_measured_exit_slip_pct,
@@ -77,10 +92,22 @@ export function computeTradingData(
     whereParams.push(executionModeFilter);
   }
   const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+  // true_net_return_pct: shadow-only — what net return would have been using the
+  // measured AMM slippage (gross - shadow_entry_slip - shadow_exit_slip) instead
+  // of the modelled gap penalty. Null for paper trades or shadow trades missing
+  // either slippage measurement.
   const tradesQuery = `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
         COALESCE(t.execution_mode, 'paper') as execution_mode,
         t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
-        t.exit_price_sol, t.exit_reason, t.net_return_pct, t.gap_adjusted_return_pct,
+        t.exit_price_sol, t.exit_reason,
+        t.gross_return_pct, t.net_return_pct, t.gap_adjusted_return_pct,
+        CASE WHEN t.status='closed'
+                  AND t.shadow_measured_entry_slippage_pct IS NOT NULL
+                  AND t.shadow_measured_exit_slippage_pct IS NOT NULL
+             THEN ROUND(t.gross_return_pct
+                        - t.shadow_measured_entry_slippage_pct
+                        - t.shadow_measured_exit_slippage_pct, 2)
+             END as true_net_return_pct,
         t.take_profit_pct, t.stop_loss_pct,
         t.momentum_pct_t300, t.momentum_label,
         t.shadow_measured_entry_slippage_pct, t.shadow_measured_exit_slippage_pct,
@@ -97,6 +124,54 @@ export function computeTradingData(
     filter_results: t.filter_results_json ? JSON.parse(t.filter_results_json) : null,
     filter_results_json: undefined,
   }));
+
+  // ── Shadow slippage range ───────────────────────────────────────────────
+  // Distribution of measured AMM slippage on closed shadow trades. Useful for
+  // sanity-checking how variable the real fills are vs the static 1-3% the gap
+  // model assumes. Computed in JS (no sqlite percentile_cont) over the raw
+  // closed-shadow population, no recency window.
+  const shadowSlipRows = db.prepare(`
+    SELECT
+      shadow_measured_entry_slippage_pct as entry_slip,
+      shadow_measured_exit_slippage_pct as exit_slip,
+      gross_return_pct,
+      gross_return_pct - shadow_measured_entry_slippage_pct - shadow_measured_exit_slippage_pct as true_net_return_pct
+    FROM trades_v2
+    WHERE status='closed'
+      AND COALESCE(execution_mode, 'paper') = 'shadow'
+      AND shadow_measured_entry_slippage_pct IS NOT NULL
+      AND shadow_measured_exit_slippage_pct IS NOT NULL
+      AND gross_return_pct IS NOT NULL
+  `).all() as Array<{ entry_slip: number; exit_slip: number; gross_return_pct: number; true_net_return_pct: number }>;
+
+  function summarize(values: number[]) {
+    if (values.length === 0) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    const pick = (p: number) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(p * (sorted.length - 1))))];
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    return {
+      n: sorted.length,
+      min: +sorted[0].toFixed(3),
+      p10: +pick(0.10).toFixed(3),
+      p50: +pick(0.50).toFixed(3),
+      p90: +pick(0.90).toFixed(3),
+      max: +sorted[sorted.length - 1].toFixed(3),
+      mean: +(sum / sorted.length).toFixed(3),
+    };
+  }
+
+  const entrySlips = shadowSlipRows.map(r => r.entry_slip);
+  const exitSlips = shadowSlipRows.map(r => r.exit_slip);
+  const roundTripSlips = shadowSlipRows.map(r => r.entry_slip + r.exit_slip);
+  const trueNetReturns = shadowSlipRows.map(r => r.true_net_return_pct);
+
+  const shadowSlippageRange = {
+    n_trades: shadowSlipRows.length,
+    entry_slippage_pct: summarize(entrySlips),
+    exit_slippage_pct: summarize(exitSlips),
+    round_trip_slippage_pct: summarize(roundTripSlips),
+    true_net_return_pct: summarize(trueNetReturns),
+  };
 
   const smStats = strategyManager ? strategyManager.getStats() : null;
   const openPositions = smStats?.activePositionDetails ?? [];
@@ -136,6 +211,7 @@ export function computeTradingData(
     open_positions: openPositions,
     performance_summary: performanceByMode,
     performance_by_execution_mode: performanceByExecutionMode,
+    shadow_slippage_range: shadowSlippageRange,
     strategy_stats: strategyStats,
     recent_trades: recentTrades,
     skip_reason_counts: skipReasons,
