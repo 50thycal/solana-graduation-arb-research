@@ -128,18 +128,18 @@ interface BondingCurveState {
   isComplete: boolean;
 }
 
-// pump.fun withdraw_authority PDA — only present in migrate instructions, not buys/sells.
-// Polling getSignaturesForAddress on this account gives us migrations with <2s latency,
-// bypassing the Helius WS batch-buffering that delays ~43% of grads by 25-75s.
+// pump.fun's withdraw_authority is a hardcoded constant pubkey baked into the
+// program — NOT a PDA. Both seeds we tried (`withdraw_authority` and
+// `withdraw-authority`) derived to addresses with no on-chain activity. The
+// real address was captured at runtime from accts[1] of a real migrate tx
+// (see comment "Captured at runtime" in the class fields below).
 //
-// Seed is 'withdraw-authority' (kebab-case) — matches pump.fun's IDL convention for
-// other PDAs ('mint-authority', 'bonding-curve'). The previous 'withdraw_authority'
-// (underscore) derived to an address with zero on-chain activity, so the poller
-// returned empty every tick.
-const PUMP_WITHDRAW_AUTHORITY = PublicKey.findProgramAddressSync(
-  [Buffer.from('withdraw-authority')],
-  PUMP_FUN_PROGRAM_ID
-)[0];
+// Polling getSignaturesForAddress on this address gives us migrations as soon
+// as Helius's indexer sees them. The runtime discovery code is kept as a
+// belt-and-suspenders fallback in case pump.fun ever rotates this key.
+const PUMP_WITHDRAW_AUTHORITY = new PublicKey(
+  '39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg'
+);
 
 // How often to poll for new migration signatures via RPC (bypasses WS delivery lag).
 const MIGRATION_POLL_INTERVAL_MS = parseInt(process.env.MIGRATION_POLL_INTERVAL_MS || '2000', 10);
