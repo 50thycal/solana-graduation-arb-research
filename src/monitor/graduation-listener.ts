@@ -211,6 +211,11 @@ export class GraduationListener {
    * does not keep polling a dead Connection reference.
    */
   private reconnectSubscribers: Array<(connection: Connection) => void> = [];
+  // Separate connection used exclusively for the migration RPC poller.
+  // Defaults to the main Helius connection, but can be overridden with
+  // MIGRATION_POLL_RPC_URL to use a provider whose indexer doesn't share
+  // Helius's batch-delivery lag.
+  private pollConnection: Connection;
 
   constructor(db: Database.Database) {
     const rpcUrl = process.env.HELIUS_RPC_URL;
@@ -227,6 +232,12 @@ export class GraduationListener {
       commitment: 'confirmed',
       wsEndpoint: wsUrl,
     });
+
+    const pollRpcUrl = process.env.MIGRATION_POLL_RPC_URL;
+    this.pollConnection = pollRpcUrl
+      ? new Connection(pollRpcUrl, { commitment: 'confirmed' })
+      : this.connection;
+
     this.db = db;
     this.poolTracker = new PoolTracker(db, this.connection);
     this.priceCollector = new PriceCollector(db, this.connection);
@@ -540,16 +551,18 @@ export class GraduationListener {
    * finality, bypassing Helius WS batch-buffering that delays ~43% of migrations 25-75s.
    */
   private async startMigrationPoller(): Promise<void> {
+    const pollEndpoint = process.env.MIGRATION_POLL_RPC_URL ?? 'helius (default)';
     try {
-      await globalRpcLimiter.throttle();
-      const initial = await this.connection.getSignaturesForAddress(
+      const initial = await this.pollConnection.getSignaturesForAddress(
         PUMP_WITHDRAW_AUTHORITY, { limit: 1 }
       );
       if (initial.length > 0) this.pollLastSig = initial[0].signature;
       logger.info(
-        'Migration RPC poller started — polling ' + PUMP_WITHDRAW_AUTHORITY.toBase58() +
-        ' every ' + MIGRATION_POLL_INTERVAL_MS + 'ms (bootstrap sigs: ' + initial.length +
-        (initial.length > 0 ? ', lastSig=' + initial[0].signature.slice(0, 8) : '') + ')'
+        'Migration RPC poller started — endpoint=' + pollEndpoint +
+        ' target=' + PUMP_WITHDRAW_AUTHORITY.toBase58() +
+        ' intervalMs=' + MIGRATION_POLL_INTERVAL_MS +
+        ' bootstrapSigs=' + initial.length +
+        (initial.length > 0 ? ' lastSig=' + initial[0].signature.slice(0, 8) : '')
       );
     } catch (err) {
       logger.warn('Migration poller bootstrap failed: %s', (err as Error).message);
@@ -561,7 +574,6 @@ export class GraduationListener {
       if (this.stopped) return;
       this.totalPollTicks++;
       try {
-        await globalRpcLimiter.throttle();
         // Use the runtime-captured address if we have one (ground truth from a
         // real migrate tx). Otherwise fall back to the derived PDA.
         const target = this.discoveredWithdrawAuthority ?? PUMP_WITHDRAW_AUTHORITY;
@@ -571,7 +583,7 @@ export class GraduationListener {
         // `until: pollLastSig` would never match (different sig history) and
         // we'd burst-process 20 historical sigs on the new address.
         if (!target.equals(this.pollerCurrentTarget)) {
-          const reboot = await this.connection.getSignaturesForAddress(target, { limit: 1 });
+          const reboot = await this.pollConnection.getSignaturesForAddress(target, { limit: 1 });
           this.pollLastSig = reboot[0]?.signature;
           this.pollerCurrentTarget = target;
           logger.info(
@@ -581,7 +593,7 @@ export class GraduationListener {
           return;
         }
 
-        const sigs = await this.connection.getSignaturesForAddress(
+        const sigs = await this.pollConnection.getSignaturesForAddress(
           target,
           { limit: 20, until: this.pollLastSig }
         );
