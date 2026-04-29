@@ -4462,14 +4462,15 @@ export function renderTradingHtml(data: any): string {
           ${ssrFmtRow('Entry slippage', ssr.entry_slippage_pct, '%')}
           ${ssrFmtRow('Exit slippage', ssr.exit_slippage_pct, '%')}
           ${ssrFmtRow('Round-trip (entry + exit)', ssr.round_trip_slippage_pct, '%')}
-          ${ssrFmtRow('True Net Ret (gross − round-trip)', ssr.true_net_return_pct, '%')}
+          ${ssrFmtRow('Sim overhead (jito tip + tx fee)', ssr.sim_overhead_pct, '%')}
+          ${ssrFmtRow('True Net Ret (gross − round-trip − overhead)', ssr.true_net_return_pct, '%')}
         </tbody>
       </table></div>
       <p style="color:#64748b;font-size:11px;margin-top:6px">
-        Compare <b>round-trip</b> here vs the static cost model
-        (slGapPenaltyPct + tpGapPenaltyPct ≈ 30%, default round-trip-cost ≈ 1.75%).
-        If real round-trip slippage is consistently below the modeled gap penalty,
-        paper Net Ret% understates the strategy's true edge.
+        <b>Shadow's net_return_pct now uses this measured-cost model</b> — gap penalty and roundTripCostPct
+        are no longer applied. The True Net Ret row recomputes the same formula on-the-fly as a sanity check
+        and should match Avg Net Ret% in the panel above. Sim overhead is 2 × jito tip + 2 × tx fee
+        (~0.04% on a 0.5 SOL trade at default tip 0.0001 SOL).
       </p>` : '<p style="color:#94a3b8">No closed shadow trades with measured slippage yet.</p>'}
     </div>` : '';
 

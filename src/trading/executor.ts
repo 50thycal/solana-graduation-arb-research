@@ -306,6 +306,10 @@ export class Executor {
     return {
       success: true, effectivePrice, tokensReceived,
       dryRun: true, executionMode: 'shadow', measuredSlippagePct,
+      // Simulate the Jito tip cost a live fill would have paid. Not a real
+      // expense in shadow, but recorded so net_return_pct reflects what live
+      // would actually net out.
+      jitoTipSol: DEFAULT_JITO_TIP_SOL,
     };
   }
 
@@ -343,6 +347,8 @@ export class Executor {
     return {
       success: true, effectivePrice, tokensReceived: 0,
       dryRun: true, executionMode: 'shadow', measuredSlippagePct,
+      // Simulate the exit-side Jito tip — same rationale as shadowBuy.
+      jitoTipSol: DEFAULT_JITO_TIP_SOL,
     };
   }
 

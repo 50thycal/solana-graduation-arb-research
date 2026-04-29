@@ -545,6 +545,57 @@ function runMigrations(db: Database.Database): void {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_trades_v2_execution_mode ON trades_v2(execution_mode)`);
   }
 
+  // One-time backfill: recompute net_return_pct on existing closed shadow
+  // trades under the measured-cost model (gross − measured entry slip −
+  // measured exit slip − simulated jito tip − tx fee). Pre-fix shadow rows
+  // were stored with the static gap-penalty model, which over-charges by
+  // ~25 pp vs reality. Guarded by a marker so it runs at most once per row.
+  {
+    // bot_settings is created lower down in this function; create-if-not-exists
+    // here so the marker check works on first boot too.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bot_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER DEFAULT (unixepoch())
+      )
+    `);
+    const alreadyDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('shadow_net_return_backfill_v1') != null;
+    if (!alreadyDone) {
+      // Use COALESCE to default missing jito_tip_sol to 0.0002 SOL (entry+exit
+      // simulated tips at DEFAULT_JITO_TIP_SOL = 0.0001 each). tx_overhead is a
+      // constant 0.00001 SOL (2 × 5000 lamports).
+      const sim2Tips = 0.0002;
+      const txOverheadSol = 1e-5;
+      const result = db.prepare(`
+        UPDATE trades_v2
+        SET net_return_pct = ROUND(
+              gross_return_pct
+              - COALESCE(shadow_measured_entry_slippage_pct, 0)
+              - COALESCE(shadow_measured_exit_slippage_pct, 0)
+              - ((COALESCE(jito_tip_sol, ?) + ?) / NULLIF(trade_size_sol, 0)) * 100
+            , 6),
+            net_profit_sol = ROUND(
+              trade_size_sol * (
+                gross_return_pct
+                - COALESCE(shadow_measured_entry_slippage_pct, 0)
+                - COALESCE(shadow_measured_exit_slippage_pct, 0)
+                - ((COALESCE(jito_tip_sol, ?) + ?) / NULLIF(trade_size_sol, 0)) * 100
+              ) / 100
+            , 8)
+        WHERE status = 'closed'
+          AND COALESCE(execution_mode, 'paper') = 'shadow'
+          AND gross_return_pct IS NOT NULL
+          AND shadow_measured_entry_slippage_pct IS NOT NULL
+          AND shadow_measured_exit_slippage_pct IS NOT NULL
+      `).run(sim2Tips, txOverheadSol, sim2Tips, txOverheadSol);
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('shadow_net_return_backfill_v1', String(result.changes));
+      logger.info({ rowsUpdated: result.changes }, 'Backfilled net_return_pct on closed shadow trades (measured-cost model)');
+    }
+  }
+
   // Add archived column to trades_v2 — backfill legacy strategy trades so they
   // stay queryable but are excluded from dashboard/snapshot by default.
   {

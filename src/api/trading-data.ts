@@ -46,13 +46,10 @@ export function computeTradingData(
   `).all() as any[];
 
   // Finer-grained rollout split: paper / shadow / live_micro / live_full.
-  // Use this panel to compare measured vs assumed slippage during the rollout.
-  //
-  // avg_true_net_return_pct: for shadow trades only — what the net return would
-  // have been using the measured AMM slippage instead of the static gap-penalty
-  // model (gross_return - shadow_entry_slip - shadow_exit_slip). The measured
-  // slippages already include LP fee + spread + price impact, so no extra
-  // round-trip cost is subtracted. Null for paper rows.
+  // Shadow's net_return_pct is now the measured-cost number (gross − entry slip
+  // − exit slip − jito tip − tx fee, no gap penalty); avg_true_net_return_pct
+  // recomputes it on the fly as a sanity check that the stored value matches.
+  // For shadow rows the two columns should be identical. Null for paper rows.
   const performanceByExecutionMode = db.prepare(`
     SELECT
       COALESCE(execution_mode, 'paper') as execution_mode,
@@ -64,7 +61,10 @@ export function computeTradingData(
       ROUND(AVG(CASE WHEN status='closed'
                        AND shadow_measured_entry_slippage_pct IS NOT NULL
                        AND shadow_measured_exit_slippage_pct IS NOT NULL
-                  THEN gross_return_pct - shadow_measured_entry_slippage_pct - shadow_measured_exit_slippage_pct
+                  THEN gross_return_pct
+                       - shadow_measured_entry_slippage_pct
+                       - shadow_measured_exit_slippage_pct
+                       - ((COALESCE(jito_tip_sol, 0.0002) + 0.00001) / NULLIF(trade_size_sol, 0)) * 100
                   END), 2) as avg_true_net_return_pct,
       COUNT(CASE WHEN status='closed'
                   AND shadow_measured_entry_slippage_pct IS NOT NULL
@@ -92,21 +92,23 @@ export function computeTradingData(
     whereParams.push(executionModeFilter);
   }
   const whereSql = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
-  // true_net_return_pct: shadow-only — what net return would have been using the
-  // measured AMM slippage (gross - shadow_entry_slip - shadow_exit_slip) instead
-  // of the modelled gap penalty. Null for paper trades or shadow trades missing
-  // either slippage measurement.
+  // true_net_return_pct: on-the-fly recomputation of measured-cost return —
+  // gross − entry slip − exit slip − (jito tip + tx fee)/trade_size_sol.
+  // Should equal net_return_pct for shadow trades after the v1 backfill runs.
+  // Null for paper or for shadow rows missing either slippage measurement.
   const tradesQuery = `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
         COALESCE(t.execution_mode, 'paper') as execution_mode,
         t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
         t.exit_price_sol, t.exit_reason,
         t.gross_return_pct, t.net_return_pct, t.gap_adjusted_return_pct,
+        t.jito_tip_sol, t.trade_size_sol,
         CASE WHEN t.status='closed'
                   AND t.shadow_measured_entry_slippage_pct IS NOT NULL
                   AND t.shadow_measured_exit_slippage_pct IS NOT NULL
              THEN ROUND(t.gross_return_pct
                         - t.shadow_measured_entry_slippage_pct
-                        - t.shadow_measured_exit_slippage_pct, 2)
+                        - t.shadow_measured_exit_slippage_pct
+                        - ((COALESCE(t.jito_tip_sol, 0.0002) + 0.00001) / NULLIF(t.trade_size_sol, 0)) * 100, 2)
              END as true_net_return_pct,
         t.take_profit_pct, t.stop_loss_pct,
         t.momentum_pct_t300, t.momentum_label,
@@ -126,23 +128,28 @@ export function computeTradingData(
   }));
 
   // ── Shadow slippage range ───────────────────────────────────────────────
-  // Distribution of measured AMM slippage on closed shadow trades. Useful for
-  // sanity-checking how variable the real fills are vs the static 1-3% the gap
-  // model assumes. Computed in JS (no sqlite percentile_cont) over the raw
-  // closed-shadow population, no recency window.
+  // Distribution of measured AMM slippage on closed shadow trades. Now includes
+  // simulated jito + tx-fee overhead so the true_net_return_pct row matches the
+  // canonical net_return_pct stored on the trade. Computed in JS (no sqlite
+  // percentile_cont) over the raw closed-shadow population, no recency window.
   const shadowSlipRows = db.prepare(`
     SELECT
       shadow_measured_entry_slippage_pct as entry_slip,
       shadow_measured_exit_slippage_pct as exit_slip,
       gross_return_pct,
-      gross_return_pct - shadow_measured_entry_slippage_pct - shadow_measured_exit_slippage_pct as true_net_return_pct
+      ((COALESCE(jito_tip_sol, 0.0002) + 0.00001) / NULLIF(trade_size_sol, 0)) * 100 as overhead_pct,
+      gross_return_pct
+        - shadow_measured_entry_slippage_pct
+        - shadow_measured_exit_slippage_pct
+        - ((COALESCE(jito_tip_sol, 0.0002) + 0.00001) / NULLIF(trade_size_sol, 0)) * 100 as true_net_return_pct
     FROM trades_v2
     WHERE status='closed'
       AND COALESCE(execution_mode, 'paper') = 'shadow'
       AND shadow_measured_entry_slippage_pct IS NOT NULL
       AND shadow_measured_exit_slippage_pct IS NOT NULL
       AND gross_return_pct IS NOT NULL
-  `).all() as Array<{ entry_slip: number; exit_slip: number; gross_return_pct: number; true_net_return_pct: number }>;
+      AND trade_size_sol > 0
+  `).all() as Array<{ entry_slip: number; exit_slip: number; gross_return_pct: number; overhead_pct: number; true_net_return_pct: number }>;
 
   function summarize(values: number[]) {
     if (values.length === 0) return null;
@@ -163,6 +170,7 @@ export function computeTradingData(
   const entrySlips = shadowSlipRows.map(r => r.entry_slip);
   const exitSlips = shadowSlipRows.map(r => r.exit_slip);
   const roundTripSlips = shadowSlipRows.map(r => r.entry_slip + r.exit_slip);
+  const overheadPcts = shadowSlipRows.map(r => r.overhead_pct);
   const trueNetReturns = shadowSlipRows.map(r => r.true_net_return_pct);
 
   const shadowSlippageRange = {
@@ -170,6 +178,7 @@ export function computeTradingData(
     entry_slippage_pct: summarize(entrySlips),
     exit_slippage_pct: summarize(exitSlips),
     round_trip_slippage_pct: summarize(roundTripSlips),
+    sim_overhead_pct: summarize(overheadPcts),
     true_net_return_pct: summarize(trueNetReturns),
   };
 
