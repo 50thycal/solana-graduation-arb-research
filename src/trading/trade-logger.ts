@@ -116,41 +116,95 @@ export class TradeLogger {
 
     const grossReturnPct = ((exitPriceSol - entryPriceSol) / entryPriceSol) * 100;
 
-    // In live_micro / live_full we have the actual measured slippage from the
-    // on-chain fill — use it directly. Paper and shadow keep the Panel-4 gap
-    // penalty model so backtest/sim comparisons stay apples-to-apples.
-    let effectiveExitPrice = exitPriceSol;
-    const isLiveFill = params.measuredExitSlippagePct != null &&
-      (params.executionMode === 'live_micro' || params.executionMode === 'live_full');
-    if (isLiveFill) {
-      effectiveExitPrice = exitPriceSol * (1 - (params.measuredExitSlippagePct as number) / 100);
-    } else if (exitReason === 'stop_loss') {
-      effectiveExitPrice = exitPriceSol * (1 - params.slGapPenaltyPct / 100);
-    } else if (exitReason === 'trailing_stop' || exitReason === 'breakeven_stop') {
-      // Use TP gap penalty when exiting in profit, SL gap penalty when exiting at a loss
-      const inProfit = exitPriceSol > entryPriceSol;
-      const penaltyPct = inProfit ? params.tpGapPenaltyPct : params.slGapPenaltyPct;
-      effectiveExitPrice = exitPriceSol * (1 - penaltyPct / 100);
-    } else if (exitReason === 'take_profit' || exitReason === 'trailing_tp') {
-      effectiveExitPrice = exitPriceSol * (1 - params.tpGapPenaltyPct / 100);
-    }
-    const gapAdjustedReturnPct = ((effectiveExitPrice - entryPriceSol) / entryPriceSol) * 100;
-
-    // Round-trip fee estimate (use 1.75% as default if not computed per-trade)
-    let roundTripCostPct = 1.75;
+    // Cost model branches by execution mode:
+    //   live_*  → real measured exit slippage applied to effective exit price.
+    //             Round-trip cost still subtracted (entry-side LP fee + spread,
+    //             plus jito tip / tx fee that liveBuy already accounted for in
+    //             the wallet diff).
+    //   shadow  → measured entry + exit slippage (no gap penalty, no roundTrip
+    //             since the AMM math in shadowBuy/Sell already includes LP fee).
+    //             Plus simulated jito tip + tx fee so net_return_pct matches what
+    //             a live fill would actually net.
+    //   paper   → static gap penalty + roundTripCostPct fallback (unchanged).
+    //
+    // Pull the row's stored entry-side metadata once so all three branches can
+    // see entry slip, jito tip, trade size, and the measured round-trip cost.
+    let entrySlippagePct: number | null = null;
+    let shadowEntrySlipPct: number | null = null;
+    let entryJitoTipSol: number | null = null;
+    let measuredRoundTripPct: number | null = null;
     try {
       const row = this.db.prepare(
-        `SELECT t.entry_slippage_pct, gm.round_trip_slippage_pct
+        `SELECT t.entry_slippage_pct,
+                t.shadow_measured_entry_slippage_pct,
+                t.jito_tip_sol AS entry_jito_tip_sol,
+                gm.round_trip_slippage_pct
          FROM trades_v2 t
          LEFT JOIN graduation_momentum gm ON gm.graduation_id = t.graduation_id
          WHERE t.id = ?`
       ).get(params.tradeId) as any;
-      if (row?.round_trip_slippage_pct != null) roundTripCostPct = row.round_trip_slippage_pct;
-    } catch { /* use default */ }
+      if (row) {
+        entrySlippagePct = row.entry_slippage_pct ?? null;
+        shadowEntrySlipPct = row.shadow_measured_entry_slippage_pct ?? null;
+        entryJitoTipSol = row.entry_jito_tip_sol ?? null;
+        measuredRoundTripPct = row.round_trip_slippage_pct ?? null;
+      }
+    } catch { /* use defaults */ }
 
-    const estimatedFeesSol = params.tradeSizeSol * (roundTripCostPct / 100);
-    const netReturnPct = gapAdjustedReturnPct - roundTripCostPct;
+    let effectiveExitPrice = exitPriceSol;
+    let netReturnPct: number;
+    let estimatedFeesSol: number;
+
+    const isLiveFill = params.measuredExitSlippagePct != null &&
+      (params.executionMode === 'live_micro' || params.executionMode === 'live_full');
+    const isShadow = params.executionMode === 'shadow';
+
+    if (isShadow) {
+      // Measured-cost model. shadow_measured_*_slippage_pct already includes
+      // LP fee + spread + price impact at our trade size, so don't stack a
+      // synthetic round-trip cost on top of it.
+      const entrySlip = shadowEntrySlipPct ?? 0;
+      const exitSlip = params.shadowMeasuredExitSlippagePct ?? 0;
+      effectiveExitPrice = exitPriceSol * (1 - exitSlip / 100);
+      // True post-slip return = gross - entry_slip - exit_slip (small-slip
+      // approximation; exact compounding diverges by < 0.05 pp at < 5% slip).
+      const slipAdjustedReturnPct = grossReturnPct - entrySlip - exitSlip;
+      // Simulated execution overhead: jito tips (entry already on row, exit
+      // arrives via params) + 2 × tx fee. tradeSizeSol denominates both.
+      const totalJitoTipSol = (entryJitoTipSol ?? 0) + (params.jitoTipSol ?? 0);
+      const txOverheadSol = (5_000 * 2) / 1e9; // 2 × TX_FEE_LAMPORTS
+      const overheadSol = totalJitoTipSol + txOverheadSol;
+      const overheadPct = params.tradeSizeSol > 0
+        ? (overheadSol / params.tradeSizeSol) * 100
+        : 0;
+      netReturnPct = slipAdjustedReturnPct - overheadPct;
+      estimatedFeesSol = overheadSol + params.tradeSizeSol * (entrySlip + exitSlip) / 100;
+    } else if (isLiveFill) {
+      effectiveExitPrice = exitPriceSol * (1 - (params.measuredExitSlippagePct as number) / 100);
+      const gapAdjustedReturnPct = ((effectiveExitPrice - entryPriceSol) / entryPriceSol) * 100;
+      const roundTripCostPct = measuredRoundTripPct ?? 1.75;
+      estimatedFeesSol = params.tradeSizeSol * (roundTripCostPct / 100);
+      netReturnPct = gapAdjustedReturnPct - roundTripCostPct;
+    } else {
+      // Paper — unchanged. Static gap penalty + measured/default round-trip cost.
+      if (exitReason === 'stop_loss') {
+        effectiveExitPrice = exitPriceSol * (1 - params.slGapPenaltyPct / 100);
+      } else if (exitReason === 'trailing_stop' || exitReason === 'breakeven_stop') {
+        const inProfit = exitPriceSol > entryPriceSol;
+        const penaltyPct = inProfit ? params.tpGapPenaltyPct : params.slGapPenaltyPct;
+        effectiveExitPrice = exitPriceSol * (1 - penaltyPct / 100);
+      } else if (exitReason === 'take_profit' || exitReason === 'trailing_tp') {
+        effectiveExitPrice = exitPriceSol * (1 - params.tpGapPenaltyPct / 100);
+      }
+      const gapAdjustedReturnPct = ((effectiveExitPrice - entryPriceSol) / entryPriceSol) * 100;
+      const roundTripCostPct = measuredRoundTripPct ?? 1.75;
+      estimatedFeesSol = params.tradeSizeSol * (roundTripCostPct / 100);
+      netReturnPct = gapAdjustedReturnPct - roundTripCostPct;
+    }
+
+    const gapAdjustedReturnPct = ((effectiveExitPrice - entryPriceSol) / entryPriceSol) * 100;
     const netProfitSol = params.tradeSizeSol * (netReturnPct / 100);
+    void entrySlippagePct; // captured for future use; not currently in net calc
 
     closeTrade(this.db, params.tradeId, {
       exit_timestamp: Math.floor(Date.now() / 1000),
