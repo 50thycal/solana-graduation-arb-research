@@ -18,6 +18,7 @@ import Database from 'better-sqlite3';
 
 import {
   computeBestCombos,
+  ENTRY_GATE,
   simulateCombo,
   whereForFilterNames,
 } from './aggregates';
@@ -119,6 +120,42 @@ export interface WalletRepCoverage {
   creator_wallet_coverage_pct: number;
 }
 
+/**
+ * Standalone view of each rep filter applied to the FULL entry-gated
+ * labeled population (no combo intersection). Answers "does layering this
+ * rep filter on top of any strategy reduce dumps / lift returns?" without
+ * the small-cell scarcity that the top-20 matrix runs into.
+ */
+export interface WalletRepPopulationCell {
+  rep_filter: string;
+  description: string;
+  /** Applied subset stats. */
+  n: number;
+  pump: number;
+  dump: number;
+  stable: number;
+  pump_rate_pct: number | null;
+  dump_rate_pct: number | null;
+  /** Raw avg cost-unaware T+30→T+300 return. */
+  raw_avg_ret_pct: number | null;
+  /** Per-subset simulator optimum (same TP×SL grid as everything else). */
+  opt_tp: number | null;
+  opt_sl: number | null;
+  opt_avg_ret: number | null;
+  opt_win_rate: number | null;
+  /** Δ vs the unfiltered baseline (negative dump_rate Δ = filter knocks out dumps). */
+  delta_pump_rate_pp: number | null;
+  delta_dump_rate_pp: number | null;
+  delta_raw_avg_ret_pp: number | null;
+  delta_opt_avg_ret_pp: number | null;
+  n_retention_pct: number;
+}
+
+export interface WalletRepPopulationView {
+  baseline: WalletRepPopulationCell;
+  rows: WalletRepPopulationCell[];
+}
+
 export interface WalletRepAnalysisData {
   generated_at: string;
   baseline_avg_return_pct: number;
@@ -126,6 +163,7 @@ export interface WalletRepAnalysisData {
   rows: WalletRepRow[];
   summary: WalletRepSummary[];
   coverage: WalletRepCoverage;
+  population_view: WalletRepPopulationView;
   notes: {
     min_n_for_valid_delta: number;
     combo_source: string;
@@ -171,6 +209,103 @@ function median(xs: number[]): number | null {
   return sorted.length % 2 === 0
     ? +((sorted[mid - 1] + sorted[mid]) / 2).toFixed(2)
     : +sorted[mid].toFixed(2);
+}
+
+/** Population-level pump/dump/stable counts + raw avg return on the entry-gated subset. */
+function computeLabelBreakdown(
+  db: Database.Database,
+  whereClause: string,
+): {
+  n: number;
+  pump: number;
+  dump: number;
+  stable: number;
+  pump_rate_pct: number | null;
+  dump_rate_pct: number | null;
+  raw_avg_ret_pct: number | null;
+} {
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) AS n,
+      SUM(CASE WHEN label = 'PUMP' THEN 1 ELSE 0 END) AS pump,
+      SUM(CASE WHEN label = 'DUMP' THEN 1 ELSE 0 END) AS dump,
+      SUM(CASE WHEN label = 'STABLE' THEN 1 ELSE 0 END) AS stable,
+      AVG(((1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) - 1.0) * 100.0) AS raw_avg_ret
+    FROM graduation_momentum
+    WHERE label IS NOT NULL
+      AND ${ENTRY_GATE}
+      AND (${whereClause})
+  `).get() as {
+    n: number;
+    pump: number | null;
+    dump: number | null;
+    stable: number | null;
+    raw_avg_ret: number | null;
+  };
+
+  const n = row.n || 0;
+  const pump = row.pump || 0;
+  const dump = row.dump || 0;
+  const stable = row.stable || 0;
+  return {
+    n,
+    pump,
+    dump,
+    stable,
+    pump_rate_pct: n > 0 ? +((pump / n) * 100).toFixed(1) : null,
+    dump_rate_pct: n > 0 ? +((dump / n) * 100).toFixed(1) : null,
+    raw_avg_ret_pct: row.raw_avg_ret !== null ? +row.raw_avg_ret.toFixed(2) : null,
+  };
+}
+
+function computePopulationCell(
+  db: Database.Database,
+  rep: { name: string; description: string },
+  whereClause: string,
+  baseline: WalletRepPopulationCell | null,
+): WalletRepPopulationCell {
+  const breakdown = computeLabelBreakdown(db, whereClause);
+  const sim = simulateCombo(db, whereClause);
+
+  const deltaPump =
+    baseline && breakdown.pump_rate_pct !== null && baseline.pump_rate_pct !== null
+      ? +(breakdown.pump_rate_pct - baseline.pump_rate_pct).toFixed(2)
+      : null;
+  const deltaDump =
+    baseline && breakdown.dump_rate_pct !== null && baseline.dump_rate_pct !== null
+      ? +(breakdown.dump_rate_pct - baseline.dump_rate_pct).toFixed(2)
+      : null;
+  const deltaRaw =
+    baseline && breakdown.raw_avg_ret_pct !== null && baseline.raw_avg_ret_pct !== null
+      ? +(breakdown.raw_avg_ret_pct - baseline.raw_avg_ret_pct).toFixed(2)
+      : null;
+  const deltaOpt =
+    baseline && sim.opt_avg_ret !== null && baseline.opt_avg_ret !== null
+      ? +(sim.opt_avg_ret - baseline.opt_avg_ret).toFixed(2)
+      : null;
+
+  return {
+    rep_filter: rep.name,
+    description: rep.description,
+    n: breakdown.n,
+    pump: breakdown.pump,
+    dump: breakdown.dump,
+    stable: breakdown.stable,
+    pump_rate_pct: breakdown.pump_rate_pct,
+    dump_rate_pct: breakdown.dump_rate_pct,
+    raw_avg_ret_pct: breakdown.raw_avg_ret_pct,
+    opt_tp: sim.opt_tp,
+    opt_sl: sim.opt_sl,
+    opt_avg_ret: sim.opt_avg_ret,
+    opt_win_rate: sim.opt_win_rate,
+    delta_pump_rate_pp: deltaPump,
+    delta_dump_rate_pp: deltaDump,
+    delta_raw_avg_ret_pp: deltaRaw,
+    delta_opt_avg_ret_pp: deltaOpt,
+    n_retention_pct: baseline && baseline.n > 0
+      ? +((breakdown.n / baseline.n) * 100).toFixed(1)
+      : 100,
+  };
 }
 
 export function computeWalletRepAnalysis(
@@ -300,6 +435,31 @@ export function computeWalletRepAnalysis(
       total > 0 ? +((coverageRow.with_creator / total) * 100).toFixed(1) : 0,
   };
 
+  // Population view — each rep filter standalone, no combo intersection.
+  // Baseline = unfiltered entry-gated population. This is the "would
+  // layering this rep filter on ANY strategy reduce dump rate / lift
+  // returns?" view, free from the small-cell scarcity in the top-20 matrix.
+  const baselinePop = computePopulationCell(
+    db,
+    { name: 'baseline', description: 'all entry-gated labeled rows (no rep filter)' },
+    '1=1',
+    null,
+  );
+  const populationRows: WalletRepPopulationCell[] = WALLET_REP_FILTERS.map((rep) =>
+    computePopulationCell(db, rep, rep.where, baselinePop),
+  );
+  // Sort by dump-rate Δ ascending (largest dump-rate reduction first), nulls last.
+  populationRows.sort((a, b) => {
+    if (a.delta_dump_rate_pp === null && b.delta_dump_rate_pp === null) return 0;
+    if (a.delta_dump_rate_pp === null) return 1;
+    if (b.delta_dump_rate_pp === null) return -1;
+    return a.delta_dump_rate_pp - b.delta_dump_rate_pp;
+  });
+  const populationView: WalletRepPopulationView = {
+    baseline: baselinePop,
+    rows: populationRows,
+  };
+
   return {
     generated_at: new Date().toISOString(),
     baseline_avg_return_pct: leaderboard.baseline_avg_return_pct,
@@ -310,6 +470,7 @@ export function computeWalletRepAnalysis(
     })),
     rows,
     summary,
+    population_view: populationView,
     notes: {
       min_n_for_valid_delta: MIN_N_FOR_DELTA,
       combo_source: 'computeBestCombos(min_n=20, top=20, include_pairs=true)',
