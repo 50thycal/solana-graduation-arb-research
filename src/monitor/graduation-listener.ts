@@ -836,6 +836,22 @@ export class GraduationListener {
               token_age_seconds: tokenAgeSeconds,
               creator_wallet_address: creatorWalletAddress,
             });
+            // Compute reputation here too — without this, rows that hit the
+            // enrichment-failure path are missing creator_prior_* even when we
+            // recovered the creator wallet, which silently shrinks the n on
+            // every wallet-rep filter (and the matrix in /wallet-rep-analysis).
+            if (creatorWalletAddress && event.timestamp) {
+              try {
+                const rep = computeCreatorReputation(this.db, creatorWalletAddress, event.timestamp);
+                updateMomentumReputation(this.db, graduationId, rep);
+              } catch (repErr) {
+                logger.debug(
+                  'Reputation compute failed in enrichment-fallback path for grad %d: %s',
+                  graduationId,
+                  repErr instanceof Error ? repErr.message : String(repErr)
+                );
+              }
+            }
             logger.info(
               { graduationId, tokenAgeSeconds, creator: creatorWalletAddress?.slice(0, 8) },
               'token_age_seconds / creator_wallet recovered after holder enrichment failure'
