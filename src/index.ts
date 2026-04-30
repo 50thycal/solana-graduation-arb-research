@@ -628,6 +628,69 @@ async function main() {
     });
   });
 
+  // Standalone reputation recompute. /backfill-wallets does this as a "second
+  // pass" but only after the wallet backfill itself runs. This endpoint lets
+  // us recompute creator_prior_* against current full history without touching
+  // wallet addresses — useful because computeCreatorReputation requires the
+  // prior's pct_t300 to be populated, and at enrichment time priors that
+  // graduated within the last ~5 min often haven't completed yet, so they're
+  // missed. Re-running picks them up.
+  let reputationBackfillRunning = false;
+  app.get('/backfill-reputation', (req, res) => {
+    if (reputationBackfillRunning) {
+      sendJsonOrHtml(req, res, { status: 'already_running', message: 'Reputation backfill is already in progress.' });
+      return;
+    }
+
+    const rows = db.prepare(`
+      SELECT gm.graduation_id, gm.creator_wallet_address, g.timestamp AS grad_timestamp
+      FROM graduation_momentum gm
+      JOIN graduations g ON g.id = gm.graduation_id
+      WHERE gm.creator_wallet_address IS NOT NULL
+      ORDER BY g.timestamp ASC
+    `).all() as Array<{ graduation_id: number; creator_wallet_address: string; grad_timestamp: number }>;
+
+    if (rows.length === 0) {
+      sendJsonOrHtml(req, res, { status: 'done', message: 'No rows with creator_wallet_address — nothing to backfill.' });
+      return;
+    }
+
+    sendJsonOrHtml(req, res, {
+      status: 'started',
+      total: rows.length,
+      message: `Recomputing reputation for ${rows.length} rows in background...`,
+    });
+
+    reputationBackfillRunning = true;
+    (async () => {
+      const before = (db.prepare(
+        'SELECT COUNT(*) AS n FROM graduation_momentum WHERE creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 1'
+      ).get() as any).n;
+      let updated = 0;
+      try {
+        for (const row of rows) {
+          const rep = computeCreatorReputation(db, row.creator_wallet_address, row.grad_timestamp);
+          updateMomentumReputation(db, row.graduation_id, rep);
+          updated++;
+          if (updated % 200 === 0) await new Promise((r) => setImmediate(r));
+        }
+      } catch (err) {
+        logger.warn('Reputation backfill row loop failed: %s', err instanceof Error ? err.message : String(err));
+      }
+      const after = (db.prepare(
+        'SELECT COUNT(*) AS n FROM graduation_momentum WHERE creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 1'
+      ).get() as any).n;
+      logger.info(
+        { updated, prior_count_ge_1_before: before, prior_count_ge_1_after: after, delta: after - before },
+        'Reputation backfill complete'
+      );
+      reputationBackfillRunning = false;
+    })().catch((err) => {
+      reputationBackfillRunning = false;
+      logger.error('Reputation backfill crashed: %s', err instanceof Error ? err.message : String(err));
+    });
+  });
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // DASHBOARD LANDING PAGE
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -2852,6 +2915,43 @@ ${rows.map(r => {
 
   app.listen(healthPort, () => {
     logger.info({ port: healthPort }, 'Health server listening');
+  });
+
+  // Self-healing reputation sweep on every startup: recompute creator_prior_*
+  // for all rows with a creator_wallet_address. The compute is timestamp-
+  // gated (priors must have graduated before this row + have pct_t300), so
+  // re-running is safe and idempotent. Catches T+300 race conditions where a
+  // prior's pct_t300 wasn't ready when this row was originally enriched.
+  // Runs in background — does not block listener start.
+  setImmediate(() => {
+    try {
+      const rows = db.prepare(`
+        SELECT gm.graduation_id, gm.creator_wallet_address, g.timestamp AS grad_timestamp
+        FROM graduation_momentum gm
+        JOIN graduations g ON g.id = gm.graduation_id
+        WHERE gm.creator_wallet_address IS NOT NULL
+        ORDER BY g.timestamp ASC
+      `).all() as Array<{ graduation_id: number; creator_wallet_address: string; grad_timestamp: number }>;
+      if (rows.length === 0) return;
+      const before = (db.prepare(
+        'SELECT COUNT(*) AS n FROM graduation_momentum WHERE creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 1'
+      ).get() as any).n;
+      let updated = 0;
+      for (const row of rows) {
+        const rep = computeCreatorReputation(db, row.creator_wallet_address, row.grad_timestamp);
+        updateMomentumReputation(db, row.graduation_id, rep);
+        updated++;
+      }
+      const after = (db.prepare(
+        'SELECT COUNT(*) AS n FROM graduation_momentum WHERE creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 1'
+      ).get() as any).n;
+      logger.info(
+        { updated, prior_count_ge_1_before: before, prior_count_ge_1_after: after, delta: after - before },
+        'Startup reputation sweep complete'
+      );
+    } catch (err) {
+      logger.warn('Startup reputation sweep failed: %s', err instanceof Error ? err.message : String(err));
+    }
   });
 
   // Gist sync — push diagnose/snapshot/best-combos to bot-status branch
