@@ -4061,12 +4061,16 @@ export function renderTradingHtml(data: any): string {
   const tabsHtml = `
     <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
       <a href="/trading${selectedExec ? '?execution_mode=' + selectedExec : ''}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(!selected)}">All</a>
-      ${strategies.map((s: any) => `
-        <a href="/trading?strategy=${s.id}${selectedExec ? '&execution_mode=' + selectedExec : ''}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(selected === s.id)}">
+      ${strategies.map((s: any) => {
+        const tabExec = execModeStyle((s.params?.executionMode) || 'paper');
+        return `
+        <a href="/trading?strategy=${s.id}${selectedExec ? '&execution_mode=' + selectedExec : ''}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(selected === s.id)};display:inline-flex;align-items:center;gap:6px">
+          <span style="background:${tabExec.color}22;color:${tabExec.color};border:1px solid ${tabExec.color}55;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;letter-spacing:0.4px">${tabExec.label}</span>
           ${escHtml(s.label)}${!s.enabled ? ' (off)' : ''}
-          <span style="font-size:10px;color:#64748b;margin-left:4px">${s.activePositions}pos</span>
+          <span style="font-size:10px;color:#64748b">${s.activePositions}pos</span>
         </a>
-      `).join('')}
+      `;
+      }).join('')}
       <button onclick="document.getElementById('new-strategy-form').style.display='block'" style="padding:6px 14px;border-radius:4px;font-size:12px;background:#065f46;color:#fff;border:none;cursor:pointer">+ New Strategy</button>
     </div>`;
 
@@ -4126,6 +4130,11 @@ export function renderTradingHtml(data: any): string {
           <option value="five_second">5s intervals (from entry)</option>
           <option value="match_collection">Match collection schedule</option>
         </select></label>
+        <label style="color:#94a3b8;font-size:11px">Execution Mode<select id="new-execution-mode" style="${selStyle}">
+          <option value="paper">PAPER — sim fill, gap-penalty cost model</option>
+          <option value="shadow">SHADOW — read on-chain pool, measured cost</option>
+        </select>
+        <span style="color:#64748b;font-size:10px;display:block;margin-top:2px">Live modes only via env or strategy-commands.json</span></label>
       </div>
       <div style="margin-bottom:12px;border-top:1px solid #334155;padding-top:10px">
         <div style="color:#94a3b8;font-size:11px;font-weight:bold;margin-bottom:8px">Dynamic Position Monitoring <span style="color:#64748b;font-weight:normal">(0 = disabled)</span></div>
@@ -4179,9 +4188,13 @@ export function renderTradingHtml(data: any): string {
         <button onclick="removeFilterSlot('ed',${i + 1})" style="background:#7f1d1d;color:#fff;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px" title="Remove">x</button>
       </div>`).join('');
 
+    const edExec = execModeStyle(p.executionMode || 'paper');
+    const edExecCurrent = p.executionMode || 'paper';
+    const isLiveMode = edExecCurrent === 'live_micro' || edExecCurrent === 'live_full';
     editorHtml = `
     <div class="card" style="border:1px solid #334155">
       <div class="card-title">Strategy: ${escHtml(selectedStrategy.label)}
+        <span style="background:${edExec.color}22;color:${edExec.color};border:1px solid ${edExec.color}55;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;margin-left:8px;letter-spacing:0.5px">${edExec.label}</span>
         <span style="color:${selectedStrategy.enabled ? '#4ade80' : '#f87171'};font-size:12px;margin-left:8px">${selectedStrategy.enabled ? 'ENABLED' : 'DISABLED'}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
@@ -4204,6 +4217,12 @@ export function renderTradingHtml(data: any): string {
           <option value="match_collection" ${p.positionMonitorMode === 'match_collection' ? 'selected' : ''}>Match collection schedule</option>
         </select>
         <span style="color:#64748b;font-size:10px;display:block;margin-top:2px">Restart required to apply</span></label>
+        <label style="color:#94a3b8;font-size:11px">Execution Mode<select id="ed-execution-mode" style="${selStyle}" ${isLiveMode ? 'disabled' : ''}>
+          <option value="paper" ${edExecCurrent === 'paper' ? 'selected' : ''}>PAPER — sim fill, gap-penalty cost</option>
+          <option value="shadow" ${edExecCurrent === 'shadow' ? 'selected' : ''}>SHADOW — measured cost</option>
+          ${isLiveMode ? `<option value="${edExecCurrent}" selected>${edExec.label} (read-only)</option>` : ''}
+        </select>
+        <span style="color:#64748b;font-size:10px;display:block;margin-top:2px">${isLiveMode ? 'Live mode locked — change via strategy-commands.json' : 'Toggle paper ↔ shadow takes effect on next trade'}</span></label>
       </div>
       <div style="margin-bottom:12px;border-top:1px solid #334155;padding-top:10px">
         <div style="color:#94a3b8;font-size:11px;font-weight:bold;margin-bottom:8px">Dynamic Position Monitoring <span style="color:#64748b;font-weight:normal">(0 = disabled)</span></div>
@@ -4271,9 +4290,13 @@ export function renderTradingHtml(data: any): string {
     const ret = s.avg_net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
     const firstDt = s.first_trade_ts ? utcToCentral(new Date(s.first_trade_ts * 1000).toISOString()) : '-';
+    // Use execution_mode (paper/shadow/live_micro/live_full) for the badge —
+    // the legacy `mode` column only distinguishes paper vs live and would
+    // mislabel shadow trades as PAPER.
+    const exec = execModeStyle(s.execution_mode || 'paper');
     return `<tr>
       <td style="color:#a78bfa">${s.strategy_id ?? 'default'}</td>
-      <td style="color:${s.mode === 'live' ? '#f59e0b' : '#22d3ee'}">${s.mode?.toUpperCase()}</td>
+      <td><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${exec.label}</span></td>
       <td>${s.total}</td><td>${s.closed}</td><td>${s.open_count}</td>
       <td style="color:${retColor}" data-sort="${ret ?? -999}">${ret != null ? ret + '%' : '-'}</td>
       <td style="color:#22d3ee">${s.tp_exits}</td>
@@ -4703,7 +4726,8 @@ export function renderTradingHtml(data: any): string {
             tightenSlAtPctTime: gn('new-tighten-sl-time'),
             tightenSlTargetPct: gn('new-tighten-sl-pct'),
             tightenSlAtPctTime2: gn('new-tighten-sl-time2'),
-            tightenSlTargetPct2: gn('new-tighten-sl-pct2')
+            tightenSlTargetPct2: gn('new-tighten-sl-pct2'),
+            executionMode: gv('new-execution-mode')
           }
         };
         if (!body.id) { errEl.textContent = 'ID is required'; return; }
@@ -4740,7 +4764,8 @@ export function renderTradingHtml(data: any): string {
             tightenSlAtPctTime: gn('ed-tighten-sl-time'),
             tightenSlTargetPct: gn('ed-tighten-sl-pct'),
             tightenSlAtPctTime2: gn('ed-tighten-sl-time2'),
-            tightenSlTargetPct2: gn('ed-tighten-sl-pct2')
+            tightenSlTargetPct2: gn('ed-tighten-sl-pct2'),
+            executionMode: gv('ed-execution-mode')
           }
         };
         const res = await fetch('/api/strategies/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });

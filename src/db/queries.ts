@@ -936,6 +936,7 @@ export function getTradeStatsByStrategy(db: Database.Database, includeArchived =
     SELECT
       strategy_id,
       mode,
+      COALESCE(execution_mode, 'paper') as execution_mode,
       COUNT(*) as total,
       COUNT(CASE WHEN status='closed' THEN 1 END) as closed,
       COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
@@ -949,8 +950,8 @@ export function getTradeStatsByStrategy(db: Database.Database, includeArchived =
       MAX(entry_timestamp) as last_trade_ts
     FROM trades_v2
     ${archiveFilter}
-    GROUP BY strategy_id, mode
-    ORDER BY strategy_id, mode
+    GROUP BY strategy_id, mode, COALESCE(execution_mode, 'paper')
+    ORDER BY strategy_id, mode, COALESCE(execution_mode, 'paper')
   `).all();
 }
 
