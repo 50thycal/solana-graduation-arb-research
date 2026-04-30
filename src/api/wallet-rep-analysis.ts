@@ -21,6 +21,7 @@ import {
   simulateCombo,
   whereForFilterNames,
 } from './aggregates';
+import { SIM_MIN_N_FOR_OPTIMUM } from './sim-constants';
 
 export interface WalletRepFilterDef {
   name: string;
@@ -103,6 +104,19 @@ export interface WalletRepSummary {
   combos_worsened: number;
   combos_evaluated: number;
   mean_n_retention_pct: number | null;
+  /** Combos where the cell has at least 1 row (regardless of opt threshold) — diagnostic for "is the data being captured". */
+  combos_with_any_n: number;
+}
+
+/** Coverage of the `creator_prior_*` columns across the entry-gated labeled population. */
+export interface WalletRepCoverage {
+  total_labeled_rows: number;
+  with_prior_count: number;
+  with_prior_count_ge_1: number;
+  with_prior_count_ge_3: number;
+  with_creator_wallet: number;
+  prior_count_coverage_pct: number;
+  creator_wallet_coverage_pct: number;
 }
 
 export interface WalletRepAnalysisData {
@@ -111,13 +125,21 @@ export interface WalletRepAnalysisData {
   rep_filters: Array<{ name: string; description: string }>;
   rows: WalletRepRow[];
   summary: WalletRepSummary[];
+  coverage: WalletRepCoverage;
   notes: {
     min_n_for_valid_delta: number;
     combo_source: string;
+    framework: string;
   };
 }
 
-const MIN_N_FOR_DELTA = 20;
+// A delta is only published when the rep-modified cell can also produce an
+// opt TP/SL (simulateCombo's gate). If we set this lower than
+// SIM_MIN_N_FOR_OPTIMUM the cells in [MIN_N, SIM_MIN_N_FOR_OPTIMUM) come back
+// with opt_avg_ret = null, the delta becomes null, and the row silently drops
+// from the leaderboard — making it look like the data isn't being collected
+// when in fact it is. Keep these aligned.
+const MIN_N_FOR_DELTA = SIM_MIN_N_FOR_OPTIMUM;
 
 function makeCell(
   base: { n: number; opt_avg_ret: number | null },
@@ -204,6 +226,7 @@ export function computeWalletRepAnalysis(
     const retentions: number[] = [];
     let improved = 0;
     let worsened = 0;
+    let combosWithAnyN = 0;
 
     for (const row of rows) {
       const cell = row.cells[rep.name];
@@ -213,6 +236,7 @@ export function computeWalletRepAnalysis(
         else if (cell.delta_opt_ret_pp < 0) worsened++;
       }
       if (cell.n_retention_pct !== null) retentions.push(cell.n_retention_pct);
+      if (cell.n > 0) combosWithAnyN++;
     }
 
     const mean =
@@ -233,6 +257,7 @@ export function computeWalletRepAnalysis(
       combos_worsened: worsened,
       combos_evaluated: deltas.length,
       mean_n_retention_pct: meanRetention,
+      combos_with_any_n: combosWithAnyN,
     };
   }).sort((a, b) => {
     if (a.mean_delta_pp === null && b.mean_delta_pp === null) return 0;
@@ -241,9 +266,44 @@ export function computeWalletRepAnalysis(
     return b.mean_delta_pp - a.mean_delta_pp;
   });
 
+  // Coverage diagnostic: how many entry-gated labeled rows actually carry
+  // creator_prior_* values. Answers "is the data being captured?" directly,
+  // independent of the optimizer threshold above.
+  const coverageRow = db.prepare(`
+    SELECT
+      COUNT(*) AS total_labeled,
+      SUM(CASE WHEN creator_prior_token_count IS NOT NULL THEN 1 ELSE 0 END) AS with_prior,
+      SUM(CASE WHEN creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 1 THEN 1 ELSE 0 END) AS with_prior_ge_1,
+      SUM(CASE WHEN creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 3 THEN 1 ELSE 0 END) AS with_prior_ge_3,
+      SUM(CASE WHEN creator_wallet_address IS NOT NULL THEN 1 ELSE 0 END) AS with_creator
+    FROM graduation_momentum
+    WHERE label IS NOT NULL
+      AND pct_t30 BETWEEN 5 AND 100
+  `).get() as {
+    total_labeled: number;
+    with_prior: number;
+    with_prior_ge_1: number;
+    with_prior_ge_3: number;
+    with_creator: number;
+  };
+
+  const total = coverageRow.total_labeled || 0;
+  const coverage: WalletRepCoverage = {
+    total_labeled_rows: total,
+    with_prior_count: coverageRow.with_prior || 0,
+    with_prior_count_ge_1: coverageRow.with_prior_ge_1 || 0,
+    with_prior_count_ge_3: coverageRow.with_prior_ge_3 || 0,
+    with_creator_wallet: coverageRow.with_creator || 0,
+    prior_count_coverage_pct:
+      total > 0 ? +((coverageRow.with_prior / total) * 100).toFixed(1) : 0,
+    creator_wallet_coverage_pct:
+      total > 0 ? +((coverageRow.with_creator / total) * 100).toFixed(1) : 0,
+  };
+
   return {
     generated_at: new Date().toISOString(),
     baseline_avg_return_pct: leaderboard.baseline_avg_return_pct,
+    coverage,
     rep_filters: WALLET_REP_FILTERS.map((r) => ({
       name: r.name,
       description: r.description,
@@ -253,6 +313,7 @@ export function computeWalletRepAnalysis(
     notes: {
       min_n_for_valid_delta: MIN_N_FOR_DELTA,
       combo_source: 'computeBestCombos(min_n=20, top=20, include_pairs=true)',
+      framework: 'per-combo opt TP/SL from SIM_TP_GRID × SIM_SL_GRID (matches Panel 6 top_pairs)',
     },
   };
 }

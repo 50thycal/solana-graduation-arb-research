@@ -5270,13 +5270,40 @@ export function renderWalletRepAnalysisHtml(data: any): string {
     return `<span class="${cls}">${v.toFixed(1)}%</span>`;
   };
 
+  const cov = d.coverage ?? null;
+  const coverageCard = cov ? `
+    <div class="card">
+      <h2>Reputation column coverage</h2>
+      <div class="desc">
+        How many entry-gated labeled rows currently carry <code>creator_prior_*</code> values.
+        Coverage of <code>creator_prior_token_count</code> is what the rep filters actually depend on —
+        if it's near 100% the data <em>is</em> being captured, and any low cell n in the matrix below is
+        real data scarcity (most pump.fun graduations come from first-time creators who have no priors in
+        the DB), not a collection bug.
+      </div>
+      <table>
+        <tbody>
+          <tr><td>Total entry-gated labeled rows</td><td><strong>${cov.total_labeled_rows}</strong></td></tr>
+          <tr><td>creator_wallet_address populated</td><td><strong>${cov.with_creator_wallet}</strong> (${cov.creator_wallet_coverage_pct}%)</td></tr>
+          <tr><td>creator_prior_token_count populated</td><td><strong>${cov.with_prior_count}</strong> (${cov.prior_count_coverage_pct}%)</td></tr>
+          <tr><td>… of those, with prior_count ≥ 1 (known_dev)</td><td><strong>${cov.with_prior_count_ge_1}</strong></td></tr>
+          <tr><td>… of those, with prior_count ≥ 3 (repeat_dev_3plus)</td><td><strong>${cov.with_prior_count_ge_3}</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  ` : '';
+
   const summaryCard = `
     <div class="card">
       <h2>Rep Filter Leaderboard — avg impact across the top 20 combos</h2>
       <div class="desc">
         For each wallet-rep filter, we layer it on top of each of the top 20 combos from
-        <code>/api/best-combos</code> and measure the change in 10%SL/50%TP sim return.
-        Deltas are only counted when the filtered cell has n ≥ ${d.notes?.min_n_for_valid_delta ?? 20}.
+        <code>/api/best-combos</code> and measure the change in <strong>per-combo opt TP/SL</strong>
+        sim return (matches Panel 6 <code>top_pairs</code>; the fixed 10%SL/50%TP framework was retired
+        2026-04-21). Deltas are only counted when the filtered cell has
+        n ≥ ${d.notes?.min_n_for_valid_delta ?? 30} (same as <code>SIM_MIN_N_FOR_OPTIMUM</code> — below
+        that, no opt is published). <strong>Combos w/ any n</strong> shows how many of the 20 combos have
+        at least 1 row passing the rep filter — useful when "Evaluated" reads 0 but data is being captured.
         Ranked by mean Δ (best first).
       </div>
       <table>
@@ -5288,7 +5315,8 @@ export function renderWalletRepAnalysisHtml(data: any): string {
             <th>Median Δ pp</th>
             <th>Combos improved</th>
             <th>Combos worsened</th>
-            <th>Evaluated (n≥${d.notes?.min_n_for_valid_delta ?? 20})</th>
+            <th>Evaluated (n≥${d.notes?.min_n_for_valid_delta ?? 30})</th>
+            <th>Combos w/ any n</th>
             <th>Mean n retention</th>
           </tr>
         </thead>
@@ -5304,6 +5332,7 @@ export function renderWalletRepAnalysisHtml(data: any): string {
               <td class="green">${s.combos_improved}</td>
               <td class="red">${s.combos_worsened}</td>
               <td>${s.combos_evaluated} / ${d.rows.length}</td>
+              <td>${s.combos_with_any_n ?? '—'} / ${d.rows.length}</td>
               <td>${fmtRetention(s.mean_n_retention_pct)}</td>
             </tr>`;
           }).join('')}
@@ -5318,8 +5347,11 @@ export function renderWalletRepAnalysisHtml(data: any): string {
     <div class="card">
       <h2>Matrix — top 20 combos × wallet-rep filters</h2>
       <div class="desc">
-        Each cell shows the sim-return delta (percentage points) vs the base combo when the
-        rep filter is layered on. Cell hover shows filtered n. Grey cells are below the n≥${d.notes?.min_n_for_valid_delta ?? 20} threshold.
+        Each cell shows the per-combo opt sim-return delta (percentage points) vs the base combo
+        when the rep filter is layered on. Cell hover shows filtered n + opt TP/SL.
+        <span class="n-insuf">Grey "n=X"</span> cells are below the n ≥ ${d.notes?.min_n_for_valid_delta ?? 30}
+        threshold (= <code>SIM_MIN_N_FOR_OPTIMUM</code>) — the rows exist but there aren't enough of them
+        to publish an opt TP/SL.
       </div>
       <table>
         <thead>
@@ -5368,7 +5400,7 @@ export function renderWalletRepAnalysisHtml(data: any): string {
     </div>
   `;
 
-  const body = summaryCard + matrixCard + notesCard;
+  const body = coverageCard + summaryCard + matrixCard + notesCard;
   return shell('Wallet Rep Analysis', '/wallet-rep-analysis', body, d);
 }
 
