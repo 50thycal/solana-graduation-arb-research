@@ -5293,6 +5293,97 @@ export function renderWalletRepAnalysisHtml(data: any): string {
     </div>
   ` : '';
 
+  // ── Population view: each rep filter applied standalone to the full
+  //    entry-gated population (no combo intersection). Primary signal = Δ
+  //    dump rate vs baseline (negative = filter knocks dumps out).
+  const pop = d.population_view ?? null;
+  const fmtRate = (v: number | null): string => {
+    if (v === null || v === undefined) return '—';
+    return `${v.toFixed(1)}%`;
+  };
+  const fmtDeltaRate = (v: number | null, invert = false): string => {
+    if (v === null || v === undefined) return '—';
+    // For dump-rate Δ: negative = good (less dumps), so invert color.
+    const good = invert ? v < -0.3 : v > 0.3;
+    const bad = invert ? v > 0.3 : v < -0.3;
+    const cls = good ? 'green' : bad ? 'red' : 'yellow';
+    const sign = v >= 0 ? '+' : '';
+    return `<span class="${cls}"><strong>${sign}${v.toFixed(2)}pp</strong></span>`;
+  };
+  const fmtOptRet = (v: number | null): string => {
+    if (v === null || v === undefined) return '<span class="yellow">—</span>';
+    const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+    return `<span class="${cls}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
+  };
+
+  const populationCard = pop ? `
+    <div class="card">
+      <h2>Population view — each rep filter standalone (no combo intersection)</h2>
+      <div class="desc">
+        Each row is a wallet-rep filter applied to the <strong>full entry-gated labeled population</strong>,
+        no combo filter layered on. Answers "if I drop this rep filter on top of <em>any</em> existing strategy,
+        does it knock out more dumps than pumps?" Sorted by Δ dump rate ascending — the first row is the filter
+        that reduces dump rate the most vs the unfiltered baseline. Negative Δ on dump rate is good (fewer dumps);
+        positive Δ on pump rate / opt avg ret is good (lifts winners / lifts return).
+        <strong>Retention</strong> is what fraction of the baseline n the filter keeps — a filter that drops dump
+        rate by 5pp but cuts n by 80% is rarely worth it.
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Rep filter</th>
+            <th>Condition</th>
+            <th>n</th>
+            <th>Retention</th>
+            <th>Pump rate</th>
+            <th>Dump rate</th>
+            <th>Δ Dump rate</th>
+            <th>Δ Pump rate</th>
+            <th>Raw avg ret</th>
+            <th>Δ Raw avg ret</th>
+            <th>Opt avg ret</th>
+            <th>Δ Opt avg ret</th>
+            <th>Opt TP/SL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="row-baseline">
+            <td><strong>baseline (no filter)</strong></td>
+            <td><span class="desc">${pop.baseline.description}</span></td>
+            <td><strong>${pop.baseline.n}</strong></td>
+            <td>—</td>
+            <td>${fmtRate(pop.baseline.pump_rate_pct)}</td>
+            <td>${fmtRate(pop.baseline.dump_rate_pct)}</td>
+            <td>—</td>
+            <td>—</td>
+            <td>${fmtOptRet(pop.baseline.raw_avg_ret_pct)}</td>
+            <td>—</td>
+            <td>${fmtOptRet(pop.baseline.opt_avg_ret)}</td>
+            <td>—</td>
+            <td>${pop.baseline.opt_tp ?? '—'} / ${pop.baseline.opt_sl ?? '—'}</td>
+          </tr>
+          ${(pop.rows as any[]).map((r) => `
+            <tr>
+              <td><strong>${r.rep_filter}</strong></td>
+              <td><span class="desc">${r.description}</span></td>
+              <td>${r.n}</td>
+              <td>${fmtRetention(r.n_retention_pct)}</td>
+              <td>${fmtRate(r.pump_rate_pct)}</td>
+              <td>${fmtRate(r.dump_rate_pct)}</td>
+              <td>${fmtDeltaRate(r.delta_dump_rate_pp, true)}</td>
+              <td>${fmtDeltaRate(r.delta_pump_rate_pp)}</td>
+              <td>${fmtOptRet(r.raw_avg_ret_pct)}</td>
+              <td>${fmtDeltaRate(r.delta_raw_avg_ret_pp)}</td>
+              <td>${fmtOptRet(r.opt_avg_ret)}</td>
+              <td>${fmtDeltaRate(r.delta_opt_avg_ret_pp)}</td>
+              <td>${r.opt_tp ?? '—'} / ${r.opt_sl ?? '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '';
+
   const summaryCard = `
     <div class="card">
       <h2>Rep Filter Leaderboard — avg impact across the top 20 combos</h2>
@@ -5400,7 +5491,7 @@ export function renderWalletRepAnalysisHtml(data: any): string {
     </div>
   `;
 
-  const body = coverageCard + summaryCard + matrixCard + notesCard;
+  const body = coverageCard + populationCard + summaryCard + matrixCard + notesCard;
   return shell('Wallet Rep Analysis', '/wallet-rep-analysis', body, d);
 }
 
