@@ -5454,6 +5454,27 @@ export function renderWalletRepAnalysisHtml(data: any): string {
           </tr>
         </thead>
         <tbody>
+          ${(() => {
+            // Baseline row at the top: no combo applied. Pulls from
+            // population_view so each rep cell shows the rep filter's
+            // standalone Δ vs the entry-gated baseline.
+            if (!pop) return '';
+            const popByName: Record<string, any> = {};
+            for (const r of (pop.rows as any[])) popByName[r.rep_filter] = r;
+            const cells = repFilters.map(rep => {
+              const r = popByName[rep.name];
+              if (!r) return '<td>—</td>';
+              const title = `n=${r.n} (retention ${r.n_retention_pct ?? '—'}%) · opt ${r.opt_avg_ret ?? '—'}% @ tp${r.opt_tp ?? '—'}/sl${r.opt_sl ?? '—'} · wr ${r.opt_win_rate ?? '—'}% · dump_rate ${r.dump_rate_pct ?? '—'}% (Δ ${r.delta_dump_rate_pp ?? '—'}pp)`;
+              return `<td title="${title}">${fmtDelta(r.delta_opt_avg_ret_pp, r.n)}</td>`;
+            }).join('');
+            return `
+            <tr class="row-baseline">
+              <td><strong>(no combo — entry-gated baseline)</strong></td>
+              <td>${pop.baseline.n}</td>
+              <td>${fmtSim(pop.baseline.opt_avg_ret)}</td>
+              ${cells}
+            </tr>`;
+          })()}
           ${(d.rows as any[]).map((row) => {
             const cells = repFilters.map(rep => {
               const cell = row.cells[rep.name];
