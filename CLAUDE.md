@@ -18,49 +18,57 @@ The human operator is the code-review and deploy loop — they do not write code
 
 ---
 
-## RESEARCH FINDINGS (as of n=630)
+## RESEARCH FINDINGS (refreshed 2026-05-01, n~6,000 trades / 4,500 labeled grads)
 
 These are prior results. They are **starting knowledge**, not constraints. If newer data contradicts anything here, update the doc — don't twist the data to fit.
 
 ### Confirmed Dead (do not revisit without strong reason)
-- **Raw buy-and-hold T+30 to T+300**: -6.2% avg return. Dead.
-- **SL-only strategies (no TP)**: All negative EV. The asymmetry kills you — winners give +19%, losers take -59%. TP is mandatory for any strategy.
+- **Raw buy-and-hold T+30 to T+300**: negative EV. Mean ALL path bottoms at ~−2% around T+50–T+75 then drifts to ~−1% by T+300.
+- **SL-only strategies (no TP)**: All negative EV. The asymmetry kills you — winners give +19%, losers take -59%. TP is mandatory.
 - **SOL raised filters**: All tokens graduate at ~85 SOL. No discriminating power.
-- **Raw holder count filters**: No signal in isolation. All ~38% win rate regardless of threshold. (Holders may still matter as part of a combination — do not exclude from combo search.)
-- **Raw top5 wallet concentration filters**: Actively negative in isolation — higher concentration = worse. (Same caveat: may have value in combos.)
+- **Raw holder count filters**: No signal in isolation. All ~38% win rate regardless of threshold. (Useful in combos.)
+- **Raw top5 wallet concentration filters**: Actively negative in isolation — higher concentration = worse. (Useful in combos.)
 - **Momentum continuation** (T+300 > T+30): Only 47%. Not a signal.
+- **liq_t300 / liq_retained as entry filters** (REMOVED 2026-05-01): These look at T+300 liquidity to make T+30 entry decisions — pure look-ahead bias. The +36% / +46% "baselines" they produced were tautological artifacts. Removed from `FILTER_CATALOG` in `src/api/aggregates.ts:369-372`. Field stays in schema for backwards-looking exit-strategy research only (`exit-sim.ts:656,701`).
+- **Single-filter strategies**: Panel 7 walk-forward (test split) shows every standalone filter has negative test-set return. Best is `dev > 5%` at −5.78% test. **Single filters cannot clear the bar — combos required.**
 
 ### Current Best-Known Baseline (per-combo opt framework)
-- **Baseline**: rolling ALL-entry-gated population at its own grid optimum — i.e. `/api/best-combos → baseline_avg_return_pct`. Reported afresh every sync. As of the 2026-04-21 refactor it's negative (~−12% range) — the raw graduation population is unprofitable even at its best TP/SL.
+- **Baseline**: rolling ALL-entry-gated population at its own grid optimum — `/api/best-combos → baseline_avg_return_pct`. Reported afresh every sync. As of 2026-05-01: ~−10.5%.
+- **Entry gate (research AND trading, aligned 2026-05-01)**: `pct_t30 IS NOT NULL AND pct_t30 >= -99 AND pct_t30 <= 1000`. Effectively unfiltered — research baseline now matches what live strategies actually trade. The old `+5..+100` gate was retired because it filtered out deep-crash entries that strategies (with `entryGateMinPctT30: -99`) DO take. Defined at `src/api/aggregates.ts:407` and `src/trading/config.ts:177-178`.
 - **Promotion bar**: a combo qualifies for promotion when `opt_avg_ret > baseline_avg_return_pct + 0.3 pp` on n ≥ 100 with regime std-dev < 15% (Panel 11). Positive returns are not required — beating the rolling floor is.
-- **Retired 2026-04-21**: the fixed 10% SL / 50% TP ranking, the +6.44% promotion value for `vel<20 + top5<10%`, and the +1.4% vel 5-20 anchor. None of these reference points are used anymore. The fields `sim_avg_return_10sl_50tp_pct` / `sim_win_rate_10sl_50tp_pct` no longer exist on best-combos rows — use `opt_tp`, `opt_sl`, `opt_avg_ret`, `opt_win_rate`.
+- **Median check (added 2026-05-01)**: With the open entry gate, single trades can register +700% returns due to 5s-poll discretization on fast pumps (see graduation 18481, mint `DunC6ovDYKoHe…`). Mean is unreliable. Cross-check with `strategy-percentiles.json` median before promoting any candidate. If median << mean, the strategy is outlier-driven, not edge.
+- **Shadow vs paper costs**: Paper applies a static 20% gap penalty on SL fills which is too pessimistic; paper book runs ~−14%. Shadow (measured slippage) is the realistic cost model and runs ~−8 to −9%. **Compare candidates against shadow baseline, not paper.**
 
-### Leaderboard Leaders (snapshot at 2026-04-21 refactor cutover, n~3,378 labeled)
-Panel 6 `top_pairs` (which computeBestCombos now mirrors) shows these at their own opt TP/SL. These are the candidates to watch as n grows.
+### Leaderboard Leaders (snapshot 2026-05-01, post-liq-fix)
+Top of `/api/best-combos` ranked by `opt_avg_ret`:
 
-**Best with n ≥ 100 (all are negative — bar to beat is the rolling baseline, not zero):**
-1. `top5 < 10% + dev > 5%` — n=50 (still under 100, watching) opt_tp=50, opt_sl=20, opt_avg_ret **+12.6%** — highest-return pair in the catalog; needs ~50 more samples
-2. `holders >= 18 + top5 < 10%` — n=352, opt_tp=50, opt_sl=30, opt_avg_ret −0.6% (but lift +11.1 pp over single-filter optima)
-3. `vel < 20 + top5 < 10%` — n=293, opt_tp=150, opt_sl=30, opt_avg_ret −1.1% (lift +8.6 pp)
-4. `holders >= 15/10/5 + top5 < 10%` cluster — n=360–373, opt ~150/30, opt_avg_ret in the −0.5 to −3 pp range
+**Currently beating baseline at n ≥ 100:**
+1. `vel < 5 + dev < 3%` — n=125, opt @ 100/30, opt_avg_ret **+3.09%** (~13.5 pp lift over baseline). The first true honest-leaderboard winner since the framework refactor.
+2. `age > 10min + dev < 3%` — n=170, opt @ 150/30, opt_avg_ret +1.46%
+3. `vel < 20 + top5 < 10%` — n=182, opt @ 75/30, opt_avg_ret +0.60%
 
-**Top combos with positive opt return (insufficient n — watch):**
-1. `top5 < 10% + dev > 5%` — n=50, opt @ 50/20 → **+12.6%**, 70% WR
-2. `vel 20-50 + max_dd > -10%` — n=71, opt @ 100/30 → +6.4%, 54% WR
-3. `bc_age > 1 day + max_dd > -10%` — n=66, opt @ 100/30 → +3.7%, 45% WR
-4. `liq > 150 + vol > 60%` — n=45, opt @ 150/30 → +3.5%, 33% WR (but extremely high variance)
-5. `vel 20-50 + liq > 100` — n=61, opt @ 75/30 → +2.1%, 56% WR
+**High opt but n<100 (watch):**
+1. `vel 20-50 + dd > -10%` — n=92 (8 from promotion), opt @ 150/25, opt_avg_ret **+7.58%**, 65% WR. Highest opt in the catalog.
+2. `vel < 5 + top5 < 10%` — n=65, opt @ 75/30, opt_avg_ret +6.42%
+3. `vel 10-20 + liq > 100` — n=52, opt @ 30/25, opt_avg_ret +2.34%, 71% WR
 
-**Interpretation (post-refactor):** `top5 < 10%` is still the most repeated component across the top pairs, but the optimal TP/SL for it in combination is often 50/20 or 150/30 — NOT the old 10%SL/50%TP the fixed framework assumed. `dev > 5%` as a co-filter (against the grain of earlier "dev < 3%" hypotheses) keeps surfacing at the top — likely because insider-held tokens run harder when they work. Watch `top5<10% + dev>5%` toward n=100.
+**Active live cohort (shadow mode, 2026-05-01):**
+- `v9shadow-vel5-10` — n=9, **median +7.99%**, 7 TPs / 2 SLs. Best live strategy by far.
+- `v9shadow-vol-30-60` — n=17, median +3.83%
+- `v9shadow-vel50-liq` — n=11, median +2.95%
+- `v10-snipers-base` (`snipers <= 2`) — n=11, median **−10.59%** (mean of −1.09% was misleading; baseline-equivalent in reality)
+- `v10-best-single` (`top5 < 10%`) — n=8, mean +55% but median **−19.59%** — single trade outlier (graduation 18481) drove the mean
 
-### Promising Leads (priority order — beat the rolling baseline on n ≥ 100 with STABLE regime)
-1. **`top5 < 10% + dev > 5%`** (n=50, opt @ 50/20, +12.6%): Highest opt_avg_ret in the catalog. ~50 more samples to n=100. If it holds it's the first positive-EV combo at n≥100 since the framework changed.
-2. **`vel 20-50 + max_dd > -10%`** (n=71, opt @ 100/30, +6.4%): Second-highest opt. ~29 samples from n=100.
-3. **`vel 20-50 + mono > 0.5/0.66`** (n=120 each, opt @ 150/30, +1.2%): Already n≥100 but marginal vs baseline — regime-check in Panel 11 before promotion.
-4. **`holders >= 18 + top5 < 10%`** (n=352, opt @ 50/30, −0.6%): Close to the baseline and the widest-n candidate — if baseline drifts lower this one clears the promotion bar without new data.
-5. **Everything with `top5 < 10%` in it**: strongest repeated component. Check Panels 7 (walk-forward) + 11 (regime) before claiming an edge.
-- **Regime stability**: Panel 11 remains the check for combo stability. Panel 7 walk-forward still uses the same SIM_TP_GRID / SIM_SL_GRID — an "OVERFIT" verdict on test means the opt TP/SL is train-dependent.
-- **Tail risk**: SL in the 10–30% range is mandatory. `opt_sl` will tell you which level fits each combo; do not run without one.
+### Promising Leads (priority order — beat the shadow-baseline ~−9% by ≥ +0.3 pp on n ≥ 100 with stable regime)
+1. **`vel 20-50 + dd > -10%`** (n=92, opt @ 150/25, +7.58%): Closest to promotion. ~8 samples to n=100. Already deployed as `v10-best-double` shadow but matches < 6% of grads — slow accumulator. **Top promotion candidate.**
+2. **`vel < 5 + dev < 3%`** (n=125, opt @ 100/30, +3.09%, beats_baseline=true): Already qualifies on numerics. Needs Panel 11 regime check before promoting. If stable, deploy as live shadow strategy.
+3. **`v9shadow-vel5-10` live cohort** (n=9, median +7.99%): Tightest distribution and only positive median in the live cohort. Direction is unambiguous — needs n ≥ 50 to call.
+4. **Sniper combos**: `snipers <= 2 + wallet_vel_avg < 20` had +7.9 pp lift in early sniper-panel readings but coverage on the historical population is sparse (~8% then, ~15-20% now). Re-pull `sniper-panel.json` periodically as new graduations populate sniper data live (T+35).
+5. **Holders / top5 / dev as exclusion filters**: `serial_rugger`, `repeat_dev >= 3`, `rapid_fire`, `top5 > 30%` all cluster at −20 to −27% test return in Panel 7 — strong exclusion candidates. Cumulative skip on these may lift the entry-gated population by a few pp without picking specific filters.
+
+**Don't promote on these alone:**
+- `top5 < 10%` standalone (was a promising lead pre-2026-05-01) — Panel 7 shows DEGRADED on test (−16% test), and the `v10-best-single` live test confirmed median −19.59%.
+- Mean-positive strategies whose median is negative — the +55% / +63% on `v10-best-single` and `+11/+12% means` on v6 sumabs strategies are entirely driven by graduation 18481's +700% trade (a 5s-poll artifact on a 7× pump in 104s, not real edge).
 
 ## SEARCH SPACE
 
@@ -70,10 +78,18 @@ The full space Claude is free to explore (see `FILTER_PRESET_GROUPS` in `src/uti
 - **BC Age** (`token_age_seconds`): <10 min, >10 min, >30 min, >1 hr, >1 day
 - **Holders** (`holder_count`): ≥5, ≥10, ≥15, ≥18
 - **Top 5 Wallet Concentration** (`top5_wallet_pct`): <10%, <15%, <20%, <30%, <40%
-- **Liquidity at T+30** (pool SOL reserves)
-- **T+30 entry gate** (PumpSwap pool price move from open)
+- **Dev Wallet** (`dev_wallet_pct`): <3%, <5%
+- **Liquidity at T+30** (`liquidity_sol_t30`): >50, >100, >150
+- **Path shape (0–30s window)**: monotonicity, max_drawdown_0_30, sum_abs_returns_0_30, acceleration_t30
+- **Buy pressure** (computed at T+35 — strategies auto-delay 5s): `buy_pressure_unique_buyers`, `buy_pressure_buy_ratio`, `buy_pressure_whale_pct`
+- **Snipers** (`sniper_count_t0_t2`, computed at T+35): ≤2, ≤5, >5, >10
+- **Sniper wallet velocity** (`sniper_wallet_velocity_avg`, also T+35): <5, <10, <20, ≥20 (avg # of EARLIER graduations these snipers also sniped — PRIOR-only by construction)
+- **Creator reputation** (`creator_prior_*`, derived from self-join): fresh_dev, repeat_dev≥3, clean_dev, serial_rugger, rapid_fire
+- **T+30 entry gate**: now `-99..1000` (effectively unfiltered)
 - **Cross-dimension combos** — any pair, triple, or N-way combination of the above
 - **New dimensions** — add any field already captured on `graduation_momentum` as a candidate filter; if a useful field isn't captured yet, add it to the schema and backfill
+
+**Look-ahead leak rule (added 2026-05-01):** Never add a `where` clause that references a column with a `_t300`, `_t600`, `_0_300`, `_0_600`, `max_relret_*`, or any other field whose value is only known AFTER T+30. Those columns may exist in the schema for backwards-looking research (e.g. `exit-sim.ts` uses `liquidity_sol_t300` for whale-sell exit simulation) but they MUST NOT appear in `FILTER_CATALOG`. The `liq_t300 / liq_retained` look-ahead bias bug (fixed 2026-05-01) inflated the leaderboard's apparent +36% baseline to a tautology — don't repeat.
 
 For each candidate, the evaluation protocol is fixed: compute avg return, win rate, and regime std-dev on n ≥ 100, across the same TP/SL grid as the baseline, with the same cost model. No special pleading.
 
@@ -197,16 +213,17 @@ Never declare victory on n < 100. Never keep a candidate running past a clear in
 | Parameter | Value |
 |---|---|
 | Entry timing | T+30 post-graduation on PumpSwap pool |
-| Entry gate | T+30 price between +5% and +100% from open |
-| Filter | No n≥100 combo currently beats the rolling baseline — searching. Watch `top5 < 10% + dev > 5%` at n=50 (opt +12.6% @ 50/20) and `vel 20-50 + max_dd > -10%` at n=71 (opt +6.4% @ 100/30). |
+| Entry gate (research + trading, aligned 2026-05-01) | `pct_t30 IS NOT NULL AND pct_t30 >= -99 AND pct_t30 <= 1000`. Effectively unfiltered — research baseline now matches what live strategies trade. Default for new strategies is also `-99 / +1000` (`src/trading/config.ts:177-178`). |
+| Filter | One n≥100 combo beats baseline: `vel < 5 + dev < 3%` (n=125, opt @ 100/30, +3.09%, beats_baseline=true). Watch `vel 20-50 + dd > -10%` at n=92 (opt +7.58% @ 150/25) — closest to promotion at n=100. |
 | Stop-loss | Per-combo `opt_sl` from `SIM_SL_GRID = [3, 4, 5, 7.5, 10, 12.5, 15, 20, 25, 30]` — no longer fixed. 30% adverse gap penalty modeled on SL fills. |
 | Take-profit | Per-combo `opt_tp` from `SIM_TP_GRID = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150]` — no longer fixed. 10% adverse gap penalty modeled on TP fills. |
-| Round-trip costs | Per-token measured slippage, fallback 3% (`SIM_DEFAULT_COST_PCT`) |
-| Baseline avg return | **Rolling** — published live as `baseline_avg_return_pct` in `best-combos.json`. Recomputed every 2 min against the current entry-gated labeled population at its own opt TP/SL. |
-| Promotion bar | Beat `baseline_avg_return_pct` by ≥ +0.3 pp on n ≥ 100 with Panel 11 regime std-dev < 15% AND Panel 7 walk-forward NOT OVERFIT |
+| Round-trip costs | Per-token measured slippage, fallback 3% (`SIM_DEFAULT_COST_PCT`). Shadow strategies use measured entry+exit slippage from on-chain pool state — more accurate than paper's static 20% gap penalty. **Compare candidates against shadow baseline (~−9%), not paper (~−14%).** |
+| Baseline avg return | **Rolling** — published live as `baseline_avg_return_pct` in `best-combos.json`. Recomputed every 2 min against the current entry-gated labeled population at its own opt TP/SL. ~−10.5% as of 2026-05-01. |
+| Promotion bar | Beat `baseline_avg_return_pct` by ≥ +0.3 pp on n ≥ 100 with Panel 11 regime std-dev < 15% AND Panel 7 walk-forward NOT OVERFIT AND `strategy-percentiles.json` median in line with mean (no single-trade outlier driving the result). |
 | Price source | PumpSwap pool ONLY (not bonding curve) |
-| Execution | Research only — no live trades |
+| Execution | Research + paper + shadow. **No live trades yet** — bar to clear is profitable shadow strategy at n ≥ 100 by both mean AND median. |
 | Monthly revenue target | ~$490/month at 0.5 SOL position size (covers AI/infra costs) |
+| Position monitoring | All enabled strategies use `five_second` mode (`src/trading/position-manager.ts`). 5s polling can over-collect on fast pumps via discretization (see graduation 18481 +700% trade) — known limitation, mainly affects shadow stats not live execution math. |
 
 Simulator constants are exported from `src/api/sim-constants.ts` and shared across `computeBestCombos` (aggregates.ts), Panel 4 / Panel 6 / Panel 10 (filter-v2-data.ts), and the wallet-rep analysis. Changes to grid or gap penalties there propagate everywhere — do not re-hardcode values in new code paths.
 
@@ -230,13 +247,15 @@ Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These
 ### Session-start protocol (do this first, every time)
 
 1. **`diagnose.json`** → confirm `verdict: "HEALTHY"`. If not, fix the reported level before doing anything else.
-2. **`snapshot.json`** → read counts, scorecard, data quality, last 10 graduations, last error. Note `best_known_baseline` now carries `opt_tp_pct` / `opt_sl_pct` (per-combo) instead of fixed 10/50.
-3. **`best-combos.json`** → leaderboard ranked by `opt_avg_ret` at each combo's own TP/SL optimum (mirrors Panel 6 `top_pairs`). `baseline_avg_return_pct` is the rolling entry-gated floor the top row has to beat by +0.3 pp on n≥100 to promote. Pick the next hypothesis from here.
-4. **`panel11.json`** → regime stability for the top combos — check `stability` and `wr_std_dev` alongside `opt_avg_ret`.
-5. **`panel3.json`** → regime stability for individual filters — useful when evaluating single-dimension signals.
-6. **`price-path-stats.json`** → mean price paths by label, Cohen's d effect sizes for path features, entry timing optimization.
-7. **`trades.json`** → paper trading performance: stats, by-strategy breakdown, recent trades.
-8. **`exit-sim-matrix.json`** → when you have a promising combo from step 3, check here to see whether any dynamic exit strategy (momentum_reversal / scale_out / vol_adaptive / time_decayed_tp / whale_liq) beats the combo's own static optimum. A positive `best_delta_pp` is the promotion signal for a live dynamic-exit strategy.
+2. **`snapshot.json`** → read counts, scorecard, data quality, last 10 graduations, last error. Note `best_known_baseline` carries `opt_tp_pct` / `opt_sl_pct` (per-combo).
+3. **`best-combos.json`** → leaderboard ranked by `opt_avg_ret` at each combo's own TP/SL optimum (mirrors Panel 6 `top_pairs`). `baseline_avg_return_pct` is the rolling entry-gated floor the top row has to beat by +0.3 pp on n≥100 to promote. **As of 2026-05-01 the entry gate is `-99..1000` — research and trading aligned.** Pick the next hypothesis from here.
+4. **`strategy-percentiles.json`** → per-active-strategy median / p10 / p25 / p75 / p90 / min / max for both gross and net. Plus `top_winners` and `top_losers` (top 3 each, with mint + graduation_id). **Use this BEFORE celebrating any positive mean** — single-trade outliers (see graduation 18481) have inflated several mean returns past the median and the median is the honest read.
+5. **`panel11.json`** → regime stability for the top combos — check `stability` and `wr_std_dev` alongside `opt_avg_ret`.
+6. **`panel3.json`** → regime stability for individual filters — useful when evaluating single-dimension signals.
+7. **`price-path-stats.json`** → mean price paths by label, Cohen's d effect sizes for path features, entry timing optimization.
+8. **`trades.json`** → paper + shadow trading performance: stats, by-strategy breakdown (filtered to ENABLED strategies only as of 2026-05-01 — disabled strategies' history stays in DB but drops from the panel), recent trades.
+9. **`sniper-panel.json`** → threshold sweeps + histograms for `sniper_count_t0_t2` and `sniper_wallet_velocity_avg`, plus the slice of `/api/best-combos` rows that include a sniper filter. Coverage is growing (was ~8% of historical rows on 2026-05-01, all new graduations populate live at T+35).
+10. **`exit-sim-matrix.json`** → when you have a promising combo from step 3, check here to see whether any dynamic exit strategy (momentum_reversal / scale_out / vol_adaptive / time_decayed_tp / whale_liq) beats the combo's own static optimum. A positive `best_delta_pp` is the promotion signal for a live dynamic-exit strategy. (Note: `whale_liq` consistently underperforms — confirmed 2026-05-01.)
 
 #### Drill-down files (consult when a specific question comes up)
 
@@ -386,8 +405,10 @@ Peak analysis and trading:
 | File | Corresponding API | Description |
 |---|---|---|
 | `peak-analysis.json` | `/api/peak-analysis` | Peak CDF, peak time histogram, per-filter peak bucket, suggested TP |
-| `trading.json` | `/api/trading` | Full /trading dashboard: open positions, per-strategy performance, recent trades (50), skip reasons + recent skips, active strategy configs, top filter combos |
+| `trading.json` | `/api/trading` | Full /trading dashboard: open positions, per-strategy performance (enabled-only as of 2026-05-01), recent trades (50), skip reasons + recent skips, active strategy configs, top filter combos |
 | `wallet-rep-analysis.json` | `/api/wallet-rep-analysis` | Top 20 combos × creator-wallet-rep modifiers: matrix of opt_avg_ret deltas + rep filter leaderboard ranked by mean Δ. Use to pick a creator-rep modifier that improves profitability without collapsing sample size. |
+| `sniper-panel.json` | `/api/sniper-panel` | Sniper-window analytics: population coverage, baseline at own opt TP/SL, threshold sweep for `snipers <= N` and `wallet_vel_avg < N`, sniper-count + wallet-velocity histograms, top 20 best-combos rows that include a sniper filter. Added 2026-05-01. |
+| `strategy-percentiles.json` | `/api/strategy-percentiles` | Per-active-strategy percentile breakdown of closed trade returns (median, p10/p25/p75/p90, std dev, min/max, exit-reason breakdown, avg execution cost in pp) for both gross and net. Plus `top_winners` + `top_losers` (top 3 each, with mint + graduation_id + held_seconds) for outlier drill-down. Sorted by median net return desc. Added 2026-05-01. **Always cross-check leaderboard means with this panel's medians before promoting.** |
 
 Exit-strategy simulators (dynamic exits: trailing, scale-out, vol-adaptive, time-decayed TP, whale/liq-drop):
 

@@ -403,8 +403,12 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'wallet_vel_avg >= 20', group: 'Sniper Vel',where: 'sniper_wallet_velocity_avg >= 20' },
 ];
 
-/** Entry gate shared by all candidates — matches the baseline. */
-export const ENTRY_GATE = 'pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100 AND pct_t300 IS NOT NULL';
+/** Entry gate shared by all candidates — matches the trading strategy default
+ *  (`config.ts` defaults: -99..1000). Effectively just requires pct_t30 to be
+ *  populated; bounds are sanity guards. Aligning research and trading on the
+ *  same entry population means promotion-bar comparisons (`opt_avg_ret >
+ *  baseline_avg_return_pct + 0.3 pp`) are apples-to-apples. */
+export const ENTRY_GATE = 'pct_t30 IS NOT NULL AND pct_t30 >= -99 AND pct_t30 <= 1000 AND pct_t300 IS NOT NULL';
 
 export interface SimulateComboResult {
   n: number;
