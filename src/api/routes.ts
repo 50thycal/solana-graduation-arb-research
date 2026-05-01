@@ -40,6 +40,7 @@ import { computePeakAnalysis } from './peak-analysis';
 import { computeExitSim } from './exit-sim';
 import { computeExitSimMatrix } from './exit-sim-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
+import { computeSniperPanel } from './sniper-panel';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
@@ -347,6 +348,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // aggregates.ts so the cost/gap model matches /api/best-combos exactly.
   app.get('/api/wallet-rep-analysis', wrap(async (_req, res) => {
     res.json(computeWalletRepAnalysis(db));
+  }));
+
+  // ── /api/sniper-panel ──
+  // Sniper-window analytics: threshold sweeps + histograms for
+  // sniper_count_t0_t2 and sniper_wallet_velocity_avg, plus the slice of
+  // /api/best-combos rows that include a sniper filter. Same simulateCombo()
+  // cost model as /api/best-combos so per-combo opt TP/SL are comparable.
+  app.get('/api/sniper-panel', wrap(async (_req, res) => {
+    res.json(computeSniperPanel(db));
   }));
 
   // ── /api/panel3 ──

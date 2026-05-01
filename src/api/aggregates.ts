@@ -362,18 +362,14 @@ export const FILTER_CATALOG: FilterDef[] = [
   // Dev Wallet
   { name: 'dev < 3%',           group: 'Dev',      where: 'dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 3' },
   { name: 'dev < 5%',           group: 'Dev',      where: 'dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5' },
-  // Liquidity
+  // Liquidity (T+30 — available at entry decision time)
   { name: 'liq > 50',           group: 'Liquidity', where: 'liquidity_sol_t30 > 50' },
   { name: 'liq > 100',          group: 'Liquidity', where: 'liquidity_sol_t30 > 100' },
   { name: 'liq > 150',          group: 'Liquidity', where: 'liquidity_sol_t30 > 150' },
-  // Liquidity at T+300 — presence of these filters unlocks "pool stayed deep
-  // through the full hold" as a candidate dimension. Whale-sell / liq-drop
-  // exit strategies can use the ratio liquidity_sol_t300 / liquidity_sol_t30.
-  { name: 'liq_t300 > 50',      group: 'Liquidity', where: 'liquidity_sol_t300 > 50' },
-  { name: 'liq_t300 > 100',     group: 'Liquidity', where: 'liquidity_sol_t300 > 100' },
-  { name: 'liq_t300 > 150',     group: 'Liquidity', where: 'liquidity_sol_t300 > 150' },
-  { name: 'liq_retained > 0.8', group: 'Liquidity',
-    where: 'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t300 IS NOT NULL AND liquidity_sol_t30 > 0 AND (liquidity_sol_t300 / liquidity_sol_t30) > 0.8' },
+  // T+300 liquidity (`liquidity_sol_t300`) is intentionally NOT a FILTER_CATALOG entry —
+  // it's future data relative to a T+30 entry decision and using it as an entry filter
+  // creates look-ahead bias. The field stays available for backwards-looking research
+  // (see exit-sim.ts whale-sell / liq-drop exit simulation).
   // Path shape
   { name: 'mono > 0.5',         group: 'Path Mono', where: 'monotonicity_0_30 > 0.5' },
   { name: 'mono > 0.66',        group: 'Path Mono', where: 'monotonicity_0_30 > 0.66' },
@@ -393,6 +389,18 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'clean_dev',          group: 'Creator Rep', where: 'creator_prior_rug_rate IS NOT NULL AND creator_prior_rug_rate < 0.3' },
   { name: 'serial_rugger',      group: 'Creator Rep', where: 'creator_prior_rug_rate >= 0.7' },
   { name: 'rapid_fire',         group: 'Creator Rep', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1' },
+  // Sniper detection — distinct wallets buying in T+0..T+2s window. Populated
+  // at T+35 alongside buy_pressure_*, so strategies using these auto-delay 5s.
+  { name: 'snipers <= 2',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 2' },
+  { name: 'snipers <= 5',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 5' },
+  { name: 'snipers > 5',        group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 > 5' },
+  { name: 'snipers > 10',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 > 10' },
+  // Sniper-wallet velocity = avg # of EARLIER graduations that this graduation's
+  // T+0..T+2 buyer wallets also sniped. Higher = more bot-heavy snipe set.
+  { name: 'wallet_vel_avg < 5', group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 5' },
+  { name: 'wallet_vel_avg < 10',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 10' },
+  { name: 'wallet_vel_avg < 20',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 20' },
+  { name: 'wallet_vel_avg >= 20', group: 'Sniper Vel',where: 'sniper_wallet_velocity_avg >= 20' },
 ];
 
 /** Entry gate shared by all candidates — matches the baseline. */
