@@ -362,18 +362,14 @@ export const FILTER_CATALOG: FilterDef[] = [
   // Dev Wallet
   { name: 'dev < 3%',           group: 'Dev',      where: 'dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 3' },
   { name: 'dev < 5%',           group: 'Dev',      where: 'dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5' },
-  // Liquidity
+  // Liquidity (T+30 — available at entry decision time)
   { name: 'liq > 50',           group: 'Liquidity', where: 'liquidity_sol_t30 > 50' },
   { name: 'liq > 100',          group: 'Liquidity', where: 'liquidity_sol_t30 > 100' },
   { name: 'liq > 150',          group: 'Liquidity', where: 'liquidity_sol_t30 > 150' },
-  // Liquidity at T+300 — presence of these filters unlocks "pool stayed deep
-  // through the full hold" as a candidate dimension. Whale-sell / liq-drop
-  // exit strategies can use the ratio liquidity_sol_t300 / liquidity_sol_t30.
-  { name: 'liq_t300 > 50',      group: 'Liquidity', where: 'liquidity_sol_t300 > 50' },
-  { name: 'liq_t300 > 100',     group: 'Liquidity', where: 'liquidity_sol_t300 > 100' },
-  { name: 'liq_t300 > 150',     group: 'Liquidity', where: 'liquidity_sol_t300 > 150' },
-  { name: 'liq_retained > 0.8', group: 'Liquidity',
-    where: 'liquidity_sol_t30 IS NOT NULL AND liquidity_sol_t300 IS NOT NULL AND liquidity_sol_t30 > 0 AND (liquidity_sol_t300 / liquidity_sol_t30) > 0.8' },
+  // T+300 liquidity (`liquidity_sol_t300`) is intentionally NOT a FILTER_CATALOG entry —
+  // it's future data relative to a T+30 entry decision and using it as an entry filter
+  // creates look-ahead bias. The field stays available for backwards-looking research
+  // (see exit-sim.ts whale-sell / liq-drop exit simulation).
   // Path shape
   { name: 'mono > 0.5',         group: 'Path Mono', where: 'monotonicity_0_30 > 0.5' },
   { name: 'mono > 0.66',        group: 'Path Mono', where: 'monotonicity_0_30 > 0.66' },
