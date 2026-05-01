@@ -40,6 +40,7 @@ import { computePeakAnalysis } from './peak-analysis';
 import { computeExitSim } from './exit-sim';
 import { computeExitSimMatrix } from './exit-sim-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
+import { computeSniperPanel } from './sniper-panel';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { getHeavyData } from './heavy-cache';
@@ -91,6 +92,7 @@ export interface StatusUrls {
   price_path_detail: string;
   trading: string;
   wallet_rep_analysis: string;
+  sniper_panel: string;
   exit_sim_matrix: string;
   branch_html: string;
 }
@@ -201,6 +203,7 @@ export class GistSync {
       price_path_detail: `${base}/price-path-detail.json`,
       trading: `${base}/trading.json`,
       wallet_rep_analysis: `${base}/wallet-rep-analysis.json`,
+      sniper_panel: `${base}/sniper-panel.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
@@ -418,6 +421,7 @@ export class GistSync {
     const exitSim = computeExitSim(this.db);
     const exitSimMatrix = computeExitSimMatrix(this.db);
     const walletRepAnalysis = computeWalletRepAnalysis(this.db);
+    const sniperPanel = computeSniperPanel(this.db);
 
     // Heavy compute (filter-v2 panels, price-path detail, trading data) is
     // cached with a 24h TTL — computeFilterV2Data alone is ~100s at current
@@ -474,6 +478,7 @@ export class GistSync {
       'exit-sim.json': JSON.stringify(exitSim, null, 2),
       'exit-sim-matrix.json': JSON.stringify(exitSimMatrix, null, 2),
       'wallet-rep-analysis.json': JSON.stringify(walletRepAnalysis, null, 2),
+      'sniper-panel.json': JSON.stringify(sniperPanel, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,
         count: strategies.length,

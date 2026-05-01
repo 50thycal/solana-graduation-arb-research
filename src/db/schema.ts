@@ -238,6 +238,13 @@ function runMigrations(db: Database.Database): void {
       ['buy_pressure_buy_ratio', 'REAL'],          // buys / (buys + sells) as 0-1
       ['buy_pressure_whale_pct', 'REAL'],          // largest single buy SOL / total buy SOL volume
       ['buy_pressure_trade_count', 'INTEGER'],     // total txs in 0-30s window (from signature count)
+      // Sniper metrics (computed at T+35 from competition_signals in T+0..T+2s window).
+      // Strategies that filter on these fields are auto-delayed by 5s in StrategyManager,
+      // matching the buy_pressure_* pattern.
+      ['sniper_count_t0_t2', 'INTEGER'],          // distinct wallets with a 'buy' signal in T+0..T+2s
+      ['sniper_sol_t0_t2', 'REAL'],               // total SOL spent on T+0..T+2s 'buy' signals
+      ['sniper_wallet_velocity_avg', 'REAL'],     // avg # of EARLIER graduations these snipers also sniped (T+0..T+2)
+      ['sniper_wallet_velocity_max', 'INTEGER'],  // max # of earlier graduations any of these snipers sniped
       // Wallet address tracking
       ['dev_wallet_address', 'TEXT'],              // wallet address of largest non-infrastructure holder
       ['creator_wallet_address', 'TEXT'],          // wallet that deployed the token on pump.fun
@@ -361,6 +368,109 @@ function runMigrations(db: Database.Database): void {
 
     db.exec(`CREATE INDEX IF NOT EXISTS idx_grad_momentum_label_t60  ON graduation_momentum(label_t60)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_grad_momentum_label_t120 ON graduation_momentum(label_t120)`);
+
+    // Sniper-window index (used by both backfill and live writes — wallet
+    // self-join is what makes wallet_velocity tractable). Idempotent.
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_competition_signals_wallet ON competition_signals(wallet_address)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_grad_momentum_sniper_count ON graduation_momentum(sniper_count_t0_t2)`);
+
+    // Backfill sniper_count_t0_t2 / sniper_sol_t0_t2 from competition_signals.
+    // SQL alone since these are per-graduation aggregates with no cross-row
+    // dependencies. Only touches rows where the column is still NULL.
+    db.exec(`
+      UPDATE graduation_momentum
+      SET sniper_count_t0_t2 = (
+            SELECT COUNT(DISTINCT wallet_address)
+            FROM competition_signals cs
+            WHERE cs.graduation_id = graduation_momentum.graduation_id
+              AND cs.action = 'buy'
+              AND cs.seconds_since_graduation >= 0
+              AND cs.seconds_since_graduation <= 2
+              AND cs.wallet_address IS NOT NULL
+          ),
+          sniper_sol_t0_t2 = (
+            SELECT COALESCE(SUM(amount_sol), 0)
+            FROM competition_signals cs
+            WHERE cs.graduation_id = graduation_momentum.graduation_id
+              AND cs.action = 'buy'
+              AND cs.seconds_since_graduation >= 0
+              AND cs.seconds_since_graduation <= 2
+              AND cs.amount_sol IS NOT NULL
+          )
+      WHERE sniper_count_t0_t2 IS NULL
+        AND graduation_id IN (
+          SELECT DISTINCT graduation_id FROM competition_signals
+          WHERE seconds_since_graduation >= 0 AND seconds_since_graduation <= 2
+        )
+    `);
+
+    // Backfill wallet velocity in JS — chronological pass keeps this O(n_signals)
+    // instead of O(n²) self-joins. For each graduation in id-asc order, look up
+    // each sniper wallet's accumulated prior count, average + max, then increment
+    // the wallet's count. PRIOR-only by construction (counter increments AFTER
+    // recording) — matches what would have been knowable at trade time.
+    // bot_settings is created lower in this function; ensure it exists first
+    // so the backfill marker check works on first boot.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bot_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER DEFAULT (unixepoch())
+      )
+    `);
+    const velAlreadyDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('sniper_wallet_velocity_backfill_v1') != null;
+    if (!velAlreadyDone) {
+      const snipers = db.prepare(`
+        SELECT graduation_id, wallet_address
+        FROM competition_signals
+        WHERE action = 'buy'
+          AND seconds_since_graduation >= 0
+          AND seconds_since_graduation <= 2
+          AND wallet_address IS NOT NULL
+        GROUP BY graduation_id, wallet_address
+        ORDER BY graduation_id ASC
+      `).all() as Array<{ graduation_id: number; wallet_address: string }>;
+
+      // Group rows by graduation_id while preserving chronological order
+      const byGrad = new Map<number, string[]>();
+      for (const r of snipers) {
+        if (!byGrad.has(r.graduation_id)) byGrad.set(r.graduation_id, []);
+        byGrad.get(r.graduation_id)!.push(r.wallet_address);
+      }
+
+      const walletPriorCount = new Map<string, number>();
+      const updateStmt = db.prepare(`
+        UPDATE graduation_momentum
+        SET sniper_wallet_velocity_avg = ?,
+            sniper_wallet_velocity_max = ?
+        WHERE graduation_id = ?
+      `);
+
+      const tx = db.transaction(() => {
+        for (const [gid, wallets] of byGrad) {
+          let sum = 0;
+          let max = 0;
+          for (const w of wallets) {
+            const c = walletPriorCount.get(w) ?? 0;
+            sum += c;
+            if (c > max) max = c;
+          }
+          const avg = wallets.length > 0 ? sum / wallets.length : 0;
+          updateStmt.run(+avg.toFixed(3), max, gid);
+          // Increment AFTER recording so this graduation's sniper count
+          // doesn't include itself in its own prior.
+          for (const w of wallets) {
+            walletPriorCount.set(w, (walletPriorCount.get(w) ?? 0) + 1);
+          }
+        }
+      });
+      tx();
+
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('sniper_wallet_velocity_backfill_v1', String(byGrad.size));
+      logger.info({ graduationsUpdated: byGrad.size, snipers: snipers.length }, 'Backfilled sniper wallet velocity (chronological)');
+    }
   }
 
   // Add columns to graduations if they don't exist yet (safe migration)

@@ -173,13 +173,17 @@ export class StrategyManager {
     for (const instance of this.strategies.values()) {
       if (!instance.enabled) continue;
 
-      const needsBuyPressure = instance.config.filters.some(
+      // Filters that source from competition_signals (buy_pressure_* and sniper_*)
+      // are written at T+35 by the same detectBuyPressure pass — strategies
+      // referencing either family must delay evaluation 5s past T+30.
+      const needsT35 = instance.config.filters.some(
         f => f.field.startsWith('buy_pressure_')
+          || f.field.startsWith('sniper_'),
       );
 
-      if (needsBuyPressure) {
-        // Delay evaluation by 5s so buy_pressure fields (written at T+35) are available.
-        // Entry price is still T+30 — matches the sim model.
+      if (needsT35) {
+        // Delay evaluation by 5s so T+35 fields (buy_pressure_*, sniper_*) are
+        // available. Entry price stays T+30 — matches the sim model.
         const delayed = new Promise<void>((resolve) => {
           setTimeout(() => {
             instance.evaluator.onT30(graduationId, ctx, priceT30, pctT30, solReserves)
@@ -197,7 +201,7 @@ export class StrategyManager {
         promises.push(delayed);
         logger.debug(
           { strategyId: instance.id, graduationId },
-          'Delaying evaluation by 5s (buy_pressure filter detected)'
+          'Delaying evaluation by 5s (T+35 filter detected — buy_pressure or sniper)'
         );
       } else {
         promises.push(

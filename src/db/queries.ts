@@ -533,6 +533,102 @@ export function getExistingSignatures(
   return new Set(rows.map(r => r.tx_signature).filter((s): s is string => s !== null));
 }
 
+/**
+ * T+0..T+2s sniper window aggregates from competition_signals. Computed at
+ * T+35 alongside buy_pressure metrics. Wallet velocity = avg/max # of EARLIER
+ * graduations (lower graduation_id) that any of these snipers also sniped in
+ * a T+0..T+2s window. PRIOR-only — never counts the current graduation in its
+ * own velocity number.
+ */
+export function computeSniperAggregates(
+  db: Database.Database,
+  graduationId: number,
+): {
+  count: number;
+  sol: number;
+  velocity_avg: number | null;
+  velocity_max: number | null;
+} {
+  const snipers = db.prepare(`
+    SELECT DISTINCT wallet_address
+    FROM competition_signals
+    WHERE graduation_id = ?
+      AND action = 'buy'
+      AND seconds_since_graduation >= 0
+      AND seconds_since_graduation <= 2
+      AND wallet_address IS NOT NULL
+  `).all(graduationId) as Array<{ wallet_address: string }>;
+
+  const totalSolRow = db.prepare(`
+    SELECT COALESCE(SUM(amount_sol), 0) AS total_sol
+    FROM competition_signals
+    WHERE graduation_id = ?
+      AND action = 'buy'
+      AND seconds_since_graduation >= 0
+      AND seconds_since_graduation <= 2
+      AND amount_sol IS NOT NULL
+  `).get(graduationId) as { total_sol: number };
+
+  if (snipers.length === 0) {
+    return { count: 0, sol: totalSolRow.total_sol ?? 0, velocity_avg: null, velocity_max: null };
+  }
+
+  // For each sniper, count distinct EARLIER graduations they sniped (T+0..T+2s
+  // 'buy', graduation_id < this one). Index on competition_signals(wallet_address)
+  // makes this fast.
+  const priorStmt = db.prepare(`
+    SELECT COUNT(DISTINCT graduation_id) AS prior
+    FROM competition_signals
+    WHERE wallet_address = ?
+      AND graduation_id < ?
+      AND action = 'buy'
+      AND seconds_since_graduation >= 0
+      AND seconds_since_graduation <= 2
+  `);
+
+  let sum = 0;
+  let max = 0;
+  for (const s of snipers) {
+    const r = priorStmt.get(s.wallet_address, graduationId) as { prior: number };
+    const c = r?.prior ?? 0;
+    sum += c;
+    if (c > max) max = c;
+  }
+  const avg = sum / snipers.length;
+  return {
+    count: snipers.length,
+    sol: totalSolRow.total_sol ?? 0,
+    velocity_avg: +avg.toFixed(3),
+    velocity_max: max,
+  };
+}
+
+export function updateSniperMetrics(
+  db: Database.Database,
+  graduationId: number,
+  metrics: {
+    count: number;
+    sol: number;
+    velocity_avg: number | null;
+    velocity_max: number | null;
+  },
+): void {
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET sniper_count_t0_t2 = ?,
+        sniper_sol_t0_t2 = ?,
+        sniper_wallet_velocity_avg = ?,
+        sniper_wallet_velocity_max = ?
+    WHERE graduation_id = ?
+  `).run(
+    metrics.count,
+    metrics.sol,
+    metrics.velocity_avg,
+    metrics.velocity_max,
+    graduationId,
+  );
+}
+
 export function computeBuyPressureAggregates(
   db: Database.Database,
   graduationId: number

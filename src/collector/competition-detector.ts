@@ -1,6 +1,6 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import Database from 'better-sqlite3';
-import { insertCompetitionSignal, getExistingSignatures, computeBuyPressureAggregates, updateBuyPressureMetrics } from '../db/queries';
+import { insertCompetitionSignal, getExistingSignatures, computeBuyPressureAggregates, updateBuyPressureMetrics, computeSniperAggregates, updateSniperMetrics } from '../db/queries';
 import { ObservationContext } from './price-collector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
@@ -278,6 +278,11 @@ export class CompetitionDetector {
         trade_count: finalTradeCount,
       });
 
+      // Sniper aggregates from the same competition_signals window. Computed
+      // here (T+35) since by now the parser has seen everything in T+0..T+30s.
+      const sniperAgg = computeSniperAggregates(this.db, ctx.graduationId);
+      updateSniperMetrics(this.db, ctx.graduationId, sniperAgg);
+
       logger.info(
         {
           graduationId: ctx.graduationId,
@@ -288,6 +293,9 @@ export class CompetitionDetector {
           uniqueBuyers: aggregates.unique_buyers,
           buyRatio: aggregates.buy_ratio?.toFixed(2) ?? 'N/A',
           whalePct: aggregates.whale_pct?.toFixed(2) ?? 'N/A',
+          sniperCount: sniperAgg.count,
+          sniperSol: sniperAgg.sol.toFixed(2),
+          sniperVelAvg: sniperAgg.velocity_avg?.toFixed(2) ?? 'N/A',
         },
         'Buy pressure detection complete'
       );

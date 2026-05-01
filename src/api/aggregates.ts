@@ -389,6 +389,18 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'clean_dev',          group: 'Creator Rep', where: 'creator_prior_rug_rate IS NOT NULL AND creator_prior_rug_rate < 0.3' },
   { name: 'serial_rugger',      group: 'Creator Rep', where: 'creator_prior_rug_rate >= 0.7' },
   { name: 'rapid_fire',         group: 'Creator Rep', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1' },
+  // Sniper detection — distinct wallets buying in T+0..T+2s window. Populated
+  // at T+35 alongside buy_pressure_*, so strategies using these auto-delay 5s.
+  { name: 'snipers <= 2',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 2' },
+  { name: 'snipers <= 5',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 5' },
+  { name: 'snipers > 5',        group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 > 5' },
+  { name: 'snipers > 10',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 > 10' },
+  // Sniper-wallet velocity = avg # of EARLIER graduations that this graduation's
+  // T+0..T+2 buyer wallets also sniped. Higher = more bot-heavy snipe set.
+  { name: 'wallet_vel_avg < 5', group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 5' },
+  { name: 'wallet_vel_avg < 10',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 10' },
+  { name: 'wallet_vel_avg < 20',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 20' },
+  { name: 'wallet_vel_avg >= 20', group: 'Sniper Vel',where: 'sniper_wallet_velocity_avg >= 20' },
 ];
 
 /** Entry gate shared by all candidates — matches the baseline. */
