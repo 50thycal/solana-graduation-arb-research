@@ -41,6 +41,7 @@ import { computeExitSim } from './exit-sim';
 import { computeExitSimMatrix } from './exit-sim-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeSniperPanel } from './sniper-panel';
+import { computeStrategyPercentiles } from './strategy-percentiles';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
@@ -357,6 +358,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // cost model as /api/best-combos so per-combo opt TP/SL are comparable.
   app.get('/api/sniper-panel', wrap(async (_req, res) => {
     res.json(computeSniperPanel(db));
+  }));
+
+  // ── /api/strategy-percentiles ──
+  // Per-active-strategy percentile breakdown of closed trade net/gross returns.
+  // Companion to /api/trades by_strategy (mean-only) — adds median, p10/p25/
+  // p75/p90, std dev, exit-reason breakdown, and avg execution cost in pp.
+  // Enabled-only by default so the panel tracks the live cohort.
+  app.get('/api/strategy-percentiles', wrap(async (_req, res) => {
+    res.json(computeStrategyPercentiles(db));
   }));
 
   // ── /api/panel3 ──

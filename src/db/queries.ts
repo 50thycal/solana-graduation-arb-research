@@ -1026,28 +1026,46 @@ export function deleteStrategyConfig(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM strategy_configs WHERE id = ?').run(id);
 }
 
-export function getTradeStatsByStrategy(db: Database.Database, includeArchived = false) {
-  const archiveFilter = includeArchived ? '' : 'WHERE (archived IS NULL OR archived = 0)';
+/**
+ * Per-strategy aggregate stats from trades_v2.
+ *
+ * Defaults filter the dashboard view to currently-ENABLED strategies + show
+ * only paper/shadow/live execution rows that are unarchived. Disabled
+ * strategies' historical trades remain in the DB and are visible by passing
+ * `enabledOnly = false` (e.g. for archival lookups). This keeps the live
+ * dashboards clean as strategies churn without losing the prior data.
+ */
+export function getTradeStatsByStrategy(
+  db: Database.Database,
+  opts: { includeArchived?: boolean; enabledOnly?: boolean } = {},
+) {
+  const { includeArchived = false, enabledOnly = true } = opts;
+  const archiveFilter = includeArchived ? '' : 'AND (t.archived IS NULL OR t.archived = 0)';
+  const enabledJoin = enabledOnly
+    ? 'INNER JOIN strategy_configs c ON c.id = t.strategy_id AND c.enabled = 1'
+    : '';
   return db.prepare(`
     SELECT
-      strategy_id,
-      mode,
-      COALESCE(execution_mode, 'paper') as execution_mode,
+      t.strategy_id,
+      t.mode,
+      COALESCE(t.execution_mode, 'paper') as execution_mode,
       COUNT(*) as total,
-      COUNT(CASE WHEN status='closed' THEN 1 END) as closed,
-      COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
-      COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
-      ROUND(AVG(CASE WHEN status='closed' THEN net_return_pct END), 2) as avg_net_return_pct,
-      SUM(CASE WHEN status='closed' AND exit_reason IN ('take_profit','trailing_tp') THEN 1 ELSE 0 END) as tp_exits,
-      SUM(CASE WHEN status='closed' AND exit_reason IN ('stop_loss','trailing_stop','breakeven_stop') THEN 1 ELSE 0 END) as sl_exits,
-      SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
-      ROUND(SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END), 4) as total_net_profit_sol,
-      MIN(entry_timestamp) as first_trade_ts,
-      MAX(entry_timestamp) as last_trade_ts
-    FROM trades_v2
-    ${archiveFilter}
-    GROUP BY strategy_id, mode, COALESCE(execution_mode, 'paper')
-    ORDER BY strategy_id, mode, COALESCE(execution_mode, 'paper')
+      COUNT(CASE WHEN t.status='closed' THEN 1 END) as closed,
+      COUNT(CASE WHEN t.status='open' THEN 1 END) as open_count,
+      COUNT(CASE WHEN t.status='failed' THEN 1 END) as failed,
+      ROUND(AVG(CASE WHEN t.status='closed' THEN t.net_return_pct END), 2) as avg_net_return_pct,
+      SUM(CASE WHEN t.status='closed' AND t.exit_reason IN ('take_profit','trailing_tp') THEN 1 ELSE 0 END) as tp_exits,
+      SUM(CASE WHEN t.status='closed' AND t.exit_reason IN ('stop_loss','trailing_stop','breakeven_stop') THEN 1 ELSE 0 END) as sl_exits,
+      SUM(CASE WHEN t.status='closed' AND t.exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
+      ROUND(SUM(CASE WHEN t.status='closed' THEN t.net_profit_sol ELSE 0 END), 4) as total_net_profit_sol,
+      MIN(t.entry_timestamp) as first_trade_ts,
+      MAX(t.entry_timestamp) as last_trade_ts
+    FROM trades_v2 t
+    ${enabledJoin}
+    WHERE 1=1
+      ${archiveFilter}
+    GROUP BY t.strategy_id, t.mode, COALESCE(t.execution_mode, 'paper')
+    ORDER BY t.strategy_id, t.mode, COALESCE(t.execution_mode, 'paper')
   `).all();
 }
 
