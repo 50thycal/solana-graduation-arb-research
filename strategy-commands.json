@@ -1,0 +1,12 @@
+{
+  "commands": [
+    { "action": "toggle", "id": "v7shadow-vol-open",          "enabled": false },
+    { "action": "toggle", "id": "v7shadow-vol-top5-30",       "enabled": false },
+    { "action": "toggle", "id": "v7shadow-vol-vel50",         "enabled": false },
+    { "action": "toggle", "id": "v8shadow-tight-15-5",        "enabled": false },
+    { "action": "toggle", "id": "v6shadow-sumabs-opt",        "enabled": false },
+    { "action": "toggle", "id": "v6shadow-sumabs-baseline",   "enabled": false },
+    { "action": "toggle", "id": "v6shadow-sumabs-lg-30-tight","enabled": false },
+    { "action": "toggle", "id": "v8shadow-vel-maxdd-100-30",  "enabled": false }
+  ]
+}
