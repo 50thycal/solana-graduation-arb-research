@@ -1,0 +1,32 @@
+{
+  "commands": [
+    { "action": "delete", "id": "v4-sumabs-baseline" },
+    { "action": "delete", "id": "v4-sumabs-lockgain-20" },
+    { "action": "delete", "id": "v4-sumabs-lockgain-30" },
+    { "action": "delete", "id": "v4-sumabs-lockgain-30-tight" },
+    { "action": "delete", "id": "v4-sumabs-lockgain-40" },
+    { "action": "delete", "id": "v4-sumabs-trail-25-5" },
+    { "action": "delete", "id": "v4-sumabs-trail-30-8" },
+    { "action": "delete", "id": "v4-sumabs-trail-40-12" },
+    { "action": "delete", "id": "v4-sumabs-fasttp-30" },
+    { "action": "delete", "id": "v4-sumabs-fasttp-30-tight" },
+    { "action": "delete", "id": "v4-sumabs-fasttp-40" },
+    { "action": "delete", "id": "v4-sumabs-shortleash" },
+    { "action": "delete", "id": "v4-sumabs-shortleash-3sl" },
+    { "action": "delete", "id": "v4-sumabs-shortleash-mid" },
+    { "action": "delete", "id": "v5-velmono-baseline" },
+    { "action": "delete", "id": "v5-velmono-lockgain-20" },
+    { "action": "delete", "id": "v5-velmono-lockgain-30" },
+    { "action": "delete", "id": "v5-velmono-lockgain-30-tight" },
+    { "action": "delete", "id": "v5-velmono-lockgain-40" },
+    { "action": "delete", "id": "v5-velmono-trail-25-5" },
+    { "action": "delete", "id": "v5-velmono-trail-30-8" },
+    { "action": "delete", "id": "v5-velmono-trail-40-12" },
+    { "action": "delete", "id": "v5-velmono-fasttp-30" },
+    { "action": "delete", "id": "v5-velmono-fasttp-30-tight" },
+    { "action": "delete", "id": "v5-velmono-fasttp-40" },
+    { "action": "delete", "id": "v5-velmono-shortleash" },
+    { "action": "delete", "id": "v5-velmono-shortleash-3sl" },
+    { "action": "delete", "id": "v5-velmono-shortleash-mid" }
+  ]
+}
