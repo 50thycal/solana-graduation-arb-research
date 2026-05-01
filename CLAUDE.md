@@ -34,7 +34,7 @@ These are prior results. They are **starting knowledge**, not constraints. If ne
 
 ### Current Best-Known Baseline (per-combo opt framework)
 - **Baseline**: rolling ALL-entry-gated population at its own grid optimum — `/api/best-combos → baseline_avg_return_pct`. Reported afresh every sync. As of 2026-05-01: ~−10.5%.
-- **Entry gate (research AND trading, aligned 2026-05-01)**: `pct_t30 IS NOT NULL AND pct_t30 >= -99 AND pct_t30 <= 1000`. Effectively unfiltered — research baseline now matches what live strategies actually trade. The old `+5..+100` gate was retired because it filtered out deep-crash entries that strategies (with `entryGateMinPctT30: -99`) DO take. Defined at `src/api/aggregates.ts:407` and `src/trading/config.ts:177-178`.
+- **Entry gate split (2026-05-01)**: research-side ENTRY_GATE is `pct_t30 >= 5 AND pct_t30 <= 100` (`src/api/aggregates.ts:407`). Trading default is `pct_t30 >= -99 AND pct_t30 <= 1000` (`src/trading/config.ts:177-178`). They were briefly aligned at the wider range but the heavy-cache recompute deadlocked Railway — Panel 4/6/7 simulators iterate eligible rows × SIM_TP_GRID × SIM_SL_GRID, and a 3× row expansion blew the budget. Reverted. Asymmetry means promotion-bar comparisons (`opt_avg_ret > baseline_avg_return_pct + 0.3 pp`) are approximate — research baseline is computed on a tighter population than what shadow strategies actually trade. Call out in writeups.
 - **Promotion bar**: a combo qualifies for promotion when `opt_avg_ret > baseline_avg_return_pct + 0.3 pp` on n ≥ 100 with regime std-dev < 15% (Panel 11). Positive returns are not required — beating the rolling floor is.
 - **Median check (added 2026-05-01)**: With the open entry gate, single trades can register +700% returns due to 5s-poll discretization on fast pumps (see graduation 18481, mint `DunC6ovDYKoHe…`). Mean is unreliable. Cross-check with `strategy-percentiles.json` median before promoting any candidate. If median << mean, the strategy is outlier-driven, not edge.
 - **Shadow vs paper costs**: Paper applies a static 20% gap penalty on SL fills which is too pessimistic; paper book runs ~−14%. Shadow (measured slippage) is the realistic cost model and runs ~−8 to −9%. **Compare candidates against shadow baseline, not paper.**
@@ -85,7 +85,7 @@ The full space Claude is free to explore (see `FILTER_PRESET_GROUPS` in `src/uti
 - **Snipers** (`sniper_count_t0_t2`, computed at T+35): ≤2, ≤5, >5, >10
 - **Sniper wallet velocity** (`sniper_wallet_velocity_avg`, also T+35): <5, <10, <20, ≥20 (avg # of EARLIER graduations these snipers also sniped — PRIOR-only by construction)
 - **Creator reputation** (`creator_prior_*`, derived from self-join): fresh_dev, repeat_dev≥3, clean_dev, serial_rugger, rapid_fire
-- **T+30 entry gate**: now `-99..1000` (effectively unfiltered)
+- **T+30 entry gate**: research uses `+5..+100` (defined in aggregates.ts ENTRY_GATE); trading default is `-99..1000`. Asymmetry is intentional — wider research gate deadlocked the heavy-cache compute and was reverted.
 - **Cross-dimension combos** — any pair, triple, or N-way combination of the above
 - **New dimensions** — add any field already captured on `graduation_momentum` as a candidate filter; if a useful field isn't captured yet, add it to the schema and backfill
 
@@ -213,7 +213,7 @@ Never declare victory on n < 100. Never keep a candidate running past a clear in
 | Parameter | Value |
 |---|---|
 | Entry timing | T+30 post-graduation on PumpSwap pool |
-| Entry gate (research + trading, aligned 2026-05-01) | `pct_t30 IS NOT NULL AND pct_t30 >= -99 AND pct_t30 <= 1000`. Effectively unfiltered — research baseline now matches what live strategies trade. Default for new strategies is also `-99 / +1000` (`src/trading/config.ts:177-178`). |
+| Entry gate (split) | Research: `pct_t30 >= 5 AND pct_t30 <= 100` (`aggregates.ts:407`). Trading default: `-99 / +1000` (`config.ts:177-178`). Briefly aligned 2026-05-01 but the wider research gate deadlocked the heavy-cache recompute — reverted. Promotion-bar comparisons are approximate as a result. |
 | Filter | One n≥100 combo beats baseline: `vel < 5 + dev < 3%` (n=125, opt @ 100/30, +3.09%, beats_baseline=true). Watch `vel 20-50 + dd > -10%` at n=92 (opt +7.58% @ 150/25) — closest to promotion at n=100. |
 | Stop-loss | Per-combo `opt_sl` from `SIM_SL_GRID = [3, 4, 5, 7.5, 10, 12.5, 15, 20, 25, 30]` — no longer fixed. 30% adverse gap penalty modeled on SL fills. |
 | Take-profit | Per-combo `opt_tp` from `SIM_TP_GRID = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150]` — no longer fixed. 10% adverse gap penalty modeled on TP fills. |
@@ -248,7 +248,7 @@ Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These
 
 1. **`diagnose.json`** → confirm `verdict: "HEALTHY"`. If not, fix the reported level before doing anything else.
 2. **`snapshot.json`** → read counts, scorecard, data quality, last 10 graduations, last error. Note `best_known_baseline` carries `opt_tp_pct` / `opt_sl_pct` (per-combo).
-3. **`best-combos.json`** → leaderboard ranked by `opt_avg_ret` at each combo's own TP/SL optimum (mirrors Panel 6 `top_pairs`). `baseline_avg_return_pct` is the rolling entry-gated floor the top row has to beat by +0.3 pp on n≥100 to promote. **As of 2026-05-01 the entry gate is `-99..1000` — research and trading aligned.** Pick the next hypothesis from here.
+3. **`best-combos.json`** → leaderboard ranked by `opt_avg_ret` at each combo's own TP/SL optimum (mirrors Panel 6 `top_pairs`). `baseline_avg_return_pct` is the rolling entry-gated floor the top row has to beat by +0.3 pp on n≥100 to promote. **Note: research uses `+5..+100` entry gate, but trading strategies default to `-99..1000` — the comparison is approximate.** Pick the next hypothesis from here.
 4. **`strategy-percentiles.json`** → per-active-strategy median / p10 / p25 / p75 / p90 / min / max for both gross and net. Plus `top_winners` and `top_losers` (top 3 each, with mint + graduation_id). **Use this BEFORE celebrating any positive mean** — single-trade outliers (see graduation 18481) have inflated several mean returns past the median and the median is the honest read.
 5. **`panel11.json`** → regime stability for the top combos — check `stability` and `wr_std_dev` alongside `opt_avg_ret`.
 6. **`panel3.json`** → regime stability for individual filters — useful when evaluating single-dimension signals.
