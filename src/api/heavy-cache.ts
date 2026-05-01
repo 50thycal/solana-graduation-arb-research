@@ -46,9 +46,9 @@ const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // of FilterV2Data ever changes incompatibly, bump again to invalidate stale
 // disk blobs without manual cleanup.
 // Bump suffix when ENTRY_GATE / FILTER_CATALOG / sim grid changes invalidate
-// the cached panels. v2 → v3 (2026-05-01): ENTRY_GATE widened from +5..+100
-// to -99..1000 to match trading default; old cache would serve stale baseline.
-const CACHE_KEY = 'heavy_data_v3';
+// the cached panels. (v3 was attempted 2026-05-01 with a wider ENTRY_GATE but
+// reverted — see aggregates.ts ENTRY_GATE comment. Sticking with v2 for now.)
+const CACHE_KEY = 'heavy_data_v2';
 
 interface HeavyData {
   v2: FilterV2Data;

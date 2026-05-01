@@ -403,12 +403,15 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'wallet_vel_avg >= 20', group: 'Sniper Vel',where: 'sniper_wallet_velocity_avg >= 20' },
 ];
 
-/** Entry gate shared by all candidates — matches the trading strategy default
- *  (`config.ts` defaults: -99..1000). Effectively just requires pct_t30 to be
- *  populated; bounds are sanity guards. Aligning research and trading on the
- *  same entry population means promotion-bar comparisons (`opt_avg_ret >
- *  baseline_avg_return_pct + 0.3 pp`) are apples-to-apples. */
-export const ENTRY_GATE = 'pct_t30 IS NOT NULL AND pct_t30 >= -99 AND pct_t30 <= 1000 AND pct_t300 IS NOT NULL';
+/** Entry gate shared by all candidates — kept at +5..+100 for research-side
+ *  evaluation. Trading default is wider (-99..1000 in `config.ts`) to capture
+ *  deep-crash entries; the asymmetry is intentional. Widening this constant
+ *  to match trading was tried 2026-05-01 (commit 04dff56) but the heavy-cache
+ *  recompute deadlocked Railway — Panel 4/6/7 simulators iterate over eligible
+ *  rows × SIM_TP_GRID × SIM_SL_GRID, and a 3× row expansion blew the budget.
+ *  Reverted in next commit. Promotion bar comparisons are approximate as a
+ *  result — call out in writeups when relevant. */
+export const ENTRY_GATE = 'pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100 AND pct_t300 IS NOT NULL';
 
 export interface SimulateComboResult {
   n: number;
