@@ -45,7 +45,10 @@ const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // Bumped to v2 when we switched to the SQLite-backed layout; if the schema
 // of FilterV2Data ever changes incompatibly, bump again to invalidate stale
 // disk blobs without manual cleanup.
-const CACHE_KEY = 'heavy_data_v2';
+// Bump suffix when ENTRY_GATE / FILTER_CATALOG / sim grid changes invalidate
+// the cached panels. v2 → v3 (2026-05-01): ENTRY_GATE widened from +5..+100
+// to -99..1000 to match trading default; old cache would serve stale baseline.
+const CACHE_KEY = 'heavy_data_v3';
 
 interface HeavyData {
   v2: FilterV2Data;
