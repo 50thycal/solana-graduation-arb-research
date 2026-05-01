@@ -54,6 +54,10 @@ export interface StrategyPercentileRow {
   total_net_profit_sol: number;
   first_trade_ts: number | null;
   last_trade_ts: number | null;
+  /** Top 3 trades by gross_return_pct desc — identify outlier-driven means. */
+  top_winners: OutlierTrade[];
+  /** Bottom 3 trades by gross_return_pct asc — diagnose worst losses. */
+  top_losers: OutlierTrade[];
 }
 
 export interface StrategyPercentilesData {
@@ -98,6 +102,9 @@ function describe(values: number[]): PercentileBlock {
 }
 
 interface TradeRow {
+  trade_id: number;
+  graduation_id: number | null;
+  mint: string | null;
   strategy_id: string;
   status: string;
   execution_mode: string | null;
@@ -105,7 +112,21 @@ interface TradeRow {
   gross_return_pct: number | null;
   exit_reason: string | null;
   entry_timestamp: number | null;
+  exit_timestamp: number | null;
+  entry_pct_from_open: number | null;
   net_profit_sol: number | null;
+}
+
+/** A single notable trade — top winner or worst loser. */
+export interface OutlierTrade {
+  trade_id: number;
+  graduation_id: number | null;
+  mint: string | null;
+  entry_pct_from_open: number | null;
+  gross_return_pct: number | null;
+  net_return_pct: number | null;
+  exit_reason: string | null;
+  held_seconds: number | null;
 }
 
 export function computeStrategyPercentiles(db: Database.Database): StrategyPercentilesData {
@@ -133,6 +154,9 @@ export function computeStrategyPercentiles(db: Database.Database): StrategyPerce
 
   const trades = db.prepare(`
     SELECT
+      id AS trade_id,
+      graduation_id,
+      mint,
       strategy_id,
       status,
       COALESCE(execution_mode, 'paper') AS execution_mode,
@@ -140,6 +164,8 @@ export function computeStrategyPercentiles(db: Database.Database): StrategyPerce
       gross_return_pct,
       exit_reason,
       entry_timestamp,
+      exit_timestamp,
+      entry_pct_from_open,
       net_profit_sol
     FROM trades_v2
     WHERE strategy_id IN (${placeholders})
@@ -195,6 +221,31 @@ export function computeStrategyPercentiles(db: Database.Database): StrategyPerce
 
     const totalProfit = closed.reduce((s, t) => s + (t.net_profit_sol ?? 0), 0);
 
+    // Top 3 winners + bottom 3 losers by gross_return_pct so a future analyst
+    // can drill in on outlier-driven mean / median divergences.
+    const closedWithGross = closed.filter((t): t is TradeRow & { gross_return_pct: number } =>
+      t.gross_return_pct != null);
+    const toOutlier = (t: TradeRow): OutlierTrade => ({
+      trade_id: t.trade_id,
+      graduation_id: t.graduation_id,
+      mint: t.mint,
+      entry_pct_from_open: t.entry_pct_from_open,
+      gross_return_pct: t.gross_return_pct,
+      net_return_pct: t.net_return_pct,
+      exit_reason: t.exit_reason,
+      held_seconds: t.exit_timestamp != null && t.entry_timestamp != null
+        ? t.exit_timestamp - t.entry_timestamp
+        : null,
+    });
+    const topWinners = [...closedWithGross]
+      .sort((a, b) => b.gross_return_pct - a.gross_return_pct)
+      .slice(0, 3)
+      .map(toOutlier);
+    const topLosers = [...closedWithGross]
+      .sort((a, b) => a.gross_return_pct - b.gross_return_pct)
+      .slice(0, 3)
+      .map(toOutlier);
+
     const entryTs = group.map(t => t.entry_timestamp).filter((v): v is number => v != null);
     const firstTs = entryTs.length > 0 ? Math.min(...entryTs) : null;
     const lastTs = entryTs.length > 0 ? Math.max(...entryTs) : null;
@@ -215,6 +266,8 @@ export function computeStrategyPercentiles(db: Database.Database): StrategyPerce
       total_net_profit_sol: +totalProfit.toFixed(4),
       first_trade_ts: firstTs,
       last_trade_ts: lastTs,
+      top_winners: topWinners,
+      top_losers: topLosers,
     });
   }
 
