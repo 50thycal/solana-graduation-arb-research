@@ -8,8 +8,8 @@
       "params": {
         "tradeSizeSol": 0.5,
         "maxConcurrentPositions": 1,
-        "entryGateMinPctT30": 5,
-        "entryGateMaxPctT30": 100,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
         "takeProfitPct": 100,
         "stopLossPct": 25,
         "maxHoldSeconds": 300,
@@ -41,8 +41,8 @@
       "params": {
         "tradeSizeSol": 0.5,
         "maxConcurrentPositions": 1,
-        "entryGateMinPctT30": 5,
-        "entryGateMaxPctT30": 100,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
         "takeProfitPct": 100,
         "stopLossPct": 30,
         "maxHoldSeconds": 300,
@@ -74,8 +74,8 @@
       "params": {
         "tradeSizeSol": 0.5,
         "maxConcurrentPositions": 1,
-        "entryGateMinPctT30": 5,
-        "entryGateMaxPctT30": 100,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
         "takeProfitPct": 150,
         "stopLossPct": 25,
         "maxHoldSeconds": 300,
