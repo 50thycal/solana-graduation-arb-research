@@ -181,29 +181,11 @@ export class StrategyManager {
           || f.field.startsWith('sniper_'),
       );
 
-      if (needsT35) {
-        // Delay evaluation by 5s so T+35 fields (buy_pressure_*, sniper_*) are
-        // available. Entry price stays T+30 — matches the sim model.
-        const delayed = new Promise<void>((resolve) => {
-          setTimeout(() => {
-            instance.evaluator.onT30(graduationId, ctx, priceT30, pctT30, solReserves)
-              .catch(err => {
-                logger.error(
-                  'Strategy %s delayed onT30 error for grad %d: %s',
-                  instance.id,
-                  graduationId,
-                  err instanceof Error ? err.message : String(err)
-                );
-              })
-              .finally(resolve);
-          }, 5_000);
-        });
-        promises.push(delayed);
-        logger.debug(
-          { strategyId: instance.id, graduationId },
-          'Delaying evaluation by 5s (T+35 filter detected — buy_pressure or sniper)'
-        );
-      } else {
+      const entryTimingSec = instance.config.entryTimingSec ?? 30;
+      // Required wall-clock delay past T+30 before evaluating.
+      const delaySec = Math.max(entryTimingSec - 30, needsT35 ? 5 : 0);
+
+      if (delaySec === 0) {
         promises.push(
           instance.evaluator.onT30(graduationId, ctx, priceT30, pctT30, solReserves).catch(err => {
             logger.error(
@@ -214,7 +196,52 @@ export class StrategyManager {
             );
           })
         );
+        continue;
       }
+
+      // Delayed-entry path. For T+35 buy_pressure filters the entry price
+      // stays at T+30 (matches sim). For entryTimingSec > 30 we re-read the
+      // late-entry checkpoint from graduation_momentum at fire time.
+      const lateEntry = entryTimingSec > 30;
+      const delayed = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          let evalPrice = priceT30;
+          let evalPct = pctT30;
+          if (lateEntry) {
+            const priceCol = `price_t${entryTimingSec}`;
+            const pctCol = `pct_t${entryTimingSec}`;
+            const row = this.db.prepare(
+              `SELECT ${priceCol} AS price, ${pctCol} AS pct
+               FROM graduation_momentum WHERE graduation_id = ?`
+            ).get(graduationId) as { price: number | null; pct: number | null } | undefined;
+            if (!row || row.price == null || row.pct == null) {
+              logger.debug(
+                { strategyId: instance.id, graduationId, entryTimingSec },
+                'Late-entry skipped — late checkpoint not yet populated'
+              );
+              resolve();
+              return;
+            }
+            evalPrice = row.price;
+            evalPct = row.pct;
+          }
+          instance.evaluator.onT30(graduationId, ctx, evalPrice, evalPct, solReserves)
+            .catch(err => {
+              logger.error(
+                'Strategy %s delayed onT30 error for grad %d: %s',
+                instance.id,
+                graduationId,
+                err instanceof Error ? err.message : String(err)
+              );
+            })
+            .finally(resolve);
+        }, delaySec * 1000);
+      });
+      promises.push(delayed);
+      logger.debug(
+        { strategyId: instance.id, graduationId, delaySec, entryTimingSec, needsT35 },
+        'Delaying evaluation'
+      );
     }
 
     // Fire and forget — don't block the price collector
@@ -513,6 +540,12 @@ export class StrategyManager {
     if (p.maxSlippageBps != null) {
       if (!Number.isInteger(p.maxSlippageBps) || p.maxSlippageBps < 1 || p.maxSlippageBps > 10_000) {
         errors.push('maxSlippageBps must be an integer between 1 and 10000');
+      }
+    }
+    if (p.entryTimingSec != null) {
+      const allowed = [30, 60, 90, 120, 180, 240, 300];
+      if (!allowed.includes(p.entryTimingSec)) {
+        errors.push(`entryTimingSec must be one of ${allowed.join(', ')}`);
       }
     }
     if (errors.length > 0) {
