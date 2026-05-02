@@ -349,9 +349,20 @@ export class PriceCollector {
     // explicitly instead of as a wave of "T+30 timeout" noise.
     //
     // Threshold: T+30 means "snapshot at 30s after migration". If we're
-    // already past that, even a priority-lane fetch can't recover. We give
-    // a 5s grace (elapsedSec > 25) to let near-miss observations still try.
-    const STALE_THRESHOLD_SEC = parseInt(process.env.STALE_THRESHOLD_SEC || '25', 10);
+    // already past that, the strategy's T+30 callback won't fire for this
+    // observation — that requires a snapshot AT T+30. But we still want to
+    // accept the row for data collection (later checkpoints T+60..T+300 +
+    // labeling) because pumpFun WS is unreliable and the RPC poll fallback
+    // routinely lands at T+45..T+120. Bumped 25 → 120 on 2026-05-01 after
+    // observing 89% of poll-tier grads being rejected.
+    //
+    // Note: late-arriving observations have NULL for pct_t30 and the 0-30s
+    // path-shape metrics (monotonicity_0_30, max_drawdown_0_30, sum_abs_returns_0_30,
+    // acceleration_t30) — those moments have passed and we don't backfill them
+    // from pool tx history. Strategies that filter on those fields will skip
+    // these rows. See NEXT_SESSION_ENTRY_TIME.md for a planned late-entry mode
+    // that would let strategies trade on T+60/T+90/T+120 callbacks instead.
+    const STALE_THRESHOLD_SEC = parseInt(process.env.STALE_THRESHOLD_SEC || '120', 10);
     if (elapsedSec > STALE_THRESHOLD_SEC) {
       this.totalStaleGraduations++;
       this.lastStaleGraduations.push({
