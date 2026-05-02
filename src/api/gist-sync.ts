@@ -69,6 +69,34 @@ const BRANCH = 'bot-status';
 const COMMANDS_FILE = 'strategy-commands.json';
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
+// Heavy compute panels — entryTimeMatrix walks ~60 catalog filters × 6 entry
+// checkpoints × the 12×10 sim grid every cycle, exitSimMatrix runs the dynamic
+// exit grids over the top 20 combos, walletRepAnalysis layers rep modifiers
+// over them. Each one was adding seconds of synchronous main-thread work per
+// 2-min sync cycle, which queued every HTTP request behind it (dashboard /,
+// /pipeline, /trading all stuck for minutes — Railway 408s in production).
+//
+// Default OFF; set SYNC_HEAVY_PANELS=true on Railway to re-enable. When off
+// we still publish a small stub for each so the file exists on bot-status
+// and downstream consumers don't 404.
+const HEAVY_PANELS_ENABLED = process.env.SYNC_HEAVY_PANELS === 'true';
+
+/** Yield to the event loop between heavy compute phases so queued HTTP
+ *  requests can drain. better-sqlite3 is synchronous, so without this the
+ *  full sync pipeline holds the loop hostage end-to-end. */
+function yieldEventLoop(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
+function disabledPanelStub(name: string): { disabled: true; panel: string; reason: string; generated_at: string } {
+  return {
+    disabled: true,
+    panel: name,
+    reason: 'Heavy compute panel disabled (SYNC_HEAVY_PANELS!=true) to keep the dashboard responsive. Set SYNC_HEAVY_PANELS=true to re-enable.',
+    generated_at: new Date().toISOString(),
+  };
+}
+
 export interface StatusUrls {
   diagnose: string;
   snapshot: string;
@@ -348,11 +376,14 @@ export class GistSync {
     });
 
     // Compute leaderboard first so we can pass the live leader into the scorecard.
+    const bestCombosT0 = Date.now();
     const bestCombos = computeBestCombos(this.db, {
       min_n: 20,
       top: 20,
       include_pairs: true,
     });
+    const bestCombosMs = Date.now() - bestCombosT0;
+    await yieldEventLoop();
 
     // Find the best combo with n≥100 that beats the rolling entry-gated
     // baseline — this becomes the live best_known_baseline shown in
@@ -420,16 +451,39 @@ export class GistSync {
       trades: recentTrades,
     };
 
-    const panel11 = computePanel11(this.db);
-    const panel3 = computePanel3Summary(this.db);
-    const pricePathStats = computePricePathStats(this.db);
-    const peakAnalysis = computePeakAnalysis(this.db);
-    const exitSim = computeExitSim(this.db);
-    const exitSimMatrix = computeExitSimMatrix(this.db);
-    const entryTimeMatrix = computeEntryTimeMatrix(this.db);
-    const walletRepAnalysis = computeWalletRepAnalysis(this.db);
-    const sniperPanel = computeSniperPanel(this.db);
-    const strategyPercentiles = computeStrategyPercentiles(this.db);
+    // Run each compute, log its wall-clock time, and yield to the event loop
+    // between phases. Without the yields the whole batch holds the Node loop
+    // for tens of seconds and every HTTP request queues behind it. The three
+    // heaviest panels (entryTimeMatrix, exitSimMatrix, walletRepAnalysis) are
+    // gated behind HEAVY_PANELS_ENABLED — see the constant comment.
+    const timings: Record<string, number> = {};
+    const timed = async <T>(name: string, fn: () => T): Promise<T> => {
+      const t0 = Date.now();
+      const result = fn();
+      timings[name] = Date.now() - t0;
+      await yieldEventLoop();
+      return result;
+    };
+
+    const panel11 = await timed('panel11', () => computePanel11(this.db));
+    const panel3 = await timed('panel3', () => computePanel3Summary(this.db));
+    const pricePathStats = await timed('pricePathStats', () => computePricePathStats(this.db));
+    const peakAnalysis = await timed('peakAnalysis', () => computePeakAnalysis(this.db));
+    const exitSim = await timed('exitSim', () => computeExitSim(this.db));
+    const sniperPanel = await timed('sniperPanel', () => computeSniperPanel(this.db));
+    const strategyPercentiles = await timed('strategyPercentiles', () => computeStrategyPercentiles(this.db));
+
+    const exitSimMatrix = HEAVY_PANELS_ENABLED
+      ? await timed('exitSimMatrix', () => computeExitSimMatrix(this.db))
+      : disabledPanelStub('exit-sim-matrix');
+    const entryTimeMatrix = HEAVY_PANELS_ENABLED
+      ? await timed('entryTimeMatrix', () => computeEntryTimeMatrix(this.db))
+      : disabledPanelStub('entry-time-matrix');
+    const walletRepAnalysis = HEAVY_PANELS_ENABLED
+      ? await timed('walletRepAnalysis', () => computeWalletRepAnalysis(this.db))
+      : disabledPanelStub('wallet-rep-analysis');
+
+    logger.debug({ bestCombosMs, ...timings, heavyEnabled: HEAVY_PANELS_ENABLED }, 'Sync compute timings');
 
     // Heavy compute (filter-v2 panels, price-path detail, trading data) is
     // cached with a 24h TTL — computeFilterV2Data alone is ~100s at current
