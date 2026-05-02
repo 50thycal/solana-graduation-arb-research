@@ -413,6 +413,15 @@ export const FILTER_CATALOG: FilterDef[] = [
  *  result — call out in writeups when relevant. */
 export const ENTRY_GATE = 'pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100 AND pct_t300 IS NOT NULL';
 
+/** Build the entry gate dynamically for a specific entry checkpoint second.
+ *  Mirrors ENTRY_GATE shape but anchors the +5..+100 band on `pct_t<entrySec>`
+ *  instead of the hard-coded `pct_t30`. Used by the entry-time-matrix research
+ *  panel to evaluate filter combos at later entry points (T+60, T+90, T+120,
+ *  T+180, T+240) without touching the live trading flow. */
+export function entryGateFor(entrySec: number): string {
+  return `pct_t${entrySec} IS NOT NULL AND pct_t${entrySec} >= 5 AND pct_t${entrySec} <= 100 AND pct_t300 IS NOT NULL`;
+}
+
 export interface SimulateComboResult {
   n: number;
   pump: number;
@@ -438,24 +447,43 @@ export interface SimulateComboResult {
  * Mirrors Panel 4 / Panel 6's in-memory grid (src/api/filter-v2-data.ts ::
  * runFilterPanel4) so best-combos.json and /filter-analysis-v2 stay in sync.
  * Pass a trusted WHERE clause (no user input).
+ *
+ * `entrySec` (default 30) anchors the entry on `pct_t<entrySec>` and walks
+ * checkpoints strictly AFTER that second. Used by the entry-time-matrix
+ * research panel to compare T+30 vs T+60 vs T+90 vs T+120 vs T+180 vs T+240
+ * entry points on the same combo. Default value preserves backwards-compatible
+ * T+30 behavior — every existing caller is unchanged.
  */
 export function simulateCombo(
   db: Database.Database,
   whereClause: string,
+  entrySec: number = 30,
 ): SimulateComboResult {
-  const walkCols = SIM_CHECKPOINT_COLUMNS.join(', ');
+  // Walk only checkpoints strictly after the entry — earlier columns are in
+  // the past from the entry's perspective and meaningless for the SL/TP walk.
+  // For entrySec=30 this preserves the legacy T+40..T+300 walk exactly.
+  const walkColsArr = SIM_CHECKPOINT_COLUMNS.filter(c => {
+    const sec = parseInt(c.slice(5), 10);
+    return sec > entrySec;
+  });
+  const entryCol = `pct_t${entrySec}`;
+  // Dedupe in case the entry column happens to be in SIM_CHECKPOINT_COLUMNS
+  // (it currently isn't for entrySec ∈ {30, 60, 90, 120, 180, 240} since those
+  // are step-5 / step-10 checkpoints — but stay defensive).
+  const selectCols = walkColsArr.includes(entryCol as `pct_t${number}`)
+    ? walkColsArr.join(', ')
+    : `${entryCol}, ${walkColsArr.join(', ')}`;
   const rows = db.prepare(`
     SELECT
       label,
-      pct_t30, ${walkCols},
+      ${selectCols},
       round_trip_slippage_pct
     FROM graduation_momentum
     WHERE label IS NOT NULL
-      AND ${ENTRY_GATE}
+      AND ${entryGateFor(entrySec)}
       AND (${whereClause})
   `).all() as Array<{
     label: string;
-    pct_t30: number;
     pct_t300: number;
     round_trip_slippage_pct: number | null;
     [col: string]: number | string | null;
@@ -479,8 +507,9 @@ export function simulateCombo(
   let rawRetN = 0;
   for (const r of rows) {
     if (r.label === 'PUMP') pump++;
-    if (typeof r.pct_t30 === 'number' && typeof r.pct_t300 === 'number') {
-      rawRetSum += ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100;
+    const entryPct = r[entryCol] as number | null | undefined;
+    if (typeof entryPct === 'number' && typeof r.pct_t300 === 'number') {
+      rawRetSum += ((1 + r.pct_t300 / 100) / (1 + entryPct / 100) - 1) * 100;
       rawRetN++;
     }
   }
@@ -502,13 +531,14 @@ export function simulateCombo(
       let tpHits = 0;
       for (let k = 0; k < n; k++) {
         const r = rows[k];
-        const entryRatio = 1 + r.pct_t30 / 100;
+        const entryPct = r[entryCol] as number;
+        const entryRatio = 1 + entryPct / 100;
         const stopLevelPct = (entryRatio * (1 - sl / 100) - 1) * 100;
         const tpLevelPct = (entryRatio * (1 + tp / 100) - 1) * 100;
         const cost = r.round_trip_slippage_pct ?? SIM_DEFAULT_COST_PCT;
 
         let exitRet: number | null = null;
-        for (const cp of SIM_CHECKPOINT_COLUMNS) {
+        for (const cp of walkColsArr) {
           const v = r[cp] as number | null | undefined;
           if (v == null) continue;
           if (v <= stopLevelPct) {

@@ -39,6 +39,7 @@ import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
 import { computeExitSim } from './exit-sim';
 import { computeExitSimMatrix } from './exit-sim-matrix';
+import { computeEntryTimeMatrix } from './entry-time-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeSniperPanel } from './sniper-panel';
 import { computeStrategyPercentiles } from './strategy-percentiles';
@@ -96,6 +97,7 @@ export interface StatusUrls {
   sniper_panel: string;
   strategy_percentiles: string;
   exit_sim_matrix: string;
+  entry_time_matrix: string;
   branch_html: string;
 }
 
@@ -193,6 +195,7 @@ export class GistSync {
       strategies: `${base}/strategies.json`,
       exit_sim: `${base}/exit-sim.json`,
       exit_sim_matrix: `${base}/exit-sim-matrix.json`,
+      entry_time_matrix: `${base}/entry-time-matrix.json`,
       panel1: `${base}/panel1.json`,
       panel2: `${base}/panel2.json`,
       panel4: `${base}/panel4.json`,
@@ -423,6 +426,7 @@ export class GistSync {
     const peakAnalysis = computePeakAnalysis(this.db);
     const exitSim = computeExitSim(this.db);
     const exitSimMatrix = computeExitSimMatrix(this.db);
+    const entryTimeMatrix = computeEntryTimeMatrix(this.db);
     const walletRepAnalysis = computeWalletRepAnalysis(this.db);
     const sniperPanel = computeSniperPanel(this.db);
     const strategyPercentiles = computeStrategyPercentiles(this.db);
@@ -481,6 +485,7 @@ export class GistSync {
       'peak-analysis.json': JSON.stringify(peakAnalysis, null, 2),
       'exit-sim.json': JSON.stringify(exitSim, null, 2),
       'exit-sim-matrix.json': JSON.stringify(exitSimMatrix, null, 2),
+      'entry-time-matrix.json': JSON.stringify(entryTimeMatrix, null, 2),
       'wallet-rep-analysis.json': JSON.stringify(walletRepAnalysis, null, 2),
       'sniper-panel.json': JSON.stringify(sniperPanel, null, 2),
       'strategy-percentiles.json': JSON.stringify(strategyPercentiles, null, 2),
