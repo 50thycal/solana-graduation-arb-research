@@ -55,6 +55,14 @@ export interface StrategyParams {
   tpGapPenaltyPct: number;
   filters: FilterConfig[];
   /**
+   * Seconds after graduation at which to evaluate + enter. Default 30 (T+30,
+   * the historical baseline). Allowed values must match a `price_t<sec>` column
+   * on graduation_momentum: {30, 60, 90, 120, 180, 240, 300}. Late-entry
+   * strategies fan out at T+entryTimingSec wall-clock and gate on
+   * pct_t<entryTimingSec>. Mirrors `entryTimeMatrix` simulator semantics.
+   */
+  entryTimingSec?: number;
+  /**
    * Controls how often the position manager checks price for SL/TP.
    * five_second: independent 5s polling from position entry (more responsive, may catch intra-schedule moves)
    * match_collection: checks at the same SNAPSHOT_SCHEDULE offsets as the price collector
@@ -151,6 +159,10 @@ export interface TradingConfig {
   // ── Filter pipeline ──────────────────────────────────────────────────────
   /** All filters must pass (AND logic) before entry is triggered */
   filters: FilterConfig[];
+
+  // ── Late entry (per-strategy override of T+30 default) ──────────────────
+  /** Wall-clock seconds after graduation at which to enter. Default 30. */
+  entryTimingSec?: number;
 }
 
 /** Default filter preset: vel 5-20 sol/min — the primary confirmed signal */
@@ -234,6 +246,7 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     slGapPenaltyPct: cfg.slGapPenaltyPct,
     tpGapPenaltyPct: cfg.tpGapPenaltyPct,
     filters: cfg.filters,
+    entryTimingSec: cfg.entryTimingSec ?? 30,
     positionMonitorMode: cfg.positionMonitorMode ?? 'five_second',
     trailingSlActivationPct: cfg.trailingSlActivationPct ?? 0,
     trailingSlDistancePct: cfg.trailingSlDistancePct ?? 5,
@@ -265,6 +278,7 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     slGapPenaltyPct: params.slGapPenaltyPct,
     tpGapPenaltyPct: params.tpGapPenaltyPct,
     filters: params.filters,
+    entryTimingSec: params.entryTimingSec ?? 30,
     positionMonitorMode: params.positionMonitorMode ?? 'five_second',
     trailingSlActivationPct: params.trailingSlActivationPct ?? 0,
     trailingSlDistancePct: params.trailingSlDistancePct ?? 5,
