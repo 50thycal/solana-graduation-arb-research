@@ -39,6 +39,7 @@ import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
 import { computeExitSim } from './exit-sim';
 import { computeExitSimMatrix } from './exit-sim-matrix';
+import { computeEntryTimeMatrix } from './entry-time-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeSniperPanel } from './sniper-panel';
 import { computeStrategyPercentiles } from './strategy-percentiles';
@@ -577,6 +578,16 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     res.json(computeExitSimMatrix(db));
   }));
 
+  // ── /api/entry-time-matrix ──
+  // For every single FILTER_CATALOG entry plus the top combos from the
+  // leaderboard, re-run simulateCombo() at every candidate entry checkpoint
+  // (T+30, T+60, T+90, T+120, T+180, T+240) and surface the entry second
+  // with the highest opt_avg_ret + Δ vs T+30. Lets us pick the right
+  // entry time for the late-entry trading mode.
+  app.get('/api/entry-time-matrix', wrap(async (_req, res) => {
+    res.json(computeEntryTimeMatrix(db));
+  }));
+
   // ── /api/filter-catalog ──
   // The filter definitions used by /api/best-combos. Useful for Claude to
   // enumerate the search space before proposing new candidates.
@@ -743,6 +754,8 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
         { path: '/api/panelv3_6',          description: 'v3 Panel 6 (sum_abs_returns_0_30 — pre-entry realized vol)' },
         { path: '/api/panelv3_7',          description: 'v3 Panel 7 (regime + walk-forward on v3 leaders — stability check)' },
         { path: '/api/exit-sim',           description: 'Dynamic-exit strategy simulator (momentum, scale-out, vol-trail, time-decayed TP)' },
+        { path: '/api/exit-sim-matrix',    description: 'Top 20 combos × 5 dynamic-exit strategies — best Δ vs static optimum' },
+        { path: '/api/entry-time-matrix',  description: 'Filter combos × entry times (T+30/60/90/120/180/240) — best entry time per combo + Δ vs T+30' },
         { path: '/api/trading',            description: 'Full /trading data: open positions, performance, trades, skips' },
         { path: '/api/filter-catalog',     description: 'Filter definitions used by best-combos' },
         { path: '/api/trades',         description: 'Recent trades (query: limit, status)' },
