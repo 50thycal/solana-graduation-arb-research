@@ -14,11 +14,23 @@
 
 import type Database from 'better-sqlite3';
 
+const PIPELINE_LIMIT = 100;
+
 export function computePipelineData(
   db: Database.Database,
   listenerStats: any | null = null,
   activeStrategyCount: number = 0,
 ) {
+  // Lower-bound the trade_skips / trades_v2 aggregations to the recent ID
+  // window so they don't full-scan the whole tables on every dashboard hit.
+  // Without this bound the subqueries materialize a GROUP BY over every row
+  // ever recorded — which used to be cheap but now (~6k+ trades, many more
+  // skips) was timing out the request at Railway's 4-min edge limit.
+  const minIdRow = db.prepare(
+    `SELECT id FROM graduations ORDER BY id DESC LIMIT 1 OFFSET ?`
+  ).get(PIPELINE_LIMIT - 1) as { id: number } | undefined;
+  const minGradId = minIdRow?.id ?? 0;
+
   const grads = (db.prepare(`
     SELECT
       g.id,
@@ -40,16 +52,19 @@ export function computePipelineData(
              COUNT(*)                             AS skip_count,
              GROUP_CONCAT(DISTINCT skip_reason)  AS uniq_reasons
       FROM trade_skips
+      WHERE graduation_id >= ?
       GROUP BY graduation_id
     ) s ON s.graduation_id = g.id
     LEFT JOIN (
       SELECT graduation_id, COUNT(*) AS trade_count
       FROM trades_v2
+      WHERE graduation_id >= ?
       GROUP BY graduation_id
     ) t ON t.graduation_id = g.id
+    WHERE g.id >= ?
     ORDER BY g.id DESC
-    LIMIT 100
-  `).all() as any[]).map(g => ({
+    LIMIT ?
+  `).all(minGradId, minGradId, minGradId, PIPELINE_LIMIT) as any[]).map(g => ({
     ...g,
     status: g.trade_count > 0 ? 'TRADED'
           : g.skip_count  > 0 ? 'FILTERED'

@@ -2450,15 +2450,29 @@ async function main() {
   // or filter? Surfaces the "NO EVAL" gap that the trading dashboard hides.
   app.get('/pipeline', (req, res) => {
     try {
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      // Mirror /trading: serve the human-facing HTML from a 30s memo so
+      // dashboard refreshes don't re-run the funnel SQL on every hit. JSON
+      // path stays uncached for Claude / API consumers.
+      const memoKey = 'pipeline:html';
+      if (wantHtml) {
+        const cached = memoGet(memoKey);
+        if (cached) {
+          res.setHeader('Content-Type', cached.contentType);
+          res.send(cached.value);
+          return;
+        }
+      }
       const listenerStats = listener ? listener.getStats() : null;
       const activeCount = strategyManager
         ? strategyManager.getStrategies().filter((s: any) => s.enabled).length
         : 0;
       const data = computePipelineData(db, listenerStats, activeCount);
-      const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
+        const html = renderPipelineHtml(data);
+        memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.send(renderPipelineHtml(data));
+        res.send(html);
       } else {
         res.json(data);
       }
