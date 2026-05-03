@@ -150,14 +150,11 @@ export class GraduationListener {
   private poolTracker: PoolTracker;
   private priceCollector: PriceCollector;
   private holderEnrichment: HolderEnrichment;
-  private subscriptionId: number | null = null;
-  // Parallel pump.fun WS subscription at commitment='processed'. Helius docs:
-  // confirmed-level events get batch-replayed at slot-confirmation time, which
-  // is the source of the 25-75s lag we observed (~43-50% of pump.fun migrations).
-  // Processed-level events are emitted by the leader before voting, bypassing
-  // the slot-confirmation batch. We race this against the existing 3 channels;
-  // dedup-by-signature ensures whichever wins wins. Cost = 0 (one more onLogs
-  // call on the same shared Connection — covered by existing reconnect logic).
+  // Single pump.fun WS subscription at commitment='processed'. The confirmed-
+  // commitment sibling was removed 2026-05-03 after 11h of zero wins (Helius
+  // batch-replays confirmed-level events at slot-confirmation time — 25-75s
+  // lag — so it always lost the race). Processed bypasses that batch and
+  // wins ~97% of races; the RPC poll covers the remaining ~3% tail.
   private subscriptionIdProcessed: number | null = null;
   private stopped = false;
   private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
@@ -280,13 +277,12 @@ export class GraduationListener {
     this.priceCollector = new PriceCollector(db, this.connection);
     this.holderEnrichment = new HolderEnrichment(this.connection);
 
-    // Wire pool-tracker's PumpSwap WS as a parallel detection channel.
-    // Helius pump.fun WS delivers ~50% of migrations 30-75s late; PumpSwap WS
-    // delivers them in ~5s. The callback dedupes by signature so the slower
-    // channel's redelivery becomes a no-op.
-    this.poolTracker.setMigrationCandidateCallback((sig, slot, wsReceivedAt) =>
-      this.handleMigrationCandidate(sig, slot, 'pumpswap', wsReceivedAt)
-    );
+    // PumpSwap WS used to be wired as a parallel migration-detection channel
+    // here, but with pump.fun-processed winning ~97% and PumpSwap winning 0%
+    // over 11h, the migration-candidate forwarding was dead weight in the
+    // dedup path. Removed 2026-05-03. PumpSwap WS itself stays alive inside
+    // PoolTracker for its other job: filling in the pool address on grads
+    // where pump.fun WS fired first but inline pool extraction failed.
   }
 
   /** Expose the PriceCollector so the TradingEngine can attach its T+30 callback. */
@@ -396,7 +392,7 @@ export class GraduationListener {
       lastMintFailReasons: this.lastMintFailReasons.slice(-5),
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
       lastCandidateSecondsAgo: Math.floor((Date.now() - this.lastCandidateTime) / 1000),
-      wsConnected: this.subscriptionId !== null,
+      wsConnected: this.subscriptionIdProcessed !== null,
       reconnecting: this.reconnecting,
       totalReconnects: this.totalReconnects,
       // Per-channel distribution of (wsReceivedAt - blockTime) in seconds.
@@ -444,7 +440,7 @@ export class GraduationListener {
           recorded: this.totalGraduationsRecorded,
           falsePositives: this.totalFalsePositives,
           mintFails: this.totalMintExtractionFails,
-          subscriptionId: this.subscriptionId,
+          subscriptionId: this.subscriptionIdProcessed,
         },
         'WS health check'
       );
@@ -501,7 +497,16 @@ export class GraduationListener {
 
   private async subscribe(): Promise<void> {
     try {
-      this.subscriptionId = this.connection.onLogs(
+      // Single pump.fun subscription at commitment='processed'. Removed the
+      // sibling 'confirmed' subscription on 2026-05-03 after 11h of zero wins
+      // — confirmed always lost the race to processed because Helius batch-
+      // replays confirmed-level events at slot-confirmation time (25-75s lag).
+      // Processed bypasses that batch entirely. The reconnect / silence
+      // watchdog / health-check logic is unchanged: it tracks subscription
+      // lifecycle on whichever sub we have, and the processed sub IS the
+      // primary now. RPC-poll remains the safety net for the rare case
+      // where even processed lags (3% of wins historically).
+      this.subscriptionIdProcessed = this.connection.onLogs(
         PUMP_FUN_PROGRAM_ID,
         async (logs: Logs, ctx: Context) => {
           this.lastEventTime = Date.now();
@@ -518,34 +523,10 @@ export class GraduationListener {
                 logs: logs.logs,
                 totalReceived: this.totalLogsReceived,
               },
-              'Raw pump.fun log event'
+              'Raw pump.fun log event (processed)'
             );
           }
 
-          try {
-            await this.handleLogs(logs, ctx, 'pump.fun');
-          } catch (err) {
-            logger.error(
-              'Error handling logs for %s: %s',
-              logs.signature,
-              err instanceof Error ? err.message : String(err)
-            );
-          }
-        },
-        'confirmed'
-      );
-
-      // Parallel subscription at processed commitment. Same program, same handler,
-      // but bypasses the slot-confirmation batch replay that delays the confirmed
-      // feed 25-75s on ~50% of pump.fun migrations. Wins of either are dedup'd by
-      // signature in handleMigrationCandidate. See subscriptionIdProcessed comment
-      // at the field declaration for the rationale.
-      this.subscriptionIdProcessed = this.connection.onLogs(
-        PUMP_FUN_PROGRAM_ID,
-        async (logs: Logs, ctx: Context) => {
-          // Don't update lastEventTime/totalLogsReceived here — those track the
-          // primary confirmed channel's health (silence watchdog uses them). The
-          // processed channel is a racing peer, not the source of truth.
           try {
             await this.handleLogs(logs, ctx, 'pump.fun-processed');
           } catch (err) {
@@ -561,11 +542,8 @@ export class GraduationListener {
 
       this.lastEventTime = Date.now();
       logger.info(
-        {
-          subscriptionId: this.subscriptionId,
-          subscriptionIdProcessed: this.subscriptionIdProcessed,
-        },
-        'Subscribed to pump.fun logs (confirmed + processed)'
+        { subscriptionIdProcessed: this.subscriptionIdProcessed },
+        'Subscribed to pump.fun logs (processed only)'
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -575,7 +553,7 @@ export class GraduationListener {
   }
 
   private async unsubscribe(opts?: { skipServerCall?: boolean }): Promise<void> {
-    if (this.subscriptionId !== null) {
+    if (this.subscriptionIdProcessed !== null) {
       // On a forced reconnect, the WS is already dead and we're about to
       // throw away `this.connection` anyway. Calling removeOnLogsListener
       // against a dead socket triggers a `console.warn` inside web3.js
@@ -583,19 +561,6 @@ export class GraduationListener {
       // X could not be found") because its internal cleanup beat us to it.
       // Skip the server call in that case — the server already cleaned up
       // when the socket closed. Only the locally-tracked id needs clearing.
-      if (!opts?.skipServerCall) {
-        try {
-          await this.connection.removeOnLogsListener(this.subscriptionId);
-        } catch (err) {
-          logger.warn(
-            'Error removing logs listener: %s',
-            err instanceof Error ? err.message : String(err)
-          );
-        }
-      }
-      this.subscriptionId = null;
-    }
-    if (this.subscriptionIdProcessed !== null) {
       if (!opts?.skipServerCall) {
         try {
           await this.connection.removeOnLogsListener(this.subscriptionIdProcessed);
@@ -1039,37 +1004,48 @@ export class GraduationListener {
     }
 
     // Sanitize tx.blockTime before using it as the canonical migrationTimestamp.
-    // At commitment='processed' (the new 4th channel), Helius hasn't always
-    // finalized blockTime yet — observed values are sometimes seconds in the
-    // FUTURE (slot's anticipated time) or 30-50s in the PAST (stale slot
-    // metadata). Both break price-collector deadline math: future blockTime
-    // → negative elapsedSec → 50s+ deadline + skewed snapshot timing; stale
-    // blockTime → elapsedSec >= 44 → deadline clamped to 1s minimum → instant
-    // abandon. Either way the T+30 callback never fires.
+    // At commitment='processed', Helius's blockTime is sometimes seconds in
+    // the FUTURE (slot's anticipated time) or 25-50s in the PAST (stale slot
+    // metadata). Both break price-collector deadline math:
+    //   - future blockTime → negative elapsedSec → 50s+ deadline + skewed
+    //     snapshot timing
+    //   - stale blockTime + 22s rpcFetchMs → elapsedSec ≥ 44 → t30Deadline
+    //     clamped to 1s → instant abandon before T+30 snapshot can fire
     //
-    // Fix: trust blockTime only when it's in the past AND within 10 minutes of
-    // wsReceivedAt (a known-good wall-clock anchor). Otherwise fall back to
-    // wsReceivedAt — guaranteed to be in the past, never overshoots.
+    // Trust blockTime only within source-typical bounds. Each detection
+    // channel has a known typical wsReceivedAt-vs-blockTime gap; values
+    // outside the bound are almost certainly bad metadata, not real lag.
+    // Fall back to wsReceivedAt (always a valid past wall-clock anchor).
     //
-    // The 10-min window keeps legitimate late RPC-poll arrivals working
-    // (poll catches grads up to 120s past blockTime and we want elapsedSec
-    // to reflect that real lag so STALE_THRESHOLD bails fast). Beyond 10min
-    // is implausible — Helius indexer would never lag that far on a real tx.
+    // Per-source max blockTime lag (seconds before wsReceivedAt):
+    //   pump.fun-processed: 5s — observed canonical p50 = 1.2s; >5s is noise
+    //   pump.fun (confirmed): 90s — confirmed feed legitimately delays this far
+    //   pumpswap: 30s — confirmed channel typically <5s, 30s is generous
+    //   rpc-poll: 600s — 2s tick + tx index lag, but not infinite
+    const PER_SOURCE_MAX_LAG_SEC: Record<typeof source, number> = {
+      'pump.fun-processed': 5,
+      'pump.fun': 90,
+      'pumpswap': 30,
+      'rpc-poll': 600,
+    };
     const wsReceivedAtSec = Math.floor(wsReceivedAt / 1000);
+    const maxLag = PER_SOURCE_MAX_LAG_SEC[source];
     const txBt = tx.blockTime;
     let timestamp: number;
-    if (txBt && txBt <= wsReceivedAtSec && txBt >= wsReceivedAtSec - 600) {
+    if (txBt && txBt <= wsReceivedAtSec && txBt >= wsReceivedAtSec - maxLag) {
       timestamp = txBt;
     } else {
-      // blockTime is missing, in the future, or implausibly stale.
+      // blockTime is missing, in the future, or implausibly stale for this source.
       // Use wsReceivedAt as the migration timestamp — slightly ahead of the
-      // true on-chain block but always a valid past wall-clock value.
+      // true on-chain block but always a valid past wall-clock value, and
+      // guarantees elapsedSec at startObservation reflects ONLY rpcFetch
+      // overhead (not phantom blockTime lag).
       timestamp = wsReceivedAtSec;
       if (txBt) {
         const drift = txBt - wsReceivedAtSec;
         logger.debug(
-          { signature, source, txBlockTime: txBt, wsReceivedAtSec, driftSec: drift },
-          'Sanitized tx.blockTime — outside [now-10min, now]; using wsReceivedAt instead'
+          { signature, source, txBlockTime: txBt, wsReceivedAtSec, driftSec: drift, maxLagSec: maxLag },
+          `Sanitized tx.blockTime — outside [now-${maxLag}s, now] for ${source}; using wsReceivedAt`
         );
       }
     }
