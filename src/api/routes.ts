@@ -32,7 +32,7 @@ import {
   computeBestCombos,
   FILTER_CATALOG,
 } from './aggregates';
-import { runDiagnosis } from './diagnose';
+import { runDiagnosis, type ChannelWinCounts } from './diagnose';
 import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
@@ -159,16 +159,22 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   app.get('/api/diagnose', wrap(async (_req, res) => {
     const sm = getStrategyManager ? getStrategyManager() : null;
     let wsConnected: boolean | null = null;
+    let channelWins: ChannelWinCounts | undefined = undefined;
     if (getListenerStats) {
       try {
-        const stats = getListenerStats() as { wsConnected?: boolean } | null;
+        const stats = getListenerStats() as {
+          wsConnected?: boolean;
+          channel_wins?: ChannelWinCounts;
+        } | null;
         if (stats && typeof stats.wsConnected === 'boolean') wsConnected = stats.wsConnected;
+        if (stats && stats.channel_wins) channelWins = stats.channel_wins;
       } catch { /* listener may not be initialized yet */ }
     }
     const report = runDiagnosis(db, logBuffer, {
       wsConnected,
       lastT30CallbackAt: sm?.getLastT30CallbackAt() ?? null,
       enabledStrategies: sm ? sm.getStrategies().filter(s => s.enabled).length : 0,
+      channelWins,
     });
     res.json(report);
   }));

@@ -151,6 +151,14 @@ export class GraduationListener {
   private priceCollector: PriceCollector;
   private holderEnrichment: HolderEnrichment;
   private subscriptionId: number | null = null;
+  // Parallel pump.fun WS subscription at commitment='processed'. Helius docs:
+  // confirmed-level events get batch-replayed at slot-confirmation time, which
+  // is the source of the 25-75s lag we observed (~43-50% of pump.fun migrations).
+  // Processed-level events are emitted by the leader before voting, bypassing
+  // the slot-confirmation batch. We race this against the existing 3 channels;
+  // dedup-by-signature ensures whichever wins wins. Cost = 0 (one more onLogs
+  // call on the same shared Connection — covered by existing reconnect logic).
+  private subscriptionIdProcessed: number | null = null;
   private stopped = false;
   private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
   private pollInterval: NodeJS.Timeout | null = null;
@@ -177,6 +185,7 @@ export class GraduationListener {
   // channels, suggesting event-loop blocking or DB writes back-pressuring the
   // socket reader).
   private deliveryLatencyByPumpFun: number[] = [];
+  private deliveryLatencyByPumpFunProcessed: number[] = [];
   private deliveryLatencyByPumpSwap: number[] = [];
   private deliveryLatencyByPoll: number[] = [];
   private rpcFetchMsSamples: number[] = [];
@@ -188,6 +197,7 @@ export class GraduationListener {
   private totalLogsReceived = 0;
   private totalCandidatesDetected = 0;
   private totalCandidatesFromPumpFun = 0;
+  private totalCandidatesFromPumpFunProcessed = 0;
   private totalCandidatesFromPumpSwap = 0;
   private totalPollDupes = 0;        // poller fired but WS already won the race
   private totalPollSigsFound = 0;    // total sigs returned by getSignaturesForAddress
@@ -285,9 +295,10 @@ export class GraduationListener {
   }
 
   /** Push a latency sample (seconds) into the per-channel ring buffer. */
-  private recordDeliveryLatency(source: 'pump.fun' | 'pumpswap' | 'rpc-poll', latencySec: number): void {
+  private recordDeliveryLatency(source: 'pump.fun' | 'pump.fun-processed' | 'pumpswap' | 'rpc-poll', latencySec: number): void {
     let buf: number[];
     if (source === 'pump.fun') buf = this.deliveryLatencyByPumpFun;
+    else if (source === 'pump.fun-processed') buf = this.deliveryLatencyByPumpFunProcessed;
     else if (source === 'pumpswap') buf = this.deliveryLatencyByPumpSwap;
     else buf = this.deliveryLatencyByPoll;
     buf.push(latencySec);
@@ -350,8 +361,21 @@ export class GraduationListener {
       totalLogsReceived: this.totalLogsReceived,
       totalCandidatesDetected: this.totalCandidatesDetected,
       totalCandidatesFromPumpFun: this.totalCandidatesFromPumpFun,
+      totalCandidatesFromPumpFunProcessed: this.totalCandidatesFromPumpFunProcessed,
       totalCandidatesFromPumpSwap: this.totalCandidatesFromPumpSwap,
       totalCandidatesFromPoll: this.totalCandidatesFromPoll,
+      // Race-winner counts per channel — first to clear dedup wins. The 4
+      // channels race on every migration; whichever channel calls
+      // handleMigrationCandidate first with a fresh signature gets the win,
+      // the others get dedup'd into totalDuplicateLogs. Use this to see
+      // which channel is most often the fastest, and decide whether the
+      // processed-commitment channel is pulling its weight.
+      channel_wins: {
+        pump_fun_ws_confirmed: this.totalCandidatesFromPumpFun,
+        pump_fun_ws_processed: this.totalCandidatesFromPumpFunProcessed,
+        pumpswap_ws_confirmed: this.totalCandidatesFromPumpSwap,
+        rpc_poll: this.totalCandidatesFromPoll,
+      },
       totalPollDupes: this.totalPollDupes,
       totalPollSigsFound: this.totalPollSigsFound,
       totalPollTicks: this.totalPollTicks,
@@ -383,6 +407,7 @@ export class GraduationListener {
       // pctOver25s = % of grads in this channel that arrived stale.
       deliveryLatencySec: {
         pumpFun: GraduationListener.distributionStats(this.deliveryLatencyByPumpFun),
+        pumpFunProcessed: GraduationListener.distributionStats(this.deliveryLatencyByPumpFunProcessed),
         pumpSwap: GraduationListener.distributionStats(this.deliveryLatencyByPumpSwap),
         rpcPoll: GraduationListener.distributionStats(this.deliveryLatencyByPoll),
       },
@@ -498,7 +523,7 @@ export class GraduationListener {
           }
 
           try {
-            await this.handleLogs(logs, ctx);
+            await this.handleLogs(logs, ctx, 'pump.fun');
           } catch (err) {
             logger.error(
               'Error handling logs for %s: %s',
@@ -510,8 +535,38 @@ export class GraduationListener {
         'confirmed'
       );
 
+      // Parallel subscription at processed commitment. Same program, same handler,
+      // but bypasses the slot-confirmation batch replay that delays the confirmed
+      // feed 25-75s on ~50% of pump.fun migrations. Wins of either are dedup'd by
+      // signature in handleMigrationCandidate. See subscriptionIdProcessed comment
+      // at the field declaration for the rationale.
+      this.subscriptionIdProcessed = this.connection.onLogs(
+        PUMP_FUN_PROGRAM_ID,
+        async (logs: Logs, ctx: Context) => {
+          // Don't update lastEventTime/totalLogsReceived here — those track the
+          // primary confirmed channel's health (silence watchdog uses them). The
+          // processed channel is a racing peer, not the source of truth.
+          try {
+            await this.handleLogs(logs, ctx, 'pump.fun-processed');
+          } catch (err) {
+            logger.error(
+              'Error handling processed-commitment logs for %s: %s',
+              logs.signature,
+              err instanceof Error ? err.message : String(err)
+            );
+          }
+        },
+        'processed'
+      );
+
       this.lastEventTime = Date.now();
-      logger.info({ subscriptionId: this.subscriptionId }, 'Subscribed to pump.fun logs');
+      logger.info(
+        {
+          subscriptionId: this.subscriptionId,
+          subscriptionIdProcessed: this.subscriptionIdProcessed,
+        },
+        'Subscribed to pump.fun logs (confirmed + processed)'
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error('Failed to subscribe to logs: %s', message);
@@ -539,6 +594,19 @@ export class GraduationListener {
         }
       }
       this.subscriptionId = null;
+    }
+    if (this.subscriptionIdProcessed !== null) {
+      if (!opts?.skipServerCall) {
+        try {
+          await this.connection.removeOnLogsListener(this.subscriptionIdProcessed);
+        } catch (err) {
+          logger.warn(
+            'Error removing processed-commitment logs listener: %s',
+            err instanceof Error ? err.message : String(err)
+          );
+        }
+      }
+      this.subscriptionIdProcessed = null;
     }
   }
 
@@ -705,7 +773,11 @@ export class GraduationListener {
     }, MIGRATION_POLL_INTERVAL_MS);
   }
 
-  private async handleLogs(logs: Logs, ctx: Context): Promise<void> {
+  private async handleLogs(
+    logs: Logs,
+    ctx: Context,
+    source: 'pump.fun' | 'pump.fun-processed' = 'pump.fun',
+  ): Promise<void> {
     if (logs.err) return;
 
     // Anchor programs emit "Program log: Instruction: <Name>" for every instruction.
@@ -719,7 +791,7 @@ export class GraduationListener {
 
     if (!graduationLog) return;
 
-    await this.handleMigrationCandidate(logs.signature, ctx.slot, 'pump.fun', Date.now());
+    await this.handleMigrationCandidate(logs.signature, ctx.slot, source, Date.now());
   }
 
   /**
@@ -733,7 +805,7 @@ export class GraduationListener {
   async handleMigrationCandidate(
     signature: string,
     slot: number,
-    source: 'pump.fun' | 'pumpswap' | 'rpc-poll',
+    source: 'pump.fun' | 'pump.fun-processed' | 'pumpswap' | 'rpc-poll',
     wsReceivedAt: number,
   ): Promise<void> {
     // Drop redeliveries before any RPC work. Helius pushes the same
@@ -748,6 +820,7 @@ export class GraduationListener {
 
     this.totalCandidatesDetected++;
     if (source === 'pump.fun') this.totalCandidatesFromPumpFun++;
+    else if (source === 'pump.fun-processed') this.totalCandidatesFromPumpFunProcessed++;
     else if (source === 'pumpswap') this.totalCandidatesFromPumpSwap++;
     else this.totalCandidatesFromPoll++;
     this.lastCandidateTime = Date.now();
@@ -937,7 +1010,7 @@ export class GraduationListener {
     signature: string,
     slot: number,
     matchedLog: string,
-    source: 'pump.fun' | 'pumpswap' | 'rpc-poll' = 'pump.fun',
+    source: 'pump.fun' | 'pump.fun-processed' | 'pumpswap' | 'rpc-poll' = 'pump.fun',
     wsReceivedAt: number = Date.now(),
   ): Promise<GraduationEvent | null> {
     await globalRpcLimiter.throttlePriority();

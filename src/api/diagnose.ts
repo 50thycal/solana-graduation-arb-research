@@ -26,6 +26,27 @@ export interface LevelResult {
   notes?: string;
 }
 
+/** Per-channel counts of who-fired-first wins on the migration-detection race.
+ *  All four channels feed `handleMigrationCandidate` and the first one to clear
+ *  dedup-by-signature gets the win. Lifetime-cumulative counters from listener
+ *  stats — see `graduation-listener.ts :: getStats() :: channel_wins`. */
+export interface ChannelWinCounts {
+  pump_fun_ws_confirmed: number;
+  pump_fun_ws_processed: number;
+  pumpswap_ws_confirmed: number;
+  rpc_poll: number;
+}
+
+/** Same counts expressed as percentages of total wins. `total_wins=0` collapses
+ *  the whole struct to null (cold-start). */
+export interface ChannelWinDistribution {
+  pump_fun_ws_confirmed_pct: number;
+  pump_fun_ws_processed_pct: number;
+  pumpswap_ws_confirmed_pct: number;
+  rpc_poll_pct: number;
+  total_wins: number;
+}
+
 export interface PipelineHealth {
   ws_connected: boolean | null;
   last_graduation_sec_ago: number | null;
@@ -33,6 +54,9 @@ export interface PipelineHealth {
   last_paper_trade_sec_ago: number | null;
   last_shadow_trade_sec_ago: number | null;
   enabled_strategies: number;
+  /** Lifetime channel-win distribution (% of post-dedup candidates each
+   *  channel won). Null while the bot has zero candidates (cold start). */
+  channel_win_distribution: ChannelWinDistribution | null;
   verdict:
     | 'HEALTHY'
     | 'WS_DOWN'
@@ -69,6 +93,10 @@ export interface PipelineSignals {
   wsConnected?: boolean | null;
   lastT30CallbackAt?: number | null;
   enabledStrategies?: number;
+  /** Cumulative race-winner counts per detection channel. Comes from
+   *  `getListenerStats().channel_wins`. Optional — when omitted the
+   *  diagnose report sets `channel_win_distribution` to null. */
+  channelWins?: ChannelWinCounts;
 }
 
 // Stall thresholds. Conservative defaults — tune via env if needed.
@@ -364,6 +392,30 @@ export function runDiagnosis(
     pipelineNotes = 'Pipeline active — graduations, T+30 callbacks, and entries within thresholds.';
   }
 
+  // Channel-win distribution. Lifetime-cumulative — answers "which detection
+  // channel is winning the race most often?" Use to evaluate whether the
+  // processed-commitment channel is actually beating the confirmed one
+  // (the main reason to keep it in the rotation).
+  let channel_win_distribution: ChannelWinDistribution | null = null;
+  const cw = pipelineSignals?.channelWins;
+  if (cw) {
+    const total =
+      cw.pump_fun_ws_confirmed
+      + cw.pump_fun_ws_processed
+      + cw.pumpswap_ws_confirmed
+      + cw.rpc_poll;
+    if (total > 0) {
+      const pct = (n: number) => +((n / total) * 100).toFixed(1);
+      channel_win_distribution = {
+        pump_fun_ws_confirmed_pct: pct(cw.pump_fun_ws_confirmed),
+        pump_fun_ws_processed_pct: pct(cw.pump_fun_ws_processed),
+        pumpswap_ws_confirmed_pct: pct(cw.pumpswap_ws_confirmed),
+        rpc_poll_pct: pct(cw.rpc_poll),
+        total_wins: total,
+      };
+    }
+  }
+
   const pipeline_health: PipelineHealth = {
     ws_connected: wsConnected,
     last_graduation_sec_ago: secondsSinceLast,
@@ -371,6 +423,7 @@ export function runDiagnosis(
     last_paper_trade_sec_ago: lastPaperSecAgo,
     last_shadow_trade_sec_ago: lastShadowSecAgo,
     enabled_strategies: enabledStrategies,
+    channel_win_distribution,
     verdict: pipelineVerdict,
     notes: pipelineNotes,
   };
