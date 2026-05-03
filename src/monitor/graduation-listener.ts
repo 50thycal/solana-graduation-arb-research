@@ -1038,7 +1038,41 @@ export class GraduationListener {
       return null;
     }
 
-    const timestamp = tx.blockTime || Math.floor(Date.now() / 1000);
+    // Sanitize tx.blockTime before using it as the canonical migrationTimestamp.
+    // At commitment='processed' (the new 4th channel), Helius hasn't always
+    // finalized blockTime yet — observed values are sometimes seconds in the
+    // FUTURE (slot's anticipated time) or 30-50s in the PAST (stale slot
+    // metadata). Both break price-collector deadline math: future blockTime
+    // → negative elapsedSec → 50s+ deadline + skewed snapshot timing; stale
+    // blockTime → elapsedSec >= 44 → deadline clamped to 1s minimum → instant
+    // abandon. Either way the T+30 callback never fires.
+    //
+    // Fix: trust blockTime only when it's in the past AND within 10 minutes of
+    // wsReceivedAt (a known-good wall-clock anchor). Otherwise fall back to
+    // wsReceivedAt — guaranteed to be in the past, never overshoots.
+    //
+    // The 10-min window keeps legitimate late RPC-poll arrivals working
+    // (poll catches grads up to 120s past blockTime and we want elapsedSec
+    // to reflect that real lag so STALE_THRESHOLD bails fast). Beyond 10min
+    // is implausible — Helius indexer would never lag that far on a real tx.
+    const wsReceivedAtSec = Math.floor(wsReceivedAt / 1000);
+    const txBt = tx.blockTime;
+    let timestamp: number;
+    if (txBt && txBt <= wsReceivedAtSec && txBt >= wsReceivedAtSec - 600) {
+      timestamp = txBt;
+    } else {
+      // blockTime is missing, in the future, or implausibly stale.
+      // Use wsReceivedAt as the migration timestamp — slightly ahead of the
+      // true on-chain block but always a valid past wall-clock value.
+      timestamp = wsReceivedAtSec;
+      if (txBt) {
+        const drift = txBt - wsReceivedAtSec;
+        logger.debug(
+          { signature, source, txBlockTime: txBt, wsReceivedAtSec, driftSec: drift },
+          'Sanitized tx.blockTime — outside [now-10min, now]; using wsReceivedAt instead'
+        );
+      }
+    }
 
     let mint: string | null = null;
     let bondingCurveAddress: string | null = null;
