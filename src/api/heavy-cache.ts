@@ -47,8 +47,12 @@ const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // disk blobs without manual cleanup.
 // Bump suffix when ENTRY_GATE / FILTER_CATALOG / sim grid changes invalidate
 // the cached panels. (v3 was attempted 2026-05-01 with a wider ENTRY_GATE but
-// reverted — see aggregates.ts ENTRY_GATE comment. Sticking with v2 for now.)
-const CACHE_KEY = 'heavy_data_v2';
+// reverted — see aggregates.ts ENTRY_GATE comment.)
+// 2026-05-03: bumped to v4 for the panelv3_8 addition (rug-exclusion overlay
+// matrix). The cached blob from the prior code didn't have the panelv3_8 key,
+// so the bot was re-publishing v2.panelv3_8=undefined into bot-status forever.
+// (Skipped v3 because of the 2026-05-01 attempt.)
+const CACHE_KEY = 'heavy_data_v4';
 
 interface HeavyData {
   v2: FilterV2Data;
