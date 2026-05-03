@@ -392,6 +392,7 @@ Filter-analysis-v3 panels (extension of v2 — crash-prediction research):
 | `panelv3_5.json` | `/api/panelv3_5` | v3 Panel 5 — velocity × liquidity heatmap (5×4 buckets) showing opt_avg_ret per cell |
 | `panelv3_6.json` | `/api/panelv3_6` | v3 Panel 6 — sum_abs_returns_0_30 (pre-entry realized vol proxy), < and > thresholds standalone + stacked on baseline |
 | `panelv3_7.json` | `/api/panelv3_7` | v3 Panel 7 — regime stability + walk-forward validation for top 10 pairs + top 10 triples from v3 leaderboards. Each row has `wf_verdict` (ROBUST/DEGRADED/OVERFIT/INSUFFICIENT) and `regime_stability` (STABLE/MODERATE/CLUSTERED/INSUFFICIENT). Promote only when both are green. |
+| `panelv3_8.json` | `/api/panelv3_8` | v3 Panel 8 — rug-exclusion overlay matrix. Top 5 singles + top 5 pairs (same selection as v3_2) + unconditional baseline × 7 exclusion overlays (serial_rugger excl, rapid_fire excl, max_dd_0_30 > {-10, -15}, max_tick_drop_0_30 > -15, sum_abs_returns_0_30 > 40, union). Each cell reports `opt_avg_ret`, **`pct_loss_50`** (% of cost-adjusted returns < -50% at the optimum cell), `delta_avg_ret_pp`, `delta_pct_loss_50_pp` (negative = tail-thinning), `n_retention_pct`. `summary[]` ranks overlays by mean tail prevention across all bases. Use to evaluate whether a pre-entry rug filter prevents the catastrophic −100% trades that drag the portfolio mean. |
 
 Price-path dashboard:
 
