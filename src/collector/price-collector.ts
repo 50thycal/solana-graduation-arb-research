@@ -339,7 +339,19 @@ export class PriceCollector {
 
     const now = Date.now();
     const migrationTime = ctx.migrationTimestamp * 1000;
-    const elapsedSec = (now - migrationTime) / 1000;
+    // Defense in depth: clamp elapsedSec to >= 0. The listener sanitizes
+    // tx.blockTime before setting migrationTimestamp (graduation-listener.ts
+    // ~line 1041), so this should normally never trigger. But if a future
+    // refactor drops the sanitization, or a different code path constructs
+    // an event with a bad timestamp, a negative elapsedSec breaks both:
+    //   (a) snapshot scheduling — `delayMs = (targetSec - elapsedSec) * 1000`
+    //       fires snapshots at the wrong wall-clock time
+    //   (b) deadline math — `(45 - elapsedSec) * 1000` overshoots, leaving
+    //       T+30 capture racing the wrong window
+    // Treating future migrationTimestamps as "just now" is the safe collapse:
+    // snapshots fire on schedule, deadline = full 45s.
+    const rawElapsedSec = (now - migrationTime) / 1000;
+    const elapsedSec = Math.max(0, rawElapsedSec);
 
     // Bail on stale graduations. If the migration tx is already older than
     // T+30 by the time we get here, the trade entry window has closed —
