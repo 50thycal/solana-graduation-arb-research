@@ -190,7 +190,16 @@ export class PriceCollector {
   // - t0Succeeded: did the immediate snapshot return a valid pool state
   // - snapshotsCompleted: how many of the T+0..T+30 attempts came back ok
   // - lastFailureReason: most recent recordSnapshotFailure reason for this gradId
-  // - elapsedMsAtDeadline: wall-clock ms from observation start to deadline
+  // - elapsedMsAtDeadline: wall-clock ms from observation start to deadline timer firing
+  // - t30DeadlineMs: the originally-scheduled setTimeout delay
+  // - timerDriftMs: elapsedMsAtDeadline - t30DeadlineMs. Should be ≤ ~50ms in
+  //   a healthy event loop. >2s consistently means a long-running await chain
+  //   (likely a snapshot RPC) is blocking the loop and pushing all setTimeout
+  //   firings back. Added 2026-05-03 to confirm or reject the event-loop-blocking
+  //   hypothesis for the 48-65s elapsedMsAtDeadline pattern.
+  // - elapsedSecAtStart: elapsedSec passed into the deadline calculation. Lets
+  //   us reverse-engineer what migrationTimestamp the observation thought it
+  //   had relative to its own startedAt clock.
   private lastT30Timeouts: Array<{
     graduationId: number;
     mint: string;
@@ -200,6 +209,9 @@ export class PriceCollector {
     snapshotsCompleted: number;
     lastFailureReason: string | null;
     elapsedMsAtDeadline: number;
+    t30DeadlineMs: number;
+    timerDriftMs: number;
+    elapsedSecAtStart: number;
     time: string;
   }> = [];
   // Observations dropped at the MAX_CONCURRENT_OBSERVATIONS gate. Surfacing
@@ -509,6 +521,12 @@ export class PriceCollector {
     // CallbackAt) already detects "no callback in N min" and the new
     // totalT30Timeouts counter exposes the failure rate explicitly.
     const t30DeadlineMs = Math.max((45 - elapsedSec) * 1000, 1000);
+    // Capture the wall-clock moment the deadline timer is scheduled. Compared
+    // to Date.now() inside the callback to detect event-loop blocking — if the
+    // timer fires meaningfully later than t30DeadlineMs ms after this point,
+    // a long-running await on the main thread held the loop and ALL setTimeout
+    // firings (including the snapshot-fetch timers) drifted with it.
+    const deadlineScheduledAt = Date.now();
     const deadlineTimer = setTimeout(() => {
       const obs = this.active.get(ctx.graduationId);
       if (!obs) return;            // already cleaned up by completion path
@@ -520,6 +538,13 @@ export class PriceCollector {
       const lastFailure = [...this.lastSnapshotFailures]
         .reverse()
         .find((f) => f.graduationId === ctx.graduationId);
+      const firedAt = Date.now();
+      const elapsedMsAtDeadline = firedAt - obs.startedAt;
+      // actualDelayMs = how long setTimeout actually waited before firing.
+      // Should ≈ t30DeadlineMs in a healthy loop. Drift > 2s means the loop
+      // was blocked by something long-running (suspect: snapshot RPC chain).
+      const actualDelayMs = firedAt - deadlineScheduledAt;
+      const timerDriftMs = actualDelayMs - t30DeadlineMs;
       this.lastT30Timeouts.push({
         graduationId: ctx.graduationId,
         mint: ctx.mint,
@@ -528,8 +553,11 @@ export class PriceCollector {
         t0Succeeded: obs.openPoolPrice !== undefined && obs.openPoolPrice > 0,
         snapshotsCompleted: obs.completedSnapshots.length,
         lastFailureReason: lastFailure ? lastFailure.reason : null,
-        elapsedMsAtDeadline: Date.now() - obs.startedAt,
-        time: new Date().toISOString(),
+        elapsedMsAtDeadline,
+        t30DeadlineMs,
+        timerDriftMs,
+        elapsedSecAtStart: +elapsedSec.toFixed(2),
+        time: new Date(firedAt).toISOString(),
       });
       if (this.lastT30Timeouts.length > 50) {
         this.lastT30Timeouts = this.lastT30Timeouts.slice(-50);
@@ -545,7 +573,10 @@ export class PriceCollector {
           t0Succeeded: obs.openPoolPrice !== undefined && obs.openPoolPrice > 0,
           snapshotsCompleted: obs.completedSnapshots.length,
           lastFailureReason: lastFailure ? lastFailure.reason : null,
-          elapsedMs: Date.now() - obs.startedAt,
+          elapsedMsAtDeadline,
+          t30DeadlineMs,
+          timerDriftMs,
+          elapsedSecAtStart: +elapsedSec.toFixed(2),
         },
         'T+30 deadline hit — abandoning observation to free slot',
       );
