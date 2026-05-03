@@ -32,7 +32,7 @@ import {
   computeRecentGraduationsEnriched,
   computeBestCombos,
 } from './aggregates';
-import { runDiagnosis } from './diagnose';
+import { runDiagnosis, type ChannelWinCounts } from './diagnose';
 import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
@@ -329,11 +329,16 @@ export class GistSync {
     // entries flowing). Listener stats are best-effort — shape varies but
     // wsConnected is the only field we need for the watchdog.
     let pipelineWsConnected: boolean | null = null;
+    let pipelineChannelWins: ChannelWinCounts | undefined = undefined;
     try {
-      const stats = this.getListenerStats() as { wsConnected?: boolean } | null;
+      const stats = this.getListenerStats() as {
+        wsConnected?: boolean;
+        channel_wins?: ChannelWinCounts;
+      } | null;
       if (stats && typeof stats.wsConnected === 'boolean') {
         pipelineWsConnected = stats.wsConnected;
       }
+      if (stats && stats.channel_wins) pipelineChannelWins = stats.channel_wins;
     } catch { /* listener may not be initialized yet */ }
 
     const enabledStrategies = this.strategyManager
@@ -345,6 +350,7 @@ export class GistSync {
       wsConnected: pipelineWsConnected,
       lastT30CallbackAt,
       enabledStrategies,
+      channelWins: pipelineChannelWins,
     });
 
     // Compute leaderboard first so we can pass the live leader into the scorecard.
