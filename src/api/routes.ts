@@ -536,6 +536,11 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     const d = (await getHeavyData(db, sm)).v2;
     res.json({ generated_at: d.generated_at, panelv3_7: d.panelv3_7 });
   }));
+  app.get('/api/panelv3_8', wrap(async (_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const d = (await getHeavyData(db, sm)).v2;
+    res.json({ generated_at: d.generated_at, panelv3_8: d.panelv3_8 });
+  }));
 
   // ── /api/price-path-detail ──
   // Full price-path dashboard data: overlay (≤200 raw token paths), mean paths
