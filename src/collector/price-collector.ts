@@ -990,10 +990,22 @@ export class PriceCollector {
 
       return { price: solReserves / tokenReserves, solReserves, tokenReserves };
     } catch (err) {
-      logger.debug(
-        'Failed to fetch pool price for %s: %s',
-        ctx.poolAddress.slice(0, 8),
-        err instanceof Error ? err.message : String(err)
+      // Record the actual exception message so the failure-reason histogram
+      // distinguishes retry-able RPC errors (rate limits, network blips) from
+      // persistent ones (malformed keys, vaults closed because token died).
+      // Was logger.debug-only previously — invisible in production, made all
+      // exception failures look like generic pool_fetch_null in the outer
+      // takeSnapshot recorder. Trimmed to 100 chars to avoid massive log lines
+      // when Helius returns a stack-traced error.
+      const msg = err instanceof Error ? err.message : String(err);
+      this.recordSnapshotFailure(
+        ctx.graduationId,
+        -1,
+        `fetch_exception ${msg.slice(0, 100)}`,
+      );
+      logger.warn(
+        { graduationId: ctx.graduationId, pool: ctx.poolAddress.slice(0, 8), err: msg.slice(0, 200) },
+        'Pool/vault fetch threw — see fetch_exception failure reason',
       );
       return null;
     }
