@@ -495,7 +495,7 @@ export async function computeFilterV2Data(
       }));
 
       // ── Panel 11: combo filter regime stability — delegated to src/api/panel11.ts ──
-      const panel11Data = computePanel11(db);
+      const panel11Data = await computePanel11(db);
       const { baseline: baseline11, filters: filters11 } = panel11Data;
 
       // ── Panel 4: dynamic TP/SL EV simulator ──

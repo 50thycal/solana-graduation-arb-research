@@ -19,7 +19,7 @@
  */
 
 import type Database from 'better-sqlite3';
-import { computeBestCombos, whereForFilterNames } from './aggregates';
+import { computeBestCombos, whereForFilterNames, yieldEventLoop } from './aggregates';
 import {
   computeExitSim,
   loadExitSimRows,
@@ -136,8 +136,8 @@ function cellFrom(
   };
 }
 
-export function computeExitSimMatrix(db: Database.Database): ExitSimMatrixData {
-  const leaderboard = computeBestCombos(db, {
+export async function computeExitSimMatrix(db: Database.Database): Promise<ExitSimMatrixData> {
+  const leaderboard = await computeBestCombos(db, {
     min_n: 20,
     top: 20,
     include_pairs: true,
@@ -145,7 +145,10 @@ export function computeExitSimMatrix(db: Database.Database): ExitSimMatrixData {
 
   const rows: MatrixRow[] = [];
 
+  let lbIter = 0;
   for (const lb of leaderboard.rows) {
+    if (lbIter > 0 && lbIter % 5 === 0) await yieldEventLoop();
+    lbIter++;
     const where = whereForFilterNames(lb.filters);
     if (!where) continue;
 

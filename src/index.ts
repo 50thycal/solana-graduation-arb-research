@@ -878,7 +878,7 @@ async function main() {
   // MOMENTUM RESEARCH DASHBOARD
   // See CLAUDE.md for full dashboard spec
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  app.get('/thesis', (req, res) => {
+  app.get('/thesis', async (req, res) => {
     try {
       const uptimeMs = Date.now() - startTime;
       const uptimeSec = Math.floor(uptimeMs / 1000);
@@ -978,7 +978,7 @@ async function main() {
       } | null = null;
       let bestCombosBaseline: number | null = null;
       if (totalLabeled >= 5) {
-        const cb = computeBestCombos(db, { min_n: 20, top: 1, include_pairs: true });
+        const cb = await computeBestCombos(db, { min_n: 20, top: 1, include_pairs: true });
         bestCombosBaseline = cb.baseline_avg_return_pct;
         const top = cb.rows[0];
         if (top) {

@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { simulateCombo, computeBestCombos, ENTRY_GATE, FILTER_CATALOG } from './aggregates';
+import { simulateCombo, computeBestCombos, ENTRY_GATE, FILTER_CATALOG, yieldEventLoop } from './aggregates';
 
 /**
  * Sniper-window analytics dashboard. Companion to /api/best-combos focused on
@@ -76,14 +76,17 @@ export interface SniperPanelData {
   notes: string[];
 }
 
-function thresholdSweep(
+async function thresholdSweep(
   db: Database.Database,
   catalog: typeof FILTER_CATALOG,
   group: string,
-): ThresholdRow[] {
+): Promise<ThresholdRow[]> {
   const rows: ThresholdRow[] = [];
+  let iter = 0;
   for (const f of catalog) {
     if (f.group !== group) continue;
+    if (iter > 0 && iter % 25 === 0) await yieldEventLoop();
+    iter++;
     const result = simulateCombo(db, f.where);
     rows.push({
       filter: f.name,
@@ -117,7 +120,7 @@ function histogramFromRows(
   });
 }
 
-export function computeSniperPanel(db: Database.Database): SniperPanelData {
+export async function computeSniperPanel(db: Database.Database): Promise<SniperPanelData> {
   const generated_at = new Date().toISOString();
 
   // ── Population coverage ─────────────────────────────────────────────────
@@ -136,8 +139,8 @@ export function computeSniperPanel(db: Database.Database): SniperPanelData {
   const baselineSim = simulateCombo(db, '1=1');
 
   // ── Threshold sweeps from FILTER_CATALOG ────────────────────────────────
-  const sniperCountThresholds = thresholdSweep(db, FILTER_CATALOG, 'Snipers');
-  const walletVelThresholds = thresholdSweep(db, FILTER_CATALOG, 'Sniper Vel');
+  const sniperCountThresholds = await thresholdSweep(db, FILTER_CATALOG, 'Snipers');
+  const walletVelThresholds = await thresholdSweep(db, FILTER_CATALOG, 'Sniper Vel');
 
   // ── Histograms ──────────────────────────────────────────────────────────
   const distRows = db.prepare(`
@@ -173,7 +176,7 @@ export function computeSniperPanel(db: Database.Database): SniperPanelData {
   // ── Top combos that include a sniper filter ─────────────────────────────
   // Reuse computeBestCombos at a wide top so we can filter to sniper-touching
   // rows without re-running the simulator. min_n=20 matches /api/best-combos.
-  const wideLeaderboard = computeBestCombos(db, {
+  const wideLeaderboard = await computeBestCombos(db, {
     min_n: 20,
     top: 500,
     include_pairs: true,
