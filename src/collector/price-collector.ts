@@ -872,15 +872,24 @@ export class PriceCollector {
             return null;
           }
         }
-        // Retry once after 400ms — pool account may not yet be available at T+0
-        let poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
-        if (!poolInfo?.data) {
-          await new Promise(r => setTimeout(r, 400));
+        // Retry up to 3 times with exponential backoff (200ms, 500ms, 1000ms).
+        // Helius's read index occasionally lags slot-confirmation for fresh
+        // pools — the migrate tx is confirmed on getTransaction but the new
+        // pool account isn't yet visible to getAccountInfo for ~0.5-1.5s.
+        // Without retries this drops the entire observation (every snapshot
+        // 5s..300s fails because the pool address is "broken" — actually fine,
+        // just stale read view). 3-retry budget is ~1.7s — well under the 5s
+        // inter-snapshot interval, so it doesn't compound.
+        const POOL_RETRY_BACKOFFS_MS = [0, 200, 500, 1000];
+        let poolInfo: Awaited<ReturnType<typeof this.connection.getAccountInfo>> = null;
+        for (const backoffMs of POOL_RETRY_BACKOFFS_MS) {
+          if (backoffMs > 0) await new Promise(r => setTimeout(r, backoffMs));
           poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
+          if (poolInfo?.data) break;
         }
         if (!poolInfo?.data) {
-          this.recordSnapshotFailure(ctx.graduationId, -1, `pool_not_found pool=${ctx.poolAddress}`);
-          logger.warn({ graduationId: ctx.graduationId, pool: ctx.poolAddress }, 'Pool account not found');
+          this.recordSnapshotFailure(ctx.graduationId, -1, `pool_not_found pool=${ctx.poolAddress} retries=${POOL_RETRY_BACKOFFS_MS.length - 1}`);
+          logger.warn({ graduationId: ctx.graduationId, pool: ctx.poolAddress }, 'Pool account not found after 3 retries');
           return null;
         }
         // Ensure data is a Buffer — Helius may return it as a string or array in some configurations
@@ -929,17 +938,28 @@ export class PriceCollector {
           return null;
         }
       }
-      const vaultAccounts = await this.connection.getMultipleAccountsInfo([
-        new PublicKey(observation.baseVault),
-        new PublicKey(observation.quoteVault),
-      ]);
+      // Retry vault fetch up to 3 times with exponential backoff. Same root
+      // cause as the pool retry above — Helius's read index can lag a fresh
+      // vault by ~0.5-1.5s even after the migrate tx is confirmed. Without
+      // retries, every snapshot for that grad reports vault_data_missing →
+      // pool_fetch_null → t30CallbackFired never sets → T+30 timeout.
+      const VAULT_RETRY_BACKOFFS_MS = [0, 200, 500, 1000];
+      let vaultAccounts: Awaited<ReturnType<typeof this.connection.getMultipleAccountsInfo>> = [];
+      for (const backoffMs of VAULT_RETRY_BACKOFFS_MS) {
+        if (backoffMs > 0) await new Promise(r => setTimeout(r, backoffMs));
+        vaultAccounts = await this.connection.getMultipleAccountsInfo([
+          new PublicKey(observation.baseVault),
+          new PublicKey(observation.quoteVault),
+        ]);
+        if (vaultAccounts[0]?.data && vaultAccounts[1]?.data) break;
+      }
 
       if (!vaultAccounts[0]?.data || !vaultAccounts[1]?.data) {
         logger.warn(
-          { graduationId: ctx.graduationId, baseVault: observation.baseVault?.slice(0, 8), quoteVault: observation.quoteVault?.slice(0, 8), hasBase: !!vaultAccounts[0]?.data, hasQuote: !!vaultAccounts[1]?.data },
-          'Vault account data missing'
+          { graduationId: ctx.graduationId, baseVault: observation.baseVault?.slice(0, 8), quoteVault: observation.quoteVault?.slice(0, 8), hasBase: !!vaultAccounts[0]?.data, hasQuote: !!vaultAccounts[1]?.data, retries: VAULT_RETRY_BACKOFFS_MS.length - 1 },
+          'Vault account data missing after 3 retries'
         );
-        this.recordSnapshotFailure(ctx.graduationId, -1, `vault_data_missing base=${!!vaultAccounts[0]?.data} quote=${!!vaultAccounts[1]?.data}`);
+        this.recordSnapshotFailure(ctx.graduationId, -1, `vault_data_missing base=${!!vaultAccounts[0]?.data} quote=${!!vaultAccounts[1]?.data} retries=${VAULT_RETRY_BACKOFFS_MS.length - 1}`);
         return null;
       }
 
