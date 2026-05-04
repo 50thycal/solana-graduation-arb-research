@@ -33,6 +33,7 @@ import {
   computeBestCombos,
 } from './aggregates';
 import { runDiagnosis, type ChannelWinCounts } from './diagnose';
+import { getEventLoopLagStats } from '../utils/event-loop-lag-monitor';
 import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
@@ -346,19 +347,32 @@ export class GistSync {
       : 0;
     const lastT30CallbackAt = this.strategyManager?.getLastT30CallbackAt() ?? null;
 
-    const diagnose = runDiagnosis(this.db, this.logBuffer, {
+    // Per-step timings for buildPayloads. Surfaced on snapshot.json so we
+    // can pinpoint which compute step is monopolizing the main thread without
+    // needing live log access. Synchronous functions block the event loop for
+    // their entire duration — anything > 1000ms is a strong candidate for
+    // worker offload (filter-v2's pattern in src/api/heavy-cache.ts).
+    const computeTimingsMs: Record<string, number> = {};
+    const time = <T>(label: string, fn: () => T): T => {
+      const t0 = Date.now();
+      const result = fn();
+      computeTimingsMs[label] = Date.now() - t0;
+      return result;
+    };
+
+    const diagnose = time('runDiagnosis', () => runDiagnosis(this.db, this.logBuffer, {
       wsConnected: pipelineWsConnected,
       lastT30CallbackAt,
       enabledStrategies,
       channelWins: pipelineChannelWins,
-    });
+    }));
 
     // Compute leaderboard first so we can pass the live leader into the scorecard.
-    const bestCombos = computeBestCombos(this.db, {
+    const bestCombos = time('computeBestCombos', () => computeBestCombos(this.db, {
       min_n: 20,
       top: 20,
       include_pairs: true,
-    });
+    }));
 
     // Find the best combo with n≥100 that beats the rolling entry-gated
     // baseline — this becomes the live best_known_baseline shown in
@@ -368,10 +382,10 @@ export class GistSync {
       .filter(r => r.n >= 100 && r.beats_baseline && r.opt_avg_ret != null)
       .sort((a, b) => (b.opt_avg_ret ?? 0) - (a.opt_avg_ret ?? 0))[0];
 
-    const scorecard = computeThesisScorecard(this.db, liveLeader);
-    const quality = computeDataQualityFlags(this.db);
-    const recent = computeRecentGraduationsEnriched(this.db, 10);
-    const lastError = getLastBotError(this.db);
+    const scorecard = time('computeThesisScorecard', () => computeThesisScorecard(this.db, liveLeader));
+    const quality = time('computeDataQualityFlags', () => computeDataQualityFlags(this.db));
+    const recent = time('computeRecentGraduationsEnriched', () => computeRecentGraduationsEnriched(this.db, 10));
+    const lastError = time('getLastBotError', () => getLastBotError(this.db));
     const listenerStats = this.getListenerStats();
 
     // Singleton RPC limiter stats — useful upstream of pipeline_health so the
@@ -391,6 +405,17 @@ export class GistSync {
     const verified = lst?.totalVerifiedGraduations ?? 0;
     const recorded = lst?.totalGraduationsRecorded ?? 0;
     const dupePct = verified > 0 ? +(((verified - recorded) / verified) * 100).toFixed(1) : 0;
+
+    // ── Diagnostics: per-step compute timings + event-loop lag ──
+    // Sum of all main-thread compute steps. If this exceeds ~5000ms regularly,
+    // that's how long the bot is frozen — which directly explains T+30 timer
+    // drift observed in directPriceCollector.lastT30Timeouts. Ranked desc so
+    // the worst offender surfaces first when reading snapshot.json.
+    const totalMainThreadBlockMs = Object.values(computeTimingsMs).reduce((a, b) => a + b, 0);
+    const computeTimingsMsRanked: Record<string, number> = Object.fromEntries(
+      Object.entries(computeTimingsMs).sort(([, a], [, b]) => b - a)
+    );
+    const eventLoopLag = getEventLoopLagStats();
 
     const snapshot = {
       generated_at: new Date(nowMs).toISOString(),
@@ -413,6 +438,19 @@ export class GistSync {
       // having to cross-reference diagnose.json. See diagnose.PipelineHealth
       // for verdict semantics.
       pipeline_health: diagnose.pipeline_health,
+      // Event-loop lag (sampled at 1Hz, 10-min ring buffer). p50 should be
+      // 0-10 ms in a healthy loop; p95 >100ms means hot-path sync work is
+      // intermittently freezing the loop; max_ms_in_window > 1000 ties
+      // directly to the T+30 timer drift pattern.
+      event_loop_lag: eventLoopLag,
+      // Per-step durations of this gist-sync cycle's main-thread compute.
+      // Sorted descending so the heaviest step is on top. total_main_thread_block_ms
+      // is the cumulative freeze duration; tally it against event_loop_lag.max_ms_in_window
+      // to confirm gist-sync is the source.
+      gist_sync_compute_ms: {
+        total_main_thread_block_ms: totalMainThreadBlockMs,
+        per_step: computeTimingsMsRanked,
+      },
       recent_graduations: recent,
       last_error: lastError,
     };
@@ -426,16 +464,16 @@ export class GistSync {
       trades: recentTrades,
     };
 
-    const panel11 = computePanel11(this.db);
-    const panel3 = computePanel3Summary(this.db);
-    const pricePathStats = computePricePathStats(this.db);
-    const peakAnalysis = computePeakAnalysis(this.db);
-    const exitSim = computeExitSim(this.db);
-    const exitSimMatrix = computeExitSimMatrix(this.db);
-    const entryTimeMatrix = computeEntryTimeMatrix(this.db);
-    const walletRepAnalysis = computeWalletRepAnalysis(this.db);
-    const sniperPanel = computeSniperPanel(this.db);
-    const strategyPercentiles = computeStrategyPercentiles(this.db);
+    const panel11 = time('computePanel11', () => computePanel11(this.db));
+    const panel3 = time('computePanel3Summary', () => computePanel3Summary(this.db));
+    const pricePathStats = time('computePricePathStats', () => computePricePathStats(this.db));
+    const peakAnalysis = time('computePeakAnalysis', () => computePeakAnalysis(this.db));
+    const exitSim = time('computeExitSim', () => computeExitSim(this.db));
+    const exitSimMatrix = time('computeExitSimMatrix', () => computeExitSimMatrix(this.db));
+    const entryTimeMatrix = time('computeEntryTimeMatrix', () => computeEntryTimeMatrix(this.db));
+    const walletRepAnalysis = time('computeWalletRepAnalysis', () => computeWalletRepAnalysis(this.db));
+    const sniperPanel = time('computeSniperPanel', () => computeSniperPanel(this.db));
+    const strategyPercentiles = time('computeStrategyPercentiles', () => computeStrategyPercentiles(this.db));
 
     // Heavy compute (filter-v2 panels, price-path detail, trading data) is
     // cached with a 24h TTL — computeFilterV2Data alone is ~100s at current
@@ -451,10 +489,10 @@ export class GistSync {
     // was captured at the last heavy cache refresh (up to 24h old). Recompute
     // fresh each sync cycle so trading.json on bot-status reflects live
     // strategy state. The queries inside computeTradingData are all <100ms.
-    const tradingData = computeTradingData(this.db, this.strategyManager, {
+    const tradingData = time('computeTradingData', () => computeTradingData(this.db, this.strategyManager, {
       topPairs: v2.panel6.top_pairs,
-    });
-    const liveExecutionStats = computeLiveExecutionStats(this.db);
+    }));
+    const liveExecutionStats = time('computeLiveExecutionStats', () => computeLiveExecutionStats(this.db));
 
     // Strategy configs — includes all DPM params per strategy
     const strategyRows = getStrategyConfigs(this.db);
