@@ -430,6 +430,52 @@ export class GistSync {
     const recorded = lst?.totalGraduationsRecorded ?? 0;
     const dupePct = verified > 0 ? +(((verified - recorded) / verified) * 100).toFixed(1) : 0;
 
+    // Build snapshot AFTER the panel block runs so `timings` is fully
+    // populated. snapshot is consumed by the JSON payload writer further
+    // below — no early callers depend on it.
+    const recentTrades = getRecentTrades(this.db, 50);
+    const trades = {
+      generated_at: new Date(nowMs).toISOString(),
+      stats: getTradeStats(this.db),
+      by_strategy: getTradeStatsByStrategy(this.db),
+      count: recentTrades.length,
+      trades: recentTrades,
+    };
+
+    // Run each compute, log its wall-clock time, and yield to the event loop
+    // between phases. Without the yields the whole batch holds the Node loop
+    // for tens of seconds and every HTTP request queues behind it. The three
+    // heaviest panels (entryTimeMatrix, exitSimMatrix, walletRepAnalysis) are
+    // gated behind HEAVY_PANELS_ENABLED — see the constant comment.
+    const timings: Record<string, number> = { computeBestCombos: bestCombosMs };
+    const timed = async <T>(name: string, fn: () => T): Promise<T> => {
+      const t0 = Date.now();
+      const result = fn();
+      timings[name] = Date.now() - t0;
+      await yieldEventLoop();
+      return result;
+    };
+
+    const panel11 = await timed('panel11', () => computePanel11(this.db));
+    const panel3 = await timed('panel3', () => computePanel3Summary(this.db));
+    const pricePathStats = await timed('pricePathStats', () => computePricePathStats(this.db));
+    const peakAnalysis = await timed('peakAnalysis', () => computePeakAnalysis(this.db));
+    const exitSim = await timed('exitSim', () => computeExitSim(this.db));
+    const sniperPanel = await timed('sniperPanel', () => computeSniperPanel(this.db));
+    const strategyPercentiles = await timed('strategyPercentiles', () => computeStrategyPercentiles(this.db));
+
+    const exitSimMatrix = HEAVY_PANELS_ENABLED
+      ? await timed('exitSimMatrix', () => computeExitSimMatrix(this.db))
+      : disabledPanelStub('exit-sim-matrix');
+    const entryTimeMatrix = HEAVY_PANELS_ENABLED
+      ? await timed('entryTimeMatrix', () => computeEntryTimeMatrix(this.db))
+      : disabledPanelStub('entry-time-matrix');
+    const walletRepAnalysis = HEAVY_PANELS_ENABLED
+      ? await timed('walletRepAnalysis', () => computeWalletRepAnalysis(this.db))
+      : disabledPanelStub('wallet-rep-analysis');
+
+    logger.debug({ bestCombosMs, ...timings, heavyEnabled: HEAVY_PANELS_ENABLED }, 'Sync compute timings');
+
     // ── Diagnostics: per-step compute timings + event-loop lag ──
     // Sum of all main-thread compute steps. If this exceeds ~5000ms regularly,
     // that's how long the bot is frozen — which directly explains T+30 timer
@@ -481,49 +527,6 @@ export class GistSync {
       recent_graduations: recent,
       last_error: lastError,
     };
-
-    const recentTrades = getRecentTrades(this.db, 50);
-    const trades = {
-      generated_at: new Date(nowMs).toISOString(),
-      stats: getTradeStats(this.db),
-      by_strategy: getTradeStatsByStrategy(this.db),
-      count: recentTrades.length,
-      trades: recentTrades,
-    };
-
-    // Run each compute, log its wall-clock time, and yield to the event loop
-    // between phases. Without the yields the whole batch holds the Node loop
-    // for tens of seconds and every HTTP request queues behind it. The three
-    // heaviest panels (entryTimeMatrix, exitSimMatrix, walletRepAnalysis) are
-    // gated behind HEAVY_PANELS_ENABLED — see the constant comment.
-    const timings: Record<string, number> = { computeBestCombos: bestCombosMs };
-    const timed = async <T>(name: string, fn: () => T): Promise<T> => {
-      const t0 = Date.now();
-      const result = fn();
-      timings[name] = Date.now() - t0;
-      await yieldEventLoop();
-      return result;
-    };
-
-    const panel11 = await timed('panel11', () => computePanel11(this.db));
-    const panel3 = await timed('panel3', () => computePanel3Summary(this.db));
-    const pricePathStats = await timed('pricePathStats', () => computePricePathStats(this.db));
-    const peakAnalysis = await timed('peakAnalysis', () => computePeakAnalysis(this.db));
-    const exitSim = await timed('exitSim', () => computeExitSim(this.db));
-    const sniperPanel = await timed('sniperPanel', () => computeSniperPanel(this.db));
-    const strategyPercentiles = await timed('strategyPercentiles', () => computeStrategyPercentiles(this.db));
-
-    const exitSimMatrix = HEAVY_PANELS_ENABLED
-      ? await timed('exitSimMatrix', () => computeExitSimMatrix(this.db))
-      : disabledPanelStub('exit-sim-matrix');
-    const entryTimeMatrix = HEAVY_PANELS_ENABLED
-      ? await timed('entryTimeMatrix', () => computeEntryTimeMatrix(this.db))
-      : disabledPanelStub('entry-time-matrix');
-    const walletRepAnalysis = HEAVY_PANELS_ENABLED
-      ? await timed('walletRepAnalysis', () => computeWalletRepAnalysis(this.db))
-      : disabledPanelStub('wallet-rep-analysis');
-
-    logger.debug({ bestCombosMs, ...timings, heavyEnabled: HEAVY_PANELS_ENABLED }, 'Sync compute timings');
 
     // Heavy compute (filter-v2 panels, price-path detail, trading data) is
     // cached with a 24h TTL — computeFilterV2Data alone is ~100s at current
