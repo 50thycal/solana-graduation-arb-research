@@ -35,6 +35,7 @@ import {
   FILTER_CATALOG,
   computeBestCombos,
   simulateCombo,
+  yieldEventLoop,
   whereForFilterNames,
   type SimulateComboResult,
 } from './aggregates';
@@ -161,32 +162,39 @@ function buildRow(
   };
 }
 
-export function computeEntryTimeMatrix(db: Database.Database): EntryTimeMatrixData {
+export async function computeEntryTimeMatrix(db: Database.Database): Promise<EntryTimeMatrixData> {
   const rows: EntryTimeMatrixRow[] = [];
 
   // 1. Rolling baseline — every entry-gated labeled row, no extra filter.
   rows.push(buildRow(db, 'ALL (entry-gated)', [], 'baseline', '1=1'));
 
-  // 2. Single filters — every catalog entry. Cheap (n_filters * n_entry_times
-  //    simulateCombo calls — each call is one SELECT + a 120-cell grid walk).
+  // 2. Single filters — every catalog entry. Each row is 6 simulateCombo calls
+  //    (one per entry checkpoint), so yield every ~10 filters to keep the loop
+  //    responsive during this ~60-call burst.
+  let singleIter = 0;
   for (const f of FILTER_CATALOG) {
+    if (singleIter > 0 && singleIter % 10 === 0) await yieldEventLoop();
+    singleIter++;
     rows.push(buildRow(db, f.name, [f.name], 'single', f.where));
   }
 
   // 3. Top combos from the standard leaderboard. Use opt-ranked output so we
   //    explore the same population the user already sees on /api/best-combos.
-  const lb = computeBestCombos(db, {
+  const lb = await computeBestCombos(db, {
     min_n: 30,
     top: TOP_COMBOS_FROM_LEADERBOARD,
     include_pairs: true,
   });
   // Skip rows already covered as singles to avoid duplicates.
   const singlesSeen = new Set(FILTER_CATALOG.map(f => f.name));
+  let pairIter = 0;
   for (const c of lb.rows) {
     if (c.filters.length < 2) continue;
     const where = whereForFilterNames(c.filters);
     if (!where) continue;
     if (singlesSeen.has(c.filter_spec)) continue;
+    if (pairIter > 0 && pairIter % 10 === 0) await yieldEventLoop();
+    pairIter++;
     rows.push(buildRow(db, c.filter_spec, c.filters, 'pair', where));
   }
 

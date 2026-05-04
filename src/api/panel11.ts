@@ -232,7 +232,7 @@ export interface Panel11Data {
   flags: { low_n_threshold: number; strong_n_threshold: number };
 }
 
-export function computePanel11(db: Database.Database): Panel11Data {
+export async function computePanel11(db: Database.Database): Promise<Panel11Data> {
   const rows = loadRegimeRows(db);
   const boundaries = computeBucketBoundaries(rows);
 
@@ -246,7 +246,7 @@ export function computePanel11(db: Database.Database): Panel11Data {
     ...runFilterRegime(ENTRY_GATE_PRED, rows, boundaries),
   };
 
-  const bestCombos = computeBestCombos(db, { min_n: 20, top: 40, include_pairs: true });
+  const bestCombos = await computeBestCombos(db, { min_n: 20, top: 40, include_pairs: true });
 
   const filters = bestCombos.rows
     .filter(row => row.filters.length === 2)

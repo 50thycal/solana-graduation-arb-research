@@ -437,6 +437,25 @@ export interface SimulateComboResult {
 }
 
 /**
+ * Yield to the event loop. Used inside the heavy `computeBestCombos` candidate
+ * loop so that each ~50-iteration chunk of synchronous SQLite work is followed
+ * by a microtask break, giving HTTP requests, WebSocket callbacks, and timers
+ * (especially the price-collector's T+30 deadline) a chance to fire instead of
+ * waiting for the entire ~20s loop to finish. Without this the gist-sync cycle
+ * blocks the loop end-to-end and causes the timer-drift pattern observed in
+ * directPriceCollector.lastT30Timeouts. Exported so other heavy panels in this
+ * package can use the same primitive.
+ */
+export function yieldEventLoop(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
+/** Cadence for inner-loop yields. Picked so that worst-case sync block between
+ *  yields is ~50 × ~13ms simulateCombo = ~650ms — well under the 1s threshold
+ *  where T+30 deadline timers start drifting noticeably. */
+const YIELD_EVERY_N_CANDIDATES = 50;
+
+/**
  * Run the per-combo TP/SL grid optimizer against `graduation_momentum`
  * restricted to rows matching `whereClause` (combined with the shared
  * ENTRY_GATE + label gate). For each candidate WHERE subset this walks
@@ -631,10 +650,10 @@ export interface BestComboRow {
  * `top_pairs` approach in filter-v2-data.ts. Supersedes the earlier fixed
  * 10%SL/50%TP ranking (retired 2026-04-21).
  */
-export function computeBestCombos(
+export async function computeBestCombos(
   db: Database.Database,
   opts: { min_n?: number; top?: number; include_pairs?: boolean } = {},
-): { generated_at: string; baseline_avg_return_pct: number; rows: BestComboRow[] } {
+): Promise<{ generated_at: string; baseline_avg_return_pct: number; rows: BestComboRow[] }> {
   const minN = opts.min_n ?? 20;
   const top = opts.top ?? 20;
   const includePairs = opts.include_pairs !== false;
@@ -670,9 +689,16 @@ export function computeBestCombos(
     }
   }
 
-  // Evaluate each candidate via SQL aggregation
+  // Evaluate each candidate via SQL aggregation. Yield every
+  // YIELD_EVERY_N_CANDIDATES iterations so the main loop stays responsive —
+  // see yieldEventLoop comment for the timer-drift rationale.
   const rows: BestComboRow[] = [];
+  let iter = 0;
   for (const c of candidates) {
+    if (iter > 0 && iter % YIELD_EVERY_N_CANDIDATES === 0) {
+      await yieldEventLoop();
+    }
+    iter++;
     const result = simulateCombo(db, c.where);
     if (result.n < minN) continue;
 

@@ -390,7 +390,7 @@ export class GistSync {
 
     // Compute leaderboard first so we can pass the live leader into the scorecard.
     const bestCombosT0 = Date.now();
-    const bestCombos = computeBestCombos(this.db, {
+    const bestCombos = await computeBestCombos(this.db, {
       min_n: 20,
       top: 20,
       include_pairs: true,
@@ -448,9 +448,15 @@ export class GistSync {
     // heaviest panels (entryTimeMatrix, exitSimMatrix, walletRepAnalysis) are
     // gated behind HEAVY_PANELS_ENABLED — see the constant comment.
     const timings: Record<string, number> = { computeBestCombos: bestCombosMs };
-    const timed = async <T>(name: string, fn: () => T): Promise<T> => {
+    // `fn` may return a sync value or a Promise — we await either way so the
+    // measured wall-clock includes the full async resolution. Several of the
+    // panel computes (panel11, sniperPanel, walletRepAnalysis, entryTimeMatrix,
+    // exitSimMatrix) are async because they internally yield to the event loop
+    // every ~50 simulateCombo iterations to avoid blocking T+30 deadline timers
+    // in the price collector. See yieldEventLoop comment in aggregates.ts.
+    const timed = async <T>(name: string, fn: () => T | Promise<T>): Promise<T> => {
       const t0 = Date.now();
-      const result = fn();
+      const result = await fn();
       timings[name] = Date.now() - t0;
       await yieldEventLoop();
       return result;

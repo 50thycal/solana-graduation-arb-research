@@ -20,6 +20,7 @@ import {
   computeBestCombos,
   ENTRY_GATE,
   simulateCombo,
+  yieldEventLoop,
   whereForFilterNames,
 } from './aggregates';
 import { SIM_MIN_N_FOR_OPTIMUM } from './sim-constants';
@@ -308,10 +309,10 @@ function computePopulationCell(
   };
 }
 
-export function computeWalletRepAnalysis(
+export async function computeWalletRepAnalysis(
   db: Database.Database,
-): WalletRepAnalysisData {
-  const leaderboard = computeBestCombos(db, {
+): Promise<WalletRepAnalysisData> {
+  const leaderboard = await computeBestCombos(db, {
     min_n: 20,
     top: 20,
     include_pairs: true,
@@ -319,7 +320,10 @@ export function computeWalletRepAnalysis(
 
   const rows: WalletRepRow[] = [];
 
+  let lbIter = 0;
   for (const lbRow of leaderboard.rows) {
+    if (lbIter > 0 && lbIter % 5 === 0) await yieldEventLoop();
+    lbIter++;
     const baseWhere = whereForFilterNames(lbRow.filters);
     if (!baseWhere) continue; // should never happen — filters come from FILTER_CATALOG
 

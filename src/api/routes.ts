@@ -338,11 +338,11 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Ranked leaderboard of single filters and cross-group pairs, sorted by
   // 10%SL/50%TP simulated avg return. This is the endpoint that lets Claude
   // discover profitable filters without being told which to look at.
-  app.get('/api/best-combos', wrap((req, res) => {
+  app.get('/api/best-combos', wrap(async (req, res) => {
     const minN = parseInt(String(req.query.min_n ?? '20'), 10);
     const top = parseInt(String(req.query.top ?? '20'), 10);
     const includePairs = String(req.query.pairs ?? 'true') !== 'false';
-    const leaderboard = computeBestCombos(db, {
+    const leaderboard = await computeBestCombos(db, {
       min_n: Number.isFinite(minN) ? minN : 20,
       top: Number.isFinite(top) ? top : 20,
       include_pairs: includePairs,
@@ -355,7 +355,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // and a "best rep filter overall" summary. Reuses simulateCombo() from
   // aggregates.ts so the cost/gap model matches /api/best-combos exactly.
   app.get('/api/wallet-rep-analysis', wrap(async (_req, res) => {
-    res.json(computeWalletRepAnalysis(db));
+    res.json(await computeWalletRepAnalysis(db));
   }));
 
   // ── /api/sniper-panel ──
@@ -364,7 +364,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // /api/best-combos rows that include a sniper filter. Same simulateCombo()
   // cost model as /api/best-combos so per-combo opt TP/SL are comparable.
   app.get('/api/sniper-panel', wrap(async (_req, res) => {
-    res.json(computeSniperPanel(db));
+    res.json(await computeSniperPanel(db));
   }));
 
   // ── /api/strategy-percentiles ──
@@ -387,7 +387,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // but as JSON for Claude self-serve. Includes sim return + beats_baseline from
   // best-combos alongside regime bucket data.
   app.get('/api/panel11', wrap(async (_req, res) => {
-    res.json(computePanel11(db));
+    res.json(await computePanel11(db));
   }));
 
   // ── /api/price-path-stats ──
@@ -586,7 +586,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // combo's own static 10%SL/50%TP baseline. Sorted by best delta so the
   // combos that gain the most from dynamic exits surface first.
   app.get('/api/exit-sim-matrix', wrap(async (_req, res) => {
-    res.json(computeExitSimMatrix(db));
+    res.json(await computeExitSimMatrix(db));
   }));
 
   // ── /api/entry-time-matrix ──
@@ -596,7 +596,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // with the highest opt_avg_ret + Δ vs T+30. Lets us pick the right
   // entry time for the late-entry trading mode.
   app.get('/api/entry-time-matrix', wrap(async (_req, res) => {
-    res.json(computeEntryTimeMatrix(db));
+    res.json(await computeEntryTimeMatrix(db));
   }));
 
   // ── /api/filter-catalog ──
