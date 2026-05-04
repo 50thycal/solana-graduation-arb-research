@@ -19,6 +19,9 @@ import Database from 'better-sqlite3';
 import type { LogBuffer } from '../utils/log-buffer';
 import { isKillswitchTripped, getDailyLiveNetProfitSol } from '../trading/safety';
 import { DAILY_MAX_LOSS_SOL } from '../trading/config';
+import { makeLogger } from '../utils/logger';
+
+const logger = makeLogger('diagnose');
 
 export interface LevelResult {
   pass: boolean;
@@ -336,23 +339,37 @@ export function runDiagnosis(
     : null;
 
   // Last paper/shadow entry from trades_v2 — table may not exist on first
-  // boot before any strategy ever fired, hence the try/catch.
+  // boot before any strategy ever fired, hence the try/catch. Schema column
+  // is `entry_timestamp` (seconds since epoch), NOT `opened_at` — the prior
+  // query selected a non-existent column, the error was swallowed, and
+  // last_paper/shadow_trade_sec_ago was always null. That broke the
+  // TRADES_STALLED detector below — null > N is always false in JS, so the
+  // pipeline could never report "no entries in 30 min." Fixed 2026-05-04.
   let lastPaperSecAgo: number | null = null;
   let lastShadowSecAgo: number | null = null;
   try {
     const tradeRows = db.prepare(`
-      SELECT execution_mode, MAX(opened_at) AS last_open
+      SELECT execution_mode, MAX(entry_timestamp) AS last_open
       FROM trades_v2
       WHERE execution_mode IN ('paper', 'shadow')
       GROUP BY execution_mode
     `).all() as Array<{ execution_mode: string; last_open: number | null }>;
+    const nowSec = Math.floor(Date.now() / 1000);
     for (const r of tradeRows) {
       if (r.last_open === null) continue;
-      const ageSec = Math.floor((Date.now() - r.last_open) / 1000);
+      // entry_timestamp is in seconds (10-digit epoch). Don't divide by 1000.
+      const ageSec = nowSec - r.last_open;
       if (r.execution_mode === 'paper') lastPaperSecAgo = ageSec;
       if (r.execution_mode === 'shadow') lastShadowSecAgo = ageSec;
     }
-  } catch { /* table missing or migration in progress — leave as null */ }
+  } catch (err) {
+    // First-boot table-missing case is expected; everything else should warn
+    // so future schema drifts surface instead of silently disabling the check.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such table/i.test(msg)) {
+      logger.warn({ err: msg }, 'Failed to query trades_v2 last-entry timestamps for diagnose');
+    }
+  }
 
   let pipelineVerdict: PipelineHealth['verdict'] = 'NOT_APPLICABLE';
   let pipelineNotes = 'Trading not enabled or no strategies configured.';
