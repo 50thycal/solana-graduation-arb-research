@@ -70,6 +70,34 @@ const BRANCH = 'bot-status';
 const COMMANDS_FILE = 'strategy-commands.json';
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
+// Heavy compute panels — entryTimeMatrix walks ~60 catalog filters × 6 entry
+// checkpoints × the 12×10 sim grid every cycle, exitSimMatrix runs the dynamic
+// exit grids over the top 20 combos, walletRepAnalysis layers rep modifiers
+// over them. Each one was adding seconds of synchronous main-thread work per
+// 2-min sync cycle, which queued every HTTP request behind it (dashboard /,
+// /pipeline, /trading all stuck for minutes — Railway 408s in production).
+//
+// Default OFF; set SYNC_HEAVY_PANELS=true on Railway to re-enable. When off
+// we still publish a small stub for each so the file exists on bot-status
+// and downstream consumers don't 404.
+const HEAVY_PANELS_ENABLED = process.env.SYNC_HEAVY_PANELS === 'true';
+
+/** Yield to the event loop between heavy compute phases so queued HTTP
+ *  requests can drain. better-sqlite3 is synchronous, so without this the
+ *  full sync pipeline holds the loop hostage end-to-end. */
+function yieldEventLoop(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
+function disabledPanelStub(name: string): { disabled: true; panel: string; reason: string; generated_at: string } {
+  return {
+    disabled: true,
+    panel: name,
+    reason: 'Heavy compute panel disabled (SYNC_HEAVY_PANELS!=true) to keep the dashboard responsive. Set SYNC_HEAVY_PANELS=true to re-enable.',
+    generated_at: new Date().toISOString(),
+  };
+}
+
 export interface StatusUrls {
   diagnose: string;
   snapshot: string;
@@ -347,32 +375,28 @@ export class GistSync {
       : 0;
     const lastT30CallbackAt = this.strategyManager?.getLastT30CallbackAt() ?? null;
 
-    // Per-step timings for buildPayloads. Surfaced on snapshot.json so we
-    // can pinpoint which compute step is monopolizing the main thread without
-    // needing live log access. Synchronous functions block the event loop for
-    // their entire duration — anything > 1000ms is a strong candidate for
-    // worker offload (filter-v2's pattern in src/api/heavy-cache.ts).
-    const computeTimingsMs: Record<string, number> = {};
-    const time = <T>(label: string, fn: () => T): T => {
-      const t0 = Date.now();
-      const result = fn();
-      computeTimingsMs[label] = Date.now() - t0;
-      return result;
-    };
-
-    const diagnose = time('runDiagnosis', () => runDiagnosis(this.db, this.logBuffer, {
+    // Per-step timings for buildPayloads. Aggregated into the `timings` object
+    // built below (main thread compute stages) and surfaced on snapshot.json
+    // under gist_sync_compute_ms so we can pinpoint which compute step is
+    // monopolizing the main thread without needing live log access. The yield
+    // helper (yieldEventLoop) inside the main panel block keeps HTTP requests
+    // draining between phases — see HEAVY_PANELS_ENABLED comment.
+    const diagnose = runDiagnosis(this.db, this.logBuffer, {
       wsConnected: pipelineWsConnected,
       lastT30CallbackAt,
       enabledStrategies,
       channelWins: pipelineChannelWins,
-    }));
+    });
 
     // Compute leaderboard first so we can pass the live leader into the scorecard.
-    const bestCombos = time('computeBestCombos', () => computeBestCombos(this.db, {
+    const bestCombosT0 = Date.now();
+    const bestCombos = computeBestCombos(this.db, {
       min_n: 20,
       top: 20,
       include_pairs: true,
-    }));
+    });
+    const bestCombosMs = Date.now() - bestCombosT0;
+    await yieldEventLoop();
 
     // Find the best combo with n≥100 that beats the rolling entry-gated
     // baseline — this becomes the live best_known_baseline shown in
@@ -382,10 +406,10 @@ export class GistSync {
       .filter(r => r.n >= 100 && r.beats_baseline && r.opt_avg_ret != null)
       .sort((a, b) => (b.opt_avg_ret ?? 0) - (a.opt_avg_ret ?? 0))[0];
 
-    const scorecard = time('computeThesisScorecard', () => computeThesisScorecard(this.db, liveLeader));
-    const quality = time('computeDataQualityFlags', () => computeDataQualityFlags(this.db));
-    const recent = time('computeRecentGraduationsEnriched', () => computeRecentGraduationsEnriched(this.db, 10));
-    const lastError = time('getLastBotError', () => getLastBotError(this.db));
+    const scorecard = computeThesisScorecard(this.db, liveLeader);
+    const quality = computeDataQualityFlags(this.db);
+    const recent = computeRecentGraduationsEnriched(this.db, 10);
+    const lastError = getLastBotError(this.db);
     const listenerStats = this.getListenerStats();
 
     // Singleton RPC limiter stats — useful upstream of pipeline_health so the
@@ -411,9 +435,12 @@ export class GistSync {
     // that's how long the bot is frozen — which directly explains T+30 timer
     // drift observed in directPriceCollector.lastT30Timeouts. Ranked desc so
     // the worst offender surfaces first when reading snapshot.json.
-    const totalMainThreadBlockMs = Object.values(computeTimingsMs).reduce((a, b) => a + b, 0);
+    // `timings` already includes computeBestCombos (seeded from bestCombosMs)
+    // plus everything wrapped by `timed()` above. Heavy panels gated behind
+    // HEAVY_PANELS_ENABLED only contribute when enabled.
+    const totalMainThreadBlockMs = Object.values(timings).reduce((a, b) => a + b, 0);
     const computeTimingsMsRanked: Record<string, number> = Object.fromEntries(
-      Object.entries(computeTimingsMs).sort(([, a], [, b]) => b - a)
+      Object.entries(timings).sort(([, a], [, b]) => b - a)
     );
     const eventLoopLag = getEventLoopLagStats();
 
@@ -464,16 +491,39 @@ export class GistSync {
       trades: recentTrades,
     };
 
-    const panel11 = time('computePanel11', () => computePanel11(this.db));
-    const panel3 = time('computePanel3Summary', () => computePanel3Summary(this.db));
-    const pricePathStats = time('computePricePathStats', () => computePricePathStats(this.db));
-    const peakAnalysis = time('computePeakAnalysis', () => computePeakAnalysis(this.db));
-    const exitSim = time('computeExitSim', () => computeExitSim(this.db));
-    const exitSimMatrix = time('computeExitSimMatrix', () => computeExitSimMatrix(this.db));
-    const entryTimeMatrix = time('computeEntryTimeMatrix', () => computeEntryTimeMatrix(this.db));
-    const walletRepAnalysis = time('computeWalletRepAnalysis', () => computeWalletRepAnalysis(this.db));
-    const sniperPanel = time('computeSniperPanel', () => computeSniperPanel(this.db));
-    const strategyPercentiles = time('computeStrategyPercentiles', () => computeStrategyPercentiles(this.db));
+    // Run each compute, log its wall-clock time, and yield to the event loop
+    // between phases. Without the yields the whole batch holds the Node loop
+    // for tens of seconds and every HTTP request queues behind it. The three
+    // heaviest panels (entryTimeMatrix, exitSimMatrix, walletRepAnalysis) are
+    // gated behind HEAVY_PANELS_ENABLED — see the constant comment.
+    const timings: Record<string, number> = { computeBestCombos: bestCombosMs };
+    const timed = async <T>(name: string, fn: () => T): Promise<T> => {
+      const t0 = Date.now();
+      const result = fn();
+      timings[name] = Date.now() - t0;
+      await yieldEventLoop();
+      return result;
+    };
+
+    const panel11 = await timed('panel11', () => computePanel11(this.db));
+    const panel3 = await timed('panel3', () => computePanel3Summary(this.db));
+    const pricePathStats = await timed('pricePathStats', () => computePricePathStats(this.db));
+    const peakAnalysis = await timed('peakAnalysis', () => computePeakAnalysis(this.db));
+    const exitSim = await timed('exitSim', () => computeExitSim(this.db));
+    const sniperPanel = await timed('sniperPanel', () => computeSniperPanel(this.db));
+    const strategyPercentiles = await timed('strategyPercentiles', () => computeStrategyPercentiles(this.db));
+
+    const exitSimMatrix = HEAVY_PANELS_ENABLED
+      ? await timed('exitSimMatrix', () => computeExitSimMatrix(this.db))
+      : disabledPanelStub('exit-sim-matrix');
+    const entryTimeMatrix = HEAVY_PANELS_ENABLED
+      ? await timed('entryTimeMatrix', () => computeEntryTimeMatrix(this.db))
+      : disabledPanelStub('entry-time-matrix');
+    const walletRepAnalysis = HEAVY_PANELS_ENABLED
+      ? await timed('walletRepAnalysis', () => computeWalletRepAnalysis(this.db))
+      : disabledPanelStub('wallet-rep-analysis');
+
+    logger.debug({ bestCombosMs, ...timings, heavyEnabled: HEAVY_PANELS_ENABLED }, 'Sync compute timings');
 
     // Heavy compute (filter-v2 panels, price-path detail, trading data) is
     // cached with a 24h TTL — computeFilterV2Data alone is ~100s at current
@@ -489,10 +539,10 @@ export class GistSync {
     // was captured at the last heavy cache refresh (up to 24h old). Recompute
     // fresh each sync cycle so trading.json on bot-status reflects live
     // strategy state. The queries inside computeTradingData are all <100ms.
-    const tradingData = time('computeTradingData', () => computeTradingData(this.db, this.strategyManager, {
+    const tradingData = computeTradingData(this.db, this.strategyManager, {
       topPairs: v2.panel6.top_pairs,
-    }));
-    const liveExecutionStats = time('computeLiveExecutionStats', () => computeLiveExecutionStats(this.db));
+    });
+    const liveExecutionStats = computeLiveExecutionStats(this.db);
 
     // Strategy configs — includes all DPM params per strategy
     const strategyRows = getStrategyConfigs(this.db);
@@ -598,6 +648,7 @@ export class GistSync {
       'panelv3_5.json': JSON.stringify({ generated_at: genAt, panelv3_5: v2.panelv3_5 }, null, 2),
       'panelv3_6.json': JSON.stringify({ generated_at: genAt, panelv3_6: v2.panelv3_6 }, null, 2),
       'panelv3_7.json': JSON.stringify({ generated_at: genAt, panelv3_7: v2.panelv3_7 }, null, 2),
+      'panelv3_8.json': JSON.stringify({ generated_at: genAt, panelv3_8: v2.panelv3_8 }, null, 2),
       'price-path-detail.json': JSON.stringify(pricePathDetail, null, 2),
       'trading.json': JSON.stringify(tradingData, null, 2),
       'live-execution.json': JSON.stringify(liveExecutionStats, null, 2),

@@ -595,10 +595,14 @@ export async function computeFilterV2Data(
         const avgRet = new Array<number>(comboCount).fill(0);
         const medRet = new Array<number>(comboCount).fill(0);
         const winRate = new Array<number>(comboCount).fill(0);
-        let optimal: { tp: number; sl: number; avg_ret: number; win_rate: number } | null = null;
+        // loss_rate_neg50 = % of cost-adjusted returns < -50 at this cell. Used by
+        // panelv3_8 (rug exclusion) to track tail prevention. Computed always —
+        // O(n) extra per cell, dwarfed by the simulation cost.
+        const lossRate50 = new Array<number>(comboCount).fill(0);
+        let optimal: { tp: number; sl: number; avg_ret: number; win_rate: number; loss_rate_neg50: number } | null = null;
 
         if (n === 0) {
-          return { n: 0, combos: { avg_ret: avgRet, med_ret: medRet, win_rate: winRate }, optimal };
+          return { n: 0, combos: { avg_ret: avgRet, med_ret: medRet, win_rate: winRate, loss_rate_neg50: lossRate50 }, optimal };
         }
 
         const tpHits = new Array<number>(comboCount).fill(0);
@@ -611,11 +615,13 @@ export async function computeFilterV2Data(
             let tpHit = 0;
             let wins = 0;
             let sum = 0;
+            let losses50 = 0;
             for (let k = 0; k < n; k++) {
               const out = simulateInMemory(filtered[k], tp, sl, maxCheckpoint);
               returns[k] = out.ret;
               if (out.tpHit) tpHit++;
               if (out.ret > 0) wins++;
+              if (out.ret < -50) losses50++;
               sum += out.ret;
             }
             const sorted = returns.slice().sort((a, b) => a - b);
@@ -624,6 +630,7 @@ export async function computeFilterV2Data(
             avgRet[idx] = +(sum / n).toFixed(1);
             medRet[idx] = +median.toFixed(1);
             winRate[idx] = Math.round(wins / n * 100);
+            lossRate50[idx] = +(losses50 / n * 100).toFixed(1);
             tpHits[idx] = tpHit;
           }
         }
@@ -644,11 +651,12 @@ export async function computeFilterV2Data(
               sl: PANEL_4_SL_GRID[si],
               avg_ret: avgRet[bestIdx],
               win_rate: winRate[bestIdx],
+              loss_rate_neg50: lossRate50[bestIdx],
             };
           }
         }
 
-        return { n, combos: { avg_ret: avgRet, med_ret: medRet, win_rate: winRate }, optimal };
+        return { n, combos: { avg_ret: avgRet, med_ret: medRet, win_rate: winRate, loss_rate_neg50: lossRate50 }, optimal };
       };
 
       const baseline4 = {
@@ -2291,6 +2299,229 @@ export async function computeFilterV2Data(
         );
       }
 
+      // ── v3 Panel 8: Rug Exclusion Overlay Matrix ─────────────────────────
+      // Top 5 singles + top 5 pairs (same selection as v3_2) + the
+      // unconditional baseline as bases. Each base × 7 rug-exclusion overlays.
+      // Reports both opt_avg_ret and pct_loss_50 (% of cost-adjusted returns
+      // < -50 at the optimum cell), with deltas vs the un-overlaid base.
+      // Designed to answer: "if we exclude rug-prone tokens at entry, what
+      // fraction of catastrophic losses do we prevent and what's the cost
+      // in n?" — see analyze-trade-performance-jsUdl session.
+      type PanelV3_8_OverlayKind =
+        | 'creator_excl' | 'path_dd' | 'path_tick' | 'path_chop' | 'union';
+
+      type PanelV3_8_OverlayDef = {
+        name: string;
+        kind: PanelV3_8_OverlayKind;
+        predicate: (r: Panel4Row) => boolean;
+      };
+
+      type PanelV3_8_BaseKind = 'single' | 'pair' | 'baseline';
+
+      type PanelV3_8_Row = {
+        base: string;
+        base_kind: PanelV3_8_BaseKind;
+        overlay: string;
+        overlay_kind: PanelV3_8_OverlayKind;
+        base_n: number;
+        base_opt_avg_ret: number | null;
+        base_opt_pct_loss_50: number | null;
+        gated_n: number;
+        gated_opt_tp: number | null;
+        gated_opt_sl: number | null;
+        gated_opt_avg_ret: number | null;
+        gated_opt_win_rate: number | null;
+        gated_opt_pct_loss_50: number | null;
+        n_retention_pct: number | null;
+        delta_avg_ret_pp: number | null;        // gated - base (positive = lift)
+        delta_pct_loss_50_pp: number | null;    // gated - base (negative = tail-thinning)
+        beats_baseline: boolean;
+      };
+
+      type PanelV3_8_Summary = {
+        overlay: string;
+        overlay_kind: PanelV3_8_OverlayKind;
+        bases_evaluated: number;
+        mean_delta_avg_ret_pp: number | null;
+        mean_delta_pct_loss_50_pp: number | null;
+        mean_n_retention_pct: number | null;
+      };
+
+      // ── Overlays ──
+      // Each predicate returns TRUE when the row should be KEPT (i.e. this is
+      // an exclusion that PASSES). Null fields are conservatively kept (not
+      // excluded) so missing creator history doesn't shrink the population —
+      // mirrors how the trading strategies treat unknown-creator tokens.
+      const PANEL_V3_8_OVERLAYS: PanelV3_8_OverlayDef[] = [
+        {
+          name: 'exclude serial_rugger (rug_rate < 0.7)',
+          kind: 'creator_excl',
+          predicate: (r) => r.creator_prior_rug_rate == null || r.creator_prior_rug_rate < 0.7,
+        },
+        {
+          name: 'exclude rapid_fire (last_token_age >= 1h)',
+          kind: 'creator_excl',
+          predicate: (r) => r.creator_last_token_age_hours == null || r.creator_last_token_age_hours >= 1,
+        },
+        {
+          name: 'max_dd_0_30 > -10',
+          kind: 'path_dd',
+          predicate: (r) => r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > -10,
+        },
+        {
+          name: 'max_dd_0_30 > -15',
+          kind: 'path_dd',
+          predicate: (r) => r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > -15,
+        },
+        {
+          name: 'max_tick_drop_0_30 > -15',
+          kind: 'path_tick',
+          predicate: (r) => r.max_tick_drop_0_30 != null && r.max_tick_drop_0_30 > -15,
+        },
+        {
+          name: 'sum_abs_returns_0_30 > 40',
+          kind: 'path_chop',
+          predicate: (r) => r.sum_abs_returns_0_30 != null && r.sum_abs_returns_0_30 > 40,
+        },
+        {
+          name: 'union (rugger excl + rapid_fire excl + dd>-10 + tick_drop>-15)',
+          kind: 'union',
+          predicate: (r) =>
+            (r.creator_prior_rug_rate == null || r.creator_prior_rug_rate < 0.7) &&
+            (r.creator_last_token_age_hours == null || r.creator_last_token_age_hours >= 1) &&
+            (r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > -10) &&
+            (r.max_tick_drop_0_30 != null && r.max_tick_drop_0_30 > -15),
+        },
+      ];
+
+      // ── Bases ──
+      // Reuse v3_2's top-5 singles + top-5 pairs selection (top by
+      // Panel 4 opt_avg_ret) and prepend the unconditional baseline so we
+      // also see the overlay's effect on the broader population.
+      type PanelV3_8_BaseRef = {
+        name: string;
+        kind: PanelV3_8_BaseKind;
+        predicate: (r: Panel4Row) => boolean;
+        base_n: number;
+        base_opt_avg_ret: number | null;
+        base_opt_pct_loss_50: number | null;
+      };
+
+      const baseRefsV3_8: PanelV3_8_BaseRef[] = [];
+
+      // Unconditional ref
+      {
+        const res = runFilterPanel4(() => true);
+        baseRefsV3_8.push({
+          name: '(unconditional — all entry-gated rows)',
+          kind: 'baseline',
+          predicate: () => true,
+          base_n: res.n,
+          base_opt_avg_ret: res.optimal ? res.optimal.avg_ret : null,
+          base_opt_pct_loss_50: res.optimal ? res.optimal.loss_rate_neg50 : null,
+        });
+      }
+
+      // Top 5 singles
+      for (const s of panelV3_2_topSingles) {
+        const pred = s.def.predicate as (r: Panel4Row) => boolean;
+        const res = runFilterPanel4(pred);
+        baseRefsV3_8.push({
+          name: s.def.name,
+          kind: 'single',
+          predicate: pred,
+          base_n: res.n,
+          base_opt_avg_ret: res.optimal ? res.optimal.avg_ret : null,
+          base_opt_pct_loss_50: res.optimal ? res.optimal.loss_rate_neg50 : null,
+        });
+      }
+
+      // Top 5 pairs
+      for (const p of panelV3_2_topPairs) {
+        const defA = findFilterDef(p.filter_a);
+        const defB = findFilterDef(p.filter_b);
+        if (!defA || !defB) continue;
+        const pred = (r: Panel4Row) =>
+          (defA.predicate as (r: Panel4Row) => boolean)(r) &&
+          (defB.predicate as (r: Panel4Row) => boolean)(r);
+        const res = runFilterPanel4(pred);
+        baseRefsV3_8.push({
+          name: `${p.filter_a} + ${p.filter_b}`,
+          kind: 'pair',
+          predicate: pred,
+          base_n: res.n,
+          base_opt_avg_ret: res.optimal ? res.optimal.avg_ret : null,
+          base_opt_pct_loss_50: res.optimal ? res.optimal.loss_rate_neg50 : null,
+        });
+      }
+
+      // ── Loop bases × overlays ──
+      const panelV3_8_rows: PanelV3_8_Row[] = [];
+      let v3_8_iter = 0;
+      for (const base of baseRefsV3_8) {
+        for (const overlay of PANEL_V3_8_OVERLAYS) {
+          // Yield every 8 sims to keep the WS heartbeat happy (same budget as
+          // panel6 + v3_1 loops).
+          if (v3_8_iter > 0 && v3_8_iter % 8 === 0) await new Promise(r => setImmediate(r));
+          v3_8_iter++;
+          const combined = (r: Panel4Row) => base.predicate(r) && overlay.predicate(r);
+          const res = runFilterPanel4(combined);
+          const gatedOpt = res.optimal;
+          panelV3_8_rows.push({
+            base: base.name,
+            base_kind: base.kind,
+            overlay: overlay.name,
+            overlay_kind: overlay.kind,
+            base_n: base.base_n,
+            base_opt_avg_ret: base.base_opt_avg_ret,
+            base_opt_pct_loss_50: base.base_opt_pct_loss_50,
+            gated_n: res.n,
+            gated_opt_tp: gatedOpt ? gatedOpt.tp : null,
+            gated_opt_sl: gatedOpt ? gatedOpt.sl : null,
+            gated_opt_avg_ret: gatedOpt ? gatedOpt.avg_ret : null,
+            gated_opt_win_rate: gatedOpt ? gatedOpt.win_rate : null,
+            gated_opt_pct_loss_50: gatedOpt ? gatedOpt.loss_rate_neg50 : null,
+            n_retention_pct: base.base_n > 0 ? +((res.n / base.base_n) * 100).toFixed(1) : null,
+            delta_avg_ret_pp: (gatedOpt && base.base_opt_avg_ret != null)
+              ? +(gatedOpt.avg_ret - base.base_opt_avg_ret).toFixed(2)
+              : null,
+            delta_pct_loss_50_pp: (gatedOpt && base.base_opt_pct_loss_50 != null)
+              ? +(gatedOpt.loss_rate_neg50 - base.base_opt_pct_loss_50).toFixed(2)
+              : null,
+            beats_baseline: gatedOpt != null && gatedOpt.avg_ret > V3_BASELINE_SIM_RETURN,
+          });
+        }
+      }
+
+      // ── Summary leaderboard: aggregate per overlay across all bases ──
+      // Ranked by mean tail-prevention (most-negative delta_pct_loss_50_pp first).
+      const panelV3_8_summary: PanelV3_8_Summary[] = PANEL_V3_8_OVERLAYS.map(overlay => {
+        const matches = panelV3_8_rows.filter(r => r.overlay === overlay.name);
+        const retDeltas = matches.map(r => r.delta_avg_ret_pp).filter((x): x is number => x != null);
+        const lossDeltas = matches.map(r => r.delta_pct_loss_50_pp).filter((x): x is number => x != null);
+        const retentions = matches.map(r => r.n_retention_pct).filter((x): x is number => x != null);
+        const meanOrNull = (xs: number[]): number | null =>
+          xs.length === 0 ? null : +(xs.reduce((s, x) => s + x, 0) / xs.length).toFixed(2);
+        return {
+          overlay: overlay.name,
+          overlay_kind: overlay.kind,
+          bases_evaluated: matches.length,
+          mean_delta_avg_ret_pp: meanOrNull(retDeltas),
+          mean_delta_pct_loss_50_pp: meanOrNull(lossDeltas),
+          mean_n_retention_pct: retentions.length === 0
+            ? null
+            : +(retentions.reduce((s, x) => s + x, 0) / retentions.length).toFixed(1),
+        };
+      }).sort((a, b) => {
+        // Most-negative delta_pct_loss_50_pp = best tail prevention. Nulls last.
+        const aL = a.mean_delta_pct_loss_50_pp;
+        const bL = b.mean_delta_pct_loss_50_pp;
+        if (aL == null && bL == null) return 0;
+        if (aL == null) return 1;
+        if (bL == null) return -1;
+        return aL - bL;
+      });
+
       const filterV2Data = {
         generated_at: new Date().toISOString(),
         panel1: {
@@ -2640,6 +2871,20 @@ export async function computeFilterV2Data(
             regime_bucket_count: PANEL_3_BUCKET_COUNT,
           },
           rows: panelV3_7_rows,
+          flags: { low_n_threshold: 30, strong_n_threshold: 100 },
+        },
+        panelv3_8: {
+          title: 'Rug Exclusion Overlay Matrix — Tail Prevention vs Return Lift',
+          description:
+            'For each of the top 5 single filters and top 5 pairs (same selection as v3_2), plus the unconditional baseline, this panel stacks 7 rug-exclusion overlays and reports both opt_avg_ret and pct_loss_50 (% of cost-adjusted returns < -50% at the optimum cell). Designed to answer the analyze-trade-performance question: how much catastrophic-loss prevention does each overlay buy us, and what does it cost in n? Overlays test (a) creator-flag exclusions surfaced in panel8 — serial_rugger (rug_rate >= 0.7 → 59% catastrophic vs 37% baseline) and rapid_fire (last_token_age < 1h → 55%); (b) path-shape gates from v3_2/_4/_6 — max_dd_0_30 > {-10, -15}, max_tick_drop_0_30 > -15, sum_abs_returns_0_30 > 40 (choppy paths); (c) a union of all four. delta_pct_loss_50_pp is the catastrophe-rate change at the optimum cell vs the un-overlaid base — negative = tail-thinning. summary[] ranks overlays by mean tail prevention across the bases. beats_baseline = gated optimum > rolling ALL-labeled Panel 4 optimum.',
+          constants: {
+            baseline_sim_return: V3_BASELINE_SIM_RETURN,
+            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
+            catastrophe_threshold_pct: -50,
+            overlays: PANEL_V3_8_OVERLAYS.map(o => ({ name: o.name, kind: o.kind })),
+          },
+          rows: panelV3_8_rows,
+          summary: panelV3_8_summary,
           flags: { low_n_threshold: 30, strong_n_threshold: 100 },
         },
       };
