@@ -17,6 +17,7 @@ import { StrategyManager } from './trading';
 import { StrategyParams } from './trading/config';
 import { makeLogger, logBuffer } from './utils/logger';
 import { installStderrThrottle } from './utils/stderr-throttle';
+import { startEventLoopLagMonitor } from './utils/event-loop-lag-monitor';
 import { registerApiRoutes } from './api/routes';
 import { GistSync } from './api/gist-sync';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
@@ -130,6 +131,12 @@ async function main() {
   // Production was seeing dozens per minute during Helius hiccups, hiding the
   // real diagnostics. Throttler keeps one per 30s + a periodic summary.
   installStderrThrottle();
+
+  // Start the event-loop lag sampler so snapshot.json carries continuous loop-
+  // health stats. 1 Hz tick, 10-min ring buffer + all-time max. Cheap (one
+  // setInterval, microsecond per tick). Used to identify which gist-sync
+  // compute step is monopolizing the main thread.
+  startEventLoopLagMonitor();
 
   logger.info('Starting solana-graduation-arb-research');
 

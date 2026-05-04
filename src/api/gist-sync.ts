@@ -33,6 +33,7 @@ import {
   computeBestCombos,
 } from './aggregates';
 import { runDiagnosis, type ChannelWinCounts } from './diagnose';
+import { getEventLoopLagStats } from '../utils/event-loop-lag-monitor';
 import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
@@ -374,6 +375,12 @@ export class GistSync {
       : 0;
     const lastT30CallbackAt = this.strategyManager?.getLastT30CallbackAt() ?? null;
 
+    // Per-step timings for buildPayloads. Aggregated into the `timings` object
+    // built below (main thread compute stages) and surfaced on snapshot.json
+    // under gist_sync_compute_ms so we can pinpoint which compute step is
+    // monopolizing the main thread without needing live log access. The yield
+    // helper (yieldEventLoop) inside the main panel block keeps HTTP requests
+    // draining between phases — see HEAVY_PANELS_ENABLED comment.
     const diagnose = runDiagnosis(this.db, this.logBuffer, {
       wsConnected: pipelineWsConnected,
       lastT30CallbackAt,
@@ -423,6 +430,20 @@ export class GistSync {
     const recorded = lst?.totalGraduationsRecorded ?? 0;
     const dupePct = verified > 0 ? +(((verified - recorded) / verified) * 100).toFixed(1) : 0;
 
+    // ── Diagnostics: per-step compute timings + event-loop lag ──
+    // Sum of all main-thread compute steps. If this exceeds ~5000ms regularly,
+    // that's how long the bot is frozen — which directly explains T+30 timer
+    // drift observed in directPriceCollector.lastT30Timeouts. Ranked desc so
+    // the worst offender surfaces first when reading snapshot.json.
+    // `timings` already includes computeBestCombos (seeded from bestCombosMs)
+    // plus everything wrapped by `timed()` above. Heavy panels gated behind
+    // HEAVY_PANELS_ENABLED only contribute when enabled.
+    const totalMainThreadBlockMs = Object.values(timings).reduce((a, b) => a + b, 0);
+    const computeTimingsMsRanked: Record<string, number> = Object.fromEntries(
+      Object.entries(timings).sort(([, a], [, b]) => b - a)
+    );
+    const eventLoopLag = getEventLoopLagStats();
+
     const snapshot = {
       generated_at: new Date(nowMs).toISOString(),
       uptime_sec: Math.floor((nowMs - this.startTime) / 1000),
@@ -444,6 +465,19 @@ export class GistSync {
       // having to cross-reference diagnose.json. See diagnose.PipelineHealth
       // for verdict semantics.
       pipeline_health: diagnose.pipeline_health,
+      // Event-loop lag (sampled at 1Hz, 10-min ring buffer). p50 should be
+      // 0-10 ms in a healthy loop; p95 >100ms means hot-path sync work is
+      // intermittently freezing the loop; max_ms_in_window > 1000 ties
+      // directly to the T+30 timer drift pattern.
+      event_loop_lag: eventLoopLag,
+      // Per-step durations of this gist-sync cycle's main-thread compute.
+      // Sorted descending so the heaviest step is on top. total_main_thread_block_ms
+      // is the cumulative freeze duration; tally it against event_loop_lag.max_ms_in_window
+      // to confirm gist-sync is the source.
+      gist_sync_compute_ms: {
+        total_main_thread_block_ms: totalMainThreadBlockMs,
+        per_step: computeTimingsMsRanked,
+      },
       recent_graduations: recent,
       last_error: lastError,
     };
@@ -462,7 +496,7 @@ export class GistSync {
     // for tens of seconds and every HTTP request queues behind it. The three
     // heaviest panels (entryTimeMatrix, exitSimMatrix, walletRepAnalysis) are
     // gated behind HEAVY_PANELS_ENABLED — see the constant comment.
-    const timings: Record<string, number> = {};
+    const timings: Record<string, number> = { computeBestCombos: bestCombosMs };
     const timed = async <T>(name: string, fn: () => T): Promise<T> => {
       const t0 = Date.now();
       const result = fn();
