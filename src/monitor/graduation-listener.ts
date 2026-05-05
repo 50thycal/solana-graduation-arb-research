@@ -227,6 +227,13 @@ export class GraduationListener {
   private totalStrategy3Extractions = 0;
   private lastMintFailReasons: string[] = [];
   private totalTxFetchFails = 0;
+  // Subset of totalTxFetchFails where the underlying cause was a thrown
+  // exception (caught inside the retry loop) rather than a null/no-meta
+  // return. Lets us quantify how many graduations we're losing to
+  // `fetch failed`-class network blips on getParsedTransaction. Pre-fix,
+  // these throws bypassed the retry loop entirely and dropped grads
+  // silently; the new in-loop try/catch retries 3× then increments this.
+  private totalTxFetchExceptions = 0;
   private reconnecting = false;
   private totalReconnects = 0;
   /**
@@ -388,6 +395,7 @@ export class GraduationListener {
       totalVaultExtractions: this.totalVaultExtractions,
       totalVaultExtractionFails: this.totalVaultExtractionFails,
       totalTxFetchFails: this.totalTxFetchFails,
+      totalTxFetchExceptions: this.totalTxFetchExceptions,
       lastVaultFailReasons: this.lastVaultFailReasons.slice(-5),
       lastMintFailReasons: this.lastMintFailReasons.slice(-5),
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
@@ -978,26 +986,34 @@ export class GraduationListener {
     source: 'pump.fun' | 'pump.fun-processed' | 'pumpswap' | 'rpc-poll' = 'pump.fun',
     wsReceivedAt: number = Date.now(),
   ): Promise<GraduationEvent | null> {
-    await globalRpcLimiter.throttlePriority();
-    let tx = await this.connection.getParsedTransaction(signature, {
-      commitment: 'confirmed',
-      maxSupportedTransactionVersion: 0,
-    });
-
-    // Retry up to 2 more times — Helius may not have indexed a freshly-confirmed tx yet.
-    for (let attempt = 1; attempt <= 2 && (!tx || !tx.meta); attempt++) {
-      await new Promise(r => setTimeout(r, 1000 * attempt));
+    // 3 attempts (initial + 2 retries) with exponential backoff. Catches BOTH
+    // null/no-meta returns (Helius hasn't indexed the freshly-confirmed tx yet)
+    // AND thrown exceptions (the `fetch failed` family that also affects the
+    // price-collector's snapshot RPC — confirmed via recent_errors). Without
+    // try/catch in the loop, a thrown exception propagates straight to the
+    // outer onLogs handler at subscribe() and the entire graduation candidate
+    // is dropped silently. Each lost candidate = one missed grad in the data.
+    let tx: Awaited<ReturnType<Connection['getParsedTransaction']>> = null;
+    let lastErr: string | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
       await globalRpcLimiter.throttlePriority();
-      tx = await this.connection.getParsedTransaction(signature, {
-        commitment: 'confirmed',
-        maxSupportedTransactionVersion: 0,
-      });
+      try {
+        tx = await this.connection.getParsedTransaction(signature, {
+          commitment: 'confirmed',
+          maxSupportedTransactionVersion: 0,
+        });
+        if (tx?.meta) break;
+      } catch (err) {
+        lastErr = err instanceof Error ? err.message : String(err);
+      }
     }
 
     if (!tx || !tx.meta || tx.meta.err) {
       this.totalTxFetchFails++;
+      if (lastErr) this.totalTxFetchExceptions++;
       logger.debug(
-        { signature, hasTx: !!tx, hasMeta: !!tx?.meta, txErr: tx?.meta?.err ?? null },
+        { signature, hasTx: !!tx, hasMeta: !!tx?.meta, txErr: tx?.meta?.err ?? null, lastErr },
         'getParsedTransaction returned null/error after 3 attempts — skipping candidate'
       );
       return null;
