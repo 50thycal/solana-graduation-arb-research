@@ -1,0 +1,37 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v13-tight15top5-dd10",
+      "label": "v13 tight 15/5 + top5<10% + max_dd>-10 (v8 + dd overlay)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 15,
+        "stopLossPct": 5,
+        "maxHoldSeconds": 120,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "top5_wallet_pct", "operator": "<", "value": 10, "label": "top5<10%" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -10, "label": "dd > -10%" }
+        ],
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    }
+  ]
+}
