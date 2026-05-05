@@ -57,6 +57,16 @@ export interface ObservationContext {
 // total_sol_raised is unexpectedly null.
 const PUMP_GRADUATION_SOL = 85;
 
+// Abort an observation when N consecutive snapshots fail. Indicates the pool
+// or vault accounts are dead (rugged token, accounts closed for rent reclaim,
+// permanent Helius routing failure). Without this, a single dead grad spams
+// 60+ failures over the 300s observation window, starving the lastSnapshot-
+// Failures ring buffer of useful diagnostic data from healthier grads.
+// Threshold of 5 ≈ 25s of consecutive failures (5s tick interval) — long
+// enough to ride out the 1-2s connection blips that retry handles, short
+// enough to free the slot before the deadline timer would have anyway.
+const CONSECUTIVE_FAILURE_ABORT_THRESHOLD = 5;
+
 interface ActiveObservation {
   ctx: ObservationContext;
   startedAt: number;
@@ -85,6 +95,13 @@ interface ActiveObservation {
   earlyPrices: number[];         // all prices seen T+0 to T+30
   earlySolReserves: number[];    // SOL reserves at each early snapshot
   liquiditySolT30?: number;      // SOL reserves at T+30
+  // Consecutive snapshot failures for this observation. Reset to 0 on every
+  // successful snapshot; incremented on every failure (null pool fetch, vault
+  // throw, etc). When this hits CONSECUTIVE_FAILURE_ABORT_THRESHOLD the
+  // observation is aborted — the grad's pool/vaults are evidently dead
+  // (rugged token, vault accounts closed) and continuing to retry every 5s
+  // for the rest of the 300s window just spams failures and starves the slot.
+  consecutiveFailures: number;
 }
 
 // ── Price path shape helpers ─────────────────────────────────────────────────
@@ -430,6 +447,7 @@ export class PriceCollector {
       maxRelretSec: 30,
       earlyPrices: [],
       earlySolReserves: [],
+      consecutiveFailures: 0,
     };
 
     this.active.set(ctx.graduationId, observation);
@@ -624,8 +642,31 @@ export class PriceCollector {
           { graduationId, targetSec, pool: ctx.poolAddress },
           'Could not fetch pool state for snapshot'
         );
+        // Track consecutive failures so a permanently-dead grad (rugged
+        // token, vault accounts closed) doesn't keep spamming snapshot
+        // failures for the rest of the 300s observation window. Threshold
+        // hit → tear down the observation early, free the slot, mark as
+        // pool_dead so the operator sees it explicitly.
+        observation.consecutiveFailures++;
+        if (observation.consecutiveFailures >= CONSECUTIVE_FAILURE_ABORT_THRESHOLD) {
+          this.recordSnapshotFailure(
+            graduationId,
+            targetSec,
+            `pool_dead consecutive=${observation.consecutiveFailures} pool=${ctx.poolAddress.slice(0, 8)}`,
+          );
+          logger.warn(
+            { graduationId, targetSec, pool: ctx.poolAddress, consecutiveFailures: observation.consecutiveFailures },
+            'Aborting observation — pool/vault appears dead (consecutive snapshot failures exceeded threshold)',
+          );
+          for (const t of observation.timers) clearTimeout(t);
+          this.active.delete(graduationId);
+        }
         return;
       }
+
+      // Successful fetch — reset the consecutive-failure counter. A grad that
+      // recovers from a transient blip should be able to keep observing.
+      observation.consecutiveFailures = 0;
 
       this.totalSnapshots++;
       observation.completedSnapshots.push(targetSec);
@@ -880,16 +921,30 @@ export class PriceCollector {
         // 5s..300s fails because the pool address is "broken" — actually fine,
         // just stale read view). 3-retry budget is ~1.7s — well under the 5s
         // inter-snapshot interval, so it doesn't compound.
+        // Retry on BOTH null returns AND thrown exceptions. The previous version
+        // only retried null returns, so a thrown `fetch failed` (TCP/HTTP-level
+        // Helius blip) bypassed all retries and fell through to the outer catch.
+        // recent_errors showed `fetch failed` is by far the dominant exception
+        // — wrapping the call in try/catch inside the loop converts those into
+        // retried backoffs.
         const POOL_RETRY_BACKOFFS_MS = [0, 200, 500, 1000];
         let poolInfo: Awaited<ReturnType<typeof this.connection.getAccountInfo>> = null;
+        let lastPoolErr: string | null = null;
         for (const backoffMs of POOL_RETRY_BACKOFFS_MS) {
           if (backoffMs > 0) await new Promise(r => setTimeout(r, backoffMs));
-          poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
-          if (poolInfo?.data) break;
+          try {
+            poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
+            if (poolInfo?.data) break;
+          } catch (err) {
+            lastPoolErr = err instanceof Error ? err.message : String(err);
+          }
         }
         if (!poolInfo?.data) {
-          this.recordSnapshotFailure(ctx.graduationId, -1, `pool_not_found pool=${ctx.poolAddress} retries=${POOL_RETRY_BACKOFFS_MS.length - 1}`);
-          logger.warn({ graduationId: ctx.graduationId, pool: ctx.poolAddress }, 'Pool account not found after 3 retries');
+          const detail = lastPoolErr
+            ? `threw=${lastPoolErr.slice(0, 60)}`
+            : 'null';
+          this.recordSnapshotFailure(ctx.graduationId, -1, `pool_not_found pool=${ctx.poolAddress} retries=${POOL_RETRY_BACKOFFS_MS.length - 1} ${detail}`);
+          logger.warn({ graduationId: ctx.graduationId, pool: ctx.poolAddress, lastErr: lastPoolErr }, 'Pool account not found after 3 retries');
           return null;
         }
         // Ensure data is a Buffer — Helius may return it as a string or array in some configurations
@@ -943,23 +998,35 @@ export class PriceCollector {
       // vault by ~0.5-1.5s even after the migrate tx is confirmed. Without
       // retries, every snapshot for that grad reports vault_data_missing →
       // pool_fetch_null → t30CallbackFired never sets → T+30 timeout.
+      // Same retry shape as the pool decode path — also catches THROWN
+      // exceptions (the `fetch failed` family that recent_errors confirmed
+      // is dominant) so a transient HTTP-level Helius blip retries instead
+      // of bubbling out to the outer catch.
       const VAULT_RETRY_BACKOFFS_MS = [0, 200, 500, 1000];
       let vaultAccounts: Awaited<ReturnType<typeof this.connection.getMultipleAccountsInfo>> = [];
+      let lastVaultErr: string | null = null;
       for (const backoffMs of VAULT_RETRY_BACKOFFS_MS) {
         if (backoffMs > 0) await new Promise(r => setTimeout(r, backoffMs));
-        vaultAccounts = await this.connection.getMultipleAccountsInfo([
-          new PublicKey(observation.baseVault),
-          new PublicKey(observation.quoteVault),
-        ]);
-        if (vaultAccounts[0]?.data && vaultAccounts[1]?.data) break;
+        try {
+          vaultAccounts = await this.connection.getMultipleAccountsInfo([
+            new PublicKey(observation.baseVault),
+            new PublicKey(observation.quoteVault),
+          ]);
+          if (vaultAccounts[0]?.data && vaultAccounts[1]?.data) break;
+        } catch (err) {
+          lastVaultErr = err instanceof Error ? err.message : String(err);
+        }
       }
 
       if (!vaultAccounts[0]?.data || !vaultAccounts[1]?.data) {
+        const detail = lastVaultErr
+          ? `threw=${lastVaultErr.slice(0, 60)}`
+          : `base=${!!vaultAccounts[0]?.data} quote=${!!vaultAccounts[1]?.data}`;
         logger.warn(
-          { graduationId: ctx.graduationId, baseVault: observation.baseVault?.slice(0, 8), quoteVault: observation.quoteVault?.slice(0, 8), hasBase: !!vaultAccounts[0]?.data, hasQuote: !!vaultAccounts[1]?.data, retries: VAULT_RETRY_BACKOFFS_MS.length - 1 },
+          { graduationId: ctx.graduationId, baseVault: observation.baseVault?.slice(0, 8), quoteVault: observation.quoteVault?.slice(0, 8), hasBase: !!vaultAccounts[0]?.data, hasQuote: !!vaultAccounts[1]?.data, retries: VAULT_RETRY_BACKOFFS_MS.length - 1, lastErr: lastVaultErr },
           'Vault account data missing after 3 retries'
         );
-        this.recordSnapshotFailure(ctx.graduationId, -1, `vault_data_missing base=${!!vaultAccounts[0]?.data} quote=${!!vaultAccounts[1]?.data} retries=${VAULT_RETRY_BACKOFFS_MS.length - 1}`);
+        this.recordSnapshotFailure(ctx.graduationId, -1, `vault_data_missing ${detail} retries=${VAULT_RETRY_BACKOFFS_MS.length - 1}`);
         return null;
       }
 
