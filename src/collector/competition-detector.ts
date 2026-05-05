@@ -45,10 +45,33 @@ export class CompetitionDetector {
         logger.info({ graduationId: ctx.graduationId }, 'Skipping competition detection: RPC queue full');
         return;
       }
-      const signatures = await this.connection.getSignaturesForAddress(
-        new PublicKey(ctx.poolAddress),
-        { limit: 20 }
-      );
+      // Retry getSignaturesForAddress up to 3 attempts with backoff. Without
+      // try/catch in the loop, a `fetch failed` blip drops the entire
+      // competition-detection pass — the row's buy_pressure_* / sniper_*
+      // fields stay NULL and research filters depending on them skip the row.
+      let signatures: Awaited<ReturnType<Connection['getSignaturesForAddress']>> = [];
+      let lastErr: string | null = null;
+      let succeeded = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
+        try {
+          signatures = await this.connection.getSignaturesForAddress(
+            new PublicKey(ctx.poolAddress),
+            { limit: 20 }
+          );
+          succeeded = true;
+          break;
+        } catch (err) {
+          lastErr = err instanceof Error ? err.message : String(err);
+        }
+      }
+      if (!succeeded) {
+        logger.warn(
+          { graduationId: ctx.graduationId, lastErr },
+          'Competition detection: getSignaturesForAddress threw on all 3 retries — skipping'
+        );
+        return;
+      }
 
       if (signatures.length === 0) return;
 
@@ -170,10 +193,32 @@ export class CompetitionDetector {
         return;
       }
 
-      const signatures = await this.connection.getSignaturesForAddress(
-        new PublicKey(ctx.poolAddress),
-        { limit: 1000 }
-      );
+      // Same retry pattern as detectCompetition. A thrown `fetch failed` here
+      // would drop the entire buy-pressure pass, leaving sniper_* and
+      // buy_pressure_* fields NULL on the grad row. 3 attempts ~3s budget.
+      let signatures: Awaited<ReturnType<Connection['getSignaturesForAddress']>> = [];
+      let lastErr: string | null = null;
+      let succeeded = false;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
+        try {
+          signatures = await this.connection.getSignaturesForAddress(
+            new PublicKey(ctx.poolAddress),
+            { limit: 1000 }
+          );
+          succeeded = true;
+          break;
+        } catch (err) {
+          lastErr = err instanceof Error ? err.message : String(err);
+        }
+      }
+      if (!succeeded) {
+        logger.warn(
+          { graduationId: ctx.graduationId, lastErr },
+          'Buy pressure detection: getSignaturesForAddress threw on all 3 retries — skipping'
+        );
+        return;
+      }
 
       if (signatures.length === 0) {
         // No transactions at all — write zeros
