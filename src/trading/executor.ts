@@ -197,9 +197,14 @@ async function fetchVaultPriceRpcOnce(
 }
 
 /** Raw RPC fetch — called only when cache misses and no in-flight request exists.
- *  Retries once on `critical=true` paths to absorb transient RPC errors and the
- *  short window right after graduation when vault accounts may not yet be visible
- *  on the connected RPC node. */
+ *  On `critical=true` paths, retries up to 2 times at 500ms intervals (~1s total
+ *  wait worst case) to absorb transient RPC errors and the short window right
+ *  after graduation when vault accounts may not yet be visible on the connected
+ *  RPC node. The 250ms single retry was insufficient — observed cohort-wide
+ *  failures on single mints persisted past one retry. */
+const CRITICAL_READ_RETRIES = 2;
+const CRITICAL_READ_RETRY_DELAY_MS = 500;
+
 async function fetchVaultPriceRpc(
   connection: Connection,
   baseVault: string,
@@ -217,12 +222,13 @@ async function fetchVaultPriceRpc(
   const first = await fetchVaultPriceRpcOnce(connection, baseVault, quoteVault);
   if (first !== null || !critical) return first;
 
-  // One retry for critical reads. 250ms is short enough to keep buy latency
-  // under the 5s poll budget but long enough for vault-account propagation
-  // and most transient RPC errors to clear.
-  await new Promise(resolve => setTimeout(resolve, 250));
-  await globalRpcLimiter.throttle();
-  return fetchVaultPriceRpcOnce(connection, baseVault, quoteVault);
+  for (let attempt = 1; attempt <= CRITICAL_READ_RETRIES; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, CRITICAL_READ_RETRY_DELAY_MS));
+    await globalRpcLimiter.throttle();
+    const retry = await fetchVaultPriceRpcOnce(connection, baseVault, quoteVault);
+    if (retry !== null) return retry;
+  }
+  return null;
 }
 
 export class Executor {
