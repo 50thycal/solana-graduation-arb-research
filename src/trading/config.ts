@@ -24,6 +24,13 @@ export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL 
 export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAGE_BPS || '500', 10);
 /** SOL kept as buffer above tradeSize for tx fees + ATA rent. */
 export const WALLET_SOL_BUFFER = parseFloat(process.env.WALLET_SOL_BUFFER || '0.02');
+/** Default rolling window size (last N closed live trades) for the per-strategy risk-halt breaker.
+ *  Per-strategy override via StrategyParams.riskHaltLastNTrades. 0 disables the breaker. */
+export const DEFAULT_RISK_HALT_LAST_N_TRADES = parseInt(process.env.RISK_HALT_LAST_N_TRADES || '10', 10);
+/** Default rolling-drawdown floor (sum of net_profit_sol over last N closed live trades).
+ *  Tripping condition: rolling_pnl < threshold AND window has ≥ N trades. More negative = looser.
+ *  Per-strategy override via StrategyParams.riskHaltMaxDrawdownSol. */
+export const DEFAULT_RISK_HALT_MAX_DRAWDOWN_SOL = parseFloat(process.env.RISK_HALT_MAX_DRAWDOWN_SOL || '-0.5');
 /** Regional Jito block engine endpoint. Frankfurt/NY/Amsterdam/Tokyo also available. */
 export const JITO_BLOCK_ENGINE_URL =
   process.env.JITO_BLOCK_ENGINE_URL || 'https://mainnet.block-engine.jito.wtf';
@@ -100,6 +107,16 @@ export interface StrategyParams {
   jitoTipSol?: number;
   /** Reject entry if expected slippage > this (bps). Undefined = DEFAULT_MAX_SLIPPAGE_BPS. */
   maxSlippageBps?: number;
+
+  // ── Risk-halt breaker (per-strategy rolling-drawdown auto-disable) ────
+  /** Window size: count the last N closed live trades (live_micro + live_full only).
+   *  0 disables the breaker for this strategy. Undefined = DEFAULT_RISK_HALT_LAST_N_TRADES. */
+  riskHaltLastNTrades?: number;
+  /** Drawdown floor in SOL: trip if SUM(net_profit_sol) over the window < this AND
+   *  window has ≥ N trades. Should be negative; more negative = looser. Undefined =
+   *  DEFAULT_RISK_HALT_MAX_DRAWDOWN_SOL. When tripped, the strategy is auto-disabled
+   *  and only re-enables via a manual `toggle enabled=true` strategy-commands push. */
+  riskHaltMaxDrawdownSol?: number;
 }
 
 export interface TradingConfig {
@@ -156,6 +173,10 @@ export interface TradingConfig {
   jitoTipSol: number;
   maxSlippageBps: number;
 
+  // ── Risk-halt breaker defaults (overridden per-strategy) ────────────────
+  riskHaltLastNTrades: number;
+  riskHaltMaxDrawdownSol: number;
+
   // ── Filter pipeline ──────────────────────────────────────────────────────
   /** All filters must pass (AND logic) before entry is triggered */
   filters: FilterConfig[];
@@ -210,6 +231,8 @@ export function loadTradingConfig(): TradingConfig {
     executionMode: ((process.env.EXECUTION_MODE as ExecutionMode) || 'paper'),
     jitoTipSol: parseFloat(process.env.JITO_TIP_SOL || String(DEFAULT_JITO_TIP_SOL)),
     maxSlippageBps: parseInt(process.env.MAX_SLIPPAGE_BPS || String(DEFAULT_MAX_SLIPPAGE_BPS), 10),
+    riskHaltLastNTrades: DEFAULT_RISK_HALT_LAST_N_TRADES,
+    riskHaltMaxDrawdownSol: DEFAULT_RISK_HALT_MAX_DRAWDOWN_SOL,
     filters,
   };
 
@@ -261,6 +284,8 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     executionMode: cfg.executionMode ?? 'paper',
     jitoTipSol: cfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
     maxSlippageBps: cfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
+    riskHaltLastNTrades: cfg.riskHaltLastNTrades ?? DEFAULT_RISK_HALT_LAST_N_TRADES,
+    riskHaltMaxDrawdownSol: cfg.riskHaltMaxDrawdownSol ?? DEFAULT_RISK_HALT_MAX_DRAWDOWN_SOL,
   };
 }
 
@@ -293,5 +318,7 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     executionMode: params.executionMode ?? globalCfg.executionMode ?? 'paper',
     jitoTipSol: params.jitoTipSol ?? globalCfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
     maxSlippageBps: params.maxSlippageBps ?? globalCfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
+    riskHaltLastNTrades: params.riskHaltLastNTrades ?? globalCfg.riskHaltLastNTrades ?? DEFAULT_RISK_HALT_LAST_N_TRADES,
+    riskHaltMaxDrawdownSol: params.riskHaltMaxDrawdownSol ?? globalCfg.riskHaltMaxDrawdownSol ?? DEFAULT_RISK_HALT_MAX_DRAWDOWN_SOL,
   };
 }

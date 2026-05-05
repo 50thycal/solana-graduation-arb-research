@@ -994,6 +994,8 @@ export interface StrategyConfigRow {
   config_json: string;
   created_at: number;
   updated_at: number;
+  risk_halted_at: number | null;
+  risk_halt_reason: string | null;
 }
 
 export function getStrategyConfigs(db: Database.Database): StrategyConfigRow[] {
@@ -1024,6 +1026,70 @@ export function upsertStrategyConfig(
 
 export function deleteStrategyConfig(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM strategy_configs WHERE id = ?').run(id);
+}
+
+/**
+ * Rolling P&L over the last N closed live trades for a strategy. Used by the
+ * per-strategy risk-halt breaker — paper/shadow trades are excluded so the
+ * breaker only protects real money.
+ *
+ * Returns `n_trades < windowN` while the window is still seeding; safetyTick
+ * uses that to avoid early false trips.
+ */
+export function getStrategyRollingLivePnl(
+  db: Database.Database,
+  strategyId: string,
+  windowN: number,
+): { n_trades: number; sum_net_profit_sol: number } {
+  if (!Number.isFinite(windowN) || windowN <= 0) {
+    return { n_trades: 0, sum_net_profit_sol: 0 };
+  }
+  const rows = db.prepare(`
+    SELECT net_profit_sol
+    FROM trades_v2
+    WHERE strategy_id = ?
+      AND status = 'closed'
+      AND execution_mode IN ('live_micro', 'live_full')
+    ORDER BY exit_timestamp DESC
+    LIMIT ?
+  `).all(strategyId, windowN) as Array<{ net_profit_sol: number | null }>;
+  let sum = 0;
+  for (const r of rows) sum += Number(r.net_profit_sol ?? 0);
+  return { n_trades: rows.length, sum_net_profit_sol: sum };
+}
+
+/**
+ * Atomically halt a strategy: set enabled=0, stamp risk_halted_at + reason.
+ * Idempotent — calling on an already-halted strategy refreshes the timestamp.
+ */
+export function setStrategyRiskHalt(
+  db: Database.Database,
+  strategyId: string,
+  reason: string,
+): void {
+  db.prepare(`
+    UPDATE strategy_configs
+    SET enabled = 0,
+        risk_halted_at = unixepoch(),
+        risk_halt_reason = ?,
+        updated_at = unixepoch()
+    WHERE id = ?
+  `).run(reason, strategyId);
+}
+
+/**
+ * Clear the halt fields. Called from toggleStrategy(id, true) so manual
+ * re-enable wipes the stale halt reason. Does NOT change `enabled` — the
+ * caller (toggleStrategy / upsertStrategyConfig) is responsible for that.
+ */
+export function clearStrategyRiskHalt(db: Database.Database, strategyId: string): void {
+  db.prepare(`
+    UPDATE strategy_configs
+    SET risk_halted_at = NULL,
+        risk_halt_reason = NULL,
+        updated_at = unixepoch()
+    WHERE id = ?
+  `).run(strategyId);
 }
 
 /**

@@ -290,12 +290,49 @@ export function runDiagnosis(
     } catch { /* ignore parse errors */ }
   }
 
+  // Risk-halted strategies (rolling-drawdown breaker tripped). These are
+  // surfaced regardless of executionMode — the breaker only trips on live
+  // strategies, so the presence of any halt rows = at least one live cohort
+  // bled past its drawdown floor and was auto-disabled. Manual re-enable
+  // via strategy-commands.json `toggle enabled=true` clears the halt.
+  let haltedStrategies: Array<{
+    id: string;
+    halted_at: string;
+    reason: string;
+  }> = [];
+  try {
+    const haltRows = db.prepare(`
+      SELECT id, risk_halted_at, risk_halt_reason
+      FROM strategy_configs
+      WHERE risk_halted_at IS NOT NULL
+      ORDER BY risk_halted_at DESC
+    `).all() as Array<{ id: string; risk_halted_at: number; risk_halt_reason: string | null }>;
+    haltedStrategies = haltRows.map(r => ({
+      id: r.id,
+      halted_at: new Date(r.risk_halted_at * 1000).toISOString(),
+      reason: r.risk_halt_reason ?? 'unknown',
+    }));
+  } catch (err) {
+    // Pre-migration DB won't have these columns — leave list empty.
+    const msg = err instanceof Error ? err.message : String(err);
+    if (!/no such column/i.test(msg)) {
+      logger.warn({ err: msg }, 'Failed to query strategy_configs halt fields');
+    }
+  }
+
   let level5: LevelResult;
   if (liveIds.length === 0) {
+    // Even with no live strategies, surface any pre-existing halt rows so
+    // they don't get hidden until the user re-enables a live strategy.
     level5 = {
       pass: true,
-      evidence: { live_strategy_count: 0 },
-      notes: 'No strategies in live mode — live-readiness not applicable.',
+      evidence: {
+        live_strategy_count: 0,
+        risk_halted_strategies: haltedStrategies,
+      },
+      notes: haltedStrategies.length > 0
+        ? `${haltedStrategies.length} strategy(ies) auto-disabled by risk-halt breaker — review reasons before re-enabling.`
+        : 'No strategies in live mode — live-readiness not applicable.',
     };
   } else {
     const killswitch = isKillswitchTripped();
@@ -313,6 +350,7 @@ export function runDiagnosis(
         daily_max_loss_sol: DAILY_MAX_LOSS_SOL,
         circuit_breaker_tripped: circuitTripped,
         wallet_env_set: walletEnvSet,
+        risk_halted_strategies: haltedStrategies,
       },
       notes: !walletEnvSet
         ? 'Live strategies configured but WALLET_PRIVATE_KEY not set — entries will fail.'
@@ -320,7 +358,9 @@ export function runDiagnosis(
           ? 'Killswitch tripped — new live entries blocked and open positions force-closed.'
           : circuitTripped
             ? `Daily circuit breaker tripped — live entries blocked for the rest of UTC day (P&L ${dailyPnl.toFixed(4)} SOL ≤ -${DAILY_MAX_LOSS_SOL}).`
-            : 'Live-mode prerequisites satisfied.',
+            : haltedStrategies.length > 0
+              ? `Live-mode prerequisites satisfied. ${haltedStrategies.length} other strategy(ies) auto-disabled by risk-halt breaker.`
+              : 'Live-mode prerequisites satisfied.',
     };
   }
 

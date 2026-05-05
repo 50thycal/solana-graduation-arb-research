@@ -596,6 +596,21 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // Risk-halt columns: when the per-strategy rolling-drawdown breaker trips,
+  // strategy_configs.enabled is set to 0 AND risk_halted_at/risk_halt_reason
+  // are populated so the dashboard can show *why* the strategy is off.
+  // Cleared on manual re-enable (toggleStrategy(id, true)).
+  {
+    const cols = db.prepare("PRAGMA table_info(strategy_configs)").all() as Array<{ name: string }>;
+    const existing = new Set(cols.map(c => c.name));
+    if (!existing.has('risk_halted_at')) {
+      db.exec(`ALTER TABLE strategy_configs ADD COLUMN risk_halted_at INTEGER`);
+    }
+    if (!existing.has('risk_halt_reason')) {
+      db.exec(`ALTER TABLE strategy_configs ADD COLUMN risk_halt_reason TEXT`);
+    }
+  }
+
   // Bot error log — one row per uncaught exception / unhandled rejection so
   // /api/snapshot can surface the last crash without depending on Railway logs.
   db.exec(`

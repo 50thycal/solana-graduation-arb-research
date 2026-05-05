@@ -24,9 +24,12 @@ import {
   DAILY_MAX_LOSS_SOL,
   WALLET_SOL_BUFFER,
   KILLSWITCH_FILE,
+  DEFAULT_RISK_HALT_LAST_N_TRADES,
+  DEFAULT_RISK_HALT_MAX_DRAWDOWN_SOL,
   type ExecutionMode,
 } from './config';
 import { computeExpectedBaseOut } from './pumpswap-swap';
+import { getStrategyRollingLivePnl } from '../db/queries';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('trading-safety');
@@ -74,6 +77,60 @@ export function checkCircuitBreaker(db: Database.Database): SafetyCheck {
       ok: false,
       reason: `circuit_breaker: daily live P&L ${pnl.toFixed(4)} SOL ≤ -${DAILY_MAX_LOSS_SOL}`,
       value: pnl,
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Per-strategy rolling-drawdown breaker.
+ *
+ * Trips when: SUM(net_profit_sol) over the last N closed live trades for this
+ * strategy < `maxDrawdownSol` AND the window is full (≥ N trades). Live-only
+ * — paper/shadow trades are excluded from the rolling sum, so a paper/shadow
+ * strategy can never trip. The check itself short-circuits for non-live
+ * execution modes too — a strategy must be actively risking real money for
+ * the breaker to engage.
+ *
+ * Returns `ok: false` with a `reason` string suitable for logging into
+ * strategy_configs.risk_halt_reason. Caller (StrategyManager.safetyTick or
+ * TradeEvaluator preflight) is responsible for actually halting the strategy.
+ */
+export function checkStrategyRiskHalt(
+  db: Database.Database,
+  args: {
+    strategyId: string;
+    executionMode: ExecutionMode;
+    riskHaltLastNTrades?: number;
+    riskHaltMaxDrawdownSol?: number;
+  },
+): SafetyCheck {
+  // Only protect live cohorts — paper/shadow halts would just freeze data
+  // collection on a research strategy that hasn't risked real money yet.
+  if (args.executionMode !== 'live_micro' && args.executionMode !== 'live_full') {
+    return { ok: true };
+  }
+  const windowN = args.riskHaltLastNTrades ?? DEFAULT_RISK_HALT_LAST_N_TRADES;
+  const floorSol = args.riskHaltMaxDrawdownSol ?? DEFAULT_RISK_HALT_MAX_DRAWDOWN_SOL;
+  // Window=0 means the breaker is opt-out for this strategy.
+  if (!Number.isFinite(windowN) || windowN <= 0) {
+    return { ok: true };
+  }
+  if (!Number.isFinite(floorSol)) {
+    return { ok: true };
+  }
+  const { n_trades, sum_net_profit_sol } = getStrategyRollingLivePnl(db, args.strategyId, windowN);
+  // Don't trip until window is fully populated — avoids early false trips.
+  if (n_trades < windowN) {
+    return { ok: true };
+  }
+  if (sum_net_profit_sol < floorSol) {
+    return {
+      ok: false,
+      reason:
+        `risk_halt: rolling P&L ${sum_net_profit_sol.toFixed(4)} SOL over last ` +
+        `${windowN} live trades < ${floorSol.toFixed(4)} SOL floor`,
+      value: sum_net_profit_sol,
     };
   }
   return { ok: true };
@@ -131,16 +188,33 @@ export function checkExpectedSlippage(
 }
 
 /**
- * Aggregate preflight for live modes. Runs all 4 checks in order and returns
- * the first failure. For paper/shadow, only killswitch + circuit breaker run.
+ * Aggregate preflight for live modes. Runs all checks in order and returns
+ * the first failure. For paper/shadow, only killswitch + global daily
+ * circuit breaker run.
  *
- * Circuit breaker applies to all modes (including shadow/paper) so a tripped
- * day halts shadow-mode data collection too — we don't want to continue
- * pretend-trading when real losses have already maxed out.
+ * Order:
+ *   1. Killswitch        (all modes)
+ *   2. Daily circuit     (all modes — protects shadow data collection too)
+ *   3. Per-strategy risk (live modes only — rolling-drawdown breaker)
+ *   4. Wallet balance    (live modes only)
+ *   5. Slippage ceiling  (live modes only)
+ *
+ * Daily circuit breaker applies to all modes (including shadow/paper) so a
+ * tripped day halts shadow-mode data collection too — we don't want to
+ * continue pretend-trading when real losses have already maxed out.
+ *
+ * The per-strategy risk halt is live-only by design: a paper/shadow strategy
+ * is still in research and shouldn't auto-disable from simulated losses.
+ * When the breaker trips the strategy is auto-disabled via setStrategyRiskHalt
+ * by StrategyManager.safetyTick — this preflight just reports the failure so
+ * a stray entry attempt between safetyTick cycles can't slip through.
  */
 export async function runEntryPreflight(args: {
   db: Database.Database;
+  strategyId: string;
   executionMode: ExecutionMode;
+  riskHaltLastNTrades?: number;
+  riskHaltMaxDrawdownSol?: number;
   wallet?: Wallet | null;
   connection: Connection;
   tradeSizeSol: number;
@@ -153,6 +227,13 @@ export async function runEntryPreflight(args: {
   }
   const cb = checkCircuitBreaker(args.db);
   if (!cb.ok) return cb;
+  const riskHalt = checkStrategyRiskHalt(args.db, {
+    strategyId: args.strategyId,
+    executionMode: args.executionMode,
+    riskHaltLastNTrades: args.riskHaltLastNTrades,
+    riskHaltMaxDrawdownSol: args.riskHaltMaxDrawdownSol,
+  });
+  if (!riskHalt.ok) return riskHalt;
   if (args.executionMode === 'paper' || args.executionMode === 'shadow') {
     return { ok: true };
   }

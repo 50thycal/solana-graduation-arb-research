@@ -108,7 +108,10 @@ export class TradeEvaluator {
     if (this.connection) {
       const preflight = await runEntryPreflight({
         db: this.db,
+        strategyId: this.strategyId,
         executionMode,
+        riskHaltLastNTrades: cfg.riskHaltLastNTrades,
+        riskHaltMaxDrawdownSol: cfg.riskHaltMaxDrawdownSol,
         wallet: this.wallet,
         connection: this.connection,
         tradeSizeSol: cfg.tradeSizeSol,

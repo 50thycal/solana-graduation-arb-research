@@ -496,6 +496,29 @@ export class GistSync {
     );
     const eventLoopLag = getEventLoopLagStats();
 
+    // Strategy configs queried up-front so risk_halts can ride on snapshot.json.
+    // Hoisted from below the snapshot block; the same rows feed strategies.json
+    // below without re-querying.
+    const strategyRows = getStrategyConfigs(this.db);
+    const strategiesEnvelope = strategyRows.map(row => ({
+      id: row.id,
+      label: row.label,
+      enabled: row.enabled === 1,
+      params: JSON.parse(row.config_json),
+      risk_halted_at: row.risk_halted_at != null
+        ? new Date(row.risk_halted_at * 1000).toISOString()
+        : null,
+      risk_halt_reason: row.risk_halt_reason ?? null,
+    }));
+    const riskHalts = strategiesEnvelope
+      .filter(s => s.risk_halted_at !== null)
+      .map(s => ({
+        id: s.id,
+        label: s.label,
+        halted_at: s.risk_halted_at,
+        reason: s.risk_halt_reason,
+      }));
+
     const snapshot = {
       generated_at: new Date(nowMs).toISOString(),
       uptime_sec: Math.floor((nowMs - this.startTime) / 1000),
@@ -517,6 +540,10 @@ export class GistSync {
       // having to cross-reference diagnose.json. See diagnose.PipelineHealth
       // for verdict semantics.
       pipeline_health: diagnose.pipeline_health,
+      // Per-strategy risk-halt summary. Empty array when no auto-disables.
+      // Each entry = {id, label, halted_at (ISO), reason}. Manual re-enable
+      // via strategy-commands.json `toggle enabled=true` clears the halt.
+      risk_halts: riskHalts,
       // Event-loop lag (sampled at 1Hz, 10-min ring buffer). p50 should be
       // 0-10 ms in a healthy loop; p95 >100ms means hot-path sync work is
       // intermittently freezing the loop; max_ms_in_window > 1000 ties
@@ -553,14 +580,10 @@ export class GistSync {
     });
     const liveExecutionStats = computeLiveExecutionStats(this.db);
 
-    // Strategy configs — includes all DPM params per strategy
-    const strategyRows = getStrategyConfigs(this.db);
-    const strategies = strategyRows.map(row => ({
-      id: row.id,
-      label: row.label,
-      enabled: row.enabled === 1,
-      params: JSON.parse(row.config_json),
-    }));
+    // Strategy configs envelope (id, label, enabled, params, risk-halt fields)
+    // hoisted above the snapshot block so risk_halts can ride on snapshot.json.
+    // Reuse for strategies.json below — same row set, no re-query.
+    const strategies = strategiesEnvelope;
 
     const genAt = new Date(nowMs).toISOString();
 

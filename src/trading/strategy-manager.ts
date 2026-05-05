@@ -14,7 +14,11 @@ import { PositionManager, ExitEvent, DynamicMonitorParams } from './position-man
 import { TradeEvaluator } from './trade-evaluator';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
 import { Wallet } from './wallet';
-import { isKillswitchTripped, maybeLogKillswitchTripped } from './safety';
+import {
+  isKillswitchTripped,
+  maybeLogKillswitchTripped,
+  checkStrategyRiskHalt,
+} from './safety';
 import {
   getStrategyConfigs,
   upsertStrategyConfig,
@@ -22,6 +26,8 @@ import {
   getOpenTradesByStrategy,
   getOpenTrades,
   getTradeStatsByStrategy,
+  setStrategyRiskHalt,
+  clearStrategyRiskHalt,
 } from '../db/queries';
 import { makeLogger } from '../utils/logger';
 
@@ -120,23 +126,67 @@ export class StrategyManager {
   }
 
   private safetyTick(): void {
-    if (!isKillswitchTripped()) return;
-    maybeLogKillswitchTripped();
-    // Force-close any open live positions. We route them through handleExit so
-    // the normal sell path fires and net_profit_sol is computed consistently.
+    // ── Killswitch (global) ────────────────────────────────────────────
+    if (isKillswitchTripped()) {
+      maybeLogKillswitchTripped();
+      // Force-close any open live positions. We route them through handleExit so
+      // the normal sell path fires and net_profit_sol is computed consistently.
+      for (const instance of this.strategies.values()) {
+        for (const pos of instance.positionManager.getPositions()) {
+          if (pos.mode !== 'live') continue;
+          // Fire the exit event with the last known price — the sell path will
+          // re-quote live price before submitting, so this is a safe approximation.
+          const killEvent: ExitEvent = {
+            position: pos,
+            exitReason: 'killswitch',
+            exitPriceSol: pos.highWaterMark || pos.entryPriceSol,
+          };
+          this.handleExit(killEvent, instance.config).catch(err => {
+            logger.error(
+              'Killswitch force-close failed for trade %d: %s',
+              pos.tradeId, err instanceof Error ? err.message : String(err),
+            );
+          });
+          instance.positionManager.removePosition(pos.tradeId);
+        }
+      }
+      return;
+    }
+
+    // ── Per-strategy risk-halt (rolling-drawdown breaker) ──────────────
+    // Defense-in-depth: also checked in TradeEvaluator preflight, but live
+    // strategies may not see another entry attempt for hours. Polling here
+    // every 10s ensures a tripped strategy is auto-disabled promptly.
     for (const instance of this.strategies.values()) {
+      if (!instance.enabled) continue;
+      const cfg = instance.config;
+      if (cfg.executionMode !== 'live_micro' && cfg.executionMode !== 'live_full') continue;
+      const check = checkStrategyRiskHalt(this.db, {
+        strategyId: instance.id,
+        executionMode: cfg.executionMode,
+        riskHaltLastNTrades: cfg.riskHaltLastNTrades,
+        riskHaltMaxDrawdownSol: cfg.riskHaltMaxDrawdownSol,
+      });
+      if (check.ok) continue;
+      const reason = check.reason ?? 'risk_halt: unknown';
+      logger.warn(
+        { strategyId: instance.id, reason, value: check.value },
+        'Risk-halt breaker tripped — auto-disabling strategy'
+      );
+      setStrategyRiskHalt(this.db, instance.id, reason);
+      instance.enabled = false;
+      // Force-close any open live positions for this strategy. Mirrors the
+      // killswitch path but scoped to a single strategy.
       for (const pos of instance.positionManager.getPositions()) {
         if (pos.mode !== 'live') continue;
-        // Fire the exit event with the last known price — the sell path will
-        // re-quote live price before submitting, so this is a safe approximation.
-        const killEvent: ExitEvent = {
+        const haltEvent: ExitEvent = {
           position: pos,
           exitReason: 'killswitch',
           exitPriceSol: pos.highWaterMark || pos.entryPriceSol,
         };
-        this.handleExit(killEvent, instance.config).catch(err => {
+        this.handleExit(haltEvent, instance.config).catch(err => {
           logger.error(
-            'Killswitch force-close failed for trade %d: %s',
+            'Risk-halt force-close failed for trade %d: %s',
             pos.tradeId, err instanceof Error ? err.message : String(err),
           );
         });
@@ -302,6 +352,13 @@ export class StrategyManager {
     // Persist to DB
     upsertStrategyConfig(this.db, id, label, JSON.stringify(params), enabled ? 1 : 0);
 
+    // Manual upsert with enabled=true clears any prior risk-halt stamp — same
+    // semantic as toggleStrategy(id, true). Disabled upserts leave the halt
+    // fields alone so the dashboard can still show why the strategy is off.
+    if (enabled) {
+      clearStrategyRiskHalt(this.db, id);
+    }
+
     const existing = this.strategies.get(id);
     if (existing) {
       // Hot-swap config
@@ -372,7 +429,12 @@ export class StrategyManager {
       enabled ? 1 : 0,
     );
 
+    // Manual re-enable wipes any prior risk-halt stamp. The breaker will
+    // re-arm once new live trades close — the rolling window is recomputed
+    // from trades_v2 each tick, so the prior tripping window naturally ages
+    // out as fresh trades replace it.
     if (enabled) {
+      clearStrategyRiskHalt(this.db, id);
       instance.positionManager.start(this.connection);
     }
 
@@ -546,6 +608,17 @@ export class StrategyManager {
       const allowed = [30, 60, 90, 120, 180, 240, 300];
       if (!allowed.includes(p.entryTimingSec)) {
         errors.push(`entryTimingSec must be one of ${allowed.join(', ')}`);
+      }
+    }
+    // ── Risk-halt breaker params ────────────────────────────────────────
+    if (p.riskHaltLastNTrades != null) {
+      if (!Number.isInteger(p.riskHaltLastNTrades) || p.riskHaltLastNTrades < 0 || p.riskHaltLastNTrades > 1000) {
+        errors.push('riskHaltLastNTrades must be a non-negative integer ≤ 1000 (0 disables)');
+      }
+    }
+    if (p.riskHaltMaxDrawdownSol != null) {
+      if (!isFinite(p.riskHaltMaxDrawdownSol) || p.riskHaltMaxDrawdownSol > 0) {
+        errors.push('riskHaltMaxDrawdownSol must be a finite, non-positive number (drawdown floor in SOL)');
       }
     }
     if (errors.length > 0) {
