@@ -138,41 +138,48 @@ export async function fetchVaultPrice(
 
   try {
     const result = await fetchPromise;
-    // Store in settled cache
-    vaultPriceCache.set(cacheKey, { result, fetchedAt: Date.now() });
+    // Only cache successful reads. Caching null poisons subsequent buys/sells
+    // for the full TTL window — multiple shadow strategies firing on the same
+    // graduation would all see a transient null until the cache expired.
+    // Coalescing via inflightFetches still dedupes truly-concurrent calls.
+    if (result !== null) {
+      vaultPriceCache.set(cacheKey, { result, fetchedAt: Date.now() });
+    }
     return result;
   } finally {
     inflightFetches.delete(cacheKey);
   }
 }
 
-/** Raw RPC fetch — called only when cache misses and no in-flight request exists */
-async function fetchVaultPriceRpc(
+/** Single-pass RPC fetch. Returns null on any failure mode and logs the cause. */
+async function fetchVaultPriceRpcOnce(
   connection: Connection,
   baseVault: string,
   quoteVault: string,
-  critical: boolean,
 ): Promise<PoolPriceResult | null> {
-  if (critical) {
-    // Position monitoring: always wait for a slot — never silently skip
-    await globalRpcLimiter.throttle();
-  } else if (!await globalRpcLimiter.throttleOrDrop(5)) {
-    // Non-critical callers: yield under load
-    return null;
-  }
-
   try {
     const accounts = await connection.getMultipleAccountsInfo([
       new PublicKey(baseVault),
       new PublicKey(quoteVault),
     ]);
 
-    if (!accounts[0]?.data || !accounts[1]?.data) return null;
+    if (!accounts[0]?.data || !accounts[1]?.data) {
+      logger.debug(
+        { baseVault, quoteVault, hasBase: !!accounts[0]?.data, hasQuote: !!accounts[1]?.data },
+        'fetchVaultPrice: vault account data missing'
+      );
+      return null;
+    }
 
     const baseAmount = readTokenAccountAmount(accounts[0].data as Buffer);
     const quoteAmount = readTokenAccountAmount(accounts[1].data as Buffer);
 
-    if (baseAmount === null || quoteAmount === null || baseAmount === 0 || quoteAmount === 0) {
+    if (baseAmount === null || quoteAmount === null) {
+      logger.debug({ baseVault, quoteVault }, 'fetchVaultPrice: token amount parse failed');
+      return null;
+    }
+    if (baseAmount === 0 || quoteAmount === 0) {
+      logger.debug({ baseVault, quoteVault, baseAmount, quoteAmount }, 'fetchVaultPrice: zero reserves');
       return null;
     }
 
@@ -184,9 +191,38 @@ async function fetchVaultPriceRpc(
 
     return { priceSol: solReserves / tokenReserves, solReserves, tokenReserves };
   } catch (err) {
-    logger.debug('fetchVaultPrice failed: %s', err instanceof Error ? err.message : String(err));
+    logger.debug('fetchVaultPrice RPC error: %s', err instanceof Error ? err.message : String(err));
     return null;
   }
+}
+
+/** Raw RPC fetch — called only when cache misses and no in-flight request exists.
+ *  Retries once on `critical=true` paths to absorb transient RPC errors and the
+ *  short window right after graduation when vault accounts may not yet be visible
+ *  on the connected RPC node. */
+async function fetchVaultPriceRpc(
+  connection: Connection,
+  baseVault: string,
+  quoteVault: string,
+  critical: boolean,
+): Promise<PoolPriceResult | null> {
+  if (critical) {
+    // Position monitoring + buys/sells: always wait for a slot — never silently skip
+    await globalRpcLimiter.throttle();
+  } else if (!await globalRpcLimiter.throttleOrDrop(5)) {
+    // Non-critical callers: yield under load
+    return null;
+  }
+
+  const first = await fetchVaultPriceRpcOnce(connection, baseVault, quoteVault);
+  if (first !== null || !critical) return first;
+
+  // One retry for critical reads. 250ms is short enough to keep buy latency
+  // under the 5s poll budget but long enough for vault-account propagation
+  // and most transient RPC errors to clear.
+  await new Promise(resolve => setTimeout(resolve, 250));
+  await globalRpcLimiter.throttle();
+  return fetchVaultPriceRpcOnce(connection, baseVault, quoteVault);
 }
 
 export class Executor {
