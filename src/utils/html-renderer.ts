@@ -3924,6 +3924,18 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'whale_pct < 30%', configs: [{ field: 'buy_pressure_whale_pct', operator: '<', value: 30, label: 'whale<30%' }] },
     { name: 'whale_pct < 50%', configs: [{ field: 'buy_pressure_whale_pct', operator: '<', value: 50, label: 'whale<50%' }] },
   ]},
+  { group: 'Snipers', filters: [
+    { name: 'snipers <= 2', configs: [{ field: 'sniper_count_t0_t2', operator: '<=', value: 2, label: 'snipers <= 2' }] },
+    { name: 'snipers <= 5', configs: [{ field: 'sniper_count_t0_t2', operator: '<=', value: 5, label: 'snipers <= 5' }] },
+    { name: 'snipers > 5', configs: [{ field: 'sniper_count_t0_t2', operator: '>', value: 5, label: 'snipers > 5' }] },
+    { name: 'snipers > 10', configs: [{ field: 'sniper_count_t0_t2', operator: '>', value: 10, label: 'snipers > 10' }] },
+  ]},
+  { group: 'Sniper Wallet Velocity', filters: [
+    { name: 'wallet_vel_avg < 5', configs: [{ field: 'sniper_wallet_velocity_avg', operator: '<', value: 5, label: 'wallet_vel_avg < 5' }] },
+    { name: 'wallet_vel_avg < 10', configs: [{ field: 'sniper_wallet_velocity_avg', operator: '<', value: 10, label: 'wallet_vel_avg < 10' }] },
+    { name: 'wallet_vel_avg < 20', configs: [{ field: 'sniper_wallet_velocity_avg', operator: '<', value: 20, label: 'wallet_vel_avg < 20' }] },
+    { name: 'wallet_vel_avg >= 20', configs: [{ field: 'sniper_wallet_velocity_avg', operator: '>=', value: 20, label: 'wallet_vel_avg >= 20' }] },
+  ]},
   { group: 'Creator Reputation', filters: [
     { name: 'fresh_dev (0 prior)', configs: [{ field: 'creator_prior_token_count', operator: '==', value: 0, label: 'fresh_dev' }] },
     { name: 'repeat_dev >= 3', configs: [{ field: 'creator_prior_token_count', operator: '>=', value: 3, label: 'repeat>=3' }] },
