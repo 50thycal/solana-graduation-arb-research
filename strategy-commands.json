@@ -1,0 +1,9 @@
+{
+  "commands": [
+    { "action": "delete", "id": "v8shadow-tight-15-5-top5" },
+    { "action": "delete", "id": "v10-best-single" },
+    { "action": "delete", "id": "v4-sumabs-opt" },
+    { "action": "delete", "id": "v9shadow-dev-maxdd" },
+    { "action": "delete", "id": "v8shadow-top5-dev-50-20" }
+  ]
+}
