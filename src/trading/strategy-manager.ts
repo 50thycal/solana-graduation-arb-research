@@ -379,6 +379,79 @@ export class StrategyManager {
     logger.info({ strategyId: id, enabled }, 'Strategy toggled');
   }
 
+  /**
+   * Reconcile the in-memory strategy cache against the strategy_configs DB
+   * table. Catches drift where a delete/upsert/toggle bypassed the in-memory
+   * path (e.g. external SQL, multi-process race, or a bug in the command
+   * pipeline that updated DB but not memory). Safe to call repeatedly — only
+   * acts when state actually differs.
+   *
+   * Drift signals to look for in the returned counts:
+   *   - removed > 0  → DB no longer has a strategy that's in memory (potential
+   *     cause of the "deleted strategy still trading" symptom seen 2026-05-07)
+   *   - added > 0    → DB has a strategy that memory doesn't (e.g. upsert
+   *     persisted but createInstance failed earlier)
+   *   - toggled > 0  → enabled flag diverged
+   */
+  reconcileFromDb(): { removed: number; added: number; toggled: number } {
+    const dbRows = getStrategyConfigs(this.db);
+    const dbIds = new Set(dbRows.map(r => r.id));
+    let removed = 0;
+    let added = 0;
+    let toggled = 0;
+
+    // Memory has a strategy that DB doesn't → stop & remove.
+    // Default is exempt — it lives in memory even if the row gets cleared.
+    for (const [id, instance] of this.strategies) {
+      if (id === 'default') continue;
+      if (!dbIds.has(id)) {
+        logger.warn(
+          { strategyId: id, activePositions: instance.positionManager.activeCount() },
+          'Reconcile: strategy in memory but missing from DB — stopping & removing',
+        );
+        instance.positionManager.stop();
+        this.strategies.delete(id);
+        removed++;
+      }
+    }
+
+    // DB has a strategy that memory doesn't, or enabled flag drifted → fix.
+    for (const row of dbRows) {
+      const dbEnabled = row.enabled === 1;
+      const existing = this.strategies.get(row.id);
+      if (!existing) {
+        try {
+          const params = JSON.parse(row.config_json) as StrategyParams;
+          this.createInstance(row.id, row.label, dbEnabled, params);
+          if (dbEnabled) {
+            this.strategies.get(row.id)!.positionManager.start(this.connection);
+          }
+          logger.warn({ strategyId: row.id }, 'Reconcile: strategy in DB but missing from memory — created');
+          added++;
+        } catch (err) {
+          logger.error(
+            { strategyId: row.id, err: err instanceof Error ? err.message : String(err) },
+            'Reconcile: failed to materialize DB strategy in memory',
+          );
+        }
+      } else if (existing.enabled !== dbEnabled) {
+        existing.enabled = dbEnabled;
+        if (dbEnabled) {
+          existing.positionManager.start(this.connection);
+        } else {
+          existing.positionManager.stop();
+        }
+        logger.warn(
+          { strategyId: row.id, dbEnabled, prevEnabled: !dbEnabled },
+          'Reconcile: enabled flag drifted — synced from DB',
+        );
+        toggled++;
+      }
+    }
+
+    return { removed, added, toggled };
+  }
+
   // ── Stats ─────────────────────────────────────────────────────────────────
 
   getConfig(): TradingConfig {

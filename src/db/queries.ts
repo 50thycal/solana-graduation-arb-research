@@ -936,8 +936,13 @@ export function getOpenTrades(db: Database.Database) {
 
 export function getRecentTrades(db: Database.Database, limit = 50, includeArchived = false) {
   const archiveFilter = includeArchived ? '' : 'AND (t.archived IS NULL OR t.archived = 0)';
+  // held_seconds is derived from entry/exit timestamps so downstream consumers
+  // (trades.json, /api/trades, audits) don't have to recompute. Null while open.
   return db.prepare(`
-    SELECT t.*, g.mint as grad_mint
+    SELECT t.*,
+           g.mint as grad_mint,
+           CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
+                THEN t.exit_timestamp - t.entry_timestamp END as held_seconds
     FROM trades_v2 t
     JOIN graduations g ON g.id = t.graduation_id
     WHERE 1=1 ${archiveFilter}
