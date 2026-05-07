@@ -596,6 +596,30 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // Strategy journal — per-cohort hypothesis + prediction + status, with an
+  // append-only updates trail. Keyed by `strategy_id` but NOT a FK: entries
+  // intentionally outlive a strategy delete/disable so the research arc is
+  // preserved (we want to re-read what we predicted v9 would do, even after
+  // v9 is dead). Manual `status` (OPEN/PROMOTED/KILLED/PAUSED) is set by the
+  // operator; the live auto-badge in journal.json is computed against the
+  // strategy's current closed-trade percentiles and is independent of this
+  // column.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS strategy_journal (
+      id TEXT PRIMARY KEY,
+      strategy_id TEXT NOT NULL,
+      cohort_label TEXT,
+      hypothesis TEXT NOT NULL,
+      prediction_json TEXT,
+      status TEXT NOT NULL DEFAULT 'OPEN',
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch()),
+      updates_json TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_journal_strategy ON strategy_journal(strategy_id);
+    CREATE INDEX IF NOT EXISTS idx_journal_status ON strategy_journal(status);
+  `);
+
   // Bot error log — one row per uncaught exception / unhandled rejection so
   // /api/snapshot can surface the last crash without depending on Railway logs.
   db.exec(`

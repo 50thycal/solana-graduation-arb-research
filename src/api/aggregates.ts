@@ -437,6 +437,28 @@ export interface SimulateComboResult {
 }
 
 /**
+ * One cell of the 12×10 TP/SL grid. tp/sl are the % thresholds from entry,
+ * avg_ret is cost-adjusted, win_rate is % of trades with exitRet > 0,
+ * n_hit_tp is how many of the n trades actually hit the TP level (used to
+ * gate the optimum picker against single-trade outliers).
+ */
+export interface SimulateComboCell {
+  tp: number;
+  sl: number;
+  avg_ret: number;
+  win_rate: number;
+  n_hit_tp: number;
+}
+
+export interface SimulateComboGridResult {
+  n: number;
+  pump: number;
+  avg_return_t30_to_t300_pct: number | null;
+  /** Flat 12×10 grid; index = ti * SIM_SL_GRID.length + si. Always present (even when n < SIM_MIN_N_FOR_OPTIMUM). Empty array when n === 0. */
+  grid: SimulateComboCell[];
+}
+
+/**
  * Yield to the event loop. Used inside the heavy `computeBestCombos` candidate
  * loop so that each ~50-iteration chunk of synchronous SQLite work is followed
  * by a microtask break, giving HTTP requests, WebSocket callbacks, and timers
@@ -473,11 +495,20 @@ const YIELD_EVERY_N_CANDIDATES = 50;
  * entry points on the same combo. Default value preserves backwards-compatible
  * T+30 behavior — every existing caller is unchanged.
  */
-export function simulateCombo(
+/**
+ * Compute the full 12×10 TP/SL grid for a candidate filter set without
+ * applying the optimum picker. Used by simulateCombo (which then picks the
+ * best cell) and by the counterfactual panel (which compares the strategy's
+ * configured cell to the top-3 alternatives in the same grid).
+ *
+ * Same query, same gap penalties, same cost model as simulateCombo — just
+ * exposes every cell instead of only the winner.
+ */
+export function simulateComboFullGrid(
   db: Database.Database,
   whereClause: string,
   entrySec: number = 30,
-): SimulateComboResult {
+): SimulateComboGridResult {
   // Walk only checkpoints strictly after the entry — earlier columns are in
   // the past from the entry's perspective and meaningless for the SL/TP walk.
   // For entrySec=30 this preserves the legacy T+40..T+300 walk exactly.
@@ -510,15 +541,7 @@ export function simulateCombo(
 
   const n = rows.length;
   if (n === 0) {
-    return {
-      n: 0,
-      pump: 0,
-      avg_return_t30_to_t300_pct: null,
-      opt_tp: null,
-      opt_sl: null,
-      opt_avg_ret: null,
-      opt_win_rate: null,
-    };
+    return { n: 0, pump: 0, avg_return_t30_to_t300_pct: null, grid: [] };
   }
 
   let pump = 0;
@@ -533,13 +556,9 @@ export function simulateCombo(
     }
   }
 
-  // Walk the 12×10 TP/SL grid. For each cell sum cost-adjusted exits and
-  // count TP hits; pick the max-avg cell with enough TP-hits as the optimum.
   const tpCount = SIM_TP_GRID.length;
   const slCount = SIM_SL_GRID.length;
-  const cellAvg = new Array<number>(tpCount * slCount).fill(0);
-  const cellWin = new Array<number>(tpCount * slCount).fill(0);
-  const cellTp  = new Array<number>(tpCount * slCount).fill(0);
+  const grid: SimulateComboCell[] = new Array(tpCount * slCount);
 
   for (let ti = 0; ti < tpCount; ti++) {
     const tp = SIM_TP_GRID[ti];
@@ -572,38 +591,17 @@ export function simulateCombo(
           }
         }
         if (exitRet === null) {
-          // Fall-through: hold to T+300 (the last checkpoint column)
           const fallVal = r.pct_t300 as number;
           exitRet = ((1 + fallVal / 100) / entryRatio - 1) * 100 - cost;
         }
         sum += exitRet;
         if (exitRet > 0) wins++;
       }
-      const idx = ti * slCount + si;
-      cellAvg[idx] = +(sum / n).toFixed(2);
-      cellWin[idx] = +(wins / n * 100).toFixed(1);
-      cellTp[idx]  = tpHits;
-    }
-  }
-
-  // Pick the optimum: max avg among cells with tp_hits >= SIM_MIN_TP_HITS_FOR_OPTIMUM,
-  // gated on n >= SIM_MIN_N_FOR_OPTIMUM.
-  let opt: { tp: number; sl: number; avg_ret: number; win_rate: number } | null = null;
-  if (n >= SIM_MIN_N_FOR_OPTIMUM) {
-    let bestIdx = -1;
-    let bestAvg = -Infinity;
-    for (let i = 0; i < cellAvg.length; i++) {
-      if (cellTp[i] < SIM_MIN_TP_HITS_FOR_OPTIMUM) continue;
-      if (cellAvg[i] > bestAvg) { bestAvg = cellAvg[i]; bestIdx = i; }
-    }
-    if (bestIdx !== -1) {
-      const ti = Math.floor(bestIdx / slCount);
-      const si = bestIdx % slCount;
-      opt = {
-        tp: SIM_TP_GRID[ti],
-        sl: SIM_SL_GRID[si],
-        avg_ret: cellAvg[bestIdx],
-        win_rate: cellWin[bestIdx],
+      grid[ti * slCount + si] = {
+        tp, sl,
+        avg_ret: +(sum / n).toFixed(2),
+        win_rate: +(wins / n * 100).toFixed(1),
+        n_hit_tp: tpHits,
       };
     }
   }
@@ -612,6 +610,44 @@ export function simulateCombo(
     n,
     pump,
     avg_return_t30_to_t300_pct: rawRetN > 0 ? +(rawRetSum / rawRetN).toFixed(2) : null,
+    grid,
+  };
+}
+
+export function simulateCombo(
+  db: Database.Database,
+  whereClause: string,
+  entrySec: number = 30,
+): SimulateComboResult {
+  const full = simulateComboFullGrid(db, whereClause, entrySec);
+  const { n, pump, avg_return_t30_to_t300_pct, grid } = full;
+
+  if (n === 0) {
+    return {
+      n: 0,
+      pump: 0,
+      avg_return_t30_to_t300_pct: null,
+      opt_tp: null,
+      opt_sl: null,
+      opt_avg_ret: null,
+      opt_win_rate: null,
+    };
+  }
+
+  // Pick the optimum: max avg among cells with tp_hits >= SIM_MIN_TP_HITS_FOR_OPTIMUM,
+  // gated on n >= SIM_MIN_N_FOR_OPTIMUM.
+  let opt: SimulateComboCell | null = null;
+  if (n >= SIM_MIN_N_FOR_OPTIMUM) {
+    for (const cell of grid) {
+      if (cell.n_hit_tp < SIM_MIN_TP_HITS_FOR_OPTIMUM) continue;
+      if (opt === null || cell.avg_ret > opt.avg_ret) opt = cell;
+    }
+  }
+
+  return {
+    n,
+    pump,
+    avg_return_t30_to_t300_pct,
     opt_tp: opt ? opt.tp : null,
     opt_sl: opt ? opt.sl : null,
     opt_avg_ret: opt ? opt.avg_ret : null,

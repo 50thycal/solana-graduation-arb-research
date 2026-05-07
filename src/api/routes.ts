@@ -43,6 +43,10 @@ import { computeEntryTimeMatrix } from './entry-time-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeSniperPanel } from './sniper-panel';
 import { computeStrategyPercentiles } from './strategy-percentiles';
+import { computeJournal } from './journal';
+import { computeEdgeDecay } from './edge-decay';
+import { computeCounterfactual } from './counterfactual';
+import { computeLossPostmortem } from './loss-postmortem';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
@@ -374,6 +378,42 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Enabled-only by default so the panel tracks the live cohort.
   app.get('/api/strategy-percentiles', wrap(async (_req, res) => {
     res.json(computeStrategyPercentiles(db));
+  }));
+
+  // ── /api/journal ──
+  // Strategy journal — hypothesis + prediction + auto-status per cohort.
+  // Entries persist across strategy delete/disable; auto_status is computed
+  // every render against live closed-trade percentiles. Mutations via
+  // strategy-commands.json (journal-upsert / journal-update / journal-delete).
+  app.get('/api/journal', wrap(async (_req, res) => {
+    res.json(computeJournal(db));
+  }));
+
+  // ── /api/edge-decay ──
+  // Per-strategy rolling mean+median in trade-count windows (last 25/50/100/all)
+  // with a 12-bin sparkline. Auto-flag DECAYING/STRENGTHENING/STABLE based on
+  // the last-30 vs lifetime median delta.
+  app.get('/api/edge-decay', wrap(async (_req, res) => {
+    res.json(computeEdgeDecay(db));
+  }));
+
+  // ── /api/counterfactual ──
+  // Per-strategy filter contribution + TP/SL grid sweep. For each filter,
+  // drop it and re-sim → Δret_pp tells you whether the filter pulls weight.
+  // For TP/SL: snap configured (tp, sl) to nearest grid point and report
+  // top 3 alternative cells. Reuses simulateComboFullGrid so the cost model
+  // matches /api/best-combos exactly.
+  app.get('/api/counterfactual', wrap(async (_req, res) => {
+    res.json(await computeCounterfactual(db));
+  }));
+
+  // ── /api/loss-postmortem ──
+  // Per-strategy worst-20 closed trades clustered by entry-time feature
+  // deviation. Computes 5-quintile buckets from the strategy's own population
+  // and surfaces features where losers cluster disproportionately (>= 20pp
+  // deviation in any bucket).
+  app.get('/api/loss-postmortem', wrap(async (_req, res) => {
+    res.json(computeLossPostmortem(db));
   }));
 
   // ── /api/panel3 ──

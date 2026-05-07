@@ -1031,6 +1031,113 @@ export function deleteStrategyConfig(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM strategy_configs WHERE id = ?').run(id);
 }
 
+// ── Strategy journal CRUD ────────────────────────────────────────────────
+// Entries persist across strategy delete/disable by design — the journal's
+// purpose is to retain the research history per cohort even after the
+// underlying strategy is gone. strategy_id is therefore not a FK.
+
+export interface JournalPrediction {
+  /** Median net return % the strategy is expected to clear. */
+  target_median_net_pct?: number;
+  /** Sample size at which the prediction should resolve. */
+  target_n?: number;
+  /** Calendar days the prediction should hold. */
+  target_days?: number;
+  /** Free-text kill criterion — auto-status flips to HIT-KILL when satisfied. */
+  kill_criterion?: string;
+}
+
+export interface JournalUpdate {
+  /** Unix seconds when the update was appended. */
+  at: number;
+  /** Markdown body of the update. */
+  note: string;
+}
+
+export interface StrategyJournalRow {
+  id: string;
+  strategy_id: string;
+  cohort_label: string | null;
+  hypothesis: string;
+  prediction_json: string | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+  updates_json: string;
+}
+
+export function listJournalEntries(db: Database.Database): StrategyJournalRow[] {
+  return db.prepare('SELECT * FROM strategy_journal ORDER BY created_at DESC')
+    .all() as StrategyJournalRow[];
+}
+
+export function getJournalEntry(db: Database.Database, id: string): StrategyJournalRow | undefined {
+  return db.prepare('SELECT * FROM strategy_journal WHERE id = ?')
+    .get(id) as StrategyJournalRow | undefined;
+}
+
+export function upsertJournalEntry(
+  db: Database.Database,
+  entry: {
+    id: string;
+    strategy_id: string;
+    cohort_label?: string | null;
+    hypothesis: string;
+    prediction?: JournalPrediction | null;
+    status?: string;
+  },
+): void {
+  const status = entry.status ?? 'OPEN';
+  const predictionJson = entry.prediction ? JSON.stringify(entry.prediction) : null;
+  db.prepare(`
+    INSERT INTO strategy_journal (id, strategy_id, cohort_label, hypothesis, prediction_json, status, updated_at)
+    VALUES (@id, @strategy_id, @cohort_label, @hypothesis, @prediction_json, @status, unixepoch())
+    ON CONFLICT(id) DO UPDATE SET
+      strategy_id = @strategy_id,
+      cohort_label = @cohort_label,
+      hypothesis = @hypothesis,
+      prediction_json = @prediction_json,
+      status = @status,
+      updated_at = unixepoch()
+  `).run({
+    id: entry.id,
+    strategy_id: entry.strategy_id,
+    cohort_label: entry.cohort_label ?? null,
+    hypothesis: entry.hypothesis,
+    prediction_json: predictionJson,
+    status,
+  });
+}
+
+export function appendJournalUpdate(
+  db: Database.Database,
+  id: string,
+  note: string,
+): { ok: boolean; error?: string } {
+  const row = getJournalEntry(db, id);
+  if (!row) return { ok: false, error: `Journal entry "${id}" not found` };
+
+  let updates: JournalUpdate[];
+  try {
+    updates = JSON.parse(row.updates_json) as JournalUpdate[];
+    if (!Array.isArray(updates)) updates = [];
+  } catch {
+    updates = [];
+  }
+  updates.push({ at: Math.floor(Date.now() / 1000), note });
+
+  db.prepare(`
+    UPDATE strategy_journal
+    SET updates_json = ?, updated_at = unixepoch()
+    WHERE id = ?
+  `).run(JSON.stringify(updates), id);
+  return { ok: true };
+}
+
+export function deleteJournalEntry(db: Database.Database, id: string): void {
+  db.prepare('DELETE FROM strategy_journal WHERE id = ?').run(id);
+}
+
 /**
  * Per-strategy aggregate stats from trades_v2.
  *

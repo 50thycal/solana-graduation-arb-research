@@ -44,6 +44,10 @@ import { computeEntryTimeMatrix } from './entry-time-matrix';
 import { computeWalletRepAnalysis } from './wallet-rep-analysis';
 import { computeSniperPanel } from './sniper-panel';
 import { computeStrategyPercentiles } from './strategy-percentiles';
+import { computeJournal } from './journal';
+import { computeEdgeDecay } from './edge-decay';
+import { computeCounterfactual } from './counterfactual';
+import { computeLossPostmortem } from './loss-postmortem';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { getHeavyData } from './heavy-cache';
@@ -55,6 +59,10 @@ import {
   getTradeStats,
   getTradeStatsByStrategy,
   getStrategyConfigs,
+  upsertJournalEntry,
+  appendJournalUpdate,
+  deleteJournalEntry,
+  type JournalPrediction,
 } from '../db/queries';
 import type { StrategyManager } from '../trading/strategy-manager';
 import type { StrategyParams } from '../trading/config';
@@ -127,15 +135,44 @@ export interface StatusUrls {
   strategy_percentiles: string;
   exit_sim_matrix: string;
   entry_time_matrix: string;
+  // Trading-page research panels (2026-05-07): journal, edge-decay,
+  // filter+TP/SL counterfactual, and loss-postmortem clusterer.
+  journal: string;
+  edge_decay: string;
+  counterfactual: string;
+  loss_postmortem: string;
   branch_html: string;
 }
 
+/**
+ * Inbound command shape. The handler dispatches on `action`:
+ *
+ *   upsert / delete / toggle      — strategy CRUD (existing).
+ *   journal-upsert                — create or replace a journal entry.
+ *   journal-update                — append an update note to an existing entry.
+ *   journal-delete                — remove a journal entry.
+ *
+ * Field requirements per action are enforced at dispatch time, not in the
+ * type, so Claude / the operator gets a clear validation error in
+ * command-results.json instead of a silent rejection.
+ */
 interface StrategyCommand {
-  action: 'upsert' | 'delete' | 'toggle';
+  action:
+    | 'upsert' | 'delete' | 'toggle'
+    | 'journal-upsert' | 'journal-update' | 'journal-delete';
   id: string;
+  // upsert / toggle
   label?: string;
   enabled?: boolean;
   params?: StrategyParams;
+  // journal-upsert
+  strategy_id?: string;
+  cohort_label?: string | null;
+  hypothesis?: string;
+  prediction?: JournalPrediction | null;
+  status?: string;
+  // journal-update
+  note?: string;
 }
 
 interface StrategyCommandsFile {
@@ -239,6 +276,10 @@ export class GistSync {
       wallet_rep_analysis: `${base}/wallet-rep-analysis.json`,
       sniper_panel: `${base}/sniper-panel.json`,
       strategy_percentiles: `${base}/strategy-percentiles.json`,
+      journal: `${base}/journal.json`,
+      edge_decay: `${base}/edge-decay.json`,
+      counterfactual: `${base}/counterfactual.json`,
+      loss_postmortem: `${base}/loss-postmortem.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
@@ -311,6 +352,31 @@ export class GistSync {
           } else if (cmd.action === 'toggle') {
             this.strategyManager.toggleStrategy(cmd.id, cmd.enabled ?? true);
             results.push({ id: cmd.id, action: 'toggle', ok: true });
+          } else if (cmd.action === 'journal-upsert') {
+            // strategy_id + hypothesis are required; everything else has a sensible default.
+            if (!cmd.strategy_id || !cmd.hypothesis) {
+              results.push({ id: cmd.id, action: 'journal-upsert', ok: false, error: 'strategy_id and hypothesis are required' });
+            } else {
+              upsertJournalEntry(this.db, {
+                id: cmd.id,
+                strategy_id: cmd.strategy_id,
+                cohort_label: cmd.cohort_label ?? null,
+                hypothesis: cmd.hypothesis,
+                prediction: cmd.prediction ?? null,
+                status: cmd.status,
+              });
+              results.push({ id: cmd.id, action: 'journal-upsert', ok: true });
+            }
+          } else if (cmd.action === 'journal-update') {
+            if (!cmd.note) {
+              results.push({ id: cmd.id, action: 'journal-update', ok: false, error: 'note is required' });
+            } else {
+              const r = appendJournalUpdate(this.db, cmd.id, cmd.note);
+              results.push({ id: cmd.id, action: 'journal-update', ok: r.ok, error: r.error });
+            }
+          } else if (cmd.action === 'journal-delete') {
+            deleteJournalEntry(this.db, cmd.id);
+            results.push({ id: cmd.id, action: 'journal-delete', ok: true });
           } else {
             results.push({ id: cmd.id, action: cmd.action, ok: false, error: 'invalid command' });
           }
@@ -481,6 +547,13 @@ export class GistSync {
     const exitSim = await timed('exitSim', () => computeExitSim(this.db));
     const sniperPanel = await timed('sniperPanel', () => computeSniperPanel(this.db));
     const strategyPercentiles = await timed('strategyPercentiles', () => computeStrategyPercentiles(this.db));
+    // Trading-page research panels — all are O(strategies × trades) at most;
+    // none touch graduation_momentum × the grid except `counterfactual`, which
+    // yields between filters internally.
+    const journal = await timed('journal', () => computeJournal(this.db));
+    const edgeDecay = await timed('edgeDecay', () => computeEdgeDecay(this.db));
+    const counterfactual = await timed('counterfactual', () => computeCounterfactual(this.db));
+    const lossPostmortem = await timed('lossPostmortem', () => computeLossPostmortem(this.db));
 
     const exitSimMatrix = HEAVY_PANELS_ENABLED
       ? await timed('exitSimMatrix', () => computeExitSimMatrix(this.db))
@@ -604,6 +677,10 @@ export class GistSync {
       'wallet-rep-analysis.json': JSON.stringify(walletRepAnalysis, null, 2),
       'sniper-panel.json': JSON.stringify(sniperPanel, null, 2),
       'strategy-percentiles.json': JSON.stringify(strategyPercentiles, null, 2),
+      'journal.json': JSON.stringify(journal, null, 2),
+      'edge-decay.json': JSON.stringify(edgeDecay, null, 2),
+      'counterfactual.json': JSON.stringify(counterfactual, null, 2),
+      'loss-postmortem.json': JSON.stringify(lossPostmortem, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,
         count: strategies.length,

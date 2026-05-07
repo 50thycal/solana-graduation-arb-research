@@ -410,6 +410,10 @@ Peak analysis and trading:
 | `wallet-rep-analysis.json` | `/api/wallet-rep-analysis` | Top 20 combos × creator-wallet-rep modifiers: matrix of opt_avg_ret deltas + rep filter leaderboard ranked by mean Δ. Use to pick a creator-rep modifier that improves profitability without collapsing sample size. |
 | `sniper-panel.json` | `/api/sniper-panel` | Sniper-window analytics: population coverage, baseline at own opt TP/SL, threshold sweep for `snipers <= N` and `wallet_vel_avg < N`, sniper-count + wallet-velocity histograms, top 20 best-combos rows that include a sniper filter. Added 2026-05-01. |
 | `strategy-percentiles.json` | `/api/strategy-percentiles` | Per-active-strategy percentile breakdown of closed trade returns (median, p10/p25/p75/p90, std dev, min/max, exit-reason breakdown, avg execution cost in pp) for both gross and net. Plus `top_winners` + `top_losers` (top 3 each, with mint + graduation_id + held_seconds) for outlier drill-down. Sorted by median net return desc. Added 2026-05-01. **Always cross-check leaderboard means with this panel's medians before promoting.** |
+| `journal.json` | `/api/journal` | Strategy journal — hypothesis + prediction (`target_median_net_pct`, `target_n`, `target_days`, `kill_criterion`) per cohort, with append-only updates and a live-computed `auto_status` badge (OPEN / ON-TRACK / DEGRADING / HIT-KILL / NO-DATA / PROMOTED / KILLED / PAUSED). Entries persist across strategy delete/disable; `strategy_state` flags whether the underlying strategy is currently enabled/disabled/deleted. Mutations via `journal-upsert` / `journal-update` / `journal-delete` actions in `strategy-commands.json`. Added 2026-05-07. |
+| `edge-decay.json` | `/api/edge-decay` | Per-strategy rolling mean+median across trade-count windows (last 25 / 50 / 100 / all, capped at 200) plus 12-bin sparkline (oldest → newest) and a flag (DECAYING / STRENGTHENING / STABLE / LOW-N). Auto-flag fires when median(last 30) < median(all) − 5pp. Use to catch alpha decay before committing live capital. Added 2026-05-07. |
+| `counterfactual.json` | `/api/counterfactual` | Per-strategy filter contribution + TP/SL counterfactual. For each filter, drops it and re-runs `simulateComboFullGrid`; reports `delta_ret_pp` (negative = filter pulls weight, positive = filter hurts, ~0 = dead weight). Plus the configured (tp, sl) cell snapped to the grid + top 3 alternative cells with deltas. Same cost model as `/api/best-combos`. Added 2026-05-07. |
+| `loss-postmortem.json` | `/api/loss-postmortem` | Worst-20 closed trades per strategy clustered by entry-time feature deviation. Buckets the strategy's own population into 5 quintiles per feature, computes `loser_pct − overall_pct` per bucket, surfaces features with max \|deviation\| ≥ 20pp as `dominant_patterns`. Includes raw losers with mint + graduation_id + 16 entry-time features for drill-down. Added 2026-05-07. |
 
 Exit-strategy simulators (dynamic exits: trailing, scale-out, vol-adaptive, time-decayed TP, whale/liq-drop):
 
@@ -462,14 +466,37 @@ Claude can manage strategies without direct Railway API access by pushing a `str
       }
     },
     { "action": "delete", "id": "old-strategy" },
-    { "action": "toggle", "id": "some-strategy", "enabled": false }
+    { "action": "toggle", "id": "some-strategy", "enabled": false },
+    {
+      "action": "journal-upsert",
+      "id": "v15-vel-dev-tight",
+      "strategy_id": "v15-vel-dev-tight",
+      "cohort_label": "v15",
+      "hypothesis": "vel<5 + dev<3% should clear baseline by +13pp on n>=125 — tightest combo on the leaderboard. Bet: low-velocity + clean-dev signals a quiet pump rather than a pump-and-dump cycle.",
+      "prediction": {
+        "target_median_net_pct": 3,
+        "target_n": 125,
+        "target_days": 14,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "status": "OPEN"
+    },
+    { "action": "journal-update", "id": "v15-vel-dev-tight", "note": "n=42 after 5 days, median +1.8% — pacing fine. No exit-mix surprises." },
+    { "action": "journal-delete", "id": "v9-stale-entry" }
   ]
 }
 ```
 
-**Actions:** `upsert` (create or update), `delete` (remove), `toggle` (enable/disable). Commands are applied in order. The file is deleted from the repo after processing.
+**Strategy actions:** `upsert` (create or update), `delete` (remove), `toggle` (enable/disable). Commands are applied in order. The file is deleted from the repo after processing.
 
-**Latency:** Commands are picked up within ~2 minutes (next sync cycle). Check `strategies.json` on bot-status to confirm they were applied.
+**Journal actions** (added 2026-05-07): `journal-upsert` (create or replace by `id`), `journal-update` (append a `note` to the entry's update timeline), `journal-delete` (remove the entry). Required fields per action:
+- `journal-upsert` — `id`, `strategy_id`, `hypothesis` are required; `cohort_label`, `prediction`, `status` optional.
+- `journal-update` — `id`, `note` required.
+- `journal-delete` — `id` required.
+
+`prediction.kill_criterion` recognized forms: `"n>=N and median<X"`, `"median<X"`, `"win_rate<X"`. Anything else parses as text and never trips HIT-KILL automatically. Journal entries persist across strategy delete/disable — use `journal-delete` only when you want to forget a hypothesis entirely.
+
+**Latency:** Commands are picked up within ~2 minutes (next sync cycle). Check `strategies.json` (for strategy actions) or `journal.json` (for journal actions) on bot-status to confirm they were applied. Per-batch outcomes are also published in `command-results.json`.
 
 ### Live-only endpoints (not synced to bot-status)
 
