@@ -4045,6 +4045,505 @@ function splitFiltersToPresets(allConfigs: any[]): string[] {
   return matched;
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// Trading-page research panels (added 2026-05-07)
+// 5 panels surfaced on /trading underneath the existing performance cards:
+//   distribution / edge-decay / counterfactual / loss-postmortem / journal
+// Each takes the merged `data` object built in src/index.ts:/trading and
+// returns an HTML card. Empty / no-data fallbacks render a muted card with
+// an explanatory message instead of disappearing — keeps the layout stable
+// while strategies populate.
+// ────────────────────────────────────────────────────────────────────────
+
+/** Per-strategy distribution panel (n, mean, median, p10/p25/p75/p90, min/max,
+ *  std, exit-mix, top winner/loser). Sources from /api/strategy-percentiles. */
+function renderStrategyPercentilesPanel(data: any): string {
+  const sp = data.strategy_percentiles;
+  if (!sp || !Array.isArray(sp.rows) || sp.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Per-Strategy Distribution</div>
+      <p style="color:#94a3b8">No active strategies yet — toggle one on to populate.</p>
+    </div>`;
+  }
+
+  const fmt = (v: number | null | undefined, suffix = '') =>
+    v == null ? '<span style="color:#64748b">-</span>' : `${v}${suffix}`;
+  const colorMed = (v: number | null) =>
+    v == null ? '#94a3b8' : v > 0 ? '#22d3ee' : '#f87171';
+
+  const rowsHtml = sp.rows.map((r: any) => {
+    const totalExits = (r.exit_reasons.take_profit ?? 0) + (r.exit_reasons.stop_loss ?? 0)
+      + (r.exit_reasons.trailing_stop ?? 0) + (r.exit_reasons.breakeven_stop ?? 0)
+      + (r.exit_reasons.trailing_tp ?? 0) + (r.exit_reasons.timeout ?? 0)
+      + (r.exit_reasons.killswitch ?? 0);
+    const pct = (count: number) => totalExits > 0 ? Math.round((count / totalExits) * 100) : 0;
+    const exitMix = totalExits > 0
+      ? `TP ${pct(r.exit_reasons.take_profit + r.exit_reasons.trailing_tp)}% · SL ${pct(r.exit_reasons.stop_loss + r.exit_reasons.trailing_stop + r.exit_reasons.breakeven_stop)}% · TO ${pct(r.exit_reasons.timeout)}%`
+      : '<span style="color:#64748b">-</span>';
+
+    // Two stacked sub-rows per strategy: gross then net.
+    const gross = r.gross_return_pct;
+    const net = r.net_return_pct;
+    const winner = r.top_winners?.[0];
+    const loser = r.top_losers?.[0];
+    const winnerCell = winner
+      ? `<span title="trade ${winner.trade_id} · grad ${winner.graduation_id ?? '?'}" style="color:#22d3ee;font-family:monospace;font-size:11px">${(winner.mint || '').slice(0, 6)}… +${winner.gross_return_pct?.toFixed(0)}%</span>`
+      : '<span style="color:#64748b">-</span>';
+    const loserCell = loser
+      ? `<span title="trade ${loser.trade_id} · grad ${loser.graduation_id ?? '?'}" style="color:#f87171;font-family:monospace;font-size:11px">${(loser.mint || '').slice(0, 6)}… ${loser.gross_return_pct?.toFixed(0)}%</span>`
+      : '<span style="color:#64748b">-</span>';
+
+    // Distribution badge — simple visual cue when whole IQR is on one side of zero.
+    let badge = '';
+    if (net.p25 != null && net.p25 > 0) {
+      badge = '<span style="background:#065f4633;color:#4ade80;border:1px solid #065f46;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px">p25&gt;0</span>';
+    } else if (net.p75 != null && net.p75 < 0) {
+      badge = '<span style="background:#7f1d1d33;color:#f87171;border:1px solid #7f1d1d;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px">p75&lt;0</span>';
+    }
+
+    return `
+      <tr style="border-top:2px solid #334155">
+        <td rowspan="2" style="vertical-align:top">
+          <div style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}${badge}</div>
+          <div style="color:#64748b;font-size:11px">${escHtml(r.label)}</div>
+          <div style="color:#94a3b8;font-size:11px">n=${r.n_closed} closed · cost ${fmt(r.avg_execution_cost_pp, 'pp')}</div>
+        </td>
+        <td style="color:#64748b;font-size:11px">gross</td>
+        <td>${fmt(gross.mean, '%')}</td>
+        <td style="color:${colorMed(gross.median)}">${fmt(gross.median, '%')}</td>
+        <td>${fmt(gross.p10, '%')}</td>
+        <td>${fmt(gross.p25, '%')}</td>
+        <td>${fmt(gross.p75, '%')}</td>
+        <td>${fmt(gross.p90, '%')}</td>
+        <td>${fmt(gross.min, '%')}</td>
+        <td>${fmt(gross.max, '%')}</td>
+        <td>${fmt(gross.std_dev, '')}</td>
+        <td rowspan="2" style="vertical-align:top;font-size:11px">${exitMix}</td>
+        <td rowspan="2" style="vertical-align:top">${winnerCell}<br>${loserCell}</td>
+      </tr>
+      <tr>
+        <td style="color:#64748b;font-size:11px">net</td>
+        <td>${fmt(net.mean, '%')}</td>
+        <td style="color:${colorMed(net.median)}">${fmt(net.median, '%')}</td>
+        <td>${fmt(net.p10, '%')}</td>
+        <td>${fmt(net.p25, '%')}</td>
+        <td>${fmt(net.p75, '%')}</td>
+        <td>${fmt(net.p90, '%')}</td>
+        <td>${fmt(net.min, '%')}</td>
+        <td>${fmt(net.max, '%')}</td>
+        <td>${fmt(net.std_dev, '')}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Per-Strategy Distribution
+        <span style="color:#64748b;font-size:11px;font-weight:400">— closed trades only · sorted by median net desc</span>
+      </div>
+      <div style="overflow-x:auto"><table class="table">
+        <thead><tr>
+          <th>Strategy</th><th></th>
+          <th>Mean</th><th>Median</th>
+          <th>p10</th><th>p25</th><th>p75</th><th>p90</th>
+          <th>Min</th><th>Max</th><th>Std</th>
+          <th>Exit Mix</th><th>Top ↗ / ↘</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+    </div>`;
+}
+
+/** Inline SVG sparkline for the edge-decay panel. Width × height in px, value
+ *  array oldest -> newest. Null entries leave a gap. */
+function renderSparkline(values: Array<number | null>, width = 120, height = 30): string {
+  const vals = values.filter((v): v is number => v != null);
+  if (vals.length === 0) {
+    return `<span style="color:#64748b;font-size:11px">no data</span>`;
+  }
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const pad = 2;
+  const innerW = width - pad * 2;
+  const innerH = height - pad * 2;
+  const step = values.length > 1 ? innerW / (values.length - 1) : 0;
+
+  const points: Array<[number, number]> = [];
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v == null) continue;
+    const x = pad + i * step;
+    const y = pad + innerH - ((v - min) / range) * innerH;
+    points.push([+x.toFixed(1), +y.toFixed(1)]);
+  }
+  if (points.length === 0) {
+    return `<span style="color:#64748b;font-size:11px">no data</span>`;
+  }
+
+  // Zero baseline if it falls in range.
+  const zeroLine = (min < 0 && max > 0)
+    ? `<line x1="${pad}" y1="${(pad + innerH - ((0 - min) / range) * innerH).toFixed(1)}" x2="${(pad + innerW).toFixed(1)}" y2="${(pad + innerH - ((0 - min) / range) * innerH).toFixed(1)}" stroke="#475569" stroke-width="0.5" stroke-dasharray="2,2"/>`
+    : '';
+  const last = points[points.length - 1];
+  const lastVal = vals[vals.length - 1];
+  const color = lastVal > 0 ? '#22d3ee' : '#f87171';
+  const polylinePts = points.map(([x, y]) => `${x},${y}`).join(' ');
+  return `<svg width="${width}" height="${height}" style="vertical-align:middle">
+    ${zeroLine}
+    <polyline points="${polylinePts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>
+    <circle cx="${last[0]}" cy="${last[1]}" r="2" fill="${color}"/>
+  </svg>`;
+}
+
+/** Edge-decay tracker panel — last 25/50/100/all + sparkline + flag. */
+function renderEdgeDecayPanel(data: any): string {
+  const ed = data.edge_decay;
+  if (!ed || !Array.isArray(ed.rows) || ed.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Edge-Decay Tracker</div>
+      <p style="color:#94a3b8">No active strategies — toggle one on to populate.</p>
+    </div>`;
+  }
+
+  const flagBadge = (flag: string) => {
+    const styles: Record<string, { bg: string; fg: string; border: string }> = {
+      'DECAYING':       { bg: '#7f1d1d33', fg: '#f87171', border: '#7f1d1d' },
+      'STRENGTHENING':  { bg: '#065f4633', fg: '#4ade80', border: '#065f46' },
+      'STABLE':         { bg: '#33415533', fg: '#94a3b8', border: '#334155' },
+      'LOW-N':          { bg: '#33415533', fg: '#64748b', border: '#334155' },
+    };
+    const s = styles[flag] ?? styles['STABLE'];
+    return `<span style="background:${s.bg};color:${s.fg};border:1px solid ${s.border};padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600">${flag}</span>`;
+  };
+
+  const fmtCell = (s: any) => {
+    if (!s || s.n === 0) return '<span style="color:#64748b">-</span>';
+    const m = s.median_net_pct;
+    const color = m == null ? '#94a3b8' : m > 0 ? '#22d3ee' : '#f87171';
+    return `<span style="color:${color}">${m == null ? '-' : m + '%'}</span><span style="color:#64748b;font-size:10px"> (n=${s.n})</span>`;
+  };
+
+  const rowsHtml = ed.rows.map((r: any) => {
+    return `<tr>
+      <td>
+        <div style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}</div>
+        <div style="color:#64748b;font-size:11px">${escHtml(r.label)}</div>
+      </td>
+      <td>${fmtCell(r.last_25)}</td>
+      <td>${fmtCell(r.last_50)}</td>
+      <td>${fmtCell(r.last_100)}</td>
+      <td>${fmtCell(r.all)}</td>
+      <td title="Median across the most recent ~30 trades">${r.recent_30_median_pct != null ? r.recent_30_median_pct + '%' : '<span style=\"color:#64748b\">-</span>'}</td>
+      <td>${renderSparkline(r.sparkline)}</td>
+      <td>${flagBadge(r.flag)}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Edge-Decay Tracker
+        <span style="color:#64748b;font-size:11px;font-weight:400">— median net % across rolling trade-count windows · DECAYING flag fires when last-30 median &lt; lifetime − 5pp</span>
+      </div>
+      <div style="overflow-x:auto"><table class="table">
+        <thead><tr>
+          <th>Strategy</th>
+          <th>Last 25</th><th>Last 50</th><th>Last 100</th><th>All</th>
+          <th title="Recent-30 median used by the flag rule">Recent-30</th>
+          <th>Sparkline (oldest → newest)</th>
+          <th>Flag</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+    </div>`;
+}
+
+/** Filter + TP/SL counterfactual panel. */
+function renderCounterfactualPanel(data: any): string {
+  const cf = data.counterfactual;
+  if (!cf || !Array.isArray(cf.rows) || cf.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Counterfactual — Filter + TP/SL</div>
+      <p style="color:#94a3b8">No active strategies — toggle one on to populate.</p>
+    </div>`;
+  }
+
+  const verdictBadge = (verdict: string) => {
+    const styles: Record<string, { bg: string; fg: string; border: string }> = {
+      'pulls weight': { bg: '#065f4633', fg: '#4ade80', border: '#065f46' },
+      'dead weight':  { bg: '#33415533', fg: '#94a3b8', border: '#334155' },
+      'hurts':        { bg: '#7f1d1d33', fg: '#f87171', border: '#7f1d1d' },
+      'unknown':      { bg: '#33415533', fg: '#64748b', border: '#334155' },
+    };
+    const s = styles[verdict] ?? styles['unknown'];
+    return `<span style="background:${s.bg};color:${s.fg};border:1px solid ${s.border};padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600">${verdict}</span>`;
+  };
+
+  const cardsHtml = cf.rows.map((r: any) => {
+    const errBanner = r.error
+      ? `<div style="background:#7f1d1d33;color:#f87171;border:1px solid #7f1d1d;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:11px">${escHtml(r.error)}</div>`
+      : '';
+
+    const fmtPct = (v: number | null) => v == null
+      ? '<span style="color:#64748b">-</span>'
+      : `<span style="color:${v > 0 ? '#22d3ee' : '#f87171'}">${v > 0 ? '+' : ''}${v}%</span>`;
+    const fmtDelta = (v: number | null) => v == null
+      ? '<span style="color:#64748b">-</span>'
+      : `<span style="color:${v > 0 ? '#22d3ee' : v < 0 ? '#f87171' : '#94a3b8'}">${v > 0 ? '+' : ''}${v}pp</span>`;
+
+    const dropRows = (r.filter_drops || []).map((d: any) => `
+      <tr>
+        <td style="color:#94a3b8;font-size:11px">${escHtml(d.label)}</td>
+        <td>${d.n_with}</td>
+        <td>${d.n_without}<span style="color:${d.delta_n > 0 ? '#22d3ee' : '#f87171'};font-size:10px"> (${d.delta_n > 0 ? '+' : ''}${d.delta_n})</span></td>
+        <td>${fmtPct(d.opt_avg_ret_with)}</td>
+        <td>${fmtPct(d.opt_avg_ret_without)}</td>
+        <td>${fmtDelta(d.delta_ret_pp)}</td>
+        <td>${verdictBadge(d.verdict)}</td>
+      </tr>`).join('');
+
+    const altRows = (r.tp_sl_alternatives || []).map((a: any) => `
+      <tr>
+        <td>${a.tp}%</td>
+        <td>${a.sl}%</td>
+        <td>${fmtPct(a.avg_ret)}</td>
+        <td>${a.win_rate}%</td>
+        <td>${fmtDelta(a.delta_ret_pp)}</td>
+        <td><span style="color:${a.delta_win_rate_pp > 0 ? '#22d3ee' : '#f87171'}">${a.delta_win_rate_pp > 0 ? '+' : ''}${a.delta_win_rate_pp}pp</span></td>
+      </tr>`).join('');
+
+    const tpSlHeader = `
+      <div style="display:flex;align-items:center;gap:12px;margin:12px 0 6px;color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">
+        TP / SL alternatives
+        <span style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0">configured ${r.configured.tp_input}%/${r.configured.sl_input}% → grid ${r.configured.tp_grid}%/${r.configured.sl_grid}% (avg_ret ${r.configured.avg_ret == null ? '-' : r.configured.avg_ret + '%'}, wr ${r.configured.win_rate == null ? '-' : r.configured.win_rate + '%'})</span>
+      </div>`;
+
+    const altsTable = altRows ? `<table class="table" style="font-size:11px">
+      <thead><tr><th>TP</th><th>SL</th><th>Avg Ret</th><th>Win%</th><th>Δret vs cfg</th><th>Δwr vs cfg</th></tr></thead>
+      <tbody>${altRows}</tbody>
+    </table>` : '<p style="color:#64748b;font-size:11px;margin:0">No qualifying alternatives in the grid.</p>';
+
+    const dropTable = dropRows ? `<table class="table" style="font-size:11px">
+      <thead><tr><th>Filter</th><th>n with</th><th>n w/o</th><th>opt with</th><th>opt w/o</th><th>Δret pp</th><th>Verdict</th></tr></thead>
+      <tbody>${dropRows}</tbody>
+    </table>` : '<p style="color:#64748b;font-size:11px;margin:0">No filters configured — counterfactual only shows TP/SL grid.</p>';
+
+    return `
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <span style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}</span>
+            <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(r.label)}</span>
+            <span style="color:#64748b;font-size:11px;margin-left:8px">entry T+${r.entry_sec} · n=${r.baseline_n} · opt ${r.opt.tp == null ? '-' : r.opt.tp + '%/' + r.opt.sl + '% → ' + (r.opt.avg_ret > 0 ? '+' : '') + r.opt.avg_ret + '%'}</span>
+          </div>
+        </div>
+        ${errBanner}
+        <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Filter contribution</div>
+        ${dropTable}
+        ${tpSlHeader}
+        ${altsTable}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Counterfactual — Filter + TP/SL
+        <span style="color:#64748b;font-size:11px;font-weight:400">— Δret &lt; 0 means dropping the filter hurts (filter pulls weight) · TP/SL alternatives from the same 12×10 grid as /api/best-combos</span>
+      </div>
+      ${cardsHtml}
+    </div>`;
+}
+
+/** Loss postmortem panel — top patterns + raw loser drill-down. */
+function renderLossPostmortemPanel(data: any): string {
+  const lp = data.loss_postmortem;
+  if (!lp || !Array.isArray(lp.rows) || lp.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Loss Postmortem</div>
+      <p style="color:#94a3b8">No active strategies — toggle one on to populate.</p>
+    </div>`;
+  }
+
+  const cardsHtml = lp.rows.map((r: any) => {
+    if (r.population_n === 0) {
+      return `
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
+        <div><span style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}</span> <span style="color:#64748b">— no closed trades yet</span></div>
+      </div>`;
+    }
+
+    const patternRows = (r.dominant_patterns || []).map((p: any) => {
+      const worst = p.buckets[p.worst_bucket];
+      const direction = worst.deviation_pp > 0 ? 'cluster in' : 'avoid';
+      const rangeStr = `[${worst.range[0]}, ${worst.range[1]}]`;
+      const sign = worst.deviation_pp > 0 ? '+' : '';
+      return `<tr>
+        <td style="color:#94a3b8;font-family:monospace;font-size:11px">${escHtml(p.feature)}</td>
+        <td>${worst.loser_count}/${r.loser_n} losers ${direction} bucket ${p.worst_bucket} (${rangeStr})</td>
+        <td>${worst.overall_count}/${p.overall_n} overall</td>
+        <td><span style="color:${worst.deviation_pp > 0 ? '#f87171' : '#22d3ee'};font-weight:600">${sign}${worst.deviation_pp}pp</span></td>
+      </tr>`;
+    }).join('');
+
+    const dominantTable = patternRows
+      ? `<table class="table" style="font-size:11px"><thead><tr><th>Feature</th><th>Loser bucket</th><th>Overall</th><th>Δpp</th></tr></thead><tbody>${patternRows}</tbody></table>`
+      : `<p style="color:#64748b;font-size:11px;margin:0">No feature crosses the 20pp deviation threshold — losses look diffuse.</p>`;
+
+    // Drill-down: top 10 worst trades with feature values (collapsible <details>).
+    const featureCols = lp.rows[0]?.dominant_patterns?.[0]?.buckets ? Object.keys(r.losers[0]?.features ?? {}) : [];
+    const loserHeader = featureCols.length > 0
+      ? '<th>mint</th><th>net%</th><th>exit</th><th>held</th>' + featureCols.map(f => `<th title="${f}">${f.replace(/_/g, ' ').slice(0, 12)}</th>`).join('')
+      : '<th>mint</th><th>net%</th><th>exit</th><th>held</th>';
+    const loserRowsHtml = (r.losers || []).slice(0, 10).map((l: any) => {
+      const cells = featureCols.map(f => {
+        const v = l.features[f];
+        return v == null ? '<td style="color:#64748b">-</td>' : `<td style="font-size:10px">${typeof v === 'number' ? +v.toFixed(2) : v}</td>`;
+      }).join('');
+      return `<tr>
+        <td style="font-family:monospace;font-size:10px">${(l.mint || '').slice(0, 6)}…</td>
+        <td style="color:#f87171">${l.net_return_pct?.toFixed(1)}%</td>
+        <td style="color:#94a3b8;font-size:10px">${escHtml(l.exit_reason || '-')}</td>
+        <td style="font-size:10px">${l.held_seconds ?? '-'}s</td>
+        ${cells}
+      </tr>`;
+    }).join('');
+    const loserTable = `
+      <details style="margin-top:8px">
+        <summary style="color:#64748b;font-size:11px;cursor:pointer">Raw losers (top 10 by net loss)</summary>
+        <div style="overflow-x:auto;margin-top:6px">
+          <table class="table" style="font-size:10px"><thead><tr>${loserHeader}</tr></thead><tbody>${loserRowsHtml}</tbody></table>
+        </div>
+      </details>`;
+
+    return `
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
+        <div style="margin-bottom:8px">
+          <span style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}</span>
+          <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(r.label)}</span>
+          <span style="color:#64748b;font-size:11px;margin-left:8px">losers ${r.loser_n} of ${r.population_n} closed</span>
+        </div>
+        ${dominantTable}
+        ${loserTable}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Loss Postmortem
+        <span style="color:#64748b;font-size:11px;font-weight:400">— worst 20 trades / strategy bucketed against the strategy's own population · features with |deviation| ≥ 20pp surface as dominant patterns</span>
+      </div>
+      ${cardsHtml}
+    </div>`;
+}
+
+/** Strategy journal panel — hypothesis + auto-status + updates timeline. */
+function renderJournalPanel(data: any): string {
+  const j = data.journal;
+  if (!j || !Array.isArray(j.rows) || j.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Strategy Journal
+        <span style="color:#64748b;font-size:11px;font-weight:400">— push entries via strategy-commands.json journal-upsert</span>
+      </div>
+      <p style="color:#94a3b8">No journal entries yet. Push a journal-upsert command in strategy-commands.json to record the hypothesis behind a strategy cohort.</p>
+    </div>`;
+  }
+
+  const autoBadge = (status: string) => {
+    const styles: Record<string, { bg: string; fg: string; border: string }> = {
+      'OPEN':      { bg: '#33415533', fg: '#94a3b8', border: '#334155' },
+      'ON-TRACK':  { bg: '#065f4633', fg: '#4ade80', border: '#065f46' },
+      'DEGRADING': { bg: '#7f1d1d33', fg: '#f87171', border: '#7f1d1d' },
+      'HIT-KILL':  { bg: '#7f1d1d',   fg: '#fff',    border: '#7f1d1d' },
+      'NO-DATA':   { bg: '#33415533', fg: '#64748b', border: '#334155' },
+      'PROMOTED':  { bg: '#1e3a8a33', fg: '#60a5fa', border: '#1e3a8a' },
+      'KILLED':    { bg: '#1f2937',   fg: '#94a3b8', border: '#374151' },
+      'PAUSED':    { bg: '#33415533', fg: '#fbbf24', border: '#334155' },
+    };
+    const s = styles[status] ?? styles['OPEN'];
+    return `<span style="background:${s.bg};color:${s.fg};border:1px solid ${s.border};padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${status}</span>`;
+  };
+
+  const stateBadge = (state: string) => {
+    if (state === 'enabled') return '';
+    const color = state === 'disabled' ? '#94a3b8' : '#64748b';
+    return `<span style="background:#33415533;color:${color};border:1px solid #334155;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px">[${state}]</span>`;
+  };
+
+  const cardsHtml = j.rows.map((e: any) => {
+    const muted = e.strategy_state !== 'enabled';
+    const cardBg = muted ? '#0f172a99' : '#0f172a';
+    const cardOpacity = muted ? '0.75' : '1';
+
+    const pred = e.prediction;
+    const predLine = pred
+      ? `<div style="color:#94a3b8;font-size:11px;margin-bottom:6px">
+          Prediction:
+          ${pred.target_median_net_pct != null ? `target median ${pred.target_median_net_pct > 0 ? '+' : ''}${pred.target_median_net_pct}%` : ''}
+          ${pred.target_n != null ? `· n=${pred.target_n}` : ''}
+          ${pred.target_days != null ? `· ${pred.target_days}d` : ''}
+          ${pred.kill_criterion ? `· kill: <span style="color:#fbbf24">${escHtml(pred.kill_criterion)}</span>` : ''}
+        </div>`
+      : '';
+
+    const live = e.live_stats;
+    const liveLine = `<div style="color:#94a3b8;font-size:11px;margin-bottom:8px">
+      Live: n=${live.n_closed} closed · median ${live.median_net_pct == null ? '-' : (live.median_net_pct > 0 ? '+' : '') + live.median_net_pct + '%'} · mean ${live.mean_net_pct == null ? '-' : (live.mean_net_pct > 0 ? '+' : '') + live.mean_net_pct + '%'} · wr ${live.win_rate_pct == null ? '-' : live.win_rate_pct + '%'}
+    </div>`;
+
+    const updatesHtml = (e.updates || []).length > 0
+      ? `<details style="margin-top:6px"><summary style="color:#64748b;font-size:11px;cursor:pointer">${e.updates.length} update${e.updates.length === 1 ? '' : 's'}</summary>
+          <div style="margin-top:6px;padding-left:12px;border-left:2px solid #334155">
+            ${(e.updates as any[]).map(u => `
+              <div style="margin-bottom:6px">
+                <div style="color:#64748b;font-size:10px">${utcToCentral(new Date(u.at * 1000).toISOString())} CT</div>
+                <div style="color:#e0e0e0;font-size:11px;white-space:pre-wrap">${escHtml(u.note)}</div>
+              </div>`).join('')}
+          </div>
+        </details>`
+      : '';
+
+    const cohortChip = e.cohort_label
+      ? `<span style="background:#1e3a8a33;color:#60a5fa;border:1px solid #1e3a8a;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px">${escHtml(e.cohort_label)}</span>`
+      : '';
+
+    const manualBadge = e.manual_status !== 'OPEN' && e.manual_status !== e.auto_status
+      ? `<span style="color:#64748b;font-size:10px;margin-left:6px">manual: ${escHtml(e.manual_status)}</span>`
+      : '';
+
+    return `
+      <div style="background:${cardBg};border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px;opacity:${cardOpacity}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+          <div>
+            <span style="color:#a78bfa;font-weight:600">${escHtml(e.strategy_id)}</span>
+            <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(e.strategy_label)}</span>
+            ${stateBadge(e.strategy_state)}${cohortChip}
+          </div>
+          <div>${autoBadge(e.auto_status)}${manualBadge}</div>
+        </div>
+        ${predLine}
+        ${liveLine}
+        <div style="color:#e0e0e0;font-size:12px;white-space:pre-wrap;background:#1e293b;border-radius:4px;padding:8px;border:1px solid #334155">${escHtml(e.hypothesis)}</div>
+        ${updatesHtml}
+        <div style="color:#64748b;font-size:10px;margin-top:6px">
+          id <span style="font-family:monospace">${escHtml(e.id)}</span>
+          · created ${utcToCentral(new Date(e.created_at * 1000).toISOString())} CT
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Strategy Journal
+        <span style="color:#64748b;font-size:11px;font-weight:400">— ${j.entry_count} entries · auto-status from live closed-trade stats · entries persist across strategy delete/disable</span>
+      </div>
+      ${cardsHtml}
+    </div>`;
+}
+
 export function renderTradingHtml(data: any): string {
   const navHtml = nav('/trading');
   const strategies: any[] = data.strategies || [];
@@ -4831,6 +5330,11 @@ export function renderTradingHtml(data: any): string {
   ${perfHtml}
   ${execModeHtml}
   ${ssrHtml}
+  ${renderStrategyPercentilesPanel(data)}
+  ${renderEdgeDecayPanel(data)}
+  ${renderCounterfactualPanel(data)}
+  ${renderLossPostmortemPanel(data)}
+  ${renderJournalPanel(data)}
   ${tradesHtml}
   ${skipsHtml}
 </div>

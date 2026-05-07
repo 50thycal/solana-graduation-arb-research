@@ -12,6 +12,11 @@ import { computeExitSimMatrix } from './api/exit-sim-matrix';
 import { computeWalletRepAnalysis } from './api/wallet-rep-analysis';
 import { computeFilterV2Data } from './api/filter-v2-data';
 import { computeTradingData } from './api/trading-data';
+import { computeStrategyPercentiles } from './api/strategy-percentiles';
+import { computeJournal } from './api/journal';
+import { computeEdgeDecay } from './api/edge-decay';
+import { computeCounterfactual } from './api/counterfactual';
+import { computeLossPostmortem } from './api/loss-postmortem';
 import { getHeavyData } from './api/heavy-cache';
 import { StrategyManager } from './trading';
 import { StrategyParams } from './trading/config';
@@ -2494,8 +2499,11 @@ async function main() {
   // empty strategies/config at boot time, which left the dashboard stuck at
   // "DISABLED 0 strategies" even after strategies were upserted via
   // strategy-commands.json. computeTradingData's queries are all fast (<100ms
-  // total); only top_pairs comes from the cached filter-v2 pass.
-  app.get('/trading', (req, res) => {
+  // total); only top_pairs comes from the cached filter-v2 pass. The five
+  // research panels (distribution / edge-decay / counterfactual / loss-
+  // postmortem / journal) compute on every cache miss but the 30s HTML
+  // memoization keeps the worst case bounded.
+  app.get('/trading', async (req, res) => {
     try {
       const strategyFilter = (req.query.strategy as string) || '';
       const executionModeFilter = (req.query.execution_mode as string) || '';
@@ -2511,11 +2519,36 @@ async function main() {
           return;
         }
       }
-      const data = computeTradingData(db, strategyManager, {
+      const baseData = computeTradingData(db, strategyManager, {
         strategyFilter,
         executionModeFilter,
         topPairs: cachedTopPairs || [],
       });
+      // Research panels — same compute fns gist-sync uses for the bot-status
+      // JSON files. Counterfactual is async (yields between simulateCombo
+      // calls); the others are sync but still invoked here so they ride the
+      // same 30s HTML memo.
+      const [
+        strategyPercentiles,
+        edgeDecay,
+        counterfactual,
+        lossPostmortem,
+        journal,
+      ] = await Promise.all([
+        Promise.resolve(computeStrategyPercentiles(db)),
+        Promise.resolve(computeEdgeDecay(db)),
+        computeCounterfactual(db),
+        Promise.resolve(computeLossPostmortem(db)),
+        Promise.resolve(computeJournal(db)),
+      ]);
+      const data = {
+        ...baseData,
+        strategy_percentiles: strategyPercentiles,
+        edge_decay: edgeDecay,
+        counterfactual,
+        loss_postmortem: lossPostmortem,
+        journal,
+      };
       if (wantHtml) {
         const html = renderTradingHtml(data);
         memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
