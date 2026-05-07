@@ -253,6 +253,18 @@ export class GistSync {
   private async processInboundCommands(): Promise<void> {
     if (!this.strategyManager) return;
 
+    // Reconcile in-memory strategies with strategy_configs first. Catches the
+    // "deleted strategy still trading" class of bug where memory and DB drift
+    // (observed 2026-05-07: trades flowed for 5 deleted strategies until restart).
+    try {
+      const drift = this.strategyManager.reconcileFromDb();
+      if (drift.removed || drift.added || drift.toggled) {
+        logger.warn({ drift }, 'Strategy cache drift detected during reconcile');
+      }
+    } catch (err) {
+      logger.error({ err }, 'reconcileFromDb threw — continuing with command processing');
+    }
+
     try {
       const resp = await fetch(
         `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${COMMANDS_FILE}?ref=main`,
