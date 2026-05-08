@@ -1221,6 +1221,19 @@ function escHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Mint cell with Birdeye link + clipboard copy. Tap the truncated text on
+ * mobile to open Birdeye in a new tab; tap the small copy icon to copy the
+ * full mint to the clipboard. Always renders with rel="noopener noreferrer"
+ * on the external link.
+ */
+function mintCell(mint: string | null | undefined, prefixLen = 8): string {
+  if (!mint) return '<span style="color:#64748b">-</span>';
+  const m = escHtml(mint);
+  const truncated = m.slice(0, prefixLen) + '…';
+  return `<span class="mint-cell"><a href="https://birdeye.so/token/${m}?chain=solana" target="_blank" rel="noopener noreferrer">${truncated}</a><button type="button" class="mint-copy" data-mint="${m}" aria-label="Copy mint" title="Copy full mint">⎘</button></span>`;
+}
+
 // ── Panel 5 helpers: statistical significance (Wilson CI + bootstrap CI) ──
 
 type FilterV2Panel5Row = {
@@ -4057,7 +4070,7 @@ function splitFiltersToPresets(allConfigs: any[]): string[] {
 
 /** Per-strategy distribution panel (n, mean, median, p10/p25/p75/p90, min/max,
  *  std, exit-mix, top winner/loser). Sources from /api/strategy-percentiles. */
-function renderStrategyPercentilesPanel(data: any): string {
+export function renderStrategyPercentilesPanel(data: any): string {
   const sp = data.strategy_percentiles;
   if (!sp || !Array.isArray(sp.rows) || sp.rows.length === 0) {
     return `
@@ -4088,10 +4101,10 @@ function renderStrategyPercentilesPanel(data: any): string {
     const winner = r.top_winners?.[0];
     const loser = r.top_losers?.[0];
     const winnerCell = winner
-      ? `<span title="trade ${winner.trade_id} · grad ${winner.graduation_id ?? '?'}" style="color:#22d3ee;font-family:monospace;font-size:11px">${(winner.mint || '').slice(0, 6)}… +${winner.gross_return_pct?.toFixed(0)}%</span>`
+      ? `<span title="trade ${winner.trade_id} · grad ${winner.graduation_id ?? '?'}" style="font-size:11px">${mintCell(winner.mint, 6)} <span style="color:#22d3ee">+${winner.gross_return_pct?.toFixed(0)}%</span></span>`
       : '<span style="color:#64748b">-</span>';
     const loserCell = loser
-      ? `<span title="trade ${loser.trade_id} · grad ${loser.graduation_id ?? '?'}" style="color:#f87171;font-family:monospace;font-size:11px">${(loser.mint || '').slice(0, 6)}… ${loser.gross_return_pct?.toFixed(0)}%</span>`
+      ? `<span title="trade ${loser.trade_id} · grad ${loser.graduation_id ?? '?'}" style="font-size:11px">${mintCell(loser.mint, 6)} <span style="color:#f87171">${loser.gross_return_pct?.toFixed(0)}%</span></span>`
       : '<span style="color:#64748b">-</span>';
 
     // Distribution badge — simple visual cue when whole IQR is on one side of zero.
@@ -4102,10 +4115,11 @@ function renderStrategyPercentilesPanel(data: any): string {
       badge = '<span style="background:#7f1d1d33;color:#f87171;border:1px solid #7f1d1d;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px">p75&lt;0</span>';
     }
 
+    const sidEsc = escHtml(r.strategy_id);
     return `
-      <tr style="border-top:2px solid #334155">
+      <tr style="border-top:2px solid #334155" data-strategy="${sidEsc}">
         <td rowspan="2" style="vertical-align:top">
-          <div style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}${badge}</div>
+          <div><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a>${badge}</div>
           <div style="color:#64748b;font-size:11px">${escHtml(r.label)}</div>
           <div style="color:#94a3b8;font-size:11px">n=${r.n_closed} closed · cost ${fmt(r.avg_execution_cost_pp, 'pp')}</div>
         </td>
@@ -4122,7 +4136,7 @@ function renderStrategyPercentilesPanel(data: any): string {
         <td rowspan="2" style="vertical-align:top;font-size:11px">${exitMix}</td>
         <td rowspan="2" style="vertical-align:top">${winnerCell}<br>${loserCell}</td>
       </tr>
-      <tr>
+      <tr data-strategy="${sidEsc}">
         <td style="color:#64748b;font-size:11px">net</td>
         <td>${fmt(net.mean, '%')}</td>
         <td style="color:${colorMed(net.median)}">${fmt(net.median, '%')}</td>
@@ -4197,7 +4211,7 @@ function renderSparkline(values: Array<number | null>, width = 120, height = 30)
 }
 
 /** Edge-decay tracker panel — last 25/50/100/all + sparkline + flag. */
-function renderEdgeDecayPanel(data: any): string {
+export function renderEdgeDecayPanel(data: any): string {
   const ed = data.edge_decay;
   if (!ed || !Array.isArray(ed.rows) || ed.rows.length === 0) {
     return `
@@ -4226,9 +4240,10 @@ function renderEdgeDecayPanel(data: any): string {
   };
 
   const rowsHtml = ed.rows.map((r: any) => {
-    return `<tr>
+    const sidEsc = escHtml(r.strategy_id);
+    return `<tr data-strategy="${sidEsc}">
       <td>
-        <div style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}</div>
+        <div><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a></div>
         <div style="color:#64748b;font-size:11px">${escHtml(r.label)}</div>
       </td>
       <td>${fmtCell(r.last_25)}</td>
@@ -4260,7 +4275,7 @@ function renderEdgeDecayPanel(data: any): string {
 }
 
 /** Filter + TP/SL counterfactual panel. */
-function renderCounterfactualPanel(data: any): string {
+export function renderCounterfactualPanel(data: any): string {
   const cf = data.counterfactual;
   if (!cf || !Array.isArray(cf.rows) || cf.rows.length === 0) {
     return `
@@ -4330,11 +4345,12 @@ function renderCounterfactualPanel(data: any): string {
       <tbody>${dropRows}</tbody>
     </table>` : '<p style="color:#64748b;font-size:11px;margin:0">No filters configured — counterfactual only shows TP/SL grid.</p>';
 
+    const sidEsc = escHtml(r.strategy_id);
     return `
-      <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
+      <div data-strategy="${sidEsc}" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
           <div>
-            <span style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}</span>
+            <a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a>
             <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(r.label)}</span>
             <span style="color:#64748b;font-size:11px;margin-left:8px">entry T+${r.entry_sec} · n=${r.baseline_n} · opt ${r.opt.tp == null ? '-' : r.opt.tp + '%/' + r.opt.sl + '% → ' + (r.opt.avg_ret > 0 ? '+' : '') + r.opt.avg_ret + '%'}</span>
           </div>
@@ -4357,7 +4373,7 @@ function renderCounterfactualPanel(data: any): string {
 }
 
 /** Loss postmortem panel — top patterns + raw loser drill-down. */
-function renderLossPostmortemPanel(data: any): string {
+export function renderLossPostmortemPanel(data: any): string {
   const lp = data.loss_postmortem;
   if (!lp || !Array.isArray(lp.rows) || lp.rows.length === 0) {
     return `
@@ -4368,10 +4384,11 @@ function renderLossPostmortemPanel(data: any): string {
   }
 
   const cardsHtml = lp.rows.map((r: any) => {
+    const sidEsc = escHtml(r.strategy_id);
     if (r.population_n === 0) {
       return `
-      <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
-        <div><span style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}</span> <span style="color:#64748b">— no closed trades yet</span></div>
+      <div data-strategy="${sidEsc}" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
+        <div><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a> <span style="color:#64748b">— no closed trades yet</span></div>
       </div>`;
     }
 
@@ -4403,7 +4420,7 @@ function renderLossPostmortemPanel(data: any): string {
         return v == null ? '<td style="color:#64748b">-</td>' : `<td style="font-size:10px">${typeof v === 'number' ? +v.toFixed(2) : v}</td>`;
       }).join('');
       return `<tr>
-        <td style="font-family:monospace;font-size:10px">${(l.mint || '').slice(0, 6)}…</td>
+        <td>${mintCell(l.mint, 6)}</td>
         <td style="color:#f87171">${l.net_return_pct?.toFixed(1)}%</td>
         <td style="color:#94a3b8;font-size:10px">${escHtml(l.exit_reason || '-')}</td>
         <td style="font-size:10px">${l.held_seconds ?? '-'}s</td>
@@ -4419,9 +4436,9 @@ function renderLossPostmortemPanel(data: any): string {
       </details>`;
 
     return `
-      <div style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
+      <div data-strategy="${sidEsc}" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
         <div style="margin-bottom:8px">
-          <span style="color:#a78bfa;font-weight:600">${escHtml(r.strategy_id)}</span>
+          <a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a>
           <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(r.label)}</span>
           <span style="color:#64748b;font-size:11px;margin-left:8px">losers ${r.loser_n} of ${r.population_n} closed</span>
         </div>
@@ -4440,7 +4457,7 @@ function renderLossPostmortemPanel(data: any): string {
 }
 
 /** Strategy journal panel — hypothesis + auto-status + updates timeline. */
-function renderJournalPanel(data: any): string {
+export function renderJournalPanel(data: any): string {
   const j = data.journal;
   if (!j || !Array.isArray(j.rows) || j.rows.length === 0) {
     return `
@@ -4514,11 +4531,12 @@ function renderJournalPanel(data: any): string {
       ? `<span style="color:#64748b;font-size:10px;margin-left:6px">manual: ${escHtml(e.manual_status)}</span>`
       : '';
 
+    const sidEsc = escHtml(e.strategy_id);
     return `
-      <div style="background:${cardBg};border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px;opacity:${cardOpacity}">
+      <div data-strategy="${sidEsc}" style="background:${cardBg};border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px;opacity:${cardOpacity}">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
           <div>
-            <span style="color:#a78bfa;font-weight:600">${escHtml(e.strategy_id)}</span>
+            <a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a>
             <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(e.strategy_label)}</span>
             ${stateBadge(e.strategy_state)}${cohortChip}
           </div>
@@ -4769,14 +4787,18 @@ export function renderTradingHtml(data: any): string {
   }
 
   // ── Open positions ────────────────────────────────────────────────────────
-  const openPositions = (data.open_positions || []).filter((p: any) => !selected || p.strategyId === selected);
-  const posRows = openPositions.map((p: any) => {
+  // Server-side strategy filter is retained for JSON consumers (Accept: application/json)
+  // but the HTML shell renders all rows; client-side filter hides non-matches in real time.
+  const openPositionsAll = data.open_positions || [];
+  const posRows = (openPositionsAll as any[]).map((p: any) => {
     const effSlDiffers = p.effectiveSlPriceSol != null && p.slPriceSol != null && Math.abs(p.effectiveSlPriceSol - p.slPriceSol) > 1e-12;
+    const sid = p.strategyId ?? 'default';
+    const sidEsc = escHtml(sid);
     return `
-    <tr>
+    <tr data-strategy="${sidEsc}">
       <td>${p.tradeId}</td>
-      <td style="color:#a78bfa;font-size:11px">${p.strategyId ?? 'default'}</td>
-      <td style="font-family:monospace;font-size:11px">${p.mint.slice(0,8)}…</td>
+      <td style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
+      <td>${mintCell(p.mint)}</td>
       <td>${p.entryPriceSol?.toFixed(8) ?? '-'}</td>
       <td style="color:#22d3ee">${p.tpPriceSol?.toFixed(8) ?? '-'}</td>
       <td style="color:#f87171">${p.slPriceSol?.toFixed(8) ?? '-'}</td>
@@ -4788,8 +4810,8 @@ export function renderTradingHtml(data: any): string {
 
   const openHtml = `
     <div class="card">
-      <div class="card-title">Open Positions (${openPositions.length})</div>
-      ${posRows ? `<table class="table">
+      <div class="card-title">Open Positions (<span class="row-count" data-row-count-for="open-positions">${openPositionsAll.length}</span>)</div>
+      ${posRows ? `<table class="table" data-row-scope="open-positions">
         <thead><tr><th>ID</th><th>Strategy</th><th>Mint</th><th>Entry</th><th>TP</th><th>Fixed SL</th><th>Eff. SL</th><th>HWM</th><th>Held</th></tr></thead>
         <tbody>${posRows}</tbody>
       </table>` : '<p style="color:#94a3b8">No open positions</p>'}
@@ -4805,23 +4827,25 @@ export function renderTradingHtml(data: any): string {
     // the legacy `mode` column only distinguishes paper vs live and would
     // mislabel shadow trades as PAPER.
     const exec = execModeStyle(s.execution_mode || 'paper');
-    return `<tr>
-      <td style="color:#a78bfa">${s.strategy_id ?? 'default'}</td>
-      <td><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${exec.label}</span></td>
-      <td>${s.total}</td><td>${s.closed}</td><td>${s.open_count}</td>
-      <td style="color:${retColor}" data-sort="${ret ?? -999}">${ret != null ? ret + '%' : '-'}</td>
-      <td style="color:#22d3ee">${s.tp_exits}</td>
-      <td style="color:#f87171">${s.sl_exits}</td>
-      <td style="color:#94a3b8">${s.timeout_exits}</td>
-      <td data-sort="${s.total_net_profit_sol ?? -999}">${s.total_net_profit_sol != null ? s.total_net_profit_sol + ' SOL' : '-'}</td>
-      <td style="font-size:11px;color:#64748b" data-sort="${s.first_trade_ts ?? 0}">${firstDt}</td>
+    const sid = s.strategy_id ?? 'default';
+    const sidEsc = escHtml(sid);
+    return `<tr data-strategy="${sidEsc}">
+      <td data-label="Strategy"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
+      <td data-label="Mode"><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${exec.label}</span></td>
+      <td data-label="Total">${s.total}</td><td data-label="Closed">${s.closed}</td><td data-label="Open">${s.open_count}</td>
+      <td data-label="Avg Net Ret%" style="color:${retColor}" data-sort="${ret ?? -999}">${ret != null ? ret + '%' : '-'}</td>
+      <td data-label="TP" style="color:#22d3ee">${s.tp_exits}</td>
+      <td data-label="SL" style="color:#f87171">${s.sl_exits}</td>
+      <td data-label="Timeout" style="color:#94a3b8">${s.timeout_exits}</td>
+      <td data-label="Net P&L" data-sort="${s.total_net_profit_sol ?? -999}">${s.total_net_profit_sol != null ? s.total_net_profit_sol + ' SOL' : '-'}</td>
+      <td data-label="First Trade" style="font-size:11px;color:#64748b" data-sort="${s.first_trade_ts ?? 0}">${firstDt}</td>
     </tr>`;
   }).join('');
 
   const perfHtml = `
     <div class="card">
       <div class="card-title">Performance by Strategy</div>
-      ${stratStatRows ? `<div style="overflow-x:auto"><table class="table sortable" id="perf-table">
+      ${stratStatRows ? `<div style="overflow-x:auto"><table class="table sortable responsive" id="perf-table">
         <thead><tr>
           <th data-col="0">Strategy</th><th data-col="1">Mode</th><th data-col="2">Total</th>
           <th data-col="3">Closed</th><th data-col="4">Open</th>
@@ -4829,46 +4853,7 @@ export function renderTradingHtml(data: any): string {
           <th data-col="8">Timeout</th><th data-col="9">Net P&L</th><th data-col="10">First Trade</th>
         </tr></thead>
         <tbody>${stratStatRows}</tbody>
-      </table></div>
-      <script>
-      (function(){
-        const table = document.getElementById('perf-table');
-        if (!table) return;
-        const headers = table.querySelectorAll('th[data-col]');
-        let sortCol = -1, sortAsc = true;
-        headers.forEach(th => {
-          th.style.cursor = 'pointer';
-          th.style.userSelect = 'none';
-          th.addEventListener('click', () => {
-            const col = parseInt(th.getAttribute('data-col'));
-            if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
-            headers.forEach(h => h.textContent = h.textContent.replace(/ [▲▼]$/, ''));
-            th.textContent += sortAsc ? ' ▲' : ' ▼';
-            const tbody = table.querySelector('tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            rows.sort((a, b) => {
-              const aCell = a.children[col];
-              const bCell = b.children[col];
-              const aSort = aCell.getAttribute('data-sort');
-              const bSort = bCell.getAttribute('data-sort');
-              let aVal, bVal;
-              if (aSort !== null && bSort !== null) {
-                aVal = parseFloat(aSort); bVal = parseFloat(bSort);
-              } else {
-                aVal = (aCell.textContent || '').trim();
-                bVal = (bCell.textContent || '').trim();
-                const aNum = parseFloat(aVal); const bNum = parseFloat(bVal);
-                if (!isNaN(aNum) && !isNaN(bNum)) { aVal = aNum; bVal = bNum; }
-              }
-              if (aVal < bVal) return sortAsc ? -1 : 1;
-              if (aVal > bVal) return sortAsc ? 1 : -1;
-              return 0;
-            });
-            rows.forEach(r => tbody.appendChild(r));
-          });
-        });
-      })();
-      </script>` : '<p style="color:#94a3b8">No trades yet</p>'}
+      </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
 
   // ── Performance by Execution Mode ────────────────────────────────────────
@@ -4900,7 +4885,8 @@ export function renderTradingHtml(data: any): string {
   }).join('');
 
   const execModeHtml = `
-    <div class="card">
+    <div class="card" data-aggregate="true">
+      <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
       <div class="card-title">Performance by Execution Mode</div>
       ${execModeRows ? `<div style="overflow-x:auto"><table class="table sortable" id="exec-mode-table">
         <thead><tr>
@@ -4920,44 +4906,7 @@ export function renderTradingHtml(data: any): string {
         (gross − shadow_entry_slip − shadow_exit_slip), no extra round-trip cost. The gap between the two columns is
         the modeling overcharge: positive means our paper sim is more pessimistic than reality.
         Slippage / land-time / Jito columns are only populated for shadow and live modes.
-      </p>
-      <script>
-      (function(){
-        const table = document.getElementById('exec-mode-table');
-        if (!table) return;
-        const headers = table.querySelectorAll('th[data-col]');
-        let sortCol = -1, sortAsc = true;
-        headers.forEach(th => {
-          th.style.cursor = 'pointer';
-          th.style.userSelect = 'none';
-          th.addEventListener('click', () => {
-            const col = parseInt(th.getAttribute('data-col'));
-            if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
-            headers.forEach(h => h.textContent = h.textContent.replace(/ [▲▼]$/, ''));
-            th.textContent += sortAsc ? ' ▲' : ' ▼';
-            const tbody = table.querySelector('tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            rows.sort((a, b) => {
-              const aCell = a.children[col]; const bCell = b.children[col];
-              const aSort = aCell.getAttribute('data-sort');
-              const bSort = bCell.getAttribute('data-sort');
-              let aVal, bVal;
-              if (aSort !== null && bSort !== null) {
-                aVal = parseFloat(aSort); bVal = parseFloat(bSort);
-              } else {
-                aVal = (aCell.textContent || '').trim(); bVal = (bCell.textContent || '').trim();
-                const aNum = parseFloat(aVal); const bNum = parseFloat(bVal);
-                if (!isNaN(aNum) && !isNaN(bNum)) { aVal = aNum; bVal = bNum; }
-              }
-              if (aVal < bVal) return sortAsc ? -1 : 1;
-              if (aVal > bVal) return sortAsc ? 1 : -1;
-              return 0;
-            });
-            rows.forEach(r => tbody.appendChild(r));
-          });
-        });
-      })();
-      </script>` : '<p style="color:#94a3b8">No trades yet</p>'}
+      </p>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
 
   // ── Shadow Slippage Range ────────────────────────────────────────────────
@@ -4984,7 +4933,8 @@ export function renderTradingHtml(data: any): string {
     </tr>`;
   };
   const ssrHtml = ssr ? `
-    <div class="card">
+    <div class="card" data-aggregate="true">
+      <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
       <div class="card-title">Shadow Slippage Range
         <span style="color:#64748b;font-size:11px;font-weight:400">— measured AMM slippage on closed shadow trades (n=${ssr.n_trades})</span>
       </div>
@@ -5017,19 +4967,21 @@ export function renderTradingHtml(data: any): string {
     const reasonColor = (t.exit_reason === 'take_profit' || t.exit_reason === 'trailing_tp') ? '#22d3ee' : t.exit_reason === 'trailing_stop' ? '#fb923c' : t.exit_reason === 'breakeven_stop' ? '#fbbf24' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
     const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
     const exec = execModeStyle(t.execution_mode || 'paper');
-    return `<tr>
-      <td>${t.id}</td>
-      <td style="color:#a78bfa;font-size:11px">${t.strategy_id ?? 'default'}</td>
-      <td><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600">${exec.label}</span></td>
-      <td style="color:${t.status === 'open' ? '#a78bfa' : t.status === 'failed' ? '#f87171' : '#94a3b8'}">${t.status}</td>
-      <td style="font-family:monospace;font-size:11px">${(t.mint || '').slice(0,8)}…</td>
-      <td>${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
-      <td style="color:${reasonColor}">${t.exit_reason ?? '-'}</td>
-      <td style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
-      <td style="color:${trueRetColor}" title="Shadow-only: gross − measured entry slip − measured exit slip">${trueRet != null ? trueRet.toFixed(2) + '%' : '-'}</td>
-      <td>${heldStr}</td>
-      <td style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
-      <td style="font-size:11px;color:#64748b">${utcToCentral(t.entry_dt)}</td>
+    const sid = t.strategy_id ?? 'default';
+    const sidEsc = escHtml(sid);
+    return `<tr data-strategy="${sidEsc}">
+      <td data-label="ID">${t.id}</td>
+      <td data-label="Strategy" style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
+      <td data-label="Mode"><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600">${exec.label}</span></td>
+      <td data-label="Status" style="color:${t.status === 'open' ? '#a78bfa' : t.status === 'failed' ? '#f87171' : '#94a3b8'}">${t.status}</td>
+      <td data-label="Mint">${mintCell(t.mint)}</td>
+      <td data-label="Entry%">${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
+      <td data-label="Exit Reason" style="color:${reasonColor}">${t.exit_reason ?? '-'}</td>
+      <td data-label="Net Ret%" style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
+      <td data-label="True Net%" style="color:${trueRetColor}" title="Shadow-only: gross − measured entry slip − measured exit slip">${trueRet != null ? trueRet.toFixed(2) + '%' : '-'}</td>
+      <td data-label="Held">${heldStr}</td>
+      <td data-label="T+300" style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
+      <td data-label="Entry Time" style="font-size:11px;color:#64748b">${utcToCentral(t.entry_dt)}</td>
     </tr>`;
   }).join('');
 
@@ -5040,7 +4992,7 @@ export function renderTradingHtml(data: any): string {
   const tradesHtml = `
     <div class="card">
       <div class="card-title">Recent Trades (last 50)${tradesTitleSuffix ? ` — ${tradesTitleSuffix}` : ''}</div>
-      ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
+      ${tradeRows ? `<div style="overflow-x:auto"><table class="table responsive">
         <thead><tr><th>ID</th><th>Strategy</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
           <th>Exit Reason</th><th>Net Ret%</th>
           <th title="Shadow-only — measured AMM slippage applied instead of gap penalty">True Net Ret%</th>
@@ -5054,21 +5006,24 @@ export function renderTradingHtml(data: any): string {
     `<tr><td>${s.skip_reason}</td><td>${s.count}</td></tr>`
   ).join('');
 
-  const skipRows = (data.recent_skips || []).slice(0, 20).map((s: any) =>
-    `<tr>
+  const skipRows = (data.recent_skips || []).slice(0, 20).map((s: any) => {
+    const sid = s.strategy_id ?? 'default';
+    const sidEsc = escHtml(sid);
+    return `<tr data-strategy="${sidEsc}">
       <td>${s.graduation_id}</td>
-      <td style="font-family:monospace;font-size:11px">${(s.mint || '').slice(0,8)}…</td>
-      <td style="color:#a78bfa;font-size:11px">${s.strategy_id ?? 'default'}</td>
+      <td>${mintCell(s.mint)}</td>
+      <td style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
       <td style="color:#f87171">${s.skip_reason}</td>
       <td>${s.skip_value != null ? s.skip_value.toFixed(2) : '-'}</td>
       <td>${s.pct_t30 != null ? s.pct_t30.toFixed(1) + '%' : '-'}</td>
       <td style="font-size:11px;color:#64748b">${utcToCentral(s.created_dt)}</td>
-    </tr>`
-  ).join('');
+    </tr>`;
+  }).join('');
 
   const skipsHtml = `
-    <div style="display:grid;grid-template-columns:1fr 2fr;gap:16px">
-      <div class="card">
+    <div class="skips-grid" style="display:grid;grid-template-columns:1fr 2fr;gap:16px">
+      <div class="card" data-aggregate="true">
+        <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
         <div class="card-title">Skip Reasons</div>
         ${skipCountRows ? `<table class="table">
           <thead><tr><th>Reason</th><th>Count</th></tr></thead>
@@ -5112,7 +5067,8 @@ export function renderTradingHtml(data: any): string {
       </tr>`;
     }).join('');
     presetsHtml = `
-    <div class="card" style="border:1px solid #1e3a5f">
+    <div class="card" data-aggregate="true" style="border:1px solid #1e3a5f">
+      <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
       <div class="card-title">Top Filter Combos <span style="color:#64748b;font-size:11px;font-weight:400">(from Filter V2 — visit <a href="/filter-analysis-v2" style="color:#60a5fa">Filters V2</a> to refresh)</span></div>
       <div style="overflow-x:auto"><table class="table">
         <thead><tr><th>#</th><th>Filter A</th><th>Filter B</th><th>n</th><th>TP%</th><th>SL%</th><th>Avg Ret%</th><th>Win%</th><th></th></tr></thead>
@@ -5121,7 +5077,8 @@ export function renderTradingHtml(data: any): string {
     </div>`;
   } else {
     presetsHtml = `
-    <div class="card" style="border:1px solid #334155">
+    <div class="card" data-aggregate="true" style="border:1px solid #334155">
+      <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
       <div class="card-title" style="color:#64748b">Top Filter Combos</div>
       <p style="color:#64748b;font-size:12px">No cached data yet. Visit <a href="/filter-analysis-v2" style="color:#60a5fa">Filters V2</a> first to compute the top combos.</p>
     </div>`;
@@ -5297,10 +5254,259 @@ export function renderTradingHtml(data: any): string {
       if (res.ok) location.href = '/trading';
       else { const d = await res.json(); alert(d.error || 'Failed'); }
     }
+
+    // ── Lazy-loader for heavy panels ─────────────────────────────────────────
+    // Each placeholder section carries data-lazy-panel + data-endpoint. We fetch
+    // the HTML fragment, swap in, then re-apply any active strategy filter and
+    // attach sortable handlers. Failure → error state with retry button.
+    function loadLazyPanel(section) {
+      const endpoint = section.getAttribute('data-endpoint');
+      if (!endpoint) return;
+      section.setAttribute('data-state', 'loading');
+      fetch(endpoint, { headers: { 'Accept': 'text/html' } })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function (html) {
+          section.innerHTML = html;
+          section.setAttribute('data-state', 'ok');
+          // Re-apply current filter to newly injected rows.
+          applyStrategyFilter(document.body.dataset.activeStrategy || '');
+          // Attach sort behaviour to any newly injected sortable tables.
+          section.querySelectorAll('table.sortable').forEach(initSortable);
+        })
+        .catch(function (err) {
+          section.setAttribute('data-state', 'error');
+          section.innerHTML = '<div class="card"><div class="card-title">' + (section.getAttribute('data-label') || 'Panel') + '</div>' +
+            '<p style="color:#f87171;font-size:12px">Failed to load: ' + (err && err.message ? err.message : 'unknown error') + '</p>' +
+            '<button onclick="loadLazyPanel(this.closest(\\'[data-lazy-panel]\\'))" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Retry</button></div>';
+        });
+    }
+
+    function loadAllLazyPanels() {
+      document.querySelectorAll('[data-lazy-panel]').forEach(loadLazyPanel);
+    }
+
+    // ── Sortable table init (extracted from per-table IIFEs) ─────────────────
+    function initSortable(table) {
+      if (!table || table.__sortableInit) return;
+      table.__sortableInit = true;
+      const headers = table.querySelectorAll('th[data-col]');
+      let sortCol = -1, sortAsc = true;
+      headers.forEach(function (th) {
+        th.style.cursor = 'pointer';
+        th.style.userSelect = 'none';
+        th.addEventListener('click', function () {
+          const col = parseInt(th.getAttribute('data-col'));
+          if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
+          headers.forEach(function (h) { h.textContent = h.textContent.replace(/ [▲▼]$/, ''); });
+          th.textContent += sortAsc ? ' ▲' : ' ▼';
+          const tbody = table.querySelector('tbody');
+          const rows = Array.from(tbody.querySelectorAll('tr'));
+          rows.sort(function (a, b) {
+            const aCell = a.children[col]; const bCell = b.children[col];
+            const aSort = aCell.getAttribute('data-sort');
+            const bSort = bCell.getAttribute('data-sort');
+            let aVal, bVal;
+            if (aSort !== null && bSort !== null) {
+              aVal = parseFloat(aSort); bVal = parseFloat(bSort);
+            } else {
+              aVal = (aCell.textContent || '').trim(); bVal = (bCell.textContent || '').trim();
+              const aNum = parseFloat(aVal); const bNum = parseFloat(bVal);
+              if (!isNaN(aNum) && !isNaN(bNum)) { aVal = aNum; bVal = bNum; }
+            }
+            if (aVal < bVal) return sortAsc ? -1 : 1;
+            if (aVal > bVal) return sortAsc ? 1 : -1;
+            return 0;
+          });
+          rows.forEach(function (r) { tbody.appendChild(r); });
+        });
+      });
+    }
+
+    // ── Click-to-filter strategy ─────────────────────────────────────────────
+    // Click any [data-filter-strategy] element to filter the page to that strategy.
+    // Click again (same id) to clear. State persists in the ?strategy= query param
+    // via history.replaceState (no reload, no hash collisions).
+    function applyStrategyFilter(activeId) {
+      const body = document.body;
+      if (activeId) {
+        body.dataset.activeStrategy = activeId;
+      } else {
+        delete body.dataset.activeStrategy;
+      }
+      // Show/hide each [data-strategy] element.
+      document.querySelectorAll('[data-strategy]').forEach(function (el) {
+        const sid = el.getAttribute('data-strategy');
+        if (!activeId || sid === activeId) {
+          el.classList.remove('is-hidden-by-filter');
+        } else {
+          el.classList.add('is-hidden-by-filter');
+        }
+      });
+      // Update visible row counts on tables that opt in via data-row-scope.
+      document.querySelectorAll('[data-row-count-for]').forEach(function (el) {
+        const scope = el.getAttribute('data-row-count-for');
+        const tbl = document.querySelector('[data-row-scope="' + scope + '"]');
+        if (!tbl) return;
+        const rows = tbl.querySelectorAll('tbody > tr[data-strategy]');
+        let visible = 0;
+        rows.forEach(function (r) { if (!r.classList.contains('is-hidden-by-filter')) visible++; });
+        el.textContent = String(visible);
+      });
+      // Toggle the sticky filter pill.
+      const pill = document.getElementById('filter-pill');
+      if (pill) {
+        if (activeId) {
+          pill.removeAttribute('hidden');
+          const labelEl = pill.querySelector('.filter-pill-label');
+          if (labelEl) labelEl.textContent = activeId;
+        } else {
+          pill.setAttribute('hidden', '');
+        }
+      }
+    }
+
+    function setStrategyFilter(activeId) {
+      applyStrategyFilter(activeId);
+      // Persist via query param. Preserve any other params (e.g. execution_mode).
+      const url = new URL(window.location.href);
+      if (activeId) url.searchParams.set('strategy', activeId);
+      else url.searchParams.delete('strategy');
+      window.history.replaceState({}, '', url.toString());
+    }
+
+    // Delegated click handlers — one listener for filter, one for clipboard.
+    document.addEventListener('click', function (e) {
+      const t = e.target;
+      // Mint copy button — must run before the filter handler since the
+      // copy button can sit inside an interactive cell.
+      const copyBtn = t && (t.closest ? t.closest('.mint-copy') : null);
+      if (copyBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const mint = copyBtn.getAttribute('data-mint') || '';
+        if (!mint) return;
+        const reset = function () { copyBtn.classList.remove('copied'); copyBtn.textContent = '⎘'; };
+        const ok = function () {
+          copyBtn.classList.add('copied');
+          copyBtn.textContent = '✓';
+          setTimeout(reset, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(mint).then(ok).catch(function () { /* ignore */ });
+        } else {
+          // Fallback for older browsers / insecure contexts.
+          const ta = document.createElement('textarea');
+          ta.value = mint; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); ok(); } catch (_) { /* ignore */ }
+          document.body.removeChild(ta);
+        }
+        return;
+      }
+      const link = t && (t.closest ? t.closest('[data-filter-strategy]') : null);
+      if (!link) return;
+      // Don't hijack the Birdeye link — only the strategy-filter triggers.
+      if (t && t.tagName === 'A' && t.getAttribute('href')) return;
+      e.preventDefault();
+      const id = link.getAttribute('data-filter-strategy');
+      const current = document.body.dataset.activeStrategy || '';
+      setStrategyFilter(current === id ? '' : id);
+    });
+
+    // ── Top-3 sticky comparison strip ────────────────────────────────────────
+    // After /api/strategy-percentiles + /api/edge-decay land, render a 1-line
+    // strip showing top-3 strategies by median net % with their decay flag.
+    function populateTop3Strip() {
+      const strip = document.getElementById('top3-strip');
+      if (!strip) return;
+      Promise.all([
+        fetch('/api/strategy-percentiles').then(function (r) { return r.json(); }),
+        fetch('/api/edge-decay').then(function (r) { return r.json(); }),
+      ]).then(function (results) {
+        const sp = results[0];
+        const ed = results[1];
+        if (!sp || !Array.isArray(sp.rows) || sp.rows.length === 0) return;
+        const decayBy = {};
+        if (ed && Array.isArray(ed.rows)) {
+          ed.rows.forEach(function (r) { decayBy[r.strategy_id] = r.flag; });
+        }
+        // Sort by net.median desc, take top 3.
+        const ranked = sp.rows.slice().filter(function (r) {
+          return r.net_return_pct && r.net_return_pct.median != null && r.n_closed >= 5;
+        }).sort(function (a, b) { return b.net_return_pct.median - a.net_return_pct.median; }).slice(0, 3);
+        if (ranked.length === 0) return;
+        const flagColors = { 'DECAYING': '#7f1d1d', 'STRENGTHENING': '#065f46', 'STABLE': '#334155', 'LOW-N': '#334155' };
+        const flagFg     = { 'DECAYING': '#f87171', 'STRENGTHENING': '#4ade80', 'STABLE': '#94a3b8', 'LOW-N': '#64748b' };
+        const items = ranked.map(function (r) {
+          const med = r.net_return_pct.median;
+          const medColor = med > 0 ? '#22d3ee' : '#f87171';
+          const flag = decayBy[r.strategy_id] || 'STABLE';
+          const bg = flagColors[flag] || '#334155';
+          const fg = flagFg[flag] || '#94a3b8';
+          const sid = String(r.strategy_id).replace(/"/g, '&quot;');
+          return '<div class="top3-item" data-filter-strategy="' + sid + '">' +
+            '<span class="top3-strat">' + sid + '</span>' +
+            '<span class="top3-med" style="color:' + medColor + '">' + (med > 0 ? '+' : '') + med + '%</span>' +
+            '<span style="color:#64748b;font-size:10px">n=' + r.n_closed + '</span>' +
+            '<span class="top3-flag" style="background:' + bg + '33;color:' + fg + ';border:1px solid ' + bg + '">' + flag + '</span>' +
+            '</div>';
+        }).join('<span style="color:#334155">·</span>');
+        strip.innerHTML = items;
+        strip.removeAttribute('hidden');
+      }).catch(function () { /* fail silently — strip stays hidden */ });
+    }
+
+    // Auto-hide top3 strip on scroll-down, reveal on scroll-up.
+    let lastScrollY = 0;
+    function handleStripScroll() {
+      const strip = document.getElementById('top3-strip');
+      if (!strip || strip.hasAttribute('hidden')) return;
+      const y = window.scrollY;
+      if (y > lastScrollY && y > 60) {
+        strip.classList.add('is-hidden');
+      } else {
+        strip.classList.remove('is-hidden');
+      }
+      lastScrollY = y;
+    }
+    window.addEventListener('scroll', handleStripScroll, { passive: true });
+
+    // Bootstrap: read ?strategy= from URL on load, fetch lazy panels, init sortables.
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const initial = params.get('strategy') || '';
+      if (initial) applyStrategyFilter(initial);
+      // Existing server-rendered sortable tables.
+      document.querySelectorAll('table.sortable').forEach(initSortable);
+      loadAllLazyPanels();
+      populateTop3Strip();
+    })();
   </script>`;
 
   // Convert generated_at to Central time
   const generatedCT = new Date(data.generated_at).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+
+  // Heavy panels are now lazy-loaded — each placeholder fetches its own
+  // /api/<panel>?format=html fragment after the cheap shell renders. See the
+  // loadLazyPanel() function in the inline JS for the implementation.
+  // Wrapped in <details open> so users can collapse panels they don't need —
+  // particularly useful on mobile where vertical real estate is precious.
+  const lazyPanel = (id: string, endpoint: string, label: string) => `
+    <details class="panel-collapsible" open>
+      <summary>${label}</summary>
+      <div class="panel-body">
+        <section class="card lazy-panel" data-lazy-panel="${id}" data-endpoint="${endpoint}" data-label="${label}" data-state="loading">
+          <div class="card-title">${label}</div>
+          <div class="skeleton-rows" aria-busy="true">
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row" style="width:88%"></div>
+            <div class="skeleton-row" style="width:72%"></div>
+          </div>
+        </section>
+      </div>
+    </details>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -5312,9 +5518,84 @@ export function renderTradingHtml(data: any): string {
   .table th{text-align:left;padding:6px 8px;color:#64748b;border-bottom:1px solid #334155;font-weight:500}
   .table td{padding:5px 8px;border-bottom:1px solid #1e293b;vertical-align:top}
   .table tr:hover td{background:#1e3a5f22}
+  /* Click-to-filter strategy */
+  .filter-link{cursor:pointer;text-decoration:none;border-bottom:1px dashed transparent;transition:border-color .15s}
+  .filter-link:hover{border-bottom-color:#a78bfa}
+  body[data-active-strategy] .filter-link[data-filter-strategy]{font-weight:600}
+  .is-hidden-by-filter{display:none !important}
+  /* Aggregate panels (those that don't recompute per strategy): dim and overlay note when filter is active */
+  .card[data-aggregate]{position:relative}
+  .aggregate-overlay{display:none;position:absolute;top:8px;right:12px;background:#7f1d1d33;color:#fca5a5;border:1px solid #7f1d1d;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;z-index:1}
+  body[data-active-strategy] .card[data-aggregate]{opacity:.55}
+  body[data-active-strategy] .card[data-aggregate] .aggregate-overlay{display:block}
+  /* Sticky filter pill — visible only when a strategy filter is active */
+  .filter-pill{position:sticky;top:0;z-index:9;display:flex;align-items:center;gap:8px;background:#1e3a8a;color:#dbeafe;border:1px solid #2563eb;border-radius:0 0 6px 6px;padding:6px 12px;margin:0 0 12px;font-size:12px;font-weight:600}
+  .filter-pill button{background:#1d4ed8;color:#fff;border:none;border-radius:3px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:600}
+  .filter-pill button:hover{background:#1e40af}
+  .filter-pill[hidden]{display:none}
+  /* Lazy-panel skeletons */
+  .lazy-panel[data-state="loading"] .skeleton-rows{display:block}
+  .lazy-panel[data-state="loading"] .skeleton-row{height:18px;background:linear-gradient(90deg,#1e293b 0%,#334155 50%,#1e293b 100%);background-size:200% 100%;border-radius:3px;margin:8px 0;animation:skeleton-shimmer 1.4s ease-in-out infinite}
+  @keyframes skeleton-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  /* Sticky top-3 strategy comparison strip */
+  .top3-strip{position:sticky;top:0;z-index:8;background:#0f172a;border-bottom:1px solid #334155;padding:6px 12px;margin:0 -16px 12px;display:flex;gap:12px;flex-wrap:wrap;font-size:12px;transition:transform .25s ease}
+  .top3-strip.is-hidden{transform:translateY(-100%)}
+  .top3-strip[hidden]{display:none}
+  .top3-item{display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 8px;border-radius:4px;transition:background .15s}
+  .top3-item:hover{background:#1e293b}
+  .top3-strat{color:#a78bfa;font-family:monospace;font-weight:600}
+  .top3-med{font-weight:600}
+  .top3-flag{font-size:10px;padding:1px 6px;border-radius:3px;font-weight:600}
+  /* Mint quick-actions */
+  .mint-cell{display:inline-flex;align-items:center;gap:4px;font-family:monospace;font-size:11px}
+  .mint-cell a{color:#cbd5e1;text-decoration:none;border-bottom:1px dashed transparent;transition:border-color .15s}
+  .mint-cell a:hover{border-bottom-color:#60a5fa;color:#fff}
+  .mint-copy{background:transparent;border:none;color:#64748b;cursor:pointer;padding:1px 4px;font-size:11px;border-radius:3px}
+  .mint-copy:hover{background:#334155;color:#dbeafe}
+  .mint-copy.copied{color:#4ade80}
+  /* Mobile (≤640px) */
+  @media (max-width: 640px) {
+    .container{padding:8px}
+    .card{padding:10px;margin-bottom:10px;border-radius:6px}
+    .card-title{font-size:12px;margin-bottom:8px}
+    h1{font-size:15px !important}
+    .table{font-size:11px}
+    .table th, .table td{padding:4px 6px}
+    .skips-grid{grid-template-columns:1fr !important}
+    /* Stacked-card tables: opt-in via .responsive */
+    .table.responsive thead{display:none}
+    .table.responsive, .table.responsive tbody, .table.responsive tr{display:block;width:100%}
+    .table.responsive tr{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:8px;margin-bottom:8px}
+    .table.responsive tr[data-strategy]:hover td{background:transparent}
+    .table.responsive td{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border:none;font-size:11px;gap:8px}
+    .table.responsive td::before{content:attr(data-label);color:#64748b;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.05em;flex-shrink:0}
+    .table.responsive td:empty, .table.responsive td:first-child{font-weight:600}
+    /* Filter pill more compact */
+    .filter-pill{padding:5px 10px;font-size:11px;margin-bottom:8px}
+    .top3-strip{padding:4px 8px;gap:6px;font-size:11px;margin:0 -8px 8px}
+    .top3-item{padding:1px 4px}
+    /* Collapse padding inside <details> on mobile */
+    details summary{padding:8px 10px}
+  }
+  /* Collapsible panel chrome (<details> wrapping a .card) */
+  details.panel-collapsible{margin-bottom:12px}
+  details.panel-collapsible > summary{cursor:pointer;list-style:none;background:#1e293b;border-radius:8px;padding:12px 16px;font-size:14px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
+  details.panel-collapsible > summary::-webkit-details-marker{display:none}
+  details.panel-collapsible > summary::after{content:'▼';font-size:11px;color:#64748b;transition:transform .15s}
+  details.panel-collapsible[open] > summary::after{transform:rotate(180deg)}
+  details.panel-collapsible[open] > summary{border-radius:8px 8px 0 0;border-bottom:1px solid #334155}
+  details.panel-collapsible > .panel-body{background:#1e293b;border-radius:0 0 8px 8px;padding:0 16px 16px}
+  details.panel-collapsible > .panel-body > .card{margin-bottom:0;background:transparent;padding:0}
+  details.panel-collapsible > .panel-body > .card > .card-title{display:none}
 </style></head><body>
 <nav><span class="title">Graduation Arb Research</span>${navHtml}</nav>
 <div class="container">
+  <div class="top3-strip" id="top3-strip" hidden></div>
+  <div class="filter-pill" id="filter-pill" hidden>
+    <span>Filtered:</span>
+    <span class="filter-pill-label" style="font-family:monospace"></span>
+    <button onclick="setStrategyFilter('')">✕ Clear</button>
+  </div>
   <h1 style="font-size:18px;color:#60a5fa;margin:0 0 4px">Trading Dashboard
     <span style="font-size:13px;color:${modeColor};margin-left:8px">${modeLabel}</span>
     <span style="font-size:12px;color:#64748b;margin-left:8px">${strategies.length} strateg${strategies.length === 1 ? 'y' : 'ies'}</span>
@@ -5330,11 +5611,11 @@ export function renderTradingHtml(data: any): string {
   ${perfHtml}
   ${execModeHtml}
   ${ssrHtml}
-  ${renderStrategyPercentilesPanel(data)}
-  ${renderEdgeDecayPanel(data)}
-  ${renderCounterfactualPanel(data)}
-  ${renderLossPostmortemPanel(data)}
-  ${renderJournalPanel(data)}
+  ${lazyPanel('strategy-percentiles', '/api/strategy-percentiles?format=html', 'Per-Strategy Distribution')}
+  ${lazyPanel('edge-decay', '/api/edge-decay?format=html', 'Edge-Decay Tracker')}
+  ${lazyPanel('counterfactual', '/api/counterfactual?format=html', 'Counterfactual — Filter + TP/SL')}
+  ${lazyPanel('loss-postmortem', '/api/loss-postmortem?format=html', 'Loss Postmortem')}
+  ${lazyPanel('journal', '/api/journal?format=html', 'Strategy Journal')}
   ${tradesHtml}
   ${skipsHtml}
 </div>

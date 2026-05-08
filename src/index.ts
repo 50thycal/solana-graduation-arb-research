@@ -2519,43 +2519,50 @@ async function main() {
           return;
         }
       }
+      // For HTML, render all rows server-side and let the client handle the
+      // strategy filter (live click-to-filter without round-trips). For JSON,
+      // honour the server-side ?strategy= filter so existing API consumers
+      // keep their behaviour.
       const baseData = computeTradingData(db, strategyManager, {
-        strategyFilter,
+        strategyFilter: wantHtml ? '' : strategyFilter,
         executionModeFilter,
         topPairs: cachedTopPairs || [],
       });
-      // Research panels — same compute fns gist-sync uses for the bot-status
-      // JSON files. Counterfactual is async (yields between simulateCombo
-      // calls); the others are sync but still invoked here so they ride the
-      // same 30s HTML memo.
-      const [
-        strategyPercentiles,
-        edgeDecay,
-        counterfactual,
-        lossPostmortem,
-        journal,
-      ] = await Promise.all([
-        Promise.resolve(computeStrategyPercentiles(db)),
-        Promise.resolve(computeEdgeDecay(db)),
-        computeCounterfactual(db),
-        Promise.resolve(computeLossPostmortem(db)),
-        Promise.resolve(computeJournal(db)),
-      ]);
-      const data = {
-        ...baseData,
-        strategy_percentiles: strategyPercentiles,
-        edge_decay: edgeDecay,
-        counterfactual,
-        loss_postmortem: lossPostmortem,
-        journal,
-      };
       if (wantHtml) {
-        const html = renderTradingHtml(data);
+        // HTML shell only — heavy panels (strategy_percentiles, edge_decay,
+        // counterfactual, loss_postmortem, journal) lazy-load client-side via
+        // /api/<panel>?format=html. Each has its own per-endpoint memo.
+        // Pre-seed the body's data-active-strategy via URL ?strategy= so the
+        // client filter applies on first paint without flicker.
+        baseData.selected_strategy = strategyFilter;
+        const html = renderTradingHtml(baseData);
         memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(html);
       } else {
-        res.json(data);
+        // JSON consumers (Claude, gist-sync, agents) still get the full
+        // payload incl. the 5 research panels — preserves API contract.
+        const [
+          strategyPercentiles,
+          edgeDecay,
+          counterfactual,
+          lossPostmortem,
+          journal,
+        ] = await Promise.all([
+          Promise.resolve(computeStrategyPercentiles(db)),
+          Promise.resolve(computeEdgeDecay(db)),
+          computeCounterfactual(db),
+          Promise.resolve(computeLossPostmortem(db)),
+          Promise.resolve(computeJournal(db)),
+        ]);
+        res.json({
+          ...baseData,
+          strategy_percentiles: strategyPercentiles,
+          edge_decay: edgeDecay,
+          counterfactual,
+          loss_postmortem: lossPostmortem,
+          journal,
+        });
       }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
