@@ -47,6 +47,13 @@ import { computeJournal } from './journal';
 import { computeEdgeDecay } from './edge-decay';
 import { computeCounterfactual } from './counterfactual';
 import { computeLossPostmortem } from './loss-postmortem';
+import {
+  renderStrategyPercentilesPanel,
+  renderEdgeDecayPanel,
+  renderCounterfactualPanel,
+  renderLossPostmortemPanel,
+  renderJournalPanel,
+} from '../utils/html-renderer';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
@@ -155,6 +162,32 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       }
     };
   };
+
+  // ── HTML fragment memo ──────────────────────────────────────────────────
+  // Per-endpoint cache for the ?format=html responses on the heavy trading
+  // panels. Keeps a page reload (or several open tabs) from recomputing the
+  // same fragments. Counterfactual gets a longer TTL because it's the slow
+  // one (~1s — yields between simulateCombo calls).
+  interface HtmlMemoEntry { html: string; expiresAt: number }
+  const htmlMemo = new Map<string, HtmlMemoEntry>();
+  const htmlMemoGet = (key: string): string | null => {
+    const e = htmlMemo.get(key);
+    if (!e) return null;
+    if (Date.now() >= e.expiresAt) { htmlMemo.delete(key); return null; }
+    return e.html;
+  };
+  const htmlMemoSet = (key: string, html: string, ttlMs: number): void => {
+    htmlMemo.set(key, { html, expiresAt: Date.now() + ttlMs });
+    if (htmlMemo.size > 32) {
+      const oldest = htmlMemo.keys().next().value;
+      if (oldest !== undefined) htmlMemo.delete(oldest);
+    }
+  };
+  const sendPanelHtml = (res: Response, html: string): void => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  };
+  const wantsHtml = (req: Request): boolean => req.query.format === 'html';
 
   // ── /api/diagnose ──
   // Runs the CLAUDE.md Level 1-5 bug triage and returns a verdict, plus a
@@ -376,7 +409,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Companion to /api/trades by_strategy (mean-only) — adds median, p10/p25/
   // p75/p90, std dev, exit-reason breakdown, and avg execution cost in pp.
   // Enabled-only by default so the panel tracks the live cohort.
-  app.get('/api/strategy-percentiles', wrap(async (_req, res) => {
+  app.get('/api/strategy-percentiles', wrap(async (req, res) => {
+    if (wantsHtml(req)) {
+      const cached = htmlMemoGet('strategy-percentiles');
+      if (cached) { sendPanelHtml(res, cached); return; }
+      const html = renderStrategyPercentilesPanel({ strategy_percentiles: computeStrategyPercentiles(db) });
+      htmlMemoSet('strategy-percentiles', html, 30_000);
+      sendPanelHtml(res, html);
+      return;
+    }
     res.json(computeStrategyPercentiles(db));
   }));
 
@@ -385,7 +426,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Entries persist across strategy delete/disable; auto_status is computed
   // every render against live closed-trade percentiles. Mutations via
   // strategy-commands.json (journal-upsert / journal-update / journal-delete).
-  app.get('/api/journal', wrap(async (_req, res) => {
+  app.get('/api/journal', wrap(async (req, res) => {
+    if (wantsHtml(req)) {
+      const cached = htmlMemoGet('journal');
+      if (cached) { sendPanelHtml(res, cached); return; }
+      const html = renderJournalPanel({ journal: computeJournal(db) });
+      htmlMemoSet('journal', html, 30_000);
+      sendPanelHtml(res, html);
+      return;
+    }
     res.json(computeJournal(db));
   }));
 
@@ -393,7 +442,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // Per-strategy rolling mean+median in trade-count windows (last 25/50/100/all)
   // with a 12-bin sparkline. Auto-flag DECAYING/STRENGTHENING/STABLE based on
   // the last-30 vs lifetime median delta.
-  app.get('/api/edge-decay', wrap(async (_req, res) => {
+  app.get('/api/edge-decay', wrap(async (req, res) => {
+    if (wantsHtml(req)) {
+      const cached = htmlMemoGet('edge-decay');
+      if (cached) { sendPanelHtml(res, cached); return; }
+      const html = renderEdgeDecayPanel({ edge_decay: computeEdgeDecay(db) });
+      htmlMemoSet('edge-decay', html, 30_000);
+      sendPanelHtml(res, html);
+      return;
+    }
     res.json(computeEdgeDecay(db));
   }));
 
@@ -403,7 +460,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // For TP/SL: snap configured (tp, sl) to nearest grid point and report
   // top 3 alternative cells. Reuses simulateComboFullGrid so the cost model
   // matches /api/best-combos exactly.
-  app.get('/api/counterfactual', wrap(async (_req, res) => {
+  app.get('/api/counterfactual', wrap(async (req, res) => {
+    if (wantsHtml(req)) {
+      const cached = htmlMemoGet('counterfactual');
+      if (cached) { sendPanelHtml(res, cached); return; }
+      const html = renderCounterfactualPanel({ counterfactual: await computeCounterfactual(db) });
+      htmlMemoSet('counterfactual', html, 90_000);
+      sendPanelHtml(res, html);
+      return;
+    }
     res.json(await computeCounterfactual(db));
   }));
 
@@ -412,7 +477,15 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // deviation. Computes 5-quintile buckets from the strategy's own population
   // and surfaces features where losers cluster disproportionately (>= 20pp
   // deviation in any bucket).
-  app.get('/api/loss-postmortem', wrap(async (_req, res) => {
+  app.get('/api/loss-postmortem', wrap(async (req, res) => {
+    if (wantsHtml(req)) {
+      const cached = htmlMemoGet('loss-postmortem');
+      if (cached) { sendPanelHtml(res, cached); return; }
+      const html = renderLossPostmortemPanel({ loss_postmortem: computeLossPostmortem(db) });
+      htmlMemoSet('loss-postmortem', html, 30_000);
+      sendPanelHtml(res, html);
+      return;
+    }
     res.json(computeLossPostmortem(db));
   }));
 
