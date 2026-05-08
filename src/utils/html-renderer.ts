@@ -4845,7 +4845,7 @@ export function renderTradingHtml(data: any): string {
   const perfHtml = `
     <div class="card">
       <div class="card-title">Performance by Strategy</div>
-      ${stratStatRows ? `<div style="overflow-x:auto"><table class="table sortable responsive" id="perf-table">
+      ${stratStatRows ? `<div style="overflow-x:auto"><table class="table sortable" id="perf-table">
         <thead><tr>
           <th data-col="0">Strategy</th><th data-col="1">Mode</th><th data-col="2">Total</th>
           <th data-col="3">Closed</th><th data-col="4">Open</th>
@@ -5493,12 +5493,13 @@ export function renderTradingHtml(data: any): string {
   // loadLazyPanel() function in the inline JS for the implementation.
   // Wrapped in <details open> so users can collapse panels they don't need —
   // particularly useful on mobile where vertical real estate is precious.
+  // The fragment ships its own .card wrapper — the lazy-panel <section> is
+  // intentionally not .card to avoid a double background / nested padding.
   const lazyPanel = (id: string, endpoint: string, label: string) => `
     <details class="panel-collapsible" open>
       <summary>${label}</summary>
       <div class="panel-body">
-        <section class="card lazy-panel" data-lazy-panel="${id}" data-endpoint="${endpoint}" data-label="${label}" data-state="loading">
-          <div class="card-title">${label}</div>
+        <section class="lazy-panel" data-lazy-panel="${id}" data-endpoint="${endpoint}" data-label="${label}" data-state="loading">
           <div class="skeleton-rows" aria-busy="true">
             <div class="skeleton-row"></div>
             <div class="skeleton-row" style="width:88%"></div>
@@ -5523,9 +5524,10 @@ export function renderTradingHtml(data: any): string {
   .filter-link:hover{border-bottom-color:#a78bfa}
   body[data-active-strategy] .filter-link[data-filter-strategy]{font-weight:600}
   .is-hidden-by-filter{display:none !important}
-  /* Aggregate panels (those that don't recompute per strategy): dim and overlay note when filter is active */
-  .card[data-aggregate]{position:relative}
-  .aggregate-overlay{display:none;position:absolute;top:8px;right:12px;background:#7f1d1d33;color:#fca5a5;border:1px solid #7f1d1d;padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600;z-index:1}
+  /* Aggregate panels (those that don't recompute per strategy): dim and show
+     a banner above the title when a filter is active. Banner sits in normal
+     flow so it never overlaps the panel title (mobile or desktop). */
+  .aggregate-overlay{display:none;background:#7f1d1d33;color:#fca5a5;border:1px solid #7f1d1d;padding:3px 10px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:10px;width:fit-content}
   body[data-active-strategy] .card[data-aggregate]{opacity:.55}
   body[data-active-strategy] .card[data-aggregate] .aggregate-overlay{display:block}
   /* Sticky filter pill — visible only when a strategy filter is active */
@@ -5533,7 +5535,10 @@ export function renderTradingHtml(data: any): string {
   .filter-pill button{background:#1d4ed8;color:#fff;border:none;border-radius:3px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:600}
   .filter-pill button:hover{background:#1e40af}
   .filter-pill[hidden]{display:none}
-  /* Lazy-panel skeletons */
+  /* Lazy-panel skeletons — only the loading state shows skeleton chrome.
+     Once loaded, the fragment's own .card wrapper provides all visual chrome
+     (no double background/padding/border). */
+  .lazy-panel[data-state="loading"]{display:block;padding:8px 4px}
   .lazy-panel[data-state="loading"] .skeleton-rows{display:block}
   .lazy-panel[data-state="loading"] .skeleton-row{height:18px;background:linear-gradient(90deg,#1e293b 0%,#334155 50%,#1e293b 100%);background-size:200% 100%;border-radius:3px;margin:8px 0;animation:skeleton-shimmer 1.4s ease-in-out infinite}
   @keyframes skeleton-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
@@ -5577,16 +5582,25 @@ export function renderTradingHtml(data: any): string {
     /* Collapse padding inside <details> on mobile */
     details summary{padding:8px 10px}
   }
-  /* Collapsible panel chrome (<details> wrapping a .card) */
-  details.panel-collapsible{margin-bottom:12px}
-  details.panel-collapsible > summary{cursor:pointer;list-style:none;background:#1e293b;border-radius:8px;padding:12px 16px;font-size:14px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
+  /* Collapsible panel chrome (<details> wrapping a .card or .lazy-panel).
+     The summary acts as the panel header — duplicate inner .card-title is
+     hidden so the description span (sibling) keeps showing without the
+     redundant title text in front of it. */
+  details.panel-collapsible{margin-bottom:12px;background:#1e293b;border-radius:8px;overflow:hidden}
+  details.panel-collapsible > summary{cursor:pointer;list-style:none;padding:12px 16px;font-size:14px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
   details.panel-collapsible > summary::-webkit-details-marker{display:none}
-  details.panel-collapsible > summary::after{content:'▼';font-size:11px;color:#64748b;transition:transform .15s}
+  details.panel-collapsible > summary::after{content:'▼';font-size:11px;color:#64748b;transition:transform .15s;margin-left:8px}
   details.panel-collapsible[open] > summary::after{transform:rotate(180deg)}
-  details.panel-collapsible[open] > summary{border-radius:8px 8px 0 0;border-bottom:1px solid #334155}
-  details.panel-collapsible > .panel-body{background:#1e293b;border-radius:0 0 8px 8px;padding:0 16px 16px}
-  details.panel-collapsible > .panel-body > .card{margin-bottom:0;background:transparent;padding:0}
-  details.panel-collapsible > .panel-body > .card > .card-title{display:none}
+  details.panel-collapsible[open] > summary{border-bottom:1px solid #334155}
+  details.panel-collapsible > .panel-body{padding:0 16px 16px}
+  details.panel-collapsible > .panel-body > .lazy-panel > .card,
+  details.panel-collapsible > .panel-body > .card{margin-bottom:0;background:transparent;padding:12px 0 0;border-radius:0}
+  /* Hide the inner card-title — but only the leading text node, not the
+     description span. We use font-size:0 on the title and restore it on the
+     child <span>, leaving the description visible without the redundant
+     "PANEL NAME — " prefix. */
+  details.panel-collapsible .card > .card-title{font-size:0;text-transform:none;letter-spacing:0;margin-bottom:8px;color:#64748b}
+  details.panel-collapsible .card > .card-title > span{font-size:11px;font-weight:400;color:#64748b;text-transform:none;letter-spacing:0}
 </style></head><body>
 <nav><span class="title">Graduation Arb Research</span>${navHtml}</nav>
 <div class="container">
