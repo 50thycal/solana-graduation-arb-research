@@ -4992,7 +4992,7 @@ export function renderTradingHtml(data: any): string {
   const tradesHtml = `
     <div class="card">
       <div class="card-title">Recent Trades (last 50)${tradesTitleSuffix ? ` — ${tradesTitleSuffix}` : ''}</div>
-      ${tradeRows ? `<div style="overflow-x:auto"><table class="table responsive">
+      ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
         <thead><tr><th>ID</th><th>Strategy</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
           <th>Exit Reason</th><th>Net Ret%</th>
           <th title="Shadow-only — measured AMM slippage applied instead of gap penalty">True Net Ret%</th>
