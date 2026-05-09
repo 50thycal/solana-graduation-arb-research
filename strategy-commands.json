@@ -1,0 +1,259 @@
+{
+  "commands": [
+    {
+      "action": "delete",
+      "id": "v9shadow-vol-30-60"
+    },
+    {
+      "action": "delete",
+      "id": "v16-calm-trail5"
+    },
+    {
+      "action": "delete",
+      "id": "v16-calm-base"
+    },
+    {
+      "action": "delete",
+      "id": "v13-vol3060-dd10"
+    },
+    {
+      "action": "delete",
+      "id": "v15-snipers-liq"
+    },
+    {
+      "action": "upsert",
+      "id": "v19-age10-top5-base",
+      "label": "v19 age>10min + top5<10% @ 150/30 gate5-100 (leaderboard #1 mirror)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "token_age_seconds", "operator": ">", "value": 600, "label": "age > 10min" },
+          { "field": "top5_wallet_pct", "operator": "<", "value": 10, "label": "top5 < 10%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v19-age10-top5-tight",
+      "label": "v19 age>10min + top5<8% @ 150/30 gate5-100 (tighter top5)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "token_age_seconds", "operator": ">", "value": 600, "label": "age > 10min" },
+          { "field": "top5_wallet_pct", "operator": "<", "value": 8, "label": "top5 < 8%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v19-age10-top5-tp100",
+      "label": "v19 age>10min + top5<10% @ 100/30 gate5-100 (lower TP)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "token_age_seconds", "operator": ">", "value": 600, "label": "age > 10min" },
+          { "field": "top5_wallet_pct", "operator": "<", "value": 10, "label": "top5 < 10%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v20-vel2050-dd-base",
+      "label": "v20 vel 20-50 + dd>-10% @ 150/30 gate5-100 (corrected v10)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel >= 20" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel < 50" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -10, "label": "dd > -10%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v20-vel2050-dd-tight",
+      "label": "v20 vel 20-50 + dd>-7% @ 150/30 gate5-100 (tighter dd)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel >= 20" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel < 50" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -7, "label": "dd > -7%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v20-vel2050-dd-sl20",
+      "label": "v20 vel 20-50 + dd>-10% @ 150/20 gate5-100 (tighter SL)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 20,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel >= 20" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel < 50" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -10, "label": "dd > -10%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v19-cohort-journal",
+      "strategy_id": "v19-age10-top5-base",
+      "cohort_label": "v19",
+      "hypothesis": "age>10min + top5<10% is the new leaderboard #1 (n=117, opt +6.17% @ tp=150/sl=30, MODERATE wr_std_dev=10.6%, beats baseline by 17.4pp). Cohort tests three variants: v19-base mirrors the leaderboard exactly; v19-tight tightens top5 from <10% to <8% to test whether excluding moderate-concentration plays raises opt; v19-tp100 lowers TP from 150 to 100 to test whether earlier exits improve hit rate without losing too much per-win on live fills. At n=50 per variant, compare medians + SOL P&L; promote the strongest variant with stable regime.",
+      "prediction": {
+        "target_median_net_pct": 4,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v20-cohort-journal",
+      "strategy_id": "v20-vel2050-dd-base",
+      "cohort_label": "v20",
+      "hypothesis": "vel 20-50 + dd>-10% is the most regime-stable combo in the catalog (n=111, opt +5.13% @ tp=150/sl=30, STABLE wr_std_dev=2.8%). Live v10-best-double underperforms research at median -4.34% on n=37, attributed to entry gate mismatch (-99..1000 vs research +5..+100) and possibly SL (25 vs grid-optimal 30). v20-base deploys corrected gate to A/B-test the gate hypothesis directly against v10 (kept untouched as control). v20-tight tightens dd from -10% to -7%. v20-sl20 stress-tests the SL grid optimum — at n=92 the optimum was sl=25, at n=111 it shifted to sl=30; if v20-sl20 outperforms v20-base, the grid optimum is noisy. At n=50 per variant, the gate hypothesis confirms if v20-base median > v10 median by 5pp+.",
+      "prediction": {
+        "target_median_net_pct": 4,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-3"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
