@@ -53,6 +53,8 @@ import {
   renderCounterfactualPanel,
   renderLossPostmortemPanel,
   renderJournalPanel,
+  renderRecentTradesPanel,
+  renderRecentSkipsPanel,
 } from '../utils/html-renderer';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
@@ -488,6 +490,43 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     }
     res.json(computeLossPostmortem(db));
   }));
+
+  // ── /api/recent-trades / /api/recent-skips ──
+  // HTML-fragment endpoints that back the click-to-filter refetch on
+  // /trading. When a strategy filter is active, the global last-50 may
+  // contain zero rows for a low-volume strategy — so the client refetches
+  // here with ?strategy=<id> to surface that strategy's actual last 50.
+  // Uses the same SQL path as computeTradingData (LIMIT 50 with strategy
+  // filter applied) so behaviour matches the initial server render.
+  // Not memoized — these are filtered per-request and fast (<50ms).
+  const recentTradesHandler = (req: Request, res: Response): void => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const strategyFilter = (req.query.strategy as string) || '';
+    const executionModeFilter = (req.query.execution_mode as string) || '';
+    const data = computeTradingData(db, sm, { strategyFilter, executionModeFilter, topPairs: [] });
+    if (wantsHtml(req)) { sendPanelHtml(res, renderRecentTradesPanel(data)); return; }
+    res.json({
+      generated_at: data.generated_at,
+      selected_strategy: data.selected_strategy,
+      selected_execution_mode: data.selected_execution_mode,
+      recent_trades: data.recent_trades,
+    });
+  };
+  const recentSkipsHandler = (req: Request, res: Response): void => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    const strategyFilter = (req.query.strategy as string) || '';
+    const executionModeFilter = (req.query.execution_mode as string) || '';
+    const data = computeTradingData(db, sm, { strategyFilter, executionModeFilter, topPairs: [] });
+    if (wantsHtml(req)) { sendPanelHtml(res, renderRecentSkipsPanel(data)); return; }
+    res.json({
+      generated_at: data.generated_at,
+      selected_strategy: data.selected_strategy,
+      skip_reason_counts: data.skip_reason_counts,
+      recent_skips: data.recent_skips,
+    });
+  };
+  app.get('/api/recent-trades', wrap(async (req, res) => recentTradesHandler(req, res)));
+  app.get('/api/recent-skips', wrap(async (req, res) => recentSkipsHandler(req, res)));
 
   // ── /api/panel3 ──
   // Single-filter regime stability — same as Panel 3 on /filter-analysis-v2 as JSON.

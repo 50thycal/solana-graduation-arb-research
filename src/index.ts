@@ -2519,22 +2519,17 @@ async function main() {
           return;
         }
       }
-      // For HTML, render all rows server-side and let the client handle the
-      // strategy filter (live click-to-filter without round-trips). For JSON,
-      // honour the server-side ?strategy= filter so existing API consumers
-      // keep their behaviour.
+      // The HTML and JSON branches both honour ?strategy= server-side. The
+      // initial render is filter-aware; if the user changes the filter via
+      // click, the page refetches /api/recent-trades + /api/recent-skips
+      // with the new strategy so low-volume cohorts surface their own
+      // last 50 (the global last 50 may not contain any of their trades).
       const baseData = computeTradingData(db, strategyManager, {
-        strategyFilter: wantHtml ? '' : strategyFilter,
+        strategyFilter,
         executionModeFilter,
         topPairs: cachedTopPairs || [],
       });
       if (wantHtml) {
-        // HTML shell only — heavy panels (strategy_percentiles, edge_decay,
-        // counterfactual, loss_postmortem, journal) lazy-load client-side via
-        // /api/<panel>?format=html. Each has its own per-endpoint memo.
-        // Pre-seed the body's data-active-strategy via URL ?strategy= so the
-        // client filter applies on first paint without flicker.
-        baseData.selected_strategy = strategyFilter;
         const html = renderTradingHtml(baseData);
         memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
