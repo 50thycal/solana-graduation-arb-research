@@ -37,6 +37,7 @@ import { computePanel11 } from './panel11';
 import { computePanel3Summary } from './panel3-summary';
 import { computePricePathStats } from './price-path-stats';
 import { computePeakAnalysis } from './peak-analysis';
+import type { StrategyManager } from '../trading/strategy-manager';
 import type { LogBuffer } from '../utils/log-buffer';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { vaultPriceCacheStats } from '../trading/executor';
@@ -58,10 +59,11 @@ export interface RegisterApiOptions {
   logBuffer: LogBuffer;
   startTime: number;
   getListenerStats?: () => unknown;
+  getStrategyManager?: () => StrategyManager | null;
 }
 
 export function registerApiRoutes(opts: RegisterApiOptions): void {
-  const { app, db, logBuffer, startTime, getListenerStats } = opts;
+  const { app, db, logBuffer, startTime, getListenerStats, getStrategyManager } = opts;
 
   // Small helper — consistent error envelope.
   const wrap = (
@@ -166,6 +168,20 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
   // NOT a tradable filter — kept off /api/best-combos by design.
   app.get('/api/peak-analysis', wrap((_req, res) => {
     res.json(computePeakAnalysis(db));
+  }));
+
+  // ── /api/markov-matrix ──
+  // State-conditional exit DPM matrix per registered strategy filter set.
+  // Each cell = P(profit at T+300 | filter, age, current_pct_from_entry bucket).
+  // Built from labeled paths every REFIT_PATHS_THRESHOLD new closures.
+  // Returns 404 until the strategy manager finishes initializing.
+  app.get('/api/markov-matrix', wrap((_req, res) => {
+    const sm = getStrategyManager?.() ?? null;
+    if (!sm) {
+      res.status(404).json({ error: 'StrategyManager not initialized yet' });
+      return;
+    }
+    res.json(sm.getMarkovStore().toJson());
   }));
 
   // ── /api/filter-catalog ──

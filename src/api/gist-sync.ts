@@ -61,6 +61,7 @@ export interface StatusUrls {
   price_path_stats: string;
   peak_analysis: string;
   strategies: string;
+  markov_matrix: string;
   branch_html: string;
 }
 
@@ -139,6 +140,7 @@ export class GistSync {
       price_path_stats: `${base}/price-path-stats.json`,
       peak_analysis: `${base}/peak-analysis.json`,
       strategies: `${base}/strategies.json`,
+      markov_matrix: `${base}/markov-matrix.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
@@ -304,6 +306,12 @@ export class GistSync {
       params: JSON.parse(row.config_json),
     }));
 
+    // Markov state-conditional exit matrix — present only when StrategyManager
+    // has finished initializing and at least one strategy registered a filter.
+    const markovMatrix = this.strategyManager
+      ? this.strategyManager.getMarkovStore().toJson()
+      : { generated_at: null, paths_consumed: 0, filters: {} };
+
     return {
       'diagnose.json': JSON.stringify(diagnose, null, 2),
       'snapshot.json': JSON.stringify(snapshot, null, 2),
@@ -318,6 +326,7 @@ export class GistSync {
         count: strategies.length,
         strategies,
       }, null, 2),
+      'markov-matrix.json': JSON.stringify(markovMatrix, null, 2),
     };
   }
 
