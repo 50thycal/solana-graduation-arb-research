@@ -1252,3 +1252,205 @@ export function getRecentBotErrors(db: Database.Database, limit = 20): BotErrorR
     'SELECT * FROM bot_errors ORDER BY id DESC LIMIT ?'
   ).all(limit) as BotErrorRow[];
 }
+
+// ── Daily reports & lessons-learned ──────────────────────────────────────
+//
+// Mirrors the strategy_journal CRUD pattern (upsert / append-update / delete
+// / list). One row per UTC date, written by the routine /daily-report Claude
+// run via strategy-commands.json. Reads happen every render of the /report
+// page and on every gist-sync cycle (published as report.json).
+
+export interface DailyReportRow {
+  date: string;
+  generated_at: number;
+  generated_by: string | null;
+  winners_json: string | null;
+  losers_json: string | null;
+  recommendations_json: string | null;
+  anomalies_json: string | null;
+  patterns_json: string | null;
+  action_items_json: string;
+  narrative: string | null;
+  updates_json: string;
+}
+
+export interface ActionItem {
+  id: string;
+  kind: 'kill' | 'promote' | 'create' | 'watch' | 'investigate' | 'other';
+  target_id?: string;
+  summary: string;
+  status: 'PROPOSED' | 'EXECUTED' | 'DEFERRED' | 'REJECTED';
+  proposed_at: number;
+  resolved_at?: number;
+  resolution_note?: string;
+}
+
+export function listDailyReports(db: Database.Database, limit = 60): DailyReportRow[] {
+  return db.prepare(
+    'SELECT * FROM daily_reports ORDER BY date DESC LIMIT ?'
+  ).all(limit) as DailyReportRow[];
+}
+
+export function getDailyReport(db: Database.Database, date: string): DailyReportRow | undefined {
+  return db.prepare('SELECT * FROM daily_reports WHERE date = ?')
+    .get(date) as DailyReportRow | undefined;
+}
+
+export function upsertDailyReport(
+  db: Database.Database,
+  entry: {
+    date: string;
+    generated_by?: string | null;
+    winners?: unknown;
+    losers?: unknown;
+    recommendations?: unknown;
+    anomalies?: unknown;
+    patterns?: unknown;
+    action_items?: ActionItem[];
+    narrative?: string | null;
+  },
+): void {
+  const existing = getDailyReport(db, entry.date);
+  // Preserve existing action_items if not provided so a follow-up
+  // report-upsert without explicit action_items doesn't wipe them.
+  const actionItems = entry.action_items
+    ? JSON.stringify(entry.action_items)
+    : (existing?.action_items_json ?? '[]');
+
+  db.prepare(`
+    INSERT INTO daily_reports (
+      date, generated_at, generated_by,
+      winners_json, losers_json, recommendations_json, anomalies_json,
+      patterns_json, action_items_json, narrative
+    ) VALUES (
+      @date, unixepoch(), @generated_by,
+      @winners_json, @losers_json, @recommendations_json, @anomalies_json,
+      @patterns_json, @action_items_json, @narrative
+    )
+    ON CONFLICT(date) DO UPDATE SET
+      generated_at = unixepoch(),
+      generated_by = @generated_by,
+      winners_json = @winners_json,
+      losers_json = @losers_json,
+      recommendations_json = @recommendations_json,
+      anomalies_json = @anomalies_json,
+      patterns_json = @patterns_json,
+      action_items_json = @action_items_json,
+      narrative = @narrative
+  `).run({
+    date: entry.date,
+    generated_by: entry.generated_by ?? null,
+    winners_json: entry.winners ? JSON.stringify(entry.winners) : null,
+    losers_json: entry.losers ? JSON.stringify(entry.losers) : null,
+    recommendations_json: entry.recommendations ? JSON.stringify(entry.recommendations) : null,
+    anomalies_json: entry.anomalies ? JSON.stringify(entry.anomalies) : null,
+    patterns_json: entry.patterns ? JSON.stringify(entry.patterns) : null,
+    action_items_json: actionItems,
+    narrative: entry.narrative ?? null,
+  });
+}
+
+export function appendReportUpdate(
+  db: Database.Database,
+  date: string,
+  note: string,
+): { ok: boolean; error?: string } {
+  const row = getDailyReport(db, date);
+  if (!row) return { ok: false, error: `Daily report "${date}" not found` };
+
+  let updates: Array<{ at: number; note: string }>;
+  try {
+    updates = JSON.parse(row.updates_json);
+    if (!Array.isArray(updates)) updates = [];
+  } catch {
+    updates = [];
+  }
+  updates.push({ at: Math.floor(Date.now() / 1000), note });
+
+  db.prepare('UPDATE daily_reports SET updates_json = ? WHERE date = ?')
+    .run(JSON.stringify(updates), date);
+  return { ok: true };
+}
+
+export function updateActionItemStatus(
+  db: Database.Database,
+  date: string,
+  actionItemId: string,
+  status: ActionItem['status'],
+  resolutionNote?: string,
+): { ok: boolean; error?: string } {
+  const row = getDailyReport(db, date);
+  if (!row) return { ok: false, error: `Daily report "${date}" not found` };
+
+  let items: ActionItem[];
+  try {
+    items = JSON.parse(row.action_items_json);
+    if (!Array.isArray(items)) items = [];
+  } catch {
+    items = [];
+  }
+
+  const idx = items.findIndex(i => i.id === actionItemId);
+  if (idx < 0) return { ok: false, error: `Action item "${actionItemId}" not found in report ${date}` };
+
+  items[idx] = {
+    ...items[idx],
+    status,
+    resolved_at: Math.floor(Date.now() / 1000),
+    resolution_note: resolutionNote,
+  };
+
+  db.prepare('UPDATE daily_reports SET action_items_json = ? WHERE date = ?')
+    .run(JSON.stringify(items), date);
+  return { ok: true };
+}
+
+export interface LessonRow {
+  id: string;
+  title: string;
+  body: string;
+  evidence_json: string | null;
+  created_at: number;
+  updated_at: number;
+  archived: number;
+}
+
+export function listLessons(db: Database.Database, includeArchived = false): LessonRow[] {
+  const sql = includeArchived
+    ? 'SELECT * FROM lessons_learned ORDER BY updated_at DESC'
+    : 'SELECT * FROM lessons_learned WHERE archived = 0 ORDER BY updated_at DESC';
+  return db.prepare(sql).all() as LessonRow[];
+}
+
+export function upsertLesson(
+  db: Database.Database,
+  entry: {
+    id: string;
+    title: string;
+    body: string;
+    evidence?: unknown;
+  },
+): void {
+  db.prepare(`
+    INSERT INTO lessons_learned (id, title, body, evidence_json, updated_at)
+    VALUES (@id, @title, @body, @evidence_json, unixepoch())
+    ON CONFLICT(id) DO UPDATE SET
+      title = @title,
+      body = @body,
+      evidence_json = @evidence_json,
+      updated_at = unixepoch(),
+      archived = 0
+  `).run({
+    id: entry.id,
+    title: entry.title,
+    body: entry.body,
+    evidence_json: entry.evidence ? JSON.stringify(entry.evidence) : null,
+  });
+}
+
+export function archiveLesson(db: Database.Database, id: string): { ok: boolean; error?: string } {
+  const row = db.prepare('SELECT id FROM lessons_learned WHERE id = ?').get(id);
+  if (!row) return { ok: false, error: `Lesson "${id}" not found` };
+  db.prepare('UPDATE lessons_learned SET archived = 1, updated_at = unixepoch() WHERE id = ?').run(id);
+  return { ok: true };
+}

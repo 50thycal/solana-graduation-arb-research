@@ -620,6 +620,47 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_journal_status ON strategy_journal(status);
   `);
 
+  // Daily trading report — one row per UTC day, written by the routine Claude
+  // run via /daily-report and consumed by the `/report` page. Stores the
+  // narrative + structured fields a fresh Claude session needs to pick up
+  // where the last one left off (winners/losers, recommendations, action
+  // items, anomalies, patterns). action_items_json is the loop-closer:
+  // each item has a status (PROPOSED / EXECUTED / DEFERRED / REJECTED) so
+  // tomorrow's Claude can audit what happened to yesterday's plan.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daily_reports (
+      date TEXT PRIMARY KEY,
+      generated_at INTEGER NOT NULL,
+      generated_by TEXT,
+      winners_json TEXT,
+      losers_json TEXT,
+      recommendations_json TEXT,
+      anomalies_json TEXT,
+      patterns_json TEXT,
+      action_items_json TEXT NOT NULL DEFAULT '[]',
+      narrative TEXT,
+      updates_json TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_reports_generated_at ON daily_reports(generated_at);
+  `);
+
+  // Lessons-learned memo — long-running insights confirmed across many
+  // sessions. Sits above daily reports as institutional memory. Archived
+  // entries (archived=1) are kept for history but hidden from the active
+  // memo render.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lessons_learned (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      evidence_json TEXT,
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch()),
+      archived INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX IF NOT EXISTS idx_lessons_archived ON lessons_learned(archived);
+  `);
+
   // Bot error log — one row per uncaught exception / unhandled rejection so
   // /api/snapshot can surface the last crash without depending on Railway logs.
   db.exec(`

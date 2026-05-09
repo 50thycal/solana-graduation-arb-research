@@ -256,6 +256,7 @@ Use `WebFetch` against the `GIST_*_URL` values in `.claude/settings.json`. These
 8. **`trades.json`** → paper + shadow trading performance: stats, by-strategy breakdown (filtered to ENABLED strategies only as of 2026-05-01 — disabled strategies' history stays in DB but drops from the panel), recent trades.
 9. **`sniper-panel.json`** → threshold sweeps + histograms for `sniper_count_t0_t2` and `sniper_wallet_velocity_avg`, plus the slice of `/api/best-combos` rows that include a sniper filter. Coverage is growing (was ~8% of historical rows on 2026-05-01, all new graduations populate live at T+35).
 10. **`exit-sim-matrix.json`** → when you have a promising combo from step 3, check here to see whether any dynamic exit strategy (momentum_reversal / scale_out / vol_adaptive / time_decayed_tp / whale_liq) beats the combo's own static optimum. A positive `best_delta_pp` is the promotion signal for a live dynamic-exit strategy. (Note: `whale_liq` consistently underperforms — confirmed 2026-05-01.)
+11. **`report.json`** → daily trading report — cross-session memory. `today_auto` is recomputed every gist-sync cycle (winners/losers, by-strategy stats, deltas vs yesterday, auto-detected anomalies). `today_report` + `recent_reports` + `lessons` + `open_action_items` carry the Claude-authored narrative + recommendations + persistent institutional memory. **Read this at session start** before doing anything else — it tells you what was proposed yesterday, what was acted on, and what patterns the previous session noticed across the prior 14 days. Generated daily by the `/daily-report` slash command.
 
 #### Drill-down files (consult when a specific question comes up)
 
@@ -414,6 +415,7 @@ Peak analysis and trading:
 | `edge-decay.json` | `/api/edge-decay` | Per-strategy rolling mean+median across trade-count windows (last 25 / 50 / 100 / all, capped at 200) plus 12-bin sparkline (oldest → newest) and a flag (DECAYING / STRENGTHENING / STABLE / LOW-N). Auto-flag fires when median(last 30) < median(all) − 5pp. Use to catch alpha decay before committing live capital. Added 2026-05-07. |
 | `counterfactual.json` | `/api/counterfactual` | Per-strategy filter contribution + TP/SL counterfactual. For each filter, drops it and re-runs `simulateComboFullGrid`; reports `delta_ret_pp` (negative = filter pulls weight, positive = filter hurts, ~0 = dead weight). Plus the configured (tp, sl) cell snapped to the grid + top 3 alternative cells with deltas. Same cost model as `/api/best-combos`. Added 2026-05-07. |
 | `loss-postmortem.json` | `/api/loss-postmortem` | Worst-20 closed trades per strategy clustered by entry-time feature deviation. Buckets the strategy's own population into 5 quintiles per feature, computes `loser_pct − overall_pct` per bucket, surfaces features with max \|deviation\| ≥ 20pp as `dominant_patterns`. Includes raw losers with mint + graduation_id + 16 entry-time features for drill-down. Added 2026-05-07. |
+| `report.json` | `/api/daily-report` | Daily trading report — cross-session memory written by the routine `/daily-report` Claude run. Shape: `{generated_at, today_auto:{date, n_trades, winners[], losers[], by_strategy[], delta_vs_yesterday[], anomalies_auto[]}, today_report (Claude narrative), recent_reports[14], weekly_aggregates[4], lessons[], open_action_items[]}`. `today_auto` is recomputed every sync cycle so the page is populated even before the first `/daily-report` run; the narrative + structured recommendations come from `daily_reports` DB table populated via `report-upsert` commands. Action-item tracker (PROPOSED/EXECUTED/DEFERRED/REJECTED) lets the next session audit whether yesterday's plan was carried out. Lessons-learned section is institutional memory across sessions. Added 2026-05-09. |
 
 Exit-strategy simulators (dynamic exits: trailing, scale-out, vol-adaptive, time-decayed TP, whale/liq-drop):
 
@@ -496,7 +498,17 @@ Claude can manage strategies without direct Railway API access by pushing a `str
 
 `prediction.kill_criterion` recognized forms: `"n>=N and median<X"`, `"median<X"`, `"win_rate<X"`. Anything else parses as text and never trips HIT-KILL automatically. Journal entries persist across strategy delete/disable — use `journal-delete` only when you want to forget a hypothesis entirely.
 
-**Latency:** Commands are picked up within ~2 minutes (next sync cycle). Check `strategies.json` (for strategy actions) or `journal.json` (for journal actions) on bot-status to confirm they were applied. Per-batch outcomes are also published in `command-results.json`.
+**Daily-report actions** (added 2026-05-09): `report-upsert` (create or replace the daily report row for `date`), `report-append` (append a note to that day's update timeline), `action-item-update` (flip an action-item's status), `lesson-upsert` (create or replace a lesson-learned entry), `lesson-archive` (mark a lesson invalidated). Required fields per action:
+
+- `report-upsert` — `id`, `date` (YYYY-MM-DD UTC) required. Optional: `narrative`, `winners`, `losers`, `recommendations`, `anomalies`, `patterns`, `action_items[]`, `generated_by` (defaults to `'claude'`), `auto_journal` (when true, every entry in `recommendations.create_new[]` with `{strategy_id, hypothesis}` also seeds a journal entry — closes the proposal → strategy → journal loop).
+- `report-append` — `id`, `date`, `note` required.
+- `action-item-update` — `id`, `date`, `action_item_id`, `action_item_status` (one of PROPOSED / EXECUTED / DEFERRED / REJECTED) required. Optional: `action_item_note`.
+- `lesson-upsert` — `id`, `lesson_id` (or use `id`), `lesson_title`, `lesson_body` required. Optional: `evidence` (typically `[{report_date, note}]`).
+- `lesson-archive` — `id` (or `lesson_id`) required. Sets `archived=1` but keeps the row for history.
+
+The routine `/daily-report` slash command does the analysis + audit + push for you on a daily cadence (or via `/loop 24h /daily-report`). Read `report.json` at session start before doing anything else — it's the cross-session memory.
+
+**Latency:** Commands are picked up within ~2 minutes (next sync cycle). Check `strategies.json` (for strategy actions), `journal.json` (for journal actions), or `report.json` (for report / action-item / lesson actions) on bot-status to confirm they were applied. Per-batch outcomes are also published in `command-results.json`.
 
 ### Live-only endpoints (not synced to bot-status)
 

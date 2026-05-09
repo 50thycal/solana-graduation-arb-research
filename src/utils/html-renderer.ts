@@ -20,6 +20,7 @@ const NAV_LINKS = [
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
+  { path: '/report', label: 'Report' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
@@ -6661,4 +6662,361 @@ export function renderPipelineHtml(data: any): string {
     </div>`;
 
   return shell('Graduation Pipeline', '/pipeline', body, data);
+}
+
+// ── DAILY REPORT PAGE ────────────────────────────────────────────────────
+//
+// Reads computeDailyReport(db) data and renders the cross-session memory
+// page: lessons-learned memo, open action items, today's narrative + auto
+// stats, winners/losers drill-down, anomalies, recommendations, and
+// day-over-day / week-over-week history. Designed to be the first thing a
+// fresh Claude session reads at the start of every day.
+
+function escapeHtml(s: string | null | undefined): string {
+  if (!s) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function renderMarkdownLite(s: string | null | undefined): string {
+  // Minimal markdown — just enough for narrative readability without
+  // pulling in a parser. Handles paragraphs, **bold**, *italic*, `code`,
+  // lists. Untrusted content is escaped first.
+  if (!s) return '';
+  const escaped = escapeHtml(s);
+  const lines = escaped.split(/\r?\n/);
+  const out: string[] = [];
+  let inList = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^[-*]\s+/.test(trimmed)) {
+      if (!inList) { out.push('<ul>'); inList = true; }
+      out.push(`<li>${trimmed.replace(/^[-*]\s+/, '')}</li>`);
+    } else if (trimmed === '') {
+      if (inList) { out.push('</ul>'); inList = false; }
+      out.push('');
+    } else if (/^#{1,3}\s+/.test(trimmed)) {
+      if (inList) { out.push('</ul>'); inList = false; }
+      const level = (trimmed.match(/^#+/) || ['#'])[0].length;
+      const tag = `h${Math.min(level + 2, 6)}`;
+      out.push(`<${tag}>${trimmed.replace(/^#+\s+/, '')}</${tag}>`);
+    } else {
+      if (inList) { out.push('</ul>'); inList = false; }
+      out.push(`<p>${trimmed}</p>`);
+    }
+  }
+  if (inList) out.push('</ul>');
+  return out.join('\n')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code>$1</code>');
+}
+
+function pctSigned(val: number | null | undefined, digits = 1): string {
+  if (val == null || Number.isNaN(val)) return '—';
+  const cls = val > 0 ? 'green' : val < 0 ? 'red' : '';
+  const sign = val > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${val.toFixed(digits)}%</span>`;
+}
+
+function deltaPp(val: number | null | undefined): string {
+  if (val == null || Number.isNaN(val)) return '—';
+  const cls = val > 0 ? 'green' : val < 0 ? 'red' : '';
+  const sign = val > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${val.toFixed(1)}pp</span>`;
+}
+
+function severityBadge(sev: 'low' | 'med' | 'high'): string {
+  const color = sev === 'high' ? '#7f1d1d' : sev === 'med' ? '#7c2d12' : '#1e3a5f';
+  const fg = sev === 'high' ? '#fca5a5' : sev === 'med' ? '#fed7aa' : '#93c5fd';
+  return `<span class="badge" style="background:${color};color:${fg};text-transform:uppercase">${sev}</span>`;
+}
+
+function statusBadge(status: string): string {
+  const map: Record<string, [string, string]> = {
+    PROPOSED: ['#1e3a5f', '#93c5fd'],
+    EXECUTED: ['#166534', '#4ade80'],
+    DEFERRED: ['#422006', '#facc15'],
+    REJECTED: ['#3f1212', '#fca5a5'],
+    HEALTHY: ['#166534', '#4ade80'],
+    NO_DATA: ['#1f2937', '#94a3b8'],
+  };
+  const [bg, fg] = map[status] ?? ['#262640', '#94a3b8'];
+  return `<span class="badge" style="background:${bg};color:${fg}">${escapeHtml(status)}</span>`;
+}
+
+interface ReportTradeRow {
+  id: number;
+  graduation_id: number;
+  mint: string;
+  strategy_id: string | null;
+  exit_reason: string | null;
+  net_return_pct: number | null;
+  net_profit_sol: number | null;
+  held_seconds: number | null;
+}
+
+function renderTradeTable(trades: ReportTradeRow[], emptyMsg: string): string {
+  if (!trades || trades.length === 0) {
+    return `<div style="color:#64748b;font-style:italic;padding:8px 0">${emptyMsg}</div>`;
+  }
+  const rows = trades.map(t => `<tr>
+    <td>${t.graduation_id}</td>
+    <td><code style="font-size:11px">${escapeHtml((t.mint || '').slice(0, 8))}…</code></td>
+    <td>${escapeHtml(t.strategy_id ?? '—')}</td>
+    <td>${pctSigned(t.net_return_pct, 1)}</td>
+    <td style="text-align:right">${t.net_profit_sol != null ? t.net_profit_sol.toFixed(4) : '—'}</td>
+    <td>${escapeHtml(t.exit_reason ?? '—')}</td>
+    <td style="text-align:right">${t.held_seconds != null ? `${t.held_seconds}s` : '—'}</td>
+  </tr>`).join('');
+  return `<table>
+    <thead><tr>
+      <th>Grad</th><th>Mint</th><th>Strategy</th>
+      <th>Net %</th><th style="text-align:right">SOL</th>
+      <th>Exit</th><th style="text-align:right">Held</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderActionItems(
+  items: Array<{ id: string; kind: string; target_id?: string; summary: string; status: string; from_date?: string }>,
+): string {
+  if (!items || items.length === 0) {
+    return `<div style="color:#64748b;font-style:italic;padding:8px 0">No open action items.</div>`;
+  }
+  const rows = items.map(i => `<tr>
+    <td>${statusBadge(i.status)}</td>
+    <td><span class="badge" style="background:#262640;color:#a5b4fc">${escapeHtml(i.kind)}</span></td>
+    <td>${escapeHtml(i.target_id ?? '')}</td>
+    <td>${escapeHtml(i.summary)}</td>
+    <td style="color:#64748b;font-size:11px">${escapeHtml(i.from_date ?? '')}</td>
+  </tr>`).join('');
+  return `<table>
+    <thead><tr>
+      <th>Status</th><th>Kind</th><th>Target</th><th>Summary</th><th>From</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderRecommendations(recs: any): string {
+  if (!recs || typeof recs !== 'object') {
+    return `<div style="color:#64748b;font-style:italic;padding:8px 0">No structured recommendations yet — add via report-upsert.recommendations.</div>`;
+  }
+  const sections: Array<[string, string, string]> = [
+    ['kill', 'Kill', '#7f1d1d'],
+    ['promote', 'Promote', '#166534'],
+    ['watch', 'Watch', '#422006'],
+    ['create_new', 'Create New', '#1e3a5f'],
+  ];
+  const out: string[] = [];
+  for (const [key, label, color] of sections) {
+    const arr = recs[key];
+    if (!Array.isArray(arr) || arr.length === 0) continue;
+    const items = arr.map((it: any) => {
+      if (typeof it === 'string') return `<li>${escapeHtml(it)}</li>`;
+      const id = it.strategy_id || it.id || '';
+      const reason = it.reason || it.hypothesis || it.note || '';
+      return `<li><strong>${escapeHtml(id)}</strong> — ${escapeHtml(reason)}</li>`;
+    }).join('');
+    out.push(`<h3 style="color:${color}">${label} (${arr.length})</h3><ul>${items}</ul>`);
+  }
+  if (out.length === 0) {
+    return `<div style="color:#64748b;font-style:italic;padding:8px 0">No recommendations in this report.</div>`;
+  }
+  return out.join('');
+}
+
+export function renderReportHtml(data: any): string {
+  const todayAuto = data.today_auto || {};
+  const todayReport = data.today_report;
+  const recentReports: any[] = data.recent_reports || [];
+  const lessons: any[] = data.lessons || [];
+  const openItems: any[] = data.open_action_items || [];
+  const weekly: any[] = data.weekly_aggregates || [];
+  const anomalies: any[] = todayAuto.anomalies_auto || [];
+
+  // ── Header ──
+  const verdict = todayAuto.diagnose_verdict || 'NO_DATA';
+  const profit = todayAuto.today_net_profit_sol;
+  const profitClass = profit > 0 ? 'green' : profit < 0 ? 'red' : '';
+  const headerHtml = `<div class="card">
+    <h2>${escapeHtml(todayAuto.date || 'Daily Report')}</h2>
+    <div class="desc">Cross-session memory for the trading bot. today_auto recomputes every render; the narrative + recommendations come from /daily-report Claude runs.</div>
+    <div class="grid">
+      <div class="stat"><span class="label">Diagnose</span><span class="value">${statusBadge(verdict)}</span></div>
+      <div class="stat"><span class="label">Trades today</span><span class="value">${todayAuto.n_trades ?? 0} <span style="color:#64748b">(yest ${todayAuto.n_trades_yesterday ?? 0})</span></span></div>
+      <div class="stat"><span class="label">Graduations today</span><span class="value">${todayAuto.n_graduations ?? 0}</span></div>
+      <div class="stat"><span class="label">Net P&amp;L (SOL)</span><span class="value ${profitClass}">${profit != null ? (profit > 0 ? '+' : '') + profit.toFixed(4) : '—'}</span></div>
+      <div class="stat"><span class="label">Generated by</span><span class="value">${escapeHtml(todayReport?.generated_by ?? 'auto-stats only')}</span></div>
+      <div class="stat"><span class="label">Active lessons</span><span class="value">${lessons.length}</span></div>
+    </div>
+    ${verdict !== 'HEALTHY' && verdict !== 'NO_DATA'
+      ? `<div style="margin-top:8px;padding:10px;background:#3f1212;border:1px solid #7f1d1d;border-radius:4px;color:#fca5a5"><strong>Next action:</strong> ${escapeHtml(todayAuto.diagnose_next_action || '')}</div>`
+      : ''}
+  </div>`;
+
+  // ── Lessons learned ──
+  const lessonsHtml = lessons.length > 0
+    ? `<div class="card">
+        <h2>Lessons Learned (institutional memory)</h2>
+        <div class="desc">Long-running insights confirmed across many sessions. Edit with lesson-upsert / lesson-archive.</div>
+        ${lessons.map(l => `<details style="border:1px solid #333;border-radius:4px;margin:6px 0;padding:8px 12px">
+          <summary style="cursor:pointer;color:#a5b4fc;font-weight:600">${escapeHtml(l.title)}</summary>
+          <div style="margin-top:8px;color:#cbd5e1">${renderMarkdownLite(l.body)}</div>
+        </details>`).join('')}
+      </div>`
+    : `<div class="card">
+        <h2>Lessons Learned (institutional memory)</h2>
+        <div class="desc">Empty. Push lesson-upsert via strategy-commands.json to seed institutional memory.</div>
+      </div>`;
+
+  // ── Open action items ──
+  const actionItemsHtml = `<div class="card">
+    <h2>Open Action Items</h2>
+    <div class="desc">Every PROPOSED recommendation across recent reports. Flip with action-item-update.</div>
+    ${renderActionItems(openItems)}
+  </div>`;
+
+  // ── Today's narrative ──
+  const narrativeHtml = `<div class="card">
+    <h2>Today's Narrative</h2>
+    <div class="desc">Free-form Claude commentary for ${escapeHtml(todayAuto.date || '')}. Pushed via report-upsert.</div>
+    ${todayReport?.narrative
+      ? `<div style="color:#cbd5e1;line-height:1.5">${renderMarkdownLite(todayReport.narrative)}</div>`
+      : `<div style="color:#64748b;font-style:italic">No narrative yet today. Run /daily-report.</div>`}
+    ${todayReport?.updates && todayReport.updates.length > 0
+      ? `<h3>Updates</h3><ul>${todayReport.updates.map((u: any) => `<li><span style="color:#64748b;font-size:11px">${new Date(u.at * 1000).toISOString()}</span> — ${escapeHtml(u.note)}</li>`).join('')}</ul>`
+      : ''}
+  </div>`;
+
+  // ── By-strategy auto-stats with deltas ──
+  const deltaRows = (todayAuto.delta_vs_yesterday || []).map((d: any) => `<tr>
+    <td>${escapeHtml(d.label)}</td>
+    <td style="text-align:right">${d.n_today} <span style="color:#64748b">(yest ${d.n_yesterday})</span></td>
+    <td style="text-align:right">${pctSigned(d.median_today_pct, 1)}</td>
+    <td style="text-align:right">${pctSigned(d.median_yesterday_pct, 1)}</td>
+    <td style="text-align:right">${deltaPp(d.delta_median_pp)}</td>
+    <td style="text-align:right">${d.win_rate_today_pct != null ? d.win_rate_today_pct.toFixed(0) + '%' : '—'}</td>
+    <td style="text-align:right">${deltaPp(d.delta_win_rate_pp)}</td>
+  </tr>`).join('');
+  const byStrategyHtml = `<div class="card">
+    <h2>By Strategy (today vs yesterday)</h2>
+    <div class="desc">Auto-recomputed every render from trades_v2. Δ columns = today − yesterday.</div>
+    ${todayAuto.delta_vs_yesterday && todayAuto.delta_vs_yesterday.length > 0
+      ? `<table><thead><tr>
+          <th>Strategy</th><th style="text-align:right">N</th>
+          <th style="text-align:right">Median (today)</th>
+          <th style="text-align:right">Median (yest)</th>
+          <th style="text-align:right">Δ Median</th>
+          <th style="text-align:right">WR (today)</th>
+          <th style="text-align:right">Δ WR</th>
+        </tr></thead><tbody>${deltaRows}</tbody></table>`
+      : `<div style="color:#64748b;font-style:italic">No closed trades today yet.</div>`}
+  </div>`;
+
+  // ── Winners / Losers ──
+  const winnersHtml = `<div class="card">
+    <h2>Winners / Losers (top 5 each, today)</h2>
+    <div class="desc">Top gross-return trades. Use for outlier inspection — single +700% trades have misled us before.</div>
+    <h3 class="green">Top Winners</h3>
+    ${renderTradeTable(todayAuto.winners || [], 'No winning trades today.')}
+    <h3 class="red">Top Losers</h3>
+    ${renderTradeTable(todayAuto.losers || [], 'No losing trades today.')}
+  </div>`;
+
+  // ── Anomalies ──
+  const anomaliesHtml = `<div class="card">
+    <h2>Anomalies &amp; Alerts</h2>
+    <div class="desc">Auto-detected by the bot every render. Combine with Claude observations in the report-upsert payload.</div>
+    ${anomalies.length > 0
+      ? `<table><thead><tr><th>Sev</th><th>Kind</th><th>Detail</th></tr></thead><tbody>
+          ${anomalies.map((a: any) => `<tr>
+            <td>${severityBadge(a.severity)}</td>
+            <td><code style="font-size:11px">${escapeHtml(a.kind)}</code></td>
+            <td>${escapeHtml(a.detail)}</td>
+          </tr>`).join('')}
+        </tbody></table>`
+      : `<div style="color:#4ade80;font-style:italic">No auto-detected anomalies.</div>`}
+  </div>`;
+
+  // ── Recommendations ──
+  const recommendationsHtml = `<div class="card">
+    <h2>Recommendations</h2>
+    <div class="desc">Today's kill/promote/watch/create_new from the Claude run. create_new entries can auto-seed journal entries.</div>
+    ${renderRecommendations(todayReport?.recommendations)}
+  </div>`;
+
+  // ── History (last 14) ──
+  const historyHtml = `<div class="card">
+    <h2>Recent Reports (last ${recentReports.length})</h2>
+    <div class="desc">Day-over-day summary. Click date to expand narrative.</div>
+    ${recentReports.length === 0
+      ? `<div style="color:#64748b;font-style:italic">No prior reports yet.</div>`
+      : `<table><thead><tr>
+          <th>Date</th><th style="text-align:right">N</th>
+          <th style="text-align:right">Median Net</th>
+          <th style="text-align:right">WR</th>
+          <th>By</th><th>Narrative</th>
+        </tr></thead><tbody>
+          ${recentReports.map(r => `<tr>
+            <td>${escapeHtml(r.date)}</td>
+            <td style="text-align:right">${r.summary?.n_trades ?? 0}</td>
+            <td style="text-align:right">${pctSigned(r.summary?.median_net_pct, 1)}</td>
+            <td style="text-align:right">${r.summary?.win_rate_pct != null ? r.summary.win_rate_pct.toFixed(0) + '%' : '—'}</td>
+            <td style="color:#94a3b8">${escapeHtml(r.generated_by ?? '—')}</td>
+            <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((r.narrative || '').slice(0, 120))}${(r.narrative || '').length > 120 ? '…' : ''}</td>
+          </tr>`).join('')}
+        </tbody></table>`}
+  </div>`;
+
+  // ── Weekly aggregates ──
+  const weeklyHtml = `<div class="card">
+    <h2>Weekly Aggregates (last ${weekly.length} weeks)</h2>
+    <div class="desc">ISO week buckets ending Sunday. Week-over-week trend in Δ Median.</div>
+    ${weekly.length === 0
+      ? `<div style="color:#64748b;font-style:italic">No data yet.</div>`
+      : (() => {
+          const rows = weekly.map((w, i) => {
+            const prev = weekly[i + 1];
+            const delta = w.median_net_pct != null && prev?.median_net_pct != null
+              ? +(w.median_net_pct - prev.median_net_pct).toFixed(1) : null;
+            return `<tr>
+              <td>${escapeHtml(w.iso_week)}</td>
+              <td style="color:#94a3b8;font-size:11px">${escapeHtml(w.start_date)} → ${escapeHtml(w.end_date)}</td>
+              <td style="text-align:right">${w.n_trades}</td>
+              <td style="text-align:right">${pctSigned(w.median_net_pct, 1)}</td>
+              <td style="text-align:right">${w.win_rate_pct != null ? w.win_rate_pct.toFixed(0) + '%' : '—'}</td>
+              <td style="text-align:right">${w.net_profit_sol != null ? (w.net_profit_sol > 0 ? '+' : '') + w.net_profit_sol.toFixed(2) : '—'}</td>
+              <td style="text-align:right">${deltaPp(delta)}</td>
+            </tr>`;
+          }).join('');
+          return `<table><thead><tr>
+            <th>Week</th><th>Range</th>
+            <th style="text-align:right">N</th>
+            <th style="text-align:right">Median</th>
+            <th style="text-align:right">WR</th>
+            <th style="text-align:right">SOL</th>
+            <th style="text-align:right">Δ vs prev</th>
+          </tr></thead><tbody>${rows}</tbody></table>`;
+        })()}
+  </div>`;
+
+  const body = headerHtml
+    + lessonsHtml
+    + actionItemsHtml
+    + narrativeHtml
+    + byStrategyHtml
+    + winnersHtml
+    + anomaliesHtml
+    + recommendationsHtml
+    + historyHtml
+    + weeklyHtml;
+
+  return shell('Daily Report', '/report', body, data);
 }
