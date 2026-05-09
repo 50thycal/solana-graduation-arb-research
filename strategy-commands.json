@@ -1,0 +1,241 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-05-09",
+      "date": "2026-05-09",
+      "generated_by": "claude",
+      "narrative": "## First daily-report on record — Markov exits fail out of the gate, v16-calm-base takes a regime hit, but the weekly trend is the best seen to date.\n\n**Today in numbers:** 119 shadow trades across 60 graduations, net −4.31 SOL. That follows 271 trades yesterday — the reduced count reflects a quieter graduation day, not a pipeline fault (diagnose: HEALTHY). The daily P&L is negative but manageable; the story is in the per-strategy breakdown.\n\n**What worked:** Two graduations — 20054 and 20056 — carried the entire winner side. Graduation 20054 pumped cleanly over the 5-minute hold, netting +37.9% on both v14-sumabs-shadow and v14-sumabs-dd-shadow via timeout. Graduation 20056 hit the vol-30-60 filter's TP in 22 seconds flat — +33.5% net on v9shadow-vol-30-60 and v13-vol3060-dd10. These are the clean pump-and-hold outcomes the calm-entry filters are designed to catch. The v14-sumabs-dd-shadow now sits at all-time median +9.18% over n=10 — the cleanest live signal among mature overlays with a dd protection layer.\n\n**What failed:** Two catastrophic tokens dominated the loser side. Graduation 20145 crushed every v17 and v18 position simultaneously — all exited at −45.1% within 53 seconds via SL or markov_exit. Graduation 20146 destroyed v11 late-entry positions at −55% to −57% in 49–139 seconds. The Markov exit mechanic in v18 (strict and exitonly) fired exits on graduation 20145 that aligned exactly with the SL path — providing zero rescue benefit over a plain stop-loss. At n=9, it is too early to formally kill v18, but the thesis (Markov should trim the loss tail) is not validating. Critically: the v18-exitonly variant (hold threshold 0.99, effectively unreachable) performed identically to v18-strict (both median −23.56%). Since exitonly isolates the early-exit mechanic while disabling the hold-side, this confirms the early-exit itself is causing harm — same failure mode as v16-be3, which caught noise pullbacks inside the natural volatility band. v17 BE variants (be5/be7/be9) all show median −18.56% at n=10 today, all driven by the same graduation 20145 event. The control case (be9, near-inert BE one tick before TP) matching be5 and be7 exactly confirms the damage was token-level, not BE-mechanism-specific.\n\n**v16-calm-base regime hit:** The core v16 strategy dropped from yesterday's daily median +8.03% to today's −6.61% (delta −14.64pp). Exit mix shifted: TP rate fell from 61% to 42%, SL rate rose from 27% to 42%. This looks like a single-day market regime event — the 7-day edge-decay sparkline shows STABLE, and the all-time median is +7.76% (n=56, journal: ON-TRACK). v16-calm-trail5 tells a different story: all-time median +0.61% vs base's +7.76% at the same n=56. The trailing stop (activate +5%, distance 3%) is confirmed dead weight — it is not catching runners and is costing win rate. At n=100, if median stays below +4%, kill trail5 and do not reiterate trailing stops below act+8%/dist+5%.\n\n**Leaderboard shift — CLAUDE.md needs updating:** Two combos have crossed n=100 since the last snapshot:\n1. `vel 20-50 + dd > −10%` — n=111, opt +5.13% @ tp=150/sl=30, **STABLE** regime (wr_std_dev=2.8%). The prior snapshot noted n=92, opt +7.58% @ 150/25 — opt has settled lower as more diverse-regime data accumulated, and optimal SL shifted from 25 to 30. Still beats baseline (−11.2%) by over 16pp and is the most regime-stable combo in the catalog. The live v10-best-double (median −4.34% at n=37) severely underperforms research (+5.13%) — likely due to entry gate mismatch and possible TP/SL misconfiguration.\n2. `age > 10min + top5 < 10%` — n=117, opt +6.17% @ tp=150/sl=30, **MODERATE** regime (wr_std_dev=10.6%). New leaderboard leader. No live shadow strategy exists. Deploying a shadow strategy here is the single highest-value action available.\nNote: `vel < 5 + dev < 3%` has decayed from opt +3.09% (n=125, 2026-05-01) to −1.44% (n=155, today). Still beats baseline, but the prior 'first true winner' characterization overstated the edge — more regime-diverse data eroded the opt.\n\n**Weekly trend — genuinely positive:** W16: median −31.5% → W17: −9.9% → W18: −15.1% → W19 (partial): −4.26%. W19 is the best weekly median since trading began. The calm-survivor filter family is producing a materially better return distribution.\n\n**Mean vs median audit:** Several strategies show dangerous divergences. v9shadow-vel20-top5: mean +24.93% but median +2.43% (n=27) — sparkline shows 140% and 95% outlier wins early in history. v12-bcage1d-dd10: mean +26.31%, median −3.5% — early 179%/193% outlier trades. v11-vel5dev3-liq100: mean +12.67%, median −20.75% at n=9. None of these means are trustworthy. The median is the honest read in all three cases.\n\n**Operator next step:** Push a `strategy-commands.json` to `main` with: (1) upsert `v19-age10-top5-shadow` for `age>10min + top5<10%` at tp=150/sl=30, entry gate +5..+100, 0.5 SOL shadow; (2) verify and correct v10-best-double's TP/SL to tp=150/sl=30 matching the current leaderboard optimum. These two actions address the highest-value gap in the current portfolio.",
+      "winners": [
+        {
+          "id": 7563,
+          "graduation_id": 20054,
+          "mint": "BPsrLQMEtrdJq6xmNnuBQLsNUbms7q3BFZHq3TG3pump",
+          "strategy_id": "v14-sumabs-shadow",
+          "exit_reason": "timeout",
+          "net_return_pct": 37.91,
+          "held_seconds": 303
+        },
+        {
+          "id": 7564,
+          "graduation_id": 20054,
+          "mint": "BPsrLQMEtrdJq6xmNnuBQLsNUbms7q3BFZHq3TG3pump",
+          "strategy_id": "v14-sumabs-dd-shadow",
+          "exit_reason": "timeout",
+          "net_return_pct": 37.91,
+          "held_seconds": 303
+        },
+        {
+          "id": 7566,
+          "graduation_id": 20056,
+          "mint": "H8vL81KAcrxJz9KJvkgrdhhuvasoEMuhrPhSCnsmpump",
+          "strategy_id": "v9shadow-vol-30-60",
+          "exit_reason": "take_profit",
+          "net_return_pct": 33.48,
+          "held_seconds": 22
+        },
+        {
+          "id": 7570,
+          "graduation_id": 20056,
+          "mint": "H8vL81KAcrxJz9KJvkgrdhhuvasoEMuhrPhSCnsmpump",
+          "strategy_id": "v13-vol3060-dd10",
+          "exit_reason": "take_profit",
+          "net_return_pct": 33.48,
+          "held_seconds": 22
+        },
+        {
+          "id": 7565,
+          "graduation_id": 20056,
+          "mint": "H8vL81KAcrxJz9KJvkgrdhhuvasoEMuhrPhSCnsmpump",
+          "strategy_id": "v9shadow-vel50-liq",
+          "exit_reason": "timeout",
+          "net_return_pct": 24.24,
+          "held_seconds": 309
+        }
+      ],
+      "losers": [
+        {
+          "id": 7627,
+          "graduation_id": 20146,
+          "mint": "13h3dL9tmDajGqmRsTYQWKecHLJhfyMB7A4SbjV5pump",
+          "strategy_id": "v11-vel5dev3-t120",
+          "exit_reason": "stop_loss",
+          "net_return_pct": -56.93,
+          "held_seconds": 49
+        },
+        {
+          "id": 7618,
+          "graduation_id": 20146,
+          "mint": "13h3dL9tmDajGqmRsTYQWKecHLJhfyMB7A4SbjV5pump",
+          "strategy_id": "v11-vel5dev3-t30",
+          "exit_reason": "stop_loss",
+          "net_return_pct": -54.77,
+          "held_seconds": 139
+        },
+        {
+          "id": 7616,
+          "graduation_id": 20145,
+          "mint": "bHkUvE1osPXfZCLBtRqEpofi1MfsfDAgyQKfQfUpump",
+          "strategy_id": "v18-calm-mkv-exitonly",
+          "exit_reason": "markov_exit",
+          "net_return_pct": -45.11,
+          "held_seconds": 53
+        },
+        {
+          "id": 7615,
+          "graduation_id": 20145,
+          "mint": "bHkUvE1osPXfZCLBtRqEpofi1MfsfDAgyQKfQfUpump",
+          "strategy_id": "v18-calm-mkv-strict",
+          "exit_reason": "markov_exit",
+          "net_return_pct": -45.11,
+          "held_seconds": 53
+        },
+        {
+          "id": 7614,
+          "graduation_id": 20145,
+          "mint": "bHkUvE1osPXfZCLBtRqEpofi1MfsfDAgyQKfQfUpump",
+          "strategy_id": "v17-calm-be9",
+          "exit_reason": "stop_loss",
+          "net_return_pct": -45.11,
+          "held_seconds": 53
+        }
+      ],
+      "anomalies": [
+        {
+          "severity": "high",
+          "kind": "markov_exit_failure",
+          "detail": "All three v18 Markov variants (strict/exitonly/aggressive) produced losses on graduation 20145 at −45%. The exitonly variant (hold threshold 0.99, effectively never fires) performed identically to strict (both median −23.56%), proving the early-exit mechanic alone is causing harm. Markov is catching noise pullbacks — identical failure mode to be3. Kill criteria: n>=40 and median<0 for strict/exitonly; n>=30 and median<−3 for aggressive. Expected kill within 5–7 days at current trajectory.",
+          "strategy_ids": ["v18-calm-mkv-strict", "v18-calm-mkv-exitonly", "v18-calm-mkv-aggressive"]
+        },
+        {
+          "severity": "high",
+          "kind": "strategy_stalled",
+          "detail": "v11-vel20top5-liq100 stalled 25h. Triple filter (vel<20 + top5<10% + liq>100) too tight for consistent coverage. Candidate for disable if stall exceeds 48h.",
+          "strategy_id": "v11-vel20top5-liq100"
+        },
+        {
+          "severity": "med",
+          "kind": "exit_mix_shift",
+          "detail": "v16-calm-base TP rate dropped from 61% to 42% today (delta −20pp), SL rate rose from 27% to 42%. Edge-decay STABLE — treat as single-day regime event. Watch next 48h for recovery.",
+          "strategy_id": "v16-calm-base"
+        },
+        {
+          "severity": "med",
+          "kind": "mean_median_divergence",
+          "detail": "v9shadow-vel20-top5: mean +24.93% vs median +2.43% (n=27). Outlier bins at ~140% and ~95% dominate the mean. Median is the honest signal.",
+          "strategy_id": "v9shadow-vel20-top5"
+        },
+        {
+          "severity": "med",
+          "kind": "mean_median_divergence",
+          "detail": "v12-bcage1d-dd10: mean +26.31% vs median −3.5% (n=16). Early 179%/193% outlier trades inflate mean. WR 37.5%. bc_age>1d live edge appears absent.",
+          "strategy_id": "v12-bcage1d-dd10"
+        },
+        {
+          "severity": "low",
+          "kind": "leaderboard_shift",
+          "detail": "vel<5+dev<3% opt decayed from +3.09% (n=125, 2026-05-01) to −1.44% (n=155, today). age>10min+top5<10% is new leaderboard leader (n=117, opt +6.17%, MODERATE). vel 20-50+dd>-10% crossed n=100 (n=111, opt +5.13%, STABLE, sl shifted 25→30). CLAUDE.md baseline section outdated."
+        }
+      ],
+      "patterns": [
+        {
+          "kind": "weekly_improvement",
+          "detail": "Portfolio median return by ISO week: W16 −31.5% → W17 −9.9% → W18 −15.1% → W19 (partial) −4.26%. W19 is the best weekly median since trading began. Calm-survivor filter family producing materially better return distribution."
+        },
+        {
+          "kind": "opt_decay_with_n",
+          "detail": "vel<5+dev<3% was the standout winner at n=125 (opt +3.09%). At n=155 today, opt settled to −1.44%. High opt at n=50–100 consistently erodes with more regime-diverse data. Do not promote combos where opt is only marginally above the +0.3pp bar — wait for n=150+ to confirm stability."
+        },
+        {
+          "kind": "catastrophic_token_clustering",
+          "detail": "Graduations 20145 and 20146 caused majority of today's damage, hitting multiple strategies simultaneously. Strategies on independent entry dimensions (vel+top5 vs sum_abs+dd) avoided both tokens today, confirming diversification across entry families reduces per-token correlation."
+        },
+        {
+          "kind": "be_and_markov_convergent_failure",
+          "detail": "v16-be3 (killed), v17-be5/7/9 (DEGRADING), and v18-Markov (DEGRADING) all share the same failure: an early-exit mechanic that fires too quickly and catches natural volatility rather than true reversals. Three cohorts, same hypothesis, same failure. The DPM-overlay-on-calm-survivor approach may need to be shelved until a higher-quality exit signal is developed."
+        }
+      ],
+      "recommendations": {
+        "kill": [],
+        "promote": [
+          {
+            "strategy_id": "v19-vel2050-dd-shadow",
+            "filter_spec": "vel 20-50 + dd > -10%",
+            "reason": "n=111, opt +5.13% @ tp=150/sl=30, STABLE regime (wr_std_dev=2.8%). Beats baseline (−11.2%) by 16.3pp. Most regime-stable combo in the catalog. Live v10-best-double (median −4.34% at n=37) underperforming due to entry gate mismatch. Deploy new shadow at +5..+100 gate with tp=150/sl=30. Requires Panel 7 walk-forward check before operator deploys."
+          },
+          {
+            "strategy_id": "v19-age10-top5-shadow",
+            "filter_spec": "age > 10min + top5 < 10%",
+            "reason": "n=117, opt +6.17% @ tp=150/sl=30, MODERATE regime (wr_std_dev=10.6%). Beats baseline by 17.4pp. New leaderboard leader with no live shadow counterpart. Deploy to confirm research edge translates to live fills."
+          }
+        ],
+        "create_new": [
+          {
+            "strategy_id": "v19-age10-top5-shadow",
+            "hypothesis": "age>10min + top5<10% is the new leaderboard leader at n=117, opt +6.17% @ tp=150/sl=30, MODERATE regime (wr_std_dev=10.6%). The age>10min filter selects tokens that survived initial graduation volatility; top5<10% excludes concentrated whale plays. No live shadow strategy tests this combo. Deploy to measure whether the research edge translates to live shadow fills and whether MODERATE regime stability holds in real-time data.",
+            "prediction": {
+              "target_median_net_pct": 4,
+              "target_n": 100,
+              "target_days": 14,
+              "kill_criterion": "n>=50 and median<-5"
+            },
+            "cohort_label": "v19"
+          }
+        ],
+        "watch": [
+          {
+            "strategy_id": "v16-calm-trail5",
+            "reason": "Lifetime median +0.61% vs v16-calm-base +7.76% at n=56 each. Trail stop (act+5%/dist3%) confirmed dead weight. Kill at n=100 if median stays below +4%."
+          },
+          {
+            "strategy_id": "v18-markov-cohort",
+            "reason": "All three v18 variants DEGRADING at n=9 (median −10.92% to −23.56%). Kill criteria trip at n=30–40. Expected kill recommendation within 5–7 days."
+          },
+          {
+            "strategy_id": "v14-snipers-liq",
+            "reason": "n=4, 0% WR, median −19.26%, stalled 17h. v15-snipers-liq also 0% WR at n=5, median −27.21%. Both liq+sniper overlays failing live. Candidate for disable at n=10 if WR stays 0%."
+          },
+          {
+            "strategy_id": "v12-bcage1d-dd10",
+            "reason": "n=16, WR 37.5%, median −3.5%, mean +26.31% (outlier-driven). Stalls frequently. Consider disable if n<25 after 30 days from deployment."
+          }
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-05-09-001",
+          "kind": "create_new",
+          "target_id": "v19-age10-top5-shadow",
+          "summary": "Deploy v19-age10-top5-shadow: age>10min + top5<10% at tp=150/sl=30, entry gate +5..+100, 0.5 SOL shadow. New leaderboard leader at n=117, opt +6.17%, MODERATE regime — highest-value undeployed combo in the catalog.",
+          "status": "PROPOSED",
+          "proposed_at": 1778198400
+        },
+        {
+          "id": "ai-2026-05-09-002",
+          "kind": "promote",
+          "target_id": "v10-best-double",
+          "summary": "Verify v10-best-double TP/SL params: current leaderboard opt for vel 20-50+dd>-10% is tp=150/sl=30. Prior CLAUDE.md noted sl=25 (old snapshot at n=92). Update via strategy upsert if mismatched. Also confirm entry gate is +5..+100 to match research conditions.",
+          "status": "PROPOSED",
+          "proposed_at": 1778198400
+        },
+        {
+          "id": "ai-2026-05-09-003",
+          "kind": "watch",
+          "target_id": "v18-calm-mkv-strict,v18-calm-mkv-exitonly,v18-calm-mkv-aggressive",
+          "summary": "Monitor v18 Markov cohort through n=30–40. Exitonly matching strict proves early-exit mechanic is the failure, not hold-side. Prepare kill commands: median<0 at n>=40 (strict/exitonly), median<-3 at n>=30 (aggressive).",
+          "status": "PROPOSED",
+          "proposed_at": 1778198400
+        },
+        {
+          "id": "ai-2026-05-09-004",
+          "kind": "watch",
+          "target_id": "v16-calm-trail5",
+          "summary": "v16-calm-trail5 lifetime median +0.61% vs base +7.76% at n=56. Kill at n=100 if median stays below +4%. If killed, next trailing-stop iteration should use act>=+8% to avoid the noise-band interference confirmed across be3 and trail5.",
+          "status": "PROPOSED",
+          "proposed_at": 1778198400
+        }
+      ],
+      "auto_journal": true
+    }
+  ]
+}
