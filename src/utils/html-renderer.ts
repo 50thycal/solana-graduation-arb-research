@@ -1221,6 +1221,19 @@ function escHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/** Execution mode badge styling — hoisted so it's reachable from the
+ *  extracted Recent Trades / Recent Skips render fns and the inline
+ *  renderTradingHtml panels alike. */
+function execModeStyle(m: string): { color: string; label: string } {
+  switch (m) {
+    case 'shadow':     return { color: '#a78bfa', label: 'SHADOW' };
+    case 'live_micro': return { color: '#f59e0b', label: 'LIVE μ' };
+    case 'live_full':  return { color: '#ef4444', label: 'LIVE' };
+    case 'paper':
+    default:           return { color: '#64748b', label: 'PAPER' };
+  }
+}
+
 /**
  * Mint cell with Birdeye link + clipboard copy. Tap the truncated text on
  * mobile to open Birdeye in a new tab; tap the small copy icon to copy the
@@ -3829,8 +3842,13 @@ export function renderPricePathHtml(db: Database.Database): string {
 function utcToCentral(utcStr: string | null | undefined): string {
   if (!utcStr) return '-';
   try {
-    // SQLite datetime() returns "YYYY-MM-DD HH:MM:SS" in UTC
-    const d = new Date(utcStr + 'Z');
+    // Two input formats are passed in:
+    //  - SQLite datetime(): "YYYY-MM-DD HH:MM:SS" (no timezone, treat as UTC)
+    //  - JS Date.toISOString(): "YYYY-MM-DDTHH:MM:SS.sssZ" (already UTC-marked)
+    // Only append Z when the input has no timezone marker — appending it to an
+    // ISO string that already has Z produces "...ZZ" which Date.parse rejects.
+    const hasTz = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(utcStr);
+    const d = new Date(hasTz ? utcStr : utcStr + 'Z');
     if (isNaN(d.getTime())) return utcStr;
     return d.toLocaleString('en-US', {
       timeZone: 'America/Chicago',
@@ -4562,6 +4580,100 @@ export function renderJournalPanel(data: any): string {
     </div>`;
 }
 
+/** Recent Trades panel — last 50 trades, optionally filtered by
+ *  data.selected_strategy / data.selected_execution_mode. Same SQL backs
+ *  the initial server render and the /api/recent-trades?format=html refetch
+ *  triggered when the user clicks a strategy filter. */
+export function renderRecentTradesPanel(data: any): string {
+  const selected = data.selected_strategy || '';
+  const selectedExec = data.selected_execution_mode || '';
+  const tradeRows = (data.recent_trades || []).map((t: any) => {
+    const ret = t.net_return_pct;
+    const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
+    const trueRet = t.true_net_return_pct;
+    const trueRetColor = trueRet == null ? '#64748b' : trueRet > 0 ? '#22d3ee' : '#f87171';
+    const reasonColor = (t.exit_reason === 'take_profit' || t.exit_reason === 'trailing_tp') ? '#22d3ee' : t.exit_reason === 'trailing_stop' ? '#fb923c' : t.exit_reason === 'breakeven_stop' ? '#fbbf24' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
+    const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
+    const exec = execModeStyle(t.execution_mode || 'paper');
+    const sid = t.strategy_id ?? 'default';
+    const sidEsc = escHtml(sid);
+    return `<tr data-strategy="${sidEsc}">
+      <td data-label="ID">${t.id}</td>
+      <td data-label="Strategy" style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
+      <td data-label="Mode"><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600">${exec.label}</span></td>
+      <td data-label="Status" style="color:${t.status === 'open' ? '#a78bfa' : t.status === 'failed' ? '#f87171' : '#94a3b8'}">${t.status}</td>
+      <td data-label="Mint">${mintCell(t.mint)}</td>
+      <td data-label="Entry%">${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
+      <td data-label="Exit Reason" style="color:${reasonColor}">${t.exit_reason ?? '-'}</td>
+      <td data-label="Net Ret%" style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
+      <td data-label="True Net%" style="color:${trueRetColor}" title="Shadow-only: gross − measured entry slip − measured exit slip">${trueRet != null ? trueRet.toFixed(2) + '%' : '-'}</td>
+      <td data-label="Held">${heldStr}</td>
+      <td data-label="T+300" style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
+      <td data-label="Entry Time" style="font-size:11px;color:#64748b">${utcToCentral(t.entry_dt)} CT</td>
+    </tr>`;
+  }).join('');
+
+  const tradesTitleSuffix = [
+    selected ? selected : '',
+    selectedExec ? execModeStyle(selectedExec).label : '',
+  ].filter(Boolean).join(' · ');
+  return `
+    <div class="card">
+      <div class="card-title">Recent Trades (last 50${selected ? ' for this strategy' : ''})${tradesTitleSuffix ? ` — ${tradesTitleSuffix}` : ''}</div>
+      ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
+        <thead><tr><th>ID</th><th>Strategy</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
+          <th>Exit Reason</th><th>Net Ret%</th>
+          <th title="Shadow-only — measured AMM slippage applied instead of gap penalty">True Net Ret%</th>
+          <th>Held</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
+        <tbody>${tradeRows}</tbody>
+      </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
+    </div>`;
+}
+
+/** Recent Skips panel — Skip Reasons aggregate + Recent Skips table. The
+ *  Skip Reasons aggregate is global (it's a count(*) by reason), so when a
+ *  strategy filter is active the aggregate shows the "Filter doesn't apply"
+ *  pill. Recent Skips table is filtered server-side via data.recent_skips. */
+export function renderRecentSkipsPanel(data: any): string {
+  const skipCountRows = (data.skip_reason_counts || []).map((s: any) =>
+    `<tr><td>${s.skip_reason}</td><td>${s.count}</td></tr>`
+  ).join('');
+
+  const skipRows = (data.recent_skips || []).slice(0, 20).map((s: any) => {
+    const sid = s.strategy_id ?? 'default';
+    const sidEsc = escHtml(sid);
+    return `<tr data-strategy="${sidEsc}">
+      <td>${s.graduation_id}</td>
+      <td>${mintCell(s.mint)}</td>
+      <td style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
+      <td style="color:#f87171">${s.skip_reason}</td>
+      <td>${s.skip_value != null ? s.skip_value.toFixed(2) : '-'}</td>
+      <td>${s.pct_t30 != null ? s.pct_t30.toFixed(1) + '%' : '-'}</td>
+      <td style="font-size:11px;color:#64748b">${utcToCentral(s.created_dt)} CT</td>
+    </tr>`;
+  }).join('');
+
+  const selected = data.selected_strategy || '';
+  return `
+    <div class="skips-grid" style="display:grid;grid-template-columns:1fr 2fr;gap:16px">
+      <div class="card" data-aggregate="true">
+        <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
+        <div class="card-title">Skip Reasons</div>
+        ${skipCountRows ? `<table class="table">
+          <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+          <tbody>${skipCountRows}</tbody>
+        </table>` : '<p style="color:#94a3b8">No skips yet</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">Recent Skips (last 20${selected ? ' for this strategy' : ''})</div>
+        ${skipRows ? `<div style="overflow-x:auto"><table class="table">
+          <thead><tr><th>GradID</th><th>Mint</th><th>Strategy</th><th>Reason</th><th>Value</th><th>pct_t30</th><th>Time</th></tr></thead>
+          <tbody>${skipRows}</tbody>
+        </table></div>` : '<p style="color:#94a3b8">No skips yet</p>'}
+      </div>
+    </div>`;
+}
+
 export function renderTradingHtml(data: any): string {
   const navHtml = nav('/trading');
   const strategies: any[] = data.strategies || [];
@@ -4573,15 +4685,8 @@ export function renderTradingHtml(data: any): string {
   // Color/short-label per execution_mode — used by the badges in Recent Trades
   // and the Performance by Execution Mode card. Distinct from the global
   // `mode` (paper/live) which only has two values.
-  const execModeStyle = (m: string): { color: string; label: string } => {
-    switch (m) {
-      case 'shadow':     return { color: '#a78bfa', label: 'SHADOW' };
-      case 'live_micro': return { color: '#f59e0b', label: 'LIVE μ' };
-      case 'live_full':  return { color: '#ef4444', label: 'LIVE' };
-      case 'paper':
-      default:           return { color: '#64748b', label: 'PAPER' };
-    }
-  };
+  // (execModeStyle is hoisted to module scope so the extracted Recent
+  // Trades / Recent Skips renders can use it from /api endpoints too.)
 
   // ── Strategy tabs ─────────────────────────────────────────────────────────
   const tabStyle = (active: boolean) => active
@@ -4958,86 +5063,13 @@ export function renderTradingHtml(data: any): string {
       </p>` : '<p style="color:#94a3b8">No closed shadow trades with measured slippage yet.</p>'}
     </div>` : '';
 
-  // ── Recent trades table ───────────────────────────────────────────────────
-  const tradeRows = (data.recent_trades || []).map((t: any) => {
-    const ret = t.net_return_pct;
-    const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
-    const trueRet = t.true_net_return_pct;
-    const trueRetColor = trueRet == null ? '#64748b' : trueRet > 0 ? '#22d3ee' : '#f87171';
-    const reasonColor = (t.exit_reason === 'take_profit' || t.exit_reason === 'trailing_tp') ? '#22d3ee' : t.exit_reason === 'trailing_stop' ? '#fb923c' : t.exit_reason === 'breakeven_stop' ? '#fbbf24' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
-    const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
-    const exec = execModeStyle(t.execution_mode || 'paper');
-    const sid = t.strategy_id ?? 'default';
-    const sidEsc = escHtml(sid);
-    return `<tr data-strategy="${sidEsc}">
-      <td data-label="ID">${t.id}</td>
-      <td data-label="Strategy" style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
-      <td data-label="Mode"><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600">${exec.label}</span></td>
-      <td data-label="Status" style="color:${t.status === 'open' ? '#a78bfa' : t.status === 'failed' ? '#f87171' : '#94a3b8'}">${t.status}</td>
-      <td data-label="Mint">${mintCell(t.mint)}</td>
-      <td data-label="Entry%">${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
-      <td data-label="Exit Reason" style="color:${reasonColor}">${t.exit_reason ?? '-'}</td>
-      <td data-label="Net Ret%" style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
-      <td data-label="True Net%" style="color:${trueRetColor}" title="Shadow-only: gross − measured entry slip − measured exit slip">${trueRet != null ? trueRet.toFixed(2) + '%' : '-'}</td>
-      <td data-label="Held">${heldStr}</td>
-      <td data-label="T+300" style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
-      <td data-label="Entry Time" style="font-size:11px;color:#64748b">${utcToCentral(t.entry_dt)}</td>
-    </tr>`;
-  }).join('');
-
-  const tradesTitleSuffix = [
-    selected ? selected : '',
-    selectedExec ? execModeStyle(selectedExec).label : '',
-  ].filter(Boolean).join(' · ');
-  const tradesHtml = `
-    <div class="card">
-      <div class="card-title">Recent Trades (last 50)${tradesTitleSuffix ? ` — ${tradesTitleSuffix}` : ''}</div>
-      ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
-        <thead><tr><th>ID</th><th>Strategy</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
-          <th>Exit Reason</th><th>Net Ret%</th>
-          <th title="Shadow-only — measured AMM slippage applied instead of gap penalty">True Net Ret%</th>
-          <th>Held</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
-        <tbody>${tradeRows}</tbody>
-      </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
-    </div>`;
-
-  // ── Skips ─────────────────────────────────────────────────────────────────
-  const skipCountRows = (data.skip_reason_counts || []).map((s: any) =>
-    `<tr><td>${s.skip_reason}</td><td>${s.count}</td></tr>`
-  ).join('');
-
-  const skipRows = (data.recent_skips || []).slice(0, 20).map((s: any) => {
-    const sid = s.strategy_id ?? 'default';
-    const sidEsc = escHtml(sid);
-    return `<tr data-strategy="${sidEsc}">
-      <td>${s.graduation_id}</td>
-      <td>${mintCell(s.mint)}</td>
-      <td style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
-      <td style="color:#f87171">${s.skip_reason}</td>
-      <td>${s.skip_value != null ? s.skip_value.toFixed(2) : '-'}</td>
-      <td>${s.pct_t30 != null ? s.pct_t30.toFixed(1) + '%' : '-'}</td>
-      <td style="font-size:11px;color:#64748b">${utcToCentral(s.created_dt)}</td>
-    </tr>`;
-  }).join('');
-
-  const skipsHtml = `
-    <div class="skips-grid" style="display:grid;grid-template-columns:1fr 2fr;gap:16px">
-      <div class="card" data-aggregate="true">
-        <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
-        <div class="card-title">Skip Reasons</div>
-        ${skipCountRows ? `<table class="table">
-          <thead><tr><th>Reason</th><th>Count</th></tr></thead>
-          <tbody>${skipCountRows}</tbody>
-        </table>` : '<p style="color:#94a3b8">No skips yet</p>'}
-      </div>
-      <div class="card">
-        <div class="card-title">Recent Skips (last 20)</div>
-        ${skipRows ? `<div style="overflow-x:auto"><table class="table">
-          <thead><tr><th>GradID</th><th>Mint</th><th>Strategy</th><th>Reason</th><th>Value</th><th>pct_t30</th><th>Time</th></tr></thead>
-          <tbody>${skipRows}</tbody>
-        </table></div>` : '<p style="color:#94a3b8">No skips yet</p>'}
-      </div>
-    </div>`;
+  // ── Recent Trades + Recent Skips ─────────────────────────────────────────
+  // Wrapped in identifiable sections so the click-to-filter JS can refetch
+  // strategy-specific slices via /api/recent-trades?format=html&strategy=<id>
+  // and /api/recent-skips?format=html&strategy=<id>. Without refetch, a
+  // low-volume strategy's trades may not appear in the global last-50.
+  const tradesHtml = `<section data-section="recent-trades">${renderRecentTradesPanel(data)}</section>`;
+  const skipsHtml = `<section data-section="recent-skips">${renderRecentSkipsPanel(data)}</section>`;
 
   // ── Build client-side FILTER_PRESETS map ────────────────────────────────────
   const filterPresetsMap: Record<string, any[]> = {};
@@ -5375,6 +5407,43 @@ export function renderTradingHtml(data: any): string {
       if (activeId) url.searchParams.set('strategy', activeId);
       else url.searchParams.delete('strategy');
       window.history.replaceState({}, '', url.toString());
+      // Refetch recent trades + skips for the new filter so low-volume
+      // strategies surface their actual last 50 (not a 0-row slice of the
+      // global last 50). On clear, refetch without strategy → restores
+      // system-wide last 50.
+      refreshTradesAndSkips(activeId);
+    }
+
+    // ── Strategy-aware refresh of Recent Trades + Recent Skips ───────────────
+    let refreshSeq = 0;
+    function refreshTradesAndSkips(activeId) {
+      const seq = ++refreshSeq;
+      const params = new URLSearchParams(window.location.search);
+      const execMode = params.get('execution_mode') || '';
+      const qs = function (extra) {
+        const p = new URLSearchParams();
+        p.set('format', 'html');
+        if (activeId) p.set('strategy', activeId);
+        if (execMode) p.set('execution_mode', execMode);
+        return '?' + p.toString();
+      };
+      const swap = function (sectionAttr, endpoint) {
+        const section = document.querySelector('[data-section="' + sectionAttr + '"]');
+        if (!section) return;
+        section.style.opacity = '0.6';
+        fetch(endpoint, { headers: { 'Accept': 'text/html' } })
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+          .then(function (html) {
+            // Discard stale responses if the user clicked again.
+            if (seq !== refreshSeq) return;
+            section.innerHTML = html;
+            section.style.opacity = '1';
+            applyStrategyFilter(document.body.dataset.activeStrategy || '');
+          })
+          .catch(function () { section.style.opacity = '1'; });
+      };
+      swap('recent-trades', '/api/recent-trades' + qs());
+      swap('recent-skips', '/api/recent-skips' + qs());
     }
 
     // Delegated click handlers — one listener for filter, one for clipboard.
