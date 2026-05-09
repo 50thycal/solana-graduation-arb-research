@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { simulateCombo, computeBestCombos, ENTRY_GATE, FILTER_CATALOG, yieldEventLoop } from './aggregates';
+import { simulateCombo, computeBestCombos, ENTRY_GATE, FILTER_CATALOG, yieldEventLoop, BestComboRow } from './aggregates';
 
 /**
  * Sniper-window analytics dashboard. Companion to /api/best-combos focused on
@@ -120,7 +120,10 @@ function histogramFromRows(
   });
 }
 
-export async function computeSniperPanel(db: Database.Database): Promise<SniperPanelData> {
+export async function computeSniperPanel(
+  db: Database.Database,
+  precomputedBestCombos?: { rows: BestComboRow[] },
+): Promise<SniperPanelData> {
   const generated_at = new Date().toISOString();
 
   // ── Population coverage ─────────────────────────────────────────────────
@@ -176,11 +179,14 @@ export async function computeSniperPanel(db: Database.Database): Promise<SniperP
   // ── Top combos that include a sniper filter ─────────────────────────────
   // Reuse computeBestCombos at a wide top so we can filter to sniper-touching
   // rows without re-running the simulator. min_n=20 matches /api/best-combos.
-  const wideLeaderboard = await computeBestCombos(db, {
-    min_n: 20,
-    top: 500,
-    include_pairs: true,
-  });
+  // Gist-sync passes its own precomputed leaderboard to avoid a 3rd full
+  // grid sweep — same compute, same gating.
+  const wideLeaderboard = precomputedBestCombos
+    ?? await computeBestCombos(db, {
+      min_n: 20,
+      top: 500,
+      include_pairs: true,
+    });
   const topCombosWithSniper = wideLeaderboard.rows
     .filter(r => r.filters.some(isSniperFilterName))
     .slice(0, 20)
