@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { Connection } from '@solana/web3.js';
 import { fetchVaultPrice } from './executor';
+import { MarkovMatrixStore } from './markov-matrix';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('position-manager');
@@ -45,9 +46,20 @@ export interface ActivePosition {
   /** Per-token slippage estimate (%) from graduation_momentum.slippage_est_05sol.
    *  Used by paper mode sell to model realistic exit fill quality. */
   slippageEstPct?: number;
+  /** Filter-set key (sorted, " + "-joined filter labels) used to look up the
+   *  Markov transition matrix. Set when the strategy registers its filter. */
+  markovFilterKey?: string;
 }
 
-export type ExitReason = 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout' | 'killswitch';
+export type ExitReason =
+  | 'take_profit'
+  | 'stop_loss'
+  | 'trailing_stop'
+  | 'trailing_tp'
+  | 'breakeven_stop'
+  | 'timeout'
+  | 'markov_exit'
+  | 'killswitch';
 
 /** Dynamic monitoring parameters — subset of strategy params needed by PositionManager */
 export interface DynamicMonitorParams {
@@ -63,6 +75,9 @@ export interface DynamicMonitorParams {
   tightenSlAtPctTime2: number;
   tightenSlTargetPct2: number;
   breakevenStopPct: number;
+  markovExitEnabled: boolean;
+  markovExitProbThreshold: number;
+  markovHoldProbThreshold: number;
 }
 
 export interface ExitEvent {
@@ -78,6 +93,7 @@ export class PositionManager extends EventEmitter {
   private running = false;
   private polling = false; // guard against concurrent poll() invocations (five_second mode)
   private dynamicParams: DynamicMonitorParams;
+  private markovStore: MarkovMatrixStore | null;
 
   // match_collection mode: per-position scheduled timeout handles
   private positionTimers: Map<number, NodeJS.Timeout[]> = new Map();
@@ -85,6 +101,7 @@ export class PositionManager extends EventEmitter {
   constructor(
     private readonly monitorMode: 'five_second' | 'match_collection' = 'five_second',
     dynamicParams?: DynamicMonitorParams,
+    markovStore: MarkovMatrixStore | null = null,
   ) {
     super();
     this.dynamicParams = dynamicParams ?? {
@@ -100,7 +117,11 @@ export class PositionManager extends EventEmitter {
       tightenSlAtPctTime2: 0,
       tightenSlTargetPct2: 5,
       breakevenStopPct: 0,
+      markovExitEnabled: false,
+      markovExitProbThreshold: 0.30,
+      markovHoldProbThreshold: 0.85,
     };
+    this.markovStore = markovStore;
   }
 
   /** Hot-swap dynamic monitoring params without replacing the manager */
@@ -299,6 +320,45 @@ export class PositionManager extends EventEmitter {
       pos.highWaterMark = priceSol;
     }
 
+    // 3.5. MARKOV STATE-CONDITIONAL CHECK
+    // Look up P(profit at T+300 | filter, age, current bucket) in the matrix.
+    // If P_win is decisively low → exit early.
+    // If P_win is decisively high AND we're already in the win zone → mark
+    // markovHoldActive so a later fixed-TP step doesn't fire (let it trail).
+    let markovHoldActive = false;
+    if (
+      params.markovExitEnabled &&
+      this.markovStore &&
+      pos.markovFilterKey
+    ) {
+      const ageSec = now - (pos.graduationDetectedAt || pos.entryTimestamp - 30);
+      const curPctFromEntry = ((priceSol - pos.entryPriceSol) / pos.entryPriceSol) * 100;
+      const cell = this.markovStore.lookup(pos.markovFilterKey, ageSec, curPctFromEntry);
+      if (cell) {
+        if (cell.p_win < params.markovExitProbThreshold) {
+          logger.info(
+            {
+              tradeId: pos.tradeId,
+              ageSec,
+              curPctFromEntry: curPctFromEntry.toFixed(2),
+              p_win: cell.p_win,
+              cellN: cell.n,
+              filterKey: pos.markovFilterKey,
+            },
+            'Markov exit triggered (P_win below threshold)'
+          );
+          this.triggerExit(pos, 'markov_exit', priceSol);
+          return;
+        }
+        if (
+          cell.p_win > params.markovHoldProbThreshold &&
+          curPctFromEntry > 0
+        ) {
+          markovHoldActive = true;
+        }
+      }
+    }
+
     // 4. COMPUTE EFFECTIVE SL (layered — each rule can only RAISE the floor)
     // Track which DPM rule raised the floor highest so exit reason is correct.
     let effectiveSl = pos.slPriceSol; // start with the original fixed SL
@@ -391,8 +451,10 @@ export class PositionManager extends EventEmitter {
         }
       }
     } else {
-      // Fixed TP mode (current behavior)
-      if (priceSol >= pos.tpPriceSol) {
+      // Fixed TP mode (current behavior). When markovHoldActive, skip the
+      // fixed TP exit and let the trade keep running — the next tick will
+      // re-check P_win and either exit on a hard SL or another markov decision.
+      if (priceSol >= pos.tpPriceSol && !markovHoldActive) {
         this.triggerExit(pos, 'take_profit', priceSol);
         return;
       }

@@ -116,6 +116,7 @@ export interface StatusUrls {
   price_path_stats: string;
   peak_analysis: string;
   strategies: string;
+  markov_matrix: string;
   exit_sim: string;
   // New files (overhaul 2026-04-17): per-panel filter-v2 slices, full price-path
   // detail with raw overlay paths, and full /trading dashboard data.
@@ -259,6 +260,7 @@ export class GistSync {
       price_path_stats: `${base}/price-path-stats.json`,
       peak_analysis: `${base}/peak-analysis.json`,
       strategies: `${base}/strategies.json`,
+      markov_matrix: `${base}/markov-matrix.json`,
       exit_sim: `${base}/exit-sim.json`,
       exit_sim_matrix: `${base}/exit-sim-matrix.json`,
       entry_time_matrix: `${base}/entry-time-matrix.json`,
@@ -647,6 +649,12 @@ export class GistSync {
       params: JSON.parse(row.config_json),
     }));
 
+    // Markov state-conditional exit matrix — present only when StrategyManager
+    // has finished initializing and at least one strategy registered a filter.
+    const markovMatrix = this.strategyManager
+      ? this.strategyManager.getMarkovStore().toJson()
+      : { generated_at: null, paths_consumed: 0, filters: {} };
+
     const genAt = new Date(nowMs).toISOString();
 
     // Panel 6 sync shape: omit the URL-driven `dynamic` slice (needs user input)
@@ -686,6 +694,7 @@ export class GistSync {
         count: strategies.length,
         strategies,
       }, null, 2),
+      'markov-matrix.json': JSON.stringify(markovMatrix, null, 2),
       // Per-command outcomes from the last 20 strategy-commands.json batches
       // the bot processed. Use to debug silently-rejected upserts (ID length
       // violations, invalid params, missing fields). Fresh push wipes the

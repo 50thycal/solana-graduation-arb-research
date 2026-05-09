@@ -12,6 +12,7 @@ import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
 import { PositionManager, ExitEvent, DynamicMonitorParams } from './position-manager';
 import { TradeEvaluator } from './trade-evaluator';
+import { MarkovMatrixStore, REFIT_PATHS_THRESHOLD } from './markov-matrix';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
 import { Wallet } from './wallet';
 import { isKillswitchTripped, maybeLogKillswitchTripped } from './safety';
@@ -36,6 +37,7 @@ interface StrategyInstance {
   config: TradingConfig;
   evaluator: TradeEvaluator;
   positionManager: PositionManager;
+  markovFilterKey: string;
 }
 
 export interface StrategyInfo {
@@ -54,6 +56,7 @@ export class StrategyManager {
   private wallet: Wallet | null;
   private backfillTimer: NodeJS.Timeout | null = null;
   private safetyTimer: NodeJS.Timeout | null = null;
+  private markovStore: MarkovMatrixStore;
   // Watchdog telemetry: when the last T+30 callback fired across all strategies.
   // Used by /api/diagnose and snapshot.json to surface a stalled-pipeline state
   // (graduations arriving but callbacks not firing → PriceCollector wiring bug,
@@ -71,6 +74,30 @@ export class StrategyManager {
     // deployments (no WALLET_PRIVATE_KEY set) still work — shadow/live modes
     // will return success:false with a clear error message.
     this.executor = new Executor(this.globalConfig.executionMode, this.connection, this.wallet);
+    this.markovStore = new MarkovMatrixStore();
+  }
+
+  getMarkovStore(): MarkovMatrixStore {
+    return this.markovStore;
+  }
+
+  /** Refit every registered filter's matrix and update the consumed-paths
+   *  counter. Cheap — single SQL pass per filter, runs on a timer. */
+  private refitMarkovMatrices(): void {
+    const totalLabeledPaths = (this.db.prepare(
+      `SELECT COUNT(*) AS n FROM graduation_momentum WHERE pct_t300 IS NOT NULL`
+    ).get() as { n: number }).n;
+    if (!this.markovStore.isRefitDue(totalLabeledPaths)) return;
+    if (this.markovStore.registeredKeys().length === 0) return;
+    this.markovStore.refitAll(this.db, totalLabeledPaths);
+    logger.info(
+      {
+        pathsConsumed: totalLabeledPaths,
+        filterKeys: this.markovStore.registeredKeys(),
+        refitThreshold: REFIT_PATHS_THRESHOLD,
+      },
+      'Markov matrices refit'
+    );
   }
 
   initialize(): void {
@@ -104,11 +131,20 @@ export class StrategyManager {
       }
     }
 
-    // Periodically backfill momentum comparison fields on closed trades
+    // Periodically backfill momentum comparison fields on closed trades.
+    // Also fold in the Markov refit check on the same cadence — refit only
+    // fires when REFIT_PATHS_THRESHOLD (50) new closed paths have landed.
     this.backfillTimer = setInterval(() => {
       this.tradeLogger.backfillMomentum();
+      this.refitMarkovMatrices();
     }, BACKFILL_INTERVAL_MS);
     this.tradeLogger.backfillMomentum();
+    // Initial fit so any markov-enabled strategies have data on bot start.
+    this.markovStore.refitAll(
+      this.db,
+      (this.db.prepare(`SELECT COUNT(*) AS n FROM graduation_momentum WHERE pct_t300 IS NOT NULL`)
+        .get() as { n: number }).n,
+    );
 
     // Safety watchdog: every 10s check the killswitch and force-close open
     // live positions if tripped mid-session. Paper / shadow positions aren't
@@ -311,6 +347,16 @@ export class StrategyManager {
       existing.enabled = enabled;
       existing.evaluator.updateConfig(newConfig);
       existing.positionManager.updateDynamicParams(StrategyManager.extractDynamicParams(newConfig));
+
+      // Re-register filter spec with the matrix store — if the filter set
+      // changed, the next refit will build a fresh matrix for it.
+      const newKey = this.markovStore.registerFilter(
+        newConfig.filters,
+        newConfig.entryGateMinPctT30,
+        newConfig.entryGateMaxPctT30,
+      );
+      existing.markovFilterKey = newKey;
+      existing.evaluator.setMarkovFilterKey(newKey);
 
       // positionMonitorMode is baked into the PositionManager at construction
       // time and cannot be hot-swapped. Warn if the user changed it — the new
@@ -598,6 +644,18 @@ export class StrategyManager {
     if (!isFinite(bp) || bp < 0 || bp > 1000) {
       errors.push('breakevenStopPct must be between 0 and 1000');
     }
+    // Markov exit thresholds — both probabilities, exit < hold
+    const mexit = p.markovExitProbThreshold ?? 0.30;
+    const mhold = p.markovHoldProbThreshold ?? 0.85;
+    if (!isFinite(mexit) || mexit < 0 || mexit > 1) {
+      errors.push('markovExitProbThreshold must be between 0 and 1');
+    }
+    if (!isFinite(mhold) || mhold < 0 || mhold > 1) {
+      errors.push('markovHoldProbThreshold must be between 0 and 1');
+    }
+    if (mexit >= mhold) {
+      errors.push('markovExitProbThreshold must be less than markovHoldProbThreshold');
+    }
     // ── Live-execution params ────────────────────────────────────────────
     if (p.executionMode != null) {
       const valid = ['paper', 'shadow', 'live_micro', 'live_full'];
@@ -640,6 +698,9 @@ export class StrategyManager {
       tightenSlAtPctTime2: cfg.tightenSlAtPctTime2 ?? 0,
       tightenSlTargetPct2: cfg.tightenSlTargetPct2 ?? 5,
       breakevenStopPct: cfg.breakevenStopPct ?? 0,
+      markovExitEnabled: cfg.markovExitEnabled ?? false,
+      markovExitProbThreshold: cfg.markovExitProbThreshold ?? 0.30,
+      markovHoldProbThreshold: cfg.markovHoldProbThreshold ?? 0.85,
     };
   }
 
@@ -647,7 +708,7 @@ export class StrategyManager {
     const config = mergeStrategyParams(this.globalConfig, params);
     const monitorMode = params.positionMonitorMode ?? 'five_second';
     const dynamicParams = StrategyManager.extractDynamicParams(config);
-    const positionManager = new PositionManager(monitorMode, dynamicParams);
+    const positionManager = new PositionManager(monitorMode, dynamicParams, this.markovStore);
     const evaluator = new TradeEvaluator(
       this.db,
       config,
@@ -658,6 +719,15 @@ export class StrategyManager {
       this.connection,
       this.wallet,
     );
+
+    // Register this strategy's filter set with the matrix store so the next
+    // refit pass builds a matrix for it. Cheap and idempotent.
+    const markovFilterKey = this.markovStore.registerFilter(
+      config.filters,
+      config.entryGateMinPctT30,
+      config.entryGateMaxPctT30,
+    );
+    evaluator.setMarkovFilterKey(markovFilterKey);
 
     // Wire position exits → close trade in DB
     // Fix Issue 2: read config from the live instance at exit time (not the captured
@@ -674,7 +744,7 @@ export class StrategyManager {
       });
     });
 
-    this.strategies.set(id, { id, label, enabled, config, evaluator, positionManager });
+    this.strategies.set(id, { id, label, enabled, config, evaluator, positionManager, markovFilterKey });
   }
 
   private async handleExit(event: ExitEvent, config: TradingConfig): Promise<void> {
@@ -794,6 +864,7 @@ export class StrategyManager {
         tpThresholdHit: false,
         postTpHighWaterMark: 0,
         effectiveSlPriceSol: slPriceSol,
+        markovFilterKey: instance.markovFilterKey,
       });
       logger.info({ tradeId: trade.id, strategyId }, 'Live position recovered for monitoring');
     }

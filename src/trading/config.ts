@@ -93,6 +93,18 @@ export interface StrategyParams {
   /** Move SL to entry price once price reaches this % above entry. 0 = disabled. */
   breakevenStopPct: number;
 
+  // ── Markov state-conditional exit (optional DPM layer) ──────────────────
+  /** Enable the Markov early-exit / late-hold logic. Default false.
+   *  When true, the position-manager queries a precomputed transition matrix
+   *  every 5s and may exit early or skip a fixed-TP exit based on the cell. */
+  markovExitEnabled?: boolean;
+  /** Exit threshold: if P(profit at T+300 | current state) < this, exit early.
+   *  Default 0.30. Only fires when the matrix cell has >= MIN_CELL_N samples. */
+  markovExitProbThreshold?: number;
+  /** Hold threshold: if P(profit) > this AND price is already in the win zone,
+   *  skip the fixed-TP exit and let the trailing-SL trail. Default 0.85. */
+  markovHoldProbThreshold?: number;
+
   // ── Live execution (phase + per-strategy knobs) ───────────────────────
   /** Phased rollout — default 'paper'. Promote via strategy-commands.json. */
   executionMode?: ExecutionMode;
@@ -144,6 +156,11 @@ export interface TradingConfig {
   tightenSlAtPctTime2: number;
   tightenSlTargetPct2: number;
   breakevenStopPct: number;
+
+  // ── Markov state-conditional exit ────────────────────────────────────────
+  markovExitEnabled?: boolean;
+  markovExitProbThreshold?: number;
+  markovHoldProbThreshold?: number;
 
   // ── Execution (live mode only) ───────────────────────────────────────────
   slippageBps: number;
@@ -204,6 +221,9 @@ export function loadTradingConfig(): TradingConfig {
     tightenSlAtPctTime2: parseFloat(process.env.TIGHTEN_SL_AT_PCT_TIME2 || '0'),
     tightenSlTargetPct2: parseFloat(process.env.TIGHTEN_SL_TARGET_PCT2 || '5'),
     breakevenStopPct: parseFloat(process.env.BREAKEVEN_STOP_PCT || '0'),
+    markovExitEnabled: process.env.MARKOV_EXIT_ENABLED === 'true',
+    markovExitProbThreshold: parseFloat(process.env.MARKOV_EXIT_PROB_THRESHOLD || '0.30'),
+    markovHoldProbThreshold: parseFloat(process.env.MARKOV_HOLD_PROB_THRESHOLD || '0.85'),
     slippageBps: parseInt(process.env.SLIPPAGE_BPS || '300', 10),
     priorityFeeMicroLamports: parseInt(process.env.PRIORITY_FEE_MICRO_LAMPORTS || '100000', 10),
     walletPrivateKey: process.env.WALLET_PRIVATE_KEY,
@@ -258,6 +278,9 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     tightenSlAtPctTime2: cfg.tightenSlAtPctTime2 ?? 0,
     tightenSlTargetPct2: cfg.tightenSlTargetPct2 ?? 5,
     breakevenStopPct: cfg.breakevenStopPct ?? 0,
+    markovExitEnabled: cfg.markovExitEnabled ?? false,
+    markovExitProbThreshold: cfg.markovExitProbThreshold ?? 0.30,
+    markovHoldProbThreshold: cfg.markovHoldProbThreshold ?? 0.85,
     executionMode: cfg.executionMode ?? 'paper',
     jitoTipSol: cfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
     maxSlippageBps: cfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
@@ -290,6 +313,9 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     tightenSlAtPctTime2: params.tightenSlAtPctTime2 ?? 0,
     tightenSlTargetPct2: params.tightenSlTargetPct2 ?? 5,
     breakevenStopPct: params.breakevenStopPct ?? 0,
+    markovExitEnabled: params.markovExitEnabled ?? false,
+    markovExitProbThreshold: params.markovExitProbThreshold ?? 0.30,
+    markovHoldProbThreshold: params.markovHoldProbThreshold ?? 0.85,
     executionMode: params.executionMode ?? globalCfg.executionMode ?? 'paper',
     jitoTipSol: params.jitoTipSol ?? globalCfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
     maxSlippageBps: params.maxSlippageBps ?? globalCfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,

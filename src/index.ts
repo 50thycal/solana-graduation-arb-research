@@ -171,6 +171,9 @@ async function main() {
   // Graduation listener (declared early so both /api routes and legacy
   // HTML routes can capture it by closure; assigned later in main()).
   let listener: GraduationListener | null = null;
+  // Strategy manager hoisted early so the /api/markov-matrix route can
+  // capture it via closure. Assigned after the listener boots.
+  let strategyManager: StrategyManager | null = null;
 
   // Self-service JSON API — /api/diagnose, /api/snapshot, /api/best-combos,
   // etc. Registered before the legacy HTML routes so they take precedence
@@ -3049,8 +3052,9 @@ ${rows.map(r => {
     logger.error('Graduation listener failed to start: %s', message);
   }
 
-  // Initialize strategy manager (opt-in via TRADING_ENABLED=true)
-  let strategyManager: StrategyManager | null = null;
+  // Initialize strategy manager (opt-in via TRADING_ENABLED=true).
+  // The variable itself is declared earlier (right after `listener`) so the
+  // /api/markov-matrix route can capture it; here we just assign it.
   if (listener) {
     try {
       strategyManager = new StrategyManager(db, listener.getConnection());

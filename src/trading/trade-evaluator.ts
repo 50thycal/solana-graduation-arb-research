@@ -14,6 +14,7 @@ const logger = makeLogger('trade-evaluator');
 
 export class TradeEvaluator {
   private strategyId: string;
+  private markovFilterKey: string | undefined;
 
   constructor(
     private db: Database.Database,
@@ -35,6 +36,12 @@ export class TradeEvaluator {
   /** Hot-swap config without replacing the evaluator instance */
   updateConfig(config: TradingConfig): void {
     this.config = config;
+  }
+
+  /** StrategyManager calls this on create + filter-change so each new position
+   *  carries the correct matrix-lookup key. */
+  setMarkovFilterKey(key: string): void {
+    this.markovFilterKey = key;
   }
 
   /**
@@ -237,6 +244,7 @@ export class TradeEvaluator {
       postTpHighWaterMark: 0,
       effectiveSlPriceSol: slPriceSol,
       slippageEstPct,
+      markovFilterKey: this.markovFilterKey,
     };
 
     if (!position.baseVault || !position.quoteVault) {

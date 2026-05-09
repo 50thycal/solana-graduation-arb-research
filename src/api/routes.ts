@@ -723,6 +723,20 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     res.json(computePeakAnalysis(db));
   }));
 
+  // ── /api/markov-matrix ──
+  // State-conditional exit DPM matrix per registered strategy filter set.
+  // Each cell = P(profit at T+300 | filter, age, current_pct_from_entry bucket).
+  // Built from labeled paths every REFIT_PATHS_THRESHOLD new closures.
+  // Returns 404 until the strategy manager finishes initializing.
+  app.get('/api/markov-matrix', wrap((_req, res) => {
+    const sm = getStrategyManager?.() ?? null;
+    if (!sm) {
+      res.status(404).json({ error: 'StrategyManager not initialized yet' });
+      return;
+    }
+    res.json(sm.getMarkovStore().toJson());
+  }));
+
   // ── /api/exit-sim ──
   // Dynamic-exit strategy simulator. Evaluates alternative exit logic
   // (momentum reversal today; scale-out, vol-trail, time-decayed TP in
