@@ -822,7 +822,7 @@ export class PriceCollector {
               ctx.graduationTimestamp,
               ctx.bondingCurveAddress,
             ),
-            new Promise<void>(resolve => setTimeout(resolve, 10_000)),
+            new Promise<void>(resolve => setTimeout(resolve, 13_000)),
           ]);
           // Fire trading engine callback — all T+30 momentum fields are now written.
           // Mark the observation so the T+45 deadline timer (set in startObservation)
@@ -1385,10 +1385,9 @@ export class PriceCollector {
       let oldestBlockTime: number | null = null;
 
       for (let page = 0; page < 3; page++) {
-        if (!await globalRpcLimiter.throttleOrDrop(3)) {
-          logger.info({ graduationId }, 'bc_velocity fallback: RPC queue full, skipping page');
-          break;
-        }
+        // throttlePriority: jump to front of queue, never drop — BC age is required
+        // for velocity filters and this fallback only fires when enrichment missed it.
+        await globalRpcLimiter.throttlePriority();
         const sigs = await this.connection.getSignaturesForAddress(bcPubkey, { limit: 1000, before });
         if (sigs.length === 0) break;
         const last = sigs[sigs.length - 1];
