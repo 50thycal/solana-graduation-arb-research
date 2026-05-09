@@ -472,10 +472,13 @@ export function yieldEventLoop(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve));
 }
 
-/** Cadence for inner-loop yields. Picked so that worst-case sync block between
- *  yields is ~50 × ~13ms simulateCombo = ~650ms — well under the 1s threshold
- *  where T+30 deadline timers start drifting noticeably. */
-const YIELD_EVERY_N_CANDIDATES = 50;
+/** Cadence for inner-loop yields. Tightened from 50 → 10 (2026-05-09) once
+ *  panel11 + sniperPanel stopped redundantly re-running this loop — with only
+ *  one computeBestCombos call per gist-sync cycle the per-yield budget shrinks
+ *  to ~10 × ~13ms simulateCombo = ~130ms, keeping every T+30 deadline timer
+ *  well clear of the 1s drift threshold. Extra setImmediate overhead is ~88
+ *  yields × 1ms = ~88ms on a 25s compute — lost in the noise. */
+const YIELD_EVERY_N_CANDIDATES = 10;
 
 /**
  * Run the per-combo TP/SL grid optimizer against `graduation_momentum`
