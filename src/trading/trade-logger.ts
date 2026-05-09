@@ -32,7 +32,7 @@ export interface CloseTradeParams {
   tradeId: number;
   entryPriceSol: number;
   exitPriceSol: number;
-  exitReason: 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout' | 'manual' | 'killswitch';
+  exitReason: 'take_profit' | 'stop_loss' | 'trailing_stop' | 'trailing_tp' | 'breakeven_stop' | 'timeout' | 'manual' | 'killswitch' | 'markov_exit';
   tradeSizeSol: number;
   takeProfitPct: number;
   stopLossPct: number;
