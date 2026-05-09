@@ -2,6 +2,34 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('trading-config');
 
+/**
+ * Phased rollout for a strategy.
+ *   paper      — simulate fills with gap penalties (no chain interaction)
+ *   shadow     — read pool state at entry/exit, record what the fill WOULD have been
+ *                (measured slippage), but never submit a tx. Still persists as a
+ *                trade row with execution_mode='shadow' for comparison to paper.
+ *   live_micro — submit real txs at MICRO_TRADE_SIZE_SOL (hard override)
+ *   live_full  — submit real txs at the strategy's configured tradeSizeSol
+ */
+export type ExecutionMode = 'paper' | 'shadow' | 'live_micro' | 'live_full';
+
+// ── Live execution constants (shared by executor, safety, jito) ──────────────
+/** Hard cap on live trading losses per UTC day. Circuit breaker trips at ≤ -DAILY_MAX_LOSS_SOL. */
+export const DAILY_MAX_LOSS_SOL = parseFloat(process.env.DAILY_MAX_LOSS_SOL || '1.0');
+/** Position size used in the live_micro rollout phase — overrides strategy's tradeSizeSol. */
+export const MICRO_TRADE_SIZE_SOL = parseFloat(process.env.MICRO_TRADE_SIZE_SOL || '0.05');
+/** Default Jito tip when a strategy doesn't specify one. 100k lamports ≈ 0.0001 SOL. */
+export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL || '0.0001');
+/** Max acceptable expected slippage at entry. 500 = 5%. */
+export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAGE_BPS || '500', 10);
+/** SOL kept as buffer above tradeSize for tx fees + ATA rent. */
+export const WALLET_SOL_BUFFER = parseFloat(process.env.WALLET_SOL_BUFFER || '0.02');
+/** Regional Jito block engine endpoint. Frankfurt/NY/Amsterdam/Tokyo also available. */
+export const JITO_BLOCK_ENGINE_URL =
+  process.env.JITO_BLOCK_ENGINE_URL || 'https://mainnet.block-engine.jito.wtf';
+/** File path — presence trips the killswitch. Checked on every safety cycle. */
+export const KILLSWITCH_FILE = process.env.TRADING_KILLSWITCH_FILE || '.trading-kill';
+
 export interface FilterConfig {
   /** Column name from graduation_momentum table */
   field: string;
@@ -26,6 +54,14 @@ export interface StrategyParams {
   slGapPenaltyPct: number;
   tpGapPenaltyPct: number;
   filters: FilterConfig[];
+  /**
+   * Seconds after graduation at which to evaluate + enter. Default 30 (T+30,
+   * the historical baseline). Allowed values must match a `price_t<sec>` column
+   * on graduation_momentum: {30, 60, 90, 120, 180, 240, 300}. Late-entry
+   * strategies fan out at T+entryTimingSec wall-clock and gate on
+   * pct_t<entryTimingSec>. Mirrors `entryTimeMatrix` simulator semantics.
+   */
+  entryTimingSec?: number;
   /**
    * Controls how often the position manager checks price for SL/TP.
    * five_second: independent 5s polling from position entry (more responsive, may catch intra-schedule moves)
@@ -68,6 +104,14 @@ export interface StrategyParams {
   /** Hold threshold: if P(profit) > this AND price is already in the win zone,
    *  skip the fixed-TP exit and let the trailing-SL trail. Default 0.85. */
   markovHoldProbThreshold?: number;
+
+  // ── Live execution (phase + per-strategy knobs) ───────────────────────
+  /** Phased rollout — default 'paper'. Promote via strategy-commands.json. */
+  executionMode?: ExecutionMode;
+  /** Jito priority tip in SOL. Undefined = DEFAULT_JITO_TIP_SOL. */
+  jitoTipSol?: number;
+  /** Reject entry if expected slippage > this (bps). Undefined = DEFAULT_MAX_SLIPPAGE_BPS. */
+  maxSlippageBps?: number;
 }
 
 export interface TradingConfig {
@@ -124,9 +168,18 @@ export interface TradingConfig {
   /** base58 private key — loaded from env, never logged */
   walletPrivateKey?: string;
 
+  // ── Live execution (global defaults — overridden per-strategy) ──────────
+  executionMode: ExecutionMode;
+  jitoTipSol: number;
+  maxSlippageBps: number;
+
   // ── Filter pipeline ──────────────────────────────────────────────────────
   /** All filters must pass (AND logic) before entry is triggered */
   filters: FilterConfig[];
+
+  // ── Late entry (per-strategy override of T+30 default) ──────────────────
+  /** Wall-clock seconds after graduation at which to enter. Default 30. */
+  entryTimingSec?: number;
 }
 
 /** Default filter preset: vel 5-20 sol/min — the primary confirmed signal */
@@ -150,8 +203,8 @@ export function loadTradingConfig(): TradingConfig {
     mode: (process.env.TRADING_MODE as 'paper' | 'live') === 'live' ? 'live' : 'paper',
     tradeSizeSol: parseFloat(process.env.TRADE_SIZE_SOL || '0.5'),
     maxConcurrentPositions: parseInt(process.env.MAX_CONCURRENT_POSITIONS || '1', 10),
-    entryGateMinPctT30: parseFloat(process.env.ENTRY_GATE_MIN_PCT || '5'),
-    entryGateMaxPctT30: parseFloat(process.env.ENTRY_GATE_MAX_PCT || '100'),
+    entryGateMinPctT30: parseFloat(process.env.ENTRY_GATE_MIN_PCT || '-99'),
+    entryGateMaxPctT30: parseFloat(process.env.ENTRY_GATE_MAX_PCT || '1000'),
     takeProfitPct: parseFloat(process.env.TAKE_PROFIT_PCT || '30'),
     stopLossPct: parseFloat(process.env.STOP_LOSS_PCT || '10'),
     maxHoldSeconds: parseInt(process.env.MAX_HOLD_SECONDS || '300', 10),
@@ -174,6 +227,9 @@ export function loadTradingConfig(): TradingConfig {
     slippageBps: parseInt(process.env.SLIPPAGE_BPS || '300', 10),
     priorityFeeMicroLamports: parseInt(process.env.PRIORITY_FEE_MICRO_LAMPORTS || '100000', 10),
     walletPrivateKey: process.env.WALLET_PRIVATE_KEY,
+    executionMode: ((process.env.EXECUTION_MODE as ExecutionMode) || 'paper'),
+    jitoTipSol: parseFloat(process.env.JITO_TIP_SOL || String(DEFAULT_JITO_TIP_SOL)),
+    maxSlippageBps: parseInt(process.env.MAX_SLIPPAGE_BPS || String(DEFAULT_MAX_SLIPPAGE_BPS), 10),
     filters,
   };
 
@@ -210,6 +266,7 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     slGapPenaltyPct: cfg.slGapPenaltyPct,
     tpGapPenaltyPct: cfg.tpGapPenaltyPct,
     filters: cfg.filters,
+    entryTimingSec: cfg.entryTimingSec ?? 30,
     positionMonitorMode: cfg.positionMonitorMode ?? 'five_second',
     trailingSlActivationPct: cfg.trailingSlActivationPct ?? 0,
     trailingSlDistancePct: cfg.trailingSlDistancePct ?? 5,
@@ -224,6 +281,9 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     markovExitEnabled: cfg.markovExitEnabled ?? false,
     markovExitProbThreshold: cfg.markovExitProbThreshold ?? 0.30,
     markovHoldProbThreshold: cfg.markovHoldProbThreshold ?? 0.85,
+    executionMode: cfg.executionMode ?? 'paper',
+    jitoTipSol: cfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
+    maxSlippageBps: cfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
   };
 }
 
@@ -241,6 +301,7 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     slGapPenaltyPct: params.slGapPenaltyPct,
     tpGapPenaltyPct: params.tpGapPenaltyPct,
     filters: params.filters,
+    entryTimingSec: params.entryTimingSec ?? 30,
     positionMonitorMode: params.positionMonitorMode ?? 'five_second',
     trailingSlActivationPct: params.trailingSlActivationPct ?? 0,
     trailingSlDistancePct: params.trailingSlDistancePct ?? 5,
@@ -255,5 +316,8 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     markovExitEnabled: params.markovExitEnabled ?? false,
     markovExitProbThreshold: params.markovExitProbThreshold ?? 0.30,
     markovHoldProbThreshold: params.markovHoldProbThreshold ?? 0.85,
+    executionMode: params.executionMode ?? globalCfg.executionMode ?? 'paper',
+    jitoTipSol: params.jitoTipSol ?? globalCfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
+    maxSlippageBps: params.maxSlippageBps ?? globalCfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
   };
 }

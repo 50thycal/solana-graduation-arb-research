@@ -11,9 +11,14 @@ const NAV_LINKS = [
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
   { path: '/filter-analysis-v2', label: 'Filters V2' },
+  { path: '/filter-analysis-v3', label: 'Filters V3' },
+  { path: '/wallet-rep-analysis', label: 'Wallet Rep' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
+  { path: '/exit-sim', label: 'Exit Sim' },
+  { path: '/exit-sim-matrix', label: 'Exit Matrix' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
+  { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
@@ -71,13 +76,13 @@ const STYLES = `
   .p4-controls select{background:#0f0f1a;color:#e2e8f0;border:1px solid #334155;padding:4px 8px;margin-left:4px;border-radius:4px;font-size:12px;cursor:pointer}
   .p4-controls select:hover{border-color:#60a5fa}
   .p4-controls .desc{margin-bottom:0;margin-left:auto}
-  /* Panel 4 horizon tabs */
+  /* Panel 1 / Panel 4 / Panel 6 horizon tabs */
   .p4-tabs{display:flex;gap:4px;margin:12px 0 8px}
-  .p4-tab{background:#1f2a44;color:#94a3b8;border:1px solid #334155;padding:6px 14px;border-radius:4px 4px 0 0;font-size:12px;cursor:pointer;font-family:inherit}
-  .p4-tab:hover{background:#262640;color:#e2e8f0}
-  .p4-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6;font-weight:600}
-  .p4-horizon-panel{display:none}
-  .p4-horizon-panel.active{display:block}
+  .p1-tab,.p4-tab,.p6-tab{background:#1f2a44;color:#94a3b8;border:1px solid #334155;padding:6px 14px;border-radius:4px 4px 0 0;font-size:12px;cursor:pointer;font-family:inherit}
+  .p1-tab:hover,.p4-tab:hover,.p6-tab:hover{background:#262640;color:#e2e8f0}
+  .p1-tab.active,.p4-tab.active,.p6-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6;font-weight:600}
+  .p1-horizon-panel,.p4-horizon-panel,.p6-horizon-panel{display:none}
+  .p1-horizon-panel.active,.p4-horizon-panel.active,.p6-horizon-panel.active{display:block}
 `;
 
 function nav(currentPath: string): string {
@@ -221,10 +226,12 @@ export function renderThesisHtml(data: any): string {
         <div class="stat"><span class="label">Raw Win Rate</span><span class="value">${wr(sc.raw_win_rate_pct)}</span></div>
       </div>
       <div>
-        <div class="stat"><span class="label">Best Filter (sim)</span><span class="value blue">${sc.best_filter?.name || '—'}</span></div>
-        <div class="stat"><span class="label">Sim Avg Return</span><span class="value ${(sc.best_filter?.sim_avg_return ?? 0) >= 6.44 ? 'green' : (sc.best_filter?.sim_avg_return ?? 0) > 0 ? 'yellow' : 'red'}">${sc.best_filter?.sim_avg_return != null ? (sc.best_filter.sim_avg_return > 0 ? '+' : '') + sc.best_filter.sim_avg_return + '%' : '—'}</span></div>
-        <div class="stat"><span class="label">Win Rate</span><span class="value">${wr(sc.best_filter?.win_rate)}</span></div>
+        <div class="stat"><span class="label">Best Filter (opt)</span><span class="value blue">${sc.best_filter?.name || '—'}</span></div>
+        <div class="stat"><span class="label">Opt Avg Return</span><span class="value ${(sc.best_filter?.opt_avg_ret ?? 0) > (sc.rolling_baseline_opt_avg_ret ?? 0) + 0.3 ? 'green' : (sc.best_filter?.opt_avg_ret ?? 0) > (sc.rolling_baseline_opt_avg_ret ?? 0) ? 'yellow' : 'red'}">${sc.best_filter?.opt_avg_ret != null ? (sc.best_filter.opt_avg_ret > 0 ? '+' : '') + sc.best_filter.opt_avg_ret + '%' : '—'}</span></div>
+        <div class="stat"><span class="label">Opt TP / SL</span><span class="value">${sc.best_filter?.opt_tp != null ? `${sc.best_filter.opt_tp}% / ${sc.best_filter.opt_sl}%` : '—'}</span></div>
+        <div class="stat"><span class="label">Win Rate</span><span class="value">${wr(sc.best_filter?.opt_win_rate)}</span></div>
         <div class="stat"><span class="label">Sample Size (n)</span><span class="value">${sc.best_filter?.sample_size || '—'}</span></div>
+        <div class="stat"><span class="label">Rolling Baseline</span><span class="value">${sc.rolling_baseline_opt_avg_ret != null ? (sc.rolling_baseline_opt_avg_ret > 0 ? '+' : '') + sc.rolling_baseline_opt_avg_ret + '%' : '—'}</span></div>
         <div class="stat"><span class="label">Unlabeled</span><span class="value">${sc.unlabeled}</span></div>
       </div>
     </div>
@@ -311,6 +318,8 @@ export function renderThesisHtml(data: any): string {
     <div class="stat"><span class="label">Null Fields</span><span class="value">${typeof dq.null_fields_in_last_10 === 'string' ? `<span class="green">${dq.null_fields_in_last_10}</span>` : `<span class="yellow">${dq.null_fields_in_last_10.length} fields</span>`}</span></div>
     <div class="stat"><span class="label">Stale Data</span><span class="value ${dq.last_grad_stale ? 'yellow' : 'green'}">${dq.last_grad_stale ? 'YES' : 'NO'}</span></div>
     <div class="stat"><span class="label">WS Connected</span><span class="value ${dq.listener_connected ? 'green' : 'red'}">${dq.listener_connected ? 'YES' : 'NO'}</span></div>
+    <div class="stat"><span class="label">Full 5s Grid Coverage</span><span class="value ${(dq.full_5s_grid_pct ?? 0) >= 50 ? 'green' : 'yellow'}">${dq.full_5s_grid_count ?? 0} / ${dq.complete_observations_count ?? 0}${dq.full_5s_grid_pct != null ? ` (${dq.full_5s_grid_pct}%)` : ''}</span></div>
+    <div class="desc" style="font-size:11px;margin-top:4px">Complete observations (pct_t300 present) with every pct_tN from t5..t300 populated.</div>
   </div>`;
 
   const pd = d.path_data_summary;
@@ -1097,13 +1106,15 @@ function v2RegimeRowHtml(r: FilterV2RegimeRow, lowN: number, strongN: number, is
   </tr>`;
 }
 
-// Panel 11 row type — extends base regime row with sim return from best-combos leaderboard
+// Panel 11 row type — extends base regime row with opt return from best-combos leaderboard
 type FilterV2ComboRegimeRow = FilterV2RegimeRow & {
-  sim_avg_return: number | null;
+  opt_tp: number | null;
+  opt_sl: number | null;
+  opt_avg_ret: number | null;
   beats_baseline: boolean;
 };
 
-// Panel 11 row renderer — same as v2RegimeRowHtml but with Sim Ret + Beats? columns after n
+// Panel 11 row renderer — same as v2RegimeRowHtml but with Opt Ret + Beats? columns after n
 function v2ComboRegimeRowHtml(r: FilterV2ComboRegimeRow, lowN: number, strongN: number, isBaseline = false): string {
   const cls = isBaseline ? 'row-baseline' : v2RowClass(r.n, lowN, strongN);
   const nLabel = r.n < lowN && !isBaseline ? '<span class="lowN">(low n)</span>' : '';
@@ -1111,12 +1122,15 @@ function v2ComboRegimeRowHtml(r: FilterV2ComboRegimeRow, lowN: number, strongN: 
   while (buckets.length < 4) buckets.push({ n: 0, win_rate_pct: null, avg_return_pct: null });
 
   let simRetHtml: string;
-  if (isBaseline || r.sim_avg_return === null) {
+  if (isBaseline || r.opt_avg_ret === null) {
     simRetHtml = '<span style="color:#64748b">—</span>';
   } else {
-    const sc = r.sim_avg_return > 5 ? 'green' : r.sim_avg_return > 0 ? 'yellow' : 'red';
-    const sign = r.sim_avg_return > 0 ? '+' : '';
-    simRetHtml = `<span class="${sc}">${sign}${r.sim_avg_return.toFixed(2)}%</span>`;
+    const sc = r.opt_avg_ret > 5 ? 'green' : r.opt_avg_ret > 0 ? 'yellow' : 'red';
+    const sign = r.opt_avg_ret > 0 ? '+' : '';
+    const tpSl = (r.opt_tp != null && r.opt_sl != null)
+      ? `<span style="color:#64748b;font-size:0.85em"> @ tp${r.opt_tp}/sl${r.opt_sl}</span>`
+      : '';
+    simRetHtml = `<span class="${sc}">${sign}${r.opt_avg_ret.toFixed(2)}%</span>${tpSl}`;
   }
   const beatsHtml = isBaseline
     ? '<span style="color:#64748b">—</span>'
@@ -1205,6 +1219,32 @@ function escHtml(s: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/** Execution mode badge styling — hoisted so it's reachable from the
+ *  extracted Recent Trades / Recent Skips render fns and the inline
+ *  renderTradingHtml panels alike. */
+function execModeStyle(m: string): { color: string; label: string } {
+  switch (m) {
+    case 'shadow':     return { color: '#a78bfa', label: 'SHADOW' };
+    case 'live_micro': return { color: '#f59e0b', label: 'LIVE μ' };
+    case 'live_full':  return { color: '#ef4444', label: 'LIVE' };
+    case 'paper':
+    default:           return { color: '#64748b', label: 'PAPER' };
+  }
+}
+
+/**
+ * Mint cell with Birdeye link + clipboard copy. Tap the truncated text on
+ * mobile to open Birdeye in a new tab; tap the small copy icon to copy the
+ * full mint to the clipboard. Always renders with rel="noopener noreferrer"
+ * on the external link.
+ */
+function mintCell(mint: string | null | undefined, prefixLen = 8): string {
+  if (!mint) return '<span style="color:#64748b">-</span>';
+  const m = escHtml(mint);
+  const truncated = m.slice(0, prefixLen) + '…';
+  return `<span class="mint-cell"><a href="https://birdeye.so/token/${m}?chain=solana" target="_blank" rel="noopener noreferrer">${truncated}</a><button type="button" class="mint-copy" data-mint="${m}" aria-label="Copy mint" title="Copy full mint">⎘</button></span>`;
 }
 
 // ── Panel 5 helpers: statistical significance (Wilson CI + bootstrap CI) ──
@@ -1532,39 +1572,56 @@ export function renderFilterV2Html(data: any): string {
   const lowN = panel1.flags?.low_n_threshold ?? 20;
   const strongN = panel1.flags?.strong_n_threshold ?? 100;
 
-  // Group filters by family for visual grouping
-  const groups = new Map<string, FilterV2Row[]>();
-  for (const f of filters) {
-    if (!groups.has(f.group)) groups.set(f.group, []);
-    groups.get(f.group)!.push(f);
-  }
+  // Horizon variants for Panel 1 — same filters, different label column source.
+  const panel1Horizons: Array<{
+    key: 't300' | 't120' | 't60';
+    label: string;
+    baseline: FilterV2Row;
+    filters: FilterV2Row[];
+  }> = [
+    { key: 't300', label: '5 min (T+300)', baseline, filters },
+    ...(data.panel1_t120 ? [{ key: 't120' as const, label: '2 min (T+120)', baseline: data.panel1_t120.baseline as FilterV2Row, filters: (data.panel1_t120.filters || []) as FilterV2Row[] }] : []),
+    ...(data.panel1_t60  ? [{ key: 't60'  as const, label: '1 min (T+60)',  baseline: data.panel1_t60.baseline  as FilterV2Row, filters: (data.panel1_t60.filters  || []) as FilterV2Row[] }] : []),
+  ];
 
-  const baselineRow = v2RowHtml(baseline, lowN, strongN, true);
+  const p1Tabs = panel1Horizons
+    .map(h => `<button type="button" class="p1-tab${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}" onclick="setPanel1Horizon('${h.key}')">${h.label}</button>`)
+    .join('');
 
-  const groupRows: string[] = [];
-  for (const [groupName, rows] of groups) {
-    groupRows.push(`<tr class="row-group-header"><td colspan="7">${groupName}</td></tr>`);
-    for (const r of rows) groupRows.push(v2RowHtml(r, lowN, strongN, false));
-  }
-
-  const tableHtml = `
-  <table id="panel1-table">
-    <thead>
-      <tr>
-        <th class="sortable" onclick="sortPanel1(0,'str')">Filter <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(1,'num')">n (applicable) <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(2,'num')">PUMP <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(3,'num')">DUMP <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(4,'num')">STABLE <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(5,'num')">Win % <span class="arrow">⇅</span></th>
-        <th class="sortable" onclick="sortPanel1(6,'num')">PUMP:DUMP <span class="arrow">⇅</span></th>
-      </tr>
-    </thead>
-    <tbody>
-      ${baselineRow}
-      ${groupRows.join('\n      ')}
-    </tbody>
-  </table>`;
+  const panel1HorizonPanels = panel1Horizons.map(h => {
+    const groups = new Map<string, FilterV2Row[]>();
+    for (const f of h.filters) {
+      if (!groups.has(f.group)) groups.set(f.group, []);
+      groups.get(f.group)!.push(f);
+    }
+    const baselineRow = v2RowHtml(h.baseline, lowN, strongN, true);
+    const groupRows: string[] = [];
+    for (const [groupName, rows] of groups) {
+      groupRows.push(`<tr class="row-group-header"><td colspan="7">${groupName}</td></tr>`);
+      for (const r of rows) groupRows.push(v2RowHtml(r, lowN, strongN, false));
+    }
+    const tableId = `panel1-table-${h.key}`;
+    return `
+    <div class="p1-horizon-panel${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}">
+      <table id="${tableId}" class="panel1-table" data-horizon="${h.key}">
+        <thead>
+          <tr>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',0,'str')">Filter <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',1,'num')">n (applicable) <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',2,'num')">PUMP <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',3,'num')">DUMP <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',4,'num')">STABLE <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',5,'num')">Win % <span class="arrow">⇅</span></th>
+            <th class="sortable" onclick="sortPanel1Table('${tableId}',6,'num')">PUMP:DUMP <span class="arrow">⇅</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${baselineRow}
+          ${groupRows.join('\n          ')}
+        </tbody>
+      </table>
+    </div>`;
+  }).join('');
 
   const legend = `
   <div class="desc" style="margin-top:10px">
@@ -1577,13 +1634,16 @@ export function renderFilterV2Html(data: any): string {
     <span class="red" style="margin-left:6px">&lt; 1.0 (more losers)</span> ·
     <span class="yellow">1.0 - 1.5 (even/slight edge)</span> ·
     <span class="green">≥ 1.5 (strong edge)</span>
+    <br>
+    <strong>Horizons:</strong> all three tabs use the same >=+10% PUMP / <=-10% DUMP thresholds — only the checkpoint differs (pct_t60 / pct_t120 / pct_t300). A filter whose win rate decays T+60 → T+300 is showing mean reversion; one that grows is capturing a slow trend.
   </div>`;
 
   const panel1Html = `
   <div class="card">
     <h2>Panel 1 — ${panel1.title}</h2>
     <div class="desc">${panel1.description}</div>
-    ${tableHtml}
+    <div class="p4-tabs">${p1Tabs}</div>
+    ${panel1HorizonPanels}
     ${legend}
   </div>`;
 
@@ -2045,11 +2105,19 @@ export function renderFilterV2Html(data: any): string {
       </table>`;
     }
 
-    const topPairsRows = topPairs.length === 0
-      ? '<tr><td colspan="8" style="color:#64748b;text-align:center"><em>No two-filter intersections meet the criteria (n ≥ 30 and lift &gt; 0). Collect more data.</em></td></tr>'
-      : topPairs.map(p => {
-          const tpSl = `${p.opt_tp}/${p.opt_sl}`;
-          return `<tr>
+    const topPairsByHorizon: Array<{ key: 't300' | 't120' | 't60'; label: string; pairs: FilterV2Panel6PairRow[] }> = [
+      { key: 't300', label: '5 min (T+300)', pairs: topPairs },
+      { key: 't120', label: '2 min (T+120)', pairs: (panel6.top_pairs_t120 || []) as FilterV2Panel6PairRow[] },
+      { key: 't60',  label: '1 min (T+60)',  pairs: (panel6.top_pairs_t60  || []) as FilterV2Panel6PairRow[] },
+    ];
+
+    const buildTopPairsRows = (rows: FilterV2Panel6PairRow[]): string => {
+      if (rows.length === 0) {
+        return '<tr><td colspan="8" style="color:#64748b;text-align:center"><em>No two-filter intersections meet the criteria (n ≥ 30 and lift &gt; 0) at this horizon. Collect more data.</em></td></tr>';
+      }
+      return rows.map(p => {
+        const tpSl = `${p.opt_tp}/${p.opt_sl}`;
+        return `<tr>
             <td><code>${escHtml(p.filter_a)}</code></td>
             <td><code>${escHtml(p.filter_b)}</code></td>
             <td>${p.n}</td>
@@ -2059,27 +2127,41 @@ export function renderFilterV2Html(data: any): string {
             <td>${p4OptAvgRetCell(p.single_a_opt)} / ${p4OptAvgRetCell(p.single_b_opt)}</td>
             <td>${liftCell(p.lift)}</td>
           </tr>`;
-        }).join('\n        ');
+      }).join('\n        ');
+    };
+
+    const p6Tabs = topPairsByHorizon
+      .map(h => `<button type="button" class="p6-tab${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}" onclick="setPanel6Horizon('${h.key}')">${h.label}</button>`)
+      .join('');
+
+    const p6HorizonTables = topPairsByHorizon.map(h => {
+      const tableId = `panel6-pairs-table-${h.key}`;
+      return `
+      <div class="p6-horizon-panel${h.key === 't300' ? ' active' : ''}" data-horizon="${h.key}">
+        <table id="${tableId}" class="panel6-pairs-table" data-horizon="${h.key}">
+          <thead>
+            <tr>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',0,'str')">Filter A <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',1,'str')">Filter B <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',2,'num')">n <span class="arrow">⇅</span></th>
+              <th>Opt TP/SL</th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',4,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',5,'num')">Opt Win % <span class="arrow">⇅</span></th>
+              <th>Singles (A / B)</th>
+              <th class="sortable" onclick="sortPanel6PairsTable('${tableId}',7,'num')">Lift <span class="arrow">⇅</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${buildTopPairsRows(h.pairs)}
+          </tbody>
+        </table>
+      </div>`;
+    }).join('');
 
     const topPairsTable = `
     <h3 style="margin-top:20px;color:#e2e8f0;font-size:14px">Top 20 two-filter intersections (n ≥ 30, lift &gt; 0, sorted by Opt Avg Ret)</h3>
-    <table id="panel6-pairs-table">
-      <thead>
-        <tr>
-          <th class="sortable" onclick="sortPanel6Pairs(0,'str')">Filter A <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel6Pairs(1,'str')">Filter B <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel6Pairs(2,'num')">n <span class="arrow">⇅</span></th>
-          <th>Opt TP/SL</th>
-          <th class="sortable" onclick="sortPanel6Pairs(4,'num')">Opt Avg Ret <span class="arrow">⇅</span></th>
-          <th class="sortable" onclick="sortPanel6Pairs(5,'num')">Opt Win % <span class="arrow">⇅</span></th>
-          <th>Singles (A / B)</th>
-          <th class="sortable" onclick="sortPanel6Pairs(7,'num')">Lift <span class="arrow">⇅</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        ${topPairsRows}
-      </tbody>
-    </table>`;
+    <div class="p4-tabs">${p6Tabs}</div>
+    ${p6HorizonTables}`;
 
     const legend6 = `
     <div class="desc" style="margin-top:10px">
@@ -2626,7 +2708,27 @@ export function renderFilterV2Html(data: any): string {
     tbody.appendChild(baselineRow);
     dataRows.forEach(function(r){ tbody.appendChild(r); });
   }
-  function sortPanel1(col, type) { v2GenericSort('panel1-table', col, type); }
+  // Panel 1 has horizon variants — sortPanel1Table takes an explicit ID so
+  // each horizon's table sorts independently. sortPanel1 is a back-compat
+  // shim that targets the currently-active horizon panel.
+  function sortPanel1Table(tableId, col, type) { v2GenericSort(tableId, col, type); }
+  function sortPanel1(col, type) {
+    var active = document.querySelector('.p1-horizon-panel.active');
+    var horizon = active ? active.getAttribute('data-horizon') : 't300';
+    sortPanel1Table('panel1-table-' + horizon, col, type);
+  }
+  function setPanel1Horizon(h) {
+    var tabs = document.querySelectorAll('.p1-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].getAttribute('data-horizon') === h) tabs[i].classList.add('active');
+      else tabs[i].classList.remove('active');
+    }
+    var panels = document.querySelectorAll('.p1-horizon-panel');
+    for (var j = 0; j < panels.length; j++) {
+      if (panels[j].getAttribute('data-horizon') === h) panels[j].classList.add('active');
+      else panels[j].classList.remove('active');
+    }
+  }
   function sortPanel2(col, type) { v2GenericSort('panel2-table', col, type); }
   function sortPanel3(col, type) { v2GenericSort('panel3-table', col, type); }
   function sortPanel4(col, type) { v2GenericSort('panel4-table', col, type); }
@@ -2637,9 +2739,10 @@ export function renderFilterV2Html(data: any): string {
   function sortPanel10(col, type) { v2GenericSort('panel10-table', col, type); }
 
   // Panel 6 top-pairs table has NO baseline row — use a simpler sort that treats
-  // every row as data.
-  function sortPanel6Pairs(col, type) {
-    var table = document.getElementById('panel6-pairs-table');
+  // every row as data. sortPanel6PairsTable takes an explicit table ID so it
+  // works across horizon variants; sortPanel6Pairs is a back-compat shim.
+  function sortPanel6PairsTable(tableId, col, type) {
+    var table = document.getElementById(tableId);
     if (!table) return;
     var tbody = table.tBodies[0];
     var rows = Array.from(tbody.rows).filter(function(r){ return r.cells.length >= 2; });
@@ -2657,6 +2760,23 @@ export function renderFilterV2Html(data: any): string {
     });
     while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
     rows.forEach(function(r){ tbody.appendChild(r); });
+  }
+  function sortPanel6Pairs(col, type) {
+    var active = document.querySelector('.p6-horizon-panel.active');
+    var horizon = active ? active.getAttribute('data-horizon') : 't300';
+    sortPanel6PairsTable('panel6-pairs-table-' + horizon, col, type);
+  }
+  function setPanel6Horizon(h) {
+    var tabs = document.querySelectorAll('.p6-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].getAttribute('data-horizon') === h) tabs[i].classList.add('active');
+      else tabs[i].classList.remove('active');
+    }
+    var panels = document.querySelectorAll('.p6-horizon-panel');
+    for (var j = 0; j < panels.length; j++) {
+      if (panels[j].getAttribute('data-horizon') === h) panels[j].classList.add('active');
+      else panels[j].classList.remove('active');
+    }
   }
 
   // Panel 6 dropdowns reload the page with a new ?p6= query param. Server
@@ -2804,6 +2924,475 @@ export function renderFilterV2Html(data: any): string {
 
   const body = panel1Html + panel2Html + panel3Html + panel4Html + panel5Html + panel6Html + panel7Html + panel8Html + panel9Html + panel10Html + panel11Html + panel4DataScript + sortScript;
   return shell('Filter Analysis V2', '/filter-analysis-v2', body, data);
+}
+
+// ── FILTER ANALYSIS V3 ───────────────────────────────────────────────
+// Six panels extending v2 with triple-filter combos, drawdown-gate
+// stacking, crash-survival curves, two new filter dimensions, and a
+// velocity × liquidity heatmap. Reuses shell()/STYLES from the V2
+// page so the visual language stays consistent.
+
+function v3Pct(v: number | null | undefined, digits = 2): string {
+  if (v == null) return '<span style="color:#4b5563">—</span>';
+  const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+  const sign = v > 0 ? '+' : '';
+  return `<span class="${cls}">${sign}${v.toFixed(digits)}%</span>`;
+}
+
+function v3Num(v: number | null | undefined, digits = 0): string {
+  if (v == null) return '<span style="color:#4b5563">—</span>';
+  return v.toFixed(digits);
+}
+
+function v3BaselineBadge(beats: boolean): string {
+  return beats
+    ? '<span class="badge badge-pump" style="font-size:10px">BEATS</span>'
+    : '<span class="badge badge-dump" style="font-size:10px">NO</span>';
+}
+
+function v3HeatCellColor(v: number | null, baseline: number): string {
+  if (v == null) return '#1a1a30';
+  const delta = v - baseline;
+  // Heatmap colors: green scale above baseline, red scale below
+  if (delta >= 4) return '#166534';
+  if (delta >= 2) return '#1e7a42';
+  if (delta >= 0) return '#2a2a4a';
+  if (delta >= -2) return '#4a2a2a';
+  if (delta >= -5) return '#7f1d1d';
+  return '#5a0e0e';
+}
+
+// Build an SVG line chart for one filter's survival curves.
+// 3 lines (one per threshold), each plotting survival fraction vs timepoint.
+function v3SurvivalChart(curves: number[][], timepoints: readonly number[], thresholds: readonly number[]): string {
+  const W = 260;
+  const H = 120;
+  const padL = 30;
+  const padR = 8;
+  const padT = 8;
+  const padB = 20;
+  const plotW = W - padL - padR;
+  const plotH = H - padT - padB;
+  const minT = timepoints[0];
+  const maxT = timepoints[timepoints.length - 1];
+  const tRange = maxT - minT;
+  const colorFor = (threshold: number) =>
+    threshold === -5 ? '#facc15' : threshold === -10 ? '#f59e0b' : '#ef4444';
+  const x = (t: number) => padL + ((t - minT) / tRange) * plotW;
+  const y = (v: number) => padT + (1 - v) * plotH;
+
+  const gridLines: string[] = [];
+  for (const yv of [0.25, 0.5, 0.75, 1.0]) {
+    gridLines.push(`<line x1="${padL}" y1="${y(yv)}" x2="${W - padR}" y2="${y(yv)}" stroke="#262640" stroke-width="1" />`);
+    gridLines.push(`<text x="${padL - 4}" y="${y(yv) + 3}" fill="#64748b" font-size="8" text-anchor="end">${(yv * 100).toFixed(0)}%</text>`);
+  }
+  for (const t of timepoints) {
+    gridLines.push(`<text x="${x(t)}" y="${H - 4}" fill="#64748b" font-size="8" text-anchor="middle">${t}</text>`);
+  }
+
+  const lines = curves.map((curve, idx) => {
+    const threshold = thresholds[idx];
+    const path = curve.map((v, i) => `${i === 0 ? 'M' : 'L'}${x(timepoints[i]).toFixed(1)},${y(v).toFixed(1)}`).join(' ');
+    return `<path d="${path}" fill="none" stroke="${colorFor(threshold)}" stroke-width="1.5" />`;
+  }).join('');
+
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+    ${gridLines.join('\n    ')}
+    ${lines}
+  </svg>`;
+}
+
+export function renderFilterV3Html(data: any): string {
+  // ── Panel 1 — top 20 three-filter combos ──
+  type TripleRow = {
+    filter_a: string; filter_b: string; filter_c: string;
+    n: number;
+    opt_tp: number; opt_sl: number;
+    opt_avg_ret: number; opt_win_rate: number;
+    parent_pair_opt: number;
+    lift_vs_pair: number;
+    beats_baseline: boolean;
+  };
+  const p1 = data.panelv3_1 ?? {};
+  const horizons: Array<{ key: string; label: string; rows: TripleRow[] }> = [
+    { key: 't300', label: '5 min (T+300)', rows: p1.top_triples_t300 ?? [] },
+    { key: 't120', label: '2 min (T+120)', rows: p1.top_triples_t120 ?? [] },
+    { key: 't60',  label: '1 min (T+60)',  rows: p1.top_triples_t60  ?? [] },
+  ];
+  const p1Tabs = horizons
+    .map((h, i) => `<button type="button" class="p4-tab${i === 0 ? ' active' : ''}" data-horizon="${h.key}" onclick="v3SetP1Horizon('${h.key}')">${h.label}</button>`)
+    .join('');
+  const p1Panels = horizons.map((h, i) => {
+    const rows = h.rows.map((r: TripleRow) => `
+      <tr>
+        <td>${escHtml(r.filter_a)}</td>
+        <td>${escHtml(r.filter_b)}</td>
+        <td>${escHtml(r.filter_c)}</td>
+        <td>${r.n}</td>
+        <td>${r.opt_tp}/${r.opt_sl}</td>
+        <td>${v3Pct(r.opt_avg_ret, 2)}</td>
+        <td>${r.opt_win_rate}%</td>
+        <td>${v3Pct(r.parent_pair_opt, 2)}</td>
+        <td>${v3Pct(r.lift_vs_pair, 2)}</td>
+        <td>${v3BaselineBadge(r.beats_baseline)}</td>
+      </tr>`).join('');
+    const body = rows.length === 0
+      ? `<tr><td colspan="10" style="text-align:center;color:#64748b;padding:20px">No triples with n ≥ 30 and lift > 0 at this horizon.</td></tr>`
+      : rows;
+    return `<div class="p4-horizon-panel${i === 0 ? ' active' : ''}" data-horizon="${h.key}">
+      <table>
+        <thead><tr>
+          <th>Filter A</th><th>Filter B</th><th>Filter C</th>
+          <th>n</th><th>TP/SL</th><th>Opt Avg Ret</th><th>WR</th>
+          <th>Parent Pair Opt</th><th>Lift vs Pair</th><th>Beats Baseline</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+      </table>
+    </div>`;
+  }).join('');
+  const panelV31Html = `<div class="card">
+    <h2>v3 Panel 1 — ${escHtml(p1.title ?? 'Top 20 Three-Filter Combos')}</h2>
+    <div class="desc">${escHtml(p1.description ?? '')}</div>
+    <div class="p4-tabs">${p1Tabs}</div>
+    ${p1Panels}
+  </div>`;
+
+  // ── Panel 2 — drawdown gate stacking ──
+  type P2Row = {
+    base: string; base_kind: string; threshold: number;
+    base_n: number; base_opt_avg_ret: number | null;
+    gated_n: number;
+    gated_opt_tp: number | null; gated_opt_sl: number | null;
+    gated_opt_avg_ret: number | null; gated_opt_win_rate: number | null;
+    n_retention_pct: number | null; delta_vs_base: number | null;
+    beats_baseline: boolean;
+  };
+  const p2 = data.panelv3_2 ?? {};
+  const p2Rows: P2Row[] = p2.rows ?? [];
+  const p2RowsHtml = p2Rows.map((r: P2Row) => {
+    const tp = r.gated_opt_tp != null ? `${r.gated_opt_tp}/${r.gated_opt_sl}` : '—';
+    return `<tr>
+      <td>${escHtml(r.base)}</td>
+      <td><span class="badge" style="background:#334155;color:#94a3b8;font-size:10px">${r.base_kind}</span></td>
+      <td>${r.threshold > 0 ? '> ' : '> '}${r.threshold}%</td>
+      <td>${r.base_n}</td>
+      <td>${r.base_opt_avg_ret != null ? v3Pct(r.base_opt_avg_ret, 2) : '—'}</td>
+      <td>${r.gated_n}</td>
+      <td>${tp}</td>
+      <td>${r.gated_opt_avg_ret != null ? v3Pct(r.gated_opt_avg_ret, 2) : '—'}</td>
+      <td>${r.gated_opt_win_rate != null ? r.gated_opt_win_rate + '%' : '—'}</td>
+      <td>${r.n_retention_pct != null ? r.n_retention_pct.toFixed(1) + '%' : '—'}</td>
+      <td>${r.delta_vs_base != null ? v3Pct(r.delta_vs_base, 2) : '—'}</td>
+      <td>${v3BaselineBadge(r.beats_baseline)}</td>
+    </tr>`;
+  }).join('');
+  const panelV32Html = `<div class="card">
+    <h2>v3 Panel 2 — ${escHtml(p2.title ?? 'max_dd_0_30 Gate Stacking')}</h2>
+    <div class="desc">${escHtml(p2.description ?? '')}</div>
+    <table>
+      <thead><tr>
+        <th>Base</th><th>Kind</th><th>DD Threshold</th>
+        <th>Base n</th><th>Base Opt</th>
+        <th>Gated n</th><th>Gated TP/SL</th><th>Gated Opt</th><th>Gated WR</th>
+        <th>Retention</th><th>Δ vs Base</th><th>Beats Baseline</th>
+      </tr></thead>
+      <tbody>${p2RowsHtml || '<tr><td colspan="12" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+
+  // ── Panel 3 — survival curves ──
+  type P3Filter = { name: string; kind: string; n: number; curves: number[][] };
+  const p3 = data.panelv3_3 ?? {};
+  const p3Filters: P3Filter[] = p3.filters ?? [];
+  const p3Timepoints: readonly number[] = p3.constants?.timepoints_sec ?? [30, 45, 60, 90, 120, 180, 240, 300];
+  const p3Thresholds: readonly number[] = p3.constants?.thresholds_pct ?? [-5, -10, -20];
+  const p3BaselineFilter: P3Filter | null = p3.baseline ?? null;
+
+  const renderP3Cell = (f: P3Filter) => {
+    if (f.n < 30) {
+      return `<div class="grid" style="grid-template-columns:1fr;padding:10px;background:#1a1a30;border-radius:6px">
+        <div style="font-weight:600;color:#e2e8f0">${escHtml(f.name)}</div>
+        <div class="n-insuf">n=${f.n} &lt; 30 (insufficient)</div>
+      </div>`;
+    }
+    const chart = v3SurvivalChart(f.curves, p3Timepoints, p3Thresholds);
+    const finals = f.curves.map((c, i) => {
+      const t = p3Thresholds[i];
+      const finalVal = c[c.length - 1];
+      const colorForThreshold = t === -5 ? '#facc15' : t === -10 ? '#f59e0b' : '#ef4444';
+      return `<span style="color:${colorForThreshold};margin-right:10px">&gt;${t}%: ${(finalVal * 100).toFixed(1)}%</span>`;
+    }).join('');
+    return `<div style="padding:10px;background:#1a1a30;border-radius:6px">
+      <div style="font-weight:600;color:#e2e8f0;margin-bottom:4px">${escHtml(f.name)}</div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:4px">n=${f.n} · kind=${f.kind}</div>
+      ${chart}
+      <div style="font-size:11px;margin-top:4px">P(survive at T+300): ${finals}</div>
+    </div>`;
+  };
+
+  const baselineBlock = p3BaselineFilter ? `<div style="margin-bottom:14px">${renderP3Cell(p3BaselineFilter)}</div>` : '';
+  const p3Grid = p3Filters.map(renderP3Cell).join('\n      ');
+  const panelV33Html = `<div class="card">
+    <h2>v3 Panel 3 — ${escHtml(p3.title ?? 'Crash Survival Curves')}</h2>
+    <div class="desc">${escHtml(p3.description ?? '')}</div>
+    <div class="desc"><strong>Legend (line colors):</strong>
+      <span style="color:#facc15;margin-left:6px">&gt; −5%</span>
+      <span style="color:#f59e0b;margin-left:10px">&gt; −10%</span>
+      <span style="color:#ef4444;margin-left:10px">&gt; −20%</span>.
+      X-axis = seconds since graduation (entry at T+30). Y-axis = fraction of tokens whose running min-rel-return has not yet breached the threshold.
+    </div>
+    ${baselineBlock}
+    <div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">
+      ${p3Grid || '<div class="n-insuf">No filters available.</div>'}
+    </div>
+  </div>`;
+
+  // ── Panel 4 — max_tick_drop ──
+  type P4Row = {
+    threshold: number; mode: string; n: number;
+    opt_tp: number | null; opt_sl: number | null;
+    opt_avg_ret: number | null; opt_win_rate: number | null;
+    beats_baseline: boolean;
+  };
+  const p4 = data.panelv3_4 ?? {};
+  const p4Rows: P4Row[] = p4.rows ?? [];
+  const p4RowsHtml = p4Rows.map((r: P4Row) => {
+    const tp = r.opt_tp != null ? `${r.opt_tp}/${r.opt_sl}` : '—';
+    const modeTag = r.mode === 'standalone'
+      ? '<span class="badge" style="background:#334155;color:#94a3b8;font-size:10px">standalone</span>'
+      : '<span class="badge" style="background:#1f2a44;color:#60a5fa;font-size:10px">+ baseline</span>';
+    return `<tr>
+      <td>&gt; ${r.threshold}%</td>
+      <td>${modeTag}</td>
+      <td>${r.n}</td>
+      <td>${tp}</td>
+      <td>${r.opt_avg_ret != null ? v3Pct(r.opt_avg_ret, 2) : '—'}</td>
+      <td>${r.opt_win_rate != null ? r.opt_win_rate + '%' : '—'}</td>
+      <td>${v3BaselineBadge(r.beats_baseline)}</td>
+    </tr>`;
+  }).join('');
+  const panelV34Html = `<div class="card">
+    <h2>v3 Panel 4 — ${escHtml(p4.title ?? 'max_tick_drop_0_30')}</h2>
+    <div class="desc">${escHtml(p4.description ?? '')}</div>
+    <table>
+      <thead><tr>
+        <th>Tick Drop Threshold</th><th>Mode</th><th>n</th><th>Opt TP/SL</th>
+        <th>Opt Avg Ret</th><th>WR</th><th>Beats Baseline</th>
+      </tr></thead>
+      <tbody>${p4RowsHtml || '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+
+  // ── Panel 5 — vel × liq heatmap ──
+  type P5Cell = {
+    vel: string; liq: string; n: number;
+    opt_tp: number | null; opt_sl: number | null;
+    opt_avg_ret: number | null; opt_win_rate: number | null;
+    beats_baseline: boolean;
+  };
+  const p5 = data.panelv3_5 ?? {};
+  const p5Cells: P5Cell[] = p5.cells ?? [];
+  const velBuckets: string[] = p5.constants?.vel_buckets ?? [];
+  const liqBuckets: string[] = p5.constants?.liq_buckets ?? [];
+  const cellByKey = new Map<string, P5Cell>();
+  for (const c of p5Cells) cellByKey.set(`${c.vel}||${c.liq}`, c);
+
+  const baselineSim: number = p5.constants?.baseline_sim_return ?? 0;
+  const headerCells = liqBuckets.map(l => `<th style="text-align:center">${escHtml(l)}</th>`).join('');
+  const heatmapRows = velBuckets.map(v => {
+    const cells = liqBuckets.map(l => {
+      const c = cellByKey.get(`${v}||${l}`);
+      if (!c || c.n === 0) return `<td style="background:#111;text-align:center;color:#4b5563">—</td>`;
+      const bgColor = c.opt_avg_ret != null ? v3HeatCellColor(c.opt_avg_ret, baselineSim) : '#1a1a30';
+      const retStr = c.opt_avg_ret != null
+        ? `${c.opt_avg_ret > 0 ? '+' : ''}${c.opt_avg_ret.toFixed(2)}%`
+        : `n&lt;30`;
+      const tp = c.opt_tp != null ? `${c.opt_tp}/${c.opt_sl}` : '';
+      const wr = c.opt_win_rate != null ? `${c.opt_win_rate}%` : '';
+      return `<td style="background:${bgColor};text-align:center;padding:8px">
+        <div style="font-weight:600;color:${c.opt_avg_ret != null && c.opt_avg_ret > 0 ? '#4ade80' : '#ef4444'}">${retStr}</div>
+        <div style="font-size:10px;color:#94a3b8">n=${c.n}${tp ? ' · ' + tp : ''}${wr ? ' · ' + wr : ''}</div>
+      </td>`;
+    }).join('');
+    return `<tr><th style="text-align:right">${escHtml(v)}</th>${cells}</tr>`;
+  }).join('');
+  const panelV35Html = `<div class="card">
+    <h2>v3 Panel 5 — ${escHtml(p5.title ?? 'Velocity × Liquidity Heatmap')}</h2>
+    <div class="desc">${escHtml(p5.description ?? '')}</div>
+    <table style="margin:16px 0">
+      <thead><tr><th></th>${headerCells}</tr></thead>
+      <tbody>${heatmapRows}</tbody>
+    </table>
+    <div class="desc">Cell coloring: darker green = well above rolling baseline (${baselineSim >= 0 ? '+' : ''}${baselineSim.toFixed(2)}%), darker red = well below. Empty dash = n &lt; 30 or no data.</div>
+  </div>`;
+
+  // ── Panel 6 — sum_abs_returns ──
+  type P6Row = {
+    op: string; threshold: number; mode: string; n: number;
+    opt_tp: number | null; opt_sl: number | null;
+    opt_avg_ret: number | null; opt_win_rate: number | null;
+    beats_baseline: boolean;
+  };
+  const p6 = data.panelv3_6 ?? {};
+  const p6Rows: P6Row[] = p6.rows ?? [];
+  const p6RowsHtml = p6Rows.map((r: P6Row) => {
+    const tp = r.opt_tp != null ? `${r.opt_tp}/${r.opt_sl}` : '—';
+    const modeTag = r.mode === 'standalone'
+      ? '<span class="badge" style="background:#334155;color:#94a3b8;font-size:10px">standalone</span>'
+      : '<span class="badge" style="background:#1f2a44;color:#60a5fa;font-size:10px">+ baseline</span>';
+    return `<tr>
+      <td>${r.op} ${r.threshold}</td>
+      <td>${modeTag}</td>
+      <td>${r.n}</td>
+      <td>${tp}</td>
+      <td>${r.opt_avg_ret != null ? v3Pct(r.opt_avg_ret, 2) : '—'}</td>
+      <td>${r.opt_win_rate != null ? r.opt_win_rate + '%' : '—'}</td>
+      <td>${v3BaselineBadge(r.beats_baseline)}</td>
+    </tr>`;
+  }).join('');
+  const panelV36Html = `<div class="card">
+    <h2>v3 Panel 6 — ${escHtml(p6.title ?? 'sum_abs_returns_0_30')}</h2>
+    <div class="desc">${escHtml(p6.description ?? '')}</div>
+    <table>
+      <thead><tr>
+        <th>Threshold</th><th>Mode</th><th>n</th><th>Opt TP/SL</th>
+        <th>Opt Avg Ret</th><th>WR</th><th>Beats Baseline</th>
+      </tr></thead>
+      <tbody>${p6RowsHtml || '<tr><td colspan="7" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
+    </table>
+  </div>`;
+
+  // ── Panel 7 — regime + walk-forward on v3 leaders ──
+  type P7Row = {
+    name: string;
+    kind: 'pair' | 'triple';
+    n_total: number;
+    opt_tp: number | null;
+    opt_sl: number | null;
+    opt_avg_ret: number | null;
+    n_train: number;
+    n_test: number;
+    train_tp: number | null;
+    train_sl: number | null;
+    train_avg_ret: number | null;
+    test_avg_ret: number | null;
+    degradation: number | null;
+    wf_verdict: 'ROBUST' | 'DEGRADED' | 'OVERFIT' | 'INSUFFICIENT';
+    buckets: { n: number; win_rate_pct: number | null; avg_return_pct: number | null }[];
+    wr_std_dev: number | null;
+    regime_stability: 'STABLE' | 'MODERATE' | 'CLUSTERED' | 'INSUFFICIENT';
+  };
+  const p7 = data.panelv3_7 ?? {};
+  const p7Rows: P7Row[] = p7.rows ?? [];
+
+  const wfBadge = (v: P7Row['wf_verdict']): string => {
+    const cls = v === 'ROBUST'      ? 'badge-pump'
+              : v === 'DEGRADED'    ? 'badge-stable'
+              : v === 'OVERFIT'     ? 'badge-dump'
+              : '';
+    const bg = v === 'INSUFFICIENT' ? 'background:#334155;color:#94a3b8' : '';
+    return `<span class="badge ${cls}" style="font-size:10px;${bg}">${v}</span>`;
+  };
+  const regBadge = (v: P7Row['regime_stability']): string => {
+    const cls = v === 'STABLE'     ? 'badge-pump'
+              : v === 'MODERATE'   ? 'badge-stable'
+              : v === 'CLUSTERED'  ? 'badge-dump'
+              : '';
+    const bg = v === 'INSUFFICIENT' ? 'background:#334155;color:#94a3b8' : '';
+    return `<span class="badge ${cls}" style="font-size:10px;${bg}">${v}</span>`;
+  };
+  const bucketCell = (b: { n: number; win_rate_pct: number | null; avg_return_pct: number | null }): string => {
+    if (b.win_rate_pct == null || b.avg_return_pct == null) {
+      return `<td style="color:#4b5563;font-size:11px">n=${b.n}<br>—</td>`;
+    }
+    const wrCls = b.win_rate_pct >= 50 ? 'green' : b.win_rate_pct >= 40 ? 'yellow' : 'red';
+    const retCls = b.avg_return_pct > 0 ? 'green' : 'red';
+    return `<td style="font-size:11px">
+      <span class="${wrCls}">${b.win_rate_pct}%</span>
+      <span style="color:#64748b">/${b.n}</span><br>
+      <span class="${retCls}">${b.avg_return_pct > 0 ? '+' : ''}${b.avg_return_pct}%</span>
+    </td>`;
+  };
+
+  const p7RowsHtml = p7Rows.map((r: P7Row) => {
+    const kindTag = `<span class="badge" style="background:${r.kind === 'triple' ? '#1f2a44' : '#334155'};color:${r.kind === 'triple' ? '#60a5fa' : '#94a3b8'};font-size:10px">${r.kind}</span>`;
+    const optCell = r.opt_tp != null
+      ? `<span>${r.opt_tp}/${r.opt_sl}</span><br>${v3Pct(r.opt_avg_ret, 2)}`
+      : '—';
+    const wfCell = r.train_tp != null
+      ? `train=${r.train_tp}/${r.train_sl}<br>${v3Pct(r.train_avg_ret, 2)} → ${v3Pct(r.test_avg_ret, 2)}<br>deg=${r.degradation != null ? r.degradation.toFixed(2) + 'pp' : '—'}`
+      : '—';
+    const bucketCells = r.buckets.map(bucketCell).join('');
+    const paddedBucketCells = bucketCells + '<td></td>'.repeat(Math.max(0, 4 - r.buckets.length));
+    const stdDev = r.wr_std_dev != null ? r.wr_std_dev.toFixed(1) : '—';
+    return `<tr>
+      <td>${escHtml(r.name)}</td>
+      <td>${kindTag}</td>
+      <td>${r.n_total}</td>
+      <td style="font-size:11px">${optCell}</td>
+      <td style="font-size:11px">n=${r.n_train}/${r.n_test}<br>${wfCell}</td>
+      <td>${wfBadge(r.wf_verdict)}</td>
+      ${paddedBucketCells}
+      <td>${stdDev}</td>
+      <td>${regBadge(r.regime_stability)}</td>
+    </tr>`;
+  }).join('');
+
+  const panelV37Html = `<div class="card">
+    <h2>v3 Panel 7 — ${escHtml(p7.title ?? 'Regime Stability & Walk-Forward')}</h2>
+    <div class="desc">${escHtml(p7.description ?? '')}</div>
+    <table>
+      <thead><tr>
+        <th>Filter</th><th>Kind</th><th>n</th><th>Opt (TP/SL)<br>Avg Ret</th>
+        <th>Walk-Forward<br>train → test</th><th>WF Verdict</th>
+        <th>B1 WR/n<br>Ret</th><th>B2</th><th>B3</th><th>B4</th>
+        <th>WR σ</th><th>Regime</th>
+      </tr></thead>
+      <tbody>${p7RowsHtml || '<tr><td colspan="12" style="text-align:center;color:#64748b;padding:20px">No rows.</td></tr>'}</tbody>
+    </table>
+    <div class="desc" style="margin-top:10px">
+      <strong>Walk-forward verdict colors:</strong>
+      <span class="badge badge-pump" style="font-size:10px">ROBUST</span> (&lt; 2pp degradation) ·
+      <span class="badge badge-stable" style="font-size:10px">DEGRADED</span> (2–5pp) ·
+      <span class="badge badge-dump" style="font-size:10px">OVERFIT</span> (&gt; 5pp).
+      <br>
+      <strong>Regime stability:</strong>
+      <span class="badge badge-pump" style="font-size:10px">STABLE</span> (σ &lt; 8) ·
+      <span class="badge badge-stable" style="font-size:10px">MODERATE</span> (8–15) ·
+      <span class="badge badge-dump" style="font-size:10px">CLUSTERED</span> (≥ 15).
+      <br>
+      <em>A promotion candidate must be both NOT OVERFIT and NOT CLUSTERED.</em>
+    </div>
+  </div>`;
+
+  const script = `<script>
+  function v3SetP1Horizon(h) {
+    var tabs = document.querySelectorAll('.p4-tab');
+    for (var i = 0; i < tabs.length; i++) {
+      if (tabs[i].getAttribute('data-horizon') === h) tabs[i].classList.add('active');
+      else tabs[i].classList.remove('active');
+    }
+    var panels = document.querySelectorAll('.p4-horizon-panel');
+    for (var j = 0; j < panels.length; j++) {
+      if (panels[j].getAttribute('data-horizon') === h) panels[j].classList.add('active');
+      else panels[j].classList.remove('active');
+    }
+  }
+  </script>`;
+
+  const v3Data = {
+    generated_at: data.generated_at,
+    panelv3_1: data.panelv3_1,
+    panelv3_2: data.panelv3_2,
+    panelv3_3: data.panelv3_3,
+    panelv3_4: data.panelv3_4,
+    panelv3_5: data.panelv3_5,
+    panelv3_6: data.panelv3_6,
+    panelv3_7: data.panelv3_7,
+  };
+
+  const body = panelV31Html + panelV32Html + panelV33Html + panelV34Html + panelV35Html + panelV36Html + panelV37Html + script;
+  return shell('Filter Analysis V3', '/filter-analysis-v3', body, v3Data);
 }
 
 export function renderPricePathHtml(db: Database.Database): string {
@@ -3253,8 +3842,13 @@ export function renderPricePathHtml(db: Database.Database): string {
 function utcToCentral(utcStr: string | null | undefined): string {
   if (!utcStr) return '-';
   try {
-    // SQLite datetime() returns "YYYY-MM-DD HH:MM:SS" in UTC
-    const d = new Date(utcStr + 'Z');
+    // Two input formats are passed in:
+    //  - SQLite datetime(): "YYYY-MM-DD HH:MM:SS" (no timezone, treat as UTC)
+    //  - JS Date.toISOString(): "YYYY-MM-DDTHH:MM:SS.sssZ" (already UTC-marked)
+    // Only append Z when the input has no timezone marker — appending it to an
+    // ISO string that already has Z produces "...ZZ" which Date.parse rejects.
+    const hasTz = /[Zz]$|[+-]\d{2}:?\d{2}$/.test(utcStr);
+    const d = new Date(hasTz ? utcStr : utcStr + 'Z');
     if (isNaN(d.getTime())) return utcStr;
     return d.toLocaleString('en-US', {
       timeZone: 'America/Chicago',
@@ -3331,6 +3925,22 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'max_dd > -10% (shallow)', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -10, label: 'dd>-10%' }] },
     { name: 'max_dd > -20%', configs: [{ field: 'max_drawdown_0_30', operator: '>', value: -20, label: 'dd>-20%' }] },
   ]},
+  { group: 'Path: Tick Drop', filters: [
+    { name: 'max_tick_drop > -3%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -3,  label: 'tick>-3%' }] },
+    { name: 'max_tick_drop > -5%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -5,  label: 'tick>-5%' }] },
+    { name: 'max_tick_drop > -8%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -8,  label: 'tick>-8%' }] },
+    { name: 'max_tick_drop > -10%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -10, label: 'tick>-10%' }] },
+    { name: 'max_tick_drop > -15%', configs: [{ field: 'max_tick_drop_0_30', operator: '>', value: -15, label: 'tick>-15%' }] },
+  ]},
+  { group: 'Path: Realized Vol', filters: [
+    { name: 'sum_abs < 20',  configs: [{ field: 'sum_abs_returns_0_30', operator: '<', value: 20,  label: 'sum_abs<20'  }] },
+    { name: 'sum_abs < 40',  configs: [{ field: 'sum_abs_returns_0_30', operator: '<', value: 40,  label: 'sum_abs<40'  }] },
+    { name: 'sum_abs < 60',  configs: [{ field: 'sum_abs_returns_0_30', operator: '<', value: 60,  label: 'sum_abs<60'  }] },
+    { name: 'sum_abs < 100', configs: [{ field: 'sum_abs_returns_0_30', operator: '<', value: 100, label: 'sum_abs<100' }] },
+    { name: 'sum_abs > 20',  configs: [{ field: 'sum_abs_returns_0_30', operator: '>', value: 20,  label: 'sum_abs>20'  }] },
+    { name: 'sum_abs > 40',  configs: [{ field: 'sum_abs_returns_0_30', operator: '>', value: 40,  label: 'sum_abs>40'  }] },
+    { name: 'sum_abs > 60',  configs: [{ field: 'sum_abs_returns_0_30', operator: '>', value: 60,  label: 'sum_abs>60'  }] },
+  ]},
   { group: 'Path: Other', filters: [
     { name: 'dip_and_recover = 1', configs: [{ field: 'dip_and_recover_flag', operator: '==', value: 1, label: 'dip_recover' }] },
     { name: 'acceleration > 0', configs: [{ field: 'acceleration_t30', operator: '>', value: 0, label: 'accel>0' }] },
@@ -3344,6 +3954,18 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'unique_buyers >= 10', configs: [{ field: 'buy_pressure_unique_buyers', operator: '>=', value: 10, label: 'buyers>=10' }] },
     { name: 'whale_pct < 30%', configs: [{ field: 'buy_pressure_whale_pct', operator: '<', value: 30, label: 'whale<30%' }] },
     { name: 'whale_pct < 50%', configs: [{ field: 'buy_pressure_whale_pct', operator: '<', value: 50, label: 'whale<50%' }] },
+  ]},
+  { group: 'Snipers', filters: [
+    { name: 'snipers <= 2', configs: [{ field: 'sniper_count_t0_t2', operator: '<=', value: 2, label: 'snipers <= 2' }] },
+    { name: 'snipers <= 5', configs: [{ field: 'sniper_count_t0_t2', operator: '<=', value: 5, label: 'snipers <= 5' }] },
+    { name: 'snipers > 5', configs: [{ field: 'sniper_count_t0_t2', operator: '>', value: 5, label: 'snipers > 5' }] },
+    { name: 'snipers > 10', configs: [{ field: 'sniper_count_t0_t2', operator: '>', value: 10, label: 'snipers > 10' }] },
+  ]},
+  { group: 'Sniper Wallet Velocity', filters: [
+    { name: 'wallet_vel_avg < 5', configs: [{ field: 'sniper_wallet_velocity_avg', operator: '<', value: 5, label: 'wallet_vel_avg < 5' }] },
+    { name: 'wallet_vel_avg < 10', configs: [{ field: 'sniper_wallet_velocity_avg', operator: '<', value: 10, label: 'wallet_vel_avg < 10' }] },
+    { name: 'wallet_vel_avg < 20', configs: [{ field: 'sniper_wallet_velocity_avg', operator: '<', value: 20, label: 'wallet_vel_avg < 20' }] },
+    { name: 'wallet_vel_avg >= 20', configs: [{ field: 'sniper_wallet_velocity_avg', operator: '>=', value: 20, label: 'wallet_vel_avg >= 20' }] },
   ]},
   { group: 'Creator Reputation', filters: [
     { name: 'fresh_dev (0 prior)', configs: [{ field: 'creator_prior_token_count', operator: '==', value: 0, label: 'fresh_dev' }] },
@@ -3405,54 +4027,711 @@ function findPresetName(configs: any[]): string {
 }
 
 /**
- * Split a FilterConfig array into up to 3 filter preset slots.
- * Returns array of preset names (some may be '' for unmatched configs).
+ * Split a FilterConfig array into filter preset slots, one per preset.
+ *
+ * Walks the config array left-to-right; at each position, tries every preset
+ * across every group (NOT just the next one in group-iteration order) and
+ * picks the first match, preferring longer presets (e.g. "vel 20-50" which
+ * consumes two configs) over shorter ones at the same position. If no preset
+ * matches, emits an empty slot and advances by one config so the renderer
+ * still shows a placeholder the user can fix. Returns at least 2 slots.
  */
 function splitFiltersToPresets(allConfigs: any[]): string[] {
   if (!allConfigs || allConfigs.length === 0) return ['', ''];
-  // Try to greedily match presets
-  const matched: string[] = [];
-  let remaining = [...allConfigs];
+
+  // Flatten all presets into one list, sorted by config-length DESC so a
+  // 2-config preset (e.g. "vel 20-50") wins over a 1-config accidental
+  // prefix match when both exist at the same position.
+  type Preset = { name: string; configs: any[] };
+  const allPresets: Preset[] = [];
   for (const g of FILTER_PRESET_GROUPS) {
-    for (const f of g.filters) {
-      if (remaining.length === 0) break;
-      // Check if f.configs is a prefix of remaining
-      if (f.configs.length > remaining.length) continue;
-      const isMatch = f.configs.every((fc, i) => {
-        const c = remaining[i];
+    for (const f of g.filters) allPresets.push({ name: f.name, configs: f.configs });
+  }
+  allPresets.sort((a, b) => b.configs.length - a.configs.length);
+
+  const matched: string[] = [];
+  let i = 0;
+  while (i < allConfigs.length) {
+    const remaining = allConfigs.slice(i);
+    let bestMatch: Preset | null = null;
+    for (const p of allPresets) {
+      if (p.configs.length > remaining.length) continue;
+      const isMatch = p.configs.every((fc, j) => {
+        const c = remaining[j];
         return c && fc.field === c.field && fc.operator === c.operator && fc.value === c.value;
       });
-      if (isMatch) {
-        matched.push(f.name);
-        remaining = remaining.slice(f.configs.length);
-      }
+      if (isMatch) { bestMatch = p; break; } // first match wins (longest-first ordering)
+    }
+    if (bestMatch) {
+      matched.push(bestMatch.name);
+      i += bestMatch.configs.length;
+    } else {
+      // Config at position i has no matching preset — emit a placeholder slot
+      // and advance one step so unmatched filters don't vanish silently.
+      matched.push('');
+      i += 1;
     }
   }
   while (matched.length < 2) matched.push('');
   return matched;
 }
 
+// ────────────────────────────────────────────────────────────────────────
+// Trading-page research panels (added 2026-05-07)
+// 5 panels surfaced on /trading underneath the existing performance cards:
+//   distribution / edge-decay / counterfactual / loss-postmortem / journal
+// Each takes the merged `data` object built in src/index.ts:/trading and
+// returns an HTML card. Empty / no-data fallbacks render a muted card with
+// an explanatory message instead of disappearing — keeps the layout stable
+// while strategies populate.
+// ────────────────────────────────────────────────────────────────────────
+
+/** Per-strategy distribution panel (n, mean, median, p10/p25/p75/p90, min/max,
+ *  std, exit-mix, top winner/loser). Sources from /api/strategy-percentiles. */
+export function renderStrategyPercentilesPanel(data: any): string {
+  const sp = data.strategy_percentiles;
+  if (!sp || !Array.isArray(sp.rows) || sp.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Per-Strategy Distribution</div>
+      <p style="color:#94a3b8">No active strategies yet — toggle one on to populate.</p>
+    </div>`;
+  }
+
+  const fmt = (v: number | null | undefined, suffix = '') =>
+    v == null ? '<span style="color:#64748b">-</span>' : `${v}${suffix}`;
+  const colorMed = (v: number | null) =>
+    v == null ? '#94a3b8' : v > 0 ? '#22d3ee' : '#f87171';
+
+  const rowsHtml = sp.rows.map((r: any) => {
+    const totalExits = (r.exit_reasons.take_profit ?? 0) + (r.exit_reasons.stop_loss ?? 0)
+      + (r.exit_reasons.trailing_stop ?? 0) + (r.exit_reasons.breakeven_stop ?? 0)
+      + (r.exit_reasons.trailing_tp ?? 0) + (r.exit_reasons.timeout ?? 0)
+      + (r.exit_reasons.killswitch ?? 0);
+    const pct = (count: number) => totalExits > 0 ? Math.round((count / totalExits) * 100) : 0;
+    const exitMix = totalExits > 0
+      ? `TP ${pct(r.exit_reasons.take_profit + r.exit_reasons.trailing_tp)}% · SL ${pct(r.exit_reasons.stop_loss + r.exit_reasons.trailing_stop + r.exit_reasons.breakeven_stop)}% · TO ${pct(r.exit_reasons.timeout)}%`
+      : '<span style="color:#64748b">-</span>';
+
+    // Two stacked sub-rows per strategy: gross then net.
+    const gross = r.gross_return_pct;
+    const net = r.net_return_pct;
+    const winner = r.top_winners?.[0];
+    const loser = r.top_losers?.[0];
+    const winnerCell = winner
+      ? `<span title="trade ${winner.trade_id} · grad ${winner.graduation_id ?? '?'}" style="font-size:11px">${mintCell(winner.mint, 6)} <span style="color:#22d3ee">+${winner.gross_return_pct?.toFixed(0)}%</span></span>`
+      : '<span style="color:#64748b">-</span>';
+    const loserCell = loser
+      ? `<span title="trade ${loser.trade_id} · grad ${loser.graduation_id ?? '?'}" style="font-size:11px">${mintCell(loser.mint, 6)} <span style="color:#f87171">${loser.gross_return_pct?.toFixed(0)}%</span></span>`
+      : '<span style="color:#64748b">-</span>';
+
+    // Distribution badge — simple visual cue when whole IQR is on one side of zero.
+    let badge = '';
+    if (net.p25 != null && net.p25 > 0) {
+      badge = '<span style="background:#065f4633;color:#4ade80;border:1px solid #065f46;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px">p25&gt;0</span>';
+    } else if (net.p75 != null && net.p75 < 0) {
+      badge = '<span style="background:#7f1d1d33;color:#f87171;border:1px solid #7f1d1d;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px">p75&lt;0</span>';
+    }
+
+    const sidEsc = escHtml(r.strategy_id);
+    return `
+      <tr style="border-top:2px solid #334155" data-strategy="${sidEsc}">
+        <td rowspan="2" style="vertical-align:top">
+          <div><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a>${badge}</div>
+          <div style="color:#64748b;font-size:11px">${escHtml(r.label)}</div>
+          <div style="color:#94a3b8;font-size:11px">n=${r.n_closed} closed · cost ${fmt(r.avg_execution_cost_pp, 'pp')}</div>
+        </td>
+        <td style="color:#64748b;font-size:11px">gross</td>
+        <td>${fmt(gross.mean, '%')}</td>
+        <td style="color:${colorMed(gross.median)}">${fmt(gross.median, '%')}</td>
+        <td>${fmt(gross.p10, '%')}</td>
+        <td>${fmt(gross.p25, '%')}</td>
+        <td>${fmt(gross.p75, '%')}</td>
+        <td>${fmt(gross.p90, '%')}</td>
+        <td>${fmt(gross.min, '%')}</td>
+        <td>${fmt(gross.max, '%')}</td>
+        <td>${fmt(gross.std_dev, '')}</td>
+        <td rowspan="2" style="vertical-align:top;font-size:11px">${exitMix}</td>
+        <td rowspan="2" style="vertical-align:top">${winnerCell}<br>${loserCell}</td>
+      </tr>
+      <tr data-strategy="${sidEsc}">
+        <td style="color:#64748b;font-size:11px">net</td>
+        <td>${fmt(net.mean, '%')}</td>
+        <td style="color:${colorMed(net.median)}">${fmt(net.median, '%')}</td>
+        <td>${fmt(net.p10, '%')}</td>
+        <td>${fmt(net.p25, '%')}</td>
+        <td>${fmt(net.p75, '%')}</td>
+        <td>${fmt(net.p90, '%')}</td>
+        <td>${fmt(net.min, '%')}</td>
+        <td>${fmt(net.max, '%')}</td>
+        <td>${fmt(net.std_dev, '')}</td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Per-Strategy Distribution
+        <span style="color:#64748b;font-size:11px;font-weight:400">— closed trades only · sorted by median net desc</span>
+      </div>
+      <div style="overflow-x:auto"><table class="table">
+        <thead><tr>
+          <th>Strategy</th><th></th>
+          <th>Mean</th><th>Median</th>
+          <th>p10</th><th>p25</th><th>p75</th><th>p90</th>
+          <th>Min</th><th>Max</th><th>Std</th>
+          <th>Exit Mix</th><th>Top ↗ / ↘</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+    </div>`;
+}
+
+/** Inline SVG sparkline for the edge-decay panel. Width × height in px, value
+ *  array oldest -> newest. Null entries leave a gap. */
+function renderSparkline(values: Array<number | null>, width = 120, height = 30): string {
+  const vals = values.filter((v): v is number => v != null);
+  if (vals.length === 0) {
+    return `<span style="color:#64748b;font-size:11px">no data</span>`;
+  }
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const range = max - min || 1;
+  const pad = 2;
+  const innerW = width - pad * 2;
+  const innerH = height - pad * 2;
+  const step = values.length > 1 ? innerW / (values.length - 1) : 0;
+
+  const points: Array<[number, number]> = [];
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v == null) continue;
+    const x = pad + i * step;
+    const y = pad + innerH - ((v - min) / range) * innerH;
+    points.push([+x.toFixed(1), +y.toFixed(1)]);
+  }
+  if (points.length === 0) {
+    return `<span style="color:#64748b;font-size:11px">no data</span>`;
+  }
+
+  // Zero baseline if it falls in range.
+  const zeroLine = (min < 0 && max > 0)
+    ? `<line x1="${pad}" y1="${(pad + innerH - ((0 - min) / range) * innerH).toFixed(1)}" x2="${(pad + innerW).toFixed(1)}" y2="${(pad + innerH - ((0 - min) / range) * innerH).toFixed(1)}" stroke="#475569" stroke-width="0.5" stroke-dasharray="2,2"/>`
+    : '';
+  const last = points[points.length - 1];
+  const lastVal = vals[vals.length - 1];
+  const color = lastVal > 0 ? '#22d3ee' : '#f87171';
+  const polylinePts = points.map(([x, y]) => `${x},${y}`).join(' ');
+  return `<svg width="${width}" height="${height}" style="vertical-align:middle">
+    ${zeroLine}
+    <polyline points="${polylinePts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>
+    <circle cx="${last[0]}" cy="${last[1]}" r="2" fill="${color}"/>
+  </svg>`;
+}
+
+/** Edge-decay tracker panel — last 25/50/100/all + sparkline + flag. */
+export function renderEdgeDecayPanel(data: any): string {
+  const ed = data.edge_decay;
+  if (!ed || !Array.isArray(ed.rows) || ed.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Edge-Decay Tracker</div>
+      <p style="color:#94a3b8">No active strategies — toggle one on to populate.</p>
+    </div>`;
+  }
+
+  const flagBadge = (flag: string) => {
+    const styles: Record<string, { bg: string; fg: string; border: string }> = {
+      'DECAYING':       { bg: '#7f1d1d33', fg: '#f87171', border: '#7f1d1d' },
+      'STRENGTHENING':  { bg: '#065f4633', fg: '#4ade80', border: '#065f46' },
+      'STABLE':         { bg: '#33415533', fg: '#94a3b8', border: '#334155' },
+      'LOW-N':          { bg: '#33415533', fg: '#64748b', border: '#334155' },
+    };
+    const s = styles[flag] ?? styles['STABLE'];
+    return `<span style="background:${s.bg};color:${s.fg};border:1px solid ${s.border};padding:2px 8px;border-radius:3px;font-size:10px;font-weight:600">${flag}</span>`;
+  };
+
+  const fmtCell = (s: any) => {
+    if (!s || s.n === 0) return '<span style="color:#64748b">-</span>';
+    const m = s.median_net_pct;
+    const color = m == null ? '#94a3b8' : m > 0 ? '#22d3ee' : '#f87171';
+    return `<span style="color:${color}">${m == null ? '-' : m + '%'}</span><span style="color:#64748b;font-size:10px"> (n=${s.n})</span>`;
+  };
+
+  const rowsHtml = ed.rows.map((r: any) => {
+    const sidEsc = escHtml(r.strategy_id);
+    return `<tr data-strategy="${sidEsc}">
+      <td>
+        <div><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a></div>
+        <div style="color:#64748b;font-size:11px">${escHtml(r.label)}</div>
+      </td>
+      <td>${fmtCell(r.last_25)}</td>
+      <td>${fmtCell(r.last_50)}</td>
+      <td>${fmtCell(r.last_100)}</td>
+      <td>${fmtCell(r.all)}</td>
+      <td title="Median across the most recent ~30 trades">${r.recent_30_median_pct != null ? r.recent_30_median_pct + '%' : '<span style=\"color:#64748b\">-</span>'}</td>
+      <td>${renderSparkline(r.sparkline)}</td>
+      <td>${flagBadge(r.flag)}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Edge-Decay Tracker
+        <span style="color:#64748b;font-size:11px;font-weight:400">— median net % across rolling trade-count windows · DECAYING flag fires when last-30 median &lt; lifetime − 5pp</span>
+      </div>
+      <div style="overflow-x:auto"><table class="table">
+        <thead><tr>
+          <th>Strategy</th>
+          <th>Last 25</th><th>Last 50</th><th>Last 100</th><th>All</th>
+          <th title="Recent-30 median used by the flag rule">Recent-30</th>
+          <th>Sparkline (oldest → newest)</th>
+          <th>Flag</th>
+        </tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table></div>
+    </div>`;
+}
+
+/** Filter + TP/SL counterfactual panel. */
+export function renderCounterfactualPanel(data: any): string {
+  const cf = data.counterfactual;
+  if (!cf || !Array.isArray(cf.rows) || cf.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Counterfactual — Filter + TP/SL</div>
+      <p style="color:#94a3b8">No active strategies — toggle one on to populate.</p>
+    </div>`;
+  }
+
+  const verdictBadge = (verdict: string) => {
+    const styles: Record<string, { bg: string; fg: string; border: string }> = {
+      'pulls weight': { bg: '#065f4633', fg: '#4ade80', border: '#065f46' },
+      'dead weight':  { bg: '#33415533', fg: '#94a3b8', border: '#334155' },
+      'hurts':        { bg: '#7f1d1d33', fg: '#f87171', border: '#7f1d1d' },
+      'unknown':      { bg: '#33415533', fg: '#64748b', border: '#334155' },
+    };
+    const s = styles[verdict] ?? styles['unknown'];
+    return `<span style="background:${s.bg};color:${s.fg};border:1px solid ${s.border};padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600">${verdict}</span>`;
+  };
+
+  const cardsHtml = cf.rows.map((r: any) => {
+    const errBanner = r.error
+      ? `<div style="background:#7f1d1d33;color:#f87171;border:1px solid #7f1d1d;padding:6px 10px;border-radius:4px;margin-bottom:8px;font-size:11px">${escHtml(r.error)}</div>`
+      : '';
+
+    const fmtPct = (v: number | null) => v == null
+      ? '<span style="color:#64748b">-</span>'
+      : `<span style="color:${v > 0 ? '#22d3ee' : '#f87171'}">${v > 0 ? '+' : ''}${v}%</span>`;
+    const fmtDelta = (v: number | null) => v == null
+      ? '<span style="color:#64748b">-</span>'
+      : `<span style="color:${v > 0 ? '#22d3ee' : v < 0 ? '#f87171' : '#94a3b8'}">${v > 0 ? '+' : ''}${v}pp</span>`;
+
+    const dropRows = (r.filter_drops || []).map((d: any) => `
+      <tr>
+        <td style="color:#94a3b8;font-size:11px">${escHtml(d.label)}</td>
+        <td>${d.n_with}</td>
+        <td>${d.n_without}<span style="color:${d.delta_n > 0 ? '#22d3ee' : '#f87171'};font-size:10px"> (${d.delta_n > 0 ? '+' : ''}${d.delta_n})</span></td>
+        <td>${fmtPct(d.opt_avg_ret_with)}</td>
+        <td>${fmtPct(d.opt_avg_ret_without)}</td>
+        <td>${fmtDelta(d.delta_ret_pp)}</td>
+        <td>${verdictBadge(d.verdict)}</td>
+      </tr>`).join('');
+
+    const altRows = (r.tp_sl_alternatives || []).map((a: any) => `
+      <tr>
+        <td>${a.tp}%</td>
+        <td>${a.sl}%</td>
+        <td>${fmtPct(a.avg_ret)}</td>
+        <td>${a.win_rate}%</td>
+        <td>${fmtDelta(a.delta_ret_pp)}</td>
+        <td><span style="color:${a.delta_win_rate_pp > 0 ? '#22d3ee' : '#f87171'}">${a.delta_win_rate_pp > 0 ? '+' : ''}${a.delta_win_rate_pp}pp</span></td>
+      </tr>`).join('');
+
+    const tpSlHeader = `
+      <div style="display:flex;align-items:center;gap:12px;margin:12px 0 6px;color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em">
+        TP / SL alternatives
+        <span style="color:#64748b;font-weight:400;text-transform:none;letter-spacing:0">configured ${r.configured.tp_input}%/${r.configured.sl_input}% → grid ${r.configured.tp_grid}%/${r.configured.sl_grid}% (avg_ret ${r.configured.avg_ret == null ? '-' : r.configured.avg_ret + '%'}, wr ${r.configured.win_rate == null ? '-' : r.configured.win_rate + '%'})</span>
+      </div>`;
+
+    const altsTable = altRows ? `<table class="table" style="font-size:11px">
+      <thead><tr><th>TP</th><th>SL</th><th>Avg Ret</th><th>Win%</th><th>Δret vs cfg</th><th>Δwr vs cfg</th></tr></thead>
+      <tbody>${altRows}</tbody>
+    </table>` : '<p style="color:#64748b;font-size:11px;margin:0">No qualifying alternatives in the grid.</p>';
+
+    const dropTable = dropRows ? `<table class="table" style="font-size:11px">
+      <thead><tr><th>Filter</th><th>n with</th><th>n w/o</th><th>opt with</th><th>opt w/o</th><th>Δret pp</th><th>Verdict</th></tr></thead>
+      <tbody>${dropRows}</tbody>
+    </table>` : '<p style="color:#64748b;font-size:11px;margin:0">No filters configured — counterfactual only shows TP/SL grid.</p>';
+
+    const sidEsc = escHtml(r.strategy_id);
+    return `
+      <div data-strategy="${sidEsc}" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a>
+            <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(r.label)}</span>
+            <span style="color:#64748b;font-size:11px;margin-left:8px">entry T+${r.entry_sec} · n=${r.baseline_n} · opt ${r.opt.tp == null ? '-' : r.opt.tp + '%/' + r.opt.sl + '% → ' + (r.opt.avg_ret > 0 ? '+' : '') + r.opt.avg_ret + '%'}</span>
+          </div>
+        </div>
+        ${errBanner}
+        <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Filter contribution</div>
+        ${dropTable}
+        ${tpSlHeader}
+        ${altsTable}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Counterfactual — Filter + TP/SL
+        <span style="color:#64748b;font-size:11px;font-weight:400">— Δret &lt; 0 means dropping the filter hurts (filter pulls weight) · TP/SL alternatives from the same 12×10 grid as /api/best-combos</span>
+      </div>
+      ${cardsHtml}
+    </div>`;
+}
+
+/** Loss postmortem panel — top patterns + raw loser drill-down. */
+export function renderLossPostmortemPanel(data: any): string {
+  const lp = data.loss_postmortem;
+  if (!lp || !Array.isArray(lp.rows) || lp.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Loss Postmortem</div>
+      <p style="color:#94a3b8">No active strategies — toggle one on to populate.</p>
+    </div>`;
+  }
+
+  const cardsHtml = lp.rows.map((r: any) => {
+    const sidEsc = escHtml(r.strategy_id);
+    if (r.population_n === 0) {
+      return `
+      <div data-strategy="${sidEsc}" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
+        <div><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a> <span style="color:#64748b">— no closed trades yet</span></div>
+      </div>`;
+    }
+
+    const patternRows = (r.dominant_patterns || []).map((p: any) => {
+      const worst = p.buckets[p.worst_bucket];
+      const direction = worst.deviation_pp > 0 ? 'cluster in' : 'avoid';
+      const rangeStr = `[${worst.range[0]}, ${worst.range[1]}]`;
+      const sign = worst.deviation_pp > 0 ? '+' : '';
+      return `<tr>
+        <td style="color:#94a3b8;font-family:monospace;font-size:11px">${escHtml(p.feature)}</td>
+        <td>${worst.loser_count}/${r.loser_n} losers ${direction} bucket ${p.worst_bucket} (${rangeStr})</td>
+        <td>${worst.overall_count}/${p.overall_n} overall</td>
+        <td><span style="color:${worst.deviation_pp > 0 ? '#f87171' : '#22d3ee'};font-weight:600">${sign}${worst.deviation_pp}pp</span></td>
+      </tr>`;
+    }).join('');
+
+    const dominantTable = patternRows
+      ? `<table class="table" style="font-size:11px"><thead><tr><th>Feature</th><th>Loser bucket</th><th>Overall</th><th>Δpp</th></tr></thead><tbody>${patternRows}</tbody></table>`
+      : `<p style="color:#64748b;font-size:11px;margin:0">No feature crosses the 20pp deviation threshold — losses look diffuse.</p>`;
+
+    // Drill-down: top 10 worst trades with feature values (collapsible <details>).
+    const featureCols = lp.rows[0]?.dominant_patterns?.[0]?.buckets ? Object.keys(r.losers[0]?.features ?? {}) : [];
+    const loserHeader = featureCols.length > 0
+      ? '<th>mint</th><th>net%</th><th>exit</th><th>held</th>' + featureCols.map(f => `<th title="${f}">${f.replace(/_/g, ' ').slice(0, 12)}</th>`).join('')
+      : '<th>mint</th><th>net%</th><th>exit</th><th>held</th>';
+    const loserRowsHtml = (r.losers || []).slice(0, 10).map((l: any) => {
+      const cells = featureCols.map(f => {
+        const v = l.features[f];
+        return v == null ? '<td style="color:#64748b">-</td>' : `<td style="font-size:10px">${typeof v === 'number' ? +v.toFixed(2) : v}</td>`;
+      }).join('');
+      return `<tr>
+        <td>${mintCell(l.mint, 6)}</td>
+        <td style="color:#f87171">${l.net_return_pct?.toFixed(1)}%</td>
+        <td style="color:#94a3b8;font-size:10px">${escHtml(l.exit_reason || '-')}</td>
+        <td style="font-size:10px">${l.held_seconds ?? '-'}s</td>
+        ${cells}
+      </tr>`;
+    }).join('');
+    const loserTable = `
+      <details style="margin-top:8px">
+        <summary style="color:#64748b;font-size:11px;cursor:pointer">Raw losers (top 10 by net loss)</summary>
+        <div style="overflow-x:auto;margin-top:6px">
+          <table class="table" style="font-size:10px"><thead><tr>${loserHeader}</tr></thead><tbody>${loserRowsHtml}</tbody></table>
+        </div>
+      </details>`;
+
+    return `
+      <div data-strategy="${sidEsc}" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px">
+        <div style="margin-bottom:8px">
+          <a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a>
+          <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(r.label)}</span>
+          <span style="color:#64748b;font-size:11px;margin-left:8px">losers ${r.loser_n} of ${r.population_n} closed</span>
+        </div>
+        ${dominantTable}
+        ${loserTable}
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Loss Postmortem
+        <span style="color:#64748b;font-size:11px;font-weight:400">— worst 20 trades / strategy bucketed against the strategy's own population · features with |deviation| ≥ 20pp surface as dominant patterns</span>
+      </div>
+      ${cardsHtml}
+    </div>`;
+}
+
+/** Strategy journal panel — hypothesis + auto-status + updates timeline. */
+export function renderJournalPanel(data: any): string {
+  const j = data.journal;
+  if (!j || !Array.isArray(j.rows) || j.rows.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Strategy Journal
+        <span style="color:#64748b;font-size:11px;font-weight:400">— push entries via strategy-commands.json journal-upsert</span>
+      </div>
+      <p style="color:#94a3b8">No journal entries yet. Push a journal-upsert command in strategy-commands.json to record the hypothesis behind a strategy cohort.</p>
+    </div>`;
+  }
+
+  const autoBadge = (status: string) => {
+    const styles: Record<string, { bg: string; fg: string; border: string }> = {
+      'OPEN':      { bg: '#33415533', fg: '#94a3b8', border: '#334155' },
+      'ON-TRACK':  { bg: '#065f4633', fg: '#4ade80', border: '#065f46' },
+      'DEGRADING': { bg: '#7f1d1d33', fg: '#f87171', border: '#7f1d1d' },
+      'HIT-KILL':  { bg: '#7f1d1d',   fg: '#fff',    border: '#7f1d1d' },
+      'NO-DATA':   { bg: '#33415533', fg: '#64748b', border: '#334155' },
+      'PROMOTED':  { bg: '#1e3a8a33', fg: '#60a5fa', border: '#1e3a8a' },
+      'KILLED':    { bg: '#1f2937',   fg: '#94a3b8', border: '#374151' },
+      'PAUSED':    { bg: '#33415533', fg: '#fbbf24', border: '#334155' },
+    };
+    const s = styles[status] ?? styles['OPEN'];
+    return `<span style="background:${s.bg};color:${s.fg};border:1px solid ${s.border};padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${status}</span>`;
+  };
+
+  const stateBadge = (state: string) => {
+    if (state === 'enabled') return '';
+    const color = state === 'disabled' ? '#94a3b8' : '#64748b';
+    return `<span style="background:#33415533;color:${color};border:1px solid #334155;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px">[${state}]</span>`;
+  };
+
+  const cardsHtml = j.rows.map((e: any) => {
+    const muted = e.strategy_state !== 'enabled';
+    const cardBg = muted ? '#0f172a99' : '#0f172a';
+    const cardOpacity = muted ? '0.75' : '1';
+
+    const pred = e.prediction;
+    const predLine = pred
+      ? `<div style="color:#94a3b8;font-size:11px;margin-bottom:6px">
+          Prediction:
+          ${pred.target_median_net_pct != null ? `target median ${pred.target_median_net_pct > 0 ? '+' : ''}${pred.target_median_net_pct}%` : ''}
+          ${pred.target_n != null ? `· n=${pred.target_n}` : ''}
+          ${pred.target_days != null ? `· ${pred.target_days}d` : ''}
+          ${pred.kill_criterion ? `· kill: <span style="color:#fbbf24">${escHtml(pred.kill_criterion)}</span>` : ''}
+        </div>`
+      : '';
+
+    const live = e.live_stats;
+    const liveLine = `<div style="color:#94a3b8;font-size:11px;margin-bottom:8px">
+      Live: n=${live.n_closed} closed · median ${live.median_net_pct == null ? '-' : (live.median_net_pct > 0 ? '+' : '') + live.median_net_pct + '%'} · mean ${live.mean_net_pct == null ? '-' : (live.mean_net_pct > 0 ? '+' : '') + live.mean_net_pct + '%'} · wr ${live.win_rate_pct == null ? '-' : live.win_rate_pct + '%'}
+    </div>`;
+
+    const updatesHtml = (e.updates || []).length > 0
+      ? `<details style="margin-top:6px"><summary style="color:#64748b;font-size:11px;cursor:pointer">${e.updates.length} update${e.updates.length === 1 ? '' : 's'}</summary>
+          <div style="margin-top:6px;padding-left:12px;border-left:2px solid #334155">
+            ${(e.updates as any[]).map(u => `
+              <div style="margin-bottom:6px">
+                <div style="color:#64748b;font-size:10px">${utcToCentral(new Date(u.at * 1000).toISOString())} CT</div>
+                <div style="color:#e0e0e0;font-size:11px;white-space:pre-wrap">${escHtml(u.note)}</div>
+              </div>`).join('')}
+          </div>
+        </details>`
+      : '';
+
+    const cohortChip = e.cohort_label
+      ? `<span style="background:#1e3a8a33;color:#60a5fa;border:1px solid #1e3a8a;padding:1px 6px;border-radius:3px;font-size:10px;margin-left:6px">${escHtml(e.cohort_label)}</span>`
+      : '';
+
+    const manualBadge = e.manual_status !== 'OPEN' && e.manual_status !== e.auto_status
+      ? `<span style="color:#64748b;font-size:10px;margin-left:6px">manual: ${escHtml(e.manual_status)}</span>`
+      : '';
+
+    const sidEsc = escHtml(e.strategy_id);
+    return `
+      <div data-strategy="${sidEsc}" style="background:${cardBg};border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:10px;opacity:${cardOpacity}">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+          <div>
+            <a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;font-weight:600;cursor:pointer;text-decoration:none">${sidEsc}</a>
+            <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(e.strategy_label)}</span>
+            ${stateBadge(e.strategy_state)}${cohortChip}
+          </div>
+          <div>${autoBadge(e.auto_status)}${manualBadge}</div>
+        </div>
+        ${predLine}
+        ${liveLine}
+        <div style="color:#e0e0e0;font-size:12px;white-space:pre-wrap;background:#1e293b;border-radius:4px;padding:8px;border:1px solid #334155">${escHtml(e.hypothesis)}</div>
+        ${updatesHtml}
+        <div style="color:#64748b;font-size:10px;margin-top:6px">
+          id <span style="font-family:monospace">${escHtml(e.id)}</span>
+          · created ${utcToCentral(new Date(e.created_at * 1000).toISOString())} CT
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Strategy Journal
+        <span style="color:#64748b;font-size:11px;font-weight:400">— ${j.entry_count} entries · auto-status from live closed-trade stats · entries persist across strategy delete/disable</span>
+      </div>
+      ${cardsHtml}
+    </div>`;
+}
+
+/** Recent Trades panel — last 50 trades, optionally filtered by
+ *  data.selected_strategy / data.selected_execution_mode. Same SQL backs
+ *  the initial server render and the /api/recent-trades?format=html refetch
+ *  triggered when the user clicks a strategy filter. */
+export function renderRecentTradesPanel(data: any): string {
+  const selected = data.selected_strategy || '';
+  const selectedExec = data.selected_execution_mode || '';
+  const tradeRows = (data.recent_trades || []).map((t: any) => {
+    const ret = t.net_return_pct;
+    const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
+    const trueRet = t.true_net_return_pct;
+    const trueRetColor = trueRet == null ? '#64748b' : trueRet > 0 ? '#22d3ee' : '#f87171';
+    const reasonColor = (t.exit_reason === 'take_profit' || t.exit_reason === 'trailing_tp') ? '#22d3ee' : t.exit_reason === 'trailing_stop' ? '#fb923c' : t.exit_reason === 'breakeven_stop' ? '#fbbf24' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
+    const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
+    const exec = execModeStyle(t.execution_mode || 'paper');
+    const sid = t.strategy_id ?? 'default';
+    const sidEsc = escHtml(sid);
+    return `<tr data-strategy="${sidEsc}">
+      <td data-label="ID">${t.id}</td>
+      <td data-label="Strategy" style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
+      <td data-label="Mode"><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600">${exec.label}</span></td>
+      <td data-label="Status" style="color:${t.status === 'open' ? '#a78bfa' : t.status === 'failed' ? '#f87171' : '#94a3b8'}">${t.status}</td>
+      <td data-label="Mint">${mintCell(t.mint)}</td>
+      <td data-label="Entry%">${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
+      <td data-label="Exit Reason" style="color:${reasonColor}">${t.exit_reason ?? '-'}</td>
+      <td data-label="Net Ret%" style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
+      <td data-label="True Net%" style="color:${trueRetColor}" title="Shadow-only: gross − measured entry slip − measured exit slip">${trueRet != null ? trueRet.toFixed(2) + '%' : '-'}</td>
+      <td data-label="Held">${heldStr}</td>
+      <td data-label="T+300" style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
+      <td data-label="Entry Time" style="font-size:11px;color:#64748b">${utcToCentral(t.entry_dt)} CT</td>
+    </tr>`;
+  }).join('');
+
+  const tradesTitleSuffix = [
+    selected ? selected : '',
+    selectedExec ? execModeStyle(selectedExec).label : '',
+  ].filter(Boolean).join(' · ');
+  return `
+    <div class="card">
+      <div class="card-title">Recent Trades (last 50${selected ? ' for this strategy' : ''})${tradesTitleSuffix ? ` — ${tradesTitleSuffix}` : ''}</div>
+      ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
+        <thead><tr><th>ID</th><th>Strategy</th><th>Mode</th><th>Status</th><th>Mint</th><th>Entry%</th>
+          <th>Exit Reason</th><th>Net Ret%</th>
+          <th title="Shadow-only — measured AMM slippage applied instead of gap penalty">True Net Ret%</th>
+          <th>Held</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
+        <tbody>${tradeRows}</tbody>
+      </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
+    </div>`;
+}
+
+/** Recent Skips panel — Skip Reasons aggregate + Recent Skips table. The
+ *  Skip Reasons aggregate is global (it's a count(*) by reason), so when a
+ *  strategy filter is active the aggregate shows the "Filter doesn't apply"
+ *  pill. Recent Skips table is filtered server-side via data.recent_skips. */
+export function renderRecentSkipsPanel(data: any): string {
+  const skipCountRows = (data.skip_reason_counts || []).map((s: any) =>
+    `<tr><td>${s.skip_reason}</td><td>${s.count}</td></tr>`
+  ).join('');
+
+  const skipRows = (data.recent_skips || []).slice(0, 20).map((s: any) => {
+    const sid = s.strategy_id ?? 'default';
+    const sidEsc = escHtml(sid);
+    return `<tr data-strategy="${sidEsc}">
+      <td>${s.graduation_id}</td>
+      <td>${mintCell(s.mint)}</td>
+      <td style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
+      <td style="color:#f87171">${s.skip_reason}</td>
+      <td>${s.skip_value != null ? s.skip_value.toFixed(2) : '-'}</td>
+      <td>${s.pct_t30 != null ? s.pct_t30.toFixed(1) + '%' : '-'}</td>
+      <td style="font-size:11px;color:#64748b">${utcToCentral(s.created_dt)} CT</td>
+    </tr>`;
+  }).join('');
+
+  const selected = data.selected_strategy || '';
+  return `
+    <div class="skips-grid" style="display:grid;grid-template-columns:1fr 2fr;gap:16px">
+      <div class="card" data-aggregate="true">
+        <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
+        <div class="card-title">Skip Reasons</div>
+        ${skipCountRows ? `<table class="table">
+          <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+          <tbody>${skipCountRows}</tbody>
+        </table>` : '<p style="color:#94a3b8">No skips yet</p>'}
+      </div>
+      <div class="card">
+        <div class="card-title">Recent Skips (last 20${selected ? ' for this strategy' : ''})</div>
+        ${skipRows ? `<div style="overflow-x:auto"><table class="table">
+          <thead><tr><th>GradID</th><th>Mint</th><th>Strategy</th><th>Reason</th><th>Value</th><th>pct_t30</th><th>Time</th></tr></thead>
+          <tbody>${skipRows}</tbody>
+        </table></div>` : '<p style="color:#94a3b8">No skips yet</p>'}
+      </div>
+    </div>`;
+}
+
 export function renderTradingHtml(data: any): string {
   const navHtml = nav('/trading');
   const strategies: any[] = data.strategies || [];
   const selected = data.selected_strategy || '';
+  const selectedExec = data.selected_execution_mode || '';
   const modeColor = !data.trading_enabled ? '#94a3b8' : data.global_mode === 'live' ? '#f59e0b' : '#22d3ee';
   const modeLabel = !data.trading_enabled ? 'DISABLED' : (data.global_mode ?? 'paper').toUpperCase();
+
+  // Color/short-label per execution_mode — used by the badges in Recent Trades
+  // and the Performance by Execution Mode card. Distinct from the global
+  // `mode` (paper/live) which only has two values.
+  // (execModeStyle is hoisted to module scope so the extracted Recent
+  // Trades / Recent Skips renders can use it from /api endpoints too.)
 
   // ── Strategy tabs ─────────────────────────────────────────────────────────
   const tabStyle = (active: boolean) => active
     ? 'background:#2563eb;color:#fff;pointer-events:none'
     : 'background:#334155;color:#94a3b8';
   const tabsHtml = `
-    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
-      <a href="/trading" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(!selected)}">All</a>
-      ${strategies.map((s: any) => `
-        <a href="/trading?strategy=${s.id}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(selected === s.id)}">
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+      <a href="/trading${selectedExec ? '?execution_mode=' + selectedExec : ''}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(!selected)}">All</a>
+      ${strategies.map((s: any) => {
+        const tabExec = execModeStyle((s.params?.executionMode) || 'paper');
+        return `
+        <a href="/trading?strategy=${s.id}${selectedExec ? '&execution_mode=' + selectedExec : ''}" style="padding:6px 14px;border-radius:4px;font-size:12px;text-decoration:none;${tabStyle(selected === s.id)};display:inline-flex;align-items:center;gap:6px">
+          <span style="background:${tabExec.color}22;color:${tabExec.color};border:1px solid ${tabExec.color}55;padding:1px 6px;border-radius:3px;font-size:9px;font-weight:600;letter-spacing:0.4px">${tabExec.label}</span>
           ${escHtml(s.label)}${!s.enabled ? ' (off)' : ''}
-          <span style="font-size:10px;color:#64748b;margin-left:4px">${s.activePositions}pos</span>
+          <span style="font-size:10px;color:#64748b">${s.activePositions}pos</span>
         </a>
-      `).join('')}
+      `;
+      }).join('')}
       <button onclick="document.getElementById('new-strategy-form').style.display='block'" style="padding:6px 14px;border-radius:4px;font-size:12px;background:#065f46;color:#fff;border:none;cursor:pointer">+ New Strategy</button>
+    </div>`;
+
+  // Execution-mode filter pills. Compose with the strategy filter — clicking
+  // a mode pill keeps the current strategy in the URL, and vice versa. Default
+  // = "All" so the historical paper-trade view is unchanged unless explicitly
+  // narrowed.
+  const stratQs = selected ? `strategy=${selected}` : '';
+  const buildExecHref = (mode: string) => {
+    const parts = [stratQs, mode ? `execution_mode=${mode}` : ''].filter(Boolean);
+    return `/trading${parts.length ? '?' + parts.join('&') : ''}`;
+  };
+  const execPill = (mode: string, label: string, color: string) => {
+    const active = selectedExec === mode;
+    const bg = active ? color : '#1e293b';
+    const fg = active ? '#0f172a' : color;
+    const cursor = active ? 'pointer-events:none;' : '';
+    return `<a href="${buildExecHref(mode)}" style="padding:4px 12px;border-radius:4px;font-size:11px;text-decoration:none;background:${bg};color:${fg};border:1px solid ${color};font-weight:600;${cursor}">${label}</a>`;
+  };
+  const execTabsHtml = `
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center">
+      <span style="color:#64748b;font-size:11px;margin-right:4px">Mode:</span>
+      <a href="${buildExecHref('')}" style="padding:4px 12px;border-radius:4px;font-size:11px;text-decoration:none;${selectedExec === '' ? 'background:#2563eb;color:#fff;pointer-events:none' : 'background:#334155;color:#94a3b8'}">All</a>
+      ${execPill('paper', 'PAPER', '#64748b')}
+      ${execPill('shadow', 'SHADOW', '#a78bfa')}
+      ${execPill('live_micro', 'LIVE μ', '#f59e0b')}
+      ${execPill('live_full', 'LIVE', '#ef4444')}
     </div>`;
 
   // ── Shared select style ────────────────────────────────────────────────────
@@ -3485,6 +4764,11 @@ export function renderTradingHtml(data: any): string {
           <option value="five_second">5s intervals (from entry)</option>
           <option value="match_collection">Match collection schedule</option>
         </select></label>
+        <label style="color:#94a3b8;font-size:11px">Execution Mode<select id="new-execution-mode" style="${selStyle}">
+          <option value="paper">PAPER — sim fill, gap-penalty cost model</option>
+          <option value="shadow">SHADOW — read on-chain pool, measured cost</option>
+        </select>
+        <span style="color:#64748b;font-size:10px;display:block;margin-top:2px">Live modes only via env or strategy-commands.json</span></label>
       </div>
       <div style="margin-bottom:12px;border-top:1px solid #334155;padding-top:10px">
         <div style="color:#94a3b8;font-size:11px;font-weight:bold;margin-bottom:8px">Dynamic Position Monitoring <span style="color:#64748b;font-weight:normal">(0 = disabled)</span></div>
@@ -3538,9 +4822,13 @@ export function renderTradingHtml(data: any): string {
         <button onclick="removeFilterSlot('ed',${i + 1})" style="background:#7f1d1d;color:#fff;border:none;border-radius:4px;padding:3px 8px;cursor:pointer;font-size:11px" title="Remove">x</button>
       </div>`).join('');
 
+    const edExec = execModeStyle(p.executionMode || 'paper');
+    const edExecCurrent = p.executionMode || 'paper';
+    const isLiveMode = edExecCurrent === 'live_micro' || edExecCurrent === 'live_full';
     editorHtml = `
     <div class="card" style="border:1px solid #334155">
       <div class="card-title">Strategy: ${escHtml(selectedStrategy.label)}
+        <span style="background:${edExec.color}22;color:${edExec.color};border:1px solid ${edExec.color}55;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;margin-left:8px;letter-spacing:0.5px">${edExec.label}</span>
         <span style="color:${selectedStrategy.enabled ? '#4ade80' : '#f87171'};font-size:12px;margin-left:8px">${selectedStrategy.enabled ? 'ENABLED' : 'DISABLED'}</span>
       </div>
       <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
@@ -3563,6 +4851,12 @@ export function renderTradingHtml(data: any): string {
           <option value="match_collection" ${p.positionMonitorMode === 'match_collection' ? 'selected' : ''}>Match collection schedule</option>
         </select>
         <span style="color:#64748b;font-size:10px;display:block;margin-top:2px">Restart required to apply</span></label>
+        <label style="color:#94a3b8;font-size:11px">Execution Mode<select id="ed-execution-mode" style="${selStyle}" ${isLiveMode ? 'disabled' : ''}>
+          <option value="paper" ${edExecCurrent === 'paper' ? 'selected' : ''}>PAPER — sim fill, gap-penalty cost</option>
+          <option value="shadow" ${edExecCurrent === 'shadow' ? 'selected' : ''}>SHADOW — measured cost</option>
+          ${isLiveMode ? `<option value="${edExecCurrent}" selected>${edExec.label} (read-only)</option>` : ''}
+        </select>
+        <span style="color:#64748b;font-size:10px;display:block;margin-top:2px">${isLiveMode ? 'Live mode locked — change via strategy-commands.json' : 'Toggle paper ↔ shadow takes effect on next trade'}</span></label>
       </div>
       <div style="margin-bottom:12px;border-top:1px solid #334155;padding-top:10px">
         <div style="color:#94a3b8;font-size:11px;font-weight:bold;margin-bottom:8px">Dynamic Position Monitoring <span style="color:#64748b;font-weight:normal">(0 = disabled)</span></div>
@@ -3598,14 +4892,18 @@ export function renderTradingHtml(data: any): string {
   }
 
   // ── Open positions ────────────────────────────────────────────────────────
-  const openPositions = (data.open_positions || []).filter((p: any) => !selected || p.strategyId === selected);
-  const posRows = openPositions.map((p: any) => {
+  // Server-side strategy filter is retained for JSON consumers (Accept: application/json)
+  // but the HTML shell renders all rows; client-side filter hides non-matches in real time.
+  const openPositionsAll = data.open_positions || [];
+  const posRows = (openPositionsAll as any[]).map((p: any) => {
     const effSlDiffers = p.effectiveSlPriceSol != null && p.slPriceSol != null && Math.abs(p.effectiveSlPriceSol - p.slPriceSol) > 1e-12;
+    const sid = p.strategyId ?? 'default';
+    const sidEsc = escHtml(sid);
     return `
-    <tr>
+    <tr data-strategy="${sidEsc}">
       <td>${p.tradeId}</td>
-      <td style="color:#a78bfa;font-size:11px">${p.strategyId ?? 'default'}</td>
-      <td style="font-family:monospace;font-size:11px">${p.mint.slice(0,8)}…</td>
+      <td style="font-size:11px"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
+      <td>${mintCell(p.mint)}</td>
       <td>${p.entryPriceSol?.toFixed(8) ?? '-'}</td>
       <td style="color:#22d3ee">${p.tpPriceSol?.toFixed(8) ?? '-'}</td>
       <td style="color:#f87171">${p.slPriceSol?.toFixed(8) ?? '-'}</td>
@@ -3617,8 +4915,8 @@ export function renderTradingHtml(data: any): string {
 
   const openHtml = `
     <div class="card">
-      <div class="card-title">Open Positions (${openPositions.length})</div>
-      ${posRows ? `<table class="table">
+      <div class="card-title">Open Positions (<span class="row-count" data-row-count-for="open-positions">${openPositionsAll.length}</span>)</div>
+      ${posRows ? `<table class="table" data-row-scope="open-positions">
         <thead><tr><th>ID</th><th>Strategy</th><th>Mint</th><th>Entry</th><th>TP</th><th>Fixed SL</th><th>Eff. SL</th><th>HWM</th><th>Held</th></tr></thead>
         <tbody>${posRows}</tbody>
       </table>` : '<p style="color:#94a3b8">No open positions</p>'}
@@ -3630,16 +4928,22 @@ export function renderTradingHtml(data: any): string {
     const ret = s.avg_net_return_pct;
     const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
     const firstDt = s.first_trade_ts ? utcToCentral(new Date(s.first_trade_ts * 1000).toISOString()) : '-';
-    return `<tr>
-      <td style="color:#a78bfa">${s.strategy_id ?? 'default'}</td>
-      <td style="color:${s.mode === 'live' ? '#f59e0b' : '#22d3ee'}">${s.mode?.toUpperCase()}</td>
-      <td>${s.total}</td><td>${s.closed}</td><td>${s.open_count}</td>
-      <td style="color:${retColor}" data-sort="${ret ?? -999}">${ret != null ? ret + '%' : '-'}</td>
-      <td style="color:#22d3ee">${s.tp_exits}</td>
-      <td style="color:#f87171">${s.sl_exits}</td>
-      <td style="color:#94a3b8">${s.timeout_exits}</td>
-      <td data-sort="${s.total_net_profit_sol ?? -999}">${s.total_net_profit_sol != null ? s.total_net_profit_sol + ' SOL' : '-'}</td>
-      <td style="font-size:11px;color:#64748b" data-sort="${s.first_trade_ts ?? 0}">${firstDt}</td>
+    // Use execution_mode (paper/shadow/live_micro/live_full) for the badge —
+    // the legacy `mode` column only distinguishes paper vs live and would
+    // mislabel shadow trades as PAPER.
+    const exec = execModeStyle(s.execution_mode || 'paper');
+    const sid = s.strategy_id ?? 'default';
+    const sidEsc = escHtml(sid);
+    return `<tr data-strategy="${sidEsc}">
+      <td data-label="Strategy"><a class="filter-link" data-filter-strategy="${sidEsc}" style="color:#a78bfa;cursor:pointer;text-decoration:none">${sidEsc}</a></td>
+      <td data-label="Mode"><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${exec.label}</span></td>
+      <td data-label="Total">${s.total}</td><td data-label="Closed">${s.closed}</td><td data-label="Open">${s.open_count}</td>
+      <td data-label="Avg Net Ret%" style="color:${retColor}" data-sort="${ret ?? -999}">${ret != null ? ret + '%' : '-'}</td>
+      <td data-label="TP" style="color:#22d3ee">${s.tp_exits}</td>
+      <td data-label="SL" style="color:#f87171">${s.sl_exits}</td>
+      <td data-label="Timeout" style="color:#94a3b8">${s.timeout_exits}</td>
+      <td data-label="Net P&L" data-sort="${s.total_net_profit_sol ?? -999}">${s.total_net_profit_sol != null ? s.total_net_profit_sol + ' SOL' : '-'}</td>
+      <td data-label="First Trade" style="font-size:11px;color:#64748b" data-sort="${s.first_trade_ts ?? 0}">${firstDt}</td>
     </tr>`;
   }).join('');
 
@@ -3654,112 +4958,118 @@ export function renderTradingHtml(data: any): string {
           <th data-col="8">Timeout</th><th data-col="9">Net P&L</th><th data-col="10">First Trade</th>
         </tr></thead>
         <tbody>${stratStatRows}</tbody>
-      </table></div>
-      <script>
-      (function(){
-        const table = document.getElementById('perf-table');
-        if (!table) return;
-        const headers = table.querySelectorAll('th[data-col]');
-        let sortCol = -1, sortAsc = true;
-        headers.forEach(th => {
-          th.style.cursor = 'pointer';
-          th.style.userSelect = 'none';
-          th.addEventListener('click', () => {
-            const col = parseInt(th.getAttribute('data-col'));
-            if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
-            headers.forEach(h => h.textContent = h.textContent.replace(/ [▲▼]$/, ''));
-            th.textContent += sortAsc ? ' ▲' : ' ▼';
-            const tbody = table.querySelector('tbody');
-            const rows = Array.from(tbody.querySelectorAll('tr'));
-            rows.sort((a, b) => {
-              const aCell = a.children[col];
-              const bCell = b.children[col];
-              const aSort = aCell.getAttribute('data-sort');
-              const bSort = bCell.getAttribute('data-sort');
-              let aVal, bVal;
-              if (aSort !== null && bSort !== null) {
-                aVal = parseFloat(aSort); bVal = parseFloat(bSort);
-              } else {
-                aVal = (aCell.textContent || '').trim();
-                bVal = (bCell.textContent || '').trim();
-                const aNum = parseFloat(aVal); const bNum = parseFloat(bVal);
-                if (!isNaN(aNum) && !isNaN(bNum)) { aVal = aNum; bVal = bNum; }
-              }
-              if (aVal < bVal) return sortAsc ? -1 : 1;
-              if (aVal > bVal) return sortAsc ? 1 : -1;
-              return 0;
-            });
-            rows.forEach(r => tbody.appendChild(r));
-          });
-        });
-      })();
-      </script>` : '<p style="color:#94a3b8">No trades yet</p>'}
-    </div>`;
-
-  // ── Recent trades table ───────────────────────────────────────────────────
-  const tradeRows = (data.recent_trades || []).map((t: any) => {
-    const ret = t.net_return_pct;
-    const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
-    const reasonColor = (t.exit_reason === 'take_profit' || t.exit_reason === 'trailing_tp') ? '#22d3ee' : t.exit_reason === 'trailing_stop' ? '#fb923c' : t.exit_reason === 'breakeven_stop' ? '#fbbf24' : t.exit_reason === 'stop_loss' ? '#f87171' : '#94a3b8';
-    const heldStr = t.held_seconds != null ? t.held_seconds + 's' : '-';
-    return `<tr>
-      <td>${t.id}</td>
-      <td style="color:#a78bfa;font-size:11px">${t.strategy_id ?? 'default'}</td>
-      <td style="color:${t.status === 'open' ? '#a78bfa' : t.status === 'failed' ? '#f87171' : '#94a3b8'}">${t.status}</td>
-      <td style="font-family:monospace;font-size:11px">${(t.mint || '').slice(0,8)}…</td>
-      <td>${t.entry_pct_from_open != null ? '+' + t.entry_pct_from_open.toFixed(1) + '%' : '-'}</td>
-      <td style="color:${reasonColor}">${t.exit_reason ?? '-'}</td>
-      <td style="color:${retColor}">${ret != null ? ret.toFixed(2) + '%' : '-'}</td>
-      <td>${heldStr}</td>
-      <td style="color:#94a3b8">${t.momentum_label ?? '-'} ${t.momentum_pct_t300 != null ? '(' + t.momentum_pct_t300.toFixed(1) + '%)' : ''}</td>
-      <td style="font-size:11px;color:#64748b">${utcToCentral(t.entry_dt)}</td>
-    </tr>`;
-  }).join('');
-
-  const tradesHtml = `
-    <div class="card">
-      <div class="card-title">Recent Trades (last 50)${selected ? ` — ${selected}` : ''}</div>
-      ${tradeRows ? `<div style="overflow-x:auto"><table class="table">
-        <thead><tr><th>ID</th><th>Strategy</th><th>Status</th><th>Mint</th><th>Entry%</th>
-          <th>Exit Reason</th><th>Net Ret%</th><th>Held</th><th>T+300 Outcome</th><th>Entry Time</th></tr></thead>
-        <tbody>${tradeRows}</tbody>
       </table></div>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
 
-  // ── Skips ─────────────────────────────────────────────────────────────────
-  const skipCountRows = (data.skip_reason_counts || []).map((s: any) =>
-    `<tr><td>${s.skip_reason}</td><td>${s.count}</td></tr>`
-  ).join('');
+  // ── Performance by Execution Mode ────────────────────────────────────────
+  // Mirrors Performance by Strategy but bucketed by paper / shadow / live_*.
+  // Surfaces measured slippage (only meaningful for shadow/live) so we can
+  // compare against paper's static gap-penalty assumption during rollout.
+  const execModeData = data.performance_by_execution_mode || [];
+  const execModeRows = execModeData.map((m: any) => {
+    const ret = m.avg_net_return_pct;
+    const retColor = ret == null ? '#94a3b8' : ret > 0 ? '#22d3ee' : '#f87171';
+    const trueRet = m.avg_true_net_return_pct;
+    const trueRetColor = trueRet == null ? '#94a3b8' : trueRet > 0 ? '#22d3ee' : '#f87171';
+    const trueRetLabel = trueRet == null
+      ? '-'
+      : `${trueRet}% <span style="color:#64748b;font-size:10px">(n=${m.true_net_n ?? 0})</span>`;
+    const exec = execModeStyle(m.execution_mode);
+    const fmt = (v: any, suffix = '') => v == null ? '-' : v + suffix;
+    return `<tr>
+      <td><span style="background:${exec.color}22;color:${exec.color};border:1px solid ${exec.color}55;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600">${exec.label}</span></td>
+      <td>${m.total}</td><td>${m.closed}</td><td>${m.open_count}</td><td>${m.failed}</td>
+      <td style="color:${retColor}" data-sort="${ret ?? -999}">${ret != null ? ret + '%' : '-'}</td>
+      <td style="color:${trueRetColor}" data-sort="${trueRet ?? -999}">${trueRetLabel}</td>
+      <td style="color:#94a3b8" data-sort="${m.avg_shadow_entry_slip_pct ?? -999}">${fmt(m.avg_shadow_entry_slip_pct, '%')}</td>
+      <td style="color:#94a3b8" data-sort="${m.avg_shadow_exit_slip_pct ?? -999}">${fmt(m.avg_shadow_exit_slip_pct, '%')}</td>
+      <td style="color:#94a3b8" data-sort="${m.avg_tx_land_ms ?? -999}">${fmt(m.avg_tx_land_ms, 'ms')}</td>
+      <td style="color:#94a3b8" data-sort="${m.total_jito_tip_sol ?? 0}">${fmt(m.total_jito_tip_sol, ' SOL')}</td>
+      <td data-sort="${m.total_net_profit_sol ?? -999}">${m.total_net_profit_sol != null ? m.total_net_profit_sol + ' SOL' : '-'}</td>
+    </tr>`;
+  }).join('');
 
-  const skipRows = (data.recent_skips || []).slice(0, 20).map((s: any) =>
-    `<tr>
-      <td>${s.graduation_id}</td>
-      <td style="font-family:monospace;font-size:11px">${(s.mint || '').slice(0,8)}…</td>
-      <td style="color:#a78bfa;font-size:11px">${s.strategy_id ?? 'default'}</td>
-      <td style="color:#f87171">${s.skip_reason}</td>
-      <td>${s.skip_value != null ? s.skip_value.toFixed(2) : '-'}</td>
-      <td>${s.pct_t30 != null ? s.pct_t30.toFixed(1) + '%' : '-'}</td>
-      <td style="font-size:11px;color:#64748b">${utcToCentral(s.created_dt)}</td>
-    </tr>`
-  ).join('');
-
-  const skipsHtml = `
-    <div style="display:grid;grid-template-columns:1fr 2fr;gap:16px">
-      <div class="card">
-        <div class="card-title">Skip Reasons</div>
-        ${skipCountRows ? `<table class="table">
-          <thead><tr><th>Reason</th><th>Count</th></tr></thead>
-          <tbody>${skipCountRows}</tbody>
-        </table>` : '<p style="color:#94a3b8">No skips yet</p>'}
-      </div>
-      <div class="card">
-        <div class="card-title">Recent Skips (last 20)</div>
-        ${skipRows ? `<div style="overflow-x:auto"><table class="table">
-          <thead><tr><th>GradID</th><th>Mint</th><th>Strategy</th><th>Reason</th><th>Value</th><th>pct_t30</th><th>Time</th></tr></thead>
-          <tbody>${skipRows}</tbody>
-        </table></div>` : '<p style="color:#94a3b8">No skips yet</p>'}
-      </div>
+  const execModeHtml = `
+    <div class="card" data-aggregate="true">
+      <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
+      <div class="card-title">Performance by Execution Mode</div>
+      ${execModeRows ? `<div style="overflow-x:auto"><table class="table sortable" id="exec-mode-table">
+        <thead><tr>
+          <th data-col="0">Mode</th><th data-col="1">Total</th>
+          <th data-col="2">Closed</th><th data-col="3">Open</th><th data-col="4">Failed</th>
+          <th data-col="5">Avg Net Ret%</th>
+          <th data-col="6" title="Shadow only: gross_return - shadow_entry_slip - shadow_exit_slip. What the net return would be using measured AMM slippage instead of the modeled gap penalty.">True Net Ret%</th>
+          <th data-col="7">Shadow Entry Slip%</th><th data-col="8">Shadow Exit Slip%</th>
+          <th data-col="9">Avg Land ms</th><th data-col="10">Jito Tips</th>
+          <th data-col="11">Net P&L</th>
+        </tr></thead>
+        <tbody>${execModeRows}</tbody>
+      </table></div>
+      <p style="color:#64748b;font-size:11px;margin-top:6px">
+        <b>Avg Net Ret%</b> uses the static gap-penalty model (same for paper and shadow, so they're sim-comparable).
+        <b>True Net Ret%</b> is shadow-only — recomputes net return from the actual measured AMM slippage on each fill
+        (gross − shadow_entry_slip − shadow_exit_slip), no extra round-trip cost. The gap between the two columns is
+        the modeling overcharge: positive means our paper sim is more pessimistic than reality.
+        Slippage / land-time / Jito columns are only populated for shadow and live modes.
+      </p>` : '<p style="color:#94a3b8">No trades yet</p>'}
     </div>`;
+
+  // ── Shadow Slippage Range ────────────────────────────────────────────────
+  // Distribution of measured AMM slippage on closed shadow trades — gives a
+  // direct read on how wide the real fill range is vs the modeled 1-3% gap
+  // assumption. If max here is small (single-digit %), the gap-penalty model
+  // is overcharging us; if max is large the model may be lenient.
+  const ssr = data.shadow_slippage_range;
+  const ssrFmtRow = (label: string, stats: any, suffix = '%') => {
+    if (!stats) {
+      return `<tr><td>${label}</td><td colspan="7" style="color:#64748b">no shadow trades yet</td></tr>`;
+    }
+    const f = (v: number) => `${v.toFixed(3)}${suffix}`;
+    const colorFor = (v: number) => label.includes('True Net') ? (v > 0 ? '#22d3ee' : '#f87171') : '#e5e7eb';
+    return `<tr>
+      <td style="color:#94a3b8">${label}</td>
+      <td>${stats.n}</td>
+      <td style="color:${colorFor(stats.min)}">${f(stats.min)}</td>
+      <td style="color:${colorFor(stats.p10)}">${f(stats.p10)}</td>
+      <td style="color:${colorFor(stats.p50)}">${f(stats.p50)}</td>
+      <td style="color:${colorFor(stats.p90)}">${f(stats.p90)}</td>
+      <td style="color:${colorFor(stats.max)}">${f(stats.max)}</td>
+      <td style="color:${colorFor(stats.mean)}">${f(stats.mean)}</td>
+    </tr>`;
+  };
+  const ssrHtml = ssr ? `
+    <div class="card" data-aggregate="true">
+      <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
+      <div class="card-title">Shadow Slippage Range
+        <span style="color:#64748b;font-size:11px;font-weight:400">— measured AMM slippage on closed shadow trades (n=${ssr.n_trades})</span>
+      </div>
+      ${ssr.n_trades > 0 ? `<div style="overflow-x:auto"><table class="table">
+        <thead><tr>
+          <th>Metric</th><th>n</th><th>Min</th><th>P10</th><th>Median</th><th>P90</th><th>Max</th><th>Mean</th>
+        </tr></thead>
+        <tbody>
+          ${ssrFmtRow('Entry slippage', ssr.entry_slippage_pct, '%')}
+          ${ssrFmtRow('Exit slippage', ssr.exit_slippage_pct, '%')}
+          ${ssrFmtRow('Round-trip (entry + exit)', ssr.round_trip_slippage_pct, '%')}
+          ${ssrFmtRow('Sim overhead (jito tip + tx fee)', ssr.sim_overhead_pct, '%')}
+          ${ssrFmtRow('True Net Ret (gross − round-trip − overhead)', ssr.true_net_return_pct, '%')}
+        </tbody>
+      </table></div>
+      <p style="color:#64748b;font-size:11px;margin-top:6px">
+        <b>Shadow's net_return_pct now uses this measured-cost model</b> — gap penalty and roundTripCostPct
+        are no longer applied. The True Net Ret row recomputes the same formula on-the-fly as a sanity check
+        and should match Avg Net Ret% in the panel above. Sim overhead is 2 × jito tip + 2 × tx fee
+        (~0.04% on a 0.5 SOL trade at default tip 0.0001 SOL).
+      </p>` : '<p style="color:#94a3b8">No closed shadow trades with measured slippage yet.</p>'}
+    </div>` : '';
+
+  // ── Recent Trades + Recent Skips ─────────────────────────────────────────
+  // Wrapped in identifiable sections so the click-to-filter JS can refetch
+  // strategy-specific slices via /api/recent-trades?format=html&strategy=<id>
+  // and /api/recent-skips?format=html&strategy=<id>. Without refetch, a
+  // low-volume strategy's trades may not appear in the global last-50.
+  const tradesHtml = `<section data-section="recent-trades">${renderRecentTradesPanel(data)}</section>`;
+  const skipsHtml = `<section data-section="recent-skips">${renderRecentSkipsPanel(data)}</section>`;
 
   // ── Build client-side FILTER_PRESETS map ────────────────────────────────────
   const filterPresetsMap: Record<string, any[]> = {};
@@ -3789,7 +5099,8 @@ export function renderTradingHtml(data: any): string {
       </tr>`;
     }).join('');
     presetsHtml = `
-    <div class="card" style="border:1px solid #1e3a5f">
+    <div class="card" data-aggregate="true" style="border:1px solid #1e3a5f">
+      <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
       <div class="card-title">Top Filter Combos <span style="color:#64748b;font-size:11px;font-weight:400">(from Filter V2 — visit <a href="/filter-analysis-v2" style="color:#60a5fa">Filters V2</a> to refresh)</span></div>
       <div style="overflow-x:auto"><table class="table">
         <thead><tr><th>#</th><th>Filter A</th><th>Filter B</th><th>n</th><th>TP%</th><th>SL%</th><th>Avg Ret%</th><th>Win%</th><th></th></tr></thead>
@@ -3798,7 +5109,8 @@ export function renderTradingHtml(data: any): string {
     </div>`;
   } else {
     presetsHtml = `
-    <div class="card" style="border:1px solid #334155">
+    <div class="card" data-aggregate="true" style="border:1px solid #334155">
+      <div class="aggregate-overlay">Filter doesn't apply — shows all strategies</div>
       <div class="card-title" style="color:#64748b">Top Filter Combos</div>
       <p style="color:#64748b;font-size:12px">No cached data yet. Visit <a href="/filter-analysis-v2" style="color:#60a5fa">Filters V2</a> first to compute the top combos.</p>
     </div>`;
@@ -3914,7 +5226,8 @@ export function renderTradingHtml(data: any): string {
             tightenSlAtPctTime: gn('new-tighten-sl-time'),
             tightenSlTargetPct: gn('new-tighten-sl-pct'),
             tightenSlAtPctTime2: gn('new-tighten-sl-time2'),
-            tightenSlTargetPct2: gn('new-tighten-sl-pct2')
+            tightenSlTargetPct2: gn('new-tighten-sl-pct2'),
+            executionMode: gv('new-execution-mode')
           }
         };
         if (!body.id) { errEl.textContent = 'ID is required'; return; }
@@ -3951,7 +5264,8 @@ export function renderTradingHtml(data: any): string {
             tightenSlAtPctTime: gn('ed-tighten-sl-time'),
             tightenSlTargetPct: gn('ed-tighten-sl-pct'),
             tightenSlAtPctTime2: gn('ed-tighten-sl-time2'),
-            tightenSlTargetPct2: gn('ed-tighten-sl-pct2')
+            tightenSlTargetPct2: gn('ed-tighten-sl-pct2'),
+            executionMode: gv('ed-execution-mode')
           }
         };
         const res = await fetch('/api/strategies/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -3972,10 +5286,297 @@ export function renderTradingHtml(data: any): string {
       if (res.ok) location.href = '/trading';
       else { const d = await res.json(); alert(d.error || 'Failed'); }
     }
+
+    // ── Lazy-loader for heavy panels ─────────────────────────────────────────
+    // Each placeholder section carries data-lazy-panel + data-endpoint. We fetch
+    // the HTML fragment, swap in, then re-apply any active strategy filter and
+    // attach sortable handlers. Failure → error state with retry button.
+    function loadLazyPanel(section) {
+      const endpoint = section.getAttribute('data-endpoint');
+      if (!endpoint) return;
+      section.setAttribute('data-state', 'loading');
+      fetch(endpoint, { headers: { 'Accept': 'text/html' } })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function (html) {
+          section.innerHTML = html;
+          section.setAttribute('data-state', 'ok');
+          // Re-apply current filter to newly injected rows.
+          applyStrategyFilter(document.body.dataset.activeStrategy || '');
+          // Attach sort behaviour to any newly injected sortable tables.
+          section.querySelectorAll('table.sortable').forEach(initSortable);
+        })
+        .catch(function (err) {
+          section.setAttribute('data-state', 'error');
+          section.innerHTML = '<div class="card"><div class="card-title">' + (section.getAttribute('data-label') || 'Panel') + '</div>' +
+            '<p style="color:#f87171;font-size:12px">Failed to load: ' + (err && err.message ? err.message : 'unknown error') + '</p>' +
+            '<button onclick="loadLazyPanel(this.closest(\\'[data-lazy-panel]\\'))" style="background:#2563eb;color:#fff;border:none;border-radius:4px;padding:6px 14px;cursor:pointer;font-size:12px">Retry</button></div>';
+        });
+    }
+
+    function loadAllLazyPanels() {
+      document.querySelectorAll('[data-lazy-panel]').forEach(loadLazyPanel);
+    }
+
+    // ── Sortable table init (extracted from per-table IIFEs) ─────────────────
+    function initSortable(table) {
+      if (!table || table.__sortableInit) return;
+      table.__sortableInit = true;
+      const headers = table.querySelectorAll('th[data-col]');
+      let sortCol = -1, sortAsc = true;
+      headers.forEach(function (th) {
+        th.style.cursor = 'pointer';
+        th.style.userSelect = 'none';
+        th.addEventListener('click', function () {
+          const col = parseInt(th.getAttribute('data-col'));
+          if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
+          headers.forEach(function (h) { h.textContent = h.textContent.replace(/ [▲▼]$/, ''); });
+          th.textContent += sortAsc ? ' ▲' : ' ▼';
+          const tbody = table.querySelector('tbody');
+          const rows = Array.from(tbody.querySelectorAll('tr'));
+          rows.sort(function (a, b) {
+            const aCell = a.children[col]; const bCell = b.children[col];
+            const aSort = aCell.getAttribute('data-sort');
+            const bSort = bCell.getAttribute('data-sort');
+            let aVal, bVal;
+            if (aSort !== null && bSort !== null) {
+              aVal = parseFloat(aSort); bVal = parseFloat(bSort);
+            } else {
+              aVal = (aCell.textContent || '').trim(); bVal = (bCell.textContent || '').trim();
+              const aNum = parseFloat(aVal); const bNum = parseFloat(bVal);
+              if (!isNaN(aNum) && !isNaN(bNum)) { aVal = aNum; bVal = bNum; }
+            }
+            if (aVal < bVal) return sortAsc ? -1 : 1;
+            if (aVal > bVal) return sortAsc ? 1 : -1;
+            return 0;
+          });
+          rows.forEach(function (r) { tbody.appendChild(r); });
+        });
+      });
+    }
+
+    // ── Click-to-filter strategy ─────────────────────────────────────────────
+    // Click any [data-filter-strategy] element to filter the page to that strategy.
+    // Click again (same id) to clear. State persists in the ?strategy= query param
+    // via history.replaceState (no reload, no hash collisions).
+    function applyStrategyFilter(activeId) {
+      const body = document.body;
+      if (activeId) {
+        body.dataset.activeStrategy = activeId;
+      } else {
+        delete body.dataset.activeStrategy;
+      }
+      // Show/hide each [data-strategy] element.
+      document.querySelectorAll('[data-strategy]').forEach(function (el) {
+        const sid = el.getAttribute('data-strategy');
+        if (!activeId || sid === activeId) {
+          el.classList.remove('is-hidden-by-filter');
+        } else {
+          el.classList.add('is-hidden-by-filter');
+        }
+      });
+      // Update visible row counts on tables that opt in via data-row-scope.
+      document.querySelectorAll('[data-row-count-for]').forEach(function (el) {
+        const scope = el.getAttribute('data-row-count-for');
+        const tbl = document.querySelector('[data-row-scope="' + scope + '"]');
+        if (!tbl) return;
+        const rows = tbl.querySelectorAll('tbody > tr[data-strategy]');
+        let visible = 0;
+        rows.forEach(function (r) { if (!r.classList.contains('is-hidden-by-filter')) visible++; });
+        el.textContent = String(visible);
+      });
+      // Toggle the sticky filter pill.
+      const pill = document.getElementById('filter-pill');
+      if (pill) {
+        if (activeId) {
+          pill.removeAttribute('hidden');
+          const labelEl = pill.querySelector('.filter-pill-label');
+          if (labelEl) labelEl.textContent = activeId;
+        } else {
+          pill.setAttribute('hidden', '');
+        }
+      }
+    }
+
+    function setStrategyFilter(activeId) {
+      applyStrategyFilter(activeId);
+      // Persist via query param. Preserve any other params (e.g. execution_mode).
+      const url = new URL(window.location.href);
+      if (activeId) url.searchParams.set('strategy', activeId);
+      else url.searchParams.delete('strategy');
+      window.history.replaceState({}, '', url.toString());
+      // Refetch recent trades + skips for the new filter so low-volume
+      // strategies surface their actual last 50 (not a 0-row slice of the
+      // global last 50). On clear, refetch without strategy → restores
+      // system-wide last 50.
+      refreshTradesAndSkips(activeId);
+    }
+
+    // ── Strategy-aware refresh of Recent Trades + Recent Skips ───────────────
+    let refreshSeq = 0;
+    function refreshTradesAndSkips(activeId) {
+      const seq = ++refreshSeq;
+      const params = new URLSearchParams(window.location.search);
+      const execMode = params.get('execution_mode') || '';
+      const qs = function (extra) {
+        const p = new URLSearchParams();
+        p.set('format', 'html');
+        if (activeId) p.set('strategy', activeId);
+        if (execMode) p.set('execution_mode', execMode);
+        return '?' + p.toString();
+      };
+      const swap = function (sectionAttr, endpoint) {
+        const section = document.querySelector('[data-section="' + sectionAttr + '"]');
+        if (!section) return;
+        section.style.opacity = '0.6';
+        fetch(endpoint, { headers: { 'Accept': 'text/html' } })
+          .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+          .then(function (html) {
+            // Discard stale responses if the user clicked again.
+            if (seq !== refreshSeq) return;
+            section.innerHTML = html;
+            section.style.opacity = '1';
+            applyStrategyFilter(document.body.dataset.activeStrategy || '');
+          })
+          .catch(function () { section.style.opacity = '1'; });
+      };
+      swap('recent-trades', '/api/recent-trades' + qs());
+      swap('recent-skips', '/api/recent-skips' + qs());
+    }
+
+    // Delegated click handlers — one listener for filter, one for clipboard.
+    document.addEventListener('click', function (e) {
+      const t = e.target;
+      // Mint copy button — must run before the filter handler since the
+      // copy button can sit inside an interactive cell.
+      const copyBtn = t && (t.closest ? t.closest('.mint-copy') : null);
+      if (copyBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const mint = copyBtn.getAttribute('data-mint') || '';
+        if (!mint) return;
+        const reset = function () { copyBtn.classList.remove('copied'); copyBtn.textContent = '⎘'; };
+        const ok = function () {
+          copyBtn.classList.add('copied');
+          copyBtn.textContent = '✓';
+          setTimeout(reset, 1500);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(mint).then(ok).catch(function () { /* ignore */ });
+        } else {
+          // Fallback for older browsers / insecure contexts.
+          const ta = document.createElement('textarea');
+          ta.value = mint; document.body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); ok(); } catch (_) { /* ignore */ }
+          document.body.removeChild(ta);
+        }
+        return;
+      }
+      const link = t && (t.closest ? t.closest('[data-filter-strategy]') : null);
+      if (!link) return;
+      // Don't hijack the Birdeye link — only the strategy-filter triggers.
+      if (t && t.tagName === 'A' && t.getAttribute('href')) return;
+      e.preventDefault();
+      const id = link.getAttribute('data-filter-strategy');
+      const current = document.body.dataset.activeStrategy || '';
+      setStrategyFilter(current === id ? '' : id);
+    });
+
+    // ── Top-3 sticky comparison strip ────────────────────────────────────────
+    // After /api/strategy-percentiles + /api/edge-decay land, render a 1-line
+    // strip showing top-3 strategies by median net % with their decay flag.
+    function populateTop3Strip() {
+      const strip = document.getElementById('top3-strip');
+      if (!strip) return;
+      Promise.all([
+        fetch('/api/strategy-percentiles').then(function (r) { return r.json(); }),
+        fetch('/api/edge-decay').then(function (r) { return r.json(); }),
+      ]).then(function (results) {
+        const sp = results[0];
+        const ed = results[1];
+        if (!sp || !Array.isArray(sp.rows) || sp.rows.length === 0) return;
+        const decayBy = {};
+        if (ed && Array.isArray(ed.rows)) {
+          ed.rows.forEach(function (r) { decayBy[r.strategy_id] = r.flag; });
+        }
+        // Sort by net.median desc, take top 3.
+        const ranked = sp.rows.slice().filter(function (r) {
+          return r.net_return_pct && r.net_return_pct.median != null && r.n_closed >= 5;
+        }).sort(function (a, b) { return b.net_return_pct.median - a.net_return_pct.median; }).slice(0, 3);
+        if (ranked.length === 0) return;
+        const flagColors = { 'DECAYING': '#7f1d1d', 'STRENGTHENING': '#065f46', 'STABLE': '#334155', 'LOW-N': '#334155' };
+        const flagFg     = { 'DECAYING': '#f87171', 'STRENGTHENING': '#4ade80', 'STABLE': '#94a3b8', 'LOW-N': '#64748b' };
+        const items = ranked.map(function (r) {
+          const med = r.net_return_pct.median;
+          const medColor = med > 0 ? '#22d3ee' : '#f87171';
+          const flag = decayBy[r.strategy_id] || 'STABLE';
+          const bg = flagColors[flag] || '#334155';
+          const fg = flagFg[flag] || '#94a3b8';
+          const sid = String(r.strategy_id).replace(/"/g, '&quot;');
+          return '<div class="top3-item" data-filter-strategy="' + sid + '">' +
+            '<span class="top3-strat">' + sid + '</span>' +
+            '<span class="top3-med" style="color:' + medColor + '">' + (med > 0 ? '+' : '') + med + '%</span>' +
+            '<span style="color:#64748b;font-size:10px">n=' + r.n_closed + '</span>' +
+            '<span class="top3-flag" style="background:' + bg + '33;color:' + fg + ';border:1px solid ' + bg + '">' + flag + '</span>' +
+            '</div>';
+        }).join('<span style="color:#334155">·</span>');
+        strip.innerHTML = items;
+        strip.removeAttribute('hidden');
+      }).catch(function () { /* fail silently — strip stays hidden */ });
+    }
+
+    // Auto-hide top3 strip on scroll-down, reveal on scroll-up.
+    let lastScrollY = 0;
+    function handleStripScroll() {
+      const strip = document.getElementById('top3-strip');
+      if (!strip || strip.hasAttribute('hidden')) return;
+      const y = window.scrollY;
+      if (y > lastScrollY && y > 60) {
+        strip.classList.add('is-hidden');
+      } else {
+        strip.classList.remove('is-hidden');
+      }
+      lastScrollY = y;
+    }
+    window.addEventListener('scroll', handleStripScroll, { passive: true });
+
+    // Bootstrap: read ?strategy= from URL on load, fetch lazy panels, init sortables.
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const initial = params.get('strategy') || '';
+      if (initial) applyStrategyFilter(initial);
+      // Existing server-rendered sortable tables.
+      document.querySelectorAll('table.sortable').forEach(initSortable);
+      loadAllLazyPanels();
+      populateTop3Strip();
+    })();
   </script>`;
 
   // Convert generated_at to Central time
   const generatedCT = new Date(data.generated_at).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' });
+
+  // Heavy panels are now lazy-loaded — each placeholder fetches its own
+  // /api/<panel>?format=html fragment after the cheap shell renders. See the
+  // loadLazyPanel() function in the inline JS for the implementation.
+  // Wrapped in <details open> so users can collapse panels they don't need —
+  // particularly useful on mobile where vertical real estate is precious.
+  // The fragment ships its own .card wrapper — the lazy-panel <section> is
+  // intentionally not .card to avoid a double background / nested padding.
+  const lazyPanel = (id: string, endpoint: string, label: string) => `
+    <details class="panel-collapsible" open>
+      <summary>${label}</summary>
+      <div class="panel-body">
+        <section class="lazy-panel" data-lazy-panel="${id}" data-endpoint="${endpoint}" data-label="${label}" data-state="loading">
+          <div class="skeleton-rows" aria-busy="true">
+            <div class="skeleton-row"></div>
+            <div class="skeleton-row" style="width:88%"></div>
+            <div class="skeleton-row" style="width:72%"></div>
+          </div>
+        </section>
+      </div>
+    </details>`;
 
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -3987,9 +5588,97 @@ export function renderTradingHtml(data: any): string {
   .table th{text-align:left;padding:6px 8px;color:#64748b;border-bottom:1px solid #334155;font-weight:500}
   .table td{padding:5px 8px;border-bottom:1px solid #1e293b;vertical-align:top}
   .table tr:hover td{background:#1e3a5f22}
+  /* Click-to-filter strategy */
+  .filter-link{cursor:pointer;text-decoration:none;border-bottom:1px dashed transparent;transition:border-color .15s}
+  .filter-link:hover{border-bottom-color:#a78bfa}
+  body[data-active-strategy] .filter-link[data-filter-strategy]{font-weight:600}
+  .is-hidden-by-filter{display:none !important}
+  /* Aggregate panels (those that don't recompute per strategy): dim and show
+     a banner above the title when a filter is active. Banner sits in normal
+     flow so it never overlaps the panel title (mobile or desktop). */
+  .aggregate-overlay{display:none;background:#7f1d1d33;color:#fca5a5;border:1px solid #7f1d1d;padding:3px 10px;border-radius:3px;font-size:10px;font-weight:600;margin-bottom:10px;width:fit-content}
+  body[data-active-strategy] .card[data-aggregate]{opacity:.55}
+  body[data-active-strategy] .card[data-aggregate] .aggregate-overlay{display:block}
+  /* Sticky filter pill — visible only when a strategy filter is active */
+  .filter-pill{position:sticky;top:0;z-index:9;display:flex;align-items:center;gap:8px;background:#1e3a8a;color:#dbeafe;border:1px solid #2563eb;border-radius:0 0 6px 6px;padding:6px 12px;margin:0 0 12px;font-size:12px;font-weight:600}
+  .filter-pill button{background:#1d4ed8;color:#fff;border:none;border-radius:3px;padding:2px 8px;cursor:pointer;font-size:11px;font-weight:600}
+  .filter-pill button:hover{background:#1e40af}
+  .filter-pill[hidden]{display:none}
+  /* Lazy-panel skeletons — only the loading state shows skeleton chrome.
+     Once loaded, the fragment's own .card wrapper provides all visual chrome
+     (no double background/padding/border). */
+  .lazy-panel[data-state="loading"]{display:block;padding:8px 4px}
+  .lazy-panel[data-state="loading"] .skeleton-rows{display:block}
+  .lazy-panel[data-state="loading"] .skeleton-row{height:18px;background:linear-gradient(90deg,#1e293b 0%,#334155 50%,#1e293b 100%);background-size:200% 100%;border-radius:3px;margin:8px 0;animation:skeleton-shimmer 1.4s ease-in-out infinite}
+  @keyframes skeleton-shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  /* Sticky top-3 strategy comparison strip */
+  .top3-strip{position:sticky;top:0;z-index:8;background:#0f172a;border-bottom:1px solid #334155;padding:6px 12px;margin:0 -16px 12px;display:flex;gap:12px;flex-wrap:wrap;font-size:12px;transition:transform .25s ease}
+  .top3-strip.is-hidden{transform:translateY(-100%)}
+  .top3-strip[hidden]{display:none}
+  .top3-item{display:flex;align-items:center;gap:6px;cursor:pointer;padding:2px 8px;border-radius:4px;transition:background .15s}
+  .top3-item:hover{background:#1e293b}
+  .top3-strat{color:#a78bfa;font-family:monospace;font-weight:600}
+  .top3-med{font-weight:600}
+  .top3-flag{font-size:10px;padding:1px 6px;border-radius:3px;font-weight:600}
+  /* Mint quick-actions */
+  .mint-cell{display:inline-flex;align-items:center;gap:4px;font-family:monospace;font-size:11px}
+  .mint-cell a{color:#cbd5e1;text-decoration:none;border-bottom:1px dashed transparent;transition:border-color .15s}
+  .mint-cell a:hover{border-bottom-color:#60a5fa;color:#fff}
+  .mint-copy{background:transparent;border:none;color:#64748b;cursor:pointer;padding:1px 4px;font-size:11px;border-radius:3px}
+  .mint-copy:hover{background:#334155;color:#dbeafe}
+  .mint-copy.copied{color:#4ade80}
+  /* Mobile (≤640px) */
+  @media (max-width: 640px) {
+    .container{padding:8px}
+    .card{padding:10px;margin-bottom:10px;border-radius:6px}
+    .card-title{font-size:12px;margin-bottom:8px}
+    h1{font-size:15px !important}
+    .table{font-size:11px}
+    .table th, .table td{padding:4px 6px}
+    .skips-grid{grid-template-columns:1fr !important}
+    /* Stacked-card tables: opt-in via .responsive */
+    .table.responsive thead{display:none}
+    .table.responsive, .table.responsive tbody, .table.responsive tr{display:block;width:100%}
+    .table.responsive tr{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:8px;margin-bottom:8px}
+    .table.responsive tr[data-strategy]:hover td{background:transparent}
+    .table.responsive td{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border:none;font-size:11px;gap:8px}
+    .table.responsive td::before{content:attr(data-label);color:#64748b;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.05em;flex-shrink:0}
+    .table.responsive td:empty, .table.responsive td:first-child{font-weight:600}
+    /* Filter pill more compact */
+    .filter-pill{padding:5px 10px;font-size:11px;margin-bottom:8px}
+    .top3-strip{padding:4px 8px;gap:6px;font-size:11px;margin:0 -8px 8px}
+    .top3-item{padding:1px 4px}
+    /* Collapse padding inside <details> on mobile */
+    details summary{padding:8px 10px}
+  }
+  /* Collapsible panel chrome (<details> wrapping a .card or .lazy-panel).
+     The summary acts as the panel header — duplicate inner .card-title is
+     hidden so the description span (sibling) keeps showing without the
+     redundant title text in front of it. */
+  details.panel-collapsible{margin-bottom:12px;background:#1e293b;border-radius:8px;overflow:hidden}
+  details.panel-collapsible > summary{cursor:pointer;list-style:none;padding:12px 16px;font-size:14px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
+  details.panel-collapsible > summary::-webkit-details-marker{display:none}
+  details.panel-collapsible > summary::after{content:'▼';font-size:11px;color:#64748b;transition:transform .15s;margin-left:8px}
+  details.panel-collapsible[open] > summary::after{transform:rotate(180deg)}
+  details.panel-collapsible[open] > summary{border-bottom:1px solid #334155}
+  details.panel-collapsible > .panel-body{padding:0 16px 16px}
+  details.panel-collapsible > .panel-body > .lazy-panel > .card,
+  details.panel-collapsible > .panel-body > .card{margin-bottom:0;background:transparent;padding:12px 0 0;border-radius:0}
+  /* Hide the inner card-title — but only the leading text node, not the
+     description span. We use font-size:0 on the title and restore it on the
+     child <span>, leaving the description visible without the redundant
+     "PANEL NAME — " prefix. */
+  details.panel-collapsible .card > .card-title{font-size:0;text-transform:none;letter-spacing:0;margin-bottom:8px;color:#64748b}
+  details.panel-collapsible .card > .card-title > span{font-size:11px;font-weight:400;color:#64748b;text-transform:none;letter-spacing:0}
 </style></head><body>
 <nav><span class="title">Graduation Arb Research</span>${navHtml}</nav>
 <div class="container">
+  <div class="top3-strip" id="top3-strip" hidden></div>
+  <div class="filter-pill" id="filter-pill" hidden>
+    <span>Filtered:</span>
+    <span class="filter-pill-label" style="font-family:monospace"></span>
+    <button onclick="setStrategyFilter('')">✕ Clear</button>
+  </div>
   <h1 style="font-size:18px;color:#60a5fa;margin:0 0 4px">Trading Dashboard
     <span style="font-size:13px;color:${modeColor};margin-left:8px">${modeLabel}</span>
     <span style="font-size:12px;color:#64748b;margin-left:8px">${strategies.length} strateg${strategies.length === 1 ? 'y' : 'ies'}</span>
@@ -3997,11 +5686,19 @@ export function renderTradingHtml(data: any): string {
   </h1>
   <p style="color:#64748b;font-size:11px;margin:0 0 16px">Manual refresh · Generated ${generatedCT} CT</p>
   ${tabsHtml}
+  ${execTabsHtml}
   ${presetsHtml}
   ${newFormHtml}
   ${editorHtml}
   ${openHtml}
   ${perfHtml}
+  ${execModeHtml}
+  ${ssrHtml}
+  ${lazyPanel('strategy-percentiles', '/api/strategy-percentiles?format=html', 'Per-Strategy Distribution')}
+  ${lazyPanel('edge-decay', '/api/edge-decay?format=html', 'Edge-Decay Tracker')}
+  ${lazyPanel('counterfactual', '/api/counterfactual?format=html', 'Counterfactual — Filter + TP/SL')}
+  ${lazyPanel('loss-postmortem', '/api/loss-postmortem?format=html', 'Loss Postmortem')}
+  ${lazyPanel('journal', '/api/journal?format=html', 'Strategy Journal')}
   ${tradesHtml}
   ${skipsHtml}
 </div>
@@ -4156,4 +5853,812 @@ export function renderPeakAnalysisHtml(data: any): string {
 
   const body = headerCards + panelA + panelB + panelC + panelD;
   return shell('Peak Analysis', '/peak-analysis', body, d);
+}
+
+// ── EXIT-SIM PAGE ────────────────────────────────────────────────────
+
+export function renderExitSimHtml(data: any): string {
+  const d = data;
+
+  const fmtPct = (v: number | null | undefined): string => {
+    if (v === null || v === undefined) return '<span class="yellow">—</span>';
+    const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+    const sign = v > 0 ? '+' : '';
+    return `<span class="${cls}">${sign}${v.toFixed(2)}%</span>`;
+  };
+
+  const fmtWr = (v: number | null | undefined): string => {
+    if (v === null || v === undefined) return '<span class="yellow">—</span>';
+    const cls = v >= 60 ? 'green' : v >= 50 ? 'yellow' : 'red';
+    return `<span class="${cls}">${v.toFixed(1)}%</span>`;
+  };
+
+  const exitBreakdown = (bd: any): string => {
+    if (!bd) return '';
+    const parts: string[] = [];
+    for (const k of Object.keys(bd)) if (bd[k] > 0) parts.push(`${k}:${bd[k]}`);
+    return parts.join(' · ');
+  };
+
+  // Baseline + universe header
+  const bs = d.baseline_static;
+  const matrixBanner = `
+    <div class="card" style="border-left:3px solid #2563eb">
+      <div class="desc">
+        <strong>Single-universe view.</strong> This page evaluates all 5 dynamic-exit strategies
+        only on <code>${d.universe.label}</code>. To see which of the top 20 filter combos gains
+        the most from dynamic exits, jump to <a href="/exit-sim-matrix" style="color:#60a5fa"><strong>/exit-sim-matrix</strong></a>.
+      </div>
+    </div>
+  `;
+  const headerCards = `
+    <div class="grid">
+      <div class="card">
+        <h2>Universe</h2>
+        <div class="stat"><span class="label">Label</span><span class="value">${d.universe.label}</span></div>
+        <div class="stat"><span class="label">n rows (post-gate)</span><span class="value">${d.universe.n_rows}</span></div>
+      </div>
+      <div class="card">
+        <h2>Static baseline (10% SL / 50% TP)</h2>
+        <div class="stat"><span class="label">Avg return</span><span class="value">${fmtPct(bs.avg_return_pct)}</span></div>
+        <div class="stat"><span class="label">Win rate</span><span class="value">${fmtWr(bs.win_rate_pct)}</span></div>
+        <div class="stat"><span class="label">n</span><span class="value">${bs.n}</span></div>
+        <div class="desc">Exit mix: ${exitBreakdown(bs.exit_reason_breakdown)}</div>
+      </div>
+    </div>
+  `;
+
+  // Momentum reversal grid
+  const mr = d.strategies.momentum_reversal;
+  const mrRows = (mr.grid as any[])
+    .slice()
+    .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+    .map((c) => {
+      const isBest = mr.best && c.params.drop_from_hwm_pct === mr.best.params.drop_from_hwm_pct
+        && c.params.min_hwm_pct === mr.best.params.min_hwm_pct;
+      const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+      return `
+        <tr class="${isBest ? 'row-baseline' : ''}">
+          <td>${c.params.drop_from_hwm_pct}%${isBest ? ' ★' : ''}</td>
+          <td>${c.params.min_hwm_pct}%</td>
+          <td>${c.n}</td>
+          <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+          <td>${fmtWr(c.win_rate_pct)}</td>
+          <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+          <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+        </tr>`;
+    })
+    .join('');
+
+  const momentumCard = `
+    <div class="card">
+      <h2>Strategy 1 — Momentum reversal</h2>
+      <div class="desc">Exit when price drops <strong>drop_from_hwm</strong>% from the high-water mark in a single
+        checkpoint, but only if HWM is at least <strong>min_hwm</strong>% above entry. Fixed 10% floor SL.
+        Grid sorted by avg return. ★ = optimum (gated by n≥30).
+      </div>
+      <table>
+        <thead><tr>
+          <th>Drop from HWM</th><th>Min HWM above entry</th><th>n</th>
+          <th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th>
+        </tr></thead>
+        <tbody>${mrRows}</tbody>
+      </table>
+    </div>
+  `;
+
+  // Generic strategy-grid card builder
+  const paramCols = (c: any, keys: string[]): string =>
+    keys.map((k) => `<td>${c.params[k]}${typeof c.params[k] === 'number' && k.endsWith('_pct') ? '%' : ''}</td>`).join('');
+
+  const gridCard = (
+    title: string, desc: string, strat: any, paramKeys: { key: string; label: string }[],
+  ): string => {
+    const isBest = (c: any) =>
+      strat.best && paramKeys.every(({ key }) => c.params[key] === strat.best.params[key]);
+    const rows = (strat.grid as any[])
+      .slice()
+      .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+      .map((c) => {
+        const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+        const best = isBest(c);
+        return `
+          <tr class="${best ? 'row-baseline' : ''}">
+            ${paramCols(c, paramKeys.map((p) => p.key))}
+            <td>${c.n}${best ? ' ★' : ''}</td>
+            <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+            <td>${fmtWr(c.win_rate_pct)}</td>
+            <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+            <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+          </tr>`;
+      })
+      .join('');
+    const headerCols = paramKeys.map((p) => `<th>${p.label}</th>`).join('');
+    return `
+      <div class="card">
+        <h2>${title}</h2>
+        <div class="desc">${desc}</div>
+        <table>
+          <thead><tr>${headerCols}<th>n</th><th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `;
+  };
+
+  const va = d.strategies.vol_adaptive;
+  const scaleOutCard = gridCard(
+    'Strategy 2 — Scale-out / partial exits',
+    'Sell <strong>size_pct</strong> of position at first checkpoint where price ≥ <strong>first_tp</strong>%. ' +
+    'Runner trails <strong>runner_trail</strong>% below its post-partial HWM. Fixed 10% floor SL. ' +
+    'Cost applied once. ★ = optimum (n≥30).',
+    d.strategies.scale_out,
+    [
+      { key: 'first_tp_pct', label: 'First TP' },
+      { key: 'size_pct', label: 'Size %' },
+      { key: 'runner_trail_pct', label: 'Runner trail' },
+    ],
+  );
+
+  const volCard = `
+    <div class="card">
+      <h2>Strategy 3 — Volatility-adaptive trailing</h2>
+      <div class="desc">Trail distance = <strong>k × path_smoothness_0_30</strong>. Activates once price ≥ entry.
+        Rows missing <code>path_smoothness_0_30</code> are skipped: ${va.rows_with_vol}/${d.universe.n_rows} usable.
+        ★ = optimum (n≥30).
+      </div>
+      <table>
+        <thead><tr><th>k</th><th>n</th><th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th></tr></thead>
+        <tbody>
+          ${(va.grid as any[])
+            .slice()
+            .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+            .map((c) => {
+              const best = va.best && c.params.k === va.best.params.k;
+              const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+              return `
+                <tr class="${best ? 'row-baseline' : ''}">
+                  <td>${c.params.k}${best ? ' ★' : ''}</td>
+                  <td>${c.n}</td>
+                  <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+                  <td>${fmtWr(c.win_rate_pct)}</td>
+                  <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+                  <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+                </tr>`;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const td = d.strategies.time_decayed_tp;
+  const timeCard = `
+    <div class="card">
+      <h2>Strategy 5 — Time-decayed TP ladder</h2>
+      <div class="desc">TP target shrinks with elapsed seconds since entry (T+30). Four preset curves:
+        aggressive · linear · exponential · conservative. Fixed 10% floor SL. ★ = optimum (n≥30).
+      </div>
+      <table>
+        <thead><tr><th>Preset</th><th>Ladder</th><th>n</th><th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th></tr></thead>
+        <tbody>
+          ${(td.grid as any[])
+            .slice()
+            .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+            .map((c) => {
+              const best = td.best && c.params.preset === td.best.params.preset;
+              const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+              const ladder = JSON.parse(c.params.ladder)
+                .map((s: any) => `${s.seconds}s→${s.tpPct}%`).join(', ');
+              return `
+                <tr class="${best ? 'row-baseline' : ''}">
+                  <td>${c.params.preset}${best ? ' ★' : ''}</td>
+                  <td><span class="desc">${ladder}</span></td>
+                  <td>${c.n}</td>
+                  <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+                  <td>${fmtWr(c.win_rate_pct)}</td>
+                  <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+                  <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+                </tr>`;
+            })
+            .join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const wl = d.strategies.whale_liq;
+  const whaleDesc =
+    'Exit early on adverse pool signals: <strong>liq_drop</strong>% drop in pool SOL from entry ' +
+    'OR a single sell swap of ≥ <strong>whale_sell</strong> SOL. Fixed 10% SL + 50% TP still active — ' +
+    'whale/liq triggers are ADDED on top of the baseline. ' +
+    `Rows with entry liquidity captured: ${wl.rows_with_data}/${d.universe.n_rows}. ★ = optimum (n≥30).`;
+  const whaleCard = (() => {
+    if (!wl.grid || wl.grid.length === 0 || wl.rows_with_data === 0) {
+      return `
+        <div class="card">
+          <h2>Strategy 4 — Whale-sell / liquidity drop</h2>
+          <div class="desc">
+            <span class="yellow">COLLECTING</span> — 0 rows have entry liquidity / swap data yet.
+            ${wl.rows_with_data === 0 ? 'Waiting for new graduations after the 2026-04-20 data-collection rollout.' : ''}
+          </div>
+        </div>
+      `;
+    }
+    const rowsHtml = (wl.grid as any[])
+      .slice()
+      .sort((a, b) => (b.avg_return_pct ?? -Infinity) - (a.avg_return_pct ?? -Infinity))
+      .map((c) => {
+        const best = wl.best
+          && c.params.liq_drop_pct === wl.best.params.liq_drop_pct
+          && c.params.whale_sell_sol === wl.best.params.whale_sell_sol;
+        const beatsBaseline = c.avg_return_pct != null && bs.avg_return_pct != null && c.avg_return_pct > bs.avg_return_pct;
+        return `
+          <tr class="${best ? 'row-baseline' : ''}">
+            <td>${c.params.liq_drop_pct}%${best ? ' ★' : ''}</td>
+            <td>${c.params.whale_sell_sol} SOL</td>
+            <td>${c.n}</td>
+            <td><strong>${fmtPct(c.avg_return_pct)}</strong></td>
+            <td>${fmtWr(c.win_rate_pct)}</td>
+            <td class="${beatsBaseline ? 'green' : ''}">${beatsBaseline ? 'YES' : '—'}</td>
+            <td><span class="desc">${exitBreakdown(c.exit_reason_breakdown)}</span></td>
+          </tr>`;
+      })
+      .join('');
+    return `
+      <div class="card">
+        <h2>Strategy 4 — Whale-sell / liquidity drop</h2>
+        <div class="desc">${whaleDesc}</div>
+        <table>
+          <thead><tr><th>Liq drop</th><th>Whale sell</th><th>n</th><th>Avg return</th><th>Win rate</th><th>Beats baseline?</th><th>Exit mix</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+    `;
+  })();
+
+  const body = matrixBanner + headerCards + momentumCard + scaleOutCard + volCard + timeCard + whaleCard;
+  return shell('Exit Strategy Simulator', '/exit-sim', body, d);
+}
+
+// ── WALLET REP ANALYSIS PAGE ─────────────────────────────────────────
+
+export function renderWalletRepAnalysisHtml(data: any): string {
+  const d = data;
+  const repFilters: Array<{ name: string; description: string }> = d.rep_filters ?? [];
+
+  const fmtSim = (v: number | null): string => {
+    if (v === null || v === undefined) return '<span class="yellow">—</span>';
+    const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+    return `<span class="${cls}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
+  };
+
+  const fmtDelta = (v: number | null, n: number): string => {
+    if (v === null || v === undefined) {
+      return n < (d.notes?.min_n_for_valid_delta ?? 20)
+        ? `<span class="n-insuf">n=${n}</span>`
+        : '<span class="yellow">—</span>';
+    }
+    const cls = v > 0.3 ? 'green' : v < -0.3 ? 'red' : 'yellow';
+    const sign = v >= 0 ? '+' : '';
+    return `<span class="${cls}"><strong>${sign}${v.toFixed(2)}pp</strong></span>`;
+  };
+
+  const fmtRetention = (v: number | null): string => {
+    if (v === null || v === undefined) return '—';
+    const cls = v >= 70 ? 'green' : v >= 40 ? 'yellow' : 'red';
+    return `<span class="${cls}">${v.toFixed(1)}%</span>`;
+  };
+
+  const cov = d.coverage ?? null;
+  const coverageCard = cov ? `
+    <div class="card">
+      <h2>Reputation column coverage</h2>
+      <div class="desc">
+        How many entry-gated labeled rows currently carry <code>creator_prior_*</code> values.
+        Coverage of <code>creator_prior_token_count</code> is what the rep filters actually depend on —
+        if it's near 100% the data <em>is</em> being captured, and any low cell n in the matrix below is
+        real data scarcity (most pump.fun graduations come from first-time creators who have no priors in
+        the DB), not a collection bug.
+      </div>
+      <table>
+        <tbody>
+          <tr><td>Total entry-gated labeled rows</td><td><strong>${cov.total_labeled_rows}</strong></td></tr>
+          <tr><td>creator_wallet_address populated</td><td><strong>${cov.with_creator_wallet}</strong> (${cov.creator_wallet_coverage_pct}%)</td></tr>
+          <tr><td>creator_prior_token_count populated</td><td><strong>${cov.with_prior_count}</strong> (${cov.prior_count_coverage_pct}%)</td></tr>
+          <tr><td>… of those, with prior_count ≥ 1 (known_dev)</td><td><strong>${cov.with_prior_count_ge_1}</strong></td></tr>
+          <tr><td>… of those, with prior_count ≥ 3 (repeat_dev_3plus)</td><td><strong>${cov.with_prior_count_ge_3}</strong></td></tr>
+        </tbody>
+      </table>
+    </div>
+  ` : '';
+
+  // ── Population view: each rep filter applied standalone to the full
+  //    entry-gated population (no combo intersection). Primary signal = Δ
+  //    dump rate vs baseline (negative = filter knocks dumps out).
+  const pop = d.population_view ?? null;
+  const fmtRate = (v: number | null): string => {
+    if (v === null || v === undefined) return '—';
+    return `${v.toFixed(1)}%`;
+  };
+  const fmtDeltaRate = (v: number | null, invert = false): string => {
+    if (v === null || v === undefined) return '—';
+    // For dump-rate Δ: negative = good (less dumps), so invert color.
+    const good = invert ? v < -0.3 : v > 0.3;
+    const bad = invert ? v > 0.3 : v < -0.3;
+    const cls = good ? 'green' : bad ? 'red' : 'yellow';
+    const sign = v >= 0 ? '+' : '';
+    return `<span class="${cls}"><strong>${sign}${v.toFixed(2)}pp</strong></span>`;
+  };
+  const fmtOptRet = (v: number | null): string => {
+    if (v === null || v === undefined) return '<span class="yellow">—</span>';
+    const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+    return `<span class="${cls}">${v >= 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
+  };
+
+  const populationCard = pop ? `
+    <div class="card">
+      <h2>Population view — each rep filter standalone (no combo intersection)</h2>
+      <div class="desc">
+        Each row is a wallet-rep filter applied to the <strong>full entry-gated labeled population</strong>,
+        no combo filter layered on. Answers "if I drop this rep filter on top of <em>any</em> existing strategy,
+        does it knock out more dumps than pumps?" Sorted by Δ dump rate ascending — the first row is the filter
+        that reduces dump rate the most vs the unfiltered baseline. Negative Δ on dump rate is good (fewer dumps);
+        positive Δ on pump rate / opt avg ret is good (lifts winners / lifts return).
+        <strong>Retention</strong> is what fraction of the baseline n the filter keeps — a filter that drops dump
+        rate by 5pp but cuts n by 80% is rarely worth it.
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Rep filter</th>
+            <th>Condition</th>
+            <th>n</th>
+            <th>Retention</th>
+            <th>Pump rate</th>
+            <th>Dump rate</th>
+            <th>Δ Dump rate</th>
+            <th>Δ Pump rate</th>
+            <th>Raw avg ret</th>
+            <th>Δ Raw avg ret</th>
+            <th>Opt avg ret</th>
+            <th>Δ Opt avg ret</th>
+            <th>Opt TP/SL</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="row-baseline">
+            <td><strong>baseline (no filter)</strong></td>
+            <td><span class="desc">${pop.baseline.description}</span></td>
+            <td><strong>${pop.baseline.n}</strong></td>
+            <td>—</td>
+            <td>${fmtRate(pop.baseline.pump_rate_pct)}</td>
+            <td>${fmtRate(pop.baseline.dump_rate_pct)}</td>
+            <td>—</td>
+            <td>—</td>
+            <td>${fmtOptRet(pop.baseline.raw_avg_ret_pct)}</td>
+            <td>—</td>
+            <td>${fmtOptRet(pop.baseline.opt_avg_ret)}</td>
+            <td>—</td>
+            <td>${pop.baseline.opt_tp ?? '—'} / ${pop.baseline.opt_sl ?? '—'}</td>
+          </tr>
+          ${(pop.rows as any[]).map((r) => `
+            <tr>
+              <td><strong>${r.rep_filter}</strong></td>
+              <td><span class="desc">${r.description}</span></td>
+              <td>${r.n}</td>
+              <td>${fmtRetention(r.n_retention_pct)}</td>
+              <td>${fmtRate(r.pump_rate_pct)}</td>
+              <td>${fmtRate(r.dump_rate_pct)}</td>
+              <td>${fmtDeltaRate(r.delta_dump_rate_pp, true)}</td>
+              <td>${fmtDeltaRate(r.delta_pump_rate_pp)}</td>
+              <td>${fmtOptRet(r.raw_avg_ret_pct)}</td>
+              <td>${fmtDeltaRate(r.delta_raw_avg_ret_pp)}</td>
+              <td>${fmtOptRet(r.opt_avg_ret)}</td>
+              <td>${fmtDeltaRate(r.delta_opt_avg_ret_pp)}</td>
+              <td>${r.opt_tp ?? '—'} / ${r.opt_sl ?? '—'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '';
+
+  const summaryCard = `
+    <div class="card">
+      <h2>Rep Filter Leaderboard — avg impact across the top 20 combos</h2>
+      <div class="desc">
+        For each wallet-rep filter, we layer it on top of each of the top 20 combos from
+        <code>/api/best-combos</code> and measure the change in <strong>per-combo opt TP/SL</strong>
+        sim return (matches Panel 6 <code>top_pairs</code>; the fixed 10%SL/50%TP framework was retired
+        2026-04-21). Deltas are only counted when the filtered cell has
+        n ≥ ${d.notes?.min_n_for_valid_delta ?? 30} (same as <code>SIM_MIN_N_FOR_OPTIMUM</code> — below
+        that, no opt is published). <strong>Combos w/ any n</strong> shows how many of the 20 combos have
+        at least 1 row passing the rep filter — useful when "Evaluated" reads 0 but data is being captured.
+        Ranked by mean Δ (best first).
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Rep filter</th>
+            <th>Condition</th>
+            <th>Mean Δ pp</th>
+            <th>Median Δ pp</th>
+            <th>Combos improved</th>
+            <th>Combos worsened</th>
+            <th>Evaluated (n≥${d.notes?.min_n_for_valid_delta ?? 30})</th>
+            <th>Combos w/ any n</th>
+            <th>Mean n retention</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${(d.summary as any[]).map((s, idx) => {
+            const best = idx === 0 && s.mean_delta_pp !== null && s.mean_delta_pp > 0;
+            return `
+            <tr class="${best ? 'row-baseline' : ''}">
+              <td><strong>${s.rep_filter}${best ? ' ★' : ''}</strong></td>
+              <td><span class="desc">${s.description}</span></td>
+              <td>${fmtDelta(s.mean_delta_pp, s.combos_evaluated >= 1 ? 999 : 0)}</td>
+              <td>${fmtDelta(s.median_delta_pp, s.combos_evaluated >= 1 ? 999 : 0)}</td>
+              <td class="green">${s.combos_improved}</td>
+              <td class="red">${s.combos_worsened}</td>
+              <td>${s.combos_evaluated} / ${d.rows.length}</td>
+              <td>${s.combos_with_any_n ?? '—'} / ${d.rows.length}</td>
+              <td>${fmtRetention(s.mean_n_retention_pct)}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const repCols = repFilters.map(r => `<th title="${r.description}">${r.name}<br><span class="desc" style="font-weight:400">Δ pp</span></th>`).join('');
+
+  const matrixCard = `
+    <div class="card">
+      <h2>Matrix — top 20 combos × wallet-rep filters</h2>
+      <div class="desc">
+        Each cell shows the per-combo opt sim-return delta (percentage points) vs the base combo
+        when the rep filter is layered on. Cell hover shows filtered n + opt TP/SL.
+        <span class="n-insuf">Grey "n=X"</span> cells are below the n ≥ ${d.notes?.min_n_for_valid_delta ?? 30}
+        threshold (= <code>SIM_MIN_N_FOR_OPTIMUM</code>) — the rows exist but there aren't enough of them
+        to publish an opt TP/SL.
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th style="min-width:220px">Combo</th>
+            <th>Base n</th>
+            <th>Base opt%</th>
+            ${repCols}
+          </tr>
+        </thead>
+        <tbody>
+          ${(() => {
+            // Baseline row at the top: no combo applied. Pulls from
+            // population_view so each rep cell shows the rep filter's
+            // standalone Δ vs the entry-gated baseline.
+            if (!pop) return '';
+            const popByName: Record<string, any> = {};
+            for (const r of (pop.rows as any[])) popByName[r.rep_filter] = r;
+            const cells = repFilters.map(rep => {
+              const r = popByName[rep.name];
+              if (!r) return '<td>—</td>';
+              const title = `n=${r.n} (retention ${r.n_retention_pct ?? '—'}%) · opt ${r.opt_avg_ret ?? '—'}% @ tp${r.opt_tp ?? '—'}/sl${r.opt_sl ?? '—'} · wr ${r.opt_win_rate ?? '—'}% · dump_rate ${r.dump_rate_pct ?? '—'}% (Δ ${r.delta_dump_rate_pp ?? '—'}pp)`;
+              return `<td title="${title}">${fmtDelta(r.delta_opt_avg_ret_pp, r.n)}</td>`;
+            }).join('');
+            return `
+            <tr class="row-baseline">
+              <td><strong>(no combo — entry-gated baseline)</strong></td>
+              <td>${pop.baseline.n}</td>
+              <td>${fmtSim(pop.baseline.opt_avg_ret)}</td>
+              ${cells}
+            </tr>`;
+          })()}
+          ${(d.rows as any[]).map((row) => {
+            const cells = repFilters.map(rep => {
+              const cell = row.cells[rep.name];
+              if (!cell) return '<td>—</td>';
+              const title = `n=${cell.n} (retention ${cell.n_retention_pct ?? '—'}%) · opt ${cell.opt_avg_ret ?? '—'}% @ tp${cell.opt_tp ?? '—'}/sl${cell.opt_sl ?? '—'} · wr ${cell.opt_win_rate ?? '—'}%`;
+              return `<td title="${title}">${fmtDelta(cell.delta_opt_ret_pp, cell.n)}</td>`;
+            }).join('');
+            return `
+            <tr>
+              <td><strong>${row.filter_spec}</strong></td>
+              <td>${row.base.n}</td>
+              <td>${fmtSim(row.base.opt_avg_ret)}</td>
+              ${cells}
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const notesCard = `
+    <div class="card">
+      <h2>How to read</h2>
+      <div class="desc">
+        <strong>Δ pp</strong> = filtered combo sim return minus base combo sim return, in percentage points.<br>
+        Positive (green) means the wallet-rep filter improves profitability on that combo.<br>
+        Negative (red) means it hurts (usually because it drops too many winners alongside losers).<br>
+        <strong>n retention</strong> = filtered sample size as a percentage of the base combo's n. A rep filter
+        that improves Δ but cuts n by 80% is a lot less useful than one that improves Δ at 50%+ retention.<br><br>
+        <strong>Rep source:</strong> creator wallet reputation only, using
+        <code>creator_prior_token_count</code>, <code>creator_prior_rug_rate</code>,
+        <code>creator_prior_avg_return</code>, and <code>creator_last_token_age_hours</code>
+        from <code>graduation_momentum</code>.
+      </div>
+    </div>
+  `;
+
+  const body = coverageCard + populationCard + summaryCard + matrixCard + notesCard;
+  return shell('Wallet Rep Analysis', '/wallet-rep-analysis', body, d);
+}
+
+// ── EXIT-SIM MATRIX PAGE ─────────────────────────────────────────────
+// Top 20 filter combos × 5 dynamic-exit strategies. Each cell = best-cell
+// Δ vs that combo's own static 10%SL/50%TP baseline. Answers "which
+// combo lifts most from dynamic exits?".
+
+export function renderExitSimMatrixHtml(data: any): string {
+  const d = data;
+
+  const fmtPct = (v: number | null | undefined): string => {
+    if (v == null) return '<span class="yellow">—</span>';
+    const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+    const sign = v > 0 ? '+' : '';
+    return `<span class="${cls}">${sign}${v.toFixed(2)}%</span>`;
+  };
+
+  const fmtDelta = (v: number | null | undefined): string => {
+    if (v == null) return '<span class="yellow">—</span>';
+    const cls = v > 0.3 ? 'green' : v < -0.3 ? 'red' : 'yellow';
+    const sign = v >= 0 ? '+' : '';
+    return `<span class="${cls}"><strong>${sign}${v.toFixed(2)}pp</strong></span>`;
+  };
+
+  const strategyLabels: Record<string, string> = {
+    momentum_reversal: 'Mom. reversal',
+    scale_out: 'Scale-out',
+    vol_adaptive: 'Vol. trail',
+    time_decayed_tp: 'Time-decay TP',
+    whale_liq: 'Whale / liq',
+  };
+
+  const overviewCard = `
+    <div class="card">
+      <h2>Exit Strategy × Combo Matrix</h2>
+      <div class="desc">
+        Each row is one of the top 20 filter combos from <code>/api/best-combos</code>.
+        For each combo we (1) find its own best static (SL × TP) cell across a 4×4 grid,
+        (2) re-run the full 5-strategy dynamic-exit grid, and (3) report the best dynamic
+        cell's Δ vs the combo's own OPTIMAL static baseline — not the global 10/50 default.
+        <br><br>
+        <strong>Sort order:</strong> by best Δ across all 5 strategies, descending.
+        Combos near the top gain the most from dynamic exits on top of their own optimal
+        static tuning; combos at the bottom are already at their optimum (or have too-thin
+        grids to rank).
+      </div>
+    </div>
+  `;
+
+  const matrixCard = (() => {
+    if (!d.rows || d.rows.length === 0) {
+      return `
+        <div class="card">
+          <h2>Matrix</h2>
+          <div class="desc"><span class="yellow">No combos found</span> — is <code>/api/best-combos</code> empty?</div>
+        </div>`;
+    }
+
+    const strategyCols = ['momentum_reversal', 'scale_out', 'vol_adaptive', 'time_decayed_tp', 'whale_liq'];
+
+    const headerCells = strategyCols
+      .map((s) => `<th>${strategyLabels[s]}</th>`)
+      .join('');
+
+    const rowsHtml = (d.rows as any[]).map((r, i) => {
+      const strategyByName = new Map<string, any>();
+      for (const c of r.strategies) strategyByName.set(c.strategy, c);
+
+      const strategyCells = strategyCols.map((name) => {
+        const c = strategyByName.get(name);
+        if (!c || c.delta_vs_static_pp == null) {
+          return `<td><span class="desc">n<${d.min_n_per_cell}</span></td>`;
+        }
+        const isBest = r.best_strategy === name;
+        return `
+          <td class="${isBest ? 'row-baseline' : ''}">
+            ${fmtDelta(c.delta_vs_static_pp)}
+            <div class="desc">${fmtPct(c.best_avg_return_pct)} · n=${c.best_n}${isBest ? ' ★' : ''}</div>
+          </td>`;
+      }).join('');
+
+      const optParams = (r.static_optimal_sl_pct != null && r.static_optimal_tp_pct != null)
+        ? `<div class="desc">${r.static_optimal_sl_pct}SL / ${r.static_optimal_tp_pct}TP</div>`
+        : '';
+
+      return `
+        <tr>
+          <td>${i + 1}</td>
+          <td><code>${r.filter_spec}</code></td>
+          <td>${r.n_rows}</td>
+          <td>${fmtPct(r.static_10_50_return_pct)}</td>
+          <td><strong>${fmtPct(r.static_optimal_return_pct)}</strong>${optParams}</td>
+          ${strategyCells}
+          <td>${fmtDelta(r.best_delta_pp)}</td>
+        </tr>`;
+    }).join('');
+
+    return `
+      <div class="card">
+        <h2>Matrix — top 20 combos × 5 strategies</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Combo</th>
+              <th>n</th>
+              <th>Static 10/50</th>
+              <th>Opt. Static</th>
+              ${headerCells}
+              <th>Best Δ</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>`;
+  })();
+
+  const notesCard = `
+    <div class="card">
+      <h2>How to read</h2>
+      <div class="desc">
+        <strong>Static 10/50</strong>: return at the global 10%SL/50%TP default — sanity-check
+        column so you can spot any drift from /api/best-combos' leaderboard value.<br>
+        <strong>Opt. Static</strong>: the best cell in a 10×12 (SL × TP) grid mirroring
+        Panel 6's (SL ∈ 3–30, TP ∈ 10–150). This is the FAIR baseline — each combo has its
+        own natural TP/SL pair, and comparing every combo against a fixed 10/50 undersells
+        combos 10/50 wasn't tuned for.<br><br>
+        Each strategy cell shows <strong>Δ vs Opt. Static</strong> in pp (top), then the best
+        dynamic-cell's raw avg return and n (bottom). ★ = the winning strategy for that row.<br>
+        <span class="green">Green</span> = Δ > +0.3 pp (meaningful lift over opt. static).
+        <span class="yellow">Yellow</span> = Δ within ±0.3 pp (noise).
+        <span class="red">Red</span> = Δ < -0.3 pp (dynamic exit hurts vs this combo's own optimum).<br><br>
+        <code>n&lt;${d.min_n_per_cell}</code> means that strategy's grid has no cell with enough samples
+        for this combo to rank — wait for more data.<br><br>
+        <strong>Why n differs from Panel 6:</strong> this matrix enforces the live-trading
+        entry gate (<code>pct_t30 ∈ [5%, 100%]</code>) — a real bot only enters positions that
+        are modestly up at T+30. Panel 6 explores all labeled rows regardless of entry state.
+        Same combo, different universes by design. Opt. (SL, TP) values should be comparable;
+        raw returns will differ.
+      </div>
+    </div>
+  `;
+
+  const body = overviewCard + matrixCard + notesCard;
+  return shell('Exit Strategy Matrix', '/exit-sim-matrix', body, d);
+}
+
+// ── PIPELINE PAGE ────────────────────────────────────────────────────────────
+
+export function renderPipelineHtml(data: any): string {
+  const grads: any[] = data.grads || [];
+  const ss = data.session_stats;
+  const activeCount: number = data.active_strategy_count || 0;
+
+  const fmt  = (v: any, dec = 1) => v == null ? '—' : Number(v).toFixed(dec);
+  const fmtP = (v: any) => v == null ? '—' : `${Number(v) > 0 ? '+' : ''}${Number(v).toFixed(1)}%`;
+
+  const chip = (text: string, color: string) =>
+    `<span style="background:${color}22;color:${color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">${text}</span>`;
+
+  const statusChip = (s: string) => {
+    if (s === 'TRADED')   return chip('TRADED',   '#22c55e');
+    if (s === 'FILTERED') return chip('FILTERED', '#f59e0b');
+    return chip('NO EVAL', '#f87171');
+  };
+
+  const labelChip = (l: string | null) => {
+    if (!l) return '<span style="color:#475569">—</span>';
+    const c = l === 'PUMP' ? '#22c55e' : l === 'DUMP' ? '#f87171' : '#94a3b8';
+    return `<span style="color:${c}">${l}</span>`;
+  };
+
+  // Session funnel cards
+  const fCard = (label: string, val: any, color: string, note?: string) => `
+    <div style="background:#1e293b;border-radius:6px;padding:12px 16px;min-width:120px;flex:1">
+      <div style="color:${color};font-size:22px;font-weight:bold;line-height:1">${val ?? '—'}</div>
+      <div style="color:#94a3b8;font-size:11px;margin-top:4px">${label}</div>
+      ${note ? `<div style="color:#475569;font-size:10px;margin-top:2px">${note}</div>` : ''}
+    </div>`;
+
+  const funnelHtml = ss ? `
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:20px">
+      ${fCard('Verified Grads',        ss.verified_graduations, '#60a5fa', 'listener')}
+      ${fCard('Observations Started',  ss.observations_started,  '#22d3ee', 'price collector')}
+      ${fCard('Stale / No Eval',       ss.stale_graduations,     '#f87171', 'arrived > T+25')}
+      ${fCard('T+30 Fired',            ss.t30_callbacks_fired,   '#a3e635', 'strategies ran')}
+      ${fCard('T+30 Timeouts',         ss.t30_timeouts,          '#f59e0b', 'pool fetch failed')}
+    </div>
+  ` : `<div style="color:#64748b;margin-bottom:20px">No session stats (listener not running or just restarted)</div>`;
+
+  const rows = grads.map(g => {
+    // Pool died = T+30 was reached (strategies evaluated) but T+300 never arrived
+    // and the token is old enough that it should have completed by now (>6 min).
+    const gradMs = g.grad_time ? new Date(g.grad_time + 'Z').getTime() : null;
+    const minsOld = gradMs ? (Date.now() - gradMs) / 60000 : 0;
+    const t30Reached = g.pct_t30 != null || g.skip_count > 0 || g.trade_count > 0;
+    const poolDied = t30Reached && g.pct_t300 == null && minsOld > 6;
+
+    const noEvalNote = g.status === 'NO_EVAL'
+      ? `<span style="color:#475569;font-size:10px"> stale or T+30 timeout</span>`
+      : '';
+    const poolDiedNote = poolDied
+      ? `<span style="background:#33415522;color:#64748b;padding:1px 6px;border-radius:8px;font-size:10px;margin-left:4px" title="Pool liquidity drained before T+300 — token dumped hard, no 5-min data. Not a bug.">pool dead</span>`
+      : '';
+    const reasons = g.skip_reasons
+      ? g.skip_reasons.split(',').map((r: string) =>
+          `<span style="color:#94a3b8;font-size:10px;margin-right:4px">${escHtml(r.trim())}</span>`
+        ).join('')
+      : (g.status === 'NO_EVAL' ? `<span style="color:#475569;font-size:10px">not evaluated</span>` : '—');
+
+    return `<tr style="border-bottom:1px solid #1e293b">
+      <td style="color:#60a5fa;font-weight:bold">#${g.id}</td>
+      <td style="white-space:nowrap">${g.mint ? `<span style="display:inline-flex;align-items:center;gap:3px"><a href="https://dexscreener.com/solana/${g.mint}" target="_blank" title="${g.mint}" style="font-family:monospace;font-size:10px;color:#64748b;text-decoration:none">${g.mint.slice(0,8)}…</a><button onclick="navigator.clipboard.writeText('${g.mint}').then(()=>{this.textContent='✓';setTimeout(()=>{this.textContent='⎘'},1200)})" title="Copy mint address" style="background:none;border:none;cursor:pointer;color:#475569;font-size:11px;padding:0 2px;line-height:1">⎘</button></span>` : '—'}</td>
+      <td style="color:#475569;font-size:11px">${g.grad_time ? g.grad_time.replace('T',' ').slice(0,19) : '—'}</td>
+      <td style="text-align:right">${fmt(g.vel)}</td>
+      <td style="text-align:right">${fmt(g.top5)}</td>
+      <td style="text-align:right">${fmt(g.dev_pct)}</td>
+      <td style="text-align:right">${fmtP(g.pct_t30)}</td>
+      <td style="text-align:right">${fmtP(g.pct_t300)}</td>
+      <td>${labelChip(g.label)}</td>
+      <td>${statusChip(g.status)}${noEvalNote}${poolDiedNote}</td>
+      <td>${reasons}</td>
+      <td style="text-align:center;color:${g.trade_count > 0 ? '#22c55e' : '#475569'}">${g.trade_count}</td>
+      <td style="text-align:center;color:#94a3b8">${g.skip_count}</td>
+    </tr>`;
+  }).join('');
+
+  const body = `
+    <h2 style="margin:0 0 4px;color:#60a5fa">Graduation Pipeline</h2>
+    <p style="margin:0 0 20px;color:#64748b">
+      Session funnel: graduation → price observation → T+30 → strategy evaluation → trade/skip.<br>
+      Active strategies: <strong style="color:#e2e8f0">${activeCount}</strong> —
+      so each graduation should produce ${activeCount} trade or skip records when it passes T+30.
+    </p>
+
+    ${funnelHtml}
+
+    <div style="background:#172033;border:1px solid #334155;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#64748b">
+      <strong style="color:#94a3b8">Status key:</strong>
+      ${chip('TRADED','#22c55e')} at least 1 strategy entered &nbsp;·&nbsp;
+      ${chip('FILTERED','#f59e0b')} all ${activeCount} strategies ran and rejected (see Skip Reasons) &nbsp;·&nbsp;
+      ${chip('NO EVAL','#f87171')} price collector rejected before strategies ran — stale arrival (&gt;T+25) or T+30 pool-fetch timeout &nbsp;·&nbsp;
+      <span style="background:#33415522;color:#64748b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:bold">pool dead</span> T+30 fired but pool drained before T+300 — token dumped hard, not a bug
+    </div>
+
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="color:#475569;font-size:11px;text-align:left;border-bottom:2px solid #334155;padding-bottom:4px">
+        <th style="padding:6px 8px">ID</th>
+        <th style="padding:6px 8px">Mint</th>
+        <th style="padding:6px 8px">Grad Time (UTC)</th>
+        <th style="padding:6px 8px;text-align:right">vel</th>
+        <th style="padding:6px 8px;text-align:right">top5%</th>
+        <th style="padding:6px 8px;text-align:right">dev%</th>
+        <th style="padding:6px 8px;text-align:right">pct_t30</th>
+        <th style="padding:6px 8px;text-align:right">pct_t300</th>
+        <th style="padding:6px 8px">Label</th>
+        <th style="padding:6px 8px">Status</th>
+        <th style="padding:6px 8px">Skip Reasons</th>
+        <th style="padding:6px 8px;text-align:center">Trades</th>
+        <th style="padding:6px 8px;text-align:center">Skips</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>`;
+
+  return shell('Graduation Pipeline', '/pipeline', body, data);
 }

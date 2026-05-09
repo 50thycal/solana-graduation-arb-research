@@ -17,6 +17,17 @@
 
 import Database from 'better-sqlite3';
 
+import {
+  SIM_CHECKPOINT_COLUMNS,
+  SIM_DEFAULT_COST_PCT,
+  SIM_MIN_N_FOR_OPTIMUM,
+  SIM_MIN_TP_HITS_FOR_OPTIMUM,
+  SIM_SL_GAP_PENALTY,
+  SIM_SL_GRID,
+  SIM_TP_GAP_PENALTY,
+  SIM_TP_GRID,
+} from './sim-constants';
+
 // ──────────────────────────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────────────────────────
@@ -36,8 +47,11 @@ export interface ThesisScorecard {
   };
   best_known_baseline: {
     filter: string;
-    sl_pct: number;
-    tp_pct: number;
+    /** Per-combo optimal stop-loss (% from entry) — null if insufficient data. */
+    opt_sl_pct: number | null;
+    /** Per-combo optimal take-profit (% from entry) — null if insufficient data. */
+    opt_tp_pct: number | null;
+    /** Avg cost-adjusted return at the combo's optimum (tp, sl) cell. */
     avg_return_pct: number;
     n: number;
     note: string;
@@ -50,6 +64,12 @@ export interface DataQualityFlags {
   last_graduation_seconds_ago: number | null;
   stalled: boolean;
   timestamp_drift_detected: boolean;
+  /** Rows where every pct_t5..pct_t300 (60 checkpoints, every 5s) is non-null. */
+  full_5s_grid_count: number;
+  /** Rows with pct_t300 non-null (complete 300s observation). Denominator for full_5s_grid_pct. */
+  complete_observations_count: number;
+  /** full_5s_grid_count / complete_observations_count, as percentage. Null if no complete obs. */
+  full_5s_grid_pct: number | null;
 }
 
 export interface EnrichedGraduation {
@@ -76,7 +96,13 @@ export interface EnrichedGraduation {
 
 export function computeThesisScorecard(
   db: Database.Database,
-  currentBestCombo?: { filter_spec: string; n: number; sim_avg_return_10sl_50tp_pct: number | null },
+  currentBestCombo?: {
+    filter_spec: string;
+    n: number;
+    opt_tp: number | null;
+    opt_sl: number | null;
+    opt_avg_ret: number | null;
+  },
 ): ThesisScorecard {
   const labels = db.prepare(`
     SELECT label, COUNT(*) as count
@@ -131,19 +157,19 @@ export function computeThesisScorecard(
     best_known_baseline: currentBestCombo
       ? {
           filter: currentBestCombo.filter_spec,
-          sl_pct: 10,
-          tp_pct: 50,
-          avg_return_pct: currentBestCombo.sim_avg_return_10sl_50tp_pct ?? 0,
+          opt_sl_pct: currentBestCombo.opt_sl,
+          opt_tp_pct: currentBestCombo.opt_tp,
+          avg_return_pct: currentBestCombo.opt_avg_ret ?? 0,
           n: currentBestCombo.n,
-          note: 'Live leader from leaderboard (n≥100, beats old baseline). Sim return updates as new data arrives — value at promotion is recorded in CLAUDE.md.',
+          note: 'Live leader from leaderboard (n≥100, beats entry-gated baseline). Per-combo optimal TP/SL from SIM_TP_GRID × SIM_SL_GRID — replaces retired fixed 10%SL/50%TP framework (2026-04-21).',
         }
       : {
-          filter: 'vel < 20 + top5 < 10%',
-          sl_pct: 10,
-          tp_pct: 50,
-          avg_return_pct: 5.31,
-          n: 118,
-          note: 'Current best-known baseline — leaderboard not yet computed. See CLAUDE.md for promotion value.',
+          filter: 'none',
+          opt_sl_pct: null,
+          opt_tp_pct: null,
+          avg_return_pct: 0,
+          n: 0,
+          note: 'No live leader yet — no combo has n ≥ 100 with opt_avg_ret > entry-gated baseline + 0.3 pp.',
         },
   };
 }
@@ -201,12 +227,31 @@ export function computeDataQualityFlags(db: Database.Database): DataQualityFlags
   // (skip for now — return false; the v2 panel regime check is richer, handle there)
   const timestampDrift = false;
 
+  // Full 5s grid coverage — what % of complete observations have every pct_tN populated?
+  // Pre-rollout rows have NULLs for t65..t295; this surfaces how much of the collected
+  // dataset can be used by the widened simulators and new long-horizon path metrics.
+  const gridCols: string[] = [];
+  for (let sec = 5; sec <= 300; sec += 5) gridCols.push(`pct_t${sec}`);
+  const gridNotNull = gridCols.map(c => `${c} IS NOT NULL`).join(' AND ');
+  const fullGridCount = (db.prepare(
+    `SELECT COUNT(*) AS n FROM graduation_momentum WHERE ${gridNotNull}`
+  ).get() as { n: number }).n;
+  const completeObsCount = (db.prepare(
+    'SELECT COUNT(*) AS n FROM graduation_momentum WHERE pct_t300 IS NOT NULL'
+  ).get() as { n: number }).n;
+  const fullGridPct = completeObsCount > 0
+    ? +(fullGridCount / completeObsCount * 100).toFixed(1)
+    : null;
+
   return {
     price_source_pumpswap_all_last_10: allHavePumpswap,
     null_fields_in_last_10: nullFields,
     last_graduation_seconds_ago: lastGradSecondsAgo,
     stalled: lastGradSecondsAgo !== null && lastGradSecondsAgo > 600,
     timestamp_drift_detected: timestampDrift,
+    full_5s_grid_count: fullGridCount,
+    complete_observations_count: completeObsCount,
+    full_5s_grid_pct: fullGridPct,
   };
 }
 
@@ -317,10 +362,14 @@ export const FILTER_CATALOG: FilterDef[] = [
   // Dev Wallet
   { name: 'dev < 3%',           group: 'Dev',      where: 'dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 3' },
   { name: 'dev < 5%',           group: 'Dev',      where: 'dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5' },
-  // Liquidity
+  // Liquidity (T+30 — available at entry decision time)
   { name: 'liq > 50',           group: 'Liquidity', where: 'liquidity_sol_t30 > 50' },
   { name: 'liq > 100',          group: 'Liquidity', where: 'liquidity_sol_t30 > 100' },
   { name: 'liq > 150',          group: 'Liquidity', where: 'liquidity_sol_t30 > 150' },
+  // T+300 liquidity (`liquidity_sol_t300`) is intentionally NOT a FILTER_CATALOG entry —
+  // it's future data relative to a T+30 entry decision and using it as an entry filter
+  // creates look-ahead bias. The field stays available for backwards-looking research
+  // (see exit-sim.ts whale-sell / liq-drop exit simulation).
   // Path shape
   { name: 'mono > 0.5',         group: 'Path Mono', where: 'monotonicity_0_30 > 0.5' },
   { name: 'mono > 0.66',        group: 'Path Mono', where: 'monotonicity_0_30 > 0.66' },
@@ -340,31 +389,315 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'clean_dev',          group: 'Creator Rep', where: 'creator_prior_rug_rate IS NOT NULL AND creator_prior_rug_rate < 0.3' },
   { name: 'serial_rugger',      group: 'Creator Rep', where: 'creator_prior_rug_rate >= 0.7' },
   { name: 'rapid_fire',         group: 'Creator Rep', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1' },
+  // Sniper detection — distinct wallets buying in T+0..T+2s window. Populated
+  // at T+35 alongside buy_pressure_*, so strategies using these auto-delay 5s.
+  { name: 'snipers <= 2',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 2' },
+  { name: 'snipers <= 5',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 5' },
+  { name: 'snipers > 5',        group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 > 5' },
+  { name: 'snipers > 10',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 > 10' },
+  // Sniper-wallet velocity = avg # of EARLIER graduations that this graduation's
+  // T+0..T+2 buyer wallets also sniped. Higher = more bot-heavy snipe set.
+  { name: 'wallet_vel_avg < 5', group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 5' },
+  { name: 'wallet_vel_avg < 10',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 10' },
+  { name: 'wallet_vel_avg < 20',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 20' },
+  { name: 'wallet_vel_avg >= 20', group: 'Sniper Vel',where: 'sniper_wallet_velocity_avg >= 20' },
 ];
 
-/** Entry gate shared by all candidates — matches the baseline. */
-const ENTRY_GATE = 'pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100 AND pct_t300 IS NOT NULL';
+/** Entry gate shared by all candidates — kept at +5..+100 for research-side
+ *  evaluation. Trading default is wider (-99..1000 in `config.ts`) to capture
+ *  deep-crash entries; the asymmetry is intentional. Widening this constant
+ *  to match trading was tried 2026-05-01 (commit 04dff56) but the heavy-cache
+ *  recompute deadlocked Railway — Panel 4/6/7 simulators iterate over eligible
+ *  rows × SIM_TP_GRID × SIM_SL_GRID, and a 3× row expansion blew the budget.
+ *  Reverted in next commit. Promotion bar comparisons are approximate as a
+ *  result — call out in writeups when relevant. */
+export const ENTRY_GATE = 'pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100 AND pct_t300 IS NOT NULL';
+
+/** Build the entry gate dynamically for a specific entry checkpoint second.
+ *  Mirrors ENTRY_GATE shape but anchors the +5..+100 band on `pct_t<entrySec>`
+ *  instead of the hard-coded `pct_t30`. Used by the entry-time-matrix research
+ *  panel to evaluate filter combos at later entry points (T+60, T+90, T+120,
+ *  T+180, T+240) without touching the live trading flow. */
+export function entryGateFor(entrySec: number): string {
+  return `pct_t${entrySec} IS NOT NULL AND pct_t${entrySec} >= 5 AND pct_t${entrySec} <= 100 AND pct_t300 IS NOT NULL`;
+}
+
+export interface SimulateComboResult {
+  n: number;
+  pump: number;
+  avg_return_t30_to_t300_pct: number | null;
+  /** Per-combo optimal take-profit (% from entry) across SIM_TP_GRID × SIM_SL_GRID. Null when n < SIM_MIN_N_FOR_OPTIMUM. */
+  opt_tp: number | null;
+  /** Per-combo optimal stop-loss (% from entry). */
+  opt_sl: number | null;
+  /** Avg cost-adjusted return at the optimal (tp, sl) cell. */
+  opt_avg_ret: number | null;
+  /** Win rate at the optimal (tp, sl) cell. */
+  opt_win_rate: number | null;
+}
+
+/**
+ * One cell of the 12×10 TP/SL grid. tp/sl are the % thresholds from entry,
+ * avg_ret is cost-adjusted, win_rate is % of trades with exitRet > 0,
+ * n_hit_tp is how many of the n trades actually hit the TP level (used to
+ * gate the optimum picker against single-trade outliers).
+ */
+export interface SimulateComboCell {
+  tp: number;
+  sl: number;
+  avg_ret: number;
+  win_rate: number;
+  n_hit_tp: number;
+}
+
+export interface SimulateComboGridResult {
+  n: number;
+  pump: number;
+  avg_return_t30_to_t300_pct: number | null;
+  /** Flat 12×10 grid; index = ti * SIM_SL_GRID.length + si. Always present (even when n < SIM_MIN_N_FOR_OPTIMUM). Empty array when n === 0. */
+  grid: SimulateComboCell[];
+}
+
+/**
+ * Yield to the event loop. Used inside the heavy `computeBestCombos` candidate
+ * loop so that each ~50-iteration chunk of synchronous SQLite work is followed
+ * by a microtask break, giving HTTP requests, WebSocket callbacks, and timers
+ * (especially the price-collector's T+30 deadline) a chance to fire instead of
+ * waiting for the entire ~20s loop to finish. Without this the gist-sync cycle
+ * blocks the loop end-to-end and causes the timer-drift pattern observed in
+ * directPriceCollector.lastT30Timeouts. Exported so other heavy panels in this
+ * package can use the same primitive.
+ */
+export function yieldEventLoop(): Promise<void> {
+  return new Promise(resolve => setImmediate(resolve));
+}
+
+/** Cadence for inner-loop yields. Picked so that worst-case sync block between
+ *  yields is ~50 × ~13ms simulateCombo = ~650ms — well under the 1s threshold
+ *  where T+30 deadline timers start drifting noticeably. */
+const YIELD_EVERY_N_CANDIDATES = 50;
+
+/**
+ * Run the per-combo TP/SL grid optimizer against `graduation_momentum`
+ * restricted to rows matching `whereClause` (combined with the shared
+ * ENTRY_GATE + label gate). For each candidate WHERE subset this walks
+ * the SIM_TP_GRID × SIM_SL_GRID (12×10 = 120 cells) and returns the
+ * cell with max avg cost-adjusted return, gated by SIM_MIN_N_FOR_OPTIMUM
+ * and SIM_MIN_TP_HITS_FOR_OPTIMUM to avoid low-data overfits.
+ *
+ * Mirrors Panel 4 / Panel 6's in-memory grid (src/api/filter-v2-data.ts ::
+ * runFilterPanel4) so best-combos.json and /filter-analysis-v2 stay in sync.
+ * Pass a trusted WHERE clause (no user input).
+ *
+ * `entrySec` (default 30) anchors the entry on `pct_t<entrySec>` and walks
+ * checkpoints strictly AFTER that second. Used by the entry-time-matrix
+ * research panel to compare T+30 vs T+60 vs T+90 vs T+120 vs T+180 vs T+240
+ * entry points on the same combo. Default value preserves backwards-compatible
+ * T+30 behavior — every existing caller is unchanged.
+ */
+/**
+ * Compute the full 12×10 TP/SL grid for a candidate filter set without
+ * applying the optimum picker. Used by simulateCombo (which then picks the
+ * best cell) and by the counterfactual panel (which compares the strategy's
+ * configured cell to the top-3 alternatives in the same grid).
+ *
+ * Same query, same gap penalties, same cost model as simulateCombo — just
+ * exposes every cell instead of only the winner.
+ */
+export function simulateComboFullGrid(
+  db: Database.Database,
+  whereClause: string,
+  entrySec: number = 30,
+): SimulateComboGridResult {
+  // Walk only checkpoints strictly after the entry — earlier columns are in
+  // the past from the entry's perspective and meaningless for the SL/TP walk.
+  // For entrySec=30 this preserves the legacy T+40..T+300 walk exactly.
+  const walkColsArr = SIM_CHECKPOINT_COLUMNS.filter(c => {
+    const sec = parseInt(c.slice(5), 10);
+    return sec > entrySec;
+  });
+  const entryCol = `pct_t${entrySec}`;
+  // Dedupe in case the entry column happens to be in SIM_CHECKPOINT_COLUMNS
+  // (it currently isn't for entrySec ∈ {30, 60, 90, 120, 180, 240} since those
+  // are step-5 / step-10 checkpoints — but stay defensive).
+  const selectCols = walkColsArr.includes(entryCol as `pct_t${number}`)
+    ? walkColsArr.join(', ')
+    : `${entryCol}, ${walkColsArr.join(', ')}`;
+  const rows = db.prepare(`
+    SELECT
+      label,
+      ${selectCols},
+      round_trip_slippage_pct
+    FROM graduation_momentum
+    WHERE label IS NOT NULL
+      AND ${entryGateFor(entrySec)}
+      AND (${whereClause})
+  `).all() as Array<{
+    label: string;
+    pct_t300: number;
+    round_trip_slippage_pct: number | null;
+    [col: string]: number | string | null;
+  }>;
+
+  const n = rows.length;
+  if (n === 0) {
+    return { n: 0, pump: 0, avg_return_t30_to_t300_pct: null, grid: [] };
+  }
+
+  let pump = 0;
+  let rawRetSum = 0;
+  let rawRetN = 0;
+  for (const r of rows) {
+    if (r.label === 'PUMP') pump++;
+    const entryPct = r[entryCol] as number | null | undefined;
+    if (typeof entryPct === 'number' && typeof r.pct_t300 === 'number') {
+      rawRetSum += ((1 + r.pct_t300 / 100) / (1 + entryPct / 100) - 1) * 100;
+      rawRetN++;
+    }
+  }
+
+  const tpCount = SIM_TP_GRID.length;
+  const slCount = SIM_SL_GRID.length;
+  const grid: SimulateComboCell[] = new Array(tpCount * slCount);
+
+  for (let ti = 0; ti < tpCount; ti++) {
+    const tp = SIM_TP_GRID[ti];
+    for (let si = 0; si < slCount; si++) {
+      const sl = SIM_SL_GRID[si];
+      let sum = 0;
+      let wins = 0;
+      let tpHits = 0;
+      for (let k = 0; k < n; k++) {
+        const r = rows[k];
+        const entryPct = r[entryCol] as number;
+        const entryRatio = 1 + entryPct / 100;
+        const stopLevelPct = (entryRatio * (1 - sl / 100) - 1) * 100;
+        const tpLevelPct = (entryRatio * (1 + tp / 100) - 1) * 100;
+        const cost = r.round_trip_slippage_pct ?? SIM_DEFAULT_COST_PCT;
+
+        let exitRet: number | null = null;
+        for (const cp of walkColsArr) {
+          const v = r[cp] as number | null | undefined;
+          if (v == null) continue;
+          if (v <= stopLevelPct) {
+            const exitRatio = (1 + v / 100) * (1 - SIM_SL_GAP_PENALTY);
+            exitRet = (exitRatio / entryRatio - 1) * 100 - cost;
+            break;
+          }
+          if (v >= tpLevelPct) {
+            exitRet = tp * (1 - SIM_TP_GAP_PENALTY) - cost;
+            tpHits++;
+            break;
+          }
+        }
+        if (exitRet === null) {
+          const fallVal = r.pct_t300 as number;
+          exitRet = ((1 + fallVal / 100) / entryRatio - 1) * 100 - cost;
+        }
+        sum += exitRet;
+        if (exitRet > 0) wins++;
+      }
+      grid[ti * slCount + si] = {
+        tp, sl,
+        avg_ret: +(sum / n).toFixed(2),
+        win_rate: +(wins / n * 100).toFixed(1),
+        n_hit_tp: tpHits,
+      };
+    }
+  }
+
+  return {
+    n,
+    pump,
+    avg_return_t30_to_t300_pct: rawRetN > 0 ? +(rawRetSum / rawRetN).toFixed(2) : null,
+    grid,
+  };
+}
+
+export function simulateCombo(
+  db: Database.Database,
+  whereClause: string,
+  entrySec: number = 30,
+): SimulateComboResult {
+  const full = simulateComboFullGrid(db, whereClause, entrySec);
+  const { n, pump, avg_return_t30_to_t300_pct, grid } = full;
+
+  if (n === 0) {
+    return {
+      n: 0,
+      pump: 0,
+      avg_return_t30_to_t300_pct: null,
+      opt_tp: null,
+      opt_sl: null,
+      opt_avg_ret: null,
+      opt_win_rate: null,
+    };
+  }
+
+  // Pick the optimum: max avg among cells with tp_hits >= SIM_MIN_TP_HITS_FOR_OPTIMUM,
+  // gated on n >= SIM_MIN_N_FOR_OPTIMUM.
+  let opt: SimulateComboCell | null = null;
+  if (n >= SIM_MIN_N_FOR_OPTIMUM) {
+    for (const cell of grid) {
+      if (cell.n_hit_tp < SIM_MIN_TP_HITS_FOR_OPTIMUM) continue;
+      if (opt === null || cell.avg_ret > opt.avg_ret) opt = cell;
+    }
+  }
+
+  return {
+    n,
+    pump,
+    avg_return_t30_to_t300_pct,
+    opt_tp: opt ? opt.tp : null,
+    opt_sl: opt ? opt.sl : null,
+    opt_avg_ret: opt ? opt.avg_ret : null,
+    opt_win_rate: opt ? opt.win_rate : null,
+  };
+}
+
+/** Reconstruct the combined SQL WHERE for a list of filter names in FILTER_CATALOG. */
+export function whereForFilterNames(names: string[]): string | null {
+  const clauses: string[] = [];
+  for (const name of names) {
+    const f = FILTER_CATALOG.find((x) => x.name === name);
+    if (!f) return null;
+    clauses.push(`(${f.where})`);
+  }
+  return clauses.length > 0 ? clauses.join(' AND ') : null;
+}
 
 export interface BestComboRow {
   filter_spec: string;        // e.g. "vel 5-20 + holders >= 10"
   filters: string[];          // individual filter names for machine parsing
   n: number;
-  win_rate_pct: number | null;
-  avg_return_t30_to_t300_pct: number | null;
-  sim_avg_return_10sl_50tp_pct: number | null;
-  sim_win_rate_10sl_50tp_pct: number | null;
-  beats_baseline: boolean;    // sim_avg_return > baseline + 0.3pp on n>=100
+  win_rate_pct: number | null;                 // PUMP-label rate on raw labeled subset (pre-simulation)
+  avg_return_t30_to_t300_pct: number | null;   // raw buy-and-hold return T+30 → T+300
+  opt_tp: number | null;                       // per-combo optimal TP across SIM_TP_GRID × SIM_SL_GRID
+  opt_sl: number | null;                       // per-combo optimal SL
+  opt_avg_ret: number | null;                  // avg cost-adjusted return at the optimum cell
+  opt_win_rate: number | null;                 // win rate at the optimum cell
+  beats_baseline: boolean;                     // opt_avg_ret > baseline + 0.3pp on n ≥ 100
 }
 
-/** Rank filters and filter pairs by 10%SL/50%TP simulation on labeled rows. */
-export function computeBestCombos(
+/**
+ * Rank filters and filter pairs by per-combo TP/SL-optimized simulation on
+ * labeled rows. Each candidate is run through the SIM_TP_GRID × SIM_SL_GRID
+ * (12×10 cells) and reported at its own best cell — matches Panel 6's
+ * `top_pairs` approach in filter-v2-data.ts. Supersedes the earlier fixed
+ * 10%SL/50%TP ranking (retired 2026-04-21).
+ */
+export async function computeBestCombos(
   db: Database.Database,
   opts: { min_n?: number; top?: number; include_pairs?: boolean } = {},
-): { generated_at: string; baseline_avg_return_pct: number; rows: BestComboRow[] } {
+): Promise<{ generated_at: string; baseline_avg_return_pct: number; rows: BestComboRow[] }> {
   const minN = opts.min_n ?? 20;
   const top = opts.top ?? 20;
   const includePairs = opts.include_pairs !== false;
-  const baseline = 1.4;
+  // Baseline: avg cost-adjusted return across ALL entry-gated labeled rows at
+  // their own grid optimum. Updated each run so promotion gate (+0.3 pp) is
+  // meaningful against the current population, not a stale historical anchor.
+  const baselineResult = simulateCombo(db, '1=1');
+  const baseline = baselineResult.opt_avg_ret ?? 0;
 
   // Single filters
   const candidates: Array<{ name: string; filters: string[]; where: string }> = [];
@@ -392,103 +725,37 @@ export function computeBestCombos(
     }
   }
 
-  // Evaluate each candidate via SQL aggregation
+  // Evaluate each candidate via SQL aggregation. Yield every
+  // YIELD_EVERY_N_CANDIDATES iterations so the main loop stays responsive —
+  // see yieldEventLoop comment for the timer-drift rationale.
   const rows: BestComboRow[] = [];
+  let iter = 0;
   for (const c of candidates) {
-    const stats = db.prepare(`
-      SELECT
-        COUNT(*) as n,
-        SUM(CASE WHEN label='PUMP' THEN 1 ELSE 0 END) as pump,
-        AVG((1.0 + pct_t300/100.0) / (1.0 + pct_t30/100.0) * 100.0 - 100.0) as avg_return
-      FROM graduation_momentum
-      WHERE label IS NOT NULL
-        AND ${ENTRY_GATE}
-        AND (${c.where})
-    `).get() as { n: number; pump: number; avg_return: number | null };
-
-    if (stats.n < minN) continue;
-
-    // Simulate 10% SL / 50% TP over the rows (pct_t40 .. pct_t300 fall-through).
-    const simRows = db.prepare(`
-      SELECT
-        pct_t30, pct_t40, pct_t50, pct_t60, pct_t90,
-        pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
-        round_trip_slippage_pct
-      FROM graduation_momentum
-      WHERE label IS NOT NULL
-        AND ${ENTRY_GATE}
-        AND (${c.where})
-    `).all() as Array<{
-      pct_t30: number;
-      pct_t40: number | null;
-      pct_t50: number | null;
-      pct_t60: number | null;
-      pct_t90: number | null;
-      pct_t120: number | null;
-      pct_t150: number | null;
-      pct_t180: number | null;
-      pct_t240: number | null;
-      pct_t300: number;
-      round_trip_slippage_pct: number | null;
-    }>;
-
-    let simSum = 0;
-    let simWins = 0;
-    let simN = 0;
-    const SL_GAP = 0.30;   // adverse gap on stop-loss exits — price-multiplier model, mirrors trade-logger.ts:112
-    const TP_GAP = 0.10;   // adverse gap on take-profit exits
-    const DEFAULT_COST = 3.0;
-    const checkpoints: Array<'pct_t40'|'pct_t50'|'pct_t60'|'pct_t90'|'pct_t120'|'pct_t150'|'pct_t180'|'pct_t240'|'pct_t300'> =
-      ['pct_t40','pct_t50','pct_t60','pct_t90','pct_t120','pct_t150','pct_t180','pct_t240','pct_t300'];
-
-    for (const r of simRows) {
-      const ep = r.pct_t30;
-      const openM = 1 + ep / 100;
-      const slLvl = (openM * 0.9 - 1) * 100;      // 10% SL from entry
-      const tpLvl = (openM * 1.5 - 1) * 100;      // 50% TP from entry
-      const cost = r.round_trip_slippage_pct ?? DEFAULT_COST;
-
-      let exit: number | null = null;
-      for (const cp of checkpoints) {
-        const cv = r[cp];
-        if (cv === null) continue;
-        if (cv <= slLvl) {
-          // Price-multiplier gap: observed price * (1 - SL_GAP), return vs entry
-          const exitRatio = (1 + cv / 100) * (1 - SL_GAP);
-          exit = (exitRatio / openM - 1) * 100;
-          break;
-        }
-        if (cv >= tpLvl) { exit = 50 * (1 - TP_GAP); break; }
-      }
-      if (exit === null) {
-        // Fall through to T+300 — compute return from entry to T+300
-        exit = ((1 + r.pct_t300 / 100) / (1 + ep / 100) - 1) * 100;
-      }
-      const net = exit - cost;
-      simSum += net;
-      if (net > 0) simWins++;
-      simN++;
+    if (iter > 0 && iter % YIELD_EVERY_N_CANDIDATES === 0) {
+      await yieldEventLoop();
     }
-
-    const simAvg = simN > 0 ? +(simSum / simN).toFixed(2) : null;
-    const simWr = simN > 0 ? +(simWins / simN * 100).toFixed(1) : null;
+    iter++;
+    const result = simulateCombo(db, c.where);
+    if (result.n < minN) continue;
 
     rows.push({
       filter_spec: c.name,
       filters: c.filters,
-      n: stats.n,
-      win_rate_pct: stats.n > 0 ? +(stats.pump / stats.n * 100).toFixed(1) : null,
-      avg_return_t30_to_t300_pct: stats.avg_return !== null ? +stats.avg_return.toFixed(2) : null,
-      sim_avg_return_10sl_50tp_pct: simAvg,
-      sim_win_rate_10sl_50tp_pct: simWr,
-      beats_baseline: simAvg !== null && stats.n >= 100 && simAvg > baseline + 0.3,
+      n: result.n,
+      win_rate_pct: result.n > 0 ? +(result.pump / result.n * 100).toFixed(1) : null,
+      avg_return_t30_to_t300_pct: result.avg_return_t30_to_t300_pct,
+      opt_tp: result.opt_tp,
+      opt_sl: result.opt_sl,
+      opt_avg_ret: result.opt_avg_ret,
+      opt_win_rate: result.opt_win_rate,
+      beats_baseline: result.opt_avg_ret !== null && result.n >= 100 && result.opt_avg_ret > baseline + 0.3,
     });
   }
 
-  // Sort by simulation avg return (nulls last), then by n
+  // Sort by per-combo opt_avg_ret (nulls last), then by n
   rows.sort((a, b) => {
-    const av = a.sim_avg_return_10sl_50tp_pct;
-    const bv = b.sim_avg_return_10sl_50tp_pct;
+    const av = a.opt_avg_ret;
+    const bv = b.opt_avg_ret;
     if (av === null && bv === null) return b.n - a.n;
     if (av === null) return 1;
     if (bv === null) return -1;
@@ -498,7 +765,7 @@ export function computeBestCombos(
 
   return {
     generated_at: new Date().toISOString(),
-    baseline_avg_return_pct: baseline,
+    baseline_avg_return_pct: +baseline.toFixed(2),
     rows: rows.slice(0, top),
   };
 }

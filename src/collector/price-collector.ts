@@ -5,42 +5,33 @@ import {
   insertPoolObservation,
   markObservationComplete,
   updateMomentumPrice,
+  updateMomentumLiquidity,
   updateMomentumOpenPrice,
 } from '../db/queries';
 import { MomentumLabeler } from '../analysis/momentum-labeler';
 import { CompetitionDetector } from './competition-detector';
+import { SwapLogger } from './swap-logger';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('price-collector');
 
-// Momentum research schedule: T+0 for open price, then checkpoints for price tracking.
-// Every 5s for the first 60s (for price path shape analysis), then every 30s until T+300,
-// then T+600 for final state.
-const SNAPSHOT_SCHEDULE = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 90, 120, 150, 180, 240, 300, 600];
+// Momentum research schedule: T+0 for open price, then every 5s through T+300
+// (full 5-minute monitoring window, 60 snapshots), plus T+600 for final state.
+const SNAPSHOT_SCHEDULE: number[] = (() => {
+  const s: number[] = [];
+  for (let sec = 0; sec <= 300; sec += 5) s.push(sec);
+  s.push(600);
+  return s;
+})();
 
 // Map snapshot seconds to momentum checkpoint column names
-const CHECKPOINT_MAP: Record<number, string> = {
-  5:  't5',
-  10: 't10',
-  15: 't15',
-  20: 't20',
-  25: 't25',
-  30: 't30',
-  35: 't35',
-  40: 't40',
-  45: 't45',
-  50: 't50',
-  55: 't55',
-  60: 't60',
-  90: 't90',
-  120: 't120',
-  150: 't150',
-  180: 't180',
-  240: 't240',
-  300: 't300',
-  600: 't600',
-};
+const CHECKPOINT_MAP: Record<number, string> = (() => {
+  const m: Record<number, string> = {};
+  for (let sec = 5; sec <= 300; sec += 5) m[sec] = `t${sec}`;
+  m[600] = 't600';
+  return m;
+})();
 
 const LAMPORTS_PER_SOL = new BN(1_000_000_000);
 const TOKEN_DECIMAL_FACTOR = new BN(10 ** 6);
@@ -66,12 +57,26 @@ export interface ObservationContext {
 // total_sol_raised is unexpectedly null.
 const PUMP_GRADUATION_SOL = 85;
 
+// Abort an observation when N consecutive snapshots fail. Indicates the pool
+// or vault accounts are dead (rugged token, accounts closed for rent reclaim,
+// permanent Helius routing failure). Without this, a single dead grad spams
+// 60+ failures over the 300s observation window, starving the lastSnapshot-
+// Failures ring buffer of useful diagnostic data from healthier grads.
+// Threshold of 5 ≈ 25s of consecutive failures (5s tick interval) — long
+// enough to ride out the 1-2s connection blips that retry handles, short
+// enough to free the slot before the deadline timer would have anyway.
+const CONSECUTIVE_FAILURE_ABORT_THRESHOLD = 5;
+
 interface ActiveObservation {
   ctx: ObservationContext;
   startedAt: number;
   scheduledSnapshots: number[];
   completedSnapshots: number[];
   timers: NodeJS.Timeout[];
+  // Set true once the T+30 onT30Callback has fired successfully. Drives the
+  // T+35 deadline timer's "did the snapshot land?" check — if false at T+35,
+  // we abandon the observation rather than holding the slot for ~10 minutes.
+  t30CallbackFired: boolean;
   // Cached after first successful pool decode — avoids re-fetching pool account on every snapshot
   baseVault?: string;
   quoteVault?: string;
@@ -90,6 +95,13 @@ interface ActiveObservation {
   earlyPrices: number[];         // all prices seen T+0 to T+30
   earlySolReserves: number[];    // SOL reserves at each early snapshot
   liquiditySolT30?: number;      // SOL reserves at T+30
+  // Consecutive snapshot failures for this observation. Reset to 0 on every
+  // successful snapshot; incremented on every failure (null pool fetch, vault
+  // throw, etc). When this hits CONSECUTIVE_FAILURE_ABORT_THRESHOLD the
+  // observation is aborted — the grad's pool/vaults are evidently dead
+  // (rugged token, vault accounts closed) and continuing to retry every 5s
+  // for the rest of the 300s window just spams failures and starves the slot.
+  consecutiveFailures: number;
 }
 
 // ── Price path shape helpers ─────────────────────────────────────────────────
@@ -127,6 +139,25 @@ function computeMaxDrawdown(pcts: number[]): number {
   return maxDD;
 }
 
+/** Biggest single 5s-interval drop, pct points (always ≤ 0). */
+export function computeMaxTickDrop(pcts: number[]): number {
+  if (pcts.length < 2) return 0;
+  let worst = 0;
+  for (let i = 1; i < pcts.length; i++) {
+    const drop = pcts[i] - pcts[i - 1];
+    if (drop < worst) worst = drop;
+  }
+  return worst;
+}
+
+/** Sum of absolute 5s-interval changes — realized volatility proxy. */
+export function computeSumAbsReturns(pcts: number[]): number {
+  if (pcts.length < 2) return 0;
+  let acc = 0;
+  for (let i = 1; i < pcts.length; i++) acc += Math.abs(pcts[i] - pcts[i - 1]);
+  return acc;
+}
+
 /**
  * Returns 1 if price dropped more than `threshold`% from a running peak
  * and then subsequently recovered above that same peak; 0 otherwise.
@@ -154,10 +185,69 @@ export class PriceCollector {
   private active: Map<number, ActiveObservation> = new Map();
   private momentumLabeler: MomentumLabeler;
   private competitionDetector: CompetitionDetector;
+  private swapLogger: SwapLogger;
   private totalObservationsStarted = 0;
   private totalObservationsCompleted = 0;
   private totalSnapshots = 0;
   private totalSnapshotFailures = 0;
+  // Observations whose T+30 snapshot never landed by the T+45 deadline.
+  // High count vs totalObservationsStarted = RPC pressure or pool not ready.
+  private totalT30Timeouts = 0;
+  // T+30-specific telemetry. If t30AttemptsStarted lags totalT30Timeouts the
+  // T+30 snapshot timer didn't even FIRE before the deadline (RPC bucket
+  // fully drained or event-loop blocked). If t30AttemptsStarted matches
+  // totalT30Timeouts but t30CallbacksFiredCount lags, the snapshot ran but
+  // didn't complete with valid pool data inside the 15s grace window.
+  private t30AttemptsStarted = 0;
+  private t30CallbacksFiredCount = 0;
+  // Ring buffer of recent T+30 timeout details. Each entry captures enough
+  // context to diagnose the root cause without needing live logs:
+  // - vaultsPreExtracted: were vaults available from migration tx (no pool
+  //   decode RPC needed)
+  // - t0Succeeded: did the immediate snapshot return a valid pool state
+  // - snapshotsCompleted: how many of the T+0..T+30 attempts came back ok
+  // - lastFailureReason: most recent recordSnapshotFailure reason for this gradId
+  // - elapsedMsAtDeadline: wall-clock ms from observation start to deadline timer firing
+  // - t30DeadlineMs: the originally-scheduled setTimeout delay
+  // - timerDriftMs: elapsedMsAtDeadline - t30DeadlineMs. Should be ≤ ~50ms in
+  //   a healthy event loop. >2s consistently means a long-running await chain
+  //   (likely a snapshot RPC) is blocking the loop and pushing all setTimeout
+  //   firings back. Added 2026-05-03 to confirm or reject the event-loop-blocking
+  //   hypothesis for the 48-65s elapsedMsAtDeadline pattern.
+  // - elapsedSecAtStart: elapsedSec passed into the deadline calculation. Lets
+  //   us reverse-engineer what migrationTimestamp the observation thought it
+  //   had relative to its own startedAt clock.
+  private lastT30Timeouts: Array<{
+    graduationId: number;
+    mint: string;
+    pool: string;
+    vaultsPreExtracted: boolean;
+    t0Succeeded: boolean;
+    snapshotsCompleted: number;
+    lastFailureReason: string | null;
+    elapsedMsAtDeadline: number;
+    t30DeadlineMs: number;
+    timerDriftMs: number;
+    elapsedSecAtStart: number;
+    time: string;
+  }> = [];
+  // Observations dropped at the MAX_CONCURRENT_OBSERVATIONS gate. Surfacing
+  // this lets the operator see when the slot pool is saturated — previously
+  // the gate was logger.debug only and silently lost graduations.
+  private totalSlotsRejected = 0;
+  // Graduations rejected at startObservation because the migration tx was
+  // already older than T+30 by the time we got here. We literally cannot
+  // capture a T+30 snapshot for these — by the time we begin observing,
+  // the entry window has closed. Surfaces Helius / listener latency:
+  // a high count means migration logs are arriving 30+ seconds late.
+  private totalStaleGraduations = 0;
+  private lastStaleGraduations: Array<{
+    graduationId: number;
+    mint: string;
+    elapsedSecAtStart: number;
+    migrationTimestamp: number;
+    time: string;
+  }> = [];
   private lastSnapshotFailures: Array<{ graduationId: number; targetSec: number; reason: string; time: string }> = [];
   private onT30Callback?: (
     graduationId: number,
@@ -183,11 +273,13 @@ export class PriceCollector {
     this.connection = connection;
     this.momentumLabeler = new MomentumLabeler(db);
     this.competitionDetector = new CompetitionDetector(db, connection);
+    this.swapLogger = new SwapLogger(db, connection);
   }
 
   updateConnection(connection: Connection): void {
     this.connection = connection;
     this.competitionDetector.updateConnection(connection);
+    this.swapLogger.updateConnection(connection);
   }
 
   getStats() {
@@ -197,7 +289,32 @@ export class PriceCollector {
       totalCompleted: this.totalObservationsCompleted,
       totalSnapshots: this.totalSnapshots,
       totalSnapshotFailures: this.totalSnapshotFailures,
-      lastSnapshotFailures: this.lastSnapshotFailures.slice(-5),
+      // Observations whose T+30 snapshot never landed by T+45. High count vs
+      // totalStarted = RPC pressure or pool not yet decodable at T+30.
+      totalT30Timeouts: this.totalT30Timeouts,
+      // T+30-specific telemetry. Compare these three:
+      //   t30AttemptsStarted < totalT30Timeouts     → snapshot timer never
+      //                                                fired (event-loop or
+      //                                                RPC token starvation)
+      //   t30AttemptsStarted ≈ totalT30Timeouts &&
+      //   t30CallbacksFiredCount < t30AttemptsStarted → snapshot ran but
+      //                                                pool/vault returned
+      //                                                null or arrived late
+      t30AttemptsStarted: this.t30AttemptsStarted,
+      t30CallbacksFired: this.t30CallbacksFiredCount,
+      lastT30Timeouts: this.lastT30Timeouts.slice(-10),
+      // Graduations dropped at the MAX_CONCURRENT_OBSERVATIONS gate. Non-zero
+      // value here means the observation pool is saturated — either raise
+      // the limit or fix whatever is keeping observations alive longer than
+      // they should be.
+      totalSlotsRejected: this.totalSlotsRejected,
+      // Graduations rejected because they reached startObservation past the
+      // T+25 threshold. High count = Helius logs subscription is delayed
+      // OR the listener verify path is taking too long. lastStaleGraduations
+      // shows per-event delay so the operator can see the distribution.
+      totalStaleGraduations: this.totalStaleGraduations,
+      lastStaleGraduations: this.lastStaleGraduations.slice(-10),
+      lastSnapshotFailures: this.lastSnapshotFailures.slice(-15),
     };
   }
 
@@ -210,8 +327,10 @@ export class PriceCollector {
       time: new Date().toISOString(),
     });
     // Keep only last 20
-    if (this.lastSnapshotFailures.length > 20) {
-      this.lastSnapshotFailures = this.lastSnapshotFailures.slice(-20);
+    // Retain last 50 (was 20) — needed enough history for per-graduation
+    // root-cause analysis on T+30 timeouts. Each entry is small (4 fields).
+    if (this.lastSnapshotFailures.length > 50) {
+      this.lastSnapshotFailures = this.lastSnapshotFailures.slice(-50);
     }
   }
 
@@ -224,9 +343,24 @@ export class PriceCollector {
     // MAX_CONCURRENT_OBSERVATIONS limits active price observation sessions.
     // Each active session fires RPC calls on a schedule (T+0, T+5, T+10, T+30, T+60, T+120, T+300).
     // At 8 RPS budget, 20 concurrent = ~0.5 RPS from snapshots alone — well within limits.
+    //
+    // The T+35 deadline timer (added below) frees slots within ~35s of any
+    // observation whose T+30 snapshot fails, instead of holding the slot for
+    // the full 605s lifetime. Previously, a burst of RPC failures could
+    // saturate all 20 slots and silently drop every subsequent graduation
+    // for ~10 minutes — which is exactly the cascade that stalled trades
+    // overnight on 2026-04-25/26.
     const maxActive = parseInt(process.env.MAX_CONCURRENT_OBSERVATIONS || '20', 10);
     if (this.active.size >= maxActive) {
-      logger.debug({ graduationId: ctx.graduationId, active: this.active.size }, 'Max active observations');
+      this.totalSlotsRejected++;
+      // Log first hit per burst at warn so saturation is visible without
+      // spamming. After 1, 21, 41, … just keep counting.
+      if (this.totalSlotsRejected % 20 === 1) {
+        logger.warn(
+          { graduationId: ctx.graduationId, active: this.active.size, totalSlotsRejected: this.totalSlotsRejected },
+          'Max active observations — graduation dropped without observation',
+        );
+      }
       return;
     }
 
@@ -234,7 +368,65 @@ export class PriceCollector {
 
     const now = Date.now();
     const migrationTime = ctx.migrationTimestamp * 1000;
-    const elapsedSec = (now - migrationTime) / 1000;
+    // Defense in depth: clamp elapsedSec to >= 0. The listener sanitizes
+    // tx.blockTime before setting migrationTimestamp (graduation-listener.ts
+    // ~line 1041), so this should normally never trigger. But if a future
+    // refactor drops the sanitization, or a different code path constructs
+    // an event with a bad timestamp, a negative elapsedSec breaks both:
+    //   (a) snapshot scheduling — `delayMs = (targetSec - elapsedSec) * 1000`
+    //       fires snapshots at the wrong wall-clock time
+    //   (b) deadline math — `(45 - elapsedSec) * 1000` overshoots, leaving
+    //       T+30 capture racing the wrong window
+    // Treating future migrationTimestamps as "just now" is the safe collapse:
+    // snapshots fire on schedule, deadline = full 45s.
+    const rawElapsedSec = (now - migrationTime) / 1000;
+    const elapsedSec = Math.max(0, rawElapsedSec);
+
+    // Bail on stale graduations. If the migration tx is already older than
+    // T+30 by the time we get here, the trade entry window has closed —
+    // SNAPSHOT_SCHEDULE.filter below would drop T+30 entirely, the deadline
+    // timer would fire ~1s later, and we'd waste a slot for nothing. Better
+    // to count + log + skip so the operator sees Helius/listener latency
+    // explicitly instead of as a wave of "T+30 timeout" noise.
+    //
+    // Threshold: T+30 means "snapshot at 30s after migration". If we're
+    // already past that, the strategy's T+30 callback won't fire for this
+    // observation — that requires a snapshot AT T+30. But we still want to
+    // accept the row for data collection (later checkpoints T+60..T+300 +
+    // labeling) because pumpFun WS is unreliable and the RPC poll fallback
+    // routinely lands at T+45..T+120. Bumped 25 → 120 on 2026-05-01 after
+    // observing 89% of poll-tier grads being rejected.
+    //
+    // Note: late-arriving observations have NULL for pct_t30 and the 0-30s
+    // path-shape metrics (monotonicity_0_30, max_drawdown_0_30, sum_abs_returns_0_30,
+    // acceleration_t30) — those moments have passed and we don't backfill them
+    // from pool tx history. Strategies that filter on those fields will skip
+    // these rows. See NEXT_SESSION_ENTRY_TIME.md for a planned late-entry mode
+    // that would let strategies trade on T+60/T+90/T+120 callbacks instead.
+    const STALE_THRESHOLD_SEC = parseInt(process.env.STALE_THRESHOLD_SEC || '120', 10);
+    if (elapsedSec > STALE_THRESHOLD_SEC) {
+      this.totalStaleGraduations++;
+      this.lastStaleGraduations.push({
+        graduationId: ctx.graduationId,
+        mint: ctx.mint,
+        elapsedSecAtStart: +elapsedSec.toFixed(1),
+        migrationTimestamp: ctx.migrationTimestamp,
+        time: new Date().toISOString(),
+      });
+      if (this.lastStaleGraduations.length > 50) {
+        this.lastStaleGraduations = this.lastStaleGraduations.slice(-50);
+      }
+      logger.warn(
+        {
+          graduationId: ctx.graduationId,
+          mint: ctx.mint,
+          elapsedSec: +elapsedSec.toFixed(1),
+          totalStaleGraduations: this.totalStaleGraduations,
+        },
+        'Skipping stale graduation — migration tx older than T+30 by the time it reached startObservation',
+      );
+      return;
+    }
 
     // Filter out snapshots that are already in the past
     const remaining = SNAPSHOT_SCHEDULE.filter((s) => s > elapsedSec - 1);
@@ -245,6 +437,7 @@ export class PriceCollector {
       scheduledSnapshots: remaining,
       completedSnapshots: [],
       timers: [],
+      t30CallbackFired: false,
       peakPricePct: 0,
       peakPriceSec: 0,
       maxDrawdownPct: 0,
@@ -254,6 +447,7 @@ export class PriceCollector {
       maxRelretSec: 30,
       earlyPrices: [],
       earlySolReserves: [],
+      consecutiveFailures: 0,
     };
 
     this.active.set(ctx.graduationId, observation);
@@ -329,6 +523,86 @@ export class PriceCollector {
     }, Math.max(completionDelay, 5000));
 
     observation.timers.push(completionTimer);
+
+    // T+45 deadline: if the T+30 snapshot didn't land within 15s of its
+    // scheduled time, abandon the observation and free the slot. Originally
+    // T+35 (5s grace) — bumped to T+45 after seeing 67% timeout rate in
+    // production with only 5.5% snapshot failures. Heavy RPC throttling
+    // (~12 throttles/min, 559 in 47min) was pushing T+30 vault fetches past
+    // the 5s window even though they would have eventually landed. The T+30
+    // path also now uses throttlePriority() (see fetchPoolPrice priorityMode)
+    // so it jumps the queue, but the larger deadline gives margin for any
+    // residual stragglers.
+    //
+    // We do NOT fire a fake onT30Callback with null price — TradeEvaluator
+    // would have to special-case it. The watchdog (StrategyManager.lastT30
+    // CallbackAt) already detects "no callback in N min" and the new
+    // totalT30Timeouts counter exposes the failure rate explicitly.
+    const t30DeadlineMs = Math.max((45 - elapsedSec) * 1000, 1000);
+    // Capture the wall-clock moment the deadline timer is scheduled. Compared
+    // to Date.now() inside the callback to detect event-loop blocking — if the
+    // timer fires meaningfully later than t30DeadlineMs ms after this point,
+    // a long-running await on the main thread held the loop and ALL setTimeout
+    // firings (including the snapshot-fetch timers) drifted with it.
+    const deadlineScheduledAt = Date.now();
+    const deadlineTimer = setTimeout(() => {
+      const obs = this.active.get(ctx.graduationId);
+      if (!obs) return;            // already cleaned up by completion path
+      if (obs.t30CallbackFired) return; // T+30 success — leave observation running
+      this.totalT30Timeouts++;
+
+      // Capture root-cause snapshot before we delete the observation so
+      // ops can see *why* this one timed out without needing live logs.
+      const lastFailure = [...this.lastSnapshotFailures]
+        .reverse()
+        .find((f) => f.graduationId === ctx.graduationId);
+      const firedAt = Date.now();
+      const elapsedMsAtDeadline = firedAt - obs.startedAt;
+      // actualDelayMs = how long setTimeout actually waited before firing.
+      // Should ≈ t30DeadlineMs in a healthy loop. Drift > 2s means the loop
+      // was blocked by something long-running (suspect: snapshot RPC chain).
+      const actualDelayMs = firedAt - deadlineScheduledAt;
+      const timerDriftMs = actualDelayMs - t30DeadlineMs;
+      this.lastT30Timeouts.push({
+        graduationId: ctx.graduationId,
+        mint: ctx.mint,
+        pool: ctx.poolAddress,
+        vaultsPreExtracted: !!(ctx.baseVault && ctx.quoteVault),
+        t0Succeeded: obs.openPoolPrice !== undefined && obs.openPoolPrice > 0,
+        snapshotsCompleted: obs.completedSnapshots.length,
+        lastFailureReason: lastFailure ? lastFailure.reason : null,
+        elapsedMsAtDeadline,
+        t30DeadlineMs,
+        timerDriftMs,
+        elapsedSecAtStart: +elapsedSec.toFixed(2),
+        time: new Date(firedAt).toISOString(),
+      });
+      if (this.lastT30Timeouts.length > 50) {
+        this.lastT30Timeouts = this.lastT30Timeouts.slice(-50);
+      }
+
+      logger.warn(
+        {
+          graduationId: ctx.graduationId,
+          mint: ctx.mint,
+          totalT30Timeouts: this.totalT30Timeouts,
+          active: this.active.size,
+          vaultsPreExtracted: !!(ctx.baseVault && ctx.quoteVault),
+          t0Succeeded: obs.openPoolPrice !== undefined && obs.openPoolPrice > 0,
+          snapshotsCompleted: obs.completedSnapshots.length,
+          lastFailureReason: lastFailure ? lastFailure.reason : null,
+          elapsedMsAtDeadline,
+          t30DeadlineMs,
+          timerDriftMs,
+          elapsedSecAtStart: +elapsedSec.toFixed(2),
+        },
+        'T+30 deadline hit — abandoning observation to free slot',
+      );
+      for (const t of obs.timers) clearTimeout(t);
+      this.active.delete(ctx.graduationId);
+    }, t30DeadlineMs);
+
+    observation.timers.push(deadlineTimer);
   }
 
   stop(): void {
@@ -348,9 +622,19 @@ export class PriceCollector {
     const now = Math.floor(Date.now() / 1000);
     const actualSecSinceGraduation = now - ctx.graduationTimestamp;
 
+    // Count every T+30 attempt that survives the active-map check above.
+    // Compared against totalT30Timeouts and t30CallbacksFired, this tells
+    // us whether the timer fired at all (vs RPC bucket starvation) and
+    // whether the snapshot completed in time (vs landed too late).
+    if (targetSec === 30) this.t30AttemptsStarted++;
+
     try {
-      // Fetch pool state to get current price
-      const poolState = await this.fetchPoolPrice(observation);
+      // T+30 is the only snapshot that determines whether a trade fires —
+      // promote it to the priority RPC lane so it bypasses the throttle queue.
+      // Other snapshots (T+5, T+10, T+60, T+120, ...) keep the drop-on-full
+      // path so they don't starve more critical work.
+      const priorityMode = targetSec === 30;
+      const poolState = await this.fetchPoolPrice(observation, priorityMode);
 
       if (!poolState) {
         this.recordSnapshotFailure(graduationId, targetSec, `pool_fetch_null pool=${ctx.poolAddress.slice(0, 8)}`);
@@ -358,8 +642,31 @@ export class PriceCollector {
           { graduationId, targetSec, pool: ctx.poolAddress },
           'Could not fetch pool state for snapshot'
         );
+        // Track consecutive failures so a permanently-dead grad (rugged
+        // token, vault accounts closed) doesn't keep spamming snapshot
+        // failures for the rest of the 300s observation window. Threshold
+        // hit → tear down the observation early, free the slot, mark as
+        // pool_dead so the operator sees it explicitly.
+        observation.consecutiveFailures++;
+        if (observation.consecutiveFailures >= CONSECUTIVE_FAILURE_ABORT_THRESHOLD) {
+          this.recordSnapshotFailure(
+            graduationId,
+            targetSec,
+            `pool_dead consecutive=${observation.consecutiveFailures} pool=${ctx.poolAddress.slice(0, 8)}`,
+          );
+          logger.warn(
+            { graduationId, targetSec, pool: ctx.poolAddress, consecutiveFailures: observation.consecutiveFailures },
+            'Aborting observation — pool/vault appears dead (consecutive snapshot failures exceeded threshold)',
+          );
+          for (const t of observation.timers) clearTimeout(t);
+          this.active.delete(graduationId);
+        }
         return;
       }
+
+      // Successful fetch — reset the consecutive-failure counter. A grad that
+      // recovers from a transient blip should be able to keep observing.
+      observation.consecutiveFailures = 0;
 
       this.totalSnapshots++;
       observation.completedSnapshots.push(targetSec);
@@ -441,6 +748,19 @@ export class PriceCollector {
         const pctChange = ((poolState.price - openRef) / openRef) * 100;
         updateMomentumPrice(this.db, graduationId, checkpoint, poolState.price, pctChange);
 
+        // Write pool SOL reserves for every 5s checkpoint in 0-300s.
+        // Feeds the whale-sell / liquidity-drop exit strategy: strategies can
+        // inspect the rolling liquidity series at backtest time to detect
+        // sharp drops that precede a dump.
+        if (checkpoint !== 't600') {
+          try {
+            updateMomentumLiquidity(this.db, graduationId, checkpoint, +poolState.solReserves.toFixed(4));
+          } catch (err) {
+            logger.warn('Failed to write liquidity_sol_%s for grad %d: %s',
+              checkpoint, graduationId, err instanceof Error ? err.message : String(err));
+          }
+        }
+
         // Track peak and max drawdown
         if (pctChange > observation.peakPricePct) {
           observation.peakPricePct = pctChange;
@@ -487,21 +807,39 @@ export class PriceCollector {
           // completeObservation() runs at T+300+, and every trade that would
           // qualify on velocity fails the filter pipeline's null guard.
           // Safe to call here and again at completeObservation — idempotent UPDATE.
-          this.computeAndStoreVelocity(
-            graduationId,
-            ctx.mint,
-            ctx.graduationTimestamp,
-            ctx.bondingCurveAddress,
-          );
-          // Fire trading engine callback — all T+30 momentum fields are now written
+          //
+          // Use a 10-second cap via Promise.race: when token_age_seconds is null
+          // (e.g. same-block graduation where enrichment sets age=0), the fallback
+          // BC signature walk can take 60-90s and would push the T+30 callback past
+          // the T+45 deadline, causing NO EVAL. 10s gives the fast cases (<1ms when
+          // enrichment already wrote token_age_seconds) their result immediately, and
+          // slow BC lookups time out gracefully — velocity stays null → vel filters
+          // FILTERED (same outcome as before the fix, but no NO EVAL regression).
+          await Promise.race([
+            this.computeAndStoreVelocity(
+              graduationId,
+              ctx.mint,
+              ctx.graduationTimestamp,
+              ctx.bondingCurveAddress,
+            ),
+            new Promise<void>(resolve => setTimeout(resolve, 13_000)),
+          ]);
+          // Fire trading engine callback — all T+30 momentum fields are now written.
+          // Mark the observation so the T+45 deadline timer (set in startObservation)
+          // knows to leave it running for the rest of the snapshot grid instead of
+          // aborting it as a stuck observation.
+          observation.t30CallbackFired = true;
+          this.t30CallbacksFiredCount++;
           if (this.onT30Callback) {
             this.onT30Callback(graduationId, ctx, poolState.price, pctChange, poolState.solReserves);
           }
         }
 
-        // Compute derived path shape metrics at T+60 (pct_t60 is now in DB)
-        if (targetSec === 60) {
-          this.computeT60PathMetrics(graduationId);
+        // Compute derived path shape metrics at each fixed horizon (window = targetSec).
+        // T+60 uses the same formulas as T+120/180/300. T+30 has its own method because
+        // it also writes dip_and_recover_flag (scoped to the 0-30 window).
+        if (targetSec === 60 || targetSec === 120 || targetSec === 180 || targetSec === 300) {
+          this.computePathMetricsForWindow(graduationId, targetSec);
         }
       }
     } catch (err) {
@@ -545,7 +883,8 @@ export class PriceCollector {
   private static readonly POOL_QUOTE_VAULT_OFFSET = PriceCollector.POOL_BASE_VAULT_OFFSET + 32; // 171
 
   private async fetchPoolPrice(
-    observation: ActiveObservation
+    observation: ActiveObservation,
+    priorityMode = false,
   ): Promise<{ price: number; solReserves: number; tokenReserves: number } | null> {
     const ctx = observation.ctx;
     try {
@@ -562,20 +901,50 @@ export class PriceCollector {
             'Using vault addresses from migration tx'
           );
         } else {
-        if (!await globalRpcLimiter.throttleOrDrop(15)) {
-          this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_pool_decode');
-          logger.warn({ graduationId: ctx.graduationId }, 'Pool account fetch dropped — RPC queue full');
-          return null;
+        // Pool account decode is one-shot per observation. priorityMode skips
+        // the drop-on-full path because the T+30 snapshot is on the critical
+        // path for trade entry and we'd rather wait than miss the deadline.
+        if (priorityMode) {
+          await globalRpcLimiter.throttlePriority();
+        } else {
+          if (!await globalRpcLimiter.throttleOrDrop(15)) {
+            this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_pool_decode');
+            logger.warn({ graduationId: ctx.graduationId }, 'Pool account fetch dropped — RPC queue full');
+            return null;
+          }
         }
-        // Retry once after 400ms — pool account may not yet be available at T+0
-        let poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
-        if (!poolInfo?.data) {
-          await new Promise(r => setTimeout(r, 400));
-          poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
+        // Retry up to 3 times with exponential backoff (200ms, 500ms, 1000ms).
+        // Helius's read index occasionally lags slot-confirmation for fresh
+        // pools — the migrate tx is confirmed on getTransaction but the new
+        // pool account isn't yet visible to getAccountInfo for ~0.5-1.5s.
+        // Without retries this drops the entire observation (every snapshot
+        // 5s..300s fails because the pool address is "broken" — actually fine,
+        // just stale read view). 3-retry budget is ~1.7s — well under the 5s
+        // inter-snapshot interval, so it doesn't compound.
+        // Retry on BOTH null returns AND thrown exceptions. The previous version
+        // only retried null returns, so a thrown `fetch failed` (TCP/HTTP-level
+        // Helius blip) bypassed all retries and fell through to the outer catch.
+        // recent_errors showed `fetch failed` is by far the dominant exception
+        // — wrapping the call in try/catch inside the loop converts those into
+        // retried backoffs.
+        const POOL_RETRY_BACKOFFS_MS = [0, 200, 500, 1000];
+        let poolInfo: Awaited<ReturnType<typeof this.connection.getAccountInfo>> = null;
+        let lastPoolErr: string | null = null;
+        for (const backoffMs of POOL_RETRY_BACKOFFS_MS) {
+          if (backoffMs > 0) await new Promise(r => setTimeout(r, backoffMs));
+          try {
+            poolInfo = await this.connection.getAccountInfo(new PublicKey(ctx.poolAddress), 'confirmed');
+            if (poolInfo?.data) break;
+          } catch (err) {
+            lastPoolErr = err instanceof Error ? err.message : String(err);
+          }
         }
         if (!poolInfo?.data) {
-          this.recordSnapshotFailure(ctx.graduationId, -1, `pool_not_found pool=${ctx.poolAddress}`);
-          logger.warn({ graduationId: ctx.graduationId, pool: ctx.poolAddress }, 'Pool account not found');
+          const detail = lastPoolErr
+            ? `threw=${lastPoolErr.slice(0, 60)}`
+            : 'null';
+          this.recordSnapshotFailure(ctx.graduationId, -1, `pool_not_found pool=${ctx.poolAddress} retries=${POOL_RETRY_BACKOFFS_MS.length - 1} ${detail}`);
+          logger.warn({ graduationId: ctx.graduationId, pool: ctx.poolAddress, lastErr: lastPoolErr }, 'Pool account not found after 3 retries');
           return null;
         }
         // Ensure data is a Buffer — Helius may return it as a string or array in some configurations
@@ -609,23 +978,55 @@ export class PriceCollector {
         } // end else (no pre-extracted vaults)
       }
 
-      // Fetch both vault balances in a single RPC call
-      if (!await globalRpcLimiter.throttleOrDrop(15)) {
-        this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_vault_fetch');
-        logger.warn({ graduationId: ctx.graduationId, targetVault: observation.baseVault?.slice(0, 8) }, 'Snapshot dropped — RPC queue full');
-        return null;
+      // Fetch both vault balances in a single RPC call. priorityMode lets the
+      // T+30 snapshot jump the queue — it's the only snapshot that gates a
+      // trade entry, so a 0.5–1s wait is far cheaper than missing the T+30
+      // callback entirely (which is what was timing out 67% of T+30s in
+      // production: 559 throttles/47min meant T+30 vault fetches were
+      // landing past the T+35 deadline).
+      if (priorityMode) {
+        await globalRpcLimiter.throttlePriority();
+      } else {
+        if (!await globalRpcLimiter.throttleOrDrop(15)) {
+          this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_vault_fetch');
+          logger.warn({ graduationId: ctx.graduationId, targetVault: observation.baseVault?.slice(0, 8) }, 'Snapshot dropped — RPC queue full');
+          return null;
+        }
       }
-      const vaultAccounts = await this.connection.getMultipleAccountsInfo([
-        new PublicKey(observation.baseVault),
-        new PublicKey(observation.quoteVault),
-      ]);
+      // Retry vault fetch up to 3 times with exponential backoff. Same root
+      // cause as the pool retry above — Helius's read index can lag a fresh
+      // vault by ~0.5-1.5s even after the migrate tx is confirmed. Without
+      // retries, every snapshot for that grad reports vault_data_missing →
+      // pool_fetch_null → t30CallbackFired never sets → T+30 timeout.
+      // Same retry shape as the pool decode path — also catches THROWN
+      // exceptions (the `fetch failed` family that recent_errors confirmed
+      // is dominant) so a transient HTTP-level Helius blip retries instead
+      // of bubbling out to the outer catch.
+      const VAULT_RETRY_BACKOFFS_MS = [0, 200, 500, 1000];
+      let vaultAccounts: Awaited<ReturnType<typeof this.connection.getMultipleAccountsInfo>> = [];
+      let lastVaultErr: string | null = null;
+      for (const backoffMs of VAULT_RETRY_BACKOFFS_MS) {
+        if (backoffMs > 0) await new Promise(r => setTimeout(r, backoffMs));
+        try {
+          vaultAccounts = await this.connection.getMultipleAccountsInfo([
+            new PublicKey(observation.baseVault),
+            new PublicKey(observation.quoteVault),
+          ]);
+          if (vaultAccounts[0]?.data && vaultAccounts[1]?.data) break;
+        } catch (err) {
+          lastVaultErr = err instanceof Error ? err.message : String(err);
+        }
+      }
 
       if (!vaultAccounts[0]?.data || !vaultAccounts[1]?.data) {
+        const detail = lastVaultErr
+          ? `threw=${lastVaultErr.slice(0, 60)}`
+          : `base=${!!vaultAccounts[0]?.data} quote=${!!vaultAccounts[1]?.data}`;
         logger.warn(
-          { graduationId: ctx.graduationId, baseVault: observation.baseVault?.slice(0, 8), quoteVault: observation.quoteVault?.slice(0, 8), hasBase: !!vaultAccounts[0]?.data, hasQuote: !!vaultAccounts[1]?.data },
-          'Vault account data missing'
+          { graduationId: ctx.graduationId, baseVault: observation.baseVault?.slice(0, 8), quoteVault: observation.quoteVault?.slice(0, 8), hasBase: !!vaultAccounts[0]?.data, hasQuote: !!vaultAccounts[1]?.data, retries: VAULT_RETRY_BACKOFFS_MS.length - 1, lastErr: lastVaultErr },
+          'Vault account data missing after 3 retries'
         );
-        this.recordSnapshotFailure(ctx.graduationId, -1, `vault_data_missing base=${!!vaultAccounts[0]?.data} quote=${!!vaultAccounts[1]?.data}`);
+        this.recordSnapshotFailure(ctx.graduationId, -1, `vault_data_missing ${detail} retries=${VAULT_RETRY_BACKOFFS_MS.length - 1}`);
         return null;
       }
 
@@ -656,10 +1057,22 @@ export class PriceCollector {
 
       return { price: solReserves / tokenReserves, solReserves, tokenReserves };
     } catch (err) {
-      logger.debug(
-        'Failed to fetch pool price for %s: %s',
-        ctx.poolAddress.slice(0, 8),
-        err instanceof Error ? err.message : String(err)
+      // Record the actual exception message so the failure-reason histogram
+      // distinguishes retry-able RPC errors (rate limits, network blips) from
+      // persistent ones (malformed keys, vaults closed because token died).
+      // Was logger.debug-only previously — invisible in production, made all
+      // exception failures look like generic pool_fetch_null in the outer
+      // takeSnapshot recorder. Trimmed to 100 chars to avoid massive log lines
+      // when Helius returns a stack-traced error.
+      const msg = err instanceof Error ? err.message : String(err);
+      this.recordSnapshotFailure(
+        ctx.graduationId,
+        -1,
+        `fetch_exception ${msg.slice(0, 100)}`,
+      );
+      logger.warn(
+        { graduationId: ctx.graduationId, pool: ctx.poolAddress.slice(0, 8), err: msg.slice(0, 200) },
+        'Pool/vault fetch threw — see fetch_exception failure reason',
       );
       return null;
     }
@@ -713,6 +1126,8 @@ export class PriceCollector {
       const path_smoothness_0_30 = computePathSmoothness(valid);
       const max_drawdown_0_30   = computeMaxDrawdown(valid);
       const dip_and_recover_flag = computeDipAndRecover(valid);
+      const max_tick_drop_0_30  = computeMaxTickDrop(valid);
+      const sum_abs_returns_0_30 = computeSumAbsReturns(valid);
 
       // Front-loaded (+) vs back-loaded (-): first half gain minus second half gain
       const early_vs_late_0_30 =
@@ -727,7 +1142,9 @@ export class PriceCollector {
             path_smoothness_0_30 = ?,
             max_drawdown_0_30    = ?,
             dip_and_recover_flag = ?,
-            early_vs_late_0_30   = ?
+            early_vs_late_0_30   = ?,
+            max_tick_drop_0_30   = ?,
+            sum_abs_returns_0_30 = ?
         WHERE graduation_id = ?
       `).run(
         acceleration_t30 != null ? +acceleration_t30.toFixed(3) : null,
@@ -736,6 +1153,8 @@ export class PriceCollector {
         +max_drawdown_0_30.toFixed(3),
         dip_and_recover_flag,
         early_vs_late_0_30 != null ? +early_vs_late_0_30.toFixed(3) : null,
+        +max_tick_drop_0_30.toFixed(3),
+        +sum_abs_returns_0_30.toFixed(3),
         graduationId,
       );
 
@@ -746,60 +1165,68 @@ export class PriceCollector {
     }
   }
 
-  /** Compute and persist path shape metrics based on T+0 – T+60 pct snapshots. */
-  private computeT60PathMetrics(graduationId: number): void {
+  /**
+   * Compute and persist path shape metrics over [0, windowSec]. windowSec must
+   * be a multiple of 10 so early_vs_late splits cleanly at windowSec / 2.
+   * Used for T+60, T+120, T+180, T+300. T+30 has its own method because it
+   * also computes dip_and_recover_flag, which is only defined on the 0-30 window.
+   */
+  private computePathMetricsForWindow(graduationId: number, windowSec: number): void {
     try {
-      const row = this.db.prepare(`
-        SELECT pct_t5, pct_t10, pct_t15, pct_t20, pct_t25, pct_t30,
-               pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60
-        FROM graduation_momentum WHERE graduation_id = ?
-      `).get(graduationId) as any;
+      const cols: string[] = [];
+      for (let s = 5; s <= windowSec; s += 5) cols.push(`pct_t${s}`);
+      const row = this.db.prepare(
+        `SELECT ${cols.join(', ')} FROM graduation_momentum WHERE graduation_id = ?`,
+      ).get(graduationId) as Record<string, number | null> | undefined;
 
-      if (!row || row.pct_t60 == null) return;
+      if (!row || row[`pct_t${windowSec}`] == null) return;
 
-      const allPcts: (number | null)[] = [
-        0,
-        row.pct_t5,  row.pct_t10, row.pct_t15, row.pct_t20, row.pct_t25, row.pct_t30,
-        row.pct_t35, row.pct_t40, row.pct_t45, row.pct_t50, row.pct_t55, row.pct_t60,
-      ];
+      const allPcts: (number | null)[] = [0];
+      for (let s = 5; s <= windowSec; s += 5) allPcts.push(row[`pct_t${s}`] ?? null);
       const valid = allPcts.filter(p => p !== null) as number[];
       if (valid.length < 5) return;
 
-      const acceleration_t60 =
-        row.pct_t55 != null && row.pct_t50 != null
-          ? (row.pct_t60 - row.pct_t55) - (row.pct_t55 - row.pct_t50)
+      const last = row[`pct_t${windowSec}`]!;
+      const penult = row[`pct_t${windowSec - 5}`];
+      const antepenult = row[`pct_t${windowSec - 10}`];
+      const acceleration =
+        penult != null && antepenult != null
+          ? (last - penult) - (penult - antepenult)
           : null;
 
-      const monotonicity_0_60   = computeMonotonicity(valid);
-      const path_smoothness_0_60 = computePathSmoothness(valid);
-      const max_drawdown_0_60   = computeMaxDrawdown(valid);
+      const monotonicity   = computeMonotonicity(valid);
+      const path_smoothness = computePathSmoothness(valid);
+      const max_drawdown   = computeMaxDrawdown(valid);
 
-      // Front half (0→30) vs back half (30→60)
-      const early_vs_late_0_60 =
-        row.pct_t30 != null
-          ? row.pct_t30 - (row.pct_t60 - row.pct_t30)
-          : null;
+      // early vs late: first-half gain minus second-half gain
+      const midSec = windowSec / 2;
+      const midPct = row[`pct_t${midSec}`];
+      const early_vs_late =
+        midPct != null ? midPct - (last - midPct) : null;
 
       this.db.prepare(`
         UPDATE graduation_momentum
-        SET acceleration_t60     = ?,
-            monotonicity_0_60    = ?,
-            path_smoothness_0_60 = ?,
-            max_drawdown_0_60    = ?,
-            early_vs_late_0_60   = ?
+        SET acceleration_t${windowSec}      = ?,
+            monotonicity_0_${windowSec}     = ?,
+            path_smoothness_0_${windowSec}  = ?,
+            max_drawdown_0_${windowSec}     = ?,
+            early_vs_late_0_${windowSec}    = ?
         WHERE graduation_id = ?
       `).run(
-        acceleration_t60 != null ? +acceleration_t60.toFixed(3) : null,
-        +monotonicity_0_60.toFixed(3),
-        +path_smoothness_0_60.toFixed(3),
-        +max_drawdown_0_60.toFixed(3),
-        early_vs_late_0_60 != null ? +early_vs_late_0_60.toFixed(3) : null,
+        acceleration != null ? +acceleration.toFixed(3) : null,
+        +monotonicity.toFixed(3),
+        +path_smoothness.toFixed(3),
+        +max_drawdown.toFixed(3),
+        early_vs_late != null ? +early_vs_late.toFixed(3) : null,
         graduationId,
       );
 
-      logger.debug({ graduationId, acceleration_t60, monotonicity_0_60: +monotonicity_0_60.toFixed(3) }, 'T+60 path metrics computed');
+      logger.debug(
+        { graduationId, windowSec, acceleration, monotonicity: +monotonicity.toFixed(3) },
+        `T+${windowSec} path metrics computed`,
+      );
     } catch (err) {
-      logger.warn('Failed to compute T+60 path metrics for grad %d: %s', graduationId,
+      logger.warn('Failed to compute T+%d path metrics for grad %d: %s', windowSec, graduationId,
         err instanceof Error ? err.message : String(err));
     }
   }
@@ -872,6 +1299,15 @@ export class PriceCollector {
     // have null velocity (covers restarts, missed observations, etc.)
     this.runVelocityRecoverySweep().catch(() => {});
 
+    // Backfill per-swap rows for the 30-300s window — feeds the whale-sell /
+    // liquidity-drop exit strategy (api/exit-sim.ts whale_liq). Fire-and-forget:
+    // RPC failures or throttling are logged inside SwapLogger but never block
+    // observation completion.
+    this.swapLogger.backfillSwaps(observation.ctx).catch((err) => {
+      logger.warn('Swap backfill rejected for grad %d: %s', graduationId,
+        err instanceof Error ? err.message : String(err));
+    });
+
     logger.info(
       {
         graduationId,
@@ -895,7 +1331,7 @@ export class PriceCollector {
    * pool was ready, or RPC hiccup), we do ONE direct fallback fetch on the BC address.
    * sol_raised falls back to the known PumpFun graduation threshold (85 SOL).
    */
-  private computeAndStoreVelocity(graduationId: number, mint: string, graduationTimestamp: number, bondingCurveAddress?: string): void {
+  private async computeAndStoreVelocity(graduationId: number, mint: string, graduationTimestamp: number, bondingCurveAddress?: string): Promise<void> {
     try {
       const row = this.db.prepare(
         'SELECT total_sol_raised, token_age_seconds FROM graduation_momentum WHERE graduation_id = ?'
@@ -920,14 +1356,16 @@ export class PriceCollector {
         return;
       }
 
-      // token_age_seconds still null — do one direct BC lookup as a last-resort fallback
+      // token_age_seconds still null — do one direct BC lookup as a last-resort fallback.
+      // Awaited so velocity is written before onT30Callback fires; without await the
+      // fallback runs in the background and the strategy filter sees null → FAIL.
       if (!bondingCurveAddress) {
         logger.warn({ graduationId, mint: mint.slice(0, 8) }, 'bc_velocity: token_age_seconds null and no bondingCurveAddress for fallback');
         return;
       }
 
-      logger.info({ graduationId, mint: mint.slice(0, 8) }, 'bc_velocity: token_age_seconds null at T+300, doing direct BC age lookup');
-      this.fallbackAgeLookup(graduationId, bondingCurveAddress, graduationTimestamp, solRaised);
+      logger.info({ graduationId, mint: mint.slice(0, 8) }, 'bc_velocity: token_age_seconds null at T+30, doing direct BC age lookup before callback');
+      await this.fallbackAgeLookup(graduationId, bondingCurveAddress, graduationTimestamp, solRaised);
     } catch (err) {
       logger.warn('Failed to compute bc_velocity for grad %d: %s', graduationId,
         err instanceof Error ? err.message : String(err));
@@ -947,6 +1385,9 @@ export class PriceCollector {
       let oldestBlockTime: number | null = null;
 
       for (let page = 0; page < 3; page++) {
+        // throttlePriority: jump to front of queue, never drop — BC age is required
+        // for velocity filters and this fallback only fires when enrichment missed it.
+        await globalRpcLimiter.throttlePriority();
         const sigs = await this.connection.getSignaturesForAddress(bcPubkey, { limit: 1000, before });
         if (sigs.length === 0) break;
         const last = sigs[sigs.length - 1];
@@ -1053,6 +1494,10 @@ export class PriceCollector {
           let totalSigsScanned = 0;
 
           for (let page = 0; page < 5; page++) {
+            if (!await globalRpcLimiter.throttleOrDrop(5)) {
+              logger.info({ graduationId: row.graduation_id }, 'Velocity recovery: RPC queue full, skipping page');
+              break;
+            }
             const sigs = await this.connection.getSignaturesForAddress(bcPubkey, { limit: 1000, before });
             totalSigsScanned += sigs.length;
             if (sigs.length === 0) break;

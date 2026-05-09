@@ -300,6 +300,54 @@ export function getCompetitionCount10s(db: Database.Database, graduationId: numb
   return row.count;
 }
 
+// ==================== Post-graduation swaps ====================
+
+export interface PostGradSwapInsert {
+  graduation_id: number;
+  tx_signature: string;
+  block_time: number;
+  seconds_since_graduation: number;
+  wallet_address?: string | null;
+  action?: string | null;
+  amount_sol?: number | null;
+  amount_token?: number | null;
+  pool_sol_after?: number | null;
+}
+
+export function insertPostGradSwap(db: Database.Database, data: PostGradSwapInsert): number {
+  // ON CONFLICT ignores duplicates — backfill can safely re-run without
+  // creating duplicate rows for the same (graduation_id, tx_signature) pair.
+  const result = db.prepare(`
+    INSERT INTO post_grad_swaps (
+      graduation_id, tx_signature, block_time, seconds_since_graduation,
+      wallet_address, action, amount_sol, amount_token, pool_sol_after
+    ) VALUES (
+      @graduation_id, @tx_signature, @block_time, @seconds_since_graduation,
+      @wallet_address, @action, @amount_sol, @amount_token, @pool_sol_after
+    )
+    ON CONFLICT(graduation_id, tx_signature) DO NOTHING
+  `).run({
+    graduation_id: data.graduation_id,
+    tx_signature: data.tx_signature,
+    block_time: data.block_time,
+    seconds_since_graduation: data.seconds_since_graduation,
+    wallet_address: data.wallet_address ?? null,
+    action: data.action ?? null,
+    amount_sol: data.amount_sol ?? null,
+    amount_token: data.amount_token ?? null,
+    pool_sol_after: data.pool_sol_after ?? null,
+  });
+
+  return result.lastInsertRowid as number;
+}
+
+export function getPostGradSwapsCount(db: Database.Database, graduationId: number): number {
+  const row = db.prepare(
+    'SELECT COUNT(*) as count FROM post_grad_swaps WHERE graduation_id = ?'
+  ).get(graduationId) as { count: number };
+  return row.count;
+}
+
 // ==================== Graduation momentum ====================
 
 export interface MomentumInsert {
@@ -373,10 +421,13 @@ export function updateMomentumEnrichment(
 
 // Fix Issue 4: whitelist prevents SQL column-name injection if a future caller
 // passes unsanitized input. All current callers use values from CHECKPOINT_MAP.
-const VALID_MOMENTUM_CHECKPOINTS = new Set([
-  't5','t10','t15','t20','t25','t30','t35','t40','t45','t50','t55',
-  't60','t90','t120','t150','t180','t240','t300','t600',
-]);
+// Every 5s from t5 through t300 (5-min monitoring window) + t600 final-state snapshot.
+const VALID_MOMENTUM_CHECKPOINTS: Set<string> = (() => {
+  const s = new Set<string>();
+  for (let sec = 5; sec <= 300; sec += 5) s.add(`t${sec}`);
+  s.add('t600');
+  return s;
+})();
 
 export function updateMomentumPrice(
   db: Database.Database,
@@ -391,6 +442,27 @@ export function updateMomentumPrice(
   db.prepare(
     `UPDATE graduation_momentum SET price_${checkpoint} = ?, pct_${checkpoint} = ? WHERE graduation_id = ?`
   ).run(price, pctChange, graduationId);
+}
+
+// t600 is not in the liquidity grid (we stop tracking pool reserves at T+300).
+const VALID_LIQUIDITY_CHECKPOINTS: Set<string> = (() => {
+  const s = new Set<string>();
+  for (let sec = 5; sec <= 300; sec += 5) s.add(`t${sec}`);
+  return s;
+})();
+
+export function updateMomentumLiquidity(
+  db: Database.Database,
+  graduationId: number,
+  checkpoint: string,
+  solReserves: number
+): void {
+  if (!VALID_LIQUIDITY_CHECKPOINTS.has(checkpoint)) {
+    throw new Error(`Invalid liquidity checkpoint: ${checkpoint}`);
+  }
+  db.prepare(
+    `UPDATE graduation_momentum SET liquidity_sol_${checkpoint} = ? WHERE graduation_id = ?`
+  ).run(solReserves, graduationId);
 }
 
 export function updateMomentumOpenPrice(
@@ -459,6 +531,102 @@ export function getExistingSignatures(
     'SELECT tx_signature FROM competition_signals WHERE graduation_id = ?'
   ).all(graduationId) as Array<{ tx_signature: string | null }>;
   return new Set(rows.map(r => r.tx_signature).filter((s): s is string => s !== null));
+}
+
+/**
+ * T+0..T+2s sniper window aggregates from competition_signals. Computed at
+ * T+35 alongside buy_pressure metrics. Wallet velocity = avg/max # of EARLIER
+ * graduations (lower graduation_id) that any of these snipers also sniped in
+ * a T+0..T+2s window. PRIOR-only — never counts the current graduation in its
+ * own velocity number.
+ */
+export function computeSniperAggregates(
+  db: Database.Database,
+  graduationId: number,
+): {
+  count: number;
+  sol: number;
+  velocity_avg: number | null;
+  velocity_max: number | null;
+} {
+  const snipers = db.prepare(`
+    SELECT DISTINCT wallet_address
+    FROM competition_signals
+    WHERE graduation_id = ?
+      AND action = 'buy'
+      AND seconds_since_graduation >= 0
+      AND seconds_since_graduation <= 2
+      AND wallet_address IS NOT NULL
+  `).all(graduationId) as Array<{ wallet_address: string }>;
+
+  const totalSolRow = db.prepare(`
+    SELECT COALESCE(SUM(amount_sol), 0) AS total_sol
+    FROM competition_signals
+    WHERE graduation_id = ?
+      AND action = 'buy'
+      AND seconds_since_graduation >= 0
+      AND seconds_since_graduation <= 2
+      AND amount_sol IS NOT NULL
+  `).get(graduationId) as { total_sol: number };
+
+  if (snipers.length === 0) {
+    return { count: 0, sol: totalSolRow.total_sol ?? 0, velocity_avg: null, velocity_max: null };
+  }
+
+  // For each sniper, count distinct EARLIER graduations they sniped (T+0..T+2s
+  // 'buy', graduation_id < this one). Index on competition_signals(wallet_address)
+  // makes this fast.
+  const priorStmt = db.prepare(`
+    SELECT COUNT(DISTINCT graduation_id) AS prior
+    FROM competition_signals
+    WHERE wallet_address = ?
+      AND graduation_id < ?
+      AND action = 'buy'
+      AND seconds_since_graduation >= 0
+      AND seconds_since_graduation <= 2
+  `);
+
+  let sum = 0;
+  let max = 0;
+  for (const s of snipers) {
+    const r = priorStmt.get(s.wallet_address, graduationId) as { prior: number };
+    const c = r?.prior ?? 0;
+    sum += c;
+    if (c > max) max = c;
+  }
+  const avg = sum / snipers.length;
+  return {
+    count: snipers.length,
+    sol: totalSolRow.total_sol ?? 0,
+    velocity_avg: +avg.toFixed(3),
+    velocity_max: max,
+  };
+}
+
+export function updateSniperMetrics(
+  db: Database.Database,
+  graduationId: number,
+  metrics: {
+    count: number;
+    sol: number;
+    velocity_avg: number | null;
+    velocity_max: number | null;
+  },
+): void {
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET sniper_count_t0_t2 = ?,
+        sniper_sol_t0_t2 = ?,
+        sniper_wallet_velocity_avg = ?,
+        sniper_wallet_velocity_max = ?
+    WHERE graduation_id = ?
+  `).run(
+    metrics.count,
+    metrics.sol,
+    metrics.velocity_avg,
+    metrics.velocity_max,
+    graduationId,
+  );
 }
 
 export function computeBuyPressureAggregates(
@@ -607,6 +775,7 @@ export interface TradeInsert {
   filter_results_json?: string;
   filter_config_json?: string;
   strategy_id?: string;
+  execution_mode?: string;
 }
 
 export function insertTrade(db: Database.Database, data: TradeInsert): number {
@@ -618,13 +787,13 @@ export function insertTrade(db: Database.Database, data: TradeInsert): number {
       entry_timestamp, entry_price_sol, entry_pct_from_open, entry_liquidity_sol,
       entry_slippage_pct,
       trade_size_sol, take_profit_pct, stop_loss_pct, max_hold_seconds,
-      filter_results_json, filter_config_json, strategy_id
+      filter_results_json, filter_config_json, strategy_id, execution_mode
     ) VALUES (
       @graduation_id, @mode, 'open', @mint, @pool_address, @base_vault, @quote_vault,
       @entry_timestamp, @entry_price_sol, @entry_pct_from_open, @entry_liquidity_sol,
       @entry_slippage_pct,
       @trade_size_sol, @take_profit_pct, @stop_loss_pct, @max_hold_seconds,
-      @filter_results_json, @filter_config_json, @strategy_id
+      @filter_results_json, @filter_config_json, @strategy_id, @execution_mode
     )
   `).run({
     graduation_id: data.graduation_id,
@@ -645,6 +814,7 @@ export function insertTrade(db: Database.Database, data: TradeInsert): number {
     filter_results_json: data.filter_results_json ?? null,
     filter_config_json: data.filter_config_json ?? null,
     strategy_id: data.strategy_id ?? 'default',
+    execution_mode: data.execution_mode ?? 'paper',
   });
   return result.lastInsertRowid as number;
 }
@@ -660,6 +830,10 @@ export interface TradeClose {
   net_profit_sol: number;
   net_return_pct: number;
   exit_tx_signature?: string;
+  measured_exit_slippage_pct?: number;
+  shadow_measured_exit_slippage_pct?: number;
+  jito_tip_sol?: number;
+  tx_land_ms?: number;
 }
 
 export function closeTrade(db: Database.Database, tradeId: number, data: TradeClose): void {
@@ -675,7 +849,11 @@ export function closeTrade(db: Database.Database, tradeId: number, data: TradeCl
       gap_adjusted_return_pct = @gap_adjusted_return_pct,
       estimated_fees_sol = @estimated_fees_sol,
       net_profit_sol = @net_profit_sol,
-      net_return_pct = @net_return_pct
+      net_return_pct = @net_return_pct,
+      measured_exit_slippage_pct = COALESCE(@measured_exit_slippage_pct, measured_exit_slippage_pct),
+      shadow_measured_exit_slippage_pct = COALESCE(@shadow_measured_exit_slippage_pct, shadow_measured_exit_slippage_pct),
+      jito_tip_sol = COALESCE(jito_tip_sol, 0) + COALESCE(@jito_tip_sol, 0),
+      tx_land_ms = COALESCE(@tx_land_ms, tx_land_ms)
     WHERE id = @tradeId
   `).run({
     tradeId,
@@ -689,6 +867,10 @@ export function closeTrade(db: Database.Database, tradeId: number, data: TradeCl
     estimated_fees_sol: data.estimated_fees_sol,
     net_profit_sol: data.net_profit_sol,
     net_return_pct: data.net_return_pct,
+    measured_exit_slippage_pct: data.measured_exit_slippage_pct ?? null,
+    shadow_measured_exit_slippage_pct: data.shadow_measured_exit_slippage_pct ?? null,
+    jito_tip_sol: data.jito_tip_sol ?? null,
+    tx_land_ms: data.tx_land_ms ?? null,
   });
 }
 
@@ -709,19 +891,28 @@ export function updateTradeEntryFill(
     entry_effective_price: number;
     entry_tokens_received: number;
     entry_tx_signature?: string;
+    shadow_measured_entry_slippage_pct?: number;
+    jito_tip_sol?: number;
+    tx_land_ms?: number;
   }
 ): void {
   db.prepare(`
     UPDATE trades_v2 SET
       entry_effective_price = @entry_effective_price,
       entry_tokens_received = @entry_tokens_received,
-      entry_tx_signature    = @entry_tx_signature
+      entry_tx_signature    = @entry_tx_signature,
+      shadow_measured_entry_slippage_pct = COALESCE(@shadow_measured_entry_slippage_pct, shadow_measured_entry_slippage_pct),
+      jito_tip_sol          = COALESCE(@jito_tip_sol, jito_tip_sol),
+      tx_land_ms            = COALESCE(@tx_land_ms, tx_land_ms)
     WHERE id = @tradeId
   `).run({
     tradeId,
     entry_effective_price: data.entry_effective_price,
     entry_tokens_received: data.entry_tokens_received,
     entry_tx_signature: data.entry_tx_signature ?? null,
+    shadow_measured_entry_slippage_pct: data.shadow_measured_entry_slippage_pct ?? null,
+    jito_tip_sol: data.jito_tip_sol ?? null,
+    tx_land_ms: data.tx_land_ms ?? null,
   });
 }
 
@@ -745,8 +936,13 @@ export function getOpenTrades(db: Database.Database) {
 
 export function getRecentTrades(db: Database.Database, limit = 50, includeArchived = false) {
   const archiveFilter = includeArchived ? '' : 'AND (t.archived IS NULL OR t.archived = 0)';
+  // held_seconds is derived from entry/exit timestamps so downstream consumers
+  // (trades.json, /api/trades, audits) don't have to recompute. Null while open.
   return db.prepare(`
-    SELECT t.*, g.mint as grad_mint
+    SELECT t.*,
+           g.mint as grad_mint,
+           CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
+                THEN t.exit_timestamp - t.entry_timestamp END as held_seconds
     FROM trades_v2 t
     JOIN graduations g ON g.id = t.graduation_id
     WHERE 1=1 ${archiveFilter}
@@ -835,27 +1031,153 @@ export function deleteStrategyConfig(db: Database.Database, id: string): void {
   db.prepare('DELETE FROM strategy_configs WHERE id = ?').run(id);
 }
 
-export function getTradeStatsByStrategy(db: Database.Database, includeArchived = false) {
-  const archiveFilter = includeArchived ? '' : 'WHERE (archived IS NULL OR archived = 0)';
+// ── Strategy journal CRUD ────────────────────────────────────────────────
+// Entries persist across strategy delete/disable by design — the journal's
+// purpose is to retain the research history per cohort even after the
+// underlying strategy is gone. strategy_id is therefore not a FK.
+
+export interface JournalPrediction {
+  /** Median net return % the strategy is expected to clear. */
+  target_median_net_pct?: number;
+  /** Sample size at which the prediction should resolve. */
+  target_n?: number;
+  /** Calendar days the prediction should hold. */
+  target_days?: number;
+  /** Free-text kill criterion — auto-status flips to HIT-KILL when satisfied. */
+  kill_criterion?: string;
+}
+
+export interface JournalUpdate {
+  /** Unix seconds when the update was appended. */
+  at: number;
+  /** Markdown body of the update. */
+  note: string;
+}
+
+export interface StrategyJournalRow {
+  id: string;
+  strategy_id: string;
+  cohort_label: string | null;
+  hypothesis: string;
+  prediction_json: string | null;
+  status: string;
+  created_at: number;
+  updated_at: number;
+  updates_json: string;
+}
+
+export function listJournalEntries(db: Database.Database): StrategyJournalRow[] {
+  return db.prepare('SELECT * FROM strategy_journal ORDER BY created_at DESC')
+    .all() as StrategyJournalRow[];
+}
+
+export function getJournalEntry(db: Database.Database, id: string): StrategyJournalRow | undefined {
+  return db.prepare('SELECT * FROM strategy_journal WHERE id = ?')
+    .get(id) as StrategyJournalRow | undefined;
+}
+
+export function upsertJournalEntry(
+  db: Database.Database,
+  entry: {
+    id: string;
+    strategy_id: string;
+    cohort_label?: string | null;
+    hypothesis: string;
+    prediction?: JournalPrediction | null;
+    status?: string;
+  },
+): void {
+  const status = entry.status ?? 'OPEN';
+  const predictionJson = entry.prediction ? JSON.stringify(entry.prediction) : null;
+  db.prepare(`
+    INSERT INTO strategy_journal (id, strategy_id, cohort_label, hypothesis, prediction_json, status, updated_at)
+    VALUES (@id, @strategy_id, @cohort_label, @hypothesis, @prediction_json, @status, unixepoch())
+    ON CONFLICT(id) DO UPDATE SET
+      strategy_id = @strategy_id,
+      cohort_label = @cohort_label,
+      hypothesis = @hypothesis,
+      prediction_json = @prediction_json,
+      status = @status,
+      updated_at = unixepoch()
+  `).run({
+    id: entry.id,
+    strategy_id: entry.strategy_id,
+    cohort_label: entry.cohort_label ?? null,
+    hypothesis: entry.hypothesis,
+    prediction_json: predictionJson,
+    status,
+  });
+}
+
+export function appendJournalUpdate(
+  db: Database.Database,
+  id: string,
+  note: string,
+): { ok: boolean; error?: string } {
+  const row = getJournalEntry(db, id);
+  if (!row) return { ok: false, error: `Journal entry "${id}" not found` };
+
+  let updates: JournalUpdate[];
+  try {
+    updates = JSON.parse(row.updates_json) as JournalUpdate[];
+    if (!Array.isArray(updates)) updates = [];
+  } catch {
+    updates = [];
+  }
+  updates.push({ at: Math.floor(Date.now() / 1000), note });
+
+  db.prepare(`
+    UPDATE strategy_journal
+    SET updates_json = ?, updated_at = unixepoch()
+    WHERE id = ?
+  `).run(JSON.stringify(updates), id);
+  return { ok: true };
+}
+
+export function deleteJournalEntry(db: Database.Database, id: string): void {
+  db.prepare('DELETE FROM strategy_journal WHERE id = ?').run(id);
+}
+
+/**
+ * Per-strategy aggregate stats from trades_v2.
+ *
+ * Defaults filter the dashboard view to currently-ENABLED strategies + show
+ * only paper/shadow/live execution rows that are unarchived. Disabled
+ * strategies' historical trades remain in the DB and are visible by passing
+ * `enabledOnly = false` (e.g. for archival lookups). This keeps the live
+ * dashboards clean as strategies churn without losing the prior data.
+ */
+export function getTradeStatsByStrategy(
+  db: Database.Database,
+  opts: { includeArchived?: boolean; enabledOnly?: boolean } = {},
+) {
+  const { includeArchived = false, enabledOnly = true } = opts;
+  const archiveFilter = includeArchived ? '' : 'AND (t.archived IS NULL OR t.archived = 0)';
+  const enabledJoin = enabledOnly
+    ? 'INNER JOIN strategy_configs c ON c.id = t.strategy_id AND c.enabled = 1'
+    : '';
   return db.prepare(`
     SELECT
-      strategy_id,
-      mode,
+      t.strategy_id,
+      t.mode,
+      COALESCE(t.execution_mode, 'paper') as execution_mode,
       COUNT(*) as total,
-      COUNT(CASE WHEN status='closed' THEN 1 END) as closed,
-      COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
-      COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
-      ROUND(AVG(CASE WHEN status='closed' THEN net_return_pct END), 2) as avg_net_return_pct,
-      SUM(CASE WHEN status='closed' AND exit_reason IN ('take_profit','trailing_tp') THEN 1 ELSE 0 END) as tp_exits,
-      SUM(CASE WHEN status='closed' AND exit_reason IN ('stop_loss','trailing_stop','breakeven_stop') THEN 1 ELSE 0 END) as sl_exits,
-      SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
-      ROUND(SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END), 4) as total_net_profit_sol,
-      MIN(entry_timestamp) as first_trade_ts,
-      MAX(entry_timestamp) as last_trade_ts
-    FROM trades_v2
-    ${archiveFilter}
-    GROUP BY strategy_id, mode
-    ORDER BY strategy_id, mode
+      COUNT(CASE WHEN t.status='closed' THEN 1 END) as closed,
+      COUNT(CASE WHEN t.status='open' THEN 1 END) as open_count,
+      COUNT(CASE WHEN t.status='failed' THEN 1 END) as failed,
+      ROUND(AVG(CASE WHEN t.status='closed' THEN t.net_return_pct END), 2) as avg_net_return_pct,
+      SUM(CASE WHEN t.status='closed' AND t.exit_reason IN ('take_profit','trailing_tp') THEN 1 ELSE 0 END) as tp_exits,
+      SUM(CASE WHEN t.status='closed' AND t.exit_reason IN ('stop_loss','trailing_stop','breakeven_stop') THEN 1 ELSE 0 END) as sl_exits,
+      SUM(CASE WHEN t.status='closed' AND t.exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
+      ROUND(SUM(CASE WHEN t.status='closed' THEN t.net_profit_sol ELSE 0 END), 4) as total_net_profit_sol,
+      MIN(t.entry_timestamp) as first_trade_ts,
+      MAX(t.entry_timestamp) as last_trade_ts
+    FROM trades_v2 t
+    ${enabledJoin}
+    WHERE 1=1
+      ${archiveFilter}
+    GROUP BY t.strategy_id, t.mode, COALESCE(t.execution_mode, 'paper')
+    ORDER BY t.strategy_id, t.mode, COALESCE(t.execution_mode, 'paper')
   `).all();
 }
 

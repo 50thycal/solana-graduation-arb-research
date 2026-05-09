@@ -67,6 +67,26 @@ function runMigrations(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_pool_obs_grad ON pool_observations(graduation_id);
 
+    -- Per-swap log across the post-graduation window (0..300s). Populated via
+    -- T+305 backfill from getSignaturesForAddress(poolAddress). Used by the
+    -- whale-sell / liquidity-drop exit strategy (see api/exit-sim.ts whale_liq).
+    CREATE TABLE IF NOT EXISTS post_grad_swaps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      graduation_id INTEGER NOT NULL REFERENCES graduations(id),
+      tx_signature TEXT NOT NULL,
+      block_time INTEGER NOT NULL,
+      seconds_since_graduation INTEGER NOT NULL,
+      wallet_address TEXT,
+      action TEXT,
+      amount_sol REAL,
+      amount_token REAL,
+      pool_sol_after REAL,
+      UNIQUE(graduation_id, tx_signature)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_post_grad_swaps_grad_time
+      ON post_grad_swaps(graduation_id, seconds_since_graduation);
+
     CREATE TABLE IF NOT EXISTS price_comparisons (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       graduation_id INTEGER NOT NULL REFERENCES graduations(id),
@@ -207,6 +227,8 @@ function runMigrations(db: Database.Database): void {
       ['path_smoothness_0_60', 'REAL'],// same for 0-60s
       ['max_drawdown_0_30', 'REAL'],   // max peak-to-trough % drop within 0-30s (negative)
       ['max_drawdown_0_60', 'REAL'],   // same for 0-60s
+      ['max_tick_drop_0_30', 'REAL'],  // worst single 5s-interval drop in pct points within 0-30s (≤ 0)
+      ['sum_abs_returns_0_30', 'REAL'],// sum of |Δpct| across 5s intervals in 0-30s — realized vol proxy
       ['dip_and_recover_flag', 'INTEGER'], // 1 if price dropped >10% from running peak then recovered
       ['early_vs_late_0_30', 'REAL'],  // (pct_t15-pct_t0) - (pct_t30-pct_t15): positive = front-loaded
       ['early_vs_late_0_60', 'REAL'],  // (pct_t30-pct_t0) - (pct_t60-pct_t30): same for full window
@@ -216,6 +238,13 @@ function runMigrations(db: Database.Database): void {
       ['buy_pressure_buy_ratio', 'REAL'],          // buys / (buys + sells) as 0-1
       ['buy_pressure_whale_pct', 'REAL'],          // largest single buy SOL / total buy SOL volume
       ['buy_pressure_trade_count', 'INTEGER'],     // total txs in 0-30s window (from signature count)
+      // Sniper metrics (computed at T+35 from competition_signals in T+0..T+2s window).
+      // Strategies that filter on these fields are auto-delayed by 5s in StrategyManager,
+      // matching the buy_pressure_* pattern.
+      ['sniper_count_t0_t2', 'INTEGER'],          // distinct wallets with a 'buy' signal in T+0..T+2s
+      ['sniper_sol_t0_t2', 'REAL'],               // total SOL spent on T+0..T+2s 'buy' signals
+      ['sniper_wallet_velocity_avg', 'REAL'],     // avg # of EARLIER graduations these snipers also sniped (T+0..T+2)
+      ['sniper_wallet_velocity_max', 'INTEGER'],  // max # of earlier graduations any of these snipers sniped
       // Wallet address tracking
       ['dev_wallet_address', 'TEXT'],              // wallet address of largest non-infrastructure holder
       ['creator_wallet_address', 'TEXT'],          // wallet that deployed the token on pump.fun
@@ -228,6 +257,30 @@ function runMigrations(db: Database.Database): void {
       ['label_t60', 'TEXT'],                        // PUMP/DUMP/STABLE at T+60
       ['label_t120', 'TEXT'],                       // PUMP/DUMP/STABLE at T+120
     ];
+    // Every-5s price snapshots across the full 300s monitoring window — dedupes against
+    // explicit entries above (t5, t10, ..., t60, t90, t120, t150, t180, t240, t300).
+    // Liquidity snapshots use the same grid — whale-sell / pool-drop exit rules need
+    // sub-30s resolution because dumps usually complete in seconds, not minutes.
+    {
+      const planned = new Set(newMomCols.map(([c]) => c));
+      for (let sec = 5; sec <= 300; sec += 5) {
+        const priceCol = `price_t${sec}`;
+        const pctCol = `pct_t${sec}`;
+        const liqCol = `liquidity_sol_t${sec}`;
+        if (!planned.has(priceCol)) newMomCols.push([priceCol, 'REAL']);
+        if (!planned.has(pctCol)) newMomCols.push([pctCol, 'REAL']);
+        if (!planned.has(liqCol)) newMomCols.push([liqCol, 'REAL']);
+      }
+    }
+    // Path-shape metrics over longer horizons (0-120, 0-180, 0-300). Only populated
+    // for graduations with the full every-5s snapshot grid — pre-rollout rows stay NULL.
+    for (const win of [120, 180, 300] as const) {
+      newMomCols.push([`acceleration_t${win}`, 'REAL']);
+      newMomCols.push([`monotonicity_0_${win}`, 'REAL']);
+      newMomCols.push([`path_smoothness_0_${win}`, 'REAL']);
+      newMomCols.push([`max_drawdown_0_${win}`, 'REAL']);
+      newMomCols.push([`early_vs_late_0_${win}`, 'REAL']);
+    }
     for (const [col, type] of newMomCols) {
       if (!momExisting.has(col)) {
         db.exec(`ALTER TABLE graduation_momentum ADD COLUMN ${col} ${type}`);
@@ -315,6 +368,109 @@ function runMigrations(db: Database.Database): void {
 
     db.exec(`CREATE INDEX IF NOT EXISTS idx_grad_momentum_label_t60  ON graduation_momentum(label_t60)`);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_grad_momentum_label_t120 ON graduation_momentum(label_t120)`);
+
+    // Sniper-window index (used by both backfill and live writes — wallet
+    // self-join is what makes wallet_velocity tractable). Idempotent.
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_competition_signals_wallet ON competition_signals(wallet_address)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_grad_momentum_sniper_count ON graduation_momentum(sniper_count_t0_t2)`);
+
+    // Backfill sniper_count_t0_t2 / sniper_sol_t0_t2 from competition_signals.
+    // SQL alone since these are per-graduation aggregates with no cross-row
+    // dependencies. Only touches rows where the column is still NULL.
+    db.exec(`
+      UPDATE graduation_momentum
+      SET sniper_count_t0_t2 = (
+            SELECT COUNT(DISTINCT wallet_address)
+            FROM competition_signals cs
+            WHERE cs.graduation_id = graduation_momentum.graduation_id
+              AND cs.action = 'buy'
+              AND cs.seconds_since_graduation >= 0
+              AND cs.seconds_since_graduation <= 2
+              AND cs.wallet_address IS NOT NULL
+          ),
+          sniper_sol_t0_t2 = (
+            SELECT COALESCE(SUM(amount_sol), 0)
+            FROM competition_signals cs
+            WHERE cs.graduation_id = graduation_momentum.graduation_id
+              AND cs.action = 'buy'
+              AND cs.seconds_since_graduation >= 0
+              AND cs.seconds_since_graduation <= 2
+              AND cs.amount_sol IS NOT NULL
+          )
+      WHERE sniper_count_t0_t2 IS NULL
+        AND graduation_id IN (
+          SELECT DISTINCT graduation_id FROM competition_signals
+          WHERE seconds_since_graduation >= 0 AND seconds_since_graduation <= 2
+        )
+    `);
+
+    // Backfill wallet velocity in JS — chronological pass keeps this O(n_signals)
+    // instead of O(n²) self-joins. For each graduation in id-asc order, look up
+    // each sniper wallet's accumulated prior count, average + max, then increment
+    // the wallet's count. PRIOR-only by construction (counter increments AFTER
+    // recording) — matches what would have been knowable at trade time.
+    // bot_settings is created lower in this function; ensure it exists first
+    // so the backfill marker check works on first boot.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bot_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER DEFAULT (unixepoch())
+      )
+    `);
+    const velAlreadyDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('sniper_wallet_velocity_backfill_v1') != null;
+    if (!velAlreadyDone) {
+      const snipers = db.prepare(`
+        SELECT graduation_id, wallet_address
+        FROM competition_signals
+        WHERE action = 'buy'
+          AND seconds_since_graduation >= 0
+          AND seconds_since_graduation <= 2
+          AND wallet_address IS NOT NULL
+        GROUP BY graduation_id, wallet_address
+        ORDER BY graduation_id ASC
+      `).all() as Array<{ graduation_id: number; wallet_address: string }>;
+
+      // Group rows by graduation_id while preserving chronological order
+      const byGrad = new Map<number, string[]>();
+      for (const r of snipers) {
+        if (!byGrad.has(r.graduation_id)) byGrad.set(r.graduation_id, []);
+        byGrad.get(r.graduation_id)!.push(r.wallet_address);
+      }
+
+      const walletPriorCount = new Map<string, number>();
+      const updateStmt = db.prepare(`
+        UPDATE graduation_momentum
+        SET sniper_wallet_velocity_avg = ?,
+            sniper_wallet_velocity_max = ?
+        WHERE graduation_id = ?
+      `);
+
+      const tx = db.transaction(() => {
+        for (const [gid, wallets] of byGrad) {
+          let sum = 0;
+          let max = 0;
+          for (const w of wallets) {
+            const c = walletPriorCount.get(w) ?? 0;
+            sum += c;
+            if (c > max) max = c;
+          }
+          const avg = wallets.length > 0 ? sum / wallets.length : 0;
+          updateStmt.run(+avg.toFixed(3), max, gid);
+          // Increment AFTER recording so this graduation's sniper count
+          // doesn't include itself in its own prior.
+          for (const w of wallets) {
+            walletPriorCount.set(w, (walletPriorCount.get(w) ?? 0) + 1);
+          }
+        }
+      });
+      tx();
+
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('sniper_wallet_velocity_backfill_v1', String(byGrad.size));
+      logger.info({ graduationsUpdated: byGrad.size, snipers: snipers.length }, 'Backfilled sniper wallet velocity (chronological)');
+    }
   }
 
   // Add columns to graduations if they don't exist yet (safe migration)
@@ -440,6 +596,30 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // Strategy journal — per-cohort hypothesis + prediction + status, with an
+  // append-only updates trail. Keyed by `strategy_id` but NOT a FK: entries
+  // intentionally outlive a strategy delete/disable so the research arc is
+  // preserved (we want to re-read what we predicted v9 would do, even after
+  // v9 is dead). Manual `status` (OPEN/PROMOTED/KILLED/PAUSED) is set by the
+  // operator; the live auto-badge in journal.json is computed against the
+  // strategy's current closed-trade percentiles and is independent of this
+  // column.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS strategy_journal (
+      id TEXT PRIMARY KEY,
+      strategy_id TEXT NOT NULL,
+      cohort_label TEXT,
+      hypothesis TEXT NOT NULL,
+      prediction_json TEXT,
+      status TEXT NOT NULL DEFAULT 'OPEN',
+      created_at INTEGER DEFAULT (unixepoch()),
+      updated_at INTEGER DEFAULT (unixepoch()),
+      updates_json TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE INDEX IF NOT EXISTS idx_journal_strategy ON strategy_journal(strategy_id);
+    CREATE INDEX IF NOT EXISTS idx_journal_status ON strategy_journal(status);
+  `);
+
   // Bot error log — one row per uncaught exception / unhandled rejection so
   // /api/snapshot can surface the last crash without depending on Railway logs.
   db.exec(`
@@ -472,6 +652,84 @@ function runMigrations(db: Database.Database): void {
     }
   }
 
+  // Live-execution columns on trades_v2 (safe migration).
+  // execution_mode is the per-phase rollout flag (paper/shadow/live_micro/live_full).
+  // shadow_measured_* capture on-chain pool state at entry/exit in shadow mode —
+  // we never submit a tx but record what the fill would have been so paper gap
+  // penalties can be compared to reality. jito_tip_sol and tx_land_ms are only
+  // populated in live_micro/live_full.
+  {
+    const tradeColsLive = db.prepare("PRAGMA table_info(trades_v2)").all() as Array<{ name: string }>;
+    const tradeExistingLive = new Set(tradeColsLive.map(c => c.name));
+    const newTradeCols: Array<[string, string]> = [
+      ['execution_mode', `TEXT DEFAULT 'paper'`],
+      ['shadow_measured_entry_slippage_pct', 'REAL'],
+      ['shadow_measured_exit_slippage_pct', 'REAL'],
+      ['measured_exit_slippage_pct', 'REAL'],
+      ['jito_tip_sol', 'REAL'],
+      ['tx_land_ms', 'INTEGER'],
+    ];
+    for (const [col, type] of newTradeCols) {
+      if (!tradeExistingLive.has(col)) {
+        db.exec(`ALTER TABLE trades_v2 ADD COLUMN ${col} ${type}`);
+      }
+    }
+    // Backfill legacy rows: anything already in DB pre-migration was paper.
+    db.exec(`UPDATE trades_v2 SET execution_mode = 'paper' WHERE execution_mode IS NULL`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_trades_v2_execution_mode ON trades_v2(execution_mode)`);
+  }
+
+  // One-time backfill: recompute net_return_pct on existing closed shadow
+  // trades under the measured-cost model (gross − measured entry slip −
+  // measured exit slip − simulated jito tip − tx fee). Pre-fix shadow rows
+  // were stored with the static gap-penalty model, which over-charges by
+  // ~25 pp vs reality. Guarded by a marker so it runs at most once per row.
+  {
+    // bot_settings is created lower down in this function; create-if-not-exists
+    // here so the marker check works on first boot too.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bot_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER DEFAULT (unixepoch())
+      )
+    `);
+    const alreadyDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('shadow_net_return_backfill_v1') != null;
+    if (!alreadyDone) {
+      // Use COALESCE to default missing jito_tip_sol to 0.0002 SOL (entry+exit
+      // simulated tips at DEFAULT_JITO_TIP_SOL = 0.0001 each). tx_overhead is a
+      // constant 0.00001 SOL (2 × 5000 lamports).
+      const sim2Tips = 0.0002;
+      const txOverheadSol = 1e-5;
+      const result = db.prepare(`
+        UPDATE trades_v2
+        SET net_return_pct = ROUND(
+              gross_return_pct
+              - COALESCE(shadow_measured_entry_slippage_pct, 0)
+              - COALESCE(shadow_measured_exit_slippage_pct, 0)
+              - ((COALESCE(jito_tip_sol, ?) + ?) / NULLIF(trade_size_sol, 0)) * 100
+            , 6),
+            net_profit_sol = ROUND(
+              trade_size_sol * (
+                gross_return_pct
+                - COALESCE(shadow_measured_entry_slippage_pct, 0)
+                - COALESCE(shadow_measured_exit_slippage_pct, 0)
+                - ((COALESCE(jito_tip_sol, ?) + ?) / NULLIF(trade_size_sol, 0)) * 100
+              ) / 100
+            , 8)
+        WHERE status = 'closed'
+          AND COALESCE(execution_mode, 'paper') = 'shadow'
+          AND gross_return_pct IS NOT NULL
+          AND shadow_measured_entry_slippage_pct IS NOT NULL
+          AND shadow_measured_exit_slippage_pct IS NOT NULL
+      `).run(sim2Tips, txOverheadSol, sim2Tips, txOverheadSol);
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('shadow_net_return_backfill_v1', String(result.changes));
+      logger.info({ rowsUpdated: result.changes }, 'Backfilled net_return_pct on closed shadow trades (measured-cost model)');
+    }
+  }
+
   // Add archived column to trades_v2 — backfill legacy strategy trades so they
   // stay queryable but are excluded from dashboard/snapshot by default.
   {
@@ -497,6 +755,18 @@ function runMigrations(db: Database.Database): void {
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
       updated_at INTEGER DEFAULT (unixepoch())
+    );
+  `);
+
+  // Persistent cache for heavy precomputed JSON blobs (filter-v2 panels,
+  // price-path detail, etc.). Survives process restarts so a redeploy doesn't
+  // trigger another ~100s blocking recompute. Read on boot, written after
+  // each refreshHeavyData() completes. value_json can be MB-sized.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cache_kv (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      computed_at INTEGER NOT NULL
     );
   `);
 

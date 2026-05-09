@@ -14,6 +14,8 @@ import { PositionManager, ExitEvent, DynamicMonitorParams } from './position-man
 import { TradeEvaluator } from './trade-evaluator';
 import { MarkovMatrixStore, REFIT_PATHS_THRESHOLD } from './markov-matrix';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
+import { Wallet } from './wallet';
+import { isKillswitchTripped, maybeLogKillswitchTripped } from './safety';
 import {
   getStrategyConfigs,
   upsertStrategyConfig,
@@ -51,8 +53,15 @@ export class StrategyManager {
   private strategies: Map<string, StrategyInstance> = new Map();
   private tradeLogger: TradeLogger;
   private executor: Executor;
+  private wallet: Wallet | null;
   private backfillTimer: NodeJS.Timeout | null = null;
+  private safetyTimer: NodeJS.Timeout | null = null;
   private markovStore: MarkovMatrixStore;
+  // Watchdog telemetry: when the last T+30 callback fired across all strategies.
+  // Used by /api/diagnose and snapshot.json to surface a stalled-pipeline state
+  // (graduations arriving but callbacks not firing → PriceCollector wiring bug,
+  // or no graduations at all → WS subscription dead).
+  private lastT30CallbackAt: number | null = null;
 
   constructor(
     private db: Database.Database,
@@ -60,7 +69,11 @@ export class StrategyManager {
   ) {
     this.globalConfig = loadTradingConfig();
     this.tradeLogger = new TradeLogger(db);
-    this.executor = new Executor(this.globalConfig.mode);
+    this.wallet = Wallet.fromEnv();
+    // Executor gets connection + wallet so it can build live txs. Paper-only
+    // deployments (no WALLET_PRIVATE_KEY set) still work — shadow/live modes
+    // will return success:false with a clear error message.
+    this.executor = new Executor(this.globalConfig.executionMode, this.connection, this.wallet);
     this.markovStore = new MarkovMatrixStore();
   }
 
@@ -133,8 +146,39 @@ export class StrategyManager {
         .get() as { n: number }).n,
     );
 
+    // Safety watchdog: every 10s check the killswitch and force-close open
+    // live positions if tripped mid-session. Paper / shadow positions aren't
+    // force-closed (they're harmless — no real exposure).
+    this.safetyTimer = setInterval(() => this.safetyTick(), 10_000);
+
     const enabledCount = Array.from(this.strategies.values()).filter(s => s.enabled).length;
     logger.info({ total: this.strategies.size, enabled: enabledCount }, 'StrategyManager initialized');
+  }
+
+  private safetyTick(): void {
+    if (!isKillswitchTripped()) return;
+    maybeLogKillswitchTripped();
+    // Force-close any open live positions. We route them through handleExit so
+    // the normal sell path fires and net_profit_sol is computed consistently.
+    for (const instance of this.strategies.values()) {
+      for (const pos of instance.positionManager.getPositions()) {
+        if (pos.mode !== 'live') continue;
+        // Fire the exit event with the last known price — the sell path will
+        // re-quote live price before submitting, so this is a safe approximation.
+        const killEvent: ExitEvent = {
+          position: pos,
+          exitReason: 'killswitch',
+          exitPriceSol: pos.highWaterMark || pos.entryPriceSol,
+        };
+        this.handleExit(killEvent, instance.config).catch(err => {
+          logger.error(
+            'Killswitch force-close failed for trade %d: %s',
+            pos.tradeId, err instanceof Error ? err.message : String(err),
+          );
+        });
+        instance.positionManager.removePosition(pos.tradeId);
+      }
+    }
   }
 
   attachToPriceCollector(priceCollector: PriceCollector): void {
@@ -159,38 +203,25 @@ export class StrategyManager {
     pctT30: number,
     solReserves: number,
   ): void {
+    this.lastT30CallbackAt = Date.now();
     const promises: Promise<void>[] = [];
 
     for (const instance of this.strategies.values()) {
       if (!instance.enabled) continue;
 
-      const needsBuyPressure = instance.config.filters.some(
+      // Filters that source from competition_signals (buy_pressure_* and sniper_*)
+      // are written at T+35 by the same detectBuyPressure pass — strategies
+      // referencing either family must delay evaluation 5s past T+30.
+      const needsT35 = instance.config.filters.some(
         f => f.field.startsWith('buy_pressure_')
+          || f.field.startsWith('sniper_'),
       );
 
-      if (needsBuyPressure) {
-        // Delay evaluation by 5s so buy_pressure fields (written at T+35) are available.
-        // Entry price is still T+30 — matches the sim model.
-        const delayed = new Promise<void>((resolve) => {
-          setTimeout(() => {
-            instance.evaluator.onT30(graduationId, ctx, priceT30, pctT30, solReserves)
-              .catch(err => {
-                logger.error(
-                  'Strategy %s delayed onT30 error for grad %d: %s',
-                  instance.id,
-                  graduationId,
-                  err instanceof Error ? err.message : String(err)
-                );
-              })
-              .finally(resolve);
-          }, 5_000);
-        });
-        promises.push(delayed);
-        logger.debug(
-          { strategyId: instance.id, graduationId },
-          'Delaying evaluation by 5s (buy_pressure filter detected)'
-        );
-      } else {
+      const entryTimingSec = instance.config.entryTimingSec ?? 30;
+      // Required wall-clock delay past T+30 before evaluating.
+      const delaySec = Math.max(entryTimingSec - 30, needsT35 ? 5 : 0);
+
+      if (delaySec === 0) {
         promises.push(
           instance.evaluator.onT30(graduationId, ctx, priceT30, pctT30, solReserves).catch(err => {
             logger.error(
@@ -201,11 +232,74 @@ export class StrategyManager {
             );
           })
         );
+        continue;
       }
+
+      // Delayed-entry path. For T+35 buy_pressure filters the entry price
+      // stays at T+30 (matches sim). For entryTimingSec > 30 we re-read the
+      // late-entry checkpoint from graduation_momentum at fire time.
+      const lateEntry = entryTimingSec > 30;
+      const delayed = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          let evalPrice = priceT30;
+          let evalPct = pctT30;
+          if (lateEntry) {
+            const priceCol = `price_t${entryTimingSec}`;
+            const pctCol = `pct_t${entryTimingSec}`;
+            const row = this.db.prepare(
+              `SELECT ${priceCol} AS price, ${pctCol} AS pct
+               FROM graduation_momentum WHERE graduation_id = ?`
+            ).get(graduationId) as { price: number | null; pct: number | null } | undefined;
+            if (!row || row.price == null || row.pct == null) {
+              logger.debug(
+                { strategyId: instance.id, graduationId, entryTimingSec },
+                'Late-entry skipped — late checkpoint not yet populated'
+              );
+              resolve();
+              return;
+            }
+            evalPrice = row.price;
+            evalPct = row.pct;
+          }
+          instance.evaluator.onT30(graduationId, ctx, evalPrice, evalPct, solReserves)
+            .catch(err => {
+              logger.error(
+                'Strategy %s delayed onT30 error for grad %d: %s',
+                instance.id,
+                graduationId,
+                err instanceof Error ? err.message : String(err)
+              );
+            })
+            .finally(resolve);
+        }, delaySec * 1000);
+      });
+      promises.push(delayed);
+      logger.debug(
+        { strategyId: instance.id, graduationId, delaySec, entryTimingSec, needsT35 },
+        'Delaying evaluation'
+      );
     }
 
     // Fire and forget — don't block the price collector
     Promise.allSettled(promises);
+  }
+
+  // ── Watchdog telemetry ─────────────────────────────────────────────────────
+  /**
+   * Wall-clock ms of the last T+30 callback dispatched (across any strategy).
+   * Null until the PriceCollector first fires. Used by /api/diagnose +
+   * snapshot.json to detect stalled pipelines.
+   */
+  getLastT30CallbackAt(): number | null {
+    return this.lastT30CallbackAt;
+  }
+
+  /** True if at least one strategy is currently enabled. */
+  hasEnabledStrategies(): boolean {
+    for (const s of this.strategies.values()) {
+      if (s.enabled) return true;
+    }
+    return false;
   }
 
   // ── Strategy CRUD ──────────────────────────────────────────────────────────
@@ -331,6 +425,79 @@ export class StrategyManager {
     logger.info({ strategyId: id, enabled }, 'Strategy toggled');
   }
 
+  /**
+   * Reconcile the in-memory strategy cache against the strategy_configs DB
+   * table. Catches drift where a delete/upsert/toggle bypassed the in-memory
+   * path (e.g. external SQL, multi-process race, or a bug in the command
+   * pipeline that updated DB but not memory). Safe to call repeatedly — only
+   * acts when state actually differs.
+   *
+   * Drift signals to look for in the returned counts:
+   *   - removed > 0  → DB no longer has a strategy that's in memory (potential
+   *     cause of the "deleted strategy still trading" symptom seen 2026-05-07)
+   *   - added > 0    → DB has a strategy that memory doesn't (e.g. upsert
+   *     persisted but createInstance failed earlier)
+   *   - toggled > 0  → enabled flag diverged
+   */
+  reconcileFromDb(): { removed: number; added: number; toggled: number } {
+    const dbRows = getStrategyConfigs(this.db);
+    const dbIds = new Set(dbRows.map(r => r.id));
+    let removed = 0;
+    let added = 0;
+    let toggled = 0;
+
+    // Memory has a strategy that DB doesn't → stop & remove.
+    // Default is exempt — it lives in memory even if the row gets cleared.
+    for (const [id, instance] of this.strategies) {
+      if (id === 'default') continue;
+      if (!dbIds.has(id)) {
+        logger.warn(
+          { strategyId: id, activePositions: instance.positionManager.activeCount() },
+          'Reconcile: strategy in memory but missing from DB — stopping & removing',
+        );
+        instance.positionManager.stop();
+        this.strategies.delete(id);
+        removed++;
+      }
+    }
+
+    // DB has a strategy that memory doesn't, or enabled flag drifted → fix.
+    for (const row of dbRows) {
+      const dbEnabled = row.enabled === 1;
+      const existing = this.strategies.get(row.id);
+      if (!existing) {
+        try {
+          const params = JSON.parse(row.config_json) as StrategyParams;
+          this.createInstance(row.id, row.label, dbEnabled, params);
+          if (dbEnabled) {
+            this.strategies.get(row.id)!.positionManager.start(this.connection);
+          }
+          logger.warn({ strategyId: row.id }, 'Reconcile: strategy in DB but missing from memory — created');
+          added++;
+        } catch (err) {
+          logger.error(
+            { strategyId: row.id, err: err instanceof Error ? err.message : String(err) },
+            'Reconcile: failed to materialize DB strategy in memory',
+          );
+        }
+      } else if (existing.enabled !== dbEnabled) {
+        existing.enabled = dbEnabled;
+        if (dbEnabled) {
+          existing.positionManager.start(this.connection);
+        } else {
+          existing.positionManager.stop();
+        }
+        logger.warn(
+          { strategyId: row.id, dbEnabled, prevEnabled: !dbEnabled },
+          'Reconcile: enabled flag drifted — synced from DB',
+        );
+        toggled++;
+      }
+    }
+
+    return { removed, added, toggled };
+  }
+
   // ── Stats ─────────────────────────────────────────────────────────────────
 
   getConfig(): TradingConfig {
@@ -378,6 +545,7 @@ export class StrategyManager {
     this.connection = connection;
     for (const instance of this.strategies.values()) {
       instance.positionManager.updateConnection(connection);
+      instance.evaluator.updateConnection(connection);
     }
   }
 
@@ -388,6 +556,10 @@ export class StrategyManager {
     if (this.backfillTimer) {
       clearInterval(this.backfillTimer);
       this.backfillTimer = null;
+    }
+    if (this.safetyTimer) {
+      clearInterval(this.safetyTimer);
+      this.safetyTimer = null;
     }
   }
 
@@ -484,6 +656,29 @@ export class StrategyManager {
     if (mexit >= mhold) {
       errors.push('markovExitProbThreshold must be less than markovHoldProbThreshold');
     }
+    // ── Live-execution params ────────────────────────────────────────────
+    if (p.executionMode != null) {
+      const valid = ['paper', 'shadow', 'live_micro', 'live_full'];
+      if (!valid.includes(p.executionMode)) {
+        errors.push(`executionMode must be one of ${valid.join(', ')}`);
+      }
+    }
+    if (p.jitoTipSol != null) {
+      if (!isFinite(p.jitoTipSol) || p.jitoTipSol < 0 || p.jitoTipSol > 0.1) {
+        errors.push('jitoTipSol must be between 0 and 0.1');
+      }
+    }
+    if (p.maxSlippageBps != null) {
+      if (!Number.isInteger(p.maxSlippageBps) || p.maxSlippageBps < 1 || p.maxSlippageBps > 10_000) {
+        errors.push('maxSlippageBps must be an integer between 1 and 10000');
+      }
+    }
+    if (p.entryTimingSec != null) {
+      const allowed = [30, 60, 90, 120, 180, 240, 300];
+      if (!allowed.includes(p.entryTimingSec)) {
+        errors.push(`entryTimingSec must be one of ${allowed.join(', ')}`);
+      }
+    }
     if (errors.length > 0) {
       throw new Error(`Invalid strategy params: ${errors.join('; ')}`);
     }
@@ -521,6 +716,8 @@ export class StrategyManager {
       this.executor,
       positionManager,
       id,
+      this.connection,
+      this.wallet,
     );
 
     // Register this strategy's filter set with the matrix store so the next
@@ -553,20 +750,31 @@ export class StrategyManager {
   private async handleExit(event: ExitEvent, config: TradingConfig): Promise<void> {
     const { position: pos, exitReason, exitPriceSol } = event;
 
+    const executionMode = pos.executionMode ?? config.executionMode ?? 'paper';
+    const poolCtx = (pos.baseVault && pos.quoteVault)
+      ? { poolAddress: pos.poolAddress, baseVault: pos.baseVault, quoteVault: pos.quoteVault }
+      : undefined;
+
     let sellResult;
     try {
-      sellResult = await this.executor.sell(pos.mint, pos.tokensHeld, exitPriceSol, pos.slippageEstPct);
+      sellResult = await this.executor.sell(
+        pos.mint, pos.tokensHeld, exitPriceSol, pos.slippageEstPct, poolCtx, executionMode,
+      );
     } catch (err) {
       logger.error({ tradeId: pos.tradeId }, 'Sell execution threw: %s', err instanceof Error ? err.message : String(err));
-      sellResult = { success: true, effectivePrice: exitPriceSol, tokensReceived: 0, dryRun: pos.mode === 'paper' };
+      sellResult = {
+        success: true, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: executionMode === 'paper' || executionMode === 'shadow',
+      } as Awaited<ReturnType<typeof this.executor.sell>>;
     }
 
-    const effectiveExitPrice = sellResult.effectivePrice ?? exitPriceSol;
-
+    // closeTrade applies either measured slippage (live modes) or gap
+    // penalty (paper/shadow) on top of this raw spot price — do NOT
+    // pre-discount here or the live path double-counts.
     this.tradeLogger.closeTrade({
       tradeId: pos.tradeId,
       entryPriceSol: pos.entryPriceSol,
-      exitPriceSol: effectiveExitPrice,
+      exitPriceSol,
       exitReason,
       tradeSizeSol: config.tradeSizeSol,
       takeProfitPct: config.takeProfitPct,
@@ -574,6 +782,11 @@ export class StrategyManager {
       slGapPenaltyPct: config.slGapPenaltyPct,
       tpGapPenaltyPct: config.tpGapPenaltyPct,
       exitTxSignature: sellResult.txSignature,
+      measuredExitSlippagePct: sellResult.measuredSlippagePct,
+      shadowMeasuredExitSlippagePct: executionMode === 'shadow' ? sellResult.measuredSlippagePct : undefined,
+      jitoTipSol: sellResult.jitoTipSol,
+      txLandMs: sellResult.txLandMs,
+      executionMode,
     });
   }
 
@@ -642,6 +855,7 @@ export class StrategyManager {
         maxExitTimestamp: trade.entry_timestamp + trade.max_hold_seconds,
         tokensHeld: trade.entry_tokens_received ?? 0,
         mode: 'live',
+        executionMode: (trade.execution_mode as any) ?? 'live_full',
         // graduation_timestamp not stored on trades_v2; approximate from entry
         graduationDetectedAt: trade.entry_timestamp - 30,
         // Dynamic monitoring runtime state — initialize conservatively on recovery

@@ -16,6 +16,23 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('graduation-listener');
 
+// Rejects after `ms` if `p` hasn't settled. Note: the underlying promise keeps
+// running — there's no way to cancel an in-flight await in JS. That's fine
+// here: the old subscription/connection is about to be replaced anyway, so a
+// dangling promise holding a dead socket handle is a GC problem, not a bug.
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`${label} timed out after ${ms}ms`)),
+      ms,
+    );
+    p.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 // pump.fun program ID
 const PUMP_FUN_PROGRAM_ID = new PublicKey(
   process.env.PUMP_FUN_PROGRAM_ID || '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P'
@@ -61,9 +78,29 @@ const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 60_000;
 const RECONNECT_BACKOFF_MULTIPLIER = 2;
 
-// How long silence before we consider the WS dead
+// How long silence before we consider the WS dead. 2 minutes is the proven
+// production value. A shorter threshold (30 s) caused Helius to replay
+// buffered migration txs on every reconnect, arriving 30-270 s past T+0 and
+// getting rejected as stale by the price collector. Off-thread compute
+// (b07f54d) already removed the original motivation for a shorter value.
 const WS_SILENCE_TIMEOUT_MS = 2 * 60 * 1000;
 const WS_HEALTH_CHECK_INTERVAL_MS = 30_000;
+
+// Secondary health check: if no migrate candidates in this long, force a
+// reconnect even if other pump.fun logs are still flowing. Defends against
+// "WS half-alive" — connected, routing chatter, but not routing migrations.
+// Historical grad rate is 30-150/day, so one every ~30 min on the low end.
+// 60 min without a single candidate is suspicious enough to reset the pipe.
+const NO_CANDIDATE_SILENCE_MS = 60 * 60 * 1000;
+
+// Hard caps on reconnect sub-steps. If unsubscribe or subscribe hangs
+// indefinitely (Helius WS occasionally does this), the outer reconnect()
+// never exits its try block, `finally { reconnecting = false }` never runs,
+// and the health check's `if (reconnecting) return` early-outs forever.
+// Wrap each step with a timeout so a hang surfaces as a throw → the catch
+// block schedules another reconnect and the finally flips the flag back.
+const RECONNECT_UNSUBSCRIBE_TIMEOUT_MS = 10_000;
+const RECONNECT_SUBSCRIBE_TIMEOUT_MS = 20_000;
 
 export interface GraduationEvent {
   mint: string;
@@ -91,22 +128,96 @@ interface BondingCurveState {
   isComplete: boolean;
 }
 
+// pump.fun's withdraw_authority is a hardcoded constant pubkey baked into the
+// program — NOT a PDA. Both seeds we tried (`withdraw_authority` and
+// `withdraw-authority`) derived to addresses with no on-chain activity. The
+// real address was captured at runtime from accts[1] of a real migrate tx
+// (see comment "Captured at runtime" in the class fields below).
+//
+// Polling getSignaturesForAddress on this address gives us migrations as soon
+// as Helius's indexer sees them. The runtime discovery code is kept as a
+// belt-and-suspenders fallback in case pump.fun ever rotates this key.
+const PUMP_WITHDRAW_AUTHORITY = new PublicKey(
+  '39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg'
+);
+
+// How often to poll for new migration signatures via RPC (bypasses WS delivery lag).
+const MIGRATION_POLL_INTERVAL_MS = parseInt(process.env.MIGRATION_POLL_INTERVAL_MS || '2000', 10);
+
 export class GraduationListener {
   private connection: Connection;
   private db: Database.Database;
   private poolTracker: PoolTracker;
   private priceCollector: PriceCollector;
   private holderEnrichment: HolderEnrichment;
-  private subscriptionId: number | null = null;
+  // Single pump.fun WS subscription at commitment='processed'. The confirmed-
+  // commitment sibling was removed 2026-05-03 after 11h of zero wins (Helius
+  // batch-replays confirmed-level events at slot-confirmation time — 25-75s
+  // lag — so it always lost the race). Processed bypasses that batch and
+  // wins ~97% of races; the RPC poll covers the remaining ~3% tail.
+  private subscriptionIdProcessed: number | null = null;
   private stopped = false;
   private reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
+  private pollInterval: NodeJS.Timeout | null = null;
+  private pollLastSig: string | undefined = undefined;
+  private totalCandidatesFromPoll = 0;
+  // Captured at runtime from accts[1] of the first verified migrate tx. If our
+  // derived PDA above is wrong (kebab vs snake case again), this is the ground
+  // truth and the poller switches to it on the next tick.
+  private discoveredWithdrawAuthority: PublicKey | null = null;
+  // The address the poller is currently using. Tracked separately from the
+  // derived/discovered values so we can detect a mid-flight target switch and
+  // re-bootstrap pollLastSig instead of burst-processing 20 historical sigs.
+  private pollerCurrentTarget: PublicKey = PUMP_WITHDRAW_AUTHORITY;
+  // Circuit breaker: if the poll RPC errors N times in a row, pause polling
+  // for COOLDOWN_MS to avoid log spam and event-loop pressure. Reset on any
+  // successful tick (including ones that find zero new sigs).
+  private pollConsecutiveFailures = 0;
+  private pollPausedUntil = 0;
+  private static readonly POLL_FAILURE_THRESHOLD = 5;
+  private static readonly POLL_COOLDOWN_MS = 60_000;
+  // Per-channel ring buffers of (wsReceivedAt - blockTime) in seconds for the
+  // last 100 verified grads. Lets us see whether stale grads are upstream lag
+  // (high p50 from one channel) or consumer-side lag (high p95 across all
+  // channels, suggesting event-loop blocking or DB writes back-pressuring the
+  // socket reader).
+  private deliveryLatencyByPumpFun: number[] = [];
+  private deliveryLatencyByPumpFunProcessed: number[] = [];
+  private deliveryLatencyByPumpSwap: number[] = [];
+  private deliveryLatencyByPoll: number[] = [];
+  private rpcFetchMsSamples: number[] = [];
+  private static readonly LATENCY_BUFFER_MAX = 100;
   private reconnectTimer: NodeJS.Timeout | null = null;
   private lastEventTime = Date.now();
+  private lastCandidateTime = Date.now();
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private totalLogsReceived = 0;
   private totalCandidatesDetected = 0;
+  private totalCandidatesFromPumpFun = 0;
+  private totalCandidatesFromPumpFunProcessed = 0;
+  private totalCandidatesFromPumpSwap = 0;
+  private totalPollDupes = 0;        // poller fired but WS already won the race
+  private totalPollSigsFound = 0;    // total sigs returned by getSignaturesForAddress
+  private totalPollTicks = 0;        // how many poll intervals have run
   private totalVerifiedGraduations = 0;
   private totalGraduationsRecorded = 0;
+  // Helius's logs subscription delivers the same migration tx multiple times
+  // — observed 4-5x in production. Without dedupe, each redelivery burns:
+  //   - getTransaction RPC (in processAndVerifyGraduation)
+  //   - getAccountInfo RPC (bonding curve verify)
+  //   - vault extraction RPC
+  // ... before INSERT OR IGNORE rejects it. That wasted budget then starves
+  // the priority-lane T+30 vault fetch, which is what kept timing out at
+  // 100% even after the priority-lane patch.
+  //
+  // Bounded Map: signature → wall-clock ms when first seen. Map preserves
+  // insertion order so we can drop the oldest in O(1).
+  private seenSignatures: Map<string, number> = new Map();
+  private static readonly SEEN_SIG_MAX = 2048;          // ~3 hours of grads
+  private static readonly SEEN_SIG_TTL_MS = 30 * 60_000; // 30 min — Helius
+                                                          // re-delivery windows
+                                                          // are seconds, not min
+  private totalDuplicateLogs = 0;
   private totalFalsePositives = 0;
   private totalBundlerFalsePositives = 0;
   private totalMintExtractionFails = 0;
@@ -116,13 +227,26 @@ export class GraduationListener {
   private totalStrategy3Extractions = 0;
   private lastMintFailReasons: string[] = [];
   private totalTxFetchFails = 0;
+  // Subset of totalTxFetchFails where the underlying cause was a thrown
+  // exception (caught inside the retry loop) rather than a null/no-meta
+  // return. Lets us quantify how many graduations we're losing to
+  // `fetch failed`-class network blips on getParsedTransaction. Pre-fix,
+  // these throws bypassed the retry loop entirely and dropped grads
+  // silently; the new in-loop try/catch retries 3× then increments this.
+  private totalTxFetchExceptions = 0;
   private reconnecting = false;
+  private totalReconnects = 0;
   /**
    * Subscribers notified after a successful websocket reconnect with the fresh
    * Connection object. TradingEngine registers here so its PositionManager
    * does not keep polling a dead Connection reference.
    */
   private reconnectSubscribers: Array<(connection: Connection) => void> = [];
+  // Separate connection used exclusively for the migration RPC poller.
+  // Defaults to the main Helius connection, but can be overridden with
+  // MIGRATION_POLL_RPC_URL to use a provider whose indexer doesn't share
+  // Helius's batch-delivery lag.
+  private pollConnection: Connection;
 
   constructor(db: Database.Database) {
     const rpcUrl = process.env.HELIUS_RPC_URL;
@@ -139,15 +263,65 @@ export class GraduationListener {
       commitment: 'confirmed',
       wsEndpoint: wsUrl,
     });
+
+    const pollRpcUrl = process.env.MIGRATION_POLL_RPC_URL;
+    // disableRetryOnRateLimit: true — web3.js's default behaviour on 429 is
+    // to retry up to 4× with exponential backoff (500ms, 1s, 2s, 4s = 7.5s
+    // total per failed call). Public/free RPCs hard-rate-limit the
+    // getSignaturesForAddress endpoint, so without this flag a single rate
+    // limit cascades into overlapping retry storms that flood the logs and
+    // block the event loop. Better to fail fast and let the next 2s poll
+    // tick try again — or trip the circuit breaker.
+    this.pollConnection = pollRpcUrl
+      ? new Connection(pollRpcUrl, {
+          commitment: 'confirmed',
+          disableRetryOnRateLimit: true,
+        })
+      : this.connection;
+
     this.db = db;
     this.poolTracker = new PoolTracker(db, this.connection);
     this.priceCollector = new PriceCollector(db, this.connection);
     this.holderEnrichment = new HolderEnrichment(this.connection);
+
+    // PumpSwap WS used to be wired as a parallel migration-detection channel
+    // here, but with pump.fun-processed winning ~97% and PumpSwap winning 0%
+    // over 11h, the migration-candidate forwarding was dead weight in the
+    // dedup path. Removed 2026-05-03. PumpSwap WS itself stays alive inside
+    // PoolTracker for its other job: filling in the pool address on grads
+    // where pump.fun WS fired first but inline pool extraction failed.
   }
 
   /** Expose the PriceCollector so the TradingEngine can attach its T+30 callback. */
   getPriceCollector(): PriceCollector {
     return this.priceCollector;
+  }
+
+  /** Push a latency sample (seconds) into the per-channel ring buffer. */
+  private recordDeliveryLatency(source: 'pump.fun' | 'pump.fun-processed' | 'pumpswap' | 'rpc-poll', latencySec: number): void {
+    let buf: number[];
+    if (source === 'pump.fun') buf = this.deliveryLatencyByPumpFun;
+    else if (source === 'pump.fun-processed') buf = this.deliveryLatencyByPumpFunProcessed;
+    else if (source === 'pumpswap') buf = this.deliveryLatencyByPumpSwap;
+    else buf = this.deliveryLatencyByPoll;
+    buf.push(latencySec);
+    if (buf.length > GraduationListener.LATENCY_BUFFER_MAX) buf.shift();
+  }
+
+  /** Compute basic distribution stats from a numeric ring buffer. */
+  private static distributionStats(buf: number[]): { n: number; p50: number; p95: number; max: number; mean: number; pctOver25s: number } | null {
+    if (buf.length === 0) return null;
+    const sorted = [...buf].sort((a, b) => a - b);
+    const sum = sorted.reduce((a, b) => a + b, 0);
+    const overGate = sorted.filter((v) => v > 25).length;
+    return {
+      n: sorted.length,
+      p50: +sorted[Math.floor(sorted.length * 0.5)].toFixed(1),
+      p95: +sorted[Math.floor(sorted.length * 0.95)].toFixed(1),
+      max: +sorted[sorted.length - 1].toFixed(1),
+      mean: +(sum / sorted.length).toFixed(1),
+      pctOver25s: +((overGate / sorted.length) * 100).toFixed(1),
+    };
   }
 
   /** Expose the active Connection for the TradingEngine's position monitor. */
@@ -164,10 +338,54 @@ export class GraduationListener {
     this.reconnectSubscribers.push(cb);
   }
 
+  /**
+   * Returns true when this signature has already been processed within the
+   * TTL window. Side effect: prunes expired entries opportunistically and
+   * caps the map size at SEEN_SIG_MAX (oldest dropped first via insertion
+   * order).
+   */
+  private isDuplicateSignature(signature: string): boolean {
+    const now = Date.now();
+    const seenAt = this.seenSignatures.get(signature);
+    if (seenAt !== undefined && now - seenAt < GraduationListener.SEEN_SIG_TTL_MS) {
+      return true;
+    }
+    // Mark seen (overwrites stale entry if expired).
+    this.seenSignatures.set(signature, now);
+    if (this.seenSignatures.size > GraduationListener.SEEN_SIG_MAX) {
+      const oldest = this.seenSignatures.keys().next().value;
+      if (oldest !== undefined) this.seenSignatures.delete(oldest);
+    }
+    return false;
+  }
+
   getStats() {
     return {
       totalLogsReceived: this.totalLogsReceived,
       totalCandidatesDetected: this.totalCandidatesDetected,
+      totalCandidatesFromPumpFun: this.totalCandidatesFromPumpFun,
+      totalCandidatesFromPumpFunProcessed: this.totalCandidatesFromPumpFunProcessed,
+      totalCandidatesFromPumpSwap: this.totalCandidatesFromPumpSwap,
+      totalCandidatesFromPoll: this.totalCandidatesFromPoll,
+      // Race-winner counts per channel — first to clear dedup wins. The 4
+      // channels race on every migration; whichever channel calls
+      // handleMigrationCandidate first with a fresh signature gets the win,
+      // the others get dedup'd into totalDuplicateLogs. Use this to see
+      // which channel is most often the fastest, and decide whether the
+      // processed-commitment channel is pulling its weight.
+      channel_wins: {
+        pump_fun_ws_confirmed: this.totalCandidatesFromPumpFun,
+        pump_fun_ws_processed: this.totalCandidatesFromPumpFunProcessed,
+        pumpswap_ws_confirmed: this.totalCandidatesFromPumpSwap,
+        rpc_poll: this.totalCandidatesFromPoll,
+      },
+      totalPollDupes: this.totalPollDupes,
+      totalPollSigsFound: this.totalPollSigsFound,
+      totalPollTicks: this.totalPollTicks,
+      // Migrate logs filtered out as Helius redeliveries before any RPC
+      // call. Healthy ratio is roughly 4× duplicates for every unique
+      // candidate (so this should be ~80% of (candidates + duplicates)).
+      totalDuplicateLogs: this.totalDuplicateLogs,
       totalVerifiedGraduations: this.totalVerifiedGraduations,
       totalGraduationsRecorded: this.totalGraduationsRecorded,
       totalFalsePositives: this.totalFalsePositives,
@@ -177,11 +395,30 @@ export class GraduationListener {
       totalVaultExtractions: this.totalVaultExtractions,
       totalVaultExtractionFails: this.totalVaultExtractionFails,
       totalTxFetchFails: this.totalTxFetchFails,
+      totalTxFetchExceptions: this.totalTxFetchExceptions,
       lastVaultFailReasons: this.lastVaultFailReasons.slice(-5),
       lastMintFailReasons: this.lastMintFailReasons.slice(-5),
       lastEventSecondsAgo: Math.floor((Date.now() - this.lastEventTime) / 1000),
-      wsConnected: this.subscriptionId !== null,
+      lastCandidateSecondsAgo: Math.floor((Date.now() - this.lastCandidateTime) / 1000),
+      wsConnected: this.subscriptionIdProcessed !== null,
       reconnecting: this.reconnecting,
+      totalReconnects: this.totalReconnects,
+      // Per-channel distribution of (wsReceivedAt - blockTime) in seconds.
+      // Compares pump.fun WS, PumpSwap WS, and RPC poll head-to-head — if all
+      // three show similar p50, the lag is upstream (Helius indexer). If
+      // pump.fun WS p95 is much higher than its p50, lag is consumer-side
+      // (event-loop blocking on heavy momentum-checkpoint bursts).
+      // pctOver25s = % of grads in this channel that arrived stale.
+      deliveryLatencySec: {
+        pumpFun: GraduationListener.distributionStats(this.deliveryLatencyByPumpFun),
+        pumpFunProcessed: GraduationListener.distributionStats(this.deliveryLatencyByPumpFunProcessed),
+        pumpSwap: GraduationListener.distributionStats(this.deliveryLatencyByPumpSwap),
+        rpcPoll: GraduationListener.distributionStats(this.deliveryLatencyByPoll),
+      },
+      // Time spent in our verification pipeline (getParsedTransaction +
+      // PDA derivation + getAccountInfo). Should be <2000ms; if p95 is high,
+      // our pipeline is the lag, not the WS.
+      rpcFetchMs: GraduationListener.distributionStats(this.rpcFetchMsSamples),
       poolTracker: this.poolTracker.getStats(),
       directPriceCollector: this.priceCollector.getStats(),
     };
@@ -196,6 +433,7 @@ export class GraduationListener {
     await this.subscribe();
     await this.poolTracker.start();
     this.priceCollector.startAutoVelocityRecovery();
+    await this.startMigrationPoller();
 
     this.healthCheckInterval = setInterval(() => {
       const silentMs = Date.now() - this.lastEventTime;
@@ -210,7 +448,7 @@ export class GraduationListener {
           recorded: this.totalGraduationsRecorded,
           falsePositives: this.totalFalsePositives,
           mintFails: this.totalMintExtractionFails,
-          subscriptionId: this.subscriptionId,
+          subscriptionId: this.subscriptionIdProcessed,
         },
         'WS health check'
       );
@@ -220,6 +458,24 @@ export class GraduationListener {
           { silentSeconds: silentSec },
           'WS appears dead (no events received), forcing reconnect'
         );
+        this.reconnect();
+        return;
+      }
+
+      // WS half-alive detector: pump.fun logs still flowing but no migrate
+      // instructions routed for 60+ minutes. The primary silence check above
+      // won't catch this because lastEventTime is bumped on every log, not
+      // only migrations.
+      const candidateSilentMs = Date.now() - this.lastCandidateTime;
+      if (candidateSilentMs > NO_CANDIDATE_SILENCE_MS) {
+        logger.warn(
+          {
+            candidateSilentSeconds: Math.floor(candidateSilentMs / 1000),
+            recentLogs: this.totalLogsReceived,
+          },
+          'No graduation candidates for 60+ min but logs still flowing — forcing reconnect'
+        );
+        this.lastCandidateTime = Date.now(); // avoid re-firing every health tick
         this.reconnect();
       }
     }, WS_HEALTH_CHECK_INTERVAL_MS);
@@ -236,6 +492,10 @@ export class GraduationListener {
       clearInterval(this.healthCheckInterval);
       this.healthCheckInterval = null;
     }
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
 
     await this.unsubscribe();
     this.poolTracker.stop();
@@ -245,7 +505,16 @@ export class GraduationListener {
 
   private async subscribe(): Promise<void> {
     try {
-      this.subscriptionId = this.connection.onLogs(
+      // Single pump.fun subscription at commitment='processed'. Removed the
+      // sibling 'confirmed' subscription on 2026-05-03 after 11h of zero wins
+      // — confirmed always lost the race to processed because Helius batch-
+      // replays confirmed-level events at slot-confirmation time (25-75s lag).
+      // Processed bypasses that batch entirely. The reconnect / silence
+      // watchdog / health-check logic is unchanged: it tracks subscription
+      // lifecycle on whichever sub we have, and the processed sub IS the
+      // primary now. RPC-poll remains the safety net for the rare case
+      // where even processed lags (3% of wins historically).
+      this.subscriptionIdProcessed = this.connection.onLogs(
         PUMP_FUN_PROGRAM_ID,
         async (logs: Logs, ctx: Context) => {
           this.lastEventTime = Date.now();
@@ -262,25 +531,28 @@ export class GraduationListener {
                 logs: logs.logs,
                 totalReceived: this.totalLogsReceived,
               },
-              'Raw pump.fun log event'
+              'Raw pump.fun log event (processed)'
             );
           }
 
           try {
-            await this.handleLogs(logs, ctx);
+            await this.handleLogs(logs, ctx, 'pump.fun-processed');
           } catch (err) {
             logger.error(
-              'Error handling logs for %s: %s',
+              'Error handling processed-commitment logs for %s: %s',
               logs.signature,
               err instanceof Error ? err.message : String(err)
             );
           }
         },
-        'confirmed'
+        'processed'
       );
 
       this.lastEventTime = Date.now();
-      logger.info({ subscriptionId: this.subscriptionId }, 'Subscribed to pump.fun logs');
+      logger.info(
+        { subscriptionIdProcessed: this.subscriptionIdProcessed },
+        'Subscribed to pump.fun logs (processed only)'
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logger.error('Failed to subscribe to logs: %s', message);
@@ -288,17 +560,26 @@ export class GraduationListener {
     }
   }
 
-  private async unsubscribe(): Promise<void> {
-    if (this.subscriptionId !== null) {
-      try {
-        await this.connection.removeOnLogsListener(this.subscriptionId);
-      } catch (err) {
-        logger.warn(
-          'Error removing logs listener: %s',
-          err instanceof Error ? err.message : String(err)
-        );
+  private async unsubscribe(opts?: { skipServerCall?: boolean }): Promise<void> {
+    if (this.subscriptionIdProcessed !== null) {
+      // On a forced reconnect, the WS is already dead and we're about to
+      // throw away `this.connection` anyway. Calling removeOnLogsListener
+      // against a dead socket triggers a `console.warn` inside web3.js
+      // ("Ignored unsubscribe request because an active subscription with id
+      // X could not be found") because its internal cleanup beat us to it.
+      // Skip the server call in that case — the server already cleaned up
+      // when the socket closed. Only the locally-tracked id needs clearing.
+      if (!opts?.skipServerCall) {
+        try {
+          await this.connection.removeOnLogsListener(this.subscriptionIdProcessed);
+        } catch (err) {
+          logger.warn(
+            'Error removing processed-commitment logs listener: %s',
+            err instanceof Error ? err.message : String(err)
+          );
+        }
       }
-      this.subscriptionId = null;
+      this.subscriptionIdProcessed = null;
     }
   }
 
@@ -323,10 +604,15 @@ export class GraduationListener {
   private async reconnect(): Promise<void> {
     if (this.stopped || this.reconnecting) return;
     this.reconnecting = true;
+    this.totalReconnects++;
 
     try {
       logger.info('Reconnecting WebSocket...');
-      await this.unsubscribe();
+      await withTimeout(
+        this.unsubscribe({ skipServerCall: true }),
+        RECONNECT_UNSUBSCRIBE_TIMEOUT_MS,
+        'unsubscribe',
+      );
 
       const rpcUrl = process.env.HELIUS_RPC_URL!;
       const wsUrl = process.env.HELIUS_WS_URL!;
@@ -352,7 +638,11 @@ export class GraduationListener {
         }
       }
 
-      await this.subscribe();
+      await withTimeout(
+        this.subscribe(),
+        RECONNECT_SUBSCRIBE_TIMEOUT_MS,
+        'subscribe',
+      );
       logger.info('WebSocket reconnected successfully');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -363,7 +653,104 @@ export class GraduationListener {
     }
   }
 
-  private async handleLogs(logs: Logs, ctx: Context): Promise<void> {
+  /**
+   * Bootstrap and run an RPC polling loop against the pump.fun withdraw_authority PDA.
+   * Only migrate instructions write to this account, so getSignaturesForAddress returns
+   * only real graduation txs — no false positives. RPC confirms within 1-2s of block
+   * finality, bypassing Helius WS batch-buffering that delays ~43% of migrations 25-75s.
+   */
+  private async startMigrationPoller(): Promise<void> {
+    const pollEndpoint = process.env.MIGRATION_POLL_RPC_URL ?? 'helius (default)';
+    try {
+      const initial = await this.pollConnection.getSignaturesForAddress(
+        PUMP_WITHDRAW_AUTHORITY, { limit: 1 }
+      );
+      if (initial.length > 0) this.pollLastSig = initial[0].signature;
+      logger.info(
+        'Migration RPC poller started — endpoint=' + pollEndpoint +
+        ' target=' + PUMP_WITHDRAW_AUTHORITY.toBase58() +
+        ' intervalMs=' + MIGRATION_POLL_INTERVAL_MS +
+        ' bootstrapSigs=' + initial.length +
+        (initial.length > 0 ? ' lastSig=' + initial[0].signature.slice(0, 8) : '')
+      );
+    } catch (err) {
+      logger.warn('Migration poller bootstrap failed: %s', (err as Error).message);
+    }
+
+    this.pollerCurrentTarget = PUMP_WITHDRAW_AUTHORITY;
+
+    this.pollInterval = setInterval(async () => {
+      if (this.stopped) return;
+      // Circuit breaker: skip if we're in cooldown after repeated failures.
+      if (Date.now() < this.pollPausedUntil) return;
+      this.totalPollTicks++;
+      try {
+        // Use the runtime-captured address if we have one (ground truth from a
+        // real migrate tx). Otherwise fall back to the derived PDA.
+        const target = this.discoveredWithdrawAuthority ?? PUMP_WITHDRAW_AUTHORITY;
+
+        // If discovery just switched our target, re-bootstrap pollLastSig from
+        // the new address's head and skip processing this tick. Without this,
+        // `until: pollLastSig` would never match (different sig history) and
+        // we'd burst-process 20 historical sigs on the new address.
+        if (!target.equals(this.pollerCurrentTarget)) {
+          const reboot = await this.pollConnection.getSignaturesForAddress(target, { limit: 1 });
+          this.pollConsecutiveFailures = 0;
+          this.pollLastSig = reboot[0]?.signature;
+          this.pollerCurrentTarget = target;
+          logger.info(
+            'Poller target switched to ' + target.toBase58() +
+            ', rebootstrap lastSig=' + (this.pollLastSig?.slice(0, 8) ?? 'none')
+          );
+          return;
+        }
+
+        const sigs = await this.pollConnection.getSignaturesForAddress(
+          target,
+          { limit: 20, until: this.pollLastSig }
+        );
+        this.pollConsecutiveFailures = 0;
+        if (sigs.length === 0) return;
+        this.totalPollSigsFound += sigs.length;
+        this.pollLastSig = sigs[0].signature; // most recent first
+        logger.info(
+          { sigsFound: sigs.length, newestSig: sigs[0].signature.slice(0, 8), lastSig: this.pollLastSig?.slice(0, 8) },
+          'RPC poller found new migration sigs'
+        );
+        for (const sig of sigs.reverse()) {   // process oldest-first
+          if (!sig.err) {
+            this.handleMigrationCandidate(sig.signature, sig.slot ?? 0, 'rpc-poll', Date.now())
+              .catch((err) => logger.error('rpc-poll candidate error: %s', (err as Error).message));
+          }
+        }
+      } catch (err) {
+        this.pollConsecutiveFailures++;
+        // Only log the first few failures and the trip event — otherwise a
+        // sustained 429 storm fills the log buffer.
+        if (this.pollConsecutiveFailures <= GraduationListener.POLL_FAILURE_THRESHOLD) {
+          logger.warn(
+            'Migration poll error (' + this.pollConsecutiveFailures + '/' +
+            GraduationListener.POLL_FAILURE_THRESHOLD + '): ' + (err as Error).message
+          );
+        }
+        if (this.pollConsecutiveFailures === GraduationListener.POLL_FAILURE_THRESHOLD) {
+          this.pollPausedUntil = Date.now() + GraduationListener.POLL_COOLDOWN_MS;
+          logger.warn(
+            'Migration poller circuit breaker tripped after ' +
+            GraduationListener.POLL_FAILURE_THRESHOLD +
+            ' consecutive failures — pausing for ' +
+            (GraduationListener.POLL_COOLDOWN_MS / 1000) + 's'
+          );
+        }
+      }
+    }, MIGRATION_POLL_INTERVAL_MS);
+  }
+
+  private async handleLogs(
+    logs: Logs,
+    ctx: Context,
+    source: 'pump.fun' | 'pump.fun-processed' = 'pump.fun',
+  ): Promise<void> {
     if (logs.err) return;
 
     // Anchor programs emit "Program log: Instruction: <Name>" for every instruction.
@@ -377,10 +764,42 @@ export class GraduationListener {
 
     if (!graduationLog) return;
 
+    await this.handleMigrationCandidate(logs.signature, ctx.slot, source, Date.now());
+  }
+
+  /**
+   * Cross-channel entry point for migration candidates. Called from:
+   *   - this.handleLogs (pump.fun WS subscription) — primary in theory, often delayed 30-75s by Helius
+   *   - PoolTracker's PumpSwap WS subscription — typically delivers in ~5s
+   *
+   * Whichever channel fires first wins; the other becomes a no-op via the
+   * shared isDuplicateSignature dedupe.
+   */
+  async handleMigrationCandidate(
+    signature: string,
+    slot: number,
+    source: 'pump.fun' | 'pump.fun-processed' | 'pumpswap' | 'rpc-poll',
+    wsReceivedAt: number,
+  ): Promise<void> {
+    // Drop redeliveries before any RPC work. Helius pushes the same
+    // migration tx 4-5× per real graduation — see seenSignatures comment
+    // for the cost we're avoiding here. With two parallel detection
+    // channels, the dedupe also drops the slower channel's first delivery.
+    if (this.isDuplicateSignature(signature)) {
+      this.totalDuplicateLogs++;
+      if (source === 'rpc-poll') this.totalPollDupes++;
+      return;
+    }
+
     this.totalCandidatesDetected++;
+    if (source === 'pump.fun') this.totalCandidatesFromPumpFun++;
+    else if (source === 'pump.fun-processed') this.totalCandidatesFromPumpFunProcessed++;
+    else if (source === 'pumpswap') this.totalCandidatesFromPumpSwap++;
+    else this.totalCandidatesFromPoll++;
+    this.lastCandidateTime = Date.now();
 
     // Process: extract mint + bonding curve, then VERIFY before recording
-    const event = await this.processAndVerifyGraduation(logs.signature, ctx.slot, graduationLog);
+    const event = await this.processAndVerifyGraduation(signature, slot, 'Instruction: Migrate', source, wsReceivedAt);
     if (!event) return;
 
     const graduationId = this.saveGraduation(event);
@@ -463,6 +882,22 @@ export class GraduationListener {
               token_age_seconds: tokenAgeSeconds,
               creator_wallet_address: creatorWalletAddress,
             });
+            // Compute reputation here too — without this, rows that hit the
+            // enrichment-failure path are missing creator_prior_* even when we
+            // recovered the creator wallet, which silently shrinks the n on
+            // every wallet-rep filter (and the matrix in /wallet-rep-analysis).
+            if (creatorWalletAddress && event.timestamp) {
+              try {
+                const rep = computeCreatorReputation(this.db, creatorWalletAddress, event.timestamp);
+                updateMomentumReputation(this.db, graduationId, rep);
+              } catch (repErr) {
+                logger.debug(
+                  'Reputation compute failed in enrichment-fallback path for grad %d: %s',
+                  graduationId,
+                  repErr instanceof Error ? repErr.message : String(repErr)
+                );
+              }
+            }
             logger.info(
               { graduationId, tokenAgeSeconds, creator: creatorWalletAddress?.slice(0, 8) },
               'token_age_seconds / creator_wallet recovered after holder enrichment failure'
@@ -547,34 +982,89 @@ export class GraduationListener {
   private async processAndVerifyGraduation(
     signature: string,
     slot: number,
-    matchedLog: string
+    matchedLog: string,
+    source: 'pump.fun' | 'pump.fun-processed' | 'pumpswap' | 'rpc-poll' = 'pump.fun',
+    wsReceivedAt: number = Date.now(),
   ): Promise<GraduationEvent | null> {
-    await globalRpcLimiter.throttlePriority();
-    let tx = await this.connection.getParsedTransaction(signature, {
-      commitment: 'confirmed',
-      maxSupportedTransactionVersion: 0,
-    });
-
-    // Retry up to 2 more times — Helius may not have indexed a freshly-confirmed tx yet.
-    for (let attempt = 1; attempt <= 2 && (!tx || !tx.meta); attempt++) {
-      await new Promise(r => setTimeout(r, 1000 * attempt));
+    // 3 attempts (initial + 2 retries) with exponential backoff. Catches BOTH
+    // null/no-meta returns (Helius hasn't indexed the freshly-confirmed tx yet)
+    // AND thrown exceptions (the `fetch failed` family that also affects the
+    // price-collector's snapshot RPC — confirmed via recent_errors). Without
+    // try/catch in the loop, a thrown exception propagates straight to the
+    // outer onLogs handler at subscribe() and the entire graduation candidate
+    // is dropped silently. Each lost candidate = one missed grad in the data.
+    let tx: Awaited<ReturnType<Connection['getParsedTransaction']>> = null;
+    let lastErr: string | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
       await globalRpcLimiter.throttlePriority();
-      tx = await this.connection.getParsedTransaction(signature, {
-        commitment: 'confirmed',
-        maxSupportedTransactionVersion: 0,
-      });
+      try {
+        tx = await this.connection.getParsedTransaction(signature, {
+          commitment: 'confirmed',
+          maxSupportedTransactionVersion: 0,
+        });
+        if (tx?.meta) break;
+      } catch (err) {
+        lastErr = err instanceof Error ? err.message : String(err);
+      }
     }
 
     if (!tx || !tx.meta || tx.meta.err) {
       this.totalTxFetchFails++;
+      if (lastErr) this.totalTxFetchExceptions++;
       logger.debug(
-        { signature, hasTx: !!tx, hasMeta: !!tx?.meta, txErr: tx?.meta?.err ?? null },
+        { signature, hasTx: !!tx, hasMeta: !!tx?.meta, txErr: tx?.meta?.err ?? null, lastErr },
         'getParsedTransaction returned null/error after 3 attempts — skipping candidate'
       );
       return null;
     }
 
-    const timestamp = tx.blockTime || Math.floor(Date.now() / 1000);
+    // Sanitize tx.blockTime before using it as the canonical migrationTimestamp.
+    // At commitment='processed', Helius's blockTime is sometimes seconds in
+    // the FUTURE (slot's anticipated time) or 25-50s in the PAST (stale slot
+    // metadata). Both break price-collector deadline math:
+    //   - future blockTime → negative elapsedSec → 50s+ deadline + skewed
+    //     snapshot timing
+    //   - stale blockTime + 22s rpcFetchMs → elapsedSec ≥ 44 → t30Deadline
+    //     clamped to 1s → instant abandon before T+30 snapshot can fire
+    //
+    // Trust blockTime only within source-typical bounds. Each detection
+    // channel has a known typical wsReceivedAt-vs-blockTime gap; values
+    // outside the bound are almost certainly bad metadata, not real lag.
+    // Fall back to wsReceivedAt (always a valid past wall-clock anchor).
+    //
+    // Per-source max blockTime lag (seconds before wsReceivedAt):
+    //   pump.fun-processed: 5s — observed canonical p50 = 1.2s; >5s is noise
+    //   pump.fun (confirmed): 90s — confirmed feed legitimately delays this far
+    //   pumpswap: 30s — confirmed channel typically <5s, 30s is generous
+    //   rpc-poll: 600s — 2s tick + tx index lag, but not infinite
+    const PER_SOURCE_MAX_LAG_SEC: Record<typeof source, number> = {
+      'pump.fun-processed': 5,
+      'pump.fun': 90,
+      'pumpswap': 30,
+      'rpc-poll': 600,
+    };
+    const wsReceivedAtSec = Math.floor(wsReceivedAt / 1000);
+    const maxLag = PER_SOURCE_MAX_LAG_SEC[source];
+    const txBt = tx.blockTime;
+    let timestamp: number;
+    if (txBt && txBt <= wsReceivedAtSec && txBt >= wsReceivedAtSec - maxLag) {
+      timestamp = txBt;
+    } else {
+      // blockTime is missing, in the future, or implausibly stale for this source.
+      // Use wsReceivedAt as the migration timestamp — slightly ahead of the
+      // true on-chain block but always a valid past wall-clock value, and
+      // guarantees elapsedSec at startObservation reflects ONLY rpcFetch
+      // overhead (not phantom blockTime lag).
+      timestamp = wsReceivedAtSec;
+      if (txBt) {
+        const drift = txBt - wsReceivedAtSec;
+        logger.debug(
+          { signature, source, txBlockTime: txBt, wsReceivedAtSec, driftSec: drift, maxLagSec: maxLag },
+          `Sanitized tx.blockTime — outside [now-${maxLag}s, now] for ${source}; using wsReceivedAt`
+        );
+      }
+    }
 
     let mint: string | null = null;
     let bondingCurveAddress: string | null = null;
@@ -930,6 +1420,24 @@ export class GraduationListener {
         poolQuoteVault = accts[18];  // pool_quote_token_account
       }
 
+      // Capture the actual withdraw_authority for the RPC poller. accts[1] is
+      // the ground truth from the migrate instruction; if it differs from our
+      // derived PDA the poller switches to the captured address on next tick.
+      if (!this.discoveredWithdrawAuthority && accts[1]) {
+        try {
+          const captured = new PublicKey(accts[1]);
+          this.discoveredWithdrawAuthority = captured;
+          const matchesPda = captured.equals(PUMP_WITHDRAW_AUTHORITY);
+          logger.info(
+            'Discovered withdraw_authority from migrate tx: ' +
+            captured.toBase58() +
+            (matchesPda ? ' (matches derived PDA)' : ' (DIFFERS from derived PDA ' + PUMP_WITHDRAW_AUTHORITY.toBase58() + ' — switching poller target)')
+          );
+        } catch (err) {
+          logger.warn('Could not parse withdraw_authority accts[1]: %s', (err as Error).message);
+        }
+      }
+
       logger.debug(
         { mint: mint.slice(0, 8), poolAddress, baseVault: poolBaseVault, quoteVault: poolQuoteVault,
           acctCount: accts.length, signature },
@@ -1156,6 +1664,36 @@ export class GraduationListener {
         );
       }
     }
+
+    // Log delivery latency split: WS delay vs RPC fetch time.
+    // wsDeliveryLatencySec = time from on-chain block → WS log received (Helius delivery lag).
+    // rpcFetchMs = time from WS received → getParsedTransaction returned (our processing time).
+    // source = which channel detected this migration (pump.fun WS or PumpSwap WS).
+    // The PumpSwap channel was added to bypass Helius's pump.fun WS delivery lag,
+    // which delays ~50% of migrations 30-75s and pushes them past the 25s stale gate.
+    const wsDeliveryLatencySec = tx.blockTime
+      ? +((wsReceivedAt - tx.blockTime * 1000) / 1000).toFixed(1)
+      : null;
+    const rpcFetchMs = Date.now() - wsReceivedAt;
+
+    if (wsDeliveryLatencySec !== null) {
+      this.recordDeliveryLatency(source, wsDeliveryLatencySec);
+    }
+    this.rpcFetchMsSamples.push(rpcFetchMs);
+    if (this.rpcFetchMsSamples.length > GraduationListener.LATENCY_BUFFER_MAX) {
+      this.rpcFetchMsSamples.shift();
+    }
+
+    logger.info(
+      {
+        mint: mint?.slice(0, 8),
+        signature: signature.slice(0, 8),
+        source,
+        wsDeliveryLatencySec,
+        rpcFetchMs,
+      },
+      'Graduation tx timing'
+    );
 
     return {
       mint,

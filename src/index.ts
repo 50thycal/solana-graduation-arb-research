@@ -1,13 +1,28 @@
 import express from 'express';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
+import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderTradingHtml, renderPeakAnalysisHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml } from './utils/html-renderer';
+import { computePipelineData } from './api/pipeline-data';
 import { computePeakAnalysis } from './api/peak-analysis';
+import { computeExitSim } from './api/exit-sim';
+import { computeExitSimMatrix } from './api/exit-sim-matrix';
+import { computeWalletRepAnalysis } from './api/wallet-rep-analysis';
+import { computeFilterV2Data } from './api/filter-v2-data';
+import { computeTradingData } from './api/trading-data';
+import { computeStrategyPercentiles } from './api/strategy-percentiles';
+import { computeJournal } from './api/journal';
+import { computeEdgeDecay } from './api/edge-decay';
+import { computeCounterfactual } from './api/counterfactual';
+import { computeLossPostmortem } from './api/loss-postmortem';
+import { getHeavyData } from './api/heavy-cache';
 import { StrategyManager } from './trading';
 import { StrategyParams } from './trading/config';
 import { makeLogger, logBuffer } from './utils/logger';
+import { installStderrThrottle } from './utils/stderr-throttle';
+import { startEventLoopLagMonitor } from './utils/event-loop-lag-monitor';
 import { registerApiRoutes } from './api/routes';
 import { GistSync } from './api/gist-sync';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
@@ -27,11 +42,39 @@ const NAV_LINKS = [
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/price-path', label: 'Price Path' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
+  { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
 ];
+
+// ── Response memoization ────────────────────────────────────────────────
+// Tiny per-key TTL cache for HTML pages whose underlying data tolerates
+// sub-minute staleness (/dashboard, /trading, /filter-analysis, /thesis).
+// These pages were taking 6s–1m26s in production because the heavy filter-v2
+// compute was hogging the event loop and even cheap SQL queued behind it.
+// With the heavy compute now off-thread (worker_threads in heavy-cache.ts)
+// AND a 30s memo cache here, warm hits return in <50ms.
+//
+// Keep this cache small and explicit — never auto-cache JSON API responses,
+// which Claude polls for fresh data.
+interface MemoEntry { value: string; contentType: string; expiresAt: number; }
+const responseMemo = new Map<string, MemoEntry>();
+function memoGet(key: string): MemoEntry | null {
+  const e = responseMemo.get(key);
+  if (!e) return null;
+  if (Date.now() >= e.expiresAt) { responseMemo.delete(key); return null; }
+  return e;
+}
+function memoSet(key: string, value: string, contentType: string, ttlMs: number): void {
+  responseMemo.set(key, { value, contentType, expiresAt: Date.now() + ttlMs });
+  // Cap size to avoid leaks on query-param permutations.
+  if (responseMemo.size > 64) {
+    const oldest = responseMemo.keys().next().value;
+    if (oldest !== undefined) responseMemo.delete(oldest);
+  }
+}
 
 function sendJsonOrHtml(req: express.Request, res: express.Response, data: object): void {
   const wantHtml = (req.headers.accept || '').includes('text/html');
@@ -88,6 +131,18 @@ let listenerError: string | null = null;
 let cachedTopPairs: any[] | null = null;
 
 async function main() {
+  // Install stderr throttle BEFORE creating Connection — rpc-websockets writes
+  // its own "ws error:" lines straight to stderr, bypassing our pino logger.
+  // Production was seeing dozens per minute during Helius hiccups, hiding the
+  // real diagnostics. Throttler keeps one per 30s + a periodic summary.
+  installStderrThrottle();
+
+  // Start the event-loop lag sampler so snapshot.json carries continuous loop-
+  // health stats. 1 Hz tick, 10-min ring buffer + all-time max. Cheap (one
+  // setInterval, microsecond per tick). Used to identify which gist-sync
+  // compute step is monopolizing the main thread.
+  startEventLoopLagMonitor();
+
   logger.info('Starting solana-graduation-arb-research');
 
   // Log env var presence for debugging (not values — they contain API keys)
@@ -101,6 +156,12 @@ async function main() {
   // Initialize database
   const dataDir = process.env.DATA_DIR || './data';
   const db = initDatabase(dataDir);
+
+  // One-shot backfill for v3 derived metrics (max_tick_drop_0_30,
+  // sum_abs_returns_0_30). Idempotent — only touches rows where the new
+  // columns are NULL. Runs in-memory over the T+0–T+30 pct grid on existing
+  // graduation_momentum rows; <1s at current data volume.
+  backfillV3Metrics(db);
 
   // Start health/API server first so we can always debug via /health
   const healthPort = parseInt(process.env.PORT || process.env.HEALTH_PORT || '8080', 10);
@@ -582,10 +643,83 @@ async function main() {
     });
   });
 
+  // Standalone reputation recompute. /backfill-wallets does this as a "second
+  // pass" but only after the wallet backfill itself runs. This endpoint lets
+  // us recompute creator_prior_* against current full history without touching
+  // wallet addresses — useful because computeCreatorReputation requires the
+  // prior's pct_t300 to be populated, and at enrichment time priors that
+  // graduated within the last ~5 min often haven't completed yet, so they're
+  // missed. Re-running picks them up.
+  let reputationBackfillRunning = false;
+  app.get('/backfill-reputation', (req, res) => {
+    if (reputationBackfillRunning) {
+      sendJsonOrHtml(req, res, { status: 'already_running', message: 'Reputation backfill is already in progress.' });
+      return;
+    }
+
+    const rows = db.prepare(`
+      SELECT gm.graduation_id, gm.creator_wallet_address, g.timestamp AS grad_timestamp
+      FROM graduation_momentum gm
+      JOIN graduations g ON g.id = gm.graduation_id
+      WHERE gm.creator_wallet_address IS NOT NULL
+      ORDER BY g.timestamp ASC
+    `).all() as Array<{ graduation_id: number; creator_wallet_address: string; grad_timestamp: number }>;
+
+    if (rows.length === 0) {
+      sendJsonOrHtml(req, res, { status: 'done', message: 'No rows with creator_wallet_address — nothing to backfill.' });
+      return;
+    }
+
+    sendJsonOrHtml(req, res, {
+      status: 'started',
+      total: rows.length,
+      message: `Recomputing reputation for ${rows.length} rows in background...`,
+    });
+
+    reputationBackfillRunning = true;
+    (async () => {
+      const before = (db.prepare(
+        'SELECT COUNT(*) AS n FROM graduation_momentum WHERE creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 1'
+      ).get() as any).n;
+      let updated = 0;
+      try {
+        for (const row of rows) {
+          const rep = computeCreatorReputation(db, row.creator_wallet_address, row.grad_timestamp);
+          updateMomentumReputation(db, row.graduation_id, rep);
+          updated++;
+          if (updated % 200 === 0) await new Promise((r) => setImmediate(r));
+        }
+      } catch (err) {
+        logger.warn('Reputation backfill row loop failed: %s', err instanceof Error ? err.message : String(err));
+      }
+      const after = (db.prepare(
+        'SELECT COUNT(*) AS n FROM graduation_momentum WHERE creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 1'
+      ).get() as any).n;
+      logger.info(
+        { updated, prior_count_ge_1_before: before, prior_count_ge_1_after: after, delta: after - before },
+        'Reputation backfill complete'
+      );
+      reputationBackfillRunning = false;
+    })().catch((err) => {
+      reputationBackfillRunning = false;
+      logger.error('Reputation backfill crashed: %s', err instanceof Error ? err.message : String(err));
+    });
+  });
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // DASHBOARD LANDING PAGE
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   app.get('/dashboard', (req, res) => {
+    // Dashboard runs ~16 SQL queries (4 summary + 12 filter probes). They're
+    // each fast (<10ms) but compound to seconds when SQLite is hot, and the
+    // page tolerates 30s staleness. Memoize the rendered HTML.
+    const memoKey = 'dashboard:html';
+    const cached = memoGet(memoKey);
+    if (cached) {
+      res.setHeader('Content-Type', cached.contentType);
+      res.send(cached.value);
+      return;
+    }
     try {
       const stats = listener ? listener.getStats() : null;
       const uptimeMs = Date.now() - startTime;
@@ -668,8 +802,7 @@ async function main() {
         l.path === '/dashboard' ? `<a class="nav-active">${l.label}</a>` : `<a href="${l.path}">${l.label}</a>`
       ).join('');
 
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
+      const dashboardHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Graduation Research Dashboard</title>
 <style>
@@ -737,7 +870,10 @@ async function main() {
     </div>
   </div>
 </div>
-</body></html>`);
+</body></html>`;
+      memoSet(memoKey, dashboardHtml, 'text/html; charset=utf-8', 30_000);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(dashboardHtml);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -750,7 +886,7 @@ async function main() {
   // MOMENTUM RESEARCH DASHBOARD
   // See CLAUDE.md for full dashboard spec
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  app.get('/thesis', (req, res) => {
+  app.get('/thesis', async (req, res) => {
     try {
       const uptimeMs = Date.now() - startTime;
       const uptimeSec = Math.floor(uptimeMs / 1000);
@@ -832,73 +968,37 @@ async function main() {
       const pumpFiltered = labelsFiltered.find((l: any) => l.label === 'PUMP')?.count || 0;
       const filteredWinRate = totalLabeledFiltered > 0 ? +(pumpFiltered / totalLabeledFiltered * 100).toFixed(1) : null;
 
-      // ── BEST FILTER (ranked by sim return: 10%SL/50%TP from T+30 entry gate) ──
-      // Same cost model as /api/best-combos: enter at T+30 (+5%→+100% gate), 10%SL/50%TP,
-      // 30% SL gap penalty (recalibrated 2026-04-15), 10% TP gap penalty, per-token round-trip slippage (fallback 3%).
-      let bestFilter: { name: string; rule: string; win_rate: number; sim_avg_return: number | null; sample_size: number } | null = null;
+      // ── BEST FILTER (ranked by per-combo opt TP/SL across SIM_TP_GRID × SIM_SL_GRID) ──
+      // Delegates to computeBestCombos — exact same leaderboard that powers
+      // /api/best-combos and best-combos.json on the bot-status branch. Each
+      // candidate is run through the 12×10 grid and reported at its own best
+      // cell, matching Panel 6's top_pairs approach. Replaced 2026-04-21
+      // (was a hand-rolled fixed 10%SL/50%TP sweep across 11 hard-coded
+      // filters — see git history if you need the old shape).
+      let bestFilter: {
+        name: string;
+        rule: string;
+        opt_tp: number | null;
+        opt_sl: number | null;
+        opt_avg_ret: number | null;
+        opt_win_rate: number | null;
+        sample_size: number;
+      } | null = null;
+      let bestCombosBaseline: number | null = null;
       if (totalLabeled >= 5) {
-        const SL_G = 0.30, TP_G = 0.10, DEF_COST = 3.0;  // SL gap recalibrated 2026-04-15
-        const simCols = ['pct_t60','pct_t90','pct_t120','pct_t150','pct_t180','pct_t240','pct_t300'] as const;
-        const filterTests = [
-          // Current baseline + top candidates (per CLAUDE.md research state)
-          { name: 'vel<20 + top5<10%',        sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
-          { name: 'vel 10-20 + top5<10%',     sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
-          { name: 'holders>=18 + top5<10%',   sql: "holder_count IS NOT NULL AND holder_count >= 18 AND top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
-          { name: 'vel 10-20 + buy_ratio>0.6', sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20 AND buy_pressure_buy_ratio IS NOT NULL AND buy_pressure_buy_ratio > 0.6" },
-          // Single filters and legacy candidates
-          { name: 'top5<10%',                 sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10" },
-          { name: 'top5<20%',                 sql: "top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 20" },
-          { name: 'vel 5-20',                 sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20" },
-          { name: 'vel<20',                   sql: "bc_velocity_sol_per_min IS NOT NULL AND bc_velocity_sol_per_min < 20" },
-          { name: 'holders>=18',              sql: "holder_count IS NOT NULL AND holder_count >= 18" },
-          { name: 'bc_age>30min',             sql: "token_age_seconds > 1800" },
-          { name: 'dev_wallet_pct<5%',        sql: "dev_wallet_pct IS NOT NULL AND dev_wallet_pct < 5" },
-        ];
-        for (const ft of filterTests) {
-          // Fetch tokens matching filter + T+30 entry gate with price checkpoints
-          const rows = db.prepare(`
-            SELECT pct_t30, pct_t60, pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
-                   round_trip_slippage_pct, label
-            FROM graduation_momentum
-            WHERE label IS NOT NULL
-              AND pct_t30 IS NOT NULL AND pct_t30 >= 5 AND pct_t30 <= 100
-              AND ${ft.sql}
-          `).all() as any[];
-          if (rows.length < 3) continue;
-          let simTotal = 0, simN = 0, pumps = 0;
-          for (const r of rows) {
-            if (r.label === 'PUMP') pumps++;
-            const ep: number = r.pct_t30;
-            const cost: number = r.round_trip_slippage_pct ?? DEF_COST;
-            const openM = 1 + ep / 100;
-            const slLvl = (openM * 0.9 - 1) * 100;
-            const tpLvl = (openM * 1.5 - 1) * 100;
-            let exit: number | null = null;
-            for (const col of simCols) {
-              const cv: number | null = r[col];
-              if (cv == null) continue;
-              if (cv <= slLvl) {
-                // Price-multiplier SL (mirrors trade-logger.ts:112)
-                const exitRatio = (1 + cv / 100) * (1 - SL_G);
-                exit = (exitRatio / openM - 1) * 100;
-                break;
-              }
-              if (cv >= tpLvl) { exit = 50 * (1 - TP_G); break; }
-            }
-            if (exit == null) {
-              exit = r.pct_t300 != null
-                ? ((1 + r.pct_t300 / 100) / (1 + ep / 100) - 1) * 100
-                : -100;
-            }
-            simTotal += exit - cost;
-            simN++;
-          }
-          if (simN < 3) continue;
-          const wr = +(pumps / rows.length * 100).toFixed(1);
-          const simAvgReturn = +(simTotal / simN).toFixed(2);
-          if (!bestFilter || simAvgReturn > (bestFilter.sim_avg_return ?? -Infinity)) {
-            bestFilter = { name: ft.name, rule: ft.sql, win_rate: wr, sim_avg_return: simAvgReturn, sample_size: simN };
-          }
+        const cb = await computeBestCombos(db, { min_n: 20, top: 1, include_pairs: true });
+        bestCombosBaseline = cb.baseline_avg_return_pct;
+        const top = cb.rows[0];
+        if (top) {
+          bestFilter = {
+            name: top.filter_spec,
+            rule: top.filters.join(' + '),
+            opt_tp: top.opt_tp,
+            opt_sl: top.opt_sl,
+            opt_avg_ret: top.opt_avg_ret,
+            opt_win_rate: top.opt_win_rate,
+            sample_size: top.n,
+          };
         }
       }
 
@@ -999,24 +1099,30 @@ async function main() {
       const t30WinRate = t30Signal.n > 0 ? +(t30Signal.pump / t30Signal.n * 100).toFixed(1) : null;
 
       // ── VERDICT ──
-      // Current baseline: vel<20 + top5<10%, sim +6.44%, n=111, win rate 72.1%, STABLE (promoted 2026-04-12)
-      const BASELINE_SIM_RETURN = 6.44;
-      const BASELINE_FILTER = 'vel<20 + top5<10%';
-      const bestSimReturn = bestFilter?.sim_avg_return ?? null;
+      // Baseline is now rolling — `bestCombosBaseline` is the entry-gated
+      // ALL-population opt_avg_ret (re-computed every snapshot). Promotion
+      // bar: opt_avg_ret > baseline + 0.3 pp on n ≥ 100.
+      const bestOptRet = bestFilter?.opt_avg_ret ?? null;
+      const baseFmt = bestCombosBaseline !== null
+        ? `${bestCombosBaseline >= 0 ? '+' : ''}${bestCombosBaseline.toFixed(2)}%`
+        : '—';
+      const promotionBar = bestCombosBaseline !== null
+        ? `${(bestCombosBaseline + 0.3).toFixed(2)}%`
+        : '—';
       const verdict = totalLabeled < 10
         ? `COLLECTING DATA — ${totalLabeled}/30 labeled (${samplesRemaining} more needed)`
         : totalLabeled < 30
         ? `COLLECTING — ${totalLabeled}/30 labeled, raw win rate ${rawWinRate}%`
-        : (bestSimReturn !== null && (bestFilter?.sample_size ?? 0) >= 100 && bestSimReturn > BASELINE_SIM_RETURN + 0.3)
-        ? `NEW LEADER — ${bestFilter!.name} sim ${bestSimReturn > 0 ? '+' : ''}${bestSimReturn}% (n=${bestFilter!.sample_size}, win rate ${bestFilter!.win_rate}%) beats baseline +${BASELINE_SIM_RETURN}% by +${(bestSimReturn - BASELINE_SIM_RETURN).toFixed(2)}pp. Run regime check (/filter-analysis-v2 Panel 11).`
-        : `BASELINE ESTABLISHED — ${BASELINE_FILTER} sim +${BASELINE_SIM_RETURN}%, n=111, win rate 72.1%, STABLE regime (promoted 2026-04-12). Promotion bar: beat +${(BASELINE_SIM_RETURN + 0.3).toFixed(2)}% on n≥100 with regime std-dev < 15%.${bestSimReturn !== null ? ` Live best: ${bestFilter!.name} sim ${bestSimReturn > 0 ? '+' : ''}${bestSimReturn}% (n=${bestFilter!.sample_size})` : ''}`;
+        : (bestOptRet !== null && bestCombosBaseline !== null && (bestFilter?.sample_size ?? 0) >= 100 && bestOptRet > bestCombosBaseline + 0.3)
+        ? `NEW LEADER — ${bestFilter!.name} opt ${bestOptRet > 0 ? '+' : ''}${bestOptRet}% @ tp${bestFilter!.opt_tp}/sl${bestFilter!.opt_sl} (n=${bestFilter!.sample_size}, win rate ${bestFilter!.opt_win_rate}%) beats rolling baseline ${baseFmt} by +${(bestOptRet - bestCombosBaseline).toFixed(2)}pp. Run regime check (/filter-analysis-v2 Panel 11).`
+        : `SEARCHING — rolling baseline ${baseFmt} (entry-gated ALL @ own opt TP/SL). Promotion bar: beat ${promotionBar} on n ≥ 100 with Panel 11 STABLE and Panel 7 NOT OVERFIT.${bestOptRet !== null ? ` Live best: ${bestFilter!.name} opt ${bestOptRet > 0 ? '+' : ''}${bestOptRet}% @ tp${bestFilter!.opt_tp}/sl${bestFilter!.opt_sl} (n=${bestFilter!.sample_size})` : ''}`;
 
       // ── CODE VERSION ──
       const codeVersion = {
-        version: 'thesis-page-v2-baseline-reflect',
-        thesis: 'Baseline established: vel<20 + top5<10% sim +6.44%, n=111, win rate 72.1%, STABLE regime (promoted 2026-04-12). Next candidates: vel 10-20 + top5<10% (n=51, sim +8.08%), vel 10-20 + buy_ratio>0.6 (n=33, sim +8.90%). Need n≥100 + sim>+6.74% + STABLE regime to promote.',
-        last_change: 'Thesis page now reflects actual research state: (1) Best Filter ranked by sim return (10%SL/50%TP + costs) instead of raw T+30 profitable rate. (2) filterTests updated with current baseline combo (vel<20+top5<10%) and top candidates. (3) T+30 signal card now shows live stats for baseline filter instead of holders>=10. (4) Verdict logic reflects BASELINE ESTABLISHED vs searching for improvement.',
-        watch_for: 'Best Filter on scorecard should show vel<20+top5<10% with sim return near +6.44% (or higher if a candidate is now beating it). Baseline Signal card should show n growing as more data is collected. If sim return deviates significantly from +6.44%, check /api/best-combos for the authoritative leaderboard.',
+        version: 'thesis-page-v3-opt-grid',
+        thesis: 'Leaderboard now ranks combos by opt_avg_ret (per-combo TP/SL optimum across SIM_TP_GRID × SIM_SL_GRID), matching Panel 6 / /api/best-combos. Baseline is rolling — entry-gated ALL-population opt_avg_ret, recomputed every snapshot. Promotion bar: beat rolling baseline by +0.3 pp on n ≥ 100 with Panel 11 STABLE and Panel 7 NOT OVERFIT.',
+        last_change: 'Retired legacy fixed-10%SL/50%TP scorecard loop (and its 11 hard-coded filter tests) in favor of computeBestCombos. Removed stale +6.44% / +1.4% anchors. best_filter now carries opt_tp / opt_sl / opt_avg_ret / opt_win_rate, and the scorecard shows the live rolling baseline alongside the current leader.',
+        watch_for: 'Best Filter card should show whichever combo leads /api/best-combos — with its own opt TP/SL (not fixed 10/50). Rolling Baseline card should track the entry-gated ALL-population opt_avg_ret. If Best Filter opt_avg_ret diverges from best-combos.json top row, the HTML cache is stale.',
       };
 
       // Detection pipeline stats (shows how many raw events → real graduations)
@@ -1062,6 +1168,7 @@ async function main() {
             t300: totalLabeled,
           },
           best_filter: bestFilter,
+          rolling_baseline_opt_avg_ret: bestCombosBaseline,
           samples_remaining: samplesRemaining,
           // Quality filter: excludes self-graduated scam tokens (sol_raised < 50 SOL)
           quality_filtered: {
@@ -1101,12 +1208,31 @@ async function main() {
         last_10: last10,
 
         // ── DATA QUALITY ──
-        data_quality: {
-          price_source_pumpswap: allHavePumpswapPool,
-          null_fields_in_last_10: nullsInLast10.length > 0 ? nullsInLast10 : 'CLEAN',
-          last_grad_seconds_ago: lastGradSecondsAgo,
-          listener_connected: listenerStats?.wsConnected ?? false,
-        },
+        data_quality: (() => {
+          // Full 5s grid coverage — what share of complete observations have every
+          // pct_tN from t5..t300 populated? Pre-rollout rows miss t65..t295.
+          const gridNotNull = (() => {
+            const parts: string[] = [];
+            for (let sec = 5; sec <= 300; sec += 5) parts.push(`pct_t${sec} IS NOT NULL`);
+            return parts.join(' AND ');
+          })();
+          const fullGrid = (db.prepare(
+            `SELECT COUNT(*) AS n FROM graduation_momentum WHERE ${gridNotNull}`,
+          ).get() as { n: number }).n;
+          const completeObs = (db.prepare(
+            'SELECT COUNT(*) AS n FROM graduation_momentum WHERE pct_t300 IS NOT NULL',
+          ).get() as { n: number }).n;
+          const fullGridPct = completeObs > 0 ? +(fullGrid / completeObs * 100).toFixed(1) : null;
+          return {
+            price_source_pumpswap: allHavePumpswapPool,
+            null_fields_in_last_10: nullsInLast10.length > 0 ? nullsInLast10 : 'CLEAN',
+            last_grad_seconds_ago: lastGradSecondsAgo,
+            listener_connected: listenerStats?.wsConnected ?? false,
+            full_5s_grid_count: fullGrid,
+            complete_observations_count: completeObs,
+            full_5s_grid_pct: fullGridPct,
+          };
+        })(),
 
         // ── PATH DATA SUMMARY ──
         path_data_summary: (() => {
@@ -1119,14 +1245,16 @@ async function main() {
           let bestRet: number | null = null;
           const SL_G = 0.30, TP_G = 0.10, DEF_COST = 3.0;  // SL gap recalibrated 2026-04-15
           const entryTimes = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60] as const;
-          const checkCols = ['pct_t5','pct_t10','pct_t15','pct_t20','pct_t25','pct_t30',
-            'pct_t35','pct_t40','pct_t45','pct_t50','pct_t55','pct_t60',
-            'pct_t90','pct_t120','pct_t150','pct_t180','pct_t240'] as const;
+          // Entry points: T+5..T+60. Exit walk: every 5s through T+295 so post-entry
+          // simulation uses the full grid on new-schema rows (pre-rollout rows skip NULLs).
+          const checkCols: readonly `pct_t${number}`[] = (() => {
+            const cps: `pct_t${number}`[] = [];
+            for (let sec = 5; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
+            return cps;
+          })();
           const allSim = db.prepare(`
             SELECT round_trip_slippage_pct,
-                   pct_t5, pct_t10, pct_t15, pct_t20, pct_t25, pct_t30,
-                   pct_t35, pct_t40, pct_t45, pct_t50, pct_t55, pct_t60,
-                   pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300
+                   ${checkCols.join(', ')}, pct_t300
             FROM graduation_momentum
             WHERE label IS NOT NULL AND pct_t5 IS NOT NULL
           `).all() as any[];
@@ -1254,6 +1382,17 @@ async function main() {
   // Read-only sweep of all filter combinations against the labeled DB.
   // Hit this from a browser to get a full breakdown with copy button.
   app.get('/filter-analysis', (req, res) => {
+    // Heavy page — runs ~30 nested SQL passes (filter scans + econ thresholds).
+    // Memoize for 30s; HTML and JSON keyed separately so API consumers still
+    // get a coherent snapshot.
+    const wantHtml = (req.headers.accept || '').includes('text/html');
+    const memoKey = `filter-analysis:${wantHtml ? 'html' : 'json'}`;
+    const cached = memoGet(memoKey);
+    if (cached) {
+      res.setHeader('Content-Type', cached.contentType);
+      res.send(cached.value);
+      return;
+    }
     try {
       const winRate = (pump: number, total: number) =>
         total === 0 ? null : +(pump / total * 100).toFixed(1);
@@ -1516,8 +1655,12 @@ async function main() {
         // Limitation: intra-checkpoint dips are invisible → slightly optimistic.
         stop_loss_simulation: (() => {
           // simulate(minPct, maxPct, stopPct, extraWhere?, label?) — enter at T+30, stop out at stopPct loss
-          // Uses granular checkpoints T+40/T+50/T+60/T+90/T+120/T+150/T+180/T+240 for accurate stop detection
-          const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
+          // Every 5s from T+40 to T+295. Pre-rollout rows have NULL past the old sparse set; walk skips NULLs.
+          const stopCheckpoints: readonly `pct_t${number}`[] = (() => {
+            const cps: `pct_t${number}`[] = [];
+            for (let sec = 40; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
+            return cps;
+          })();
           // Gap penalties for thin-pool execution reality
           // Recalibrated 2026-04-15: live SL fills realize at -34% to -40% vs -28% (10*1.2) sim estimate
           const SL_GAP_PENALTY_PCT = 0.30; // SL fills 30% worse than target (adverse gap-through)
@@ -1703,7 +1846,12 @@ async function main() {
         // Monotonicity-based entry filters. Only tokens with 5s snapshots have this field.
         // n is smaller than the main cohort — flag clearly in the UI.
         path_shape_filters: (() => {
-          const stopCheckpoints = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
+          // Every 5s from T+40 to T+295 (pre-rollout rows skipped via null-check).
+          const stopCheckpoints: readonly `pct_t${number}`[] = (() => {
+            const cps: `pct_t${number}`[] = [];
+            for (let sec = 40; sec <= 295; sec += 5) cps.push(`pct_t${sec}` as const);
+            return cps;
+          })();
           const SL_GAP_PENALTY_PCT = 0.30; // recalibrated 2026-04-15
           const TP_GAP_PENALTY_PCT = 0.10;
 
@@ -2154,12 +2302,16 @@ async function main() {
           : dupes.map((d: any) => ({ mint: d.mint, count: d.cnt })),
       };
 
-      const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
+        const html = renderFilterHtml(filterData);
+        memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.send(renderFilterHtml(filterData));
+        res.send(html);
       } else {
-        res.json(filterData);
+        const json = JSON.stringify(filterData);
+        memoSet(memoKey, json, 'application/json; charset=utf-8', 30_000);
+        res.setHeader('Content-Type', 'application/json; charset=utf-8');
+        res.send(json);
       }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -2167,1909 +2319,55 @@ async function main() {
   });
 
   // ── FILTER ANALYSIS V2 ───────────────────────────────────────────────────
-  // Panel 1: Single-feature filter comparison. Each row shows how many tokens
-  // (PUMP/DUMP/STABLE) remain after applying that one filter, normalized for
-  // null data (n_applicable = tokens with non-null feature value AND label).
-  app.get('/filter-analysis-v2', (req, res) => {
+  // All panel data is computed by computeFilterV2Data (src/api/filter-v2-data.ts)
+  // so the same payload is served here, from /api/filter-v2 / /api/panelN, and
+  // from the bot-status sync. The route just branches on Accept header.
+  app.get('/filter-analysis-v2', async (req, res) => {
     try {
-      // ── Panel 3 row type: feature columns referenced by any predicate ──
-      type RegimeRow = {
-        created_at: number;
-        label: string;
-        pct_t30: number;
-        pct_t300: number;
-        cost_pct: number;
-        bc_velocity_sol_per_min: number | null;
-        token_age_seconds: number | null;
-        holder_count: number | null;
-        top5_wallet_pct: number | null;
-        dev_wallet_pct: number | null;
-        total_sol_raised: number | null;
-        liquidity_sol_t30: number | null;
-        volatility_0_30: number | null;
-        monotonicity_0_30: number | null;
-        max_drawdown_0_30: number | null;
-        dip_and_recover_flag: number | null;
-        acceleration_t30: number | null;
-        early_vs_late_0_30: number | null;
-        buy_pressure_buy_ratio: number | null;
-        buy_pressure_unique_buyers: number | null;
-        buy_pressure_whale_pct: number | null;
-        creator_prior_token_count: number | null;
-        creator_prior_rug_rate: number | null;
-        creator_prior_avg_return: number | null;
-        creator_last_token_age_hours: number | null;
-        max_relret_0_300: number | null;
-      };
-
-      // ── Panel 4 row type: RegimeRow + TP/SL checkpoints and fall-through column ──
-      type Panel4Row = RegimeRow & {
-        pct_t40: number | null;
-        pct_t50: number | null;
-        pct_t60: number | null;
-        pct_t90: number | null;
-        pct_t120: number | null;
-        pct_t150: number | null;
-        pct_t180: number | null;
-        pct_t240: number | null;
-        // pct_t300 already on RegimeRow (number, non-null for eligible rows)
-      };
-
-      type FilterDef = {
-        name: string;
-        group: string;
-        column: string;        // column to NOT NULL check (or '' for baseline)
-        where: string;         // SQL condition (or '' for baseline)
-        predicate: (r: RegimeRow) => boolean; // Panel 3 in-memory equivalent of `where`
-      };
-
-      const PANEL_1_FILTERS: FilterDef[] = [
-        // ── Bonding Curve Velocity ──
-        { name: 'vel < 5 sol/min',        group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 5',
-          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 5 },
-        { name: 'vel 5-10 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 10',
-          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 10 },
-        { name: 'vel 5-20 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 5 AND bc_velocity_sol_per_min < 20',
-          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 5 && r.bc_velocity_sol_per_min < 20 },
-        { name: 'vel 10-20 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 10 AND bc_velocity_sol_per_min < 20',
-          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 10 && r.bc_velocity_sol_per_min < 20 },
-        { name: 'vel < 20 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 20',
-          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 20 },
-        { name: 'vel < 50 sol/min',       group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min < 50',
-          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min < 50 },
-        { name: 'vel 20-50 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 20 AND bc_velocity_sol_per_min < 50',
-          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 20 && r.bc_velocity_sol_per_min < 50 },
-        { name: 'vel 50-200 sol/min',     group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 50 AND bc_velocity_sol_per_min < 200',
-          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 50 && r.bc_velocity_sol_per_min < 200 },
-        { name: 'vel > 200 sol/min',      group: 'Velocity', column: 'bc_velocity_sol_per_min', where: 'bc_velocity_sol_per_min >= 200',
-          predicate: (r) => r.bc_velocity_sol_per_min != null && r.bc_velocity_sol_per_min >= 200 },
-
-        // ── Bonding Curve Age ──
-        { name: 'bc_age < 10 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds < 600',
-          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds < 600 },
-        { name: 'bc_age > 10 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 600',
-          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 600 },
-        { name: 'bc_age > 30 min',        group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 1800',
-          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 1800 },
-        { name: 'bc_age > 1 hr',          group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 3600',
-          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 3600 },
-        { name: 'bc_age > 1 day',         group: 'BC Age', column: 'token_age_seconds', where: 'token_age_seconds > 86400',
-          predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 86400 },
-
-        // ── Holders ──
-        { name: 'holders >= 5',           group: 'Holders', column: 'holder_count', where: 'holder_count >= 5',
-          predicate: (r) => r.holder_count != null && r.holder_count >= 5 },
-        { name: 'holders >= 10',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 10',
-          predicate: (r) => r.holder_count != null && r.holder_count >= 10 },
-        { name: 'holders >= 15',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 15',
-          predicate: (r) => r.holder_count != null && r.holder_count >= 15 },
-        { name: 'holders >= 18',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 18',
-          predicate: (r) => r.holder_count != null && r.holder_count >= 18 },
-
-        // ── Top 5 Concentration ──
-        { name: 'top5 < 10%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 10',
-          predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 10 },
-        { name: 'top5 < 15%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 15',
-          predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 15 },
-        { name: 'top5 < 20%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 20',
-          predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 20 },
-        { name: 'top5 > 15%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct > 15',
-          predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct > 15 },
-
-        // ── Dev Wallet ──
-        { name: 'dev < 3%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct < 3',
-          predicate: (r) => r.dev_wallet_pct != null && r.dev_wallet_pct < 3 },
-        { name: 'dev < 5%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct < 5',
-          predicate: (r) => r.dev_wallet_pct != null && r.dev_wallet_pct < 5 },
-        { name: 'dev > 5%',               group: 'Dev Wallet', column: 'dev_wallet_pct', where: 'dev_wallet_pct > 5',
-          predicate: (r) => r.dev_wallet_pct != null && r.dev_wallet_pct > 5 },
-
-        // ── SOL Raised ──
-        { name: 'sol >= 70',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 70',
-          predicate: (r) => r.total_sol_raised != null && r.total_sol_raised >= 70 },
-        { name: 'sol >= 80',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 80',
-          predicate: (r) => r.total_sol_raised != null && r.total_sol_raised >= 80 },
-        { name: 'sol >= 84',              group: 'SOL Raised', column: 'total_sol_raised', where: 'total_sol_raised >= 84',
-          predicate: (r) => r.total_sol_raised != null && r.total_sol_raised >= 84 },
-
-        // ── Liquidity at T+30 ──
-        { name: 'liquidity > 50 SOL',     group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 50',
-          predicate: (r) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 > 50 },
-        { name: 'liquidity > 100 SOL',    group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 100',
-          predicate: (r) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 > 100 },
-        { name: 'liquidity > 150 SOL',    group: 'Liquidity (T+30)', column: 'liquidity_sol_t30', where: 'liquidity_sol_t30 > 150',
-          predicate: (r) => r.liquidity_sol_t30 != null && r.liquidity_sol_t30 > 150 },
-
-        // ── Volatility (0-30s) ──
-        { name: 'volatility < 10%',       group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 < 10',
-          predicate: (r) => r.volatility_0_30 != null && r.volatility_0_30 < 10 },
-        { name: 'volatility 10-30%',      group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 10 AND volatility_0_30 < 30',
-          predicate: (r) => r.volatility_0_30 != null && r.volatility_0_30 >= 10 && r.volatility_0_30 < 30 },
-        { name: 'volatility 30-60%',      group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 30 AND volatility_0_30 < 60',
-          predicate: (r) => r.volatility_0_30 != null && r.volatility_0_30 >= 30 && r.volatility_0_30 < 60 },
-        { name: 'volatility > 60%',       group: 'Volatility (0-30s)', column: 'volatility_0_30', where: 'volatility_0_30 >= 60',
-          predicate: (r) => r.volatility_0_30 != null && r.volatility_0_30 >= 60 },
-
-        // ── Path Shape: Monotonicity ──
-        { name: 'mono > 0.33',            group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.33',
-          predicate: (r) => r.monotonicity_0_30 != null && r.monotonicity_0_30 > 0.33 },
-        { name: 'mono > 0.5',             group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.5',
-          predicate: (r) => r.monotonicity_0_30 != null && r.monotonicity_0_30 > 0.5 },
-        { name: 'mono > 0.66',            group: 'Path: Monotonicity', column: 'monotonicity_0_30', where: 'monotonicity_0_30 > 0.66',
-          predicate: (r) => r.monotonicity_0_30 != null && r.monotonicity_0_30 > 0.66 },
-
-        // ── Path Shape: Drawdown ──
-        { name: 'max_dd > -10% (shallow)',group: 'Path: Drawdown', column: 'max_drawdown_0_30', where: 'max_drawdown_0_30 > -10',
-          predicate: (r) => r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > -10 },
-        { name: 'max_dd > -20%',          group: 'Path: Drawdown', column: 'max_drawdown_0_30', where: 'max_drawdown_0_30 > -20',
-          predicate: (r) => r.max_drawdown_0_30 != null && r.max_drawdown_0_30 > -20 },
-
-        // ── Path Shape: Other ──
-        { name: 'dip_and_recover = 1',    group: 'Path: Other', column: 'dip_and_recover_flag', where: 'dip_and_recover_flag = 1',
-          predicate: (r) => r.dip_and_recover_flag != null && r.dip_and_recover_flag === 1 },
-        { name: 'acceleration > 0',       group: 'Path: Other', column: 'acceleration_t30', where: 'acceleration_t30 > 0',
-          predicate: (r) => r.acceleration_t30 != null && r.acceleration_t30 > 0 },
-        { name: 'front-loaded (early>late)',  group: 'Path: Other', column: 'early_vs_late_0_30', where: 'early_vs_late_0_30 > 0',
-          predicate: (r) => r.early_vs_late_0_30 != null && r.early_vs_late_0_30 > 0 },
-        { name: 'back-loaded (late>early)',   group: 'Path: Other', column: 'early_vs_late_0_30', where: 'early_vs_late_0_30 < 0',
-          predicate: (r) => r.early_vs_late_0_30 != null && r.early_vs_late_0_30 < 0 },
-
-        // ── Buy Pressure (T+0 to T+30) ──
-        { name: 'buy_ratio > 0.5',        group: 'Buy Pressure', column: 'buy_pressure_buy_ratio', where: 'buy_pressure_buy_ratio > 0.5',
-          predicate: (r) => r.buy_pressure_buy_ratio != null && r.buy_pressure_buy_ratio > 0.5 },
-        { name: 'buy_ratio > 0.6',        group: 'Buy Pressure', column: 'buy_pressure_buy_ratio', where: 'buy_pressure_buy_ratio > 0.6',
-          predicate: (r) => r.buy_pressure_buy_ratio != null && r.buy_pressure_buy_ratio > 0.6 },
-        { name: 'unique_buyers >= 5',     group: 'Buy Pressure', column: 'buy_pressure_unique_buyers', where: 'buy_pressure_unique_buyers >= 5',
-          predicate: (r) => r.buy_pressure_unique_buyers != null && r.buy_pressure_unique_buyers >= 5 },
-        { name: 'unique_buyers >= 10',    group: 'Buy Pressure', column: 'buy_pressure_unique_buyers', where: 'buy_pressure_unique_buyers >= 10',
-          predicate: (r) => r.buy_pressure_unique_buyers != null && r.buy_pressure_unique_buyers >= 10 },
-        { name: 'whale_pct < 30%',        group: 'Buy Pressure', column: 'buy_pressure_whale_pct', where: 'buy_pressure_whale_pct < 30',
-          predicate: (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 30 },
-        { name: 'whale_pct < 50%',        group: 'Buy Pressure', column: 'buy_pressure_whale_pct', where: 'buy_pressure_whale_pct < 50',
-          predicate: (r) => r.buy_pressure_whale_pct != null && r.buy_pressure_whale_pct < 50 },
-
-        // ── Creator Reputation ──
-        { name: 'fresh_dev',               group: 'Creator Rep', column: 'creator_prior_token_count', where: 'creator_prior_token_count IS NOT NULL AND creator_prior_token_count = 0',
-          predicate: (r) => r.creator_prior_token_count != null && r.creator_prior_token_count === 0 },
-        { name: 'repeat_dev >= 3',         group: 'Creator Rep', column: 'creator_prior_token_count', where: 'creator_prior_token_count >= 3',
-          predicate: (r) => r.creator_prior_token_count != null && r.creator_prior_token_count >= 3 },
-        { name: 'clean_dev',              group: 'Creator Rep', column: 'creator_prior_rug_rate', where: 'creator_prior_rug_rate IS NOT NULL AND creator_prior_rug_rate < 0.3',
-          predicate: (r) => r.creator_prior_rug_rate != null && r.creator_prior_rug_rate < 0.3 },
-        { name: 'serial_rugger',          group: 'Creator Rep', column: 'creator_prior_rug_rate', where: 'creator_prior_rug_rate >= 0.7',
-          predicate: (r) => r.creator_prior_rug_rate != null && r.creator_prior_rug_rate >= 0.7 },
-        { name: 'rapid_fire',             group: 'Creator Rep', column: 'creator_last_token_age_hours', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1',
-          predicate: (r) => r.creator_last_token_age_hours != null && r.creator_last_token_age_hours < 1 },
-
-        // ── T+30 Entry Gate ──
-        { name: 't30 > 0%',                       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 > 0',
-          predicate: (r) => r.pct_t30 > 0 },
-        { name: 't30 between +5% and +50%',       group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 5 AND pct_t30 <= 50',
-          predicate: (r) => r.pct_t30 >= 5 && r.pct_t30 <= 50 },
-        { name: 't30 between +5% and +100%',      group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 5 AND pct_t30 <= 100',
-          predicate: (r) => r.pct_t30 >= 5 && r.pct_t30 <= 100 },
-        { name: 't30 between +10% and +50%',      group: 'T+30 Entry', column: 'pct_t30', where: 'pct_t30 >= 10 AND pct_t30 <= 50',
-          predicate: (r) => r.pct_t30 >= 10 && r.pct_t30 <= 50 },
-      ];
-
-      // Helper: run a single filter query and return normalized stats
-      const runFilterStats = (column: string, whereCond: string) => {
-        const baseWhere = 'label IS NOT NULL';
-        const colCheck = column ? `${column} IS NOT NULL` : '';
-        const cond = whereCond || '';
-        const fullWhere = [baseWhere, colCheck, cond].filter(Boolean).join(' AND ');
-        const row = db.prepare(`
-          SELECT
-            COUNT(*) as n,
-            SUM(CASE WHEN label='PUMP'   THEN 1 ELSE 0 END) as pump,
-            SUM(CASE WHEN label='DUMP'   THEN 1 ELSE 0 END) as dump,
-            SUM(CASE WHEN label='STABLE' THEN 1 ELSE 0 END) as stable
-          FROM graduation_momentum
-          WHERE ${fullWhere}
-        `).get() as { n: number; pump: number; dump: number; stable: number };
-        const winRate = row.n > 0 ? +(row.pump / row.n * 100).toFixed(1) : null;
-        const pumpDump = row.dump > 0 ? +(row.pump / row.dump).toFixed(2) : null;
-        return {
-          n: row.n,
-          pump: row.pump,
-          dump: row.dump,
-          stable: row.stable,
-          win_rate_pct: winRate,
-          pump_dump_ratio: pumpDump,
-        };
-      };
-
-      // ── Panel 2 helpers: T+30-anchored MAE / MFE / Final return percentiles ──
-
-      // Linear-interpolation percentile. `sorted` must be ascending.
-      const percentile = (sorted: number[], p: number): number | null => {
-        if (sorted.length === 0) return null;
-        if (sorted.length === 1) return sorted[0];
-        const idx = (p / 100) * (sorted.length - 1);
-        const lo = Math.floor(idx);
-        const hi = Math.ceil(idx);
-        if (lo === hi) return sorted[lo];
-        return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
-      };
-
-      // Snapshot columns scanned for MAE/MFE (T+30 through T+300 inclusive)
-      const SNAPSHOT_COLS = [
-        'price_t30', 'price_t35', 'price_t40', 'price_t45', 'price_t50', 'price_t55', 'price_t60',
-        'price_t90', 'price_t120', 'price_t150', 'price_t180', 'price_t240', 'price_t300',
-      ];
-
-      type SnapshotRow = Record<string, number | null>;
-
-      const runFilterPercentiles = (column: string, whereCond: string) => {
-        const baseWhere = "label IS NOT NULL AND price_t30 IS NOT NULL AND price_t30 > 0 AND price_t300 IS NOT NULL AND price_t300 > 0";
-        const colCheck = column ? `${column} IS NOT NULL` : '';
-        const cond = whereCond || '';
-        const fullWhere = [baseWhere, colCheck, cond].filter(Boolean).join(' AND ');
-        const rows = db.prepare(`
-          SELECT ${SNAPSHOT_COLS.join(', ')}
-          FROM graduation_momentum
-          WHERE ${fullWhere}
-        `).all() as SnapshotRow[];
-
-        const maes: number[] = [];
-        const mfes: number[] = [];
-        const finals: number[] = [];
-
-        for (const r of rows) {
-          const t30 = r.price_t30;
-          const t300 = r.price_t300;
-          if (t30 == null || t30 <= 0 || t300 == null || t300 <= 0) continue;
-          // Collect non-null, positive prices in the t30..t300 window
-          const window: number[] = [];
-          for (const c of SNAPSHOT_COLS) {
-            const v = r[c];
-            if (v != null && v > 0) window.push(v);
-          }
-          if (window.length < 2) continue;
-          const minP = Math.min(...window);
-          const maxP = Math.max(...window);
-          maes.push((minP / t30 - 1) * 100);
-          mfes.push((maxP / t30 - 1) * 100);
-          finals.push((t300 / t30 - 1) * 100);
-        }
-
-        const n = finals.length;
-        const round = (v: number | null) => v == null ? null : +v.toFixed(1);
-        const round2 = (v: number | null) => v == null ? null : +v.toFixed(2);
-
-        if (n === 0) {
-          return {
-            n: 0,
-            mae_p10: null, mae_p25: null, mae_p50: null, mae_p75: null, mae_p90: null,
-            mfe_p10: null, mfe_p25: null, mfe_p50: null, mfe_p75: null, mfe_p90: null,
-            final_p10: null, final_p25: null, final_p50: null, final_p75: null, final_p90: null,
-            final_mean: null, final_stddev: null, sharpe_ish: null,
-          };
-        }
-
-        const maesSorted = [...maes].sort((a, b) => a - b);
-        const mfesSorted = [...mfes].sort((a, b) => a - b);
-        const finalsSorted = [...finals].sort((a, b) => a - b);
-
-        const mean = finals.reduce((s, v) => s + v, 0) / n;
-        let stddev: number | null = null;
-        if (n >= 2) {
-          const variance = finals.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
-          stddev = Math.sqrt(variance);
-        }
-        const sharpe = stddev != null && stddev > 0 ? mean / stddev : null;
-
-        return {
-          n,
-          mae_p10: round(percentile(maesSorted, 10)),
-          mae_p25: round(percentile(maesSorted, 25)),
-          mae_p50: round(percentile(maesSorted, 50)),
-          mae_p75: round(percentile(maesSorted, 75)),
-          mae_p90: round(percentile(maesSorted, 90)),
-          mfe_p10: round(percentile(mfesSorted, 10)),
-          mfe_p25: round(percentile(mfesSorted, 25)),
-          mfe_p50: round(percentile(mfesSorted, 50)),
-          mfe_p75: round(percentile(mfesSorted, 75)),
-          mfe_p90: round(percentile(mfesSorted, 90)),
-          final_p10: round(percentile(finalsSorted, 10)),
-          final_p25: round(percentile(finalsSorted, 25)),
-          final_p50: round(percentile(finalsSorted, 50)),
-          final_p75: round(percentile(finalsSorted, 75)),
-          final_p90: round(percentile(finalsSorted, 90)),
-          final_mean: round(mean),
-          final_stddev: round(stddev),
-          sharpe_ish: round2(sharpe),
-        };
-      };
-
-      // ── Panel 3 helpers: regime stability across time buckets ──
-
-      const ROUND_TRIP_COST_PCT_V2 = 3.0;
-      const PANEL_3_BUCKET_COUNT = 4;
-
-      // Single load: all eligible rows for regime analysis, sorted by created_at ASC
-      const regimeRows = db.prepare(`
-        SELECT created_at, label, pct_t30, pct_t300,
-               COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT_V2}) as cost_pct,
-               bc_velocity_sol_per_min, token_age_seconds, holder_count, top5_wallet_pct,
-               dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
-               monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
-               early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
-               buy_pressure_whale_pct,
-               creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
-               creator_last_token_age_hours,
-               max_relret_0_300
-        FROM graduation_momentum
-        WHERE label IS NOT NULL
-          AND pct_t30 IS NOT NULL
-          AND pct_t300 IS NOT NULL
-          AND created_at IS NOT NULL
-        ORDER BY created_at ASC
-      `).all() as RegimeRow[];
-
-      // Global bucket boundaries — same for every filter so cross-row comparison is meaningful
-      const bucketBoundaries: { start: number; end: number }[] = [];
-      if (regimeRows.length > 0) {
-        const bucketSize = Math.ceil(regimeRows.length / PANEL_3_BUCKET_COUNT);
-        for (let i = 0; i < PANEL_3_BUCKET_COUNT; i++) {
-          const startIdx = i * bucketSize;
-          const endIdx = Math.min((i + 1) * bucketSize, regimeRows.length);
-          if (startIdx >= regimeRows.length) break;
-          bucketBoundaries.push({
-            start: regimeRows[startIdx].created_at,
-            end: regimeRows[endIdx - 1].created_at,
-          });
-        }
-      }
-
-      const runFilterRegime = (predicate: (r: RegimeRow) => boolean) => {
-        const buckets: { n: number; pump: number; returns: number[] }[] =
-          Array.from({ length: bucketBoundaries.length }, () => ({ n: 0, pump: 0, returns: [] }));
-
-        for (const r of regimeRows) {
-          if (!predicate(r)) continue;
-          let bucketIdx = -1;
-          for (let i = 0; i < bucketBoundaries.length; i++) {
-            if (r.created_at <= bucketBoundaries[i].end) { bucketIdx = i; break; }
-          }
-          if (bucketIdx === -1) bucketIdx = bucketBoundaries.length - 1;
-          if (bucketIdx < 0) continue;
-          const b = buckets[bucketIdx];
-          b.n++;
-          if (r.label === 'PUMP') b.pump++;
-          const ret = ((1 + r.pct_t300 / 100) / (1 + r.pct_t30 / 100) - 1) * 100 - r.cost_pct;
-          b.returns.push(ret);
-        }
-
-        const MIN_BUCKET_N = 5;
-        const perBucket = buckets.map(b => {
-          if (b.n < MIN_BUCKET_N) return { n: b.n, win_rate_pct: null as number | null, avg_return_pct: null as number | null };
-          const wr = +(b.pump / b.n * 100).toFixed(1);
-          const avgRet = +(b.returns.reduce((s, v) => s + v, 0) / b.returns.length).toFixed(1);
-          return { n: b.n, win_rate_pct: wr, avg_return_pct: avgRet };
-        });
-
-        const validWRs = perBucket.filter(b => b.win_rate_pct != null).map(b => b.win_rate_pct as number);
-        let wrStdDev: number | null = null;
-        let stability: 'STABLE' | 'MODERATE' | 'CLUSTERED' | 'INSUFFICIENT' = 'INSUFFICIENT';
-        if (validWRs.length >= 2) {
-          const mean = validWRs.reduce((a, b) => a + b, 0) / validWRs.length;
-          wrStdDev = +Math.sqrt(validWRs.reduce((s, w) => s + (w - mean) ** 2, 0) / validWRs.length).toFixed(1);
-          stability = wrStdDev < 8 ? 'STABLE' : wrStdDev < 15 ? 'MODERATE' : 'CLUSTERED';
-        }
-
-        return {
-          n: buckets.reduce((s, b) => s + b.n, 0),
-          buckets: perBucket,
-          wr_std_dev: wrStdDev,
-          stability,
-        };
-      };
-
-      // Baseline: all labeled tokens, no filter
-      const baselineStats = runFilterStats('', '');
-      const baseline = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...baselineStats,
-      };
-
-      // Run all panel 1 filters
-      const filters = PANEL_1_FILTERS.map(f => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterStats(f.column, f.where),
-      }));
-
-      // ── Panel 2: T+30-anchored MAE/MFE/Final percentiles + Sharpe-ish ──
-      const baseline2 = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...runFilterPercentiles('', ''),
-      };
-      const filters2 = PANEL_1_FILTERS.map(f => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterPercentiles(f.column, f.where),
-      }));
-
-      // ── Panel 3: regime stability across 4 time buckets ──
-      const baseline3 = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...runFilterRegime(() => true),
-      };
-      const filters3 = PANEL_1_FILTERS.map(f => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterRegime(f.predicate),
-      }));
-
-      // ── Panel 11: combo filter regime stability — delegated to src/api/panel11.ts ──
-      const panel11Data = computePanel11(db);
-      const { baseline: baseline11, filters: filters11 } = panel11Data;
-
-      // ── Panel 4: dynamic TP/SL EV simulator ──
-      // Constants MUST mirror simulateWithTP at src/index.ts:1283-1359 exactly.
-      // SL gap recalibrated 2026-04-15 from 0.20 -> 0.30 (live SL fills observed at -34% to -40%)
-      const PANEL_4_SL_GAP_PENALTY = 0.30;
-      const PANEL_4_TP_GAP_PENALTY = 0.10;
-      const PANEL_4_CHECKPOINTS = ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240'] as const;
-      const PANEL_4_TP_GRID = [10, 15, 20, 25, 30, 35, 40, 50, 60, 75, 100, 150] as const;
-      const PANEL_4_SL_GRID = [3, 4, 5, 7.5, 10, 12.5, 15, 20, 25, 30] as const;
-      const PANEL_4_DEFAULT_TP = 30;
-      const PANEL_4_DEFAULT_SL = 10;
-      const PANEL_4_MIN_N_FOR_OPTIMUM = 30;
-      const PANEL_4_MIN_TP_HITS_FOR_OPTIMUM = 3;
-
-      // Single load: all eligible rows for Panel 4.
-      // Stricter than regimeRows: also guards against pct_t30 <= -99 (division pathology).
-      const panel4Rows = db.prepare(`
-        SELECT
-          created_at, label,
-          pct_t30, pct_t40, pct_t50, pct_t60, pct_t90, pct_t120, pct_t150, pct_t180, pct_t240, pct_t300,
-          COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT_V2}) as cost_pct,
-          bc_velocity_sol_per_min, token_age_seconds, holder_count, top5_wallet_pct,
-          dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
-          monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
-          early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
-          buy_pressure_whale_pct,
-          creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
-          creator_last_token_age_hours,
-          max_relret_0_300
-        FROM graduation_momentum
-        WHERE label IS NOT NULL
-          AND pct_t30 IS NOT NULL
-          AND pct_t30 > -99
-          AND pct_t300 IS NOT NULL
-      `).all() as Panel4Row[];
-
-      type Panel4Horizon = 'pct_t60' | 'pct_t120' | 'pct_t300';
-
-      // Simulate one token at one (tp, sl). Byte-for-byte mirror of simulateWithTP
-      // when maxCheckpoint === 'pct_t300' (default). For shorter horizons the
-      // checkpoint scan is truncated at maxCheckpoint and the fall-through uses
-      // that column's value (e.g. pct_t60). Returns { ret, tpHit } — ret is
-      // already cost-adjusted.
-      const simulateInMemory = (
-        r: Panel4Row,
-        tp: number,
-        sl: number,
-        maxCheckpoint: Panel4Horizon = 'pct_t300',
-      ): { ret: number; tpHit: boolean } => {
-        const entryRatio = 1 + r.pct_t30 / 100;
-        const stopLevelPct = (entryRatio * (1 - sl / 100) - 1) * 100;
-        const tpLevelPct   = (entryRatio * (1 + tp / 100) - 1) * 100;
-
-        // Truncate checkpoint scan at maxCheckpoint. For 'pct_t300' the
-        // indexOf is -1 (not in PANEL_4_CHECKPOINTS) → scan everything.
-        const maxIdx = (PANEL_4_CHECKPOINTS as readonly string[]).indexOf(maxCheckpoint);
-        const cps = maxIdx >= 0
-          ? PANEL_4_CHECKPOINTS.slice(0, maxIdx + 1)
-          : PANEL_4_CHECKPOINTS;
-
-        for (const cp of cps) {
-          const v = r[cp];
-          if (v == null) continue;
-          if (v <= stopLevelPct) {
-            // Price-multiplier SL (mirrors trade-logger.ts:112)
-            const exitRatio = (1 + v / 100) * (1 - PANEL_4_SL_GAP_PENALTY);
-            const ret = (exitRatio / entryRatio - 1) * 100;
-            return { ret: ret - r.cost_pct, tpHit: false };
-          }
-          if (v >= tpLevelPct)   return { ret:  (tp * (1 - PANEL_4_TP_GAP_PENALTY)) - r.cost_pct, tpHit: true };
-        }
-        // Fall-through: exit at maxCheckpoint. For 'pct_t300' the eligibility
-        // predicate guarantees non-null; for shorter horizons we guard against
-        // missing checkpoints on partial observations.
-        const fallVal = r[maxCheckpoint as keyof Panel4Row] as number | null | undefined;
-        if (fallVal == null) return { ret: -100 - r.cost_pct, tpHit: false };
-        const fallRet = ((1 + fallVal / 100) / entryRatio - 1) * 100 - r.cost_pct;
-        return { ret: fallRet, tpHit: false };
-      };
-
-      const runFilterPanel4 = (
-        predicate: (r: Panel4Row) => boolean,
-        maxCheckpoint: Panel4Horizon = 'pct_t300',
-      ) => {
-        const filtered = panel4Rows.filter(predicate);
-        const n = filtered.length;
-        const comboCount = PANEL_4_TP_GRID.length * PANEL_4_SL_GRID.length;
-        const avgRet = new Array<number>(comboCount).fill(0);
-        const medRet = new Array<number>(comboCount).fill(0);
-        const winRate = new Array<number>(comboCount).fill(0);
-        let optimal: { tp: number; sl: number; avg_ret: number; win_rate: number } | null = null;
-
-        if (n === 0) {
-          return { n: 0, combos: { avg_ret: avgRet, med_ret: medRet, win_rate: winRate }, optimal };
-        }
-
-        const tpHits = new Array<number>(comboCount).fill(0);
-
-        for (let ti = 0; ti < PANEL_4_TP_GRID.length; ti++) {
-          for (let si = 0; si < PANEL_4_SL_GRID.length; si++) {
-            const tp = PANEL_4_TP_GRID[ti];
-            const sl = PANEL_4_SL_GRID[si];
-            const returns: number[] = new Array(n);
-            let tpHit = 0;
-            let wins = 0;
-            let sum = 0;
-            for (let k = 0; k < n; k++) {
-              const out = simulateInMemory(filtered[k], tp, sl, maxCheckpoint);
-              returns[k] = out.ret;
-              if (out.tpHit) tpHit++;
-              if (out.ret > 0) wins++;
-              sum += out.ret;
-            }
-            const sorted = returns.slice().sort((a, b) => a - b);
-            const median = sorted[Math.floor(n / 2)];
-            const idx = ti * PANEL_4_SL_GRID.length + si;
-            avgRet[idx] = +(sum / n).toFixed(1);
-            medRet[idx] = +median.toFixed(1);
-            winRate[idx] = Math.round(wins / n * 100);
-            tpHits[idx] = tpHit;
-          }
-        }
-
-        // Find optimal: max avg_ret among combos with tp_hit >= 3, gated by filter n >= 30
-        if (n >= PANEL_4_MIN_N_FOR_OPTIMUM) {
-          let bestIdx = -1;
-          let bestAvg = -Infinity;
-          for (let i = 0; i < comboCount; i++) {
-            if (tpHits[i] < PANEL_4_MIN_TP_HITS_FOR_OPTIMUM) continue;
-            if (avgRet[i] > bestAvg) { bestAvg = avgRet[i]; bestIdx = i; }
-          }
-          if (bestIdx !== -1) {
-            const ti = Math.floor(bestIdx / PANEL_4_SL_GRID.length);
-            const si = bestIdx % PANEL_4_SL_GRID.length;
-            optimal = {
-              tp: PANEL_4_TP_GRID[ti],
-              sl: PANEL_4_SL_GRID[si],
-              avg_ret: avgRet[bestIdx],
-              win_rate: winRate[bestIdx],
-            };
-          }
-        }
-
-        return { n, combos: { avg_ret: avgRet, med_ret: medRet, win_rate: winRate }, optimal };
-      };
-
-      const baseline4 = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...runFilterPanel4(() => true),
-      };
-      const filters4 = PANEL_1_FILTERS.map(f => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterPanel4(f.predicate as (r: Panel4Row) => boolean),
-      }));
-
-      // Horizon variants: same predicate + grid, but simulation falls through
-      // at T+60 / T+120 instead of T+300. Used by the Panel 4 horizon tabs.
-      const baseline4_t60 = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...runFilterPanel4(() => true, 'pct_t60'),
-      };
-      const filters4_t60 = PANEL_1_FILTERS.map(f => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterPanel4(f.predicate as (r: Panel4Row) => boolean, 'pct_t60'),
-      }));
-
-      const baseline4_t120 = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...runFilterPanel4(() => true, 'pct_t120'),
-      };
-      const filters4_t120 = PANEL_1_FILTERS.map(f => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterPanel4(f.predicate as (r: Panel4Row) => boolean, 'pct_t120'),
-      }));
-
-      // Shared type alias for Panel 4 optimum — mirrors the shape returned
-      // by runFilterPanel4 (src/index.ts:2342). Used by Panels 5 & 6.
-      type Panel4Optimal = { tp: number; sl: number; avg_ret: number; win_rate: number } | null;
-
-      // ── Panel 10: Dynamic Position Monitoring (DPM) EV Optimizer ──
-      //
-      // For each filter, brute-force the DPM parameter grid to find the combo
-      // that maximizes avg return. Base TP/SL held fixed at 30/10 (thesis
-      // defaults) so only DPM params vary. Mirrors the layered SL logic in
-      // src/trading/position-manager.ts checkPosition(). Also aggregates
-      // best DPM combos per filter category and overall.
-      const PANEL_10_BASE_TP = 30;
-      const PANEL_10_BASE_SL = 10;
-      const PANEL_10_SL_GAP_PENALTY = 0.30; // recalibrated 2026-04-15 (live SL fills -34% to -40%)
-      const PANEL_10_TP_GAP_PENALTY = 0.10;
-      const PANEL_10_MIN_N = 30;
-      const PANEL_10_MIN_ACTIVE_EXITS = 3;
-
-      // checkpoint → seconds since entry (T+30)
-      const PANEL_10_CHECKPOINT_DELAYS: Record<string, number> = {
-        pct_t40: 10, pct_t50: 20, pct_t60: 30, pct_t90: 60,
-        pct_t120: 90, pct_t150: 120, pct_t180: 150, pct_t240: 210,
-      };
-
-      // Paired trailing-SL configs (activation / distance) — keeps grid compact
-      // and avoids nonsensical combinations where distance >= activation.
-      const PANEL_10_TRAILING_SL = [
-        { act: 0,  dist: 0,  label: 'off' },
-        { act: 5,  dist: 3,  label: '5/3' },
-        { act: 10, dist: 5,  label: '10/5' },
-        { act: 15, dist: 7,  label: '15/7' },
-        { act: 20, dist: 10, label: '20/10' },
-      ] as const;
-      const PANEL_10_SL_DELAY_SEC = [0, 10, 30, 60] as const;
-      const PANEL_10_TRAILING_TP = [
-        { en: false, drop: 0,  label: 'off' },
-        { en: true,  drop: 3,  label: 'drop3' },
-        { en: true,  drop: 5,  label: 'drop5' },
-        { en: true,  drop: 10, label: 'drop10' },
-      ] as const;
-      const PANEL_10_BREAKEVEN = [0, 10, 15, 20] as const;
-
-      type DpmCombo = {
-        tsIdx: number;     // index into PANEL_10_TRAILING_SL
-        sdIdx: number;     // index into PANEL_10_SL_DELAY_SEC
-        ttIdx: number;     // index into PANEL_10_TRAILING_TP
-        beIdx: number;     // index into PANEL_10_BREAKEVEN
-      };
-
-      const PANEL_10_COMBO_COUNT =
-        PANEL_10_TRAILING_SL.length *
-        PANEL_10_SL_DELAY_SEC.length *
-        PANEL_10_TRAILING_TP.length *
-        PANEL_10_BREAKEVEN.length; // = 5*4*4*4 = 320
-
-      const panel10ComboIdx = (c: DpmCombo): number =>
-        c.tsIdx * (PANEL_10_SL_DELAY_SEC.length * PANEL_10_TRAILING_TP.length * PANEL_10_BREAKEVEN.length) +
-        c.sdIdx * (PANEL_10_TRAILING_TP.length * PANEL_10_BREAKEVEN.length) +
-        c.ttIdx * PANEL_10_BREAKEVEN.length +
-        c.beIdx;
-
-      const panel10DecodeIdx = (idx: number): DpmCombo => {
-        const beSize = PANEL_10_BREAKEVEN.length;
-        const ttSize = PANEL_10_TRAILING_TP.length;
-        const sdSize = PANEL_10_SL_DELAY_SEC.length;
-        const beIdx = idx % beSize;
-        const ttIdx = Math.floor(idx / beSize) % ttSize;
-        const sdIdx = Math.floor(idx / (beSize * ttSize)) % sdSize;
-        const tsIdx = Math.floor(idx / (beSize * ttSize * sdSize));
-        return { tsIdx, sdIdx, ttIdx, beIdx };
-      };
-
-      type DpmExitType = 'stop_loss' | 'trailing_stop' | 'breakeven_stop' | 'take_profit' | 'trailing_tp' | 'fall_through';
-
-      /**
-       * Simulate a single token under one DPM combo. Base TP=30, SL=10.
-       * Mirrors position-manager.ts checkPosition logic: layered SL composition
-       * (each rule can only raise the floor), HWM tracking, SL activation delay,
-       * trailing TP with post-TP peak tracking.
-       * Returns { ret, exitType } — ret is cost-adjusted.
-       */
-      const simulateDpmInMemory = (r: Panel4Row, combo: DpmCombo): { ret: number; exitType: DpmExitType } => {
-        const trailingSl = PANEL_10_TRAILING_SL[combo.tsIdx];
-        const slDelay = PANEL_10_SL_DELAY_SEC[combo.sdIdx];
-        const trailingTp = PANEL_10_TRAILING_TP[combo.ttIdx];
-        const breakeven = PANEL_10_BREAKEVEN[combo.beIdx];
-
-        const entryRatio = 1 + r.pct_t30 / 100;
-        let hwm = 0;              // peak relative return (% from entry)
-        let postTpPeak = 0;       // peak relative return after TP hit (for trailing TP)
-        let tpHit = false;
-        let trailingSlActive = false;
-
-        const checkpointKeys: (keyof typeof PANEL_10_CHECKPOINT_DELAYS)[] = [
-          'pct_t40', 'pct_t50', 'pct_t60', 'pct_t90',
-          'pct_t120', 'pct_t150', 'pct_t180', 'pct_t240',
-        ];
-
-        for (const cp of checkpointKeys) {
-          const v = (r as any)[cp];
-          if (v == null) continue;
-          const relRet = ((1 + v / 100) / entryRatio - 1) * 100;
-          const secondsSinceEntry = PANEL_10_CHECKPOINT_DELAYS[cp];
-
-          if (relRet > hwm) hwm = relRet;
-
-          // Compute effective SL (layered — each rule can only raise the floor).
-          // effSl is stored as a percentage return from entry (e.g. -10 = -10% from entry).
-          let effSl = -PANEL_10_BASE_SL;
-
-          // Breakeven stop
-          if (breakeven > 0 && hwm >= breakeven) {
-            if (0 > effSl) effSl = 0;
-          }
-
-          // Trailing SL — price-ratio based (matches position-manager.ts)
-          if (trailingSl.act > 0) {
-            if (hwm >= trailingSl.act) trailingSlActive = true;
-            if (trailingSlActive) {
-              const hwmRatio = 1 + hwm / 100;
-              const trailingSlRatio = hwmRatio * (1 - trailingSl.dist / 100);
-              const trailingSlPct = (trailingSlRatio - 1) * 100;
-              if (trailingSlPct > effSl) effSl = trailingSlPct;
-            }
-          }
-
-          // SL activation delay — suppress SL exits during the grace window
-          const slActive = secondsSinceEntry >= slDelay;
-
-          // Check SL exit (SL first, like Panel 4)
-          if (slActive && relRet <= effSl) {
-            // Price-multiplier SL (mirrors trade-logger.ts:111-120).
-            // When the trigger floor is above -baseSL (trailing/breakeven set a higher floor)
-            // AND we're exiting in profit, use TP gap (softer pullback); otherwise SL gap.
-            const inProfit = relRet > 0;
-            const gap = inProfit ? PANEL_10_TP_GAP_PENALTY : PANEL_10_SL_GAP_PENALTY;
-            const exitRatio = (1 + relRet / 100) * (1 - gap);
-            const realized = (exitRatio - 1) * 100;
-            let exitType: DpmExitType;
-            if (trailingSlActive && effSl > -PANEL_10_BASE_SL) {
-              // Trailing or breakeven set the floor above the fixed SL
-              if (effSl <= 0.001) exitType = 'breakeven_stop';
-              else exitType = 'trailing_stop';
-            } else {
-              exitType = 'stop_loss';
-            }
-            return { ret: realized - r.cost_pct, exitType };
-          }
-
-          // Check TP exit
-          if (trailingTp.en) {
-            if (relRet >= PANEL_10_BASE_TP) tpHit = true;
-            if (tpHit) {
-              if (relRet > postTpPeak) postTpPeak = relRet;
-              // Drop from peak in price-ratio terms (mirrors position-manager.ts)
-              const postTpPeakRatio = 1 + postTpPeak / 100;
-              const currRatio = 1 + relRet / 100;
-              const dropFromPeakPct = ((postTpPeakRatio - currRatio) / postTpPeakRatio) * 100;
-              if (dropFromPeakPct >= trailingTp.drop) {
-                const realized = relRet * (1 - PANEL_10_TP_GAP_PENALTY);
-                return { ret: realized - r.cost_pct, exitType: 'trailing_tp' };
-              }
-            }
-          } else {
-            // Fixed TP
-            if (relRet >= PANEL_10_BASE_TP) {
-              const realized = PANEL_10_BASE_TP * (1 - PANEL_10_TP_GAP_PENALTY);
-              return { ret: realized - r.cost_pct, exitType: 'take_profit' };
-            }
-          }
-        }
-
-        // Fall-through at T+300 (guaranteed non-null by eligibility predicate)
-        const fallRet = ((1 + r.pct_t300 / 100) / entryRatio - 1) * 100 - r.cost_pct;
-        return { ret: fallRet, exitType: 'fall_through' };
-      };
-
-      type Panel10ComboResult = {
-        avg_ret: number;    // per-combo avg return
-        win_rate: number;   // per-combo win %
-        active_exits: number; // non-fall-through exits (used for gating optimum)
-      };
-      type Panel10Optimal = {
-        trailing_sl: string;     // e.g. '10/5' or 'off'
-        sl_delay: number;
-        trailing_tp: string;     // e.g. 'drop5' or 'off'
-        breakeven: number;
-        avg_ret: number;
-        win_rate: number;
-        fallthrough_avg_ret: number; // all-DPM-off baseline for this filter
-      } | null;
-      type Panel10FilterResult = {
-        filter: string;
-        group: string;
-        n: number;
-        combos: Panel10ComboResult[];  // length = PANEL_10_COMBO_COUNT
-        optimal: Panel10Optimal;
-      };
-
-      const runFilterPanel10 = (
-        filterName: string,
-        group: string,
-        predicate: (r: Panel4Row) => boolean,
-      ): Panel10FilterResult => {
-        const filtered = panel4Rows.filter(predicate);
-        const n = filtered.length;
-        const combos: Panel10ComboResult[] = new Array(PANEL_10_COMBO_COUNT);
-        for (let i = 0; i < PANEL_10_COMBO_COUNT; i++) {
-          combos[i] = { avg_ret: 0, win_rate: 0, active_exits: 0 };
-        }
-        let optimal: Panel10Optimal = null;
-
-        if (n === 0) {
-          return { filter: filterName, group, n: 0, combos, optimal };
-        }
-
-        // "Fallthrough" combo = all DPM features off (trailingSl=off, slDelay=0,
-        // trailingTp=off, breakeven=0). This is the pure fixed 30/10 baseline.
-        const fallthroughIdx = panel10ComboIdx({ tsIdx: 0, sdIdx: 0, ttIdx: 0, beIdx: 0 });
-
-        for (let idx = 0; idx < PANEL_10_COMBO_COUNT; idx++) {
-          const combo = panel10DecodeIdx(idx);
-          let sum = 0;
-          let wins = 0;
-          let active = 0;
-          for (let k = 0; k < n; k++) {
-            const out = simulateDpmInMemory(filtered[k], combo);
-            sum += out.ret;
-            if (out.ret > 0) wins++;
-            if (out.exitType !== 'fall_through') active++;
-          }
-          combos[idx] = {
-            avg_ret: +(sum / n).toFixed(2),
-            win_rate: Math.round((wins / n) * 100),
-            active_exits: active,
-          };
-        }
-
-        // Find the optimum: max avg_ret gated by n ≥ 30 AND ≥3 active exits.
-        if (n >= PANEL_10_MIN_N) {
-          let bestIdx = -1;
-          let bestAvg = -Infinity;
-          for (let i = 0; i < PANEL_10_COMBO_COUNT; i++) {
-            if (combos[i].active_exits < PANEL_10_MIN_ACTIVE_EXITS) continue;
-            if (combos[i].avg_ret > bestAvg) {
-              bestAvg = combos[i].avg_ret;
-              bestIdx = i;
-            }
-          }
-          if (bestIdx !== -1) {
-            const c = panel10DecodeIdx(bestIdx);
-            optimal = {
-              trailing_sl: PANEL_10_TRAILING_SL[c.tsIdx].label,
-              sl_delay: PANEL_10_SL_DELAY_SEC[c.sdIdx],
-              trailing_tp: PANEL_10_TRAILING_TP[c.ttIdx].label,
-              breakeven: PANEL_10_BREAKEVEN[c.beIdx],
-              avg_ret: combos[bestIdx].avg_ret,
-              win_rate: combos[bestIdx].win_rate,
-              fallthrough_avg_ret: combos[fallthroughIdx].avg_ret,
-            };
-          }
-        }
-
-        return { filter: filterName, group, n, combos, optimal };
-      };
-
-      const baseline10 = runFilterPanel10('ALL labeled (no filter)', 'Baseline', () => true);
-      const filters10 = PANEL_1_FILTERS.map(f =>
-        runFilterPanel10(f.name, f.group, f.predicate as (r: Panel4Row) => boolean)
-      );
-
-      /**
-       * Given a list of per-filter panel-10 results, find the single DPM combo
-       * that maximizes n-weighted avg return across those filters. Used for
-       * per-category and overall aggregates.
-       */
-      const findAggregateOptimum = (
-        results: Panel10FilterResult[],
-      ): Panel10Optimal => {
-        // Only consider filters with n >= 30 (same gate as per-filter optimum)
-        const eligible = results.filter(r => r.n >= PANEL_10_MIN_N);
-        if (eligible.length === 0) return null;
-
-        // For each combo: compute n-weighted avg of per-filter avg_rets.
-        // Also require total active exits across all filters to be meaningful.
-        let bestIdx = -1;
-        let bestWeightedAvg = -Infinity;
-        const totalN = eligible.reduce((s, f) => s + f.n, 0);
-        for (let i = 0; i < PANEL_10_COMBO_COUNT; i++) {
-          let weightedSum = 0;
-          let totalActive = 0;
-          for (const f of eligible) {
-            weightedSum += f.n * f.combos[i].avg_ret;
-            totalActive += f.combos[i].active_exits;
-          }
-          if (totalActive < PANEL_10_MIN_ACTIVE_EXITS * eligible.length) continue;
-          const weightedAvg = weightedSum / totalN;
-          if (weightedAvg > bestWeightedAvg) {
-            bestWeightedAvg = weightedAvg;
-            bestIdx = i;
-          }
-        }
-
-        if (bestIdx === -1) return null;
-        const c = panel10DecodeIdx(bestIdx);
-        // Compute n-weighted avg fallthrough and win rate for the winning combo
-        const fallthroughIdx = panel10ComboIdx({ tsIdx: 0, sdIdx: 0, ttIdx: 0, beIdx: 0 });
-        let fallthroughWeightedSum = 0;
-        let winRateWeightedSum = 0;
-        for (const f of eligible) {
-          fallthroughWeightedSum += f.n * f.combos[fallthroughIdx].avg_ret;
-          winRateWeightedSum += f.n * f.combos[bestIdx].win_rate;
-        }
-        return {
-          trailing_sl: PANEL_10_TRAILING_SL[c.tsIdx].label,
-          sl_delay: PANEL_10_SL_DELAY_SEC[c.sdIdx],
-          trailing_tp: PANEL_10_TRAILING_TP[c.ttIdx].label,
-          breakeven: PANEL_10_BREAKEVEN[c.beIdx],
-          avg_ret: +bestWeightedAvg.toFixed(2),
-          win_rate: Math.round(winRateWeightedSum / totalN),
-          fallthrough_avg_ret: +(fallthroughWeightedSum / totalN).toFixed(2),
-        };
-      };
-
-      // Group filters by category and compute per-category aggregate optima
-      const groups10Map = new Map<string, Panel10FilterResult[]>();
-      for (const f of filters10) {
-        if (!groups10Map.has(f.group)) groups10Map.set(f.group, []);
-        groups10Map.get(f.group)!.push(f);
-      }
-      const categoryAggregates10 = Array.from(groups10Map.entries()).map(([group, results]) => ({
-        group,
-        filter_count: results.length,
-        eligible_count: results.filter(r => r.n >= PANEL_10_MIN_N).length,
-        optimal: findAggregateOptimum(results),
-      }));
-
-      // Overall aggregate: across all filters
-      const overallAggregate10 = findAggregateOptimum(filters10);
-
-      // ── Panel 5 helpers: statistical significance ──
-      //
-      // Wilson score 95% confidence interval for a binomial proportion.
-      // Closed-form, stable at small n (unlike normal approximation).
-      const wilsonCI = (successes: number, n: number): { low: number; high: number } | null => {
-        if (n === 0) return null;
-        const z = 1.96; // 95%
-        const p = successes / n;
-        const denom = 1 + (z * z) / n;
-        const center = (p + (z * z) / (2 * n)) / denom;
-        const halfWidth = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / denom;
-        return { low: Math.max(0, center - halfWidth) * 100, high: Math.min(1, center + halfWidth) * 100 };
-      };
-
-      // Two-proportion z-test (two-sided) p-value approximation using the
-      // complementary error function. Returns p-value in [0, 1].
-      const twoPropZPValue = (s1: number, n1: number, s2: number, n2: number): number | null => {
-        if (n1 === 0 || n2 === 0) return null;
-        const p1 = s1 / n1;
-        const p2 = s2 / n2;
-        const pPool = (s1 + s2) / (n1 + n2);
-        const se = Math.sqrt(pPool * (1 - pPool) * (1 / n1 + 1 / n2));
-        if (se === 0) return 1.0;
-        const z = Math.abs(p1 - p2) / se;
-        // Two-sided p-value = 2 * (1 - Phi(|z|)); Phi via erf.
-        // erf approximation (Abramowitz & Stegun 7.1.26), max error ~1.5e-7
-        const erf = (x: number): number => {
-          const sign = x < 0 ? -1 : 1;
-          x = Math.abs(x);
-          const a1 =  0.254829592;
-          const a2 = -0.284496736;
-          const a3 =  1.421413741;
-          const a4 = -1.453152027;
-          const a5 =  1.061405429;
-          const p  =  0.3275911;
-          const t = 1 / (1 + p * x);
-          const y = 1 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
-          return sign * y;
-        };
-        const phi = 0.5 * (1 + erf(z / Math.SQRT2));
-        return Math.max(0, Math.min(1, 2 * (1 - phi)));
-      };
-
-      // Bootstrap 95% confidence interval on the MEAN of a returns array.
-      // Uses 1000 resamples; deterministic PRNG to make the dashboard reproducible.
-      const bootstrapMeanCI = (returns: number[], iterations = 1000): { low: number; high: number } | null => {
-        const n = returns.length;
-        if (n < 2) return null;
-        // Simple LCG for deterministic resampling per filter (seed from n + first return)
-        let seed = (n * 2654435761 + Math.floor((returns[0] + 1e6) * 1000)) >>> 0;
-        const rand = () => {
-          seed = (seed * 1103515245 + 12345) >>> 0;
-          return (seed & 0x7fffffff) / 0x7fffffff;
-        };
-        const means = new Array<number>(iterations);
-        for (let it = 0; it < iterations; it++) {
-          let sum = 0;
-          for (let k = 0; k < n; k++) {
-            sum += returns[Math.floor(rand() * n)];
-          }
-          means[it] = sum / n;
-        }
-        means.sort((a, b) => a - b);
-        const low = means[Math.floor(iterations * 0.025)];
-        const high = means[Math.floor(iterations * 0.975)];
-        return { low, high };
-      };
-
-      // Simulate a single (tp, sl) on an arbitrary row subset and return
-      // the cost-adjusted returns array. Mirrors simulateInMemory exactly.
-      const simulateReturnsAtLevel = (rows: Panel4Row[], tp: number, sl: number): number[] => {
-        const out: number[] = [];
-        for (const r of rows) {
-          out.push(simulateInMemory(r, tp, sl).ret);
-        }
-        return out;
-      };
-
-      // Baseline Panel 1 counts — needed for Panel 5 p-value computation
-      const baselineP1 = runFilterStats('', '');
-      const baselinePump = baselineP1.pump;
-      const baselineN = baselineP1.n;
-
-      type Panel5Row = {
-        filter: string;
-        group: string;
-        n: number;
-        win_rate_pct: number | null;
-        win_ci_low: number | null;
-        win_ci_high: number | null;
-        p_value_vs_baseline: number | null;
-        opt_tp: number | null;
-        opt_sl: number | null;
-        opt_avg_ret: number | null;
-        boot_ret_low: number | null;
-        boot_ret_high: number | null;
-        verdict: 'SIGNIFICANT' | 'MARGINAL' | 'NOISE' | 'INSUFFICIENT';
-      };
-
-      const runFilterPanel5 = (
-        column: string,
-        whereCond: string,
-        predicate: (r: Panel4Row) => boolean,
-        optimal: Panel4Optimal,
-      ): Omit<Panel5Row, 'filter' | 'group'> => {
-        // Panel 1 counts for this filter (for Wilson CI + p-value vs baseline)
-        const p1 = runFilterStats(column, whereCond);
-        const n = p1.n;
-        const winRate = p1.win_rate_pct;
-        const wilson = wilsonCI(p1.pump, n);
-        const pVal = (column === '' && whereCond === '')
-          ? 1.0 // baseline vs itself
-          : twoPropZPValue(p1.pump, n, baselinePump, baselineN);
-
-        // Bootstrap CI on the per-token returns at this filter's optimum (Panel 4)
-        let bootLow: number | null = null;
-        let bootHigh: number | null = null;
-        if (optimal && n >= PANEL_4_MIN_N_FOR_OPTIMUM) {
-          const filtered = panel4Rows.filter(predicate);
-          const returns = simulateReturnsAtLevel(filtered, optimal.tp, optimal.sl);
-          const boot = bootstrapMeanCI(returns, 1000);
-          if (boot) { bootLow = +boot.low.toFixed(2); bootHigh = +boot.high.toFixed(2); }
-        }
-
-        // Verdict: SIGNIFICANT if p<0.05 AND bootstrap CI excludes 0 AND n>=30
-        //          MARGINAL if p<0.10 OR bootstrap CI excludes 0 (not both)
-        //          NOISE otherwise
-        //          INSUFFICIENT if n<30
-        let verdict: Panel5Row['verdict'] = 'INSUFFICIENT';
-        if (n >= PANEL_4_MIN_N_FOR_OPTIMUM) {
-          const pOk = pVal != null && pVal < 0.05;
-          const pMarginal = pVal != null && pVal < 0.10;
-          const bootOk = bootLow != null && bootHigh != null && bootLow > 0;
-          const bootMarginal = bootLow != null && bootHigh != null && (bootLow > 0 || bootHigh > 0);
-          if (pOk && bootOk) verdict = 'SIGNIFICANT';
-          else if (pMarginal || bootMarginal) verdict = 'MARGINAL';
-          else verdict = 'NOISE';
-        }
-
-        return {
-          n,
-          win_rate_pct: winRate,
-          win_ci_low: wilson ? +wilson.low.toFixed(1) : null,
-          win_ci_high: wilson ? +wilson.high.toFixed(1) : null,
-          p_value_vs_baseline: pVal == null ? null : +pVal.toFixed(4),
-          opt_tp: optimal ? optimal.tp : null,
-          opt_sl: optimal ? optimal.sl : null,
-          opt_avg_ret: optimal ? optimal.avg_ret : null,
-          boot_ret_low: bootLow,
-          boot_ret_high: bootHigh,
-          verdict,
-        };
-      };
-
-      // Panel 5 depends on Panel 4's optimal per filter — we already computed it above.
-      const baseline5: Panel5Row = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...runFilterPanel5('', '', () => true, (baseline4 as any).optimal),
-      };
-      const filters5: Panel5Row[] = PANEL_1_FILTERS.map((f, idx) => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterPanel5(
-          f.column,
-          f.where,
-          f.predicate as (r: Panel4Row) => boolean,
-          (filters4[idx] as any).optimal,
-        ),
-      }));
-
-      // ── Panel 6: multi-filter intersection (dynamic + top-20 pairs) ──
-      type Panel6Dynamic = {
-        selected: string[];              // filter names in the chosen intersection
-        n: number;
-        opt_tp: number | null;
-        opt_sl: number | null;
-        opt_avg_ret: number | null;
-        opt_win_rate: number | null;
-        lift_vs_best_single: number | null;
-      } | null;
-
-      type Panel6PairRow = {
-        filter_a: string;
-        filter_b: string;
-        n: number;
-        opt_tp: number;
-        opt_sl: number;
-        opt_avg_ret: number;
-        opt_win_rate: number;
-        single_a_opt: number | null;
-        single_b_opt: number | null;
-        lift: number;
-      };
-
-      // Parse the ?p6= query param. Accepts up to 3 filter names separated by commas.
-      // Example: ?p6=vel%205-20%20sol%2Fmin,liquidity%20%3E%20100%20SOL
-      const parsePanel6Selection = (raw: unknown): string[] => {
-        if (typeof raw !== 'string' || raw.length === 0) return [];
-        return raw.split(',')
-          .map(s => s.trim())
-          .filter(s => s.length > 0 && PANEL_1_FILTERS.some(f => f.name === s))
-          .slice(0, 3);
-      };
-
-      const panel6Selected = parsePanel6Selection(req.query.p6);
-      let panel6Dynamic: Panel6Dynamic = null;
-      if (panel6Selected.length >= 1) {
-        const selectedDefs = panel6Selected
-          .map(name => PANEL_1_FILTERS.find(f => f.name === name))
-          .filter((f): f is FilterDef => f !== undefined);
-        const combinedPredicate = (r: Panel4Row) =>
-          selectedDefs.every(def => (def.predicate as (r: Panel4Row) => boolean)(r));
-        const res = runFilterPanel4(combinedPredicate);
-        // "Lift vs best single component" = intersection opt_avg_ret - max(single opt_avg_ret)
-        let bestSingleOpt: number | null = null;
-        for (const def of selectedDefs) {
-          const singleIdx = PANEL_1_FILTERS.findIndex(x => x.name === def.name);
-          const singleOpt = (filters4[singleIdx] as any).optimal as Panel4Optimal;
-          if (singleOpt && (bestSingleOpt == null || singleOpt.avg_ret > bestSingleOpt)) {
-            bestSingleOpt = singleOpt.avg_ret;
-          }
-        }
-        panel6Dynamic = {
-          selected: panel6Selected,
-          n: res.n,
-          opt_tp: res.optimal ? res.optimal.tp : null,
-          opt_sl: res.optimal ? res.optimal.sl : null,
-          opt_avg_ret: res.optimal ? res.optimal.avg_ret : null,
-          opt_win_rate: res.optimal ? res.optimal.win_rate : null,
-          lift_vs_best_single: (res.optimal && bestSingleOpt != null)
-            ? +(res.optimal.avg_ret - bestSingleOpt).toFixed(1)
-            : null,
-        };
-      }
-
-      // Top-20 filter pairs by Opt Avg Ret with n >= 30 and lift > 0.
-      // O(C(N,2)) loop where N=53 → 1378 pairs. Each pair reuses runFilterPanel4
-      // (~120 combos × ~n tokens). Acceptable request-time cost at current data size.
-      const panel6TopPairs: Panel6PairRow[] = [];
-      {
-        const pairResults: Panel6PairRow[] = [];
-        for (let i = 0; i < PANEL_1_FILTERS.length; i++) {
-          const a = PANEL_1_FILTERS[i];
-          const aOpt = (filters4[i] as any).optimal as Panel4Optimal;
-          for (let j = i + 1; j < PANEL_1_FILTERS.length; j++) {
-            const b = PANEL_1_FILTERS[j];
-            const bOpt = (filters4[j] as any).optimal as Panel4Optimal;
-            const combinedPredicate = (r: Panel4Row) =>
-              (a.predicate as (r: Panel4Row) => boolean)(r) &&
-              (b.predicate as (r: Panel4Row) => boolean)(r);
-            const res = runFilterPanel4(combinedPredicate);
-            if (res.n < PANEL_4_MIN_N_FOR_OPTIMUM) continue;
-            if (!res.optimal) continue;
-            const bestSingle = Math.max(
-              aOpt ? aOpt.avg_ret : -Infinity,
-              bOpt ? bOpt.avg_ret : -Infinity,
-            );
-            const lift = Number.isFinite(bestSingle)
-              ? +(res.optimal.avg_ret - bestSingle).toFixed(1)
-              : res.optimal.avg_ret;
-            if (lift <= 0) continue;
-            pairResults.push({
-              filter_a: a.name,
-              filter_b: b.name,
-              n: res.n,
-              opt_tp: res.optimal.tp,
-              opt_sl: res.optimal.sl,
-              opt_avg_ret: res.optimal.avg_ret,
-              opt_win_rate: res.optimal.win_rate,
-              single_a_opt: aOpt ? aOpt.avg_ret : null,
-              single_b_opt: bOpt ? bOpt.avg_ret : null,
-              lift,
-            });
-          }
-        }
-        pairResults.sort((x, y) => y.opt_avg_ret - x.opt_avg_ret);
-        panel6TopPairs.push(...pairResults.slice(0, 20));
-      }
-
-      // Panel 6 top-pairs at shorter horizons. Same scan, different fall-through.
-      // Single-filter optima are re-derived from the corresponding filters4_tN so
-      // "lift vs best single" reflects performance at the same horizon.
-      const computeTopPairsAtHorizon = (
-        horizon: Panel4Horizon,
-        singleFilterRows: Array<{ filter: string; optimal: Panel4Optimal }>,
-      ): Panel6PairRow[] => {
-        const out: Panel6PairRow[] = [];
-        for (let i = 0; i < PANEL_1_FILTERS.length; i++) {
-          const a = PANEL_1_FILTERS[i];
-          const aOpt = singleFilterRows[i].optimal;
-          for (let j = i + 1; j < PANEL_1_FILTERS.length; j++) {
-            const b = PANEL_1_FILTERS[j];
-            const bOpt = singleFilterRows[j].optimal;
-            const combinedPredicate = (r: Panel4Row) =>
-              (a.predicate as (r: Panel4Row) => boolean)(r) &&
-              (b.predicate as (r: Panel4Row) => boolean)(r);
-            const res = runFilterPanel4(combinedPredicate, horizon);
-            if (res.n < PANEL_4_MIN_N_FOR_OPTIMUM) continue;
-            if (!res.optimal) continue;
-            const bestSingle = Math.max(
-              aOpt ? aOpt.avg_ret : -Infinity,
-              bOpt ? bOpt.avg_ret : -Infinity,
-            );
-            const lift = Number.isFinite(bestSingle)
-              ? +(res.optimal.avg_ret - bestSingle).toFixed(1)
-              : res.optimal.avg_ret;
-            if (lift <= 0) continue;
-            out.push({
-              filter_a: a.name,
-              filter_b: b.name,
-              n: res.n,
-              opt_tp: res.optimal.tp,
-              opt_sl: res.optimal.sl,
-              opt_avg_ret: res.optimal.avg_ret,
-              opt_win_rate: res.optimal.win_rate,
-              single_a_opt: aOpt ? aOpt.avg_ret : null,
-              single_b_opt: bOpt ? bOpt.avg_ret : null,
-              lift,
-            });
-          }
-        }
-        out.sort((x, y) => y.opt_avg_ret - x.opt_avg_ret);
-        return out.slice(0, 20);
-      };
-
-      const panel6TopPairs_t60 = computeTopPairsAtHorizon(
-        'pct_t60',
-        filters4_t60.map(f => ({ filter: f.filter, optimal: (f as any).optimal as Panel4Optimal })),
-      );
-      const panel6TopPairs_t120 = computeTopPairsAtHorizon(
-        'pct_t120',
-        filters4_t120.map(f => ({ filter: f.filter, optimal: (f as any).optimal as Panel4Optimal })),
-      );
-
-      // Cache for use by /trading route
-      cachedTopPairs = panel6TopPairs;
-
-      // ── Panel 7: walk-forward validation of Panel 4 optimum ──
-      //
-      // Split panel4Rows by created_at at the 70/30 boundary. Find optimum
-      // on the TRAIN half, then evaluate it on the TEST half using the same
-      // TP/SL coordinates (no re-optimization on test).
-      //
-      // Verdict thresholds:
-      //   ROBUST      — degradation (train - test) < 2 percentage points
-      //   DEGRADED    — 2pp ≤ degradation ≤ 5pp
-      //   OVERFIT     — degradation > 5pp
-      //   INSUFFICIENT— train or test n < 20
-      type Panel7Row = {
-        filter: string;
-        group: string;
-        n_train: number;
-        n_test: number;
-        train_tp: number | null;
-        train_sl: number | null;
-        train_avg_ret: number | null;
-        test_avg_ret: number | null;
-        degradation: number | null;
-        verdict: 'ROBUST' | 'DEGRADED' | 'OVERFIT' | 'INSUFFICIENT';
-      };
-
-      const PANEL_7_TRAIN_FRAC = 0.7;
-      const PANEL_7_MIN_N_HALF = 20;
-
-      // Sort a COPY of panel4Rows so the original (unsorted) load is untouched.
-      const panel4RowsSorted = [...panel4Rows].sort((a, b) => a.created_at - b.created_at);
-      const splitIdx = Math.floor(panel4RowsSorted.length * PANEL_7_TRAIN_FRAC);
-      const trainRows = panel4RowsSorted.slice(0, splitIdx);
-      const testRows = panel4RowsSorted.slice(splitIdx);
-
-      // Parameterized version of runFilterPanel4 that works on any row subset.
-      // Returns the SAME shape as runFilterPanel4, plus exposes the full combo grid.
-      const runPanel4OnRows = (rows: Panel4Row[], predicate: (r: Panel4Row) => boolean) => {
-        const filtered = rows.filter(predicate);
-        const n = filtered.length;
-        const comboCount = PANEL_4_TP_GRID.length * PANEL_4_SL_GRID.length;
-        const avgRet = new Array<number>(comboCount).fill(0);
-        const tpHits = new Array<number>(comboCount).fill(0);
-        let optimal: { tp: number; sl: number; avg_ret: number } | null = null;
-
-        if (n === 0) return { n: 0, avgRet, optimal };
-
-        for (let ti = 0; ti < PANEL_4_TP_GRID.length; ti++) {
-          for (let si = 0; si < PANEL_4_SL_GRID.length; si++) {
-            const tp = PANEL_4_TP_GRID[ti];
-            const sl = PANEL_4_SL_GRID[si];
-            let sum = 0;
-            let tpHit = 0;
-            for (let k = 0; k < n; k++) {
-              const out = simulateInMemory(filtered[k], tp, sl);
-              sum += out.ret;
-              if (out.tpHit) tpHit++;
-            }
-            const idx = ti * PANEL_4_SL_GRID.length + si;
-            avgRet[idx] = +(sum / n).toFixed(2);
-            tpHits[idx] = tpHit;
-          }
-        }
-
-        if (n >= PANEL_7_MIN_N_HALF) {
-          let bestIdx = -1;
-          let bestAvg = -Infinity;
-          for (let i = 0; i < comboCount; i++) {
-            if (tpHits[i] < PANEL_4_MIN_TP_HITS_FOR_OPTIMUM) continue;
-            if (avgRet[i] > bestAvg) { bestAvg = avgRet[i]; bestIdx = i; }
-          }
-          if (bestIdx !== -1) {
-            const ti = Math.floor(bestIdx / PANEL_4_SL_GRID.length);
-            const si = bestIdx % PANEL_4_SL_GRID.length;
-            optimal = { tp: PANEL_4_TP_GRID[ti], sl: PANEL_4_SL_GRID[si], avg_ret: avgRet[bestIdx] };
-          }
-        }
-
-        return { n, avgRet, optimal };
-      };
-
-      const runFilterPanel7 = (predicate: (r: Panel4Row) => boolean): Omit<Panel7Row, 'filter' | 'group'> => {
-        const train = runPanel4OnRows(trainRows, predicate);
-        const test = runPanel4OnRows(testRows, predicate);
-
-        if (train.n < PANEL_7_MIN_N_HALF || test.n < PANEL_7_MIN_N_HALF || !train.optimal) {
-          return {
-            n_train: train.n,
-            n_test: test.n,
-            train_tp: train.optimal ? train.optimal.tp : null,
-            train_sl: train.optimal ? train.optimal.sl : null,
-            train_avg_ret: train.optimal ? train.optimal.avg_ret : null,
-            test_avg_ret: null,
-            degradation: null,
-            verdict: 'INSUFFICIENT',
-          };
-        }
-
-        // Look up test-half avg return at the train-half optimum coordinates.
-        const ti = (PANEL_4_TP_GRID as readonly number[]).indexOf(train.optimal.tp);
-        const si = (PANEL_4_SL_GRID as readonly number[]).indexOf(train.optimal.sl);
-        const testAvg = test.avgRet[ti * PANEL_4_SL_GRID.length + si];
-        const degradation = +(train.optimal.avg_ret - testAvg).toFixed(2);
-        const verdict: Panel7Row['verdict'] =
-          degradation < 2 ? 'ROBUST' : degradation <= 5 ? 'DEGRADED' : 'OVERFIT';
-
-        return {
-          n_train: train.n,
-          n_test: test.n,
-          train_tp: train.optimal.tp,
-          train_sl: train.optimal.sl,
-          train_avg_ret: train.optimal.avg_ret,
-          test_avg_ret: +testAvg.toFixed(2),
-          degradation,
-          verdict,
-        };
-      };
-
-      const baseline7: Panel7Row = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...runFilterPanel7(() => true),
-      };
-      const filters7: Panel7Row[] = PANEL_1_FILTERS.map(f => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterPanel7(f.predicate as (r: Panel4Row) => boolean),
-      }));
-
-      // ── Panel 8: loss tail & risk metrics ──
-      //
-      // Computed at each filter's Panel 4 optimum TP/SL on chronologically-
-      // sorted rows (so "max consecutive losses" reflects true trade order).
-      // All metrics are derived from the same per-token cost-adjusted return
-      // vector that Panel 5's bootstrap CI uses.
-      type Panel8Row = {
-        filter: string;
-        group: string;
-        n: number;
-        opt_tp: number | null;
-        opt_sl: number | null;
-        pct_loss_10: number | null;           // % trades with return < -10%
-        pct_loss_25: number | null;           // % trades with return < -25%
-        pct_loss_50: number | null;           // % trades with return < -50%
-        var_95: number | null;                // 5th percentile of return distribution
-        cvar_95: number | null;               // mean of returns at or below VaR 95%
-        worst_trade: number | null;           // min return across all trades
-        max_consecutive_losses: number | null;// longest streak of return<0 in chrono order
-      };
-
-      const runFilterPanel8 = (
-        predicate: (r: Panel4Row) => boolean,
-        optimal: Panel4Optimal,
-      ): Omit<Panel8Row, 'filter' | 'group'> => {
-        if (!optimal) {
-          return {
-            n: 0,
-            opt_tp: null, opt_sl: null,
-            pct_loss_10: null, pct_loss_25: null, pct_loss_50: null,
-            var_95: null, cvar_95: null, worst_trade: null,
-            max_consecutive_losses: null,
-          };
-        }
-        const filtered = panel4RowsSorted.filter(predicate);
-        const n = filtered.length;
-        if (n < PANEL_4_MIN_N_FOR_OPTIMUM) {
-          return {
-            n,
-            opt_tp: optimal.tp, opt_sl: optimal.sl,
-            pct_loss_10: null, pct_loss_25: null, pct_loss_50: null,
-            var_95: null, cvar_95: null, worst_trade: null,
-            max_consecutive_losses: null,
-          };
-        }
-
-        const returns = filtered.map(r => simulateInMemory(r, optimal.tp, optimal.sl).ret);
-
-        // Loss threshold buckets
-        const lossCount = (t: number) => returns.filter(r => r < -t).length;
-        const pct_loss_10 = +(lossCount(10) / n * 100).toFixed(1);
-        const pct_loss_25 = +(lossCount(25) / n * 100).toFixed(1);
-        const pct_loss_50 = +(lossCount(50) / n * 100).toFixed(1);
-
-        // VaR 95 / CVaR 95 (left tail)
-        const sorted = [...returns].sort((a, b) => a - b);
-        const tailSize = Math.max(1, Math.floor(n * 0.05));
-        const var_95 = +sorted[tailSize - 1].toFixed(2);
-        const tailSum = sorted.slice(0, tailSize).reduce((s, v) => s + v, 0);
-        const cvar_95 = +(tailSum / tailSize).toFixed(2);
-
-        // Worst single trade
-        const worst_trade = +sorted[0].toFixed(2);
-
-        // Max consecutive loss streak (chronological order — depends on panel4RowsSorted)
-        let maxStreak = 0;
-        let curStreak = 0;
-        for (const r of returns) {
-          if (r < 0) { curStreak++; if (curStreak > maxStreak) maxStreak = curStreak; }
-          else curStreak = 0;
-        }
-
-        return {
-          n,
-          opt_tp: optimal.tp, opt_sl: optimal.sl,
-          pct_loss_10, pct_loss_25, pct_loss_50,
-          var_95, cvar_95, worst_trade,
-          max_consecutive_losses: maxStreak,
-        };
-      };
-
-      const baseline8: Panel8Row = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...runFilterPanel8(() => true, (baseline4 as any).optimal),
-      };
-      const filters8: Panel8Row[] = PANEL_1_FILTERS.map((f, idx) => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterPanel8(
-          f.predicate as (r: Panel4Row) => boolean,
-          (filters4[idx] as any).optimal,
-        ),
-      }));
-
-      // ── Panel 9: equity curve & drawdown simulation ──
-      //
-      // Trade the filter's Panel 4 optimum TP/SL through panel4RowsSorted in
-      // chronological order. Start at equity=1.0, geometrically compound each
-      // trade return. Report final equity, max drawdown, longest losing
-      // streak, per-trade Sharpe, and Kelly-optimal position size. Equity
-      // curve is down-sampled to ≤60 points for an inline SVG sparkline.
-      type Panel9Row = {
-        filter: string;
-        group: string;
-        n: number;
-        opt_tp: number | null;
-        opt_sl: number | null;
-        final_equity_mult: number | null;     // e.g. 1.45 = +45% cumulative
-        max_drawdown_pct: number | null;      // max peak-to-trough decline (≤0)
-        longest_losing_streak: number | null; // same as panel 8 but reported here too
-        sharpe: number | null;                // mean/stddev of per-trade returns
-        kelly_fraction: number | null;        // Kelly-optimal bet size [0, 1]
-        equity_curve: number[];               // down-sampled sparkline points
-      };
-
-      const PANEL_9_SPARKLINE_POINTS = 60;
-
-      const runFilterPanel9 = (
-        predicate: (r: Panel4Row) => boolean,
-        optimal: Panel4Optimal,
-      ): Omit<Panel9Row, 'filter' | 'group'> => {
-        if (!optimal) {
-          return {
-            n: 0,
-            opt_tp: null, opt_sl: null,
-            final_equity_mult: null, max_drawdown_pct: null,
-            longest_losing_streak: null, sharpe: null, kelly_fraction: null,
-            equity_curve: [],
-          };
-        }
-        const filtered = panel4RowsSorted.filter(predicate);
-        const n = filtered.length;
-        if (n < PANEL_4_MIN_N_FOR_OPTIMUM) {
-          return {
-            n,
-            opt_tp: optimal.tp, opt_sl: optimal.sl,
-            final_equity_mult: null, max_drawdown_pct: null,
-            longest_losing_streak: null, sharpe: null, kelly_fraction: null,
-            equity_curve: [],
-          };
-        }
-
-        const returns = filtered.map(r => simulateInMemory(r, optimal.tp, optimal.sl).ret);
-
-        // Geometric equity curve (start=1.0). Tokens clamp at −100% so a single
-        // catastrophic loss cannot wipe the account below zero.
-        const equity: number[] = [1.0];
-        let curr = 1.0;
-        for (const r of returns) {
-          const mult = Math.max(0.01, 1 + r / 100); // clamp at -99% to avoid pathology
-          curr = curr * mult;
-          equity.push(curr);
-        }
-        const final_equity_mult = +curr.toFixed(3);
-
-        // Max drawdown: scan equity curve, track running peak
-        let peak = 1.0;
-        let maxDd = 0;
-        for (const v of equity) {
-          if (v > peak) peak = v;
-          const dd = (v - peak) / peak;
-          if (dd < maxDd) maxDd = dd;
-        }
-        const max_drawdown_pct = +(maxDd * 100).toFixed(1);
-
-        // Longest losing streak (chronological)
-        let longest = 0;
-        let streak = 0;
-        for (const r of returns) {
-          if (r < 0) { streak++; if (streak > longest) longest = streak; }
-          else streak = 0;
-        }
-
-        // Per-trade Sharpe (no annualization — trades are irregular)
-        const mean = returns.reduce((s, v) => s + v, 0) / n;
-        let sharpe: number | null = null;
-        if (n >= 2) {
-          const variance = returns.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
-          const std = Math.sqrt(variance);
-          sharpe = std > 0 ? +(mean / std).toFixed(3) : null;
-        }
-
-        // Kelly fraction: (p*b - q) / b, where p = win rate, b = avg_win/avg_loss, q = 1-p
-        let kelly: number | null = null;
-        const wins = returns.filter(r => r > 0);
-        const losses = returns.filter(r => r <= 0);
-        if (wins.length > 0 && losses.length > 0) {
-          const avgWin = wins.reduce((s, v) => s + v, 0) / wins.length;
-          const avgLoss = Math.abs(losses.reduce((s, v) => s + v, 0) / losses.length);
-          if (avgLoss > 0) {
-            const b = avgWin / avgLoss;
-            const p = wins.length / n;
-            const k = (p * b - (1 - p)) / b;
-            kelly = +Math.max(0, Math.min(1, k)).toFixed(3);
-          }
-        }
-
-        // Down-sample equity curve for sparkline
-        const sparkline: number[] = [];
-        const step = Math.max(1, Math.floor(equity.length / PANEL_9_SPARKLINE_POINTS));
-        for (let i = 0; i < equity.length; i += step) {
-          sparkline.push(+equity[i].toFixed(3));
-        }
-        if (sparkline[sparkline.length - 1] !== equity[equity.length - 1]) {
-          sparkline.push(+equity[equity.length - 1].toFixed(3));
-        }
-
-        return {
-          n,
-          opt_tp: optimal.tp, opt_sl: optimal.sl,
-          final_equity_mult,
-          max_drawdown_pct,
-          longest_losing_streak: longest,
-          sharpe,
-          kelly_fraction: kelly,
-          equity_curve: sparkline,
-        };
-      };
-
-      const baseline9: Panel9Row = {
-        filter: 'ALL labeled (no filter)',
-        group: 'Baseline',
-        ...runFilterPanel9(() => true, (baseline4 as any).optimal),
-      };
-      const filters9: Panel9Row[] = PANEL_1_FILTERS.map((f, idx) => ({
-        filter: f.name,
-        group: f.group,
-        ...runFilterPanel9(
-          f.predicate as (r: Panel4Row) => boolean,
-          (filters4[idx] as any).optimal,
-        ),
-      }));
-
-      const filterV2Data = {
-        generated_at: new Date().toISOString(),
-        panel1: {
-          title: 'Single-Feature Filter Comparison',
-          description:
-            'Each row applies ONE filter to the labeled dataset. n is normalized — only tokens where the feature has a non-null value are counted, so monotonicity rows have smaller n than velocity rows. PUMP:DUMP ratio shows asymmetry: >1.0 = more winners than losers, >2.0 = strong asymmetry.',
-          baseline,
-          filters,
-          flags: {
-            low_n_threshold: 20,
-            strong_n_threshold: 100,
-          },
-        },
-        panel2: {
-          title: 'T+30-Anchored Return Percentiles (MAE / MFE / Final)',
-          description:
-            'Percentiles of MAE, MFE, and final return — all anchored from price_t30 (entry price). MAE = worst dip from entry between T+30 and T+300 (≤ 0). MFE = best peak from entry in same window (≥ 0). Final = (price_t300/price_t30 - 1). Sharpe-ish = mean(final)/stddev(final), single-number "profitable AND consistent" score. Tokens missing price_t30 or price_t300 are excluded, so n may be slightly smaller than Panel 1.',
-          baseline: baseline2,
-          filters: filters2,
-          flags: {
-            low_n_threshold: 20,
-            strong_n_threshold: 100,
-          },
-        },
-        panel3: {
-          title: 'Regime Stability — Win Rate & Avg Return Across Time Buckets',
-          description:
-            'Each filter cohort is split into 4 equal-sized time buckets (sorted by created_at). Per-bucket win rate and avg return (T+30-anchored, cost-adjusted) reveal whether the edge persists across regimes. WR StdDev = population std dev of win rates across buckets. Stability label uses the same thresholds as the existing regime_analysis: <8% STABLE, 8-15% MODERATE, ≥15% CLUSTERED. Buckets with n<5 are excluded from the std dev compute.',
-          bucket_windows: bucketBoundaries.map((b, i) => ({
-            bucket: i + 1,
-            start_iso: new Date(b.start * 1000).toISOString(),
-            end_iso: new Date(b.end * 1000).toISOString(),
-          })),
-          baseline: baseline3,
-          filters: filters3,
-          flags: {
-            low_n_threshold: 20,
-            strong_n_threshold: 100,
-          },
-        },
-        panel4: {
-          title: 'TP/SL EV Simulator — T+30 Entry, User-Selectable TP/SL + Per-Filter Optimum',
-          description:
-            'Entry at T+30. Each row precomputes EV across a 12×10 (TP × SL) grid. Dropdowns above the table pick the active cell — all Sel* columns update in place. Opt* columns show the per-filter optimum (max avg return with ≥3 TP hits among combos, requires filter n ≥ 30). Mirrors simulateWithTP (src/index.ts:1283) exactly: SL 30% adverse gap (recalibrated 2026-04-15), TP 10% adverse gap, per-token round_trip_slippage_pct with 3% fallback, null pct_t300 excluded via eligibility.',
-          grid: {
-            tp_levels: PANEL_4_TP_GRID,
-            sl_levels: PANEL_4_SL_GRID,
-            default_tp: PANEL_4_DEFAULT_TP,
-            default_sl: PANEL_4_DEFAULT_SL,
-          },
-          constants: {
-            sl_gap_penalty_pct: PANEL_4_SL_GAP_PENALTY * 100,
-            tp_gap_penalty_pct: PANEL_4_TP_GAP_PENALTY * 100,
-            cost_pct_fallback: ROUND_TRIP_COST_PCT_V2,
-            checkpoints: PANEL_4_CHECKPOINTS,
-            fall_through_column: 'pct_t300',
-            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
-            min_tp_hits_for_optimum: PANEL_4_MIN_TP_HITS_FOR_OPTIMUM,
-          },
-          baseline: baseline4,
-          filters: filters4,
-          flags: {
-            low_n_threshold: 20,
-            strong_n_threshold: 100,
-          },
-        },
-        panel4_t60: {
-          title: 'TP/SL EV Simulator — T+30 Entry, 60s Hold',
-          description:
-            'Same grid and predicate as Panel 4, but the checkpoint scan truncates at pct_t60 and falls through at pct_t60 instead of pct_t300. Use this to see whether a filter captures its edge inside a 60-second window.',
-          grid: {
-            tp_levels: PANEL_4_TP_GRID,
-            sl_levels: PANEL_4_SL_GRID,
-            default_tp: PANEL_4_DEFAULT_TP,
-            default_sl: PANEL_4_DEFAULT_SL,
-          },
-          constants: {
-            sl_gap_penalty_pct: PANEL_4_SL_GAP_PENALTY * 100,
-            tp_gap_penalty_pct: PANEL_4_TP_GAP_PENALTY * 100,
-            cost_pct_fallback: ROUND_TRIP_COST_PCT_V2,
-            checkpoints: ['pct_t40', 'pct_t50', 'pct_t60'],
-            fall_through_column: 'pct_t60',
-            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
-            min_tp_hits_for_optimum: PANEL_4_MIN_TP_HITS_FOR_OPTIMUM,
-          },
-          baseline: baseline4_t60,
-          filters: filters4_t60,
-          flags: {
-            low_n_threshold: 20,
-            strong_n_threshold: 100,
-          },
-        },
-        panel4_t120: {
-          title: 'TP/SL EV Simulator — T+30 Entry, 120s Hold',
-          description:
-            'Same grid and predicate as Panel 4, but the checkpoint scan truncates at pct_t120 and falls through at pct_t120 instead of pct_t300.',
-          grid: {
-            tp_levels: PANEL_4_TP_GRID,
-            sl_levels: PANEL_4_SL_GRID,
-            default_tp: PANEL_4_DEFAULT_TP,
-            default_sl: PANEL_4_DEFAULT_SL,
-          },
-          constants: {
-            sl_gap_penalty_pct: PANEL_4_SL_GAP_PENALTY * 100,
-            tp_gap_penalty_pct: PANEL_4_TP_GAP_PENALTY * 100,
-            cost_pct_fallback: ROUND_TRIP_COST_PCT_V2,
-            checkpoints: ['pct_t40', 'pct_t50', 'pct_t60', 'pct_t90', 'pct_t120'],
-            fall_through_column: 'pct_t120',
-            min_n_for_optimum: PANEL_4_MIN_N_FOR_OPTIMUM,
-            min_tp_hits_for_optimum: PANEL_4_MIN_TP_HITS_FOR_OPTIMUM,
-          },
-          baseline: baseline4_t120,
-          filters: filters4_t120,
-          flags: {
-            low_n_threshold: 20,
-            strong_n_threshold: 100,
-          },
-        },
-        panel5: {
-          title: 'Statistical Significance — Wilson CI on Win Rate + Bootstrap CI on Opt Avg Return',
-          description:
-            'For every filter, shows a 95% Wilson confidence interval on the Panel 1 win rate and a two-proportion z-test p-value vs the ALL-labeled baseline. Opt Avg Ret is inherited from Panel 4; the bootstrap 95% CI resamples the per-token return vector at that filter\'s optimum TP/SL 1000 times. Verdict: SIGNIFICANT (p<0.05 AND bootstrap CI > 0), MARGINAL (one of the two conditions), NOISE (neither), INSUFFICIENT (n<30). Use this to gate any filter ranking — at small n, a high raw win rate can still be noise.',
-          baseline: baseline5,
-          filters: filters5,
-          flags: {
-            low_n_threshold: 30,
-            strong_n_threshold: 100,
-          },
-        },
-        panel6: {
-          title: 'Multi-Filter Intersection (2-way + 3-way AND) — Drill-Down',
-          description:
-            'Pick up to 3 filters from the dropdowns. The page reloads with the intersection run through Panel 4\'s optimum-finder. Lift vs best single component tells you whether the combo improves on its strongest constituent (positive lift = compounding edge; zero or negative = no extra information). Selection is encoded in the URL (?p6=name1,name2,name3) so links are shareable. The Top 20 Pairs table below auto-scans all C(53,2)=1378 two-filter intersections where n≥30 and lift>0, sorted by Opt Avg Ret.',
-          filter_names: PANEL_1_FILTERS.map(f => ({ name: f.name, group: f.group })),
-          dynamic: panel6Dynamic,
-          top_pairs: panel6TopPairs,
-          top_pairs_t60: panel6TopPairs_t60,
-          top_pairs_t120: panel6TopPairs_t120,
-          flags: {
-            low_n_threshold: 30,
-            strong_n_threshold: 100,
-          },
-        },
-        panel7: {
-          title: 'Walk-Forward Validation — Train on First 70%, Test on Last 30%',
-          description:
-            'Detects whether Panel 4\'s per-filter optimum is a genuine edge or an overfit corner of the 120-combo grid. panel4Rows is sorted by created_at and split 70/30. Panel 4\'s optimum is found on the TRAIN half only; that same (TP, SL) pair is then applied (NOT re-optimized) to the TEST half. Degradation = train_avg_ret − test_avg_ret. Verdict: ROBUST (<2pp), DEGRADED (2–5pp), OVERFIT (>5pp), INSUFFICIENT (train or test n<20). Cross-reference with Panel 3 stability: ROBUST filters should also be STABLE or MODERATE.',
-          split: {
-            train_frac: PANEL_7_TRAIN_FRAC,
-            n_total: panel4RowsSorted.length,
-            n_train: trainRows.length,
-            n_test: testRows.length,
-            train_start_iso: trainRows.length > 0 ? new Date(trainRows[0].created_at * 1000).toISOString() : null,
-            train_end_iso: trainRows.length > 0 ? new Date(trainRows[trainRows.length - 1].created_at * 1000).toISOString() : null,
-            test_start_iso: testRows.length > 0 ? new Date(testRows[0].created_at * 1000).toISOString() : null,
-            test_end_iso: testRows.length > 0 ? new Date(testRows[testRows.length - 1].created_at * 1000).toISOString() : null,
-          },
-          baseline: baseline7,
-          filters: filters7,
-          flags: {
-            low_n_threshold: 30,
-            strong_n_threshold: 100,
-          },
-        },
-        panel8: {
-          title: 'Loss Tail & Risk Metrics — At Per-Filter Optimum TP/SL',
-          description:
-            'Quantifies the downside that the TP/SL is supposed to contain. All metrics are computed from per-token cost-adjusted returns at each filter\'s Panel 4 optimum, sorted chronologically. % loss columns count trades below the given threshold. VaR 95% = 5th percentile of the return distribution (you should expect to lose at least this much 5% of the time). CVaR 95% = mean of the bottom-5% tail (expected shortfall when VaR triggers). Worst = single worst trade. Max consecutive losses = longest streak of negative trades in chronological order.',
-          baseline: baseline8,
-          filters: filters8,
-          flags: {
-            low_n_threshold: 30,
-            strong_n_threshold: 100,
-          },
-        },
-        panel9: {
-          title: 'Equity Curve & Drawdown Simulation — Trade Sequence View',
-          description:
-            'Simulates trading every qualifying token in chronological order at each filter\'s Panel 4 optimum TP/SL. Equity starts at 1.0 and compounds geometrically (per-trade returns are clamped at −99% to avoid zero-out pathology). Final equity multiplier, max drawdown, longest losing streak, per-trade Sharpe, and Kelly-optimal bet fraction. The sparkline shows the down-sampled equity curve (≤60 points). This converts "avg return per trade" into the portfolio view you\'d actually experience.',
-          baseline: baseline9,
-          filters: filters9,
-          flags: {
-            low_n_threshold: 30,
-            strong_n_threshold: 100,
-          },
-        },
-        panel11: panel11Data,
-        panel10: {
-          title: 'Dynamic Position Monitoring (DPM) Optimizer — Per-Filter, Per-Category, Overall',
-          description:
-            'For each filter, brute-force a 320-cell grid of DPM parameter combos (trailing SL, SL activation delay, trailing TP, breakeven stop) to find the set that maximizes avg return. Base TP/SL held fixed at 30/10 (thesis defaults) so only DPM values vary. Mirrors the layered SL logic in position-manager.ts exactly: HWM tracking, composable SL floors (each rule can only raise), SL activation delay, price-ratio trailing distances. Also reports the best DPM combo for each filter category (n-weighted across filters in the category) and the best DPM combo across ALL filters (n-weighted). Per-filter optimum gated by n≥30 AND ≥3 non-fall-through exits.',
-          constants: {
-            base_tp_pct: PANEL_10_BASE_TP,
-            base_sl_pct: PANEL_10_BASE_SL,
-            sl_gap_penalty_pct: PANEL_10_SL_GAP_PENALTY * 100,
-            tp_gap_penalty_pct: PANEL_10_TP_GAP_PENALTY * 100,
-            min_n_for_optimum: PANEL_10_MIN_N,
-            min_active_exits_for_optimum: PANEL_10_MIN_ACTIVE_EXITS,
-            combo_count: PANEL_10_COMBO_COUNT,
-          },
-          grid: {
-            trailing_sl: PANEL_10_TRAILING_SL.map(x => ({ label: x.label, activation_pct: x.act, distance_pct: x.dist })),
-            sl_delay_sec: PANEL_10_SL_DELAY_SEC,
-            trailing_tp: PANEL_10_TRAILING_TP.map(x => ({ label: x.label, enabled: x.en, drop_pct: x.drop })),
-            breakeven_pct: PANEL_10_BREAKEVEN,
-          },
-          baseline: baseline10,
-          filters: filters10.map(f => ({ filter: f.filter, group: f.group, n: f.n, optimal: f.optimal })),
-          category_aggregates: categoryAggregates10,
-          overall_aggregate: overallAggregate10,
-          flags: {
-            low_n_threshold: 30,
-            strong_n_threshold: 100,
-          },
-        },
-      };
-
+      // Default path hits the 24h heavy cache (see src/api/heavy-cache.ts) so
+      // a dashboard load costs ~50ms instead of ~100s. The `?p6=` power-user
+      // slice still computes fresh since its input comes from the URL.
+      const p6Raw = req.query.p6;
+      const data = p6Raw !== undefined
+        ? await computeFilterV2Data(db, { p6Raw })
+        : (await getHeavyData(db, strategyManager)).v2;
+      cachedTopPairs = data.panel6.top_pairs;
       const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.send(renderFilterV2Html(filterV2Data));
+        res.send(renderFilterV2Html(data));
       } else {
-        res.json(filterV2Data);
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── FILTER ANALYSIS V3 ───────────────────────────────────────────────────
+  // Six new panels built on top of the same computeFilterV2Data pipeline:
+  // triple-filter combos, drawdown-gate stacking, crash-survival curves,
+  // two new filter dimensions (max_tick_drop_0_30, sum_abs_returns_0_30),
+  // and a velocity × liquidity heatmap. Served from the 24h heavy cache.
+  app.get('/filter-analysis-v3', async (req, res) => {
+    try {
+      const data = (await getHeavyData(db, strategyManager)).v2;
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderFilterV3Html(data));
+      } else {
+        // JSON view: just the six v3 panels
+        res.json({
+          generated_at: data.generated_at,
+          panelv3_1: data.panelv3_1,
+          panelv3_2: data.panelv3_2,
+          panelv3_3: data.panelv3_3,
+          panelv3_4: data.panelv3_4,
+          panelv3_5: data.panelv3_5,
+          panelv3_6: data.panelv3_6,
+          panelv3_7: data.panelv3_7,
+        });
       }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -4077,10 +2375,13 @@ async function main() {
   });
 
   // ── PRICE PATH ANALYSIS ──────────────────────────────────────────────────
-  app.get('/price-path', (_req, res) => {
+  // renderPricePathHtml does its own DB scan (~40s at current data volume),
+  // so the HTML output is cached alongside the other heavy payloads.
+  app.get('/price-path', async (_req, res) => {
     try {
+      const { pricePathHtml } = await getHeavyData(db, strategyManager);
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.send(renderPricePathHtml(db));
+      res.send(pricePathHtml);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
@@ -4104,115 +2405,162 @@ async function main() {
     }
   });
 
-  // ── TRADING DASHBOARD ────────────────────────────────────────────────────
-  app.get('/trading', (req, res) => {
+  // ── WALLET REP ANALYSIS ──────────────────────────────────────────────────
+  // Takes the top 20 combos from /api/best-combos and layers each of a
+  // curated set of creator-wallet-reputation filters on top, to see which
+  // rep filters consistently improve sim return (and which collapse n).
+  app.get('/wallet-rep-analysis', (req, res) => {
     try {
-      const strategyFilter = (req.query.strategy as string) || '';
-
-      // Per-strategy performance stats
-      const strategyStats = getTradeStatsByStrategy(db);
-
-      // Aggregate performance (all strategies)
-      const stats = (db.prepare(`
-        SELECT
-          mode,
-          COUNT(*) as total,
-          COUNT(CASE WHEN status='closed' THEN 1 END) as closed,
-          COUNT(CASE WHEN status='open' THEN 1 END) as open_count,
-          COUNT(CASE WHEN status='failed' THEN 1 END) as failed,
-          ROUND(AVG(CASE WHEN status='closed' THEN net_return_pct END), 2) as avg_net_return_pct,
-          SUM(CASE WHEN status='closed' AND exit_reason IN ('take_profit','trailing_tp') THEN 1 ELSE 0 END) as tp_exits,
-          SUM(CASE WHEN status='closed' AND exit_reason IN ('stop_loss','trailing_stop','breakeven_stop') THEN 1 ELSE 0 END) as sl_exits,
-          SUM(CASE WHEN status='closed' AND exit_reason='timeout' THEN 1 ELSE 0 END) as timeout_exits,
-          ROUND(SUM(CASE WHEN status='closed' THEN net_profit_sol ELSE 0 END), 4) as total_net_profit_sol
-        FROM trades_v2 GROUP BY mode
-      `).all() as any[]);
-
-      // Recent trades — optionally filtered by strategy
-      const tradesQuery = strategyFilter
-        ? `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
-            t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
-            t.exit_price_sol, t.exit_reason, t.net_return_pct, t.gap_adjusted_return_pct,
-            t.take_profit_pct, t.stop_loss_pct,
-            t.momentum_pct_t300, t.momentum_label,
-            datetime(t.entry_timestamp, 'unixepoch') as entry_dt,
-            datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
-            CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
-                 THEN t.exit_timestamp - t.entry_timestamp END as held_seconds,
-            t.filter_results_json
-          FROM trades_v2 t WHERE t.strategy_id = ?
-          ORDER BY t.created_at DESC LIMIT 50`
-        : `SELECT t.id, t.graduation_id, t.mode, t.status, t.mint, t.strategy_id,
-            t.entry_pct_from_open, t.entry_price_sol, t.entry_effective_price,
-            t.exit_price_sol, t.exit_reason, t.net_return_pct, t.gap_adjusted_return_pct,
-            t.take_profit_pct, t.stop_loss_pct,
-            t.momentum_pct_t300, t.momentum_label,
-            datetime(t.entry_timestamp, 'unixepoch') as entry_dt,
-            datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
-            CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
-                 THEN t.exit_timestamp - t.entry_timestamp END as held_seconds,
-            t.filter_results_json
-          FROM trades_v2 t
-          ORDER BY t.created_at DESC LIMIT 50`;
-
-      const recentTrades = (strategyFilter
-        ? db.prepare(tradesQuery).all(strategyFilter) as any[]
-        : db.prepare(tradesQuery).all() as any[]
-      ).map(t => ({
-        ...t,
-        filter_results: t.filter_results_json ? JSON.parse(t.filter_results_json) : null,
-        filter_results_json: undefined,
-      }));
-
-      const smStats = strategyManager ? strategyManager.getStats() : null;
-      const openPositions = smStats?.activePositionDetails ?? [];
-      const strategies = strategyManager ? strategyManager.getStrategies() : [];
-
-      const skipReasons = (db.prepare(`
-        SELECT skip_reason, COUNT(*) as count
-        FROM trade_skips GROUP BY skip_reason ORDER BY count DESC
-      `).all() as any[]);
-
-      const recentSkips = (db.prepare(`
-        SELECT ts.graduation_id, ts.skip_reason, ts.skip_value, ts.pct_t30, ts.strategy_id,
-          datetime(ts.created_at, 'unixepoch') as created_dt, g.mint
-        FROM trade_skips ts JOIN graduations g ON g.id = ts.graduation_id
-        ORDER BY ts.created_at DESC LIMIT 50
-      `).all() as any[]);
-
-      const config = strategyManager ? strategyManager.getConfig() : null;
-
-      const data = {
-        generated_at: new Date().toISOString(),
-        trading_enabled: config?.enabled ?? false,
-        global_mode: config?.mode ?? 'paper',
-        strategies,
-        selected_strategy: strategyFilter || '',
-        config: config ? {
-          mode: config.mode,
-          trade_size_sol: config.tradeSizeSol,
-          take_profit_pct: config.takeProfitPct,
-          stop_loss_pct: config.stopLossPct,
-          max_hold_seconds: config.maxHoldSeconds,
-          entry_gate: `+${config.entryGateMinPctT30}% to +${config.entryGateMaxPctT30}%`,
-          max_concurrent_positions: config.maxConcurrentPositions,
-          filters: config.filters,
-        } : null,
-        open_positions: openPositions,
-        performance_summary: stats,
-        strategy_stats: strategyStats,
-        recent_trades: recentTrades,
-        skip_reason_counts: skipReasons,
-        recent_skips: recentSkips,
-        top_pairs: cachedTopPairs || [],
-      };
-
+      const data = computeWalletRepAnalysis(db);
       const wantHtml = (req.headers.accept || '').includes('text/html');
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
-        res.send(renderTradingHtml(data));
+        res.send(renderWalletRepAnalysisHtml(data));
       } else {
         res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── EXIT-SIM (dynamic exit strategy dashboard) ───────────────────────────
+  // Replays alternative exit logic (momentum reversal today; scale-out,
+  // vol-trail, time-decayed TP in follow-ups) vs static 10%SL/50%TP on the
+  // vel<20 + top5<10% universe.
+  app.get('/exit-sim', (req, res) => {
+    try {
+      const data = computeExitSim(db);
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderExitSimHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // Matrix version of /exit-sim — top 20 filter combos × 5 dynamic-exit
+  // strategies. See src/api/exit-sim-matrix.ts.
+  app.get('/exit-sim-matrix', (req, res) => {
+    try {
+      const data = computeExitSimMatrix(db);
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderExitSimMatrixHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── GRADUATION PIPELINE ──────────────────────────────────────────────────
+  // Per-graduation funnel: was it stale? did T+30 fire? did strategies trade
+  // or filter? Surfaces the "NO EVAL" gap that the trading dashboard hides.
+  app.get('/pipeline', (req, res) => {
+    try {
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      // Mirror /trading: serve the human-facing HTML from a 30s memo so
+      // dashboard refreshes don't re-run the funnel SQL on every hit. JSON
+      // path stays uncached for Claude / API consumers.
+      const memoKey = 'pipeline:html';
+      if (wantHtml) {
+        const cached = memoGet(memoKey);
+        if (cached) {
+          res.setHeader('Content-Type', cached.contentType);
+          res.send(cached.value);
+          return;
+        }
+      }
+      const listenerStats = listener ? listener.getStats() : null;
+      const activeCount = strategyManager
+        ? strategyManager.getStrategies().filter((s: any) => s.enabled).length
+        : 0;
+      const data = computePipelineData(db, listenerStats, activeCount);
+      if (wantHtml) {
+        const html = renderPipelineHtml(data);
+        memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── TRADING DASHBOARD ────────────────────────────────────────────────────
+  // Always computed fresh so the header strategy count + "DISABLED/PAPER"
+  // mode reflect the live strategyManager. The heavy-cache pathway baked in
+  // empty strategies/config at boot time, which left the dashboard stuck at
+  // "DISABLED 0 strategies" even after strategies were upserted via
+  // strategy-commands.json. computeTradingData's queries are all fast (<100ms
+  // total); only top_pairs comes from the cached filter-v2 pass. The five
+  // research panels (distribution / edge-decay / counterfactual / loss-
+  // postmortem / journal) compute on every cache miss but the 30s HTML
+  // memoization keeps the worst case bounded.
+  app.get('/trading', async (req, res) => {
+    try {
+      const strategyFilter = (req.query.strategy as string) || '';
+      const executionModeFilter = (req.query.execution_mode as string) || '';
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      // HTML page tolerates 30s staleness — main page that humans poll. JSON
+      // path stays fresh because Claude / API consumers expect live data.
+      const memoKey = `trading:html:${strategyFilter}:${executionModeFilter}`;
+      if (wantHtml) {
+        const cached = memoGet(memoKey);
+        if (cached) {
+          res.setHeader('Content-Type', cached.contentType);
+          res.send(cached.value);
+          return;
+        }
+      }
+      // The HTML and JSON branches both honour ?strategy= server-side. The
+      // initial render is filter-aware; if the user changes the filter via
+      // click, the page refetches /api/recent-trades + /api/recent-skips
+      // with the new strategy so low-volume cohorts surface their own
+      // last 50 (the global last 50 may not contain any of their trades).
+      const baseData = computeTradingData(db, strategyManager, {
+        strategyFilter,
+        executionModeFilter,
+        topPairs: cachedTopPairs || [],
+      });
+      if (wantHtml) {
+        const html = renderTradingHtml(baseData);
+        memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+      } else {
+        // JSON consumers (Claude, gist-sync, agents) still get the full
+        // payload incl. the 5 research panels — preserves API contract.
+        const [
+          strategyPercentiles,
+          edgeDecay,
+          counterfactual,
+          lossPostmortem,
+          journal,
+        ] = await Promise.all([
+          Promise.resolve(computeStrategyPercentiles(db)),
+          Promise.resolve(computeEdgeDecay(db)),
+          computeCounterfactual(db),
+          Promise.resolve(computeLossPostmortem(db)),
+          Promise.resolve(computeJournal(db)),
+        ]);
+        res.json({
+          ...baseData,
+          strategy_percentiles: strategyPercentiles,
+          edge_decay: edgeDecay,
+          counterfactual,
+          loss_postmortem: lossPostmortem,
+          journal,
+        });
       }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
@@ -4573,14 +2921,48 @@ ${rows.map(r => {
     res.send(html);
   });
 
+  // /health must always return fast even when SQLite is contended or the
+  // event loop is recovering from a heavy compute. Production was clocking
+  // 35–50s here because getGraduationCount() queued behind the synchronous
+  // filter-v2 aggregation. Two protections now:
+  //   1. Cache the graduation count for 5s — health pollers don't need a
+  //      fresh COUNT(*) every request, and the SELECT can briefly contend
+  //      with the writer during heavy ingestion bursts.
+  //   2. Wrap the count query in a 250ms timeout so an SQLite stall returns
+  //      `degraded` instead of hanging the response.
+  //
+  // Everything else here is pure in-memory state — no awaits, no SQL.
+  let healthCountCache: { value: number; expiresAt: number } | null = null;
+  function fastGraduationCount(): { count: number | null; degraded: boolean } {
+    if (healthCountCache && Date.now() < healthCountCache.expiresAt) {
+      return { count: healthCountCache.value, degraded: false };
+    }
+    try {
+      const start = Date.now();
+      const c = getGraduationCount(db);
+      const elapsed = Date.now() - start;
+      if (elapsed > 250) {
+        // Slow query — still serve it but flag degraded so external monitors
+        // can detect SQLite contention without us hanging future requests.
+        healthCountCache = { value: c, expiresAt: Date.now() + 5000 };
+        return { count: c, degraded: true };
+      }
+      healthCountCache = { value: c, expiresAt: Date.now() + 5000 };
+      return { count: c, degraded: false };
+    } catch {
+      return { count: healthCountCache?.value ?? null, degraded: true };
+    }
+  }
+
   app.get('/health', (req, res) => {
     const uptimeMs = Date.now() - startTime;
     const uptimeSeconds = Math.floor(uptimeMs / 1000);
-    const graduationCount = getGraduationCount(db);
+    const { count: graduationCount, degraded: countDegraded } = fastGraduationCount();
     const listenerStats = listener ? listener.getStats() : null;
+    const status = countDegraded || listenerStatus !== 'running' ? 'degraded' : 'ok';
 
     sendJsonOrHtml(req, res, {
-      status: listenerStatus === 'running' ? 'ok' : 'degraded',
+      status,
       listener_status: listenerStatus,
       listener_error: listenerError,
       uptime_seconds: uptimeSeconds,
@@ -4592,6 +2974,43 @@ ${rows.map(r => {
 
   app.listen(healthPort, () => {
     logger.info({ port: healthPort }, 'Health server listening');
+  });
+
+  // Self-healing reputation sweep on every startup: recompute creator_prior_*
+  // for all rows with a creator_wallet_address. The compute is timestamp-
+  // gated (priors must have graduated before this row + have pct_t300), so
+  // re-running is safe and idempotent. Catches T+300 race conditions where a
+  // prior's pct_t300 wasn't ready when this row was originally enriched.
+  // Runs in background — does not block listener start.
+  setImmediate(() => {
+    try {
+      const rows = db.prepare(`
+        SELECT gm.graduation_id, gm.creator_wallet_address, g.timestamp AS grad_timestamp
+        FROM graduation_momentum gm
+        JOIN graduations g ON g.id = gm.graduation_id
+        WHERE gm.creator_wallet_address IS NOT NULL
+        ORDER BY g.timestamp ASC
+      `).all() as Array<{ graduation_id: number; creator_wallet_address: string; grad_timestamp: number }>;
+      if (rows.length === 0) return;
+      const before = (db.prepare(
+        'SELECT COUNT(*) AS n FROM graduation_momentum WHERE creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 1'
+      ).get() as any).n;
+      let updated = 0;
+      for (const row of rows) {
+        const rep = computeCreatorReputation(db, row.creator_wallet_address, row.grad_timestamp);
+        updateMomentumReputation(db, row.graduation_id, rep);
+        updated++;
+      }
+      const after = (db.prepare(
+        'SELECT COUNT(*) AS n FROM graduation_momentum WHERE creator_prior_token_count IS NOT NULL AND creator_prior_token_count >= 1'
+      ).get() as any).n;
+      logger.info(
+        { updated, prior_count_ge_1_before: before, prior_count_ge_1_after: after, delta: after - before },
+        'Startup reputation sweep complete'
+      );
+    } catch (err) {
+      logger.warn('Startup reputation sweep failed: %s', err instanceof Error ? err.message : String(err));
+    }
   });
 
   // Gist sync — push diagnose/snapshot/best-combos to bot-status branch

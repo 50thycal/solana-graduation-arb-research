@@ -63,8 +63,10 @@ export class PoolTracker {
   private totalSkipped = 0;
   private totalPumpSwapEvents = 0;
   private totalPoolCreationEvents = 0;
+  private totalMigrationCandidatesFired = 0;
   private totalMatched = 0;
   private totalSpeculativeHits = 0;
+  private migrationCandidateCb: ((sig: string, slot: number, wsReceivedAt: number) => Promise<void>) | null = null;
 
   constructor(db: Database.Database, connection: Connection) {
     this.db = db;
@@ -88,11 +90,22 @@ export class PoolTracker {
       totalSkipped: this.totalSkipped,
       totalPumpSwapEvents: this.totalPumpSwapEvents,
       totalPoolCreationEvents: this.totalPoolCreationEvents,
+      totalMigrationCandidatesFired: this.totalMigrationCandidatesFired,
       totalMatched: this.totalMatched,
       totalSpeculativeHits: this.totalSpeculativeHits,
       pumpSwapSubscribed: this.pumpSwapSubId !== null,
       priceCollector: this.priceCollector.getStats(),
     };
+  }
+
+  /**
+   * Register a callback that's invoked for every PumpSwap pool creation event.
+   * GraduationListener uses this to run its full migration processing pipeline
+   * off the PumpSwap WS, which delivers ~5s vs the pump.fun WS's 30-75s for
+   * delayed events. The callback is responsible for dedupe (signature-based).
+   */
+  setMigrationCandidateCallback(cb: (sig: string, slot: number, wsReceivedAt: number) => Promise<void>): void {
+    this.migrationCandidateCb = cb;
   }
 
   async start(): Promise<void> {
@@ -239,24 +252,25 @@ export class PoolTracker {
           this.totalPumpSwapEvents++;
 
           if (logs.err) return;
-          if (this.pendingByMint.size === 0 && this.speculativeByMint.size === 0) return;
 
-          // CRITICAL: PumpSwap handles thousands of swap events per minute.
-          // Only fetch the full transaction for pool creation events, not swaps.
-          // Use narrow signals: the pump.fun migration CPI is the most reliable,
-          // plus the explicit "create_pool" instruction name. Avoid broad matches
-          // like "Create"/"Initialize" which fire on every swap that creates an ATA.
-          const isPoolCreation = logs.logs.some(
-            (log) =>
-              log.includes('create_pool') ||
-              log.includes('6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P') // pump.fun program in migration CPI
+          // Narrow filter: only act on transactions that contain pump.fun's
+          // migrate instruction log. This is the same signal graduation-listener
+          // uses on the pump.fun WS. PumpSwap WS logs carry the full tx log
+          // (including pump.fun's inner "Instruction: Migrate") because
+          // pump.fun calls PumpSwap as a CPI for all graduation migrations.
+          // This replaces the old create_pool / program-ID checks, which had a
+          // ~99% false-positive rate (direct PumpSwap pool creations and any tx
+          // referencing pump.fun were triggering 1100+ wasted RPC calls/25min).
+          const isPumpFunMigration = logs.logs.some(
+            (log) => log.includes('Instruction: Migrate')
           );
 
-          if (!isPoolCreation) return;
+          if (!isPumpFunMigration) return;
 
           this.totalPoolCreationEvents++;
+          const wsReceivedAt = Date.now();
 
-          // Log first few pool creation events for debugging
+          // Log first few migration events for debugging
           if (this.totalPoolCreationEvents <= 10) {
             logger.info(
               {
@@ -264,12 +278,34 @@ export class PoolTracker {
                 slot: ctx.slot,
                 logCount: logs.logs.length,
                 logs: logs.logs.slice(0, 8),
-                totalCreationEvents: this.totalPoolCreationEvents,
+                totalMigrationEvents: this.totalPoolCreationEvents,
                 totalSwapEvents: this.totalPumpSwapEvents,
               },
-              'PumpSwap pool creation event'
+              'PumpSwap migration event detected'
             );
           }
+
+          // PRIMARY DETECTION CHANNEL: fire migration candidate to graduation-listener.
+          // PumpSwap WS typically delivers ~5s after the on-chain block, while
+          // Helius's pump.fun WS delays ~50% of migrations by 30-75s. The listener
+          // dedupes by signature so the slower channel's redelivery is a no-op.
+          // Fire-and-forget: don't block the WS handler on the full processing pipeline.
+          if (this.migrationCandidateCb) {
+            this.totalMigrationCandidatesFired++;
+            this.migrationCandidateCb(logs.signature, ctx.slot, wsReceivedAt).catch((err) => {
+              logger.error(
+                'migrationCandidateCb threw for %s: %s',
+                logs.signature,
+                err instanceof Error ? err.message : String(err)
+              );
+            });
+          }
+
+          // Existing path: fill in pool address for grads where pump.fun WS fired
+          // first (added to pending/speculative) but inline pool extraction failed.
+          // Skip when there's nothing to match — the callback above is the new
+          // primary path and handles its own pool extraction.
+          if (this.pendingByMint.size === 0 && this.speculativeByMint.size === 0) return;
 
           try {
             await this.handlePumpSwapEvent(logs.signature, ctx.slot);
@@ -297,12 +333,12 @@ export class PoolTracker {
   }
 
   private async resubscribe(): Promise<void> {
-    if (this.pumpSwapSubId !== null) {
-      try {
-        await this.connection.removeOnLogsListener(this.pumpSwapSubId);
-      } catch {}
-      this.pumpSwapSubId = null;
-    }
+    // `this.connection` was just replaced in updateConnection() with a fresh
+    // Connection. The old pumpSwapSubId belongs to the old Connection's
+    // registry and isn't in the new one — calling removeOnLogsListener with
+    // it makes web3.js console.warn about the missing id. The old socket is
+    // dead anyway, so just clear local state and resubscribe on the new one.
+    this.pumpSwapSubId = null;
     await this.subscribeToPumpSwap();
   }
 

@@ -1,11 +1,14 @@
 import Database from 'better-sqlite3';
+import { Connection } from '@solana/web3.js';
 import { makeLogger } from '../utils/logger';
-import { TradingConfig } from './config';
+import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS } from './config';
 import { runFilterPipeline } from './filter-pipeline';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
 import { PositionManager, ActivePosition } from './position-manager';
 import { ObservationContext } from '../collector/price-collector';
+import { runEntryPreflight, maybeLogKillswitchTripped, isKillswitchTripped } from './safety';
+import type { Wallet } from './wallet';
 
 const logger = makeLogger('trade-evaluator');
 
@@ -20,8 +23,14 @@ export class TradeEvaluator {
     private executor: Executor,
     private positionManager: PositionManager,
     strategyId: string = 'default',
+    private connection: Connection | null = null,
+    private wallet: Wallet | null = null,
   ) {
     this.strategyId = strategyId;
+  }
+
+  updateConnection(connection: Connection): void {
+    this.connection = connection;
   }
 
   /** Hot-swap config without replacing the evaluator instance */
@@ -101,6 +110,41 @@ export class TradeEvaluator {
       return;
     }
 
+    // ── 4b. Safety preflight (killswitch + circuit breaker + balance + slippage) ──
+    const executionMode = cfg.executionMode;
+    if (this.connection) {
+      const preflight = await runEntryPreflight({
+        db: this.db,
+        executionMode,
+        wallet: this.wallet,
+        connection: this.connection,
+        tradeSizeSol: cfg.tradeSizeSol,
+        solReserves,
+        tokenReserves: solReserves / priceT30,
+        maxSlippageBps: cfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
+      });
+      if (!preflight.ok) {
+        if (preflight.reason === 'killswitch') maybeLogKillswitchTripped();
+        this.tradeLogger.logSkipped(
+          graduationId,
+          `safety:${preflight.reason}`,
+          preflight.value ?? null,
+          pctT30,
+          this.strategyId,
+        );
+        logger.warn(
+          { graduationId, strategy: this.strategyId, reason: preflight.reason },
+          'Safety preflight blocked entry'
+        );
+        return;
+      }
+    } else if (executionMode !== 'paper' && isKillswitchTripped()) {
+      // Fallback killswitch check for paper-only path without connection.
+      maybeLogKillswitchTripped();
+      this.tradeLogger.logSkipped(graduationId, 'safety:killswitch', null, pctT30, this.strategyId);
+      return;
+    }
+
     logger.info(
       {
         graduationId,
@@ -126,6 +170,7 @@ export class TradeEvaluator {
       filterStages: filterResult.stages,
       config: cfg,
       strategyId: this.strategyId,
+      executionMode,
     });
 
     // ── 6. Execute entry ─────────────────────────────────────────────────────
@@ -135,9 +180,15 @@ export class TradeEvaluator {
       slippageEstPct = Number(row.slippage_est_05sol);
     }
 
+    const poolCtx = (ctx.baseVault && ctx.quoteVault)
+      ? { poolAddress: ctx.poolAddress, baseVault: ctx.baseVault, quoteVault: ctx.quoteVault }
+      : undefined;
+
     let entryResult;
     try {
-      entryResult = await this.executor.buy(ctx.mint, cfg.tradeSizeSol, priceT30, slippageEstPct);
+      entryResult = await this.executor.buy(
+        ctx.mint, cfg.tradeSizeSol, priceT30, slippageEstPct, poolCtx, executionMode,
+      );
     } catch (err) {
       this.tradeLogger.failTrade(tradeId, `buy_exception: ${err instanceof Error ? err.message : String(err)}`);
       return;
@@ -149,13 +200,19 @@ export class TradeEvaluator {
     }
 
     // Persist the actual fill price + tokens received onto the trade row.
-    // This replaces the placeholder value written at insert time so dashboards
-    // and restart-recovery see the true (slippage-adjusted) entry price.
+    // In shadow mode the tx was never submitted but we record the measured
+    // slippage for paper-vs-shadow comparison.
+    const isShadow = executionMode === 'shadow';
     this.tradeLogger.recordEntryFill(
       tradeId,
       entryResult.effectivePrice,
       entryResult.tokensReceived,
       entryResult.txSignature,
+      {
+        shadowMeasuredEntrySlippagePct: isShadow ? entryResult.measuredSlippagePct : undefined,
+        jitoTipSol: entryResult.jitoTipSol,
+        txLandMs: entryResult.txLandMs,
+      },
     );
 
     // ── 7. Register position for SL/TP monitoring ────────────────────────────
@@ -175,7 +232,8 @@ export class TradeEvaluator {
       slPriceSol,
       maxExitTimestamp: nowSec + cfg.maxHoldSeconds,
       tokensHeld: entryResult.tokensReceived,
-      mode: cfg.mode,
+      mode: (executionMode === 'live_micro' || executionMode === 'live_full') ? 'live' : 'paper',
+      executionMode,
       // graduationTimestamp from ObservationContext — used by match_collection
       // mode to align price checks with SNAPSHOT_SCHEDULE offsets.
       graduationDetectedAt: ctx.graduationTimestamp,
