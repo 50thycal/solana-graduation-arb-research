@@ -191,12 +191,23 @@ export function computeTradingData(
     FROM trade_skips GROUP BY skip_reason ORDER BY count DESC
   `).all() as any[];
 
+  // Recent skips: optional strategy filter so the panel mirrors what Recent
+  // Trades does — clicking a low-volume strategy on /trading shows that
+  // strategy's actual last 20 skips instead of a slice of the global 50.
+  const skipsWhereClauses: string[] = [];
+  const skipsWhereParams: string[] = [];
+  if (strategyFilter) {
+    skipsWhereClauses.push('ts.strategy_id = ?');
+    skipsWhereParams.push(strategyFilter);
+  }
+  const skipsWhereSql = skipsWhereClauses.length ? `WHERE ${skipsWhereClauses.join(' AND ')}` : '';
   const recentSkips = db.prepare(`
     SELECT ts.graduation_id, ts.skip_reason, ts.skip_value, ts.pct_t30, ts.strategy_id,
       datetime(ts.created_at, 'unixepoch') as created_dt, g.mint
     FROM trade_skips ts JOIN graduations g ON g.id = ts.graduation_id
+    ${skipsWhereSql}
     ORDER BY ts.created_at DESC LIMIT 50
-  `).all() as any[];
+  `).all(...skipsWhereParams) as any[];
 
   const config = strategyManager ? strategyManager.getConfig() : null;
 
