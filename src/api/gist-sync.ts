@@ -616,13 +616,20 @@ export class GistSync {
     });
 
     // Compute leaderboard first so we can pass the live leader into the scorecard.
+    // Use a wide top (500) so the same result can be reused by computePanel11
+    // (needs top 40) and computeSniperPanel (needs top 500) — running the full
+    // ~1100-candidate grid sweep three times per cycle was the dominant source
+    // of main-thread block (~75s/cycle), causing the event-loop lag pattern in
+    // directPriceCollector.lastT30Timeouts.
     const bestCombosT0 = Date.now();
-    const bestCombos = await computeBestCombos(this.db, {
+    const bestCombosFull = await computeBestCombos(this.db, {
       min_n: 20,
-      top: 20,
+      top: 500,
       include_pairs: true,
     });
     const bestCombosMs = Date.now() - bestCombosT0;
+    // best-combos.json keeps its top-20 contract.
+    const bestCombos = { ...bestCombosFull, rows: bestCombosFull.rows.slice(0, 20) };
     await yieldEventLoop();
 
     // Find the best combo with n≥100 that beats the rolling entry-gated
@@ -689,12 +696,12 @@ export class GistSync {
       return result;
     };
 
-    const panel11 = await timed('panel11', () => computePanel11(this.db));
+    const panel11 = await timed('panel11', () => computePanel11(this.db, bestCombosFull));
     const panel3 = await timed('panel3', () => computePanel3Summary(this.db));
     const pricePathStats = await timed('pricePathStats', () => computePricePathStats(this.db));
     const peakAnalysis = await timed('peakAnalysis', () => computePeakAnalysis(this.db));
     const exitSim = await timed('exitSim', () => computeExitSim(this.db));
-    const sniperPanel = await timed('sniperPanel', () => computeSniperPanel(this.db));
+    const sniperPanel = await timed('sniperPanel', () => computeSniperPanel(this.db, bestCombosFull));
     const strategyPercentiles = await timed('strategyPercentiles', () => computeStrategyPercentiles(this.db));
     // Trading-page research panels — all are O(strategies × trades) at most;
     // none touch graduation_momentum × the grid except `counterfactual`, which

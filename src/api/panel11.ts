@@ -11,7 +11,7 @@
  */
 
 import Database from 'better-sqlite3';
-import { FILTER_CATALOG, computeBestCombos } from './aggregates';
+import { FILTER_CATALOG, computeBestCombos, BestComboRow } from './aggregates';
 
 const ROUND_TRIP_COST_PCT = 3.0;
 const BUCKET_COUNT = 4;
@@ -232,7 +232,10 @@ export interface Panel11Data {
   flags: { low_n_threshold: number; strong_n_threshold: number };
 }
 
-export async function computePanel11(db: Database.Database): Promise<Panel11Data> {
+export async function computePanel11(
+  db: Database.Database,
+  precomputedBestCombos?: { rows: BestComboRow[] },
+): Promise<Panel11Data> {
   const rows = loadRegimeRows(db);
   const boundaries = computeBucketBoundaries(rows);
 
@@ -246,7 +249,10 @@ export async function computePanel11(db: Database.Database): Promise<Panel11Data
     ...runFilterRegime(ENTRY_GATE_PRED, rows, boundaries),
   };
 
-  const bestCombos = await computeBestCombos(db, { min_n: 20, top: 40, include_pairs: true });
+  // Reuse the leaderboard if gist-sync precomputed it this cycle — same compute,
+  // same min_n=20 + include_pairs=true gating. Saves ~25s of redundant work.
+  const bestCombos = precomputedBestCombos
+    ?? await computeBestCombos(db, { min_n: 20, top: 40, include_pairs: true });
 
   const filters = bestCombos.rows
     .filter(row => row.filters.length === 2)
