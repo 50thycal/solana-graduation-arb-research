@@ -397,7 +397,14 @@ function detectAnomalies(
     /* edge-decay compute failure shouldn't block the report */
   }
 
-  // ── 5. Strategy stalled — enabled strategy with no closed trades in 6h ──
+  // ── 5. Strict-filter watchdog — enabled strategy with no closed trades in 6h ──
+  // Demoted from strategy_stalled HIGH/MED to strict_filter LOW (2026-05-09):
+  // skip-reason analysis showed every stalled strategy was being correctly
+  // rejected by its own filters (top5<10%, vel bands, +5..+100 entry gate),
+  // not starved by a pipeline issue. Triple-filter strategies have ~0.4% pass
+  // rates and naturally take 20+ hours per hit at current graduation cadence.
+  // We still surface the row so the operator can spot strategies that should
+  // be retired or have their filters loosened, but it's no longer an alarm.
   const sixHoursAgo = nowSec - 6 * 3600;
   const staleStrategies = db.prepare(`
     SELECT c.id as strategy_id, c.label,
@@ -413,9 +420,9 @@ function detectAnomalies(
     if (s.last_exit < sixHoursAgo) {
       const hoursAgo = Math.floor((nowSec - s.last_exit) / 3600);
       anomalies.push({
-        severity: hoursAgo > 24 ? 'high' : 'med',
-        kind: 'strategy_stalled',
-        detail: `Enabled strategy "${s.label}" (${s.strategy_id}) hasn't closed a trade in ${hoursAgo}h. Filter too tight, or pipeline not feeding it.`,
+        severity: 'low',
+        kind: 'strict_filter',
+        detail: `"${s.label}" (${s.strategy_id}) — no trade in ${hoursAgo}h. Selective filters; pipeline confirmed feeding (see skip-reason panel).`,
         metric: { strategy_id: s.strategy_id, hours_since_last_trade: hoursAgo },
       });
     }
