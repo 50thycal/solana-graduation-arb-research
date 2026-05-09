@@ -50,6 +50,7 @@ import { computeCounterfactual } from './counterfactual';
 import { computeLossPostmortem } from './loss-postmortem';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
+import { computeDailyReport } from './daily-report';
 import { getHeavyData } from './heavy-cache';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import {
@@ -62,7 +63,13 @@ import {
   upsertJournalEntry,
   appendJournalUpdate,
   deleteJournalEntry,
+  upsertDailyReport,
+  appendReportUpdate,
+  updateActionItemStatus,
+  upsertLesson,
+  archiveLesson,
   type JournalPrediction,
+  type ActionItem,
 } from '../db/queries';
 import type { StrategyManager } from '../trading/strategy-manager';
 import type { StrategyParams } from '../trading/config';
@@ -141,6 +148,10 @@ export interface StatusUrls {
   edge_decay: string;
   counterfactual: string;
   loss_postmortem: string;
+  // Daily report — cross-session memory written by the routine /daily-report
+  // Claude run via report-upsert commands. Bot publishes auto-stats every
+  // sync cycle so the page is populated even before the first Claude run.
+  report: string;
   branch_html: string;
 }
 
@@ -159,7 +170,10 @@ export interface StatusUrls {
 interface StrategyCommand {
   action:
     | 'upsert' | 'delete' | 'toggle'
-    | 'journal-upsert' | 'journal-update' | 'journal-delete';
+    | 'journal-upsert' | 'journal-update' | 'journal-delete'
+    | 'report-upsert' | 'report-append'
+    | 'action-item-update'
+    | 'lesson-upsert' | 'lesson-archive';
   id: string;
   // upsert / toggle
   label?: string;
@@ -171,8 +185,38 @@ interface StrategyCommand {
   hypothesis?: string;
   prediction?: JournalPrediction | null;
   status?: string;
-  // journal-update
+  // journal-update / report-append
   note?: string;
+  // report-upsert / report-append / action-item-update
+  date?: string;
+  generated_by?: string | null;
+  winners?: unknown;
+  losers?: unknown;
+  recommendations?: unknown;
+  anomalies?: unknown;
+  patterns?: unknown;
+  action_items?: ActionItem[];
+  narrative?: string | null;
+  /** When true on report-upsert, every entry in recommendations.create_new[]
+   *  with shape { strategy_id, hypothesis, prediction?, cohort_label? } also
+   *  seeds a journal entry. Closes the Claude → strategy → journal loop. */
+  auto_journal?: boolean;
+  // action-item-update
+  action_item_id?: string;
+  action_item_status?: ActionItem['status'];
+  action_item_note?: string;
+  // lesson-upsert / lesson-archive
+  lesson_id?: string;
+  lesson_title?: string;
+  lesson_body?: string;
+  evidence?: unknown;
+}
+
+interface CreateNewRecommendation {
+  strategy_id: string;
+  hypothesis: string;
+  prediction?: JournalPrediction | null;
+  cohort_label?: string | null;
 }
 
 interface StrategyCommandsFile {
@@ -280,6 +324,7 @@ export class GistSync {
       edge_decay: `${base}/edge-decay.json`,
       counterfactual: `${base}/counterfactual.json`,
       loss_postmortem: `${base}/loss-postmortem.json`,
+      report: `${base}/report.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
@@ -377,6 +422,108 @@ export class GistSync {
           } else if (cmd.action === 'journal-delete') {
             deleteJournalEntry(this.db, cmd.id);
             results.push({ id: cmd.id, action: 'journal-delete', ok: true });
+          } else if (cmd.action === 'report-upsert') {
+            // Write/replace the daily report row for `date`. Idempotent —
+            // re-pushing the same date overwrites narrative + structured
+            // fields but preserves any action_items not explicitly set
+            // (handled inside upsertDailyReport).
+            const date = cmd.date ?? cmd.id;
+            if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+              results.push({ id: cmd.id, action: 'report-upsert', ok: false, error: 'date must be YYYY-MM-DD' });
+            } else {
+              upsertDailyReport(this.db, {
+                date,
+                generated_by: cmd.generated_by ?? 'claude',
+                winners: cmd.winners,
+                losers: cmd.losers,
+                recommendations: cmd.recommendations,
+                anomalies: cmd.anomalies,
+                patterns: cmd.patterns,
+                action_items: cmd.action_items,
+                narrative: cmd.narrative ?? null,
+              });
+              results.push({ id: cmd.id, action: 'report-upsert', ok: true });
+
+              // Auto-journal: seed a strategy_journal entry for each
+              // create_new recommendation so the proposal is tracked even
+              // before the strategy itself is upserted. Tomorrow's Claude
+              // sees the hypothesis + prediction in /api/journal alongside
+              // the report context that proposed it.
+              if (cmd.auto_journal && cmd.recommendations
+                  && typeof cmd.recommendations === 'object') {
+                const recs = cmd.recommendations as { create_new?: CreateNewRecommendation[] };
+                if (Array.isArray(recs.create_new)) {
+                  for (const rec of recs.create_new) {
+                    if (!rec.strategy_id || !rec.hypothesis) continue;
+                    try {
+                      upsertJournalEntry(this.db, {
+                        id: `${rec.strategy_id}-proposal-${date}`,
+                        strategy_id: rec.strategy_id,
+                        cohort_label: rec.cohort_label ?? `proposed:${date}`,
+                        hypothesis: rec.hypothesis,
+                        prediction: rec.prediction ?? null,
+                      });
+                      results.push({
+                        id: `${rec.strategy_id}-proposal-${date}`,
+                        action: 'auto-journal-upsert',
+                        ok: true,
+                      });
+                    } catch (err) {
+                      results.push({
+                        id: rec.strategy_id,
+                        action: 'auto-journal-upsert',
+                        ok: false,
+                        error: err instanceof Error ? err.message : String(err),
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } else if (cmd.action === 'report-append') {
+            const date = cmd.date ?? cmd.id;
+            if (!date) {
+              results.push({ id: cmd.id, action: 'report-append', ok: false, error: 'date is required' });
+            } else if (!cmd.note) {
+              results.push({ id: cmd.id, action: 'report-append', ok: false, error: 'note is required' });
+            } else {
+              const r = appendReportUpdate(this.db, date, cmd.note);
+              results.push({ id: cmd.id, action: 'report-append', ok: r.ok, error: r.error });
+            }
+          } else if (cmd.action === 'action-item-update') {
+            const date = cmd.date;
+            if (!date || !cmd.action_item_id || !cmd.action_item_status) {
+              results.push({
+                id: cmd.id, action: 'action-item-update', ok: false,
+                error: 'date, action_item_id, action_item_status are required',
+              });
+            } else {
+              const r = updateActionItemStatus(
+                this.db, date, cmd.action_item_id,
+                cmd.action_item_status, cmd.action_item_note,
+              );
+              results.push({ id: cmd.id, action: 'action-item-update', ok: r.ok, error: r.error });
+            }
+          } else if (cmd.action === 'lesson-upsert') {
+            const lessonId = cmd.lesson_id ?? cmd.id;
+            if (!lessonId || !cmd.lesson_title || !cmd.lesson_body) {
+              results.push({
+                id: cmd.id, action: 'lesson-upsert', ok: false,
+                error: 'lesson_id, lesson_title, lesson_body are required',
+              });
+            } else {
+              upsertLesson(this.db, {
+                id: lessonId,
+                title: cmd.lesson_title,
+                body: cmd.lesson_body,
+                evidence: cmd.evidence,
+              });
+              results.push({ id: cmd.id, action: 'lesson-upsert', ok: true });
+            }
+          } else if (cmd.action === 'lesson-archive') {
+            const lessonId = cmd.lesson_id ?? cmd.id;
+            const r = archiveLesson(this.db, lessonId);
+            results.push({ id: cmd.id, action: 'lesson-archive', ok: r.ok, error: r.error });
           } else {
             results.push({ id: cmd.id, action: cmd.action, ok: false, error: 'invalid command' });
           }
@@ -554,6 +701,7 @@ export class GistSync {
     const edgeDecay = await timed('edgeDecay', () => computeEdgeDecay(this.db));
     const counterfactual = await timed('counterfactual', () => computeCounterfactual(this.db));
     const lossPostmortem = await timed('lossPostmortem', () => computeLossPostmortem(this.db));
+    const dailyReport = await timed('dailyReport', () => computeDailyReport(this.db));
 
     const exitSimMatrix = HEAVY_PANELS_ENABLED
       ? await timed('exitSimMatrix', () => computeExitSimMatrix(this.db))
@@ -681,6 +829,7 @@ export class GistSync {
       'edge-decay.json': JSON.stringify(edgeDecay, null, 2),
       'counterfactual.json': JSON.stringify(counterfactual, null, 2),
       'loss-postmortem.json': JSON.stringify(lossPostmortem, null, 2),
+      'report.json': JSON.stringify(dailyReport, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,
         count: strategies.length,

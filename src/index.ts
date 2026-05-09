@@ -4,7 +4,7 @@ import { initDatabase } from './db/schema';
 import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml } from './utils/html-renderer';
 import { computePipelineData } from './api/pipeline-data';
 import { computePeakAnalysis } from './api/peak-analysis';
 import { computeExitSim } from './api/exit-sim';
@@ -17,6 +17,7 @@ import { computeJournal } from './api/journal';
 import { computeEdgeDecay } from './api/edge-decay';
 import { computeCounterfactual } from './api/counterfactual';
 import { computeLossPostmortem } from './api/loss-postmortem';
+import { computeDailyReport } from './api/daily-report';
 import { getHeavyData } from './api/heavy-cache';
 import { StrategyManager } from './trading';
 import { StrategyParams } from './trading/config';
@@ -2558,6 +2559,26 @@ async function main() {
           loss_postmortem: lossPostmortem,
           journal,
         });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── /report ──
+  // Daily trading report — cross-session memory. Auto-stats are computed
+  // every render; the narrative + structured recommendations come from the
+  // daily_reports DB table populated by the routine /daily-report Claude run
+  // via report-upsert commands.
+  app.get('/report', (req, res) => {
+    try {
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      const data = computeDailyReport(db);
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderReportHtml(data));
+      } else {
+        res.json(data);
       }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });

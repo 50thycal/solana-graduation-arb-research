@@ -47,6 +47,7 @@ import { computeJournal } from './journal';
 import { computeEdgeDecay } from './edge-decay';
 import { computeCounterfactual } from './counterfactual';
 import { computeLossPostmortem } from './loss-postmortem';
+import { computeDailyReport } from './daily-report';
 import {
   renderStrategyPercentilesPanel,
   renderEdgeDecayPanel,
@@ -55,6 +56,7 @@ import {
   renderJournalPanel,
   renderRecentTradesPanel,
   renderRecentSkipsPanel,
+  renderReportHtml,
 } from '../utils/html-renderer';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
@@ -421,6 +423,17 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       return;
     }
     res.json(computeStrategyPercentiles(db));
+  }));
+
+  // ── /api/daily-report ──
+  // Daily trading report — cross-session memory. today_auto is auto-computed
+  // every render (winners, losers, by-strategy stats, deltas vs yesterday,
+  // anomalies). today_report + recent_reports + lessons + open_action_items
+  // come from daily_reports + lessons_learned tables, written by Claude via
+  // report-upsert / report-append / action-item-update / lesson-* commands
+  // on strategy-commands.json.
+  app.get('/api/daily-report', wrap(async (_req, res) => {
+    res.json(computeDailyReport(db));
   }));
 
   // ── /api/journal ──
