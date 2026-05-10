@@ -586,15 +586,20 @@ export class GistSync {
     // wsConnected is the only field we need for the watchdog.
     let pipelineWsConnected: boolean | null = null;
     let pipelineChannelWins: ChannelWinCounts | undefined = undefined;
+    let pipelineLastCandidateSecAgo: number | null = null;
     try {
       const stats = this.getListenerStats() as {
         wsConnected?: boolean;
         channel_wins?: ChannelWinCounts;
+        lastCandidateSecondsAgo?: number;
       } | null;
       if (stats && typeof stats.wsConnected === 'boolean') {
         pipelineWsConnected = stats.wsConnected;
       }
       if (stats && stats.channel_wins) pipelineChannelWins = stats.channel_wins;
+      if (stats && typeof stats.lastCandidateSecondsAgo === 'number') {
+        pipelineLastCandidateSecAgo = stats.lastCandidateSecondsAgo;
+      }
     } catch { /* listener may not be initialized yet */ }
 
     const enabledStrategies = this.strategyManager
@@ -613,6 +618,7 @@ export class GistSync {
       lastT30CallbackAt,
       enabledStrategies,
       channelWins: pipelineChannelWins,
+      lastCandidateSecAgo: pipelineLastCandidateSecAgo,
     });
 
     // Compute leaderboard first so we can pass the live leader into the scorecard.
