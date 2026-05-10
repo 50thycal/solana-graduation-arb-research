@@ -201,14 +201,19 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     const sm = getStrategyManager ? getStrategyManager() : null;
     let wsConnected: boolean | null = null;
     let channelWins: ChannelWinCounts | undefined = undefined;
+    let lastCandidateSecAgo: number | null = null;
     if (getListenerStats) {
       try {
         const stats = getListenerStats() as {
           wsConnected?: boolean;
           channel_wins?: ChannelWinCounts;
+          lastCandidateSecondsAgo?: number;
         } | null;
         if (stats && typeof stats.wsConnected === 'boolean') wsConnected = stats.wsConnected;
         if (stats && stats.channel_wins) channelWins = stats.channel_wins;
+        if (stats && typeof stats.lastCandidateSecondsAgo === 'number') {
+          lastCandidateSecAgo = stats.lastCandidateSecondsAgo;
+        }
       } catch { /* listener may not be initialized yet */ }
     }
     const report = runDiagnosis(db, logBuffer, {
@@ -216,6 +221,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       lastT30CallbackAt: sm?.getLastT30CallbackAt() ?? null,
       enabledStrategies: sm ? sm.getStrategies().filter(s => s.enabled).length : 0,
       channelWins,
+      lastCandidateSecAgo,
     });
     res.json(report);
   }));

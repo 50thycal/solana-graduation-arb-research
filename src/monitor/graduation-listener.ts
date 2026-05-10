@@ -90,8 +90,18 @@ const WS_HEALTH_CHECK_INTERVAL_MS = 30_000;
 // reconnect even if other pump.fun logs are still flowing. Defends against
 // "WS half-alive" — connected, routing chatter, but not routing migrations.
 // Historical grad rate is 30-150/day, so one every ~30 min on the low end.
-// 60 min without a single candidate is suspicious enough to reset the pipe.
-const NO_CANDIDATE_SILENCE_MS = 60 * 60 * 1000;
+// Tightened from 60 → 25 min on 2026-05-10 after a confirmed 18-min zombie
+// stall (pump.fun WS connected + delivering chatter, no migrate candidates,
+// rpc-poll fallback returning `fetch failed` simultaneously). The 60-min
+// threshold gave the pipeline an hour to recover before any auto-action;
+// 25 min is comfortably past the typical ~10-min p95 inter-candidate gap on
+// a busy day and well above the slowest-day median (~20 min).
+const NO_CANDIDATE_SILENCE_MS = 25 * 60 * 1000;
+// Earlier visibility threshold — log a warning at 12 min so the operator + the
+// dashboard see the developing stall before the auto-reconnect fires at 25 min.
+// Diagnose.ts uses the same lastCandidateSecondsAgo to flag WS_ZOMBIE at 10 min,
+// so this gives Claude the same signal in the listener log buffer.
+const NO_CANDIDATE_WARN_MS = 12 * 60 * 1000;
 
 // Hard caps on reconnect sub-steps. If unsubscribe or subscribe hangs
 // indefinitely (Helius WS occasionally does this), the outer reconnect()
@@ -173,7 +183,23 @@ export class GraduationListener {
   // for COOLDOWN_MS to avoid log spam and event-loop pressure. Reset on any
   // successful tick (including ones that find zero new sigs).
   private pollConsecutiveFailures = 0;
+  // Lifetime cumulative count of poll RPC errors. pollConsecutiveFailures
+  // resets on every success; this one is monotonic — surfaced in getStats()
+  // and snapshot.json so a sustained Helius-side outage shows up on the
+  // dashboard even when the consecutive counter keeps clearing.
+  private totalPollFailures = 0;
   private pollPausedUntil = 0;
+  // Wall-clock timestamp of the most recent poll failure. Useful when paired
+  // with `lastCandidateTime`: if both are recent, the rpc-poll fallback is
+  // wedged at the exact moment we'd want it most (zombie WS pattern).
+  private lastPollFailureAt: number | null = null;
+  // How many times the secondary "no candidates" health check has fired a
+  // forced reconnect. Distinct from `totalReconnects` (which also counts the
+  // 2-min total-silence trigger and any external `forceReconnect()` calls).
+  private totalCandidateSilenceReconnects = 0;
+  // Suppresses repeat warnings during a single silence window. Reset every
+  // time `lastCandidateTime` advances (see handleMigrationCandidate).
+  private candidateSilenceWarnedAt: number | null = null;
   private static readonly POLL_FAILURE_THRESHOLD = 5;
   private static readonly POLL_COOLDOWN_MS = 60_000;
   // Per-channel ring buffers of (wsReceivedAt - blockTime) in seconds for the
@@ -382,6 +408,19 @@ export class GraduationListener {
       totalPollDupes: this.totalPollDupes,
       totalPollSigsFound: this.totalPollSigsFound,
       totalPollTicks: this.totalPollTicks,
+      // Lifetime cumulative count of poll RPC errors (any `fetch failed` or
+      // 429 from getSignaturesForAddress). totalPollTicks - totalPollFailures
+      // ≈ successful polls. Sustained ratio > 5% indicates a Helius-side
+      // issue and the rpc-poll fallback is unreliable.
+      totalPollFailures: this.totalPollFailures,
+      pollConsecutiveFailures: this.pollConsecutiveFailures,
+      lastPollFailureSecondsAgo: this.lastPollFailureAt !== null
+        ? Math.floor((Date.now() - this.lastPollFailureAt) / 1000)
+        : null,
+      // Forced reconnects from the WS half-alive detector (logs flowing but
+      // no migration candidates for NO_CANDIDATE_SILENCE_MS). Each one is a
+      // recovered zombie — climbing > 1 / day means the upstream is unstable.
+      totalCandidateSilenceReconnects: this.totalCandidateSilenceReconnects,
       // Migrate logs filtered out as Helius redeliveries before any RPC
       // call. Healthy ratio is roughly 4× duplicates for every unique
       // candidate (so this should be ~80% of (candidates + duplicates)).
@@ -463,19 +502,47 @@ export class GraduationListener {
       }
 
       // WS half-alive detector: pump.fun logs still flowing but no migrate
-      // instructions routed for 60+ minutes. The primary silence check above
+      // instructions routed for N minutes. The primary silence check above
       // won't catch this because lastEventTime is bumped on every log, not
-      // only migrations.
+      // only migrations. Two stages:
+      //   - WARN at NO_CANDIDATE_WARN_MS (12 min): visibility for the
+      //     operator + dashboard, no reconnect. Diagnose reads the same
+      //     `lastCandidateSecondsAgo` and flips to WS_ZOMBIE at 10 min.
+      //   - RECONNECT at NO_CANDIDATE_SILENCE_MS (25 min): force a fresh
+      //     subscription to recover from the zombie state observed
+      //     2026-05-10 (18-min stall, both ingestion channels wedged).
       const candidateSilentMs = Date.now() - this.lastCandidateTime;
-      if (candidateSilentMs > NO_CANDIDATE_SILENCE_MS) {
+      if (
+        candidateSilentMs > NO_CANDIDATE_WARN_MS &&
+        candidateSilentMs <= NO_CANDIDATE_SILENCE_MS &&
+        this.candidateSilenceWarnedAt === null
+      ) {
         logger.warn(
           {
             candidateSilentSeconds: Math.floor(candidateSilentMs / 1000),
             recentLogs: this.totalLogsReceived,
+            pollConsecutiveFailures: this.pollConsecutiveFailures,
+            totalPollFailures: this.totalPollFailures,
           },
-          'No graduation candidates for 60+ min but logs still flowing — forcing reconnect'
+          'No graduation candidates for ' + Math.floor(candidateSilentMs / 60_000)
+            + ' min but pump.fun logs still flowing — possible WS zombie'
+        );
+        this.candidateSilenceWarnedAt = Date.now();
+      }
+      if (candidateSilentMs > NO_CANDIDATE_SILENCE_MS) {
+        this.totalCandidateSilenceReconnects++;
+        logger.warn(
+          {
+            candidateSilentSeconds: Math.floor(candidateSilentMs / 1000),
+            recentLogs: this.totalLogsReceived,
+            pollConsecutiveFailures: this.pollConsecutiveFailures,
+            totalPollFailures: this.totalPollFailures,
+            totalCandidateSilenceReconnects: this.totalCandidateSilenceReconnects,
+          },
+          'No graduation candidates for 25+ min but logs still flowing — forcing reconnect'
         );
         this.lastCandidateTime = Date.now(); // avoid re-firing every health tick
+        this.candidateSilenceWarnedAt = null;
         this.reconnect();
       }
     }, WS_HEALTH_CHECK_INTERVAL_MS);
@@ -725,6 +792,8 @@ export class GraduationListener {
         }
       } catch (err) {
         this.pollConsecutiveFailures++;
+        this.totalPollFailures++;
+        this.lastPollFailureAt = Date.now();
         // Only log the first few failures and the trip event — otherwise a
         // sustained 429 storm fills the log buffer.
         if (this.pollConsecutiveFailures <= GraduationListener.POLL_FAILURE_THRESHOLD) {
@@ -797,6 +866,9 @@ export class GraduationListener {
     else if (source === 'pumpswap') this.totalCandidatesFromPumpSwap++;
     else this.totalCandidatesFromPoll++;
     this.lastCandidateTime = Date.now();
+    // Reset the warn-suppression flag so the next silence window emits a fresh
+    // warning instead of staying silent until a reconnect.
+    this.candidateSilenceWarnedAt = null;
 
     // Process: extract mint + bonding curve, then VERIFY before recording
     const event = await this.processAndVerifyGraduation(signature, slot, 'Instruction: Migrate', source, wsReceivedAt);
