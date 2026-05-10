@@ -1,0 +1,42 @@
+{
+  "commands": [
+    { "action": "delete", "id": "v11-vel5dev3-t120" },
+    { "action": "delete", "id": "v11-vel5dev3-t240" },
+    { "action": "delete", "id": "v15-sumabs-shadow" },
+    { "action": "delete", "id": "v15-sumabs-dd-shadow" },
+    {
+      "action": "journal-upsert",
+      "id": "v15-sumabs-cohort-postmortem",
+      "strategy_id": "v15-sumabs-shadow",
+      "cohort_label": "v15",
+      "hypothesis": "v15 = same path-shape signal (sum_abs_returns_0_30) as the v14 cohort, but with a +5..+90 entry gate (vs v14's wider gate). Hypothesis: tightening the entry window would surface lower-noise entries and improve net SOL accumulation. Direct 1:1 A/B vs v14 — same filter, only the entry gate differs.",
+      "prediction": {
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "underperforms v14 on net SOL accumulation"
+      },
+      "status": "KILLED"
+    },
+    {
+      "action": "journal-update",
+      "id": "v15-sumabs-cohort-postmortem",
+      "note": "KILLED 2026-05-10. v15-sumabs-shadow and v15-sumabs-dd-shadow both finished at median -1.51%, timeout-dominated exits, no net SOL accumulation. Direct 1:1 vs v14 (same path-shape filter, no +5..+90 entry gate): v15 underperformed v14, so the narrower entry gate is not pulling weight on this signal. v14 cohort kept to continue collecting. Lesson: +5..+90 entry gate + sum_abs_returns_0_30 path-shape filter does not outperform the wider-gate equivalent."
+    },
+    {
+      "action": "action-item-update",
+      "id": "cmd-ai-002-update",
+      "date": "2026-05-10",
+      "action_item_id": "ai-2026-05-10-002",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "Partial execution. Killed v11-vel5dev3-t120 and v11-vel5dev3-t240 (late-entry, medians -4.89/-4.32%). KEPT v11-vel5dev3-t30 (median -1.10%, closest-to-neutral late-entry variant — keeping signal). KEPT v11-vel5dev3-liq100 and v11-age10dev3-liq100 (both have positive total_net_sol — re-evaluate under new leave-one-out regime once bot redeploys)."
+    },
+    {
+      "action": "action-item-update",
+      "id": "cmd-ai-003-update",
+      "date": "2026-05-10",
+      "action_item_id": "ai-2026-05-10-003",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "Partial execution. Killed v15-sumabs-shadow and v15-sumabs-dd-shadow (1:1 vs v14 — narrower entry gate underperformed; see journal entry v15-sumabs-cohort-postmortem). KEPT v14-snipers-liq (continue to n>=10 before re-evaluating). KEPT v12-bcage1d-dd10 (positive total_net_sol). Re-evaluate kept strategies under new leave-one-out regime once bot redeploys."
+    }
+  ]
+}
