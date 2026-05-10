@@ -163,6 +163,7 @@ export interface DailyReportData {
     n_trades: number;
     n_trades_yesterday: number;
     n_graduations: number;
+    n_graduations_yesterday: number;
     diagnose_verdict: string;
     diagnose_next_action: string;
     today_net_profit_sol: number;
@@ -748,10 +749,14 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
     .sort((a, b) => b.readiness_score - a.readiness_score);
   const readinessTop5 = readinessAll.slice(0, 5);
 
-  // Today's graduation count.
+  // Today's graduation count + yesterday's (mirrors n_trades / n_trades_yesterday
+  // so the dashboard can show "today (yest X)" symmetrically for graduations).
   const todayGradCount = (db.prepare(
     'SELECT COUNT(*) as c FROM graduations WHERE timestamp >= ?'
   ).get(todayStartSec) as { c: number }).c;
+  const yesterdayGradCount = (db.prepare(
+    'SELECT COUNT(*) as c FROM graduations WHERE timestamp >= ? AND timestamp < ?'
+  ).get(yesterdayStartSec, todayStartSec) as { c: number }).c;
 
   // Recent reports.
   const reportRows = listDailyReports(db, 60);
@@ -783,6 +788,7 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
       n_trades: todayTrades.length,
       n_trades_yesterday: yesterdayTrades.length,
       n_graduations: todayGradCount,
+      n_graduations_yesterday: yesterdayGradCount,
       diagnose_verdict: diagnoseVerdict,
       diagnose_next_action: diagnoseNextAction,
       today_net_profit_sol: +todayProfit.toFixed(4),
