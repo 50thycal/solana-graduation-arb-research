@@ -8,6 +8,7 @@ import {
 } from '../db/queries';
 import { runDiagnosis } from './diagnose';
 import { computeEdgeDecay } from './edge-decay';
+import { computeLeaveOneOutPnl, type LeaveOneOutRow } from './leave-one-out-pnl';
 
 /**
  * Daily trading report — persistent cross-session memory for /report.
@@ -72,6 +73,51 @@ export interface DeltaVsYesterday {
   delta_win_rate_pp: number | null;
 }
 
+/**
+ * Per-strategy promotion-readiness ranking. Surfaces "closest to clearing the
+ * bar" at the top of report.json so a session-start glance shows which
+ * strategies are within reach. Lifetime data (not today-only) — bar is the
+ * SOL-accumulation target in CLAUDE.md "How to evaluate a candidate".
+ */
+export interface ReadinessRow {
+  strategy_id: string;
+  label: string;
+  enabled: boolean;
+  execution_mode: string;
+  /** 0–100 composite — surfaced first so the row is rankable at a glance. */
+  readiness_score: number;
+  /** Whether all 4 hard gates pass. */
+  promotable: boolean;
+  /** Per-component score breakdown (sum equals readiness_score). */
+  components: {
+    sample_size: number;       // 0–20
+    drop_top3_pnl: number;     // 0–30
+    total_net_sol: number;     // 0–20
+    monthly_run_rate: number;  // 0–20
+    win_rate_sanity: number;   // 0–10
+  };
+  /** Hard gates — true means cleared. */
+  gates: {
+    n_trades_ge_100: boolean;
+    drop_top3_positive: boolean;
+    total_net_sol_ge_0_5: boolean;
+    monthly_run_rate_ge_3_75: boolean;
+  };
+  raw: {
+    n_trades: number;
+    total_net_sol: number;
+    total_net_sol_drop_top1: number;
+    total_net_sol_drop_top3: number;
+    monthly_run_rate_sol: number;
+    win_rate_pct: number | null;
+    mean_net_pct: number | null;
+    trimmed_mean_net_pct: number | null;
+    top1_contribution_pct: number | null;
+    top3_contribution_pct: number | null;
+    days_active: number;
+  };
+}
+
 export interface AutoAnomaly {
   severity: 'low' | 'med' | 'high';
   kind: string;
@@ -125,6 +171,8 @@ export interface DailyReportData {
     by_strategy: PerStrategyToday[];
     delta_vs_yesterday: DeltaVsYesterday[];
     anomalies_auto: AutoAnomaly[];
+    /** Lifetime per-strategy ranking — top 5 closest to clearing the SOL bar. */
+    promotion_readiness_top5: ReadinessRow[];
   };
   today_report: DailyReportView | null;
   recent_reports: DailyReportView[];
@@ -562,6 +610,80 @@ function rowToView(row: DailyReportRow): DailyReportView {
   };
 }
 
+// ── Promotion-readiness ranking ─────────────────────────────────────────
+
+/**
+ * Translate a leave-one-out row into a 0–100 readiness score + gate booleans.
+ * Bar (must clear all 4): n>=100, drop_top3>0, total>=0.5 SOL, monthly>=3.75 SOL.
+ *
+ * Components weighted to penalize lottery-ticket strategies (drop_top3 carries
+ * the most weight) and reward strategies that project to the monthly target.
+ * Win-rate sits as a sanity check, not a primary driver — extreme WRs aren't
+ * killed because fat-tail strategies legitimately live there.
+ */
+function buildReadinessRow(row: LeaveOneOutRow): ReadinessRow {
+  const gates = {
+    n_trades_ge_100: row.n_trades >= 100,
+    drop_top3_positive: row.total_net_sol_drop_top3 > 0,
+    total_net_sol_ge_0_5: row.total_net_sol >= 0.5,
+    monthly_run_rate_ge_3_75: row.monthly_run_rate_sol >= 3.75,
+  };
+
+  const sampleSize = Math.min(row.n_trades / 100, 1) * 20;
+
+  let dropTop3 = 0;
+  if (row.total_net_sol_drop_top3 > 0) {
+    dropTop3 = 25;
+    if (row.total_net_sol_drop_top1 > 0) dropTop3 += 5;
+  }
+
+  const totalSol = Math.min(Math.max(row.total_net_sol, 0) / 0.5, 1) * 20;
+  const monthly = Math.min(Math.max(row.monthly_run_rate_sol, 0) / 3.75, 1) * 20;
+  const wrSanity = row.win_rate_pct != null && row.win_rate_pct >= 30 && row.win_rate_pct <= 70
+    ? 10
+    : 5;
+
+  const components = {
+    sample_size: +sampleSize.toFixed(2),
+    drop_top3_pnl: dropTop3,
+    total_net_sol: +totalSol.toFixed(2),
+    monthly_run_rate: +monthly.toFixed(2),
+    win_rate_sanity: wrSanity,
+  };
+  const score = +(
+    components.sample_size +
+    components.drop_top3_pnl +
+    components.total_net_sol +
+    components.monthly_run_rate +
+    components.win_rate_sanity
+  ).toFixed(2);
+
+  return {
+    strategy_id: row.strategy_id,
+    label: row.label,
+    enabled: row.enabled,
+    execution_mode: row.execution_mode,
+    readiness_score: score,
+    promotable: gates.n_trades_ge_100 && gates.drop_top3_positive
+      && gates.total_net_sol_ge_0_5 && gates.monthly_run_rate_ge_3_75,
+    components,
+    gates,
+    raw: {
+      n_trades: row.n_trades,
+      total_net_sol: row.total_net_sol,
+      total_net_sol_drop_top1: row.total_net_sol_drop_top1,
+      total_net_sol_drop_top3: row.total_net_sol_drop_top3,
+      monthly_run_rate_sol: row.monthly_run_rate_sol,
+      win_rate_pct: row.win_rate_pct,
+      mean_net_pct: row.mean_net_pct,
+      trimmed_mean_net_pct: row.trimmed_mean_net_pct,
+      top1_contribution_pct: row.top1_contribution_pct,
+      top3_contribution_pct: row.top3_contribution_pct,
+      days_active: row.days_active,
+    },
+  };
+}
+
 // ── Main compute ────────────────────────────────────────────────────────
 
 export function computeDailyReport(db: Database.Database): DailyReportData {
@@ -615,6 +737,17 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
   // Today's net P&L.
   const todayProfit = todayTrades.reduce((s, t) => s + (t.net_profit_sol ?? 0), 0);
 
+  // Promotion-readiness: rank enabled strategies by composite score against
+  // the SOL-accumulation bar. Lifetime data, not today-only — closest-to-bar
+  // is a long-horizon question. Computed by reusing the leave-one-out panel
+  // (single SQL pass over closed trades).
+  const leaveOneOut = computeLeaveOneOutPnl(db);
+  const readinessAll = leaveOneOut.rows
+    .filter(r => r.enabled)
+    .map(buildReadinessRow)
+    .sort((a, b) => b.readiness_score - a.readiness_score);
+  const readinessTop5 = readinessAll.slice(0, 5);
+
   // Today's graduation count.
   const todayGradCount = (db.prepare(
     'SELECT COUNT(*) as c FROM graduations WHERE timestamp >= ?'
@@ -658,6 +791,7 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
       by_strategy: byStrategyToday,
       delta_vs_yesterday: deltas,
       anomalies_auto: anomalies,
+      promotion_readiness_top5: readinessTop5,
     },
     today_report: todayReport,
     recent_reports: recentReports,
@@ -670,6 +804,7 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
       'Action items track "what was proposed yesterday and whether it was done" — flip status with action-item-update commands.',
       'Lessons-learned is institutional memory across many sessions; manage with lesson-upsert / lesson-archive commands.',
       'Anomalies are auto-detected by the bot; Claude can add additional ones in the report-upsert payload.',
+      'promotion_readiness_top5 ranks enabled strategies by readiness_score (0–100) against the SOL-accumulation bar (n>=100, drop_top3>0, total>=0.5 SOL, monthly>=3.75 SOL). Full panel at leave-one-out-pnl.json.',
     ],
   };
 }

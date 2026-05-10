@@ -47,6 +47,7 @@ import { computeJournal } from './journal';
 import { computeEdgeDecay } from './edge-decay';
 import { computeCounterfactual } from './counterfactual';
 import { computeLossPostmortem } from './loss-postmortem';
+import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
 import { computeDailyReport } from './daily-report';
 import {
   renderStrategyPercentilesPanel,
@@ -508,6 +509,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       return;
     }
     res.json(computeLossPostmortem(db));
+  }));
+
+  // ── /api/leave-one-out-pnl ──
+  // Outlier-robustness panel: total net SOL with the top 1 and top 3 winners
+  // stripped, plus trimmed mean and monthly run rate. Backs the promotion-
+  // readiness ranking in report.json. CLAUDE.md "How to evaluate a candidate".
+  app.get('/api/leave-one-out-pnl', wrap(async (_req, res) => {
+    res.json(computeLeaveOneOutPnl(db));
   }));
 
   // ── /api/recent-trades / /api/recent-skips ──

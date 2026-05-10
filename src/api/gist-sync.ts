@@ -48,6 +48,7 @@ import { computeJournal } from './journal';
 import { computeEdgeDecay } from './edge-decay';
 import { computeCounterfactual } from './counterfactual';
 import { computeLossPostmortem } from './loss-postmortem';
+import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { computeDailyReport } from './daily-report';
@@ -149,6 +150,8 @@ export interface StatusUrls {
   edge_decay: string;
   counterfactual: string;
   loss_postmortem: string;
+  /** Outlier-robust SOL accumulation panel — drops top 1 / top 3 winners. */
+  leave_one_out_pnl: string;
   // Daily report — cross-session memory written by the routine /daily-report
   // Claude run via report-upsert commands. Bot publishes auto-stats every
   // sync cycle so the page is populated even before the first Claude run.
@@ -326,6 +329,7 @@ export class GistSync {
       edge_decay: `${base}/edge-decay.json`,
       counterfactual: `${base}/counterfactual.json`,
       loss_postmortem: `${base}/loss-postmortem.json`,
+      leave_one_out_pnl: `${base}/leave-one-out-pnl.json`,
       report: `${base}/report.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
@@ -716,6 +720,9 @@ export class GistSync {
     const edgeDecay = await timed('edgeDecay', () => computeEdgeDecay(this.db));
     const counterfactual = await timed('counterfactual', () => computeCounterfactual(this.db));
     const lossPostmortem = await timed('lossPostmortem', () => computeLossPostmortem(this.db));
+    const leaveOneOutPnl = await timed('leaveOneOutPnl', () => computeLeaveOneOutPnl(this.db));
+    // dailyReport reads leaveOneOutPnl internally to populate
+    // promotion_readiness_top5 — keep this ordering.
     const dailyReport = await timed('dailyReport', () => computeDailyReport(this.db));
 
     const exitSimMatrix = HEAVY_PANELS_ENABLED
@@ -850,6 +857,7 @@ export class GistSync {
       'edge-decay.json': JSON.stringify(edgeDecay, null, 2),
       'counterfactual.json': JSON.stringify(counterfactual, null, 2),
       'loss-postmortem.json': JSON.stringify(lossPostmortem, null, 2),
+      'leave-one-out-pnl.json': JSON.stringify(leaveOneOutPnl, null, 2),
       'report.json': JSON.stringify(dailyReport, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,
