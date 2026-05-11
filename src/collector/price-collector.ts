@@ -7,6 +7,8 @@ import {
   updateMomentumPrice,
   updateMomentumLiquidity,
   updateMomentumOpenPrice,
+  updateMomentumInitialLp,
+  updateMomentumLpGrowth,
 } from '../db/queries';
 import { MomentumLabeler } from '../analysis/momentum-labeler';
 import { CompetitionDetector } from './competition-detector';
@@ -714,6 +716,9 @@ export class PriceCollector {
               +roundTripSlippagePct.toFixed(3),
               graduationId
             );
+            // B2 — derive lp_growth_t0_to_t30_pct now that both columns exist.
+            // No-op if pumpswap_initial_lp_sol is NULL (pre-rollout row).
+            updateMomentumLpGrowth(this.db, graduationId);
           } catch (err) {
             logger.warn('Failed to write T+30 liquidity metrics for grad %d: %s',
               graduationId, err instanceof Error ? err.message : String(err));
@@ -735,6 +740,24 @@ export class PriceCollector {
       if (!observation.openPoolPrice) {
         observation.openPoolPrice = poolState.price;
         updateMomentumOpenPrice(this.db, graduationId, poolState.price);
+        // B2 — capture initial PumpSwap pool reserves at the moment of the
+        // first snapshot. NULL-safe upsert (won't overwrite a value once set).
+        // `actualSecSinceGraduation` indicates how late the snapshot landed
+        // — for clean WS-channel grads it'll be ~0, for RPC-poll-channel grads
+        // it can be 5-15s. Strategies that filter on initial-LP can inspect
+        // pumpswap_initial_lp_capture_sec if they want to discount late captures.
+        try {
+          updateMomentumInitialLp(
+            this.db,
+            graduationId,
+            poolState.solReserves,
+            poolState.tokenReserves,
+            Math.max(0, actualSecSinceGraduation),
+          );
+        } catch (err) {
+          logger.warn('Failed to write pumpswap_initial_lp_* for grad %d: %s',
+            graduationId, err instanceof Error ? err.message : String(err));
+        }
         logger.info(
           { graduationId, mint: ctx.mint, openPrice: poolState.price.toFixed(12) },
           'Open pool price set'

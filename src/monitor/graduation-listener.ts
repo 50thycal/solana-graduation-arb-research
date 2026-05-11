@@ -7,7 +7,7 @@ import {
 } from '@solana/web3.js';
 import BN from 'bn.js';
 import Database from 'better-sqlite3';
-import { insertGraduation, insertMomentum, updateMomentumEnrichment, updateGraduationEnrichment, updateGraduationPool, computeCreatorReputation, updateMomentumReputation } from '../db/queries';
+import { insertGraduation, insertMomentum, updateMomentumEnrichment, updateGraduationEnrichment, updateGraduationPool, computeCreatorReputation, updateMomentumReputation, updateMomentumBatchRank } from '../db/queries';
 import { PoolTracker } from './pool-tracker';
 import { HolderEnrichment } from '../collector/holder-enrichment';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -912,6 +912,19 @@ export class GraduationListener {
       open_price_sol: event.finalPriceSol,
       total_sol_raised: event.finalSolReserves,
     });
+
+    // B4 — concurrent-graduation density + this row's batch rank. Pure SQL
+    // derivation from `graduations.timestamp`; no RPC, no parsing. Computed
+    // synchronously here so the row carries the signal before the price-
+    // collector lands its first snapshot.
+    try {
+      updateMomentumBatchRank(this.db, graduationId);
+    } catch (err) {
+      logger.warn(
+        'updateMomentumBatchRank failed for grad %d: %s',
+        graduationId, err instanceof Error ? err.message : String(err),
+      );
+    }
 
     // Holder enrichment (fire-and-forget — don't block pool tracking).
     // Now uses UPDATE (not INSERT) since the row already exists above.

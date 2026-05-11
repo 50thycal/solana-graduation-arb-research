@@ -209,12 +209,21 @@ export class StrategyManager {
     for (const instance of this.strategies.values()) {
       if (!instance.enabled) continue;
 
-      // Filters that source from competition_signals (buy_pressure_* and sniper_*)
-      // are written at T+35 by the same detectBuyPressure pass — strategies
-      // referencing either family must delay evaluation 5s past T+30.
+      // Filters that source from competition_signals (buy_pressure_*, sniper_*,
+      // flow_*, vwap_*, price_vs_vwap_*, firstbuyer_*) are written at T+35 by
+      // the same detectBuyPressure pass — strategies referencing any of those
+      // families must delay evaluation 5s past T+30. Keep this prefix list in
+      // sync with detectBuyPressure() in src/collector/competition-detector.ts.
+      const T35_PREFIXES = [
+        'buy_pressure_',
+        'sniper_',
+        'flow_',
+        'vwap_',
+        'price_vs_vwap_',
+        'firstbuyer_',
+      ];
       const needsT35 = instance.config.filters.some(
-        f => f.field.startsWith('buy_pressure_')
-          || f.field.startsWith('sniper_'),
+        f => T35_PREFIXES.some(p => f.field.startsWith(p)),
       );
 
       const entryTimingSec = instance.config.entryTimingSec ?? 30;
