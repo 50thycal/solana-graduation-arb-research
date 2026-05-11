@@ -256,6 +256,29 @@ function runMigrations(db: Database.Database): void {
       // Multi-horizon labels (existing `label` column is the T+300 horizon).
       ['label_t60', 'TEXT'],                        // PUMP/DUMP/STABLE at T+60
       ['label_t120', 'TEXT'],                       // PUMP/DUMP/STABLE at T+120
+      // B2 — PumpSwap initial pool depth at migration. Captured at T+0 by the
+      // price-collector alongside the open-price write. NULL on historical rows
+      // (impossible to backfill — pool state at migration is no longer readable).
+      ['pumpswap_initial_lp_sol', 'REAL'],          // SOL reserves at first snapshot
+      ['pumpswap_initial_lp_tokens', 'REAL'],       // token reserves at first snapshot
+      ['pumpswap_initial_lp_capture_sec', 'INTEGER'], // elapsedSec when initial-LP was captured (0 = true T+0)
+      ['pumpswap_lp_growth_t0_to_t30_pct', 'REAL'], // (liq_t30 - initial_lp) / initial_lp * 100
+      // B4 — concurrent-graduation density + batch rank. Pure derivation from
+      // graduations.created_at; populated synchronously at insertMomentum time
+      // and backfilled at boot.
+      ['graduation_density_5min', 'INTEGER'],       // count of grads in trailing 5 min including self
+      ['batch_rank_within_5min', 'INTEGER'],        // 1-indexed rank by created_at within the 5-min window
+      // B5 — buy/sell flow imbalance + VWAP at T+30. Computed at T+35 in
+      // detectBuyPressure() from the same competition_signals window.
+      ['flow_sol_buys_0_30', 'REAL'],               // total SOL across action='buy' txs in 0-30s
+      ['flow_sol_sells_0_30', 'REAL'],              // total SOL across action='sell' txs in 0-30s
+      ['flow_imbalance_t30', 'REAL'],               // (buys-sells) / total, range -1..+1
+      ['vwap_0_30', 'REAL'],                        // SOL-weighted average price across 5s checkpoints in 0-30s
+      ['price_vs_vwap_t30_pct', 'REAL'],            // (price_t30 - vwap_0_30) / vwap_0_30 * 100
+      // B3 — first-buyer-priors flag. Populated at T+35; firstbuyer_priors backfilled
+      // at boot via the same chronological pass as sniper_wallet_velocity_avg.
+      ['firstbuyer_wallet', 'TEXT'],                // wallet of first non-bot action='buy' in T+0..T+5s
+      ['firstbuyer_priors', 'INTEGER'],             // # earlier grads this wallet sniped (PRIOR-only)
     ];
     // Every-5s price snapshots across the full 300s monitoring window — dedupes against
     // explicit entries above (t5, t10, ..., t60, t90, t120, t150, t180, t240, t300).
@@ -470,6 +493,107 @@ function runMigrations(db: Database.Database): void {
       db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
         .run('sniper_wallet_velocity_backfill_v1', String(byGrad.size));
       logger.info({ graduationsUpdated: byGrad.size, snipers: snipers.length }, 'Backfilled sniper wallet velocity (chronological)');
+    }
+
+    // ── B4 backfill: graduation_density_5min + batch_rank_within_5min ──
+    // Pure derivation from graduations.timestamp. Idempotent — only touches
+    // rows where graduation_density_5min IS NULL. Single self-correlated UPDATE.
+    db.exec(`
+      UPDATE graduation_momentum AS gm
+      SET graduation_density_5min = (
+            SELECT COUNT(*) FROM graduations g2
+            JOIN graduations g1 ON g1.id = gm.graduation_id
+            WHERE g2.timestamp BETWEEN (g1.timestamp - 300) AND g1.timestamp
+          ),
+          batch_rank_within_5min = (
+            SELECT COUNT(*) FROM graduations g2
+            JOIN graduations g1 ON g1.id = gm.graduation_id
+            WHERE g2.timestamp BETWEEN (g1.timestamp - 300) AND g1.timestamp
+              AND g2.id <= g1.id
+          )
+      WHERE gm.graduation_density_5min IS NULL
+    `);
+
+    // ── B3 backfill: firstbuyer_wallet + firstbuyer_priors ──
+    // Chronological pass like sniper_wallet_velocity_avg. Bounded by a
+    // bot_settings marker so it runs once per release. Skip if there are no
+    // existing competition_signals rows (clean DB).
+    const fbAlreadyDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('firstbuyer_priors_backfill_v1') != null;
+    if (!fbAlreadyDone) {
+      // Per-grad: pick the earliest non-bot 'buy' in T+0..T+5s. is_likely_bot may
+      // be NULL on rows from before that flag landed — treat NULL as "not bot".
+      const firstBuyers = db.prepare(`
+        SELECT cs.graduation_id, cs.wallet_address
+        FROM competition_signals cs
+        INNER JOIN (
+          SELECT graduation_id, MIN(seconds_since_graduation) AS first_sec
+          FROM competition_signals
+          WHERE action = 'buy'
+            AND seconds_since_graduation >= 0
+            AND seconds_since_graduation <= 5
+            AND wallet_address IS NOT NULL
+            AND (is_likely_bot IS NULL OR is_likely_bot = 0)
+          GROUP BY graduation_id
+        ) f ON f.graduation_id = cs.graduation_id AND f.first_sec = cs.seconds_since_graduation
+        WHERE cs.action = 'buy'
+          AND cs.wallet_address IS NOT NULL
+          AND (cs.is_likely_bot IS NULL OR cs.is_likely_bot = 0)
+        GROUP BY cs.graduation_id
+        ORDER BY cs.graduation_id ASC
+      `).all() as Array<{ graduation_id: number; wallet_address: string }>;
+
+      const walletPriorCount = new Map<string, number>();
+      const updateStmt = db.prepare(`
+        UPDATE graduation_momentum
+        SET firstbuyer_wallet = ?, firstbuyer_priors = ?
+        WHERE graduation_id = ?
+      `);
+      const tx = db.transaction(() => {
+        for (const r of firstBuyers) {
+          const priors = walletPriorCount.get(r.wallet_address) ?? 0;
+          updateStmt.run(r.wallet_address, priors, r.graduation_id);
+          walletPriorCount.set(r.wallet_address, priors + 1);
+        }
+      });
+      tx();
+
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('firstbuyer_priors_backfill_v1', String(firstBuyers.length));
+      logger.info({ graduationsUpdated: firstBuyers.length }, 'Backfilled firstbuyer_priors (chronological)');
+    }
+
+    // ── B5 backfill: flow_imbalance + VWAP ──
+    // Pure SQL aggregate over competition_signals (no chronological dependency).
+    // Computed in JS for each row that still has a NULL flow_imbalance_t30, calling
+    // the same computeFlowAndVwap helper used at live time.
+    const fvAlreadyDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('flow_vwap_backfill_v1') != null;
+    if (!fvAlreadyDone) {
+      // Lazy-require to avoid circular import (queries.ts depends on schema.ts at load time).
+      const { computeFlowAndVwap, updateMomentumFlowVwap } = require('./queries') as typeof import('./queries');
+      const rowsToFill = db.prepare(`
+        SELECT graduation_id
+        FROM graduation_momentum
+        WHERE flow_imbalance_t30 IS NULL
+          AND graduation_id IN (SELECT DISTINCT graduation_id FROM competition_signals)
+      `).all() as Array<{ graduation_id: number }>;
+
+      const tx = db.transaction(() => {
+        for (const r of rowsToFill) {
+          try {
+            const m = computeFlowAndVwap(db, r.graduation_id);
+            updateMomentumFlowVwap(db, r.graduation_id, m);
+          } catch {
+            // skip rows where the helper fails (e.g. missing price_t* snapshots)
+          }
+        }
+      });
+      tx();
+
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('flow_vwap_backfill_v1', String(rowsToFill.length));
+      logger.info({ graduationsUpdated: rowsToFill.length }, 'Backfilled flow_imbalance + vwap_0_30');
     }
   }
 

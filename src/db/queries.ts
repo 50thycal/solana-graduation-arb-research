@@ -629,6 +629,255 @@ export function updateSniperMetrics(
   );
 }
 
+// ==================== B2 — PumpSwap initial pool depth ====================
+
+/**
+ * Persist initial pool reserves the first time the price-collector reads them.
+ * Called from price-collector right after the open-price UPDATE. Idempotent —
+ * only writes when pumpswap_initial_lp_sol is still NULL.
+ *
+ * `captureSec` is the elapsedSec of the snapshot that produced these reserves.
+ * For a true T+0 snapshot it'll be 0; for RPC-poll-channel grads with high
+ * delivery latency it may be 5 or 10. Strategies that filter on initial-LP
+ * can inspect captureSec if they need to discount late-captured rows.
+ */
+export function updateMomentumInitialLp(
+  db: Database.Database,
+  graduationId: number,
+  solReserves: number,
+  tokenReserves: number,
+  captureSec: number,
+): void {
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET pumpswap_initial_lp_sol = ?,
+        pumpswap_initial_lp_tokens = ?,
+        pumpswap_initial_lp_capture_sec = ?
+    WHERE graduation_id = ? AND pumpswap_initial_lp_sol IS NULL
+  `).run(+solReserves.toFixed(4), +tokenReserves.toFixed(4), captureSec, graduationId);
+}
+
+/** Compute pumpswap_lp_growth_t0_to_t30_pct once both initial_lp and liquidity_sol_t30 are
+ *  written. Safe to call at every T+30 snapshot — no-op if initial_lp is NULL. */
+export function updateMomentumLpGrowth(db: Database.Database, graduationId: number): void {
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET pumpswap_lp_growth_t0_to_t30_pct =
+      ROUND( ((liquidity_sol_t30 - pumpswap_initial_lp_sol) / pumpswap_initial_lp_sol) * 100, 2 )
+    WHERE graduation_id = ?
+      AND pumpswap_initial_lp_sol IS NOT NULL
+      AND pumpswap_initial_lp_sol > 0
+      AND liquidity_sol_t30 IS NOT NULL
+      AND pumpswap_lp_growth_t0_to_t30_pct IS NULL
+  `).run(graduationId);
+}
+
+// ==================== B4 — graduation density + batch rank ====================
+
+/**
+ * Compute count of graduations in the trailing 5-min window (inclusive of self)
+ * and this graduation's 1-indexed rank within that window. Pure derivation
+ * from the `graduations` table — no RPC, no parsing. Safe to call right after
+ * insertMomentum().
+ */
+export function updateMomentumBatchRank(
+  db: Database.Database,
+  graduationId: number,
+): void {
+  const row = db.prepare(`SELECT timestamp FROM graduations WHERE id = ?`)
+    .get(graduationId) as { timestamp: number } | undefined;
+  if (!row || row.timestamp == null) return;
+  const ts = row.timestamp;
+  // 5-min trailing window. Self-inclusive. Lower id = earlier within the window.
+  const agg = db.prepare(`
+    SELECT
+      COUNT(*) AS density,
+      SUM(CASE WHEN id <= ? THEN 1 ELSE 0 END) AS rank
+    FROM graduations
+    WHERE timestamp BETWEEN ? AND ?
+  `).get(graduationId, ts - 300, ts) as { density: number; rank: number };
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET graduation_density_5min = ?, batch_rank_within_5min = ?
+    WHERE graduation_id = ?
+  `).run(agg.density ?? null, agg.rank ?? null, graduationId);
+}
+
+// ==================== B5 — flow imbalance + VWAP ====================
+
+/**
+ * Compute buy/sell SOL totals and flow imbalance over T+0..T+30 from
+ * competition_signals. Computes VWAP across the 5s checkpoint prices weighted
+ * by per-window SOL volume — see vwap_0_30 caveat below.
+ *
+ * VWAP weighting note: we don't have per-second SOL volume, only per-tx
+ * timestamps. The approximation buckets each tx into the nearest 5s checkpoint
+ * (by seconds_since_graduation) and uses the corresponding price_t* as that
+ * tx's fill price. Captures intent (volume-weighted) without the per-tx
+ * price-impact accounting that would require a full pool-state replay.
+ */
+export function computeFlowAndVwap(
+  db: Database.Database,
+  graduationId: number,
+): {
+  buys: number;
+  sells: number;
+  imbalance: number | null;
+  vwap: number | null;
+  price_vs_vwap_pct: number | null;
+} {
+  const flowRow = db.prepare(`
+    SELECT
+      COALESCE(SUM(CASE WHEN action = 'buy'  THEN amount_sol ELSE 0 END), 0) AS buys,
+      COALESCE(SUM(CASE WHEN action = 'sell' THEN amount_sol ELSE 0 END), 0) AS sells
+    FROM competition_signals
+    WHERE graduation_id = ?
+      AND seconds_since_graduation >= 0
+      AND seconds_since_graduation <= 30
+      AND amount_sol IS NOT NULL
+  `).get(graduationId) as { buys: number; sells: number };
+
+  const buys = flowRow.buys ?? 0;
+  const sells = flowRow.sells ?? 0;
+  const total = buys + sells;
+  const imbalance = total > 0 ? (buys - sells) / total : null;
+
+  // Bucket each in-window tx into nearest 5s checkpoint and weight that
+  // checkpoint's price by the tx's |amount_sol|. SUM(weight * price) / SUM(weight).
+  const vwapRow = db.prepare(`
+    SELECT
+      SUM(amount_sol *
+          CASE
+            WHEN ROUND(seconds_since_graduation / 5.0) * 5 = 5  THEN gm.price_t5
+            WHEN ROUND(seconds_since_graduation / 5.0) * 5 = 10 THEN gm.price_t10
+            WHEN ROUND(seconds_since_graduation / 5.0) * 5 = 15 THEN gm.price_t15
+            WHEN ROUND(seconds_since_graduation / 5.0) * 5 = 20 THEN gm.price_t20
+            WHEN ROUND(seconds_since_graduation / 5.0) * 5 = 25 THEN gm.price_t25
+            WHEN ROUND(seconds_since_graduation / 5.0) * 5 = 30 THEN gm.price_t30
+            ELSE gm.open_price_sol
+          END
+         ) AS weighted_price_sum,
+      SUM(amount_sol) AS weight_sum,
+      gm.price_t30 AS price_t30,
+      gm.open_price_sol AS open_price
+    FROM competition_signals cs
+    JOIN graduation_momentum gm ON gm.graduation_id = cs.graduation_id
+    WHERE cs.graduation_id = ?
+      AND cs.action IN ('buy', 'sell')
+      AND cs.seconds_since_graduation >= 0
+      AND cs.seconds_since_graduation <= 30
+      AND cs.amount_sol IS NOT NULL
+  `).get(graduationId) as {
+    weighted_price_sum: number | null;
+    weight_sum: number | null;
+    price_t30: number | null;
+    open_price: number | null;
+  };
+
+  let vwap: number | null = null;
+  if (vwapRow && vwapRow.weight_sum && vwapRow.weight_sum > 0 && vwapRow.weighted_price_sum != null) {
+    vwap = vwapRow.weighted_price_sum / vwapRow.weight_sum;
+  } else if (vwapRow?.open_price && vwapRow.price_t30) {
+    // No trades captured — fall back to midpoint of open and t30. Indistinguishable
+    // signal-wise from "vwap unknown" so we leave it null instead.
+    vwap = null;
+  }
+
+  let price_vs_vwap_pct: number | null = null;
+  if (vwap != null && vwap > 0 && vwapRow?.price_t30 != null) {
+    price_vs_vwap_pct = ((vwapRow.price_t30 - vwap) / vwap) * 100;
+  }
+
+  return {
+    buys: +buys.toFixed(4),
+    sells: +sells.toFixed(4),
+    imbalance: imbalance != null ? +imbalance.toFixed(4) : null,
+    vwap: vwap != null ? vwap : null,
+    price_vs_vwap_pct: price_vs_vwap_pct != null ? +price_vs_vwap_pct.toFixed(2) : null,
+  };
+}
+
+export function updateMomentumFlowVwap(
+  db: Database.Database,
+  graduationId: number,
+  metrics: { buys: number; sells: number; imbalance: number | null; vwap: number | null; price_vs_vwap_pct: number | null },
+): void {
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET flow_sol_buys_0_30 = ?,
+        flow_sol_sells_0_30 = ?,
+        flow_imbalance_t30 = ?,
+        vwap_0_30 = ?,
+        price_vs_vwap_t30_pct = ?
+    WHERE graduation_id = ?
+  `).run(
+    metrics.buys,
+    metrics.sells,
+    metrics.imbalance,
+    metrics.vwap,
+    metrics.price_vs_vwap_pct,
+    graduationId,
+  );
+}
+
+// ==================== B3 — first-buyer wallet + priors ====================
+
+/**
+ * Identify the first non-bot action='buy' wallet in T+0..T+5s for this
+ * graduation. is_likely_bot=1 rows (early + ComputeBudget priority fee) are
+ * excluded — we want the first retail/discretionary buyer, not the Jito sniper
+ * bot at slot 0. Returns the wallet and its prior-grad sniper count (computed
+ * the same way as sniper_wallet_velocity_avg: count of EARLIER graduations
+ * the wallet appeared in as a sniper).
+ */
+export function computeFirstBuyer(
+  db: Database.Database,
+  graduationId: number,
+): { wallet: string | null; priors: number | null } {
+  const row = db.prepare(`
+    SELECT wallet_address
+    FROM competition_signals
+    WHERE graduation_id = ?
+      AND action = 'buy'
+      AND seconds_since_graduation >= 0
+      AND seconds_since_graduation <= 5
+      AND wallet_address IS NOT NULL
+      AND (is_likely_bot IS NULL OR is_likely_bot = 0)
+    ORDER BY seconds_since_graduation ASC, id ASC
+    LIMIT 1
+  `).get(graduationId) as { wallet_address: string } | undefined;
+
+  if (!row) return { wallet: null, priors: null };
+
+  const priorRow = db.prepare(`
+    SELECT COUNT(DISTINCT graduation_id) AS prior
+    FROM competition_signals
+    WHERE wallet_address = ?
+      AND graduation_id < ?
+      AND action = 'buy'
+      AND seconds_since_graduation >= 0
+      AND seconds_since_graduation <= 5
+  `).get(row.wallet_address, graduationId) as { prior: number };
+
+  return {
+    wallet: row.wallet_address,
+    priors: priorRow.prior ?? 0,
+  };
+}
+
+export function updateMomentumFirstBuyer(
+  db: Database.Database,
+  graduationId: number,
+  data: { wallet: string | null; priors: number | null },
+): void {
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET firstbuyer_wallet = ?,
+        firstbuyer_priors = ?
+    WHERE graduation_id = ?
+  `).run(data.wallet, data.priors, graduationId);
+}
+
 export function computeBuyPressureAggregates(
   db: Database.Database,
   graduationId: number

@@ -1,6 +1,17 @@
 import { Connection, PublicKey } from '@solana/web3.js';
 import Database from 'better-sqlite3';
-import { insertCompetitionSignal, getExistingSignatures, computeBuyPressureAggregates, updateBuyPressureMetrics, computeSniperAggregates, updateSniperMetrics } from '../db/queries';
+import {
+  insertCompetitionSignal,
+  getExistingSignatures,
+  computeBuyPressureAggregates,
+  updateBuyPressureMetrics,
+  computeSniperAggregates,
+  updateSniperMetrics,
+  computeFlowAndVwap,
+  updateMomentumFlowVwap,
+  computeFirstBuyer,
+  updateMomentumFirstBuyer,
+} from '../db/queries';
 import { ObservationContext } from './price-collector';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
@@ -328,6 +339,29 @@ export class CompetitionDetector {
       const sniperAgg = computeSniperAggregates(this.db, ctx.graduationId);
       updateSniperMetrics(this.db, ctx.graduationId, sniperAgg);
 
+      // B5 — flow imbalance + VWAP. Same competition_signals window, so
+      // computing it here piggybacks on the parsing we just did. Safe even
+      // when no buys/sells were parsed: returns NULL fields.
+      let flowMetrics: ReturnType<typeof computeFlowAndVwap> | null = null;
+      try {
+        flowMetrics = computeFlowAndVwap(this.db, ctx.graduationId);
+        updateMomentumFlowVwap(this.db, ctx.graduationId, flowMetrics);
+      } catch (err) {
+        logger.warn('Failed to write flow/vwap metrics for grad %d: %s',
+          ctx.graduationId, err instanceof Error ? err.message : String(err));
+      }
+
+      // B3 — first-buyer wallet + their prior-grad sniper count.
+      // PRIOR-only by SQL construction (graduation_id < this one).
+      let firstBuyer: ReturnType<typeof computeFirstBuyer> | null = null;
+      try {
+        firstBuyer = computeFirstBuyer(this.db, ctx.graduationId);
+        updateMomentumFirstBuyer(this.db, ctx.graduationId, firstBuyer);
+      } catch (err) {
+        logger.warn('Failed to write firstbuyer fields for grad %d: %s',
+          ctx.graduationId, err instanceof Error ? err.message : String(err));
+      }
+
       logger.info(
         {
           graduationId: ctx.graduationId,
@@ -341,6 +375,9 @@ export class CompetitionDetector {
           sniperCount: sniperAgg.count,
           sniperSol: sniperAgg.sol.toFixed(2),
           sniperVelAvg: sniperAgg.velocity_avg?.toFixed(2) ?? 'N/A',
+          flowImbalance: flowMetrics?.imbalance?.toFixed(2) ?? 'N/A',
+          priceVsVwap: flowMetrics?.price_vs_vwap_pct?.toFixed(2) ?? 'N/A',
+          firstBuyerPriors: firstBuyer?.priors ?? 'N/A',
         },
         'Buy pressure detection complete'
       );

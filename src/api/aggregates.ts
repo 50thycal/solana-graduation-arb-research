@@ -401,6 +401,34 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'wallet_vel_avg < 10',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 10' },
   { name: 'wallet_vel_avg < 20',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 20' },
   { name: 'wallet_vel_avg >= 20', group: 'Sniper Vel',where: 'sniper_wallet_velocity_avg >= 20' },
+  // B2 — PumpSwap initial pool depth at migration (captured at T+0, available at entry).
+  { name: 'init_lp > 15',          group: 'Initial LP', where: 'pumpswap_initial_lp_sol IS NOT NULL AND pumpswap_initial_lp_sol > 15' },
+  { name: 'init_lp > 30',          group: 'Initial LP', where: 'pumpswap_initial_lp_sol IS NOT NULL AND pumpswap_initial_lp_sol > 30' },
+  { name: 'init_lp > 50',          group: 'Initial LP', where: 'pumpswap_initial_lp_sol IS NOT NULL AND pumpswap_initial_lp_sol > 50' },
+  // pumpswap_lp_growth_t0_to_t30_pct is at-entry safe (written at T+30 alongside liquidity_sol_t30).
+  { name: 'lp_growth > 0%',        group: 'Initial LP', where: 'pumpswap_lp_growth_t0_to_t30_pct IS NOT NULL AND pumpswap_lp_growth_t0_to_t30_pct > 0' },
+  { name: 'lp_growth > 25%',       group: 'Initial LP', where: 'pumpswap_lp_growth_t0_to_t30_pct IS NOT NULL AND pumpswap_lp_growth_t0_to_t30_pct > 25' },
+  { name: 'lp_growth > 50%',       group: 'Initial LP', where: 'pumpswap_lp_growth_t0_to_t30_pct IS NOT NULL AND pumpswap_lp_growth_t0_to_t30_pct > 50' },
+  // B4 — concurrent-graduation density + batch rank. Self-joined at insert time; T+0 available.
+  { name: 'quiet_batch',           group: 'Batch',      where: 'graduation_density_5min IS NOT NULL AND graduation_density_5min <= 2' },
+  { name: 'busy_batch',            group: 'Batch',      where: 'graduation_density_5min IS NOT NULL AND graduation_density_5min >= 5' },
+  { name: 'first_in_batch',        group: 'Batch',      where: 'batch_rank_within_5min = 1' },
+  { name: 'rank <= 2',             group: 'Batch',      where: 'batch_rank_within_5min IS NOT NULL AND batch_rank_within_5min <= 2' },
+  { name: 'last_in_batch',         group: 'Batch',      where: 'batch_rank_within_5min IS NOT NULL AND graduation_density_5min IS NOT NULL AND batch_rank_within_5min >= 4 AND batch_rank_within_5min = graduation_density_5min' },
+  // B5 — buy/sell flow imbalance + VWAP-pullback at T+30. T+35 fields — strategies auto-delay 5s.
+  { name: 'flow_imb > 0',          group: 'Flow',       where: 'flow_imbalance_t30 IS NOT NULL AND flow_imbalance_t30 > 0' },
+  { name: 'flow_imb > 0.4',        group: 'Flow',       where: 'flow_imbalance_t30 IS NOT NULL AND flow_imbalance_t30 > 0.4' },
+  { name: 'flow_imb > 0.6',        group: 'Flow',       where: 'flow_imbalance_t30 IS NOT NULL AND flow_imbalance_t30 > 0.6' },
+  { name: 'flow_imb < 0',          group: 'Flow',       where: 'flow_imbalance_t30 IS NOT NULL AND flow_imbalance_t30 < 0' },
+  // price_vs_vwap_t30_pct: positive = price above session VWAP, negative = pulled back below VWAP.
+  { name: 'price > vwap',          group: 'VWAP',       where: 'price_vs_vwap_t30_pct IS NOT NULL AND price_vs_vwap_t30_pct > 0' },
+  { name: 'vwap_pullback',         group: 'VWAP',       where: 'price_vs_vwap_t30_pct IS NOT NULL AND price_vs_vwap_t30_pct BETWEEN -10 AND -1' },
+  { name: 'vwap_pullback strict',  group: 'VWAP',       where: 'price_vs_vwap_t30_pct IS NOT NULL AND price_vs_vwap_t30_pct BETWEEN -5 AND -1 AND monotonicity_0_30 > 0.5' },
+  // B3 — first non-bot buyer in T+0..T+5s and their prior-grad sniper history.
+  // firstbuyer_priors HIGH = recurring sniper wallet; LOW/0 = fresh wallet (likely retail / discretionary buyer).
+  { name: 'firstbuyer_clean',         group: 'First Buyer', where: 'firstbuyer_priors IS NOT NULL AND firstbuyer_priors < 5' },
+  { name: 'firstbuyer_known_sniper',  group: 'First Buyer', where: 'firstbuyer_priors IS NOT NULL AND firstbuyer_priors >= 20' },
+  { name: 'firstbuyer_serial',        group: 'First Buyer', where: 'firstbuyer_priors IS NOT NULL AND firstbuyer_priors >= 50' },
 ];
 
 /** Entry gate shared by all candidates — kept at +5..+100 for research-side
