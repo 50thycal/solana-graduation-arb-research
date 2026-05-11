@@ -1,0 +1,193 @@
+{
+  "commands": [
+    {
+      "action": "delete",
+      "id": "v18-calm-mkv-aggressive"
+    },
+    {
+      "action": "delete",
+      "id": "v18-calm-mkv-strict"
+    },
+    {
+      "action": "journal-update",
+      "id": "v18-calm-mkv-aggressive",
+      "note": "KILLED 2026-05-11. HIT-KILL criterion tripped: n=68, median=-8.51% (kill_criterion was n>=30 and median<-3). All SOL gates failed: total_net_sol=-1.223, drop_top3=-1.597, monthly=-16.78. Last-25 median -9.43%. Graduate 20564 single-event -91.1% confirms Markov matrix abstained (cell n<10) on exactly the worst tokens. Aggressive thresholds (exit<0.40/hold>0.80) over-clipped the win path as predicted. Edge-decay STABLE (meaning the decay is consistently bad)."
+    },
+    {
+      "action": "journal-update",
+      "id": "v18-calm-mkv-strict",
+      "note": "KILLED 2026-05-11. At n=68, v18-calm-mkv-strict is statistically identical to v18-calm-mkv-exitonly in every metric (median 8.46%, mean -4.12%, WR 60.3% — pixel-perfect match). Action item ai-2026-05-10-006 specified killing strict at n=50 if identical; executing now at n=68. The hold-side (hold>0.85) is confirmed inert: Markov adds zero value over the fixed-exit-only variant. Neither variant is SOL-positive (total=-1.401, drop3=-1.792), so the surviving exitonly is kept for comparison only, not as a promotion candidate. DECAYING edge flag (last-25 median -8.17%) confirms deteriorating conditions."
+    },
+    {
+      "action": "journal-update",
+      "id": "v21-early-exit-meanrev",
+      "note": "n=13 checkpoint: median=-5.3%, mean=-19.03%, WR=15.4%. Catastrophically bad early signal. Original kill criterion (n>=100 and median<-3) is too lenient given WR=15% at n=13. Tightening kill criterion to n>=30 and median<-5. If trend continues, expect kill before n=50. Structural issue: TP=10% in 90s with SL=15% on unfiltered tokens — too many tokens never reach TP in 90s, producing near-certain SL exits."
+    },
+    {
+      "action": "action-item-update",
+      "id": "update-ai-2026-05-09-003",
+      "date": "2026-05-11",
+      "action_item_id": "ai-2026-05-09-003",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "v18 cohort monitoring complete. All three variants now at n=68 (far past the n=30-40 window). Outcomes: mkv-aggressive HIT-KILL (median -8.51%), mkv-strict killed as identical-to-exitonly, mkv-exitonly kept as survivor. Early-exit mechanic reduces mean loss tail by ~2-3pp but does not prevent SOL bleed (total=-1.401 SOL at n=68). Markov matrix abstains on worst tokens (cell n<10). Thesis partially confirmed (early-exit better than nothing) but insufficient to overcome cost drag at TP=10."
+    },
+    {
+      "action": "action-item-update",
+      "id": "update-ai-2026-05-10-006",
+      "date": "2026-05-11",
+      "action_item_id": "ai-2026-05-10-006",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "Confirmed: v18-mkv-strict and v18-mkv-exitonly are statistically identical at n=68 (median 8.46%, mean -4.12%, WR 60.3% — identical to 3 significant figures). Hold-side (hold>0.85) is inert. Killed v18-calm-mkv-strict; retaining v18-calm-mkv-exitonly as the cleaner bet. Action item closed."
+    },
+    {
+      "action": "action-item-update",
+      "id": "update-ai-2026-05-10-004",
+      "date": "2026-05-11",
+      "action_item_id": "ai-2026-05-10-004",
+      "action_item_status": "DEFERRED",
+      "action_item_note": "CLAUDE.md leaderboard section update deferred. Pipeline stall and kill actions took priority. Carry forward — will execute next session."
+    },
+    {
+      "action": "action-item-update",
+      "id": "update-ai-2026-05-10-005",
+      "date": "2026-05-11",
+      "action_item_id": "ai-2026-05-10-005",
+      "action_item_status": "DEFERRED",
+      "action_item_note": "v10 gate decision deferred pending v20 reaching n=30. Current status: v10 (wide gate -99..1000) at n=46 total=+3.10 SOL; v20 (corrected gate +5..+100) at n=7 median=39.02%. Decision checkpoint: when v20 hits n=30, compare v10 vs v20 medians. If v20 median > v10 median by 5pp+, gate hypothesis confirmed and v10 can be retired."
+    },
+    {
+      "action": "report-upsert",
+      "id": "report-2026-05-11",
+      "date": "2026-05-11",
+      "generated_by": "claude",
+      "auto_journal": true,
+      "narrative": "## Headline\n\nPipeline stalled (WS zombie, ~2.5h gap) blocked all trades today; two kills executed on clear losers; the calm-survivor cohort is structurally bleeding SOL despite positive medians and is at risk of mass invalidation at n=100.\n\n## What Accumulated SOL / What Bled\n\nNo trades today — the graduation listener went zombie sometime before 08:13 UTC (last graduation 8823s before the 11:12 diagnose snapshot). Auto-reconnect was pending at 1308s into the 1500s trigger window. Yesterday saw 368 trades across 171 graduations.\n\nFrom the canonical leave-one-out-pnl view, no n≥100 strategy clears the promotion bar — all veterans have negative drop_top3 SOL, confirming no graduated edge exists yet. The accumulation story is entirely in the sub-100-n cohort: **v9shadow-vel20-top5** leads at +3.78 SOL (n=39, drop_top3=+0.73, monthly=+10.97 SOL), followed by **v10-best-double** at +3.10 SOL (n=46, drop_top3=+0.80, monthly=+9.89) and **v9shadow-velmono-dev** at +3.10 SOL (n=18). All three pass the outlier-strip test (drop_top3 > 0), which is the critical real-edge signal.\n\nOn the negative side, the entire v17/v18 calm-survivor family (BE and Markov overlays) is burning SOL. All variants post negative total_net_sol (−1.22 to −1.41 SOL) despite surface-level positive medians of 7–9%. Root cause: at ~3pp/trade cost, a TP=10 strategy needs >75% WR to break even on SOL. These strategies run 56–62% WR — a structural shortfall that no exit overlay can patch. The last-25-trade median has collapsed to −4% to −9% across all v17/v18 variants, confirming the edge is actively decaying, not just noisy.\n\n## Today's Kills\n\n**v18-calm-mkv-aggressive** (KILLED): HIT-KILL criterion tripped at n=68 (kill_criterion: n≥30 and median<−3; actual median=−8.51%). total_net_sol=−1.22, drop_top3=−1.60, monthly=−16.78 SOL. Grad 20564 hit −91.1% across all calm-survivor strategies simultaneously, confirming Markov matrix abstained (insufficient cell samples) on exactly the worst token type.\n\n**v18-calm-mkv-strict** (KILLED): At n=68, strict and exitonly are statistically identical on every metric (median 8.46%, mean −4.12%, WR 60.3%). Per action item ai-2026-05-10-006 (set at n=50), the hold-side (hold>0.85) is inert. Killing strict; retaining exitonly as the cleaner single-hypothesis version. Both remain SOL-negative.\n\n## Cross-Day Pattern Observations\n\nTwo pipeline health incidents in consecutive sessions: T30 callback stall (1111s) on 2026-05-10, WS zombie on 2026-05-11. Both are connection-layer issues. Action item ai-2026-05-10-001 remains unresolved — auto-reconnect masks rather than fixes the root cause. If a third incident occurs next session, the zombie listener should be treated as a systemic reliability bug requiring a deeper fix (keepalive tuning, heartbeat monitoring, or supervisory restart logic).\n\nGrad 20560 produced +39.5% across v9shadow-vel20-top5, v14-sumabs-shadow, and v21-bottom-excluded simultaneously — a broad market pump that lifted multiple unrelated strategies. Grad 20564 produced −91.1% across all v17/v18 calm-survivor variants simultaneously — a single extreme dump that hit every strategy sharing the sum_abs<60 + dd>-10% filter. This symmetry suggests the filter selects for tokens with high bi-directional tail exposure, not for one-sided momentum.\n\nThe v17 BE calibration cohort (be5/be7/be9) behaves identically to each other in recent trades. At n=69 all three show median ~+8% lifetime but last-25 median −4% to −5%. The BE trigger level (5/7/9%) is not differentiating outcomes — they're all receiving the same grad flow and sharing losses. Either the BE level doesn't matter much (confirming the be9 hypothesis that BE rarely fires) or all three are hitting the same loss tail on the same tokens.\n\n## Honest Self-Check\n\nThe positive medians (+7–9%) on v17/v18 are real in aggregate but misleading for SOL accounting. leave-one-out confirms negative total_net_sol for every variant. This is NOT a fat-tail strategy: drop_top3 is also negative (−1.67 to −1.79 SOL), meaning even after stripping the top 3 winners there is no residual edge — the wins are not fat enough to compensate a fat loss tail. Demanding continued operation to n=100 is justified per protocol (n<100 → WATCH), but the probability of reversal is low given consistent decay.\n\nTop SOL accumulators (v9shadow-vel20-top5, v10-best-double) have positive drop_top3, which IS the right signal. However, they are at n=39 and n=46 — insufficient for promotion confidence. The panel11 regime check on their underlying combos (vel<20+top5<10% wr_std=7.9% STABLE, vel 20-50+dd>-10% wr_std=2.7% STABLE) is encouraging but the panel7 walk-forward flags the individual components as DEGRADED, so combo stability needs to hold through n=100 before trusting the gate.\n\n## Operator Next Step\n\n1. **Confirm WS zombie self-healed** (check Railway dashboard for graduation detections after 11:13 UTC today). If still stalled, restart listener. Data flow is the critical path — without it, v19/v20/v21 cannot reach n=100.\n2. v18-calm-mkv-aggressive and v18-calm-mkv-strict kills are pushed in this report's commands and will take effect on the next bot sync (~2 min after this commit).\n3. Monitor v17/v18 survivors (be5/be7/be9, mkv-exitonly) at n=80: if still DECAYING and total_net_sol still negative, plan mass INVALID declaration at n=100.",
+      "winners": [
+        {"strategy_id": "v9shadow-vel20-top5", "graduation_id": 20558, "net_return_pct": 46.1, "exit_reason": "timeout"},
+        {"strategy_id": "v9shadow-vel20-top5", "graduation_id": 20560, "net_return_pct": 39.5, "exit_reason": "timeout"},
+        {"strategy_id": "v14-sumabs-shadow", "graduation_id": 20560, "net_return_pct": 39.5, "exit_reason": "timeout"},
+        {"strategy_id": "v14-sumabs-dd-shadow", "graduation_id": 20560, "net_return_pct": 39.5, "exit_reason": "timeout"},
+        {"strategy_id": "v21-bottom-excluded", "graduation_id": 20560, "net_return_pct": 37.1, "exit_reason": "timeout"}
+      ],
+      "losers": [
+        {"strategy_id": "v21-early-exit-meanrev", "graduation_id": 20564, "net_return_pct": -95.3, "exit_reason": "stop_loss"},
+        {"strategy_id": "v17-calm-be9", "graduation_id": 20564, "net_return_pct": -91.1, "exit_reason": "stop_loss"},
+        {"strategy_id": "v18-calm-mkv-strict", "graduation_id": 20564, "net_return_pct": -91.1, "exit_reason": "markov_exit"},
+        {"strategy_id": "v18-calm-mkv-exitonly", "graduation_id": 20564, "net_return_pct": -91.1, "exit_reason": "markov_exit"},
+        {"strategy_id": "v18-calm-mkv-aggressive", "graduation_id": 20564, "net_return_pct": -91.1, "exit_reason": "markov_exit"}
+      ],
+      "anomalies": [
+        {
+          "severity": "high",
+          "kind": "pipeline_stall",
+          "detail": "WS zombie: last graduation 8823s before diagnose snapshot (11:12 UTC). 0 trades and 0 grads logged today. Auto-reconnect expected at 1500s from last candidate (was at 1308s). Second pipeline incident in two consecutive sessions."
+        },
+        {
+          "severity": "high",
+          "kind": "consecutive_pipeline_incidents",
+          "detail": "T30 callback stall on 2026-05-10 (1111s), WS zombie on 2026-05-11. Pattern suggests a systemic listener reliability issue, not one-off noise. Action item ai-2026-05-10-001 remains unresolved."
+        },
+        {
+          "severity": "med",
+          "kind": "calm_survivor_sol_bleed",
+          "detail": "All v17/v18 calm-survivor variants (be5/be7/be9, mkv-strict/exitonly/aggressive) show negative total_net_sol in leave-one-out (-1.22 to -1.41 SOL). Last-25 medians collapsed to -4% to -9%. High cost (~3pp/trade) vs TP=10 creates structural SOL deficit at WR<75%."
+        },
+        {
+          "severity": "med",
+          "kind": "grad_20564_wipeout",
+          "detail": "Single graduation 20564 produced -91.1% across all v17/v18 calm-survivor strategies. Markov matrix likely abstained (insufficient cell samples). Confirms Markov does not protect against tail events when training data is sparse."
+        },
+        {
+          "severity": "med",
+          "kind": "edge_decay",
+          "detail": "DECAYING: v17-calm-be5/be7/be9 (last-25 median -4.2% to -5.2%), v18-calm-mkv-strict/exitonly (last-25 median -8.2%). Lifetime medians still 7-9% but direction is clearly deteriorating."
+        },
+        {
+          "severity": "low",
+          "kind": "v21_early_exit_meanrev_failing",
+          "detail": "v21-early-exit-meanrev: n=13, WR=15.4%, mean=-19%. 90s hold window too short for tokens to reach TP=10%. Kill criterion tightened to n>=30 and median<-5."
+        }
+      ],
+      "patterns": [
+        {
+          "pattern": "Pipeline incidents recurring across sessions",
+          "detail": "2026-05-10: T30 callback stall 1111s. 2026-05-11: WS zombie ~2.5h. Two incidents in two days suggests the graduation listener auto-reconnect is masking a deeper reliability issue. Root fix needed before the third incident."
+        },
+        {
+          "pattern": "Calm-survivor filter selects for bi-directional tail tokens",
+          "detail": "Grad 20560 (+39.5%) and grad 20564 (-91.1%) both hit the sum_abs<60+dd>-10 filter simultaneously with multiple strategies. The filter is not selecting for momentum — it's selecting a broad universe that includes both pumpers and dumpers. The positive median is real but the SOL math doesn't work at TP=10 with ~3pp costs."
+        },
+        {
+          "pattern": "vel 20-50 + dd>-10% remains the top research combo",
+          "detail": "Panel11 wr_std_dev=2.7% (STABLE), opt_avg_ret=+6.91% at n=118. Three live strategies now test variants: v10 (wide gate, n=46, +3.10 SOL), v20-base (corrected gate, n=7, median +39%), v21-trail (trailing exit, n=1). All pointing in the same direction. Next milestone: v10 and v20 both reaching n=60 for a clean gate-comparison read."
+        },
+        {
+          "pattern": "SOL leaders all sub-50 trades",
+          "detail": "Top 3 by total_net_sol (v9shadow-vel20-top5 +3.78, v10-best-double +3.10, v9shadow-velmono-dev +3.10) are all at n<50. Edge is outlier-robust (drop_top3 > 0) which is the right structural signal, but sample sizes are too small for promotion. No single strategy has accumulated the required n=100 with positive drop_top3 yet."
+        }
+      ],
+      "recommendations": {
+        "kill": [
+          {
+            "strategy_id": "v18-calm-mkv-aggressive",
+            "reason": "HIT-KILL: n=68, median=-8.51% (criterion was n>=30 and median<-3). total_net_sol=-1.223, drop_top3=-1.597, monthly=-16.78 SOL. All SOL gates fail. Markov aggressive thresholds (exit<0.40/hold>0.80) confirmed over-clipped the win path. Kill command pushed."
+          },
+          {
+            "strategy_id": "v18-calm-mkv-strict",
+            "reason": "Statistically identical to v18-calm-mkv-exitonly at n=68 (median 8.46%, mean -4.12%, WR 60.3%). Hold-side (hold>0.85) confirmed inert. Per ai-2026-05-10-006 kill criterion (n>=50 if identical), executing now. total_net_sol=-1.401, drop_top3=-1.792. Kill command pushed."
+          }
+        ],
+        "promote": [],
+        "create_new": [],
+        "watch": [
+          {
+            "strategy_id": "v9shadow-vel20-top5",
+            "reason": "Leading SOL accumulator: n=39, total=+3.78 SOL, drop_top3=+0.73, monthly=+10.97 SOL/mo. Edge is outlier-robust. Underlying combo (vel<20+top5<10%) is STABLE on panel11 (wr_std=7.9%). Next checkpoint at n=60 — confirm drop_top3 still positive. Primary promotion candidate."
+          },
+          {
+            "strategy_id": "v10-best-double",
+            "reason": "Second-best SOL accumulator: n=46, total=+3.10 SOL, drop_top3=+0.80, monthly=+9.89 SOL/mo. STRENGTHENING on edge-decay. Panel11 for vel 20-50+dd>-10% shows wr_std=2.7% (STABLE). Gate mismatch vs research (−99..1000 vs +5..+100) — v20 variants will clarify this at n=30. Next checkpoint at n=60."
+          },
+          {
+            "strategy_id": "v17-calm-be9",
+            "reason": "Lifetime median +8.77% but total_net_sol=-1.283, drop_top3=-1.675. DECAYING (last-25 median -5.17%). At n=69, not yet at the n=100 INVALID gate. Watch: if still DECAYING and drop_top3 negative at n=80-85, pre-flag as likely INVALID at n=100."
+          },
+          {
+            "strategy_id": "v18-calm-mkv-exitonly",
+            "reason": "Survivor of v18 kill round. Identical to mkv-strict at n=68 (median 8.46%, mean -4.12%). total_net_sol=-1.401, drop_top3=-1.792, DECAYING. Kept to complete the n=100 observation window. Likely INVALID at n=100 unless edge recovers — flag for mass kill if last-25 trend doesn't reverse by n=80."
+          },
+          {
+            "strategy_id": "v5-velmono-opt",
+            "reason": "n=37, total=+2.095 SOL, drop_top3=+0.036 (razor-thin outlier robustness), monthly=+3.36 (barely above 3.75 floor). STRENGTHENING on edge-decay. Paper mode so costs are elevated vs shadow (~10.84pp vs ~3pp). Watch drop_top3 closely — one outlier removal swings it negative."
+          }
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-05-11-001",
+          "kind": "fix",
+          "target_id": "pipeline-ws-zombie",
+          "summary": "URGENT: WS zombie on 2026-05-11 (2nd consecutive pipeline incident). Confirm auto-reconnect self-healed by checking Railway dashboard for grads after 11:13 UTC. If still stalled: restart listener. If 3rd incident occurs next session, treat as systemic — investigate keepalive/heartbeat tuning in graduation-listener.ts.",
+          "status": "PROPOSED",
+          "proposed_at": 1778500000
+        },
+        {
+          "id": "ai-2026-05-11-002",
+          "kind": "watch",
+          "target_id": "v17-be-cohort-v18-mkv-exitonly",
+          "summary": "v17/v18 calm-survivor survivors (be5/be7/be9, mkv-exitonly) all show negative total_net_sol and DECAYING edge. At n=80 per strategy, re-run leave-one-out check: if still drop_top3 <= 0, mark INVALID and kill all four. Do not wait for n=100 to start the paperwork.",
+          "status": "PROPOSED",
+          "proposed_at": 1778500000
+        },
+        {
+          "id": "ai-2026-05-11-003",
+          "kind": "watch",
+          "target_id": "v9shadow-vel20-top5,v10-best-double",
+          "summary": "Primary promotion candidates. Next checkpoint: v9shadow-vel20-top5 at n=60 (currently n=39, ~21 trades away at yesterday's rate) and v10-best-double at n=60 (currently n=46, ~14 trades away). Confirm drop_top3 > 0 and monthly >= 3.75 at n=60 before investing further in these paths.",
+          "status": "PROPOSED",
+          "proposed_at": 1778500000
+        }
+      ]
+    }
+  ]
+}
