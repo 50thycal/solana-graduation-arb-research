@@ -6847,7 +6847,7 @@ export function renderReportHtml(data: any): string {
   const profitClass = profit > 0 ? 'green' : profit < 0 ? 'red' : '';
   const headerHtml = `<div class="card">
     <h2>${escapeHtml(todayAuto.date || 'Daily Report')}</h2>
-    <div class="desc">Cross-session memory for the trading bot. today_auto recomputes every render; the narrative + recommendations come from /daily-report Claude runs.</div>
+    <div class="desc">Cross-session memory for the trading bot. today_auto recomputes every render; narrative + recommendations come from /daily-report Claude runs. Day boundary: 06:00 America/Chicago.</div>
     <div class="grid">
       <div class="stat"><span class="label">Diagnose</span><span class="value">${statusBadge(verdict)}</span></div>
       <div class="stat"><span class="label">Trades today</span><span class="value">${todayAuto.n_trades ?? 0} <span style="color:#64748b">(yest ${todayAuto.n_trades_yesterday ?? 0})</span></span></div>

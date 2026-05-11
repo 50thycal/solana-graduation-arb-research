@@ -199,6 +199,61 @@ function utcDateString(nowSec: number): string {
   return `${y}-${m}-${day}`;
 }
 
+// ── Trading-day helpers (06:00 America/Chicago) ─────────────────────────
+//
+// /report is keyed to the operator's local trading day, not the UTC calendar.
+// A trading day spans 06:00 CT through 05:59 CT the next morning. Handles
+// CDT/CST transitions via the IANA timezone database (Intl.DateTimeFormat).
+
+const TRADING_TZ = 'America/Chicago';
+const TRADING_DAY_START_HOUR = 6;
+
+function partsInTz(epochSec: number, tz: string): { y: number; m: number; d: number; h: number } {
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', hour12: false,
+  }).formatToParts(new Date(epochSec * 1000));
+  const get = (type: string) => parseInt(f.find(p => p.type === type)!.value, 10);
+  return { y: get('year'), m: get('month'), d: get('day'), h: get('hour') };
+}
+
+/** Epoch seconds for 06:00 America/Chicago on the given Y-M-D. DST-aware. */
+function sixAmCentralEpochSec(y: number, m: number, d: number): number {
+  // Probe UTC-5 (CDT) first; if Chicago reads back "06" there, use it.
+  // Otherwise fall back to UTC-6 (CST). Covers the two valid offsets without
+  // a separate DST calendar.
+  const cdtTry = Math.floor(Date.UTC(y, m - 1, d, TRADING_DAY_START_HOUR + 5, 0, 0) / 1000);
+  if (partsInTz(cdtTry, TRADING_TZ).h === TRADING_DAY_START_HOUR) return cdtTry;
+  return Math.floor(Date.UTC(y, m - 1, d, TRADING_DAY_START_HOUR + 6, 0, 0) / 1000);
+}
+
+/** Y-M-D of the trading day containing `nowSec` (before 06:00 CT rolls back a day). */
+function tradingDayParts(nowSec: number): { y: number; m: number; d: number } {
+  const p = partsInTz(nowSec, TRADING_TZ);
+  if (p.h < TRADING_DAY_START_HOUR) {
+    const back = new Date(Date.UTC(p.y, p.m - 1, p.d) - 86400_000);
+    return { y: back.getUTCFullYear(), m: back.getUTCMonth() + 1, d: back.getUTCDate() };
+  }
+  return { y: p.y, m: p.m, d: p.d };
+}
+
+/** Y-M-D minus one calendar day (safe for trading-day arithmetic). */
+function previousCalendarDay(p: { y: number; m: number; d: number }): { y: number; m: number; d: number } {
+  const back = new Date(Date.UTC(p.y, p.m - 1, p.d) - 86400_000);
+  return { y: back.getUTCFullYear(), m: back.getUTCMonth() + 1, d: back.getUTCDate() };
+}
+
+/** Y-M-D plus one calendar day. */
+function nextCalendarDay(p: { y: number; m: number; d: number }): { y: number; m: number; d: number } {
+  const fwd = new Date(Date.UTC(p.y, p.m - 1, p.d) + 86400_000);
+  return { y: fwd.getUTCFullYear(), m: fwd.getUTCMonth() + 1, d: fwd.getUTCDate() };
+}
+
+function formatYmd(p: { y: number; m: number; d: number }): string {
+  return `${p.y}-${String(p.m).padStart(2, '0')}-${String(p.d).padStart(2, '0')}`;
+}
+
 function isoWeekString(date: Date): string {
   // ISO 8601: week 1 contains the first Thursday of the year.
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
@@ -690,12 +745,21 @@ function buildReadinessRow(row: LeaveOneOutRow): ReadinessRow {
 export function computeDailyReport(db: Database.Database): DailyReportData {
   const generated_at = new Date().toISOString();
   const nowSec = Math.floor(Date.now() / 1000);
-  const todayStartSec = utcDayStartSec(nowSec);
-  const yesterdayStartSec = todayStartSec - 86400;
-  const todayDate = utcDateString(todayStartSec);
+
+  // Trading-day windows: 06:00 America/Chicago through 05:59 CT the next
+  // morning. DST-safe (IANA-backed). "today" tracks the current trading day
+  // even when UTC has rolled over (e.g. 02:00 UTC on May 11 is still the
+  // May 10 trading day).
+  const todayPartsTd = tradingDayParts(nowSec);
+  const yesterdayPartsTd = previousCalendarDay(todayPartsTd);
+  const tomorrowPartsTd = nextCalendarDay(todayPartsTd);
+  const todayStartSec = sixAmCentralEpochSec(todayPartsTd.y, todayPartsTd.m, todayPartsTd.d);
+  const yesterdayStartSec = sixAmCentralEpochSec(yesterdayPartsTd.y, yesterdayPartsTd.m, yesterdayPartsTd.d);
+  const tomorrowStartSec = sixAmCentralEpochSec(tomorrowPartsTd.y, tomorrowPartsTd.m, tomorrowPartsTd.d);
+  const todayDate = formatYmd(todayPartsTd);
 
   // Today's trades + yesterday's trades for delta computation.
-  const todayTrades = fetchTradesInWindow(db, todayStartSec, todayStartSec + 86400);
+  const todayTrades = fetchTradesInWindow(db, todayStartSec, tomorrowStartSec);
   const yesterdayTrades = fetchTradesInWindow(db, yesterdayStartSec, todayStartSec);
 
   // Strategy configs map.
@@ -806,6 +870,7 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
     open_action_items: openActionItems,
     notes: [
       'today_auto is recomputed every gist-sync cycle — fresh numbers even if no Claude run has fired.',
+      'Trading day = 06:00 America/Chicago (CT) through 05:59 CT the next morning. "today" tracks the current trading day, not the UTC calendar day. DST-safe.',
       'today_report is null until /daily-report runs and pushes a report-upsert via strategy-commands.json.',
       'Action items track "what was proposed yesterday and whether it was done" — flip status with action-item-update commands.',
       'Lessons-learned is institutional memory across many sessions; manage with lesson-upsert / lesson-archive commands.',
