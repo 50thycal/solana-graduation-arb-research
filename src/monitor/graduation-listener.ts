@@ -152,7 +152,15 @@ const PUMP_WITHDRAW_AUTHORITY = new PublicKey(
 );
 
 // How often to poll for new migration signatures via RPC (bypasses WS delivery lag).
-const MIGRATION_POLL_INTERVAL_MS = parseInt(process.env.MIGRATION_POLL_INTERVAL_MS || '2000', 10);
+// Migration RPC poll cadence. Bumped 2s → 10s on 2026-05-11 after Helius
+// started metering everything against a 10M-credit/month cap. pump.fun WS
+// wins 95.1% of channel races when healthy, and rpcPoll's p50 delivery
+// latency was 807s (well past STALE_THRESHOLD_SEC=120) — so polling at 2s
+// produced ~43K req/day of mostly-stale grads that get rejected at
+// startObservation anyway. 10s cadence cuts that to ~8.6K req/day while
+// preserving the fallback for WS-zombie windows (the 25-min listener
+// auto-reconnect already covers gaps that long).
+const MIGRATION_POLL_INTERVAL_MS = parseInt(process.env.MIGRATION_POLL_INTERVAL_MS || '10000', 10);
 
 export class GraduationListener {
   private connection: Connection;

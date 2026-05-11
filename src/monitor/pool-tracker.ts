@@ -16,6 +16,25 @@ const PUMPSWAP_PROGRAM_STR = PUMPSWAP_PROGRAM_ID.toBase58();
 // pump.fun program ID — used to extract pool address from migrate instruction accounts
 const PUMP_FUN_PROGRAM_STR = process.env.PUMP_FUN_PROGRAM_ID || '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P';
 
+// PumpSwap WS subscription gate (added 2026-05-11). Helius started metering
+// WS bandwidth at 2 credits / 0.1 MB on 2026-05-07, and this subscription was
+// burning ~60 GB / day (~243 events/sec firehose, mostly PumpSwap swap
+// activity unrelated to graduations). Production telemetry confirms zero
+// value: `channel_wins.pumpswap_ws_confirmed = 0` (every graduation is won
+// by the pump.fun WS or RPC poll), `totalMigrationCandidatesFired = 0` (the
+// migrationCandidateCb path was never wired up — setMigrationCandidateCallback
+// is never called anywhere in the codebase), `totalMatched = 0` and
+// `totalSpeculativeHits = 0` (the speculative pool-tracking path has never
+// matched a single graduation in production). `directPriceCollector` in
+// graduation-listener already extracts pool + vault addresses from the
+// pump.fun migrate tx directly and starts observation without this
+// subscription. Default off; flip POOL_TRACKER_PUMPSWAP_WS=1 to re-enable
+// if the speculative path is ever resurrected. See claude/investigate-data-
+// collection-FOorB session for the full audit.
+const PUMPSWAP_WS_ENABLED =
+  (process.env.POOL_TRACKER_PUMPSWAP_WS ?? '').toLowerCase() === '1'
+  || (process.env.POOL_TRACKER_PUMPSWAP_WS ?? '').toLowerCase() === 'true';
+
 interface PendingGraduation {
   graduationId: number;
   mint: string;
@@ -109,9 +128,17 @@ export class PoolTracker {
   }
 
   async start(): Promise<void> {
-    await this.subscribeToPumpSwap();
+    if (PUMPSWAP_WS_ENABLED) {
+      await this.subscribeToPumpSwap();
+      logger.info('Pool tracker started with PumpSwap log subscription');
+    } else {
+      logger.info(
+        'Pool tracker started — PumpSwap WS subscription DISABLED '
+          + '(set POOL_TRACKER_PUMPSWAP_WS=1 to re-enable). '
+          + 'Graduation detection unaffected: directPriceCollector extracts pool + vaults from the pump.fun migrate tx.'
+      );
+    }
     this.cleanupInterval = setInterval(() => this.cleanupExpired(), CLEANUP_INTERVAL_MS);
-    logger.info('Pool tracker started with PumpSwap log subscription');
   }
 
   /**
@@ -339,7 +366,9 @@ export class PoolTracker {
     // it makes web3.js console.warn about the missing id. The old socket is
     // dead anyway, so just clear local state and resubscribe on the new one.
     this.pumpSwapSubId = null;
-    await this.subscribeToPumpSwap();
+    if (PUMPSWAP_WS_ENABLED) {
+      await this.subscribeToPumpSwap();
+    }
   }
 
   /**
