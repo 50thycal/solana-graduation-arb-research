@@ -188,15 +188,44 @@ async function doRefresh(
   logger.info('Heavy cache refresh starting');
 
   let payload: Omit<HeavyData, 'computedAt'>;
-  let mode: 'worker' | 'in-process-fallback' = 'worker';
+  let mode: 'worker' | 'in-process-cold-start' = 'worker';
   try {
     const dbPath = resolveDbPath(db);
     payload = await runInWorker(dbPath);
   } catch (err) {
-    mode = 'in-process-fallback';
+    // Worker failure handling, changed 2026-05-12 after the 215s event-loop
+    // block on 2026-05-11 was traced to the prior in-process fallback. The
+    // fallback's `computeFilterV2Data` + `renderPricePathHtml` +
+    // `computePricePathData` are mostly synchronous (no yields in
+    // html-renderer.ts:3399 or price-path-data.ts:117), so they monopolize
+    // the main loop for 100-200s straight, tearing down any in-flight T+30
+    // observation. New behavior:
+    //   - If we have a usable cache (in-memory or on-disk), serve it stale
+    //     and let the caller use that. The next gist-sync cycle (~2 min)
+    //     will retry the worker fresh — most worker failures are transient
+    //     (Helius blip, OOM under autoscale, temporary file-handle pressure).
+    //   - Only run in-process on a true cold start where no cache exists,
+    //     because the caller is awaiting our result and we have to return
+    //     SOMETHING. Cold-start is rare (post-deploy, first request before
+    //     SQLite warmup); the operator should see this in logs as a one-time
+    //     event, not a recurring pattern.
+    const stale = cache;
+    if (stale) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err), ageSec: Math.floor((Date.now() - stale.computedAt) / 1000) },
+        'Heavy compute worker failed — keeping stale cache and skipping refresh '
+          + '(prevents the 100-200s main-thread block that the in-process fallback used to cause). '
+          + 'Will retry on the next gist-sync cycle.',
+      );
+      // Return stale as-is. computedAt stays at its original timestamp so the
+      // staleness is visible via /heavy-cache-info.
+      return stale;
+    }
+    mode = 'in-process-cold-start';
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
-      'Heavy compute worker unavailable — falling back to in-process (will block event loop)',
+      'Heavy compute worker failed AND no cache exists (cold start) — running in-process. '
+        + 'This will block the event loop for ~100-200s. Should only happen once at boot.',
     );
     payload = await doRefreshInProcess(db);
   }

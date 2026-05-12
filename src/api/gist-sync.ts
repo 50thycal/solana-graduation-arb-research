@@ -26,6 +26,8 @@
  */
 
 import type Database from 'better-sqlite3';
+import path from 'path';
+import { Worker } from 'worker_threads';
 import {
   computeThesisScorecard,
   computeDataQualityFlags,
@@ -103,6 +105,77 @@ const HEAVY_PANELS_ENABLED = process.env.SYNC_HEAVY_PANELS === 'true';
  *  full sync pipeline holds the loop hostage end-to-end. */
 function yieldEventLoop(): Promise<void> {
   return new Promise(resolve => setImmediate(resolve));
+}
+
+// ── Per-cycle worker-thread runner ───────────────────────────────────────
+// Spawns gist-sync-worker.ts each cycle to offload computeBestCombos +
+// computeCounterfactual (~30s wall-clock combined). Result is serialized
+// over postMessage; the parent main thread stays free to serve HTTP, WS,
+// and the price-collector T+30 deadline timers while the worker churns.
+// Falls back to in-process if the worker file can't be resolved (dev mode,
+// ts-node, missing dist build) — same fallback pattern as heavy-cache.ts.
+
+interface GistSyncWorkerResult {
+  ok: boolean;
+  error?: string;
+  stack?: string;
+  bestCombosFull?: Awaited<ReturnType<typeof computeBestCombos>>;
+  counterfactual?: Awaited<ReturnType<typeof computeCounterfactual>>;
+  timings?: { bestCombosMs: number; counterfactualMs: number };
+}
+
+function resolveDbPath(db: Database.Database): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const filename = (db as any).name as string | undefined;
+  if (!filename) throw new Error('Cannot resolve DB path from better-sqlite3 handle');
+  return filename;
+}
+
+function resolveGistSyncWorkerPath(): string | null {
+  // Compiled layout: dist/api/gist-sync.js -> __dirname = dist/api/.
+  // Worker file ships as dist/api/gist-sync-worker.js. Under ts-node (dev),
+  // __dirname is src/api/ and `new Worker(.ts)` won't load — return null
+  // so the caller falls back to in-process.
+  const here = __dirname;
+  const isCompiled = here.endsWith(`${path.sep}dist${path.sep}api`);
+  if (!isCompiled) return null;
+  return path.join(here, 'gist-sync-worker.js');
+}
+
+function runGistSyncInWorker(
+  dbPath: string,
+  bestCombosOpts: { min_n?: number; top?: number; include_pairs?: boolean },
+): Promise<GistSyncWorkerResult> {
+  const workerFile = resolveGistSyncWorkerPath();
+  if (!workerFile) {
+    return Promise.reject(new Error('Worker file path unresolved (dev mode?)'));
+  }
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const worker = new Worker(workerFile, {
+      workerData: { dbPath, bestCombos: bestCombosOpts },
+    });
+    worker.once('message', (msg: GistSyncWorkerResult) => {
+      if (settled) return;
+      settled = true;
+      if (msg.ok && msg.bestCombosFull && msg.counterfactual) {
+        resolve(msg);
+      } else {
+        reject(new Error(`Worker reported failure: ${msg.error || 'unknown'}`));
+      }
+      worker.terminate().catch(() => { /* ignore */ });
+    });
+    worker.once('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+    worker.once('exit', (code) => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`Worker exited with code ${code} before posting result`));
+    });
+  });
 }
 
 function disabledPanelStub(name: string): { disabled: true; panel: string; reason: string; generated_at: string } {
@@ -631,13 +704,44 @@ export class GistSync {
     // ~1100-candidate grid sweep three times per cycle was the dominant source
     // of main-thread block (~75s/cycle), causing the event-loop lag pattern in
     // directPriceCollector.lastT30Timeouts.
+    //
+    // Per-cycle worker (added 2026-05-12): bestCombos + counterfactual together
+    // are ~30-46s of wall-clock work. With per-iteration yields they still chew
+    // the main thread in 130ms chunks 350+ times per cycle. The worker thread
+    // runs both off the main loop entirely so HTTP requests, WS handlers, and
+    // T+30 deadline timers stay responsive. Falls back to in-process if the
+    // worker file isn't resolvable (dev mode, ts-node).
     const bestCombosT0 = Date.now();
-    const bestCombosFull = await computeBestCombos(this.db, {
-      min_n: 20,
-      top: 500,
-      include_pairs: true,
-    });
-    const bestCombosMs = Date.now() - bestCombosT0;
+    const bestCombosOpts = { min_n: 20, top: 500, include_pairs: true };
+    let bestCombosFull: Awaited<ReturnType<typeof computeBestCombos>>;
+    let counterfactual: Awaited<ReturnType<typeof computeCounterfactual>>;
+    let bestCombosMs: number;
+    let counterfactualMs: number;
+    let workerMode: 'worker' | 'in-process-fallback' = 'worker';
+    try {
+      const workerResult = await runGistSyncInWorker(
+        resolveDbPath(this.db),
+        bestCombosOpts,
+      );
+      bestCombosFull = workerResult.bestCombosFull!;
+      counterfactual = workerResult.counterfactual!;
+      bestCombosMs = workerResult.timings!.bestCombosMs;
+      counterfactualMs = workerResult.timings!.counterfactualMs;
+    } catch (err) {
+      workerMode = 'in-process-fallback';
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        'gist-sync worker unavailable — running bestCombos + counterfactual in-process (will block event loop)',
+      );
+      const inProcBcT0 = Date.now();
+      bestCombosFull = await computeBestCombos(this.db, bestCombosOpts);
+      bestCombosMs = Date.now() - inProcBcT0;
+      await yieldEventLoop();
+      const inProcCfT0 = Date.now();
+      counterfactual = await computeCounterfactual(this.db);
+      counterfactualMs = Date.now() - inProcCfT0;
+    }
+    const totalWorkerWallclockMs = Date.now() - bestCombosT0;
     // best-combos.json keeps its top-20 contract.
     const bestCombos = { ...bestCombosFull, rows: bestCombosFull.rows.slice(0, 20) };
     await yieldEventLoop();
@@ -691,7 +795,16 @@ export class GistSync {
     // for tens of seconds and every HTTP request queues behind it. The three
     // heaviest panels (entryTimeMatrix, exitSimMatrix, walletRepAnalysis) are
     // gated behind HEAVY_PANELS_ENABLED — see the constant comment.
-    const timings: Record<string, number> = { computeBestCombos: bestCombosMs };
+    // computeBestCombos + counterfactual run in the gist-sync worker (added
+    // 2026-05-12). The numbers here are still surfaced for visibility but
+    // they're WORKER wall-clock — they don't add to main-thread block time.
+    // `gist_sync_worker_ms` (added below) records the total worker spin and
+    // its mode (worker vs in-process-fallback) so the operator can tell at
+    // a glance whether the offload is healthy.
+    const timings: Record<string, number> = {
+      computeBestCombos: bestCombosMs,
+      counterfactual: counterfactualMs,
+    };
     // `fn` may return a sync value or a Promise — we await either way so the
     // measured wall-clock includes the full async resolution. Several of the
     // panel computes (panel11, sniperPanel, walletRepAnalysis, entryTimeMatrix,
@@ -718,7 +831,7 @@ export class GistSync {
     // yields between filters internally.
     const journal = await timed('journal', () => computeJournal(this.db));
     const edgeDecay = await timed('edgeDecay', () => computeEdgeDecay(this.db));
-    const counterfactual = await timed('counterfactual', () => computeCounterfactual(this.db));
+    // counterfactual now runs in the gist-sync worker — see top of buildPayloads.
     const lossPostmortem = await timed('lossPostmortem', () => computeLossPostmortem(this.db));
     const leaveOneOutPnl = await timed('leaveOneOutPnl', () => computeLeaveOneOutPnl(this.db));
     // dailyReport reads leaveOneOutPnl internally to populate
@@ -745,7 +858,17 @@ export class GistSync {
     // `timings` already includes computeBestCombos (seeded from bestCombosMs)
     // plus everything wrapped by `timed()` above. Heavy panels gated behind
     // HEAVY_PANELS_ENABLED only contribute when enabled.
-    const totalMainThreadBlockMs = Object.values(timings).reduce((a, b) => a + b, 0);
+    // When the worker succeeded, computeBestCombos + counterfactual happened
+    // OFF the main thread — exclude them from the main-thread block tally so
+    // the alarm threshold (~5000ms) reflects actual blocking work, not worker
+    // wall-clock that the loop was free during. When the worker fell back to
+    // in-process, the work DID block the main thread and is counted normally.
+    const offMainThreadStepsWhenWorkerOk = workerMode === 'worker'
+      ? new Set(['computeBestCombos', 'counterfactual'])
+      : new Set<string>();
+    const totalMainThreadBlockMs = Object.entries(timings)
+      .filter(([k]) => !offMainThreadStepsWhenWorkerOk.has(k))
+      .reduce((a, [, b]) => a + b, 0);
     const computeTimingsMsRanked: Record<string, number> = Object.fromEntries(
       Object.entries(timings).sort(([, a], [, b]) => b - a)
     );
@@ -784,6 +907,18 @@ export class GistSync {
       gist_sync_compute_ms: {
         total_main_thread_block_ms: totalMainThreadBlockMs,
         per_step: computeTimingsMsRanked,
+      },
+      // Per-cycle worker stats (added 2026-05-12). mode='worker' means
+      // computeBestCombos + counterfactual ran off-thread. mode='in-process-
+      // fallback' means the worker file couldn't be resolved or the worker
+      // failed — main thread paid the full ~30-46s of blocking work and
+      // event_loop_lag will spike accordingly. wall_clock_ms is end-to-end
+      // (spawn → result) so includes the ~50-200ms of Worker construction +
+      // postMessage roundtrip; subtract per_step.computeBestCombos +
+      // per_step.counterfactual to get pure overhead.
+      gist_sync_worker_ms: {
+        mode: workerMode,
+        wall_clock_ms: totalWorkerWallclockMs,
       },
       recent_graduations: recent,
       last_error: lastError,
