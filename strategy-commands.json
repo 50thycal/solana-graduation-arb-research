@@ -1,0 +1,246 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v23-vwap-climbing",
+      "label": "v23 vwap_pullback strict + climbing_t30_t45 (TP75/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 75,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "price_vs_vwap_t30_pct", "operator": ">=", "value": -5, "label": "vwap_pull>=-5"},
+          {"field": "price_vs_vwap_t30_pct", "operator": "<=", "value": -1, "label": "vwap_pull<=-1"},
+          {"field": "monotonicity_0_30", "operator": ">", "value": 0.5, "label": "mono>0.5"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v23-vel2050-climbing",
+      "label": "v23 vel 20-50 + climbing_t30_t45 (TP150/SL25, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel>=20"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel<50"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v23-repeat-recovery",
+      "label": "v23 repeat_dev>=3 + confirmed_recovery (TP75/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 75,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "creator_prior_token_count", "operator": ">=", "value": 3, "label": "repeat_dev>=3"},
+          {"field": "confirmed_dip_recovery", "operator": "==", "value": 1, "label": "confirmed_recovery"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v23-snipers5-recovery",
+      "label": "v23 snipers<=5 + confirmed_recovery (TP100/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "sniper_count_t0_t2", "operator": "<=", "value": 5, "label": "snipers<=5"},
+          {"field": "confirmed_dip_recovery", "operator": "==", "value": 1, "label": "confirmed_recovery"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v23-snipers-max-vel",
+      "label": "v23 snipers<=2 + max_sniper_vel<10 (TP100/SL25) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "sniper_count_t0_t2", "operator": "<=", "value": 2, "label": "snipers<=2"},
+          {"field": "sniper_wallet_velocity_max", "operator": "<", "value": 10, "label": "max_sniper_vel<10"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v23-vwap-climbing",
+      "strategy_id": "v23-vwap-climbing",
+      "cohort_label": "v23",
+      "hypothesis": "NEW leaderboard #1: vwap_pullback strict + climbing_t30_t45 at n=48, raw +21.01%, opt +13.21% with 72.9% raw WR / 68.8% opt WR. Two newly-added filter dimensions (B5 VWAP × C5 recovery) stacked. Thesis: price pulled back 1-5% below VWAP with uptrending monotonicity AND a confirmed bounce from t30 to t45 = entry caught the bottom of a healthy retracement. entryTimingSec=60 used (not 45) to guarantee recovery_t45_above_t30 is written before eval — eliminates NULL=fail race risk. Entry price is at T+60 not T+30; ~10pp drift expected vs the leaderboard sim.",
+      "prediction": {
+        "target_median_net_pct": 8,
+        "target_n": 100,
+        "target_days": 14,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v23-vel2050-climbing",
+      "strategy_id": "v23-vel2050-climbing",
+      "cohort_label": "v23",
+      "hypothesis": "NEW BASELINE row: vel 20-50 + climbing_t30_t45 at n=124, opt +8.74% (TP=150/SL=25), 59.7% opt WR — beats_baseline=true. Promoted from research to live shadow. Hypothesis: the productive velocity band (20-50 sol/min) combined with confirmed t30->t45 upward momentum is a robust, n-rich entry signal. Should accumulate trades faster than other v23 picks because vel 20-50 alone covers ~10% of the entry-gated population.",
+      "prediction": {
+        "target_median_net_pct": 5,
+        "target_n": 150,
+        "target_days": 14,
+        "kill_criterion": "n>=75 and median<-5"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v23-repeat-recovery",
+      "strategy_id": "v23-repeat-recovery",
+      "cohort_label": "v23",
+      "hypothesis": "INVERSION test: repeat_dev>=3 + confirmed_recovery at n=31, opt +12.57%, 61.3% opt WR. repeat_dev>=3 historically tested as BEARISH in isolation (Panel 7: ~-20% test return). But when stacked with confirmed_recovery, it becomes a top-tier combo. Hypothesis: 'avoid repeat devs' is averaging across all repeat-dev tokens including the rugged ones — filtering for the recovery-confirmation signal SELECTS for the repeat devs who actually deliver this drop. If true, this is a major edge: a conventional exclusion rule that inverts into a positive filter via path confirmation. Wider kill criterion (median<-8) reflects counter-intuitive direction.",
+      "prediction": {
+        "target_median_net_pct": 6,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=40 and median<-8"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v23-snipers5-recovery",
+      "strategy_id": "v23-snipers5-recovery",
+      "cohort_label": "v23",
+      "hypothesis": "Sniper × C5 stack: snipers<=5 + confirmed_recovery at n=41, opt +8.66%, 61% opt WR — IDENTICAL numbers to no_bundle + confirmed_recovery in current data (the no_bundle disjunction's extra branches (whale_pct>=30 OR max_sniper_vel>=5) don't add many rows). Deploying snipers<=5 form since the trading filter pipeline is AND-only and can't express the no_bundle disjunction directly. Tests whether sticking the C5 confirmed_recovery filter on top of the existing 'clean snipe environment' (snipers<=5) signal compounds.",
+      "prediction": {
+        "target_median_net_pct": 4,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v23-snipers-max-vel",
+      "strategy_id": "v23-snipers-max-vel",
+      "cohort_label": "v23",
+      "hypothesis": "Newly-exposed sniper_wallet_velocity_max filter: snipers<=2 + max_sniper_vel<10 at n=30, opt +6.61% (TP=100/SL=25). Tests whether the MAX-priors-of-any-sniper filter improves on the AVG version (snipers<=2 + wallet_vel_avg<10 at opt +10.33%, n=31). Hypothesis: max captures 'no single heavy-recidivist in the batch' which is the bundle-pattern signature; avg can be diluted by a clean cohort even when one heavy sniper is present. Direct comparison to the avg-version cohort already running in v21 (v21-sniper-age-shadow).",
+      "prediction": {
+        "target_median_net_pct": 3,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
