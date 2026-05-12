@@ -189,7 +189,13 @@ export class CompetitionDetector {
    *          from competition_signals via SQL and write to graduation_momentum.
    */
   async detectBuyPressure(ctx: ObservationContext): Promise<void> {
-    const MAX_NEW_TX_PARSES = 50;
+    // Tightened 50 → 20 on 2026-05-11 to fit the 10M-credit/month Helius cap.
+    // 20 transactions is statistically sufficient for the unique-buyer /
+    // buy-ratio / whale-pct estimates this function feeds into. With ~200
+    // graduations/day this caps the T+35 getParsedTransaction load at
+    // ~4K/day instead of ~10K/day. Tune via env if a future analysis shows
+    // the estimates degrade at 20.
+    const MAX_NEW_TX_PARSES = parseInt(process.env.BUY_PRESSURE_MAX_TX_PARSES || '20', 10);
 
     // Same guard as detectCompetition — synthetic pool addresses aren't valid RPC addresses.
     try { new PublicKey(ctx.poolAddress); } catch {

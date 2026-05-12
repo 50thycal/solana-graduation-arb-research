@@ -56,6 +56,12 @@ export interface PipelineHealth {
   last_t30_callback_sec_ago: number | null;
   last_paper_trade_sec_ago: number | null;
   last_shadow_trade_sec_ago: number | null;
+  /** Seconds since the listener last saw a migration candidate from any
+   *  ingestion channel (pump.fun WS or rpc-poll). Distinct from
+   *  last_graduation_sec_ago: candidates include bundler false positives
+   *  and pre-verification sigs. A long gap here while ws_connected=true is
+   *  the WS-zombie fingerprint that the WS_DOWN verdict misses. */
+  last_candidate_sec_ago: number | null;
   enabled_strategies: number;
   /** Lifetime channel-win distribution (% of post-dedup candidates each
    *  channel won). Null while the bot has zero candidates (cold start). */
@@ -63,6 +69,7 @@ export interface PipelineHealth {
   verdict:
     | 'HEALTHY'
     | 'WS_DOWN'
+    | 'WS_ZOMBIE'
     | 'NO_GRADS'
     | 'T30_STALLED'
     | 'TRADES_STALLED'
@@ -100,11 +107,22 @@ export interface PipelineSignals {
    *  `getListenerStats().channel_wins`. Optional — when omitted the
    *  diagnose report sets `channel_win_distribution` to null. */
   channelWins?: ChannelWinCounts;
+  /** Seconds since the most recent migration candidate was detected on any
+   *  channel. Comes from `getListenerStats().lastCandidateSecondsAgo`. Used
+   *  to detect the WS-zombie pattern (WS reports connected, chatter logs
+   *  still arriving, but no migrate instructions for N minutes). */
+  lastCandidateSecAgo?: number | null;
 }
 
 // Stall thresholds. Conservative defaults — tune via env if needed.
 const T30_STALL_SEC = 10 * 60;        // 10 min without a T+30 callback while WS up = pipeline broken
 const TRADES_STALL_SEC = 30 * 60;     // 30 min without a paper/shadow entry (with strategies enabled) = entry pipeline broken
+// 10 min without any migration candidate while ws_connected=true is the
+// WS-zombie fingerprint observed 2026-05-10. Listener auto-reconnect fires
+// at 25 min (graduation-listener.ts :: NO_CANDIDATE_SILENCE_MS), so the
+// dashboard sees a 15-min window where the verdict reflects the stall before
+// auto-recovery kicks in.
+const CANDIDATE_SILENCE_SEC = 10 * 60;
 
 const NULL_RATE_FAIL = 0.5; // >50% of critical fields null on recent rows = fail
 const SAMPLE_SIZE_FOR_LEVEL4 = 20;
@@ -337,6 +355,7 @@ export function runDiagnosis(
   const lastT30SecAgo = lastT30Ms !== null
     ? Math.floor((Date.now() - lastT30Ms) / 1000)
     : null;
+  const lastCandidateSecAgo = pipelineSignals?.lastCandidateSecAgo ?? null;
 
   // Last paper/shadow entry from trades_v2 — table may not exist on first
   // boot before any strategy ever fired, hence the try/catch. Schema column
@@ -380,6 +399,21 @@ export function runDiagnosis(
   } else if (wsConnected === false) {
     pipelineVerdict = 'WS_DOWN';
     pipelineNotes = 'WebSocket reports disconnected. Reconnect loop should be running — check graduation-listener logs.';
+  } else if (
+    wsConnected === true
+    && lastCandidateSecAgo !== null
+    && lastCandidateSecAgo > CANDIDATE_SILENCE_SEC
+  ) {
+    // WS-zombie pattern: TCP socket alive, pump.fun chatter still flowing,
+    // but no migrate instructions routed for 10+ min. Common failure mode
+    // for long-lived Helius WS connections — TCP heartbeat keeps the socket
+    // open while the upstream stops pushing migration logs. The listener's
+    // own 25-min `NO_CANDIDATE_SILENCE_MS` watchdog will force a reconnect
+    // shortly; this verdict gives the operator + dashboard a 15-min lead.
+    pipelineVerdict = 'WS_ZOMBIE';
+    pipelineNotes = `No migration candidates in ${lastCandidateSecAgo}s but WS reports connected. `
+      + `Likely zombie subscription — listener auto-reconnect fires at ${25 * 60}s. `
+      + 'Check graduation-listener logs for "No graduation candidates ... possible WS zombie" warning.';
   } else if (secondsSinceLast !== null && secondsSinceLast > T30_STALL_SEC) {
     // Use Level 1's existing graduation-recency check as a proxy.
     pipelineVerdict = 'NO_GRADS';
@@ -439,6 +473,7 @@ export function runDiagnosis(
     last_t30_callback_sec_ago: lastT30SecAgo,
     last_paper_trade_sec_ago: lastPaperSecAgo,
     last_shadow_trade_sec_ago: lastShadowSecAgo,
+    last_candidate_sec_ago: lastCandidateSecAgo,
     enabled_strategies: enabledStrategies,
     channel_win_distribution,
     verdict: pipelineVerdict,
@@ -483,6 +518,7 @@ export function runDiagnosis(
     next_action = level5.notes ?? 'Fix live-mode prerequisites before enabling live strategies.';
   } else if (
     pipeline_health.verdict === 'WS_DOWN'
+    || pipeline_health.verdict === 'WS_ZOMBIE'
     || pipeline_health.verdict === 'T30_STALLED'
     || pipeline_health.verdict === 'TRADES_STALLED'
   ) {
