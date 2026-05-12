@@ -134,6 +134,67 @@ export interface WeeklyBucket {
   mean_net_pct: number | null;
   win_rate_pct: number | null;
   net_profit_sol: number;
+  /** Top 3 strategies by current readiness score (lifetime — not per-week). */
+  top3_by_score: Array<{ strategy_id: string; label: string; score: number }>;
+  /** Worst 3 strategies by Net SOL within this week's window. */
+  bottom3_by_net_sol: Array<{ strategy_id: string; label: string; net_sol: number }>;
+}
+
+/**
+ * Per-strategy daily snapshot — joins today-only trade activity with lifetime
+ * SOL metrics and the composite readiness score so the dashboard can compare
+ * today vs yesterday on score / Net SOL terms instead of median.
+ *
+ * Stored on `today_auto` for the live render, and a copy is persisted into
+ * each daily_reports row's `patterns_json` blob so per-strategy history can be
+ * plotted as a time-series after rollout.
+ */
+export interface PerStrategyDailySnapshot {
+  strategy_id: string;
+  label: string;
+  enabled: boolean;
+  /** Trade count within today's trading-day window. */
+  n_trades_today: number;
+  /** Net SOL realized today only. */
+  net_sol_today: number;
+  /** Composite 0–100 readiness score (null when strategy has no closed trades). */
+  readiness_score: number | null;
+  /** Whether all four SOL-bar hard gates currently clear. */
+  promotable: boolean;
+  /** Lifetime cumulative trade count (from leave-one-out). */
+  n_trades_lifetime: number;
+  /** Lifetime total Net SOL. */
+  total_net_sol_lifetime: number;
+  /** Lifetime Net SOL with the top-3 winners stripped (outlier-robust). */
+  total_net_sol_drop_top3: number;
+  /** 30-day projection (lifetime total / days_active × 30). */
+  monthly_run_rate_sol: number;
+}
+
+/**
+ * Per-day snapshot of which strategies are configured + enabled. Captured at
+ * report-generation time so day-over-day roster diffs can be computed even
+ * after strategies are deleted from `strategy_configs`.
+ */
+export interface ActiveStrategyEntry {
+  strategy_id: string;
+  label: string;
+  enabled: boolean;
+}
+
+/**
+ * Day-over-day roster diff. Computed at render-time from the most-recent
+ * stored `active_strategies_snapshot`.
+ */
+export interface RosterDiff {
+  /** Strategies present today but absent yesterday. */
+  added: ActiveStrategyEntry[];
+  /** Strategies present yesterday but absent today. */
+  removed: ActiveStrategyEntry[];
+  /** Strategies that flipped enabled=true → false. */
+  toggled_off: ActiveStrategyEntry[];
+  /** Strategies that flipped enabled=false → true. */
+  toggled_on: ActiveStrategyEntry[];
 }
 
 export interface DailyReportView {
@@ -153,6 +214,24 @@ export interface DailyReportView {
     n_trades: number;
     median_net_pct: number | null;
     win_rate_pct: number | null;
+    /** Portfolio Net SOL for the day (sum across winners + losers). */
+    net_profit_sol?: number;
+    /** Mean composite readiness score across enabled strategies on this day. */
+    avg_readiness_score?: number | null;
+    /** Count of strategies whose all four hard gates cleared on this day. */
+    n_promotable?: number;
+    /**
+     * Per-strategy snapshot captured at this report's generation time. Used to
+     * render the time-series trend chart in the dashboard's By-Strategy panel.
+     * Optional — pre-rollout rows lack this field; renderers must tolerate
+     * undefined and fall back to "history accumulating".
+     */
+    by_strategy_daily?: PerStrategyDailySnapshot[];
+    /**
+     * Roster snapshot at this report's generation time. Used for day-over-day
+     * diff computation. Optional for the same back-compat reason.
+     */
+    active_strategies_snapshot?: ActiveStrategyEntry[];
   };
 }
 
@@ -174,12 +253,28 @@ export interface DailyReportData {
     anomalies_auto: AutoAnomaly[];
     /** Lifetime per-strategy ranking — top 5 closest to clearing the SOL bar. */
     promotion_readiness_top5: ReadinessRow[];
+    /** Full readiness ranking across all enabled strategies (top5 ⊂ this). */
+    promotion_readiness_all: ReadinessRow[];
+    /**
+     * Per-strategy snapshot for today (joins today-only trade activity with
+     * lifetime SOL + composite readiness score). Drives the dashboard's
+     * By-Strategy comparison panel.
+     */
+    by_strategy_daily_snapshot: PerStrategyDailySnapshot[];
+    /** Snapshot of which strategies are configured + enabled right now. */
+    active_strategies_snapshot: ActiveStrategyEntry[];
   };
   today_report: DailyReportView | null;
   recent_reports: DailyReportView[];
   weekly_aggregates: WeeklyBucket[];
   lessons: LessonRow[];
   open_action_items: Array<ActionItem & { from_date: string }>;
+  /**
+   * Day-over-day strategy roster diff (today vs the most-recent stored
+   * snapshot in recent_reports[0]). All arrays are empty on the first day of
+   * rollout (no prior snapshot to compare against).
+   */
+  roster_diff_vs_yesterday: RosterDiff;
   notes: string[];
 }
 
@@ -587,7 +682,46 @@ function detectAnomalies(
 
 // ── Weekly aggregates ───────────────────────────────────────────────────
 
-function computeWeeklyAggregates(db: Database.Database, weeks = 4): WeeklyBucket[] {
+/**
+ * Compare today's active-strategies snapshot against yesterday's. Returns
+ * additions, removals, and toggle changes. All arrays empty when yesterday's
+ * snapshot is undefined (first day of rollout) — that's the renderer's signal
+ * to display "No roster changes since yesterday".
+ */
+function computeRosterDiff(
+  today: ActiveStrategyEntry[],
+  yesterday: ActiveStrategyEntry[] | undefined,
+): RosterDiff {
+  const empty: RosterDiff = { added: [], removed: [], toggled_off: [], toggled_on: [] };
+  if (!yesterday) return empty;
+
+  const todayMap = new Map(today.map(s => [s.strategy_id, s]));
+  const yMap = new Map(yesterday.map(s => [s.strategy_id, s]));
+
+  const diff: RosterDiff = { added: [], removed: [], toggled_off: [], toggled_on: [] };
+  for (const entry of today) {
+    const prior = yMap.get(entry.strategy_id);
+    if (!prior) {
+      diff.added.push(entry);
+    } else if (prior.enabled && !entry.enabled) {
+      diff.toggled_off.push(entry);
+    } else if (!prior.enabled && entry.enabled) {
+      diff.toggled_on.push(entry);
+    }
+  }
+  for (const entry of yesterday) {
+    if (!todayMap.has(entry.strategy_id)) {
+      diff.removed.push(entry);
+    }
+  }
+  return diff;
+}
+
+function computeWeeklyAggregates(
+  db: Database.Database,
+  weeks = 4,
+  readinessAll: ReadinessRow[] = [],
+): WeeklyBucket[] {
   const nowSec = Math.floor(Date.now() / 1000);
   const today = new Date(nowSec * 1000);
   const buckets: WeeklyBucket[] = [];
@@ -599,6 +733,14 @@ function computeWeeklyAggregates(db: Database.Database, weeks = 4): WeeklyBucket
   const thisWeekStart = new Date(today);
   thisWeekStart.setUTCDate(today.getUTCDate() - (todayDow - 1));
   thisWeekStart.setUTCHours(0, 0, 0, 0);
+
+  // Top 3 by current readiness — same across all weekly buckets because
+  // readiness is a lifetime metric. Per-operator decision: no per-week
+  // readiness backfill. Buckets surface "biggest losers this week" instead.
+  const top3ByScore = readinessAll
+    .filter(r => r.enabled)
+    .slice(0, 3)
+    .map(r => ({ strategy_id: r.strategy_id, label: r.label, score: r.readiness_score }));
 
   for (let i = 0; i < weeks; i++) {
     const weekStart = new Date(thisWeekStart);
@@ -614,6 +756,26 @@ function computeWeeklyAggregates(db: Database.Database, weeks = 4): WeeklyBucket
     const sortedNets = [...nets].sort((a, b) => a - b);
     const profit = trades.reduce((s, r) => s + (r.net_profit_sol ?? 0), 0);
 
+    // Per-strategy Net SOL within this week — bottom 3 surfaces the biggest
+    // bleeders so the operator can see "this week's losers" at a glance.
+    const profitByStrategy = new Map<string, number>();
+    for (const t of trades) {
+      if (!t.strategy_id) continue;
+      profitByStrategy.set(
+        t.strategy_id,
+        (profitByStrategy.get(t.strategy_id) ?? 0) + (t.net_profit_sol ?? 0),
+      );
+    }
+    const labelById = new Map(readinessAll.map(r => [r.strategy_id, r.label]));
+    const bottom3 = Array.from(profitByStrategy.entries())
+      .sort((a, b) => a[1] - b[1])
+      .slice(0, 3)
+      .map(([id, sol]) => ({
+        strategy_id: id,
+        label: labelById.get(id) ?? id,
+        net_sol: +sol.toFixed(4),
+      }));
+
     buckets.push({
       iso_week: isoWeekString(weekStart),
       start_date: utcDateString(startSec),
@@ -623,6 +785,8 @@ function computeWeeklyAggregates(db: Database.Database, weeks = 4): WeeklyBucket
       mean_net_pct: mean(nets) != null ? +mean(nets)!.toFixed(2) : null,
       win_rate_pct: winRatePct(nets),
       net_profit_sol: +profit.toFixed(4),
+      top3_by_score: top3ByScore,
+      bottom3_by_net_sol: bottom3,
     });
   }
   return buckets;
@@ -639,12 +803,63 @@ function parseJson<T>(s: string | null, fallback: T): T {
   }
 }
 
+/**
+ * Detect whether a parsed `patterns_json` blob is wrapped in the new shape
+ * (object containing `patterns`, `by_strategy_daily`, and/or
+ * `active_strategies_snapshot`) or is the legacy raw payload. The wrapped
+ * shape is what `upsertDailyReport` now writes; legacy rows pre-rollout still
+ * carry the raw payload directly.
+ */
+function unwrapPatternsBlob(raw: unknown): {
+  patterns: unknown;
+  by_strategy_daily?: PerStrategyDailySnapshot[];
+  active_strategies_snapshot?: ActiveStrategyEntry[];
+} {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    const looksWrapped =
+      'by_strategy_daily' in obj ||
+      'active_strategies_snapshot' in obj ||
+      ('patterns' in obj && Object.keys(obj).some(k =>
+        k === 'by_strategy_daily' || k === 'active_strategies_snapshot',
+      ));
+    if (looksWrapped) {
+      return {
+        patterns: obj.patterns ?? null,
+        by_strategy_daily: obj.by_strategy_daily as PerStrategyDailySnapshot[] | undefined,
+        active_strategies_snapshot: obj.active_strategies_snapshot as ActiveStrategyEntry[] | undefined,
+      };
+    }
+  }
+  return { patterns: raw };
+}
+
 function rowToView(row: DailyReportRow): DailyReportView {
   const winners = parseJson<TradeRow[]>(row.winners_json, []);
   const losers = parseJson<TradeRow[]>(row.losers_json, []);
   const allTrades = [...winners, ...losers];
   const nets = allTrades.map(t => t.net_return_pct).filter((v): v is number => v != null);
   const sortedNets = [...nets].sort((a, b) => a - b);
+
+  const patternsBlob = unwrapPatternsBlob(parseJson(row.patterns_json, null));
+  const byStrategyDaily = patternsBlob.by_strategy_daily;
+
+  // Derive day-level summary fields from the persisted per-strategy snapshot
+  // when present. Pre-rollout rows leave these undefined — renderer must
+  // tolerate that and fall back to portfolio-level metrics.
+  let netProfitSol: number | undefined;
+  let avgReadinessScore: number | null | undefined;
+  let nPromotable: number | undefined;
+  if (byStrategyDaily && byStrategyDaily.length > 0) {
+    netProfitSol = +byStrategyDaily.reduce((s, r) => s + (r.net_sol_today ?? 0), 0).toFixed(4);
+    const enabledScores = byStrategyDaily
+      .filter(r => r.enabled && r.readiness_score != null)
+      .map(r => r.readiness_score as number);
+    avgReadinessScore = enabledScores.length > 0
+      ? +(enabledScores.reduce((s, v) => s + v, 0) / enabledScores.length).toFixed(2)
+      : null;
+    nPromotable = byStrategyDaily.filter(r => r.promotable).length;
+  }
 
   return {
     date: row.date,
@@ -654,7 +869,7 @@ function rowToView(row: DailyReportRow): DailyReportView {
     losers: parseJson(row.losers_json, null),
     recommendations: parseJson(row.recommendations_json, null),
     anomalies: parseJson(row.anomalies_json, null),
-    patterns: parseJson(row.patterns_json, null),
+    patterns: patternsBlob.patterns,
     action_items: parseJson<ActionItem[]>(row.action_items_json, []),
     narrative: row.narrative,
     updates: parseJson<Array<{ at: number; note: string }>>(row.updates_json, []),
@@ -662,6 +877,11 @@ function rowToView(row: DailyReportRow): DailyReportView {
       n_trades: allTrades.length,
       median_net_pct: median(sortedNets),
       win_rate_pct: winRatePct(nets),
+      net_profit_sol: netProfitSol,
+      avg_readiness_score: avgReadinessScore,
+      n_promotable: nPromotable,
+      by_strategy_daily: byStrategyDaily,
+      active_strategies_snapshot: patternsBlob.active_strategies_snapshot,
     },
   };
 }
@@ -822,14 +1042,75 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
     'SELECT COUNT(*) as c FROM graduations WHERE timestamp >= ? AND timestamp < ?'
   ).get(yesterdayStartSec, todayStartSec) as { c: number }).c;
 
+  // Per-strategy daily snapshot — joins today-only activity, lifetime SOL, and
+  // composite readiness. Drives the dashboard's By-Strategy comparison panel
+  // and is persisted into each daily_reports row so a per-strategy
+  // time-series can be plotted across days.
+  const looByStrategy = new Map(leaveOneOut.rows.map(r => [r.strategy_id, r]));
+  const readinessByStrategy = new Map(readinessAll.map(r => [r.strategy_id, r]));
+  const todayByStrategy = new Map(byStrategyToday.map(s => [s.strategy_id, s]));
+
+  const enabledStrategyIds = new Set<string>();
+  for (const [id, cfg] of configMap.entries()) {
+    if (cfg.enabled) enabledStrategyIds.add(id);
+  }
+  // Include any enabled strategy currently configured, plus any strategy that
+  // has activity today — keeps the snapshot honest if a strategy is toggled
+  // off mid-day but already produced trades.
+  for (const s of byStrategyToday) enabledStrategyIds.add(s.strategy_id);
+
+  const byStrategyDailySnapshot: PerStrategyDailySnapshot[] = [];
+  for (const id of enabledStrategyIds) {
+    const cfg = configMap.get(id);
+    const loo = looByStrategy.get(id);
+    const readiness = readinessByStrategy.get(id);
+    const today = todayByStrategy.get(id);
+    byStrategyDailySnapshot.push({
+      strategy_id: id,
+      label: cfg?.label ?? loo?.label ?? id,
+      enabled: cfg?.enabled ?? false,
+      n_trades_today: today?.n ?? 0,
+      net_sol_today: today?.net_profit_sol ?? 0,
+      readiness_score: readiness?.readiness_score ?? null,
+      promotable: readiness?.promotable ?? false,
+      n_trades_lifetime: loo?.n_trades ?? 0,
+      total_net_sol_lifetime: loo?.total_net_sol ?? 0,
+      total_net_sol_drop_top3: loo?.total_net_sol_drop_top3 ?? 0,
+      monthly_run_rate_sol: loo?.monthly_run_rate_sol ?? 0,
+    });
+  }
+  byStrategyDailySnapshot.sort((a, b) =>
+    (b.readiness_score ?? -Infinity) - (a.readiness_score ?? -Infinity),
+  );
+
+  // Active-strategies snapshot — captured now so day-over-day roster diffs
+  // remain computable even after strategies are deleted from strategy_configs.
+  const activeStrategiesSnapshot: ActiveStrategyEntry[] = [];
+  for (const [id, cfg] of configMap.entries()) {
+    activeStrategiesSnapshot.push({
+      strategy_id: id,
+      label: cfg.label,
+      enabled: cfg.enabled,
+    });
+  }
+  activeStrategiesSnapshot.sort((a, b) => a.strategy_id.localeCompare(b.strategy_id));
+
   // Recent reports.
   const reportRows = listDailyReports(db, 60);
   const allViews = reportRows.map(rowToView);
   const todayReport = allViews.find(v => v.date === todayDate) ?? null;
   const recentReports = allViews.filter(v => v.date !== todayDate).slice(0, 14);
 
+  // Day-over-day roster diff. Compare against the most-recent stored snapshot
+  // (recent_reports[0]). Empty arrays on the first day of rollout — renderer
+  // shows "No roster changes since yesterday" in that case.
+  const rosterDiff = computeRosterDiff(
+    activeStrategiesSnapshot,
+    recentReports[0]?.summary?.active_strategies_snapshot,
+  );
+
   // Weekly aggregates (last 4 ISO weeks, current first).
-  const weeklyAggregates = computeWeeklyAggregates(db, 4);
+  const weeklyAggregates = computeWeeklyAggregates(db, 4, readinessAll);
 
   // Lessons-learned (active only).
   const lessons = listLessons(db, false);
@@ -862,12 +1143,16 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
       delta_vs_yesterday: deltas,
       anomalies_auto: anomalies,
       promotion_readiness_top5: readinessTop5,
+      promotion_readiness_all: readinessAll,
+      by_strategy_daily_snapshot: byStrategyDailySnapshot,
+      active_strategies_snapshot: activeStrategiesSnapshot,
     },
     today_report: todayReport,
     recent_reports: recentReports,
     weekly_aggregates: weeklyAggregates,
     lessons,
     open_action_items: openActionItems,
+    roster_diff_vs_yesterday: rosterDiff,
     notes: [
       'today_auto is recomputed every gist-sync cycle — fresh numbers even if no Claude run has fired.',
       'Trading day = 06:00 America/Chicago (CT) through 05:59 CT the next morning. "today" tracks the current trading day, not the UTC calendar day. DST-safe.',

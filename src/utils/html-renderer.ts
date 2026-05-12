@@ -6785,23 +6785,86 @@ function renderTradeTable(trades: ReportTradeRow[], emptyMsg: string): string {
 
 function renderActionItems(
   items: Array<{ id: string; kind: string; target_id?: string; summary: string; status: string; from_date?: string }>,
+  activeStrategyIds?: Set<string>,
 ): string {
   if (!items || items.length === 0) {
     return `<div style="color:#64748b;font-style:italic;padding:8px 0">No open action items.</div>`;
   }
-  const rows = items.map(i => `<tr>
-    <td>${statusBadge(i.status)}</td>
-    <td><span class="badge" style="background:#262640;color:#a5b4fc">${escapeHtml(i.kind)}</span></td>
-    <td>${escapeHtml(i.target_id ?? '')}</td>
-    <td>${escapeHtml(i.summary)}</td>
-    <td style="color:#64748b;font-size:11px">${escapeHtml(i.from_date ?? '')}</td>
-  </tr>`).join('');
+  // Target IDs may be comma-separated lists (e.g. "v10-best-double,v9shadow-vel20-top5").
+  // An item is "stale" only when every listed target is absent from the live
+  // strategies snapshot AND the item is still PROPOSED — that's the v17/v18
+  // bug class where the kill already happened but the action item lags.
+  const isStale = (item: { target_id?: string; status: string }): boolean => {
+    if (!activeStrategyIds || item.status !== 'PROPOSED') return false;
+    const targets = (item.target_id ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    if (targets.length === 0) return false;
+    return targets.every(t => !activeStrategyIds.has(t));
+  };
+
+  const rows = items.map(i => {
+    const stale = isStale(i);
+    const staleBadge = stale
+      ? ` <span class="badge" style="background:#3f1212;color:#fca5a5;font-size:10px" title="Target absent from current strategies.json — likely already removed">stale: target removed</span>`
+      : '';
+    return `<tr${stale ? ' style="background:#1a0c0c"' : ''}>
+      <td>${statusBadge(i.status)}${staleBadge}</td>
+      <td><span class="badge" style="background:#262640;color:#a5b4fc">${escapeHtml(i.kind)}</span></td>
+      <td>${escapeHtml(i.target_id ?? '')}</td>
+      <td>${escapeHtml(i.summary)}</td>
+      <td style="color:#64748b;font-size:11px">${escapeHtml(i.from_date ?? '')}</td>
+    </tr>`;
+  }).join('');
   return `<table>
     <thead><tr>
       <th>Status</th><th>Kind</th><th>Target</th><th>Summary</th><th>From</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
+}
+
+/**
+ * Render a compact SVG line chart for a per-strategy daily history series.
+ * Used inside the By-Strategy expand row. Values aligned left→right by index
+ * (oldest→newest). null values are skipped.
+ */
+function renderMiniTimeseries(
+  values: Array<number | null>,
+  label: string,
+  color: string,
+  fmt: (v: number) => string = v => v.toFixed(2),
+): string {
+  const W = 220;
+  const H = 56;
+  const PAD = 18;
+  const points = values
+    .map((v, i) => ({ v, i }))
+    .filter((p): p is { v: number; i: number } => p.v != null);
+  if (points.length < 2) {
+    return `<div style="display:inline-block;width:${W}px;height:${H + 16}px;margin:4px 8px 0 0;padding:6px 8px;border:1px solid #2a2a3e;border-radius:4px;color:#64748b;font-size:10px">${escapeHtml(label)}: history accumulating</div>`;
+  }
+  const vs = points.map(p => p.v);
+  const minV = Math.min(...vs);
+  const maxV = Math.max(...vs);
+  const range = maxV - minV || 1;
+  const xStep = (W - PAD * 2) / Math.max(values.length - 1, 1);
+  const yScale = (v: number) => PAD + (1 - (v - minV) / range) * (H - PAD * 2);
+  const pts = points.map(p => `${(PAD + p.i * xStep).toFixed(1)},${yScale(p.v).toFixed(1)}`).join(' ');
+  const last = points[points.length - 1].v;
+  return `<div style="display:inline-block;width:${W}px;margin:4px 8px 0 0;padding:4px 6px;border:1px solid #2a2a3e;border-radius:4px;background:#13131f">
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8">
+      <span>${escapeHtml(label)}</span>
+      <span style="color:${color};font-weight:600">${escapeHtml(fmt(last))}</span>
+    </div>
+    <svg width="${W - 12}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block">
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round"/>
+    </svg>
+  </div>`;
+}
+
+/** Inline pill/chip used in the Roster Changes and Weekly Aggregates panels. */
+function rosterChip(label: string, bg: string, fg: string, title?: string): string {
+  const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+  return `<span class="badge" style="background:${bg};color:${fg};margin:2px 4px 2px 0;display:inline-block"${titleAttr}>${escapeHtml(label)}</span>`;
 }
 
 function renderRecommendations(recs: any): string {
@@ -6840,6 +6903,10 @@ export function renderReportHtml(data: any): string {
   const openItems: any[] = data.open_action_items || [];
   const weekly: any[] = data.weekly_aggregates || [];
   const anomalies: any[] = todayAuto.anomalies_auto || [];
+  const rosterDiff = data.roster_diff_vs_yesterday || { added: [], removed: [], toggled_off: [], toggled_on: [] };
+  const todaySnap: any[] = todayAuto.by_strategy_daily_snapshot || [];
+  const activeSnap: any[] = todayAuto.active_strategies_snapshot || [];
+  const activeStrategyIds = new Set<string>(activeSnap.map((s: any) => s.strategy_id));
 
   // ── Header ──
   const verdict = todayAuto.diagnose_verdict || 'NO_DATA';
@@ -6860,6 +6927,30 @@ export function renderReportHtml(data: any): string {
       ? `<div style="margin-top:8px;padding:10px;background:#3f1212;border:1px solid #7f1d1d;border-radius:4px;color:#fca5a5"><strong>Next action:</strong> ${escapeHtml(todayAuto.diagnose_next_action || '')}</div>`
       : ''}
   </div>`;
+
+  // ── Strategy Roster Changes Since Yesterday ──
+  // Surfaces toggle-offs / removals so a glance shows what the operator
+  // (or the bot) changed since the prior /daily-report snapshot. Hidden on
+  // the first day of rollout when there's no prior snapshot to diff against.
+  const rosterEmpty = rosterDiff.added.length === 0 && rosterDiff.removed.length === 0
+    && rosterDiff.toggled_off.length === 0 && rosterDiff.toggled_on.length === 0;
+  const rosterPanelVisible = recentReports.length > 0;
+  const rosterChips = (entries: any[], bg: string, fg: string) =>
+    entries.map(e => rosterChip(e.label || e.strategy_id, bg, fg, e.strategy_id)).join('');
+  const rosterHtml = rosterPanelVisible
+    ? `<div class="card">
+        <h2>Strategy Roster Changes Since Yesterday</h2>
+        <div class="desc">Diff against the prior /daily-report snapshot. Use this to catch toggle-offs and removals before reading recommendations.</div>
+        ${rosterEmpty
+          ? `<div style="color:#64748b;font-style:italic">No roster changes since yesterday.</div>`
+          : `<div style="display:flex;flex-wrap:wrap;gap:16px">
+              ${rosterDiff.added.length > 0 ? `<div><div style="color:#86efac;font-size:11px;margin-bottom:4px">Added (${rosterDiff.added.length})</div>${rosterChips(rosterDiff.added, '#14532d', '#86efac')}</div>` : ''}
+              ${rosterDiff.removed.length > 0 ? `<div><div style="color:#fca5a5;font-size:11px;margin-bottom:4px">Removed (${rosterDiff.removed.length})</div>${rosterChips(rosterDiff.removed, '#7f1d1d', '#fca5a5')}</div>` : ''}
+              ${rosterDiff.toggled_on.length > 0 ? `<div><div style="color:#93c5fd;font-size:11px;margin-bottom:4px">Toggled On (${rosterDiff.toggled_on.length})</div>${rosterChips(rosterDiff.toggled_on, '#1e3a5f', '#93c5fd')}</div>` : ''}
+              ${rosterDiff.toggled_off.length > 0 ? `<div><div style="color:#fdba74;font-size:11px;margin-bottom:4px">Toggled Off (${rosterDiff.toggled_off.length})</div>${rosterChips(rosterDiff.toggled_off, '#422006', '#fdba74')}</div>` : ''}
+            </div>`}
+      </div>`
+    : '';
 
   // ── Promotion Readiness Top 5 ──
   // Surfaced high so a glance at /report tells you which strategies are
@@ -6929,10 +7020,14 @@ export function renderReportHtml(data: any): string {
       </div>`;
 
   // ── Open action items ──
+  // Stale targets (PROPOSED items whose target_id is absent from the live
+  // strategies snapshot) are flagged red — this is the v17/v18 bug class
+  // where the kill happened but the action item lagged. Action item updates
+  // flow through `action-item-update` commands on strategy-commands.json.
   const actionItemsHtml = `<div class="card">
     <h2>Open Action Items</h2>
-    <div class="desc">Every PROPOSED recommendation across recent reports. Flip with action-item-update.</div>
-    ${renderActionItems(openItems)}
+    <div class="desc">Every PROPOSED recommendation across recent reports. Flip with action-item-update. Red rows = target absent from current strategies.json (likely already removed).</div>
+    ${renderActionItems(openItems, activeStrategyIds)}
   </div>`;
 
   // ── Today's narrative ──
@@ -6947,29 +7042,98 @@ export function renderReportHtml(data: any): string {
       : ''}
   </div>`;
 
-  // ── By-strategy auto-stats with deltas ──
-  const deltaRows = (todayAuto.delta_vs_yesterday || []).map((d: any) => `<tr>
-    <td>${escapeHtml(d.label)}</td>
-    <td style="text-align:right">${d.n_today} <span style="color:#64748b">(yest ${d.n_yesterday})</span></td>
-    <td style="text-align:right">${pctSigned(d.median_today_pct, 1)}</td>
-    <td style="text-align:right">${pctSigned(d.median_yesterday_pct, 1)}</td>
-    <td style="text-align:right">${deltaPp(d.delta_median_pp)}</td>
-    <td style="text-align:right">${d.win_rate_today_pct != null ? d.win_rate_today_pct.toFixed(0) + '%' : '—'}</td>
-    <td style="text-align:right">${deltaPp(d.delta_win_rate_pp)}</td>
-  </tr>`).join('');
+  // ── By-strategy snapshot ──
+  // Promotion-readiness composite score is the headline column (per CLAUDE.md:
+  // median is a distribution-shape diagnostic, not an evaluation primary).
+  // Yesterday's snapshot comes from recent_reports[0].summary.by_strategy_daily.
+  // Click a row to expand a hidden chart row showing 3 mini-charts of the
+  // strategy's history (readiness, n_trades, Net SOL).
+  const yesterdaySnapMap = new Map<string, any>();
+  for (const r of (recentReports[0]?.summary?.by_strategy_daily || [])) {
+    yesterdaySnapMap.set(r.strategy_id, r);
+  }
+  // Build per-strategy history series (oldest → newest) across recent_reports
+  // for the time-series mini-charts. Recent_reports is most-recent-first, so
+  // we reverse to get chronological order.
+  const historyByStrategy = new Map<string, any[]>();
+  const orderedDays = [...recentReports].reverse();
+  for (const day of orderedDays) {
+    const dayStats = day?.summary?.by_strategy_daily;
+    if (!Array.isArray(dayStats)) continue;
+    for (const stat of dayStats) {
+      const series = historyByStrategy.get(stat.strategy_id) || [];
+      series.push({ date: day.date, ...stat });
+      historyByStrategy.set(stat.strategy_id, series);
+    }
+  }
+  // Append today's live snapshot so the chart tail reflects "right now".
+  for (const t of todaySnap) {
+    const series = historyByStrategy.get(t.strategy_id) || [];
+    series.push({ date: todayAuto.date, ...t });
+    historyByStrategy.set(t.strategy_id, series);
+  }
+
+  const fmtSigned = (v: number | null | undefined, d = 3): string =>
+    v == null ? '—' : (v > 0 ? '+' : '') + v.toFixed(d);
+  const cls = (v: number | null | undefined): string =>
+    v == null ? '' : v > 0 ? 'green' : v < 0 ? 'red' : '';
+
+  const sortedSnap = [...todaySnap].sort(
+    (a, b) => (b.readiness_score ?? -Infinity) - (a.readiness_score ?? -Infinity),
+  );
+  const byStrategyRows = sortedSnap.map((s: any) => {
+    const prior = yesterdaySnapMap.get(s.strategy_id);
+    const scoreDelta = prior?.readiness_score != null && s.readiness_score != null
+      ? +(s.readiness_score - prior.readiness_score).toFixed(1) : null;
+    const promotableBadge = s.promotable
+      ? ` <span style="color:#4ade80;font-size:10px">★</span>` : '';
+    const series = historyByStrategy.get(s.strategy_id) || [];
+    const charts = series.length > 0 ? `
+      ${renderMiniTimeseries(series.map(p => p.readiness_score ?? null), 'Readiness', '#a5b4fc', v => v.toFixed(0))}
+      ${renderMiniTimeseries(series.map(p => p.n_trades_lifetime ?? null), 'N (lifetime)', '#93c5fd', v => v.toFixed(0))}
+      ${renderMiniTimeseries(series.map(p => p.total_net_sol_lifetime ?? null), 'Net SOL (lifetime)', '#86efac', v => (v > 0 ? '+' : '') + v.toFixed(3))}
+    ` : `<div style="color:#64748b;font-size:11px;padding:8px">History accumulating — charts available after a few /daily-report cycles.</div>`;
+    return `<tr class="strat-row" data-strategy-id="${escapeHtml(s.strategy_id)}" style="cursor:pointer">
+      <td>${escapeHtml(s.label)}${promotableBadge}<br><span style="color:#64748b;font-size:10px">${escapeHtml(s.strategy_id)}</span></td>
+      <td style="text-align:right;font-weight:600">${s.readiness_score != null ? s.readiness_score.toFixed(0) : '—'}</td>
+      <td style="text-align:right" class="${scoreDelta != null && scoreDelta !== 0 ? (scoreDelta > 0 ? 'green' : 'red') : ''}">${scoreDelta == null ? '—' : (scoreDelta > 0 ? '+' : '') + scoreDelta.toFixed(1)}</td>
+      <td style="text-align:right">${s.n_trades_today ?? 0} <span style="color:#64748b">(life ${s.n_trades_lifetime ?? 0})</span></td>
+      <td style="text-align:right" class="${cls(s.net_sol_today)}">${fmtSigned(s.net_sol_today, 3)}</td>
+      <td style="text-align:right" class="${cls(s.total_net_sol_lifetime)}">${fmtSigned(s.total_net_sol_lifetime, 3)}</td>
+      <td style="text-align:right" class="${cls(s.total_net_sol_drop_top3)}">${fmtSigned(s.total_net_sol_drop_top3, 3)}</td>
+      <td style="text-align:right" class="${cls(s.monthly_run_rate_sol)}">${fmtSigned(s.monthly_run_rate_sol, 2)}</td>
+    </tr>
+    <tr class="strat-detail" data-strategy-id="${escapeHtml(s.strategy_id)}" style="display:none">
+      <td colspan="8" style="background:#0f0f17;padding:8px 12px">${charts}</td>
+    </tr>`;
+  }).join('');
+
   const byStrategyHtml = `<div class="card">
     <h2>By Strategy (today vs yesterday)</h2>
-    <div class="desc">Auto-recomputed every render from trades_v2. Δ columns = today − yesterday.</div>
-    ${todayAuto.delta_vs_yesterday && todayAuto.delta_vs_yesterday.length > 0
-      ? `<table><thead><tr>
-          <th>Strategy</th><th style="text-align:right">N</th>
-          <th style="text-align:right">Median (today)</th>
-          <th style="text-align:right">Median (yest)</th>
-          <th style="text-align:right">Δ Median</th>
-          <th style="text-align:right">WR (today)</th>
-          <th style="text-align:right">Δ WR</th>
-        </tr></thead><tbody>${deltaRows}</tbody></table>`
-      : `<div style="color:#64748b;font-style:italic">No closed trades today yet.</div>`}
+    <div class="desc">Composite readiness score is the headline metric (median is a diagnostic only — see CLAUDE.md). Sorted by score desc. Click any row to expand a per-strategy history chart.</div>
+    ${sortedSnap.length > 0
+      ? `<table id="strat-table"><thead><tr>
+          <th>Strategy</th>
+          <th style="text-align:right">Score</th>
+          <th style="text-align:right">Δ Score</th>
+          <th style="text-align:right">N today (life)</th>
+          <th style="text-align:right">Net SOL today</th>
+          <th style="text-align:right">Net SOL life</th>
+          <th style="text-align:right">Drop3 SOL</th>
+          <th style="text-align:right">SOL/mo</th>
+        </tr></thead><tbody>${byStrategyRows}</tbody></table>
+        <script>
+          (function(){
+            document.querySelectorAll('#strat-table tr.strat-row').forEach(function(row){
+              row.addEventListener('click', function(){
+                var id = row.getAttribute('data-strategy-id');
+                var detail = document.querySelector('tr.strat-detail[data-strategy-id="' + id + '"]');
+                if (detail) detail.style.display = detail.style.display === 'none' ? 'table-row' : 'none';
+              });
+            });
+          })();
+        </script>`
+      : `<div style="color:#64748b;font-style:italic">No active strategies with snapshot data yet.</div>`}
   </div>`;
 
   // ── Winners / Losers ──
@@ -6998,68 +7162,108 @@ export function renderReportHtml(data: any): string {
   </div>`;
 
   // ── Recommendations ──
+  // Reinforced in the description: these are PROPOSALS, not executed actions.
+  // The skill never modifies strategy roster directly — operator approval +
+  // separate strategy-commands.json upsert/delete/toggle is required to enact.
   const recommendationsHtml = `<div class="card">
-    <h2>Recommendations</h2>
-    <div class="desc">Today's kill/promote/watch/create_new from the Claude run. create_new entries can auto-seed journal entries.</div>
+    <h2>Recommendations <span class="badge" style="background:#1e3a5f;color:#93c5fd;font-size:10px">PROPOSALS</span></h2>
+    <div class="desc">Claude-authored proposals from today's /daily-report run — <strong>not executed actions</strong>. Strategy roster changes require operator approval via a separate strategy-commands.json upsert/delete/toggle push. Use the Roster Changes panel above to confirm what actually changed.</div>
     ${renderRecommendations(todayReport?.recommendations)}
   </div>`;
 
-  // ── History (last 14) ──
+  // ── Recent Reports (last 3) ──
+  // Refocused on Net SOL + readiness composite per operator request. # Killed
+  // Since Last is computed by diffing adjacent active_strategies_snapshots —
+  // null when either side's snapshot is missing (pre-rollout rows).
+  const recentTrimmed = recentReports.slice(0, 3);
+  const killCountForRow = (idx: number): number | null => {
+    // recent[idx] is "more recent". Compare its snapshot against recent[idx+1].
+    const newer = recentReports[idx]?.summary?.active_strategies_snapshot;
+    const older = recentReports[idx + 1]?.summary?.active_strategies_snapshot;
+    if (!Array.isArray(newer) || !Array.isArray(older)) return null;
+    const newerIds = new Map(newer.map((s: any) => [s.strategy_id, s]));
+    let removed = 0;
+    for (const s of older) {
+      const cur = newerIds.get(s.strategy_id);
+      if (!cur) removed++;
+      else if (s.enabled && !cur.enabled) removed++;
+    }
+    return removed;
+  };
   const historyHtml = `<div class="card">
-    <h2>Recent Reports (last ${recentReports.length})</h2>
-    <div class="desc">Day-over-day summary. Click date to expand narrative.</div>
-    ${recentReports.length === 0
+    <h2>Recent Reports (last ${recentTrimmed.length})</h2>
+    <div class="desc">Day-over-day summary. Focused on Net SOL + composite readiness — median is no longer a primary header.</div>
+    ${recentTrimmed.length === 0
       ? `<div style="color:#64748b;font-style:italic">No prior reports yet.</div>`
       : `<table><thead><tr>
-          <th>Date</th><th style="text-align:right">N</th>
-          <th style="text-align:right">Median Net</th>
-          <th style="text-align:right">WR</th>
+          <th>Date</th>
+          <th style="text-align:right">Net SOL</th>
+          <th style="text-align:right">Avg Score</th>
+          <th style="text-align:right"># Promotable</th>
+          <th style="text-align:right"># Killed Since Last</th>
           <th>By</th><th>Narrative</th>
         </tr></thead><tbody>
-          ${recentReports.map(r => `<tr>
-            <td>${escapeHtml(r.date)}</td>
-            <td style="text-align:right">${r.summary?.n_trades ?? 0}</td>
-            <td style="text-align:right">${pctSigned(r.summary?.median_net_pct, 1)}</td>
-            <td style="text-align:right">${r.summary?.win_rate_pct != null ? r.summary.win_rate_pct.toFixed(0) + '%' : '—'}</td>
-            <td style="color:#94a3b8">${escapeHtml(r.generated_by ?? '—')}</td>
-            <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((r.narrative || '').slice(0, 120))}${(r.narrative || '').length > 120 ? '…' : ''}</td>
-          </tr>`).join('')}
+          ${recentTrimmed.map((r, i) => {
+            const netSol = r.summary?.net_profit_sol;
+            const avgScore = r.summary?.avg_readiness_score;
+            const nPromo = r.summary?.n_promotable;
+            const killed = killCountForRow(i);
+            return `<tr>
+              <td>${escapeHtml(r.date)}</td>
+              <td style="text-align:right" class="${cls(netSol)}">${netSol == null ? '—' : (netSol > 0 ? '+' : '') + netSol.toFixed(3)}</td>
+              <td style="text-align:right">${avgScore == null ? '—' : avgScore.toFixed(1)}</td>
+              <td style="text-align:right">${nPromo == null ? '—' : nPromo}</td>
+              <td style="text-align:right${killed != null && killed > 0 ? ';color:#fca5a5' : ''}">${killed == null ? '—' : killed}</td>
+              <td style="color:#94a3b8">${escapeHtml(r.generated_by ?? '—')}</td>
+              <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml((r.narrative || '').slice(0, 120))}${(r.narrative || '').length > 120 ? '…' : ''}</td>
+            </tr>`;
+          }).join('')}
         </tbody></table>`}
   </div>`;
 
   // ── Weekly aggregates ──
+  // Net SOL is the headline (median demoted). Top 3 by Score is a lifetime
+  // metric so it repeats across weeks; Bottom 3 by Net SOL is per-week and
+  // surfaces the biggest bleeders for that window specifically.
   const weeklyHtml = `<div class="card">
     <h2>Weekly Aggregates (last ${weekly.length} weeks)</h2>
-    <div class="desc">ISO week buckets ending Sunday. Week-over-week trend in Δ Median.</div>
+    <div class="desc">ISO week buckets ending Sunday. Headline: portfolio Net SOL. Top 3 by Score is lifetime (same across weeks); Bottom 3 by Net SOL is per-week.</div>
     ${weekly.length === 0
       ? `<div style="color:#64748b;font-style:italic">No data yet.</div>`
       : (() => {
           const rows = weekly.map((w, i) => {
             const prev = weekly[i + 1];
-            const delta = w.median_net_pct != null && prev?.median_net_pct != null
-              ? +(w.median_net_pct - prev.median_net_pct).toFixed(1) : null;
+            const deltaSol = w.net_profit_sol != null && prev?.net_profit_sol != null
+              ? +(w.net_profit_sol - prev.net_profit_sol).toFixed(3) : null;
+            const top3 = (w.top3_by_score || [])
+              .map((r: any) => rosterChip(`${r.label} (${r.score.toFixed(0)})`, '#1e3a5f', '#93c5fd', r.strategy_id))
+              .join('') || `<span style="color:#64748b;font-size:11px">—</span>`;
+            const bottom3 = (w.bottom3_by_net_sol || [])
+              .map((r: any) => rosterChip(`${r.label} (${(r.net_sol > 0 ? '+' : '') + r.net_sol.toFixed(2)})`, '#7f1d1d', '#fca5a5', r.strategy_id))
+              .join('') || `<span style="color:#64748b;font-size:11px">no losers</span>`;
             return `<tr>
               <td>${escapeHtml(w.iso_week)}</td>
               <td style="color:#94a3b8;font-size:11px">${escapeHtml(w.start_date)} → ${escapeHtml(w.end_date)}</td>
               <td style="text-align:right">${w.n_trades}</td>
-              <td style="text-align:right">${pctSigned(w.median_net_pct, 1)}</td>
-              <td style="text-align:right">${w.win_rate_pct != null ? w.win_rate_pct.toFixed(0) + '%' : '—'}</td>
-              <td style="text-align:right">${w.net_profit_sol != null ? (w.net_profit_sol > 0 ? '+' : '') + w.net_profit_sol.toFixed(2) : '—'}</td>
-              <td style="text-align:right">${deltaPp(delta)}</td>
+              <td style="text-align:right" class="${cls(w.net_profit_sol)}">${w.net_profit_sol != null ? (w.net_profit_sol > 0 ? '+' : '') + w.net_profit_sol.toFixed(3) : '—'}</td>
+              <td style="text-align:right" class="${cls(deltaSol)}">${deltaSol == null ? '—' : (deltaSol > 0 ? '+' : '') + deltaSol.toFixed(3)}</td>
+              <td>${top3}</td>
+              <td>${bottom3}</td>
             </tr>`;
           }).join('');
           return `<table><thead><tr>
             <th>Week</th><th>Range</th>
             <th style="text-align:right">N</th>
-            <th style="text-align:right">Median</th>
-            <th style="text-align:right">WR</th>
-            <th style="text-align:right">SOL</th>
+            <th style="text-align:right">Net SOL</th>
             <th style="text-align:right">Δ vs prev</th>
+            <th>Top 3 by Score</th>
+            <th>Bottom 3 by Net SOL</th>
           </tr></thead><tbody>${rows}</tbody></table>`;
         })()}
   </div>`;
 
   const body = headerHtml
+    + rosterHtml
     + readinessHtml
     + lessonsHtml
     + actionItemsHtml

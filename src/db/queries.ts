@@ -1590,6 +1590,15 @@ export function upsertDailyReport(
     recommendations?: unknown;
     anomalies?: unknown;
     patterns?: unknown;
+    /**
+     * Per-strategy daily snapshot — nested into `patterns_json` so adding new
+     * history fields doesn't require a schema migration. `rowToView` in
+     * daily-report.ts unwraps both shapes for back-compat with pre-rollout
+     * rows.
+     */
+    by_strategy_daily?: unknown;
+    /** Snapshot of configured strategies + enabled flags at upsert time. */
+    active_strategies_snapshot?: unknown;
     action_items?: ActionItem[];
     narrative?: string | null;
   },
@@ -1600,6 +1609,24 @@ export function upsertDailyReport(
   const actionItems = entry.action_items
     ? JSON.stringify(entry.action_items)
     : (existing?.action_items_json ?? '[]');
+
+  // Wrap patterns + history fields into a single JSON blob. The wrapper is
+  // only used when at least one of the new history fields is present; older
+  // callers passing only `patterns` keep emitting the legacy raw shape so
+  // existing downstream readers don't break mid-rollout.
+  const hasHistoryFields =
+    entry.by_strategy_daily !== undefined ||
+    entry.active_strategies_snapshot !== undefined;
+  let patternsJson: string | null;
+  if (hasHistoryFields) {
+    patternsJson = JSON.stringify({
+      patterns: entry.patterns ?? null,
+      by_strategy_daily: entry.by_strategy_daily,
+      active_strategies_snapshot: entry.active_strategies_snapshot,
+    });
+  } else {
+    patternsJson = entry.patterns ? JSON.stringify(entry.patterns) : null;
+  }
 
   db.prepare(`
     INSERT INTO daily_reports (
@@ -1628,7 +1655,7 @@ export function upsertDailyReport(
     losers_json: entry.losers ? JSON.stringify(entry.losers) : null,
     recommendations_json: entry.recommendations ? JSON.stringify(entry.recommendations) : null,
     anomalies_json: entry.anomalies ? JSON.stringify(entry.anomalies) : null,
-    patterns_json: entry.patterns ? JSON.stringify(entry.patterns) : null,
+    patterns_json: patternsJson,
     action_items_json: actionItems,
     narrative: entry.narrative ?? null,
   });
