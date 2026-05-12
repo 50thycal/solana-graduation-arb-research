@@ -450,6 +450,21 @@ export const FILTER_CATALOG: FilterDef[] = [
   // Inverse: requires sniper data be present (so we know the row was actually
   // evaluated against the bundle pattern) and the pattern is NOT matched.
   { name: 'no_bundle', group: 'Bundle Proxy', where: 'sniper_count_t0_t2 IS NOT NULL AND NOT (sniper_count_t0_t2 >= 3 AND buy_pressure_whale_pct IS NOT NULL AND buy_pressure_whale_pct < 30 AND sniper_wallet_velocity_max IS NOT NULL AND sniper_wallet_velocity_max < 5)' },
+  // C3 — wider holder concentration: top10_wallet_pct and wallet_gini_top20.
+  // Captured at enrichment time (same RPC as top5_wallet_pct). NEW rows only —
+  // historical raw holder lists weren't stored, so backfill is impossible.
+  { name: 'top10 < 25%',   group: 'Top 10',      where: 'top10_wallet_pct IS NOT NULL AND top10_wallet_pct < 25' },
+  { name: 'top10 < 40%',   group: 'Top 10',      where: 'top10_wallet_pct IS NOT NULL AND top10_wallet_pct < 40' },
+  { name: 'top10 < 50%',   group: 'Top 10',      where: 'top10_wallet_pct IS NOT NULL AND top10_wallet_pct < 50' },
+  { name: 'gini < 0.4',    group: 'Wallet Gini', where: 'wallet_gini_top20 IS NOT NULL AND wallet_gini_top20 < 0.4' },
+  { name: 'gini < 0.6',    group: 'Wallet Gini', where: 'wallet_gini_top20 IS NOT NULL AND wallet_gini_top20 < 0.6' },
+  { name: 'gini >= 0.8',   group: 'Wallet Gini', where: 'wallet_gini_top20 IS NOT NULL AND wallet_gini_top20 >= 0.8' },
+  // C5 — confirmed dip-and-recover. Available at T+45 — strategies using these
+  // MUST set entryTimingSec=45 so evaluation fires after the flags are written
+  // (NULL=fail at T+30 otherwise silently kills all trades).
+  { name: 'confirmed_recovery', group: 'Path Recovery', where: 'confirmed_dip_recovery = 1' },
+  { name: 'climbing_t15_t30',   group: 'Path Recovery', where: 'recovery_t30_above_t15 = 1' },
+  { name: 'climbing_t30_t45',   group: 'Path Recovery', where: 'recovery_t45_above_t30 = 1' },
 ];
 
 /** Entry gate shared by all candidates — kept at +5..+100 for research-side
