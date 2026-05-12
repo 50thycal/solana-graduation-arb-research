@@ -23,7 +23,9 @@ The human operator is the code-review and deploy loop — they don't write code,
 | What's the current leaderboard? | `best-combos.json` |
 | Which strategies are running, what params? | `strategies.json` |
 | What did paper/shadow trading do recently? | `trades.json`, `trading.json` |
-| Which strategies are closest to clearing the bar? | `report.json → today_auto.promotion_readiness_top5` |
+| Which strategies are closest to clearing the bar? | `report.json → today_auto.promotion_readiness_all` (or `_top5` for the trimmed view) |
+| What's each strategy's day-over-day score trend? | `report.json → recent_reports[i].summary.by_strategy_daily` (per-strategy snapshot per day) |
+| What changed in the strategy roster since yesterday? | `report.json → roster_diff_vs_yesterday` |
 | What does each strategy's outlier-stripped P&L look like? | `leave-one-out-pnl.json` |
 | Cross-session memory — what did yesterday's session decide? | `report.json` |
 | Is the bot healthy? | `diagnose.json` |
@@ -36,7 +38,8 @@ The pattern: every cycle, read those files first. Form a hypothesis from the dat
 
 When considering whether to promote, kill, or keep a strategy, evaluate in this order. Each item is more important than the next.
 
-1. **Net SOL accumulated** (after measured costs). The bot's purpose is making SOL — this is the primary metric. Look at `total_net_sol` in `leave-one-out-pnl.json`.
+0. **Composite readiness score (0–100) — the headline metric.** `report.json → today_auto.promotion_readiness_all` ranks every enabled strategy on one number that consolidates items 1–4 below: sample_size (20) + drop_top3_pnl (30) + total_net_sol (20) + monthly_run_rate (20) + win_rate_sanity (10). The component breakdown is in each row's `components` object — consult those only to explain WHY a score is high or low, not as separate primary signals. Headline / "By Strategy" panel on /report and the /daily-report skill both lead with this score.
+1. **Net SOL accumulated** (after measured costs). The bot's purpose is making SOL — this is the primary monetary metric and the heaviest single contributor to the composite. Look at `total_net_sol` in `leave-one-out-pnl.json`.
 2. **Outlier robustness — drop top 1 / top 3 winners.** If `total_net_sol_drop_top3 ≤ 0`, you don't have edge, you have 1–3 lottery tickets. Reported per-strategy in `leave-one-out-pnl.json`. This is the *real* outlier check; median is a noisy proxy for it.
 3. **Monthly run rate ≥ 3.75 SOL** (≈ $300/month at current SOL price). `monthly_run_rate_sol` in `leave-one-out-pnl.json`. A strategy that takes 3 months to earn 0.5 SOL clears the absolute floor but doesn't pay the bills.
 4. **Win rate** as a distribution-shape sanity check, not a kill criterion. High WR + losing money = tail problem; low WR + winning = cluster risk. Don't kill a fat-tail strategy just because WR is 35%.
@@ -59,9 +62,11 @@ A strategy is **promotable** when ALL of these clear:
 | Panel 7 walk-forward NOT OVERFIT | `panel7.json` |
 | Panel 11 regime std-dev < 15% | `panel11.json` |
 
-The first four are computed and ranked in `report.json → today_auto.promotion_readiness_top5` with a 0–100 composite score and per-component breakdown. The top 5 closest-to-bar strategies surface there each gist-sync cycle. Read it at session start.
+The first four are computed and ranked in `report.json → today_auto.promotion_readiness_all` with a 0–100 composite score and per-component breakdown. `_top5` is the same list truncated for narrative use. Read `_all` at session start.
 
 The old "+0.3 pp lift over baseline" framing has been retired. Absolute net-SOL accumulation replaces relative-edge-vs-baseline because (a) it maps to actual money, and (b) the rolling baseline + per-combo TP/SL grid was making "lift" a moving target.
+
+**Recommendations are proposals, never executed actions.** The `/daily-report` skill writes `report-upsert` + `action-item-update` only — it never adds, removes, or toggles strategies. Strategy roster changes require explicit operator approval via a separate `strategy-commands.json` push containing `upsert` / `delete` / `toggle`. Recommendations in `report.json → today_report.recommendations` should always read as future-tense proposals ("recommend killing X"), not as past-tense reports of executed work ("killed X"). The 2026-05-12 v17/v18 narrative confusion came from past-tense phrasing — don't repeat. The "Strategy Roster Changes Since Yesterday" panel on /report is the authoritative view of what actually changed.
 
 ---
 

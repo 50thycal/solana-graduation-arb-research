@@ -10,9 +10,22 @@ Run on demand or via `/loop 24h /daily-report` for daily cadence.
 
 > **Evaluation regime (effective 2026-05-10):** the bar is **net SOL accumulated**, not median per-trade return. See CLAUDE.md "How to evaluate a candidate" for the priority order. The promotion bar is `n>=100 AND total_net_sol_drop_top3 > 0 AND total_net_sol >= 0.5 AND monthly_run_rate_sol >= 3.75`. Do not kill strategies on negative median alone — fat-tail memecoin strategies legitimately live there.
 
+> **Headline metric (effective 2026-05-12):** the **composite readiness score (0–100)** in `report.json → today_auto.promotion_readiness_all` is the single primary evaluation number. It consolidates sample size, drop-top3 P&L, total Net SOL, monthly run rate, and a win-rate sanity check into one rankable score. Median per-trade return is a distribution-shape diagnostic only — never use it as a primary kill or promote signal.
+
+> **Recommendations are PROPOSALS, never executed actions (effective 2026-05-12).** The /daily-report skill ONLY writes `report-upsert` + `action-item-update` commands. It NEVER pushes `upsert` / `delete` / `toggle` strategy commands. Strategy roster changes require explicit operator approval and a separate `strategy-commands.json` push. Phrase every recommendation in proposal-voice ("recommend killing X because Y") — never past-tense ("killed X"). The 2026-05-12 narrative confusion came from past-tense phrasing that read as if the skill had executed; don't repeat.
+
 ## Step 0 — Today's date
 
 The report key is the **UTC date** in `YYYY-MM-DD` form. Use today's UTC date.
+
+## Step 0.5 — Capture today's roster snapshot
+
+Read `strategies.json` and `leave-one-out-pnl.json` from `bot-status`. Build two arrays you'll persist with this run's `report-upsert`:
+
+- `active_strategies_snapshot`: every entry in `strategies.json` as `{ strategy_id, label, enabled }`. This snapshot is what tomorrow's session will diff against to detect kills, adds, and toggles.
+- `by_strategy_daily`: join `leave-one-out-pnl.json → rows[]` with the enabled-strategies set. Per-entry shape: `{ strategy_id, label, enabled, n_trades_today, net_sol_today, readiness_score, promotable, n_trades_lifetime, total_net_sol_lifetime, total_net_sol_drop_top3, monthly_run_rate_sol }`. `n_trades_today` + `net_sol_today` come from `report.json → today_auto.by_strategy[i].n` / `net_profit_sol` matched by `strategy_id`. `readiness_score` + `promotable` come from `report.json → today_auto.promotion_readiness_all[i]`. The remaining fields come straight from the leave-one-out row.
+
+These two arrays go into the `report-upsert` payload as top-level fields (see Step 8). The bot stores them inside `patterns_json` for back-compat, so no schema change is needed. Pre-rollout days lack these fields — that's OK; renderers tolerate `undefined`.
 
 ## Step 1 — Fetch state
 
@@ -33,23 +46,42 @@ Read these files from `bot-status` (use `mcp__github__get_file_contents` with `o
 
 ## Step 2 — Reconcile yesterday's action items
 
+**This is the hygiene step that catches the 2026-05-12 v17/v18 bug class.** Any `open_action_items` row whose `target_id` is absent from today's `strategies.json` (or now has `enabled: false`) is **mandatorily** flipped to EXECUTED in this run — do not let a stale item sit PROPOSED for another cycle.
+
 For each entry in `report.json → open_action_items`:
 
-- `kill <strategy_id>` — check `strategies.json`. If the strategy is now `enabled: false` or absent → push `action-item-update` with `action_item_status: "EXECUTED"`. If still enabled and active → leave PROPOSED (or mark DEFERRED if the recommendation is stale). For **partial** executions (e.g. user kept some of a multi-strategy kill block), still EXECUTED but include the per-strategy split in `action_item_note`.
+- `kill <strategy_id>` — check `strategies.json`. If the strategy is now `enabled: false` **or absent** → push `action-item-update` with `action_item_status: "EXECUTED"`. **Required, not optional.** If still enabled and active → leave PROPOSED (or mark DEFERRED if the recommendation is stale). For **partial** executions (e.g. user kept some of a multi-strategy kill block), still EXECUTED but include the per-strategy split in `action_item_note`.
 - `promote <strategy_id>` — check whether the strategy is now in `strategies.json` with the proposed config. EXECUTED if yes.
 - `create_new <strategy_id>` — check `strategies.json` AND `journal.json`. If both present → EXECUTED. If only journal entry exists → still PROPOSED (proposal recorded, not yet deployed).
-- `watch <strategy_id>` — typically these resolve themselves once n hits 100 and a kill/promote decision happens. EXECUTED when the watched strategy gets a terminal verdict in journal.
+- `watch <strategy_id>` — typically these resolve themselves once n hits 100 and a kill/promote decision happens. EXECUTED when the watched strategy gets a terminal verdict in journal. **Also EXECUTED if every listed target is now absent from `strategies.json`** — the watch is moot.
+
+For multi-target items (`target_id` is a comma-separated list like `"v18-calm-mkv-strict,v18-calm-mkv-exitonly"`), the item is EXECUTED when ALL listed targets are absent. If any one is still present, leave PROPOSED and call out the partial state in `action_item_note`.
+
+## Step 2.5 — Diff yesterday vs today active strategies
+
+Compare today's `strategies.json` against `report.json → recent_reports[0].summary.active_strategies_snapshot`:
+
+- **Added**: strategy IDs in today's roster but missing from yesterday's snapshot.
+- **Removed**: strategy IDs in yesterday's snapshot but missing today.
+- **Toggled off**: `enabled: true` yesterday → `enabled: false` today.
+- **Toggled on**: the reverse.
+
+Describe any non-empty groups in plain prose at the top of the narrative (Step 7) — operators read the roster diff before reading recommendations, so it sets the frame. Example: "Roster: removed v17-calm-be5/be7/be9 + v18-calm-mkv-exitonly (4 kills enacted between yesterday and today). No adds or toggles."
+
+If yesterday's snapshot is absent (first rollout day or a session gap), say so and move on.
 
 ## Step 3 — Identify today's signal
 
-Use `report.json → today_auto`:
+Use `report.json → today_auto`. **The composite readiness score (0–100) is the headline metric** — every kill/promote/watch judgement should cite it explicitly.
 
-- **Promotion readiness** (`today_auto.promotion_readiness_top5`): **read this first.** Top 5 enabled strategies ranked by composite 0–100 score against the SOL bar, with per-component breakdown (sample_size / drop_top3_pnl / total_net_sol / monthly_run_rate / win_rate_sanity) and per-gate pass/fail. Any row with `promotable: true` is a candidate for live promotion this cycle.
+- **Promotion readiness** (`today_auto.promotion_readiness_all`): **read this first.** ALL enabled strategies ranked by composite 0–100 score against the SOL bar, with per-component breakdown (sample_size / drop_top3_pnl / total_net_sol / monthly_run_rate / win_rate_sanity) and per-gate pass/fail. Any row with `promotable: true` is a candidate for live promotion this cycle. `promotion_readiness_top5` is the same list truncated to 5 — use `_all` whenever you need to see beyond the top.
 - **Winners / losers**: top 5 each by `net_return_pct`. Note any single-trade outliers (e.g. > +200% or < −50%) — flag in the narrative, then cross-check against `leave-one-out-pnl.json → top1/top3_contribution_pct` to see if those wins are concentrating the strategy's total P&L.
-- **By-strategy deltas vs yesterday**: surface strategies where Δ Median > +5pp or < −5pp. Treat as diagnostic (distribution shifted), not as a promote/kill signal.
+- **Δ readiness score vs yesterday**: pull `by_strategy_daily` from `recent_reports[0]` and compare to today's `by_strategy_daily_snapshot`. Strategies whose score moved >5 points in either direction deserve a one-line mention. This replaces the old "Δ median" diagnostic — median per-trade is a distribution-shape diagnostic only, never a promote/kill signal.
 - **Auto-anomalies**: from `today_auto.anomalies_auto`. Include them in your narrative and rank by severity.
 
 ## Step 4 — Generate recommendations
+
+**Voice rule — non-negotiable.** Recommendations are PROPOSALS. Phrase every entry in future-tense recommend-voice: "recommend killing X because Y", "propose promoting X — gates Z clear". **Never** past-tense: not "killed X", not "declared INVALID", not "all four variants removed". The skill does NOT execute strategy changes; only the operator does, via a separate `strategy-commands.json` push. The 2026-05-12 narrative was past-tense and read as if executed — that confusion is what this rule prevents.
 
 **Promote candidates** — strategies that clear ALL four bar gates plus regime stability:
 
@@ -105,11 +137,14 @@ If the cross-history scan reveals a pattern that's been confirmed for ≥ 7 days
 
 Free-form markdown commentary, 4–8 paragraphs. Cover:
 
+- **Opening paragraph: roster diff from Step 2.5** ("Roster: added X, removed Y, toggled off Z") — operators read this before recommendations, so it sets the frame. If empty, write "No roster changes since yesterday."
 - One-sentence headline
 - What accumulated SOL today vs. what bled
 - Cross-day pattern observations
 - Honest self-check: any "this strategy is winning" claim cross-checked against `leave-one-out-pnl.json → total_net_sol_drop_top3`? Is the apparent edge from 1–3 lottery trades, or from a sustained pattern?
 - Operator next step (single most important action)
+
+**Voice rule (mirror of Step 4):** every action verb describing a recommendation MUST be future-tense — "recommend killing", "propose promoting", "watching pending n=N", "would create new strategy X". Never write "killed", "promoted", "removed", "declared INVALID" unless you are describing something the operator ALREADY did (then cite the date / commit). If you find yourself reaching for past-tense, you're conflating proposal with execution.
 
 ## Step 8 — Push commands
 
@@ -123,11 +158,13 @@ Build a single `strategy-commands.json` and push to `main` via `mcp__github__cre
       "id": "report-2026-05-10",
       "date": "2026-05-10",
       "generated_by": "claude",
-      "narrative": "...markdown...",
+      "narrative": "...markdown... (roster diff in opening paragraph; proposal-voice recommendations)",
       "winners": [/* top 5 trade rows */],
       "losers": [/* bottom 5 trade rows */],
       "anomalies": [/* combined auto + claude observations */],
       "patterns": [/* cross-day observations */],
+      "by_strategy_daily": [/* from Step 0.5 — per-strategy snapshot for the by-strategy panel + time-series chart */],
+      "active_strategies_snapshot": [/* from Step 0.5 — roster snapshot for tomorrow's diff */],
       "recommendations": {
         "kill": [{"strategy_id": "...", "reason": "n=120, drop_top3=-0.42 SOL — apparent edge was 1-3 lottery trades"}],
         "promote": [{"strategy_id": "...", "reason": "all 4 gates clear: n=134, drop_top3=+0.61 SOL, total=+0.94 SOL, monthly=4.21 SOL/mo; Panel 11 stable, Panel 7 ROBUST"}],

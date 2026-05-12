@@ -272,6 +272,13 @@ interface StrategyCommand {
   recommendations?: unknown;
   anomalies?: unknown;
   patterns?: unknown;
+  /** Per-strategy daily snapshot (n_trades_today, net_sol_today, readiness_score,
+   *  lifetime SOL, monthly run rate) — persisted into patterns_json so
+   *  per-strategy history can be charted as a time-series. */
+  by_strategy_daily?: unknown;
+  /** Snapshot of which strategies were configured + enabled at upsert time —
+   *  enables day-over-day roster diff to spot toggle-offs and removals. */
+  active_strategies_snapshot?: unknown;
   action_items?: ActionItem[];
   narrative?: string | null;
   /** When true on report-upsert, every entry in recommendations.create_new[]
@@ -518,6 +525,8 @@ export class GistSync {
                 recommendations: cmd.recommendations,
                 anomalies: cmd.anomalies,
                 patterns: cmd.patterns,
+                by_strategy_daily: cmd.by_strategy_daily,
+                active_strategies_snapshot: cmd.active_strategies_snapshot,
                 action_items: cmd.action_items,
                 narrative: cmd.narrative ?? null,
               });
