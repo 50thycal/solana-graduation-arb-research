@@ -81,7 +81,7 @@ The full space Claude is free to explore (see `FILTER_PRESET_GROUPS` in `src/uti
 - **Dev Wallet** (`dev_wallet_pct`): <3%, <5%
 - **Liquidity at T+30** (`liquidity_sol_t30`): >50, >100, >150
 - **Path shape (0–30s window)**: monotonicity, max_drawdown_0_30, sum_abs_returns_0_30, acceleration_t30
-- **Buy pressure** (computed at T+35 — strategies auto-delay 5s): `buy_pressure_unique_buyers`, `buy_pressure_buy_ratio`, `buy_pressure_whale_pct`
+- **Buy pressure** (computed at T+35 — strategies auto-delay 30s): `buy_pressure_unique_buyers`, `buy_pressure_buy_ratio`, `buy_pressure_whale_pct`
 - **Snipers** (`sniper_count_t0_t2`, computed at T+35): ≤2, ≤5, >5, >10
 - **Sniper wallet velocity** (`sniper_wallet_velocity_avg`, also T+35): <5, <10, <20, ≥20 (avg # of EARLIER graduations these snipers also sniped — PRIOR-only by construction)
 - **Creator reputation** (`creator_prior_*`, derived from self-join): fresh_dev, repeat_dev≥3, clean_dev, serial_rugger, rapid_fire
@@ -411,7 +411,7 @@ Peak analysis and trading:
 | `wallet-rep-analysis.json` | `/api/wallet-rep-analysis` | Top 20 combos × creator-wallet-rep modifiers: matrix of opt_avg_ret deltas + rep filter leaderboard ranked by mean Δ. Use to pick a creator-rep modifier that improves profitability without collapsing sample size. |
 | `sniper-panel.json` | `/api/sniper-panel` | Sniper-window analytics: population coverage, baseline at own opt TP/SL, threshold sweep for `snipers <= N` and `wallet_vel_avg < N`, sniper-count + wallet-velocity histograms, top 20 best-combos rows that include a sniper filter. Added 2026-05-01. |
 | `strategy-percentiles.json` | `/api/strategy-percentiles` | Per-active-strategy percentile breakdown of closed trade returns (median, p10/p25/p75/p90, std dev, min/max, exit-reason breakdown, avg execution cost in pp) for both gross and net. Plus `top_winners` + `top_losers` (top 3 each, with mint + graduation_id + held_seconds) for outlier drill-down. Sorted by median net return desc. Added 2026-05-01. **Always cross-check leaderboard means with this panel's medians before promoting.** |
-| `journal.json` | `/api/journal` | Strategy journal — hypothesis + prediction (`target_median_net_pct`, `target_n`, `target_days`, `kill_criterion`) per cohort, with append-only updates and a live-computed `auto_status` badge (OPEN / ON-TRACK / DEGRADING / HIT-KILL / NO-DATA / PROMOTED / KILLED / PAUSED). Entries persist across strategy delete/disable; `strategy_state` flags whether the underlying strategy is currently enabled/disabled/deleted. Mutations via `journal-upsert` / `journal-update` / `journal-delete` actions in `strategy-commands.json`. Added 2026-05-07. |
+| `journal.json` | `/api/journal` | Strategy journal — hypothesis + prediction (`target_net_sol`, `target_sol_per_mo`, `target_drop_top3`, `target_n`, `target_days`, `kill_criterion`) per cohort, with append-only updates and a live-computed `auto_status` badge (OPEN / ON-TRACK / DEGRADING / HIT-KILL / NO-DATA / PROMOTED / KILLED / PAUSED). Predictions evaluate against the SOL-bar Promotion Readiness scorecard (n≥100 · drop_top3>0 · total≥0.5 SOL · monthly≥3.75 SOL) as of 2026-05-12 — `target_median_net_pct` is retained for backwards-compat with legacy entries only. `live_stats` carries `net_sol`, `sol_per_mo`, `drop_top3` alongside median/mean/win_rate. Entries persist across strategy delete/disable; `strategy_state` flags whether the underlying strategy is currently enabled/disabled/deleted. Mutations via `journal-upsert` / `journal-update` / `journal-delete` actions in `strategy-commands.json`. Added 2026-05-07, scoring refreshed 2026-05-12. |
 | `edge-decay.json` | `/api/edge-decay` | Per-strategy rolling mean+median across trade-count windows (last 25 / 50 / 100 / all, capped at 200) plus 12-bin sparkline (oldest → newest) and a flag (DECAYING / STRENGTHENING / STABLE / LOW-N). Auto-flag fires when median(last 30) < median(all) − 5pp. Use to catch alpha decay before committing live capital. Added 2026-05-07. |
 | `counterfactual.json` | `/api/counterfactual` | Per-strategy filter contribution + TP/SL counterfactual. For each filter, drops it and re-runs `simulateComboFullGrid`; reports `delta_ret_pp` (negative = filter pulls weight, positive = filter hurts, ~0 = dead weight). Plus the configured (tp, sl) cell snapped to the grid + top 3 alternative cells with deltas. Same cost model as `/api/best-combos`. Added 2026-05-07. |
 | `loss-postmortem.json` | `/api/loss-postmortem` | Worst-20 closed trades per strategy clustered by entry-time feature deviation. Buckets the strategy's own population into 5 quintiles per feature, computes `loser_pct − overall_pct` per bucket, surfaces features with max \|deviation\| ≥ 20pp as `dominant_patterns`. Includes raw losers with mint + graduation_id + 16 entry-time features for drill-down. Added 2026-05-07. |
@@ -476,14 +476,16 @@ Claude can manage strategies without direct Railway API access by pushing a `str
       "cohort_label": "v15",
       "hypothesis": "vel<5 + dev<3% should clear baseline by +13pp on n>=125 — tightest combo on the leaderboard. Bet: low-velocity + clean-dev signals a quiet pump rather than a pump-and-dump cycle.",
       "prediction": {
-        "target_median_net_pct": 3,
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 5,
+        "target_drop_top3": 0,
         "target_n": 125,
         "target_days": 14,
-        "kill_criterion": "n>=50 and median<-5"
+        "kill_criterion": "n>=50 and net_sol<-1"
       },
       "status": "OPEN"
     },
-    { "action": "journal-update", "id": "v15-vel-dev-tight", "note": "n=42 after 5 days, median +1.8% — pacing fine. No exit-mix surprises." },
+    { "action": "journal-update", "id": "v15-vel-dev-tight", "note": "n=42 after 5 days, net_sol +0.6 — pacing fine. No exit-mix surprises." },
     { "action": "journal-delete", "id": "v9-stale-entry" }
   ]
 }
@@ -496,7 +498,33 @@ Claude can manage strategies without direct Railway API access by pushing a `str
 - `journal-update` — `id`, `note` required.
 - `journal-delete` — `id` required.
 
-`prediction.kill_criterion` recognized forms: `"n>=N and median<X"`, `"median<X"`, `"win_rate<X"`. Anything else parses as text and never trips HIT-KILL automatically. Journal entries persist across strategy delete/disable — use `journal-delete` only when you want to forget a hypothesis entirely.
+**Prediction fields — universal guidance for AI sessions (refreshed 2026-05-12):** journal predictions must be expressed in **SOL-denominated terms** matching the Promotion Readiness scorecard bar (`n≥100 · drop_top3>0 · total≥0.5 SOL · monthly≥3.75 SOL`). Do NOT use `target_median_net_pct` for new entries — median % was retired because it doesn't map to economic value and was insensitive to position sizing / exit distribution. Use these instead:
+
+| Field | What it measures | When to set |
+|---|---|---|
+| `target_net_sol` | Total net SOL the strategy should clear over `target_n` trades | Always — the primary success metric |
+| `target_sol_per_mo` | Monthly run rate (SOL/mo) — bot revenue contribution | When the strategy needs to clear the monthly-revenue bar (≥3.75 SOL/mo to be promotable) |
+| `target_drop_top3` | Net SOL after dropping the top 3 winners (robustness) | When the strategy's edge needs to survive the absence of its best 3 trades (>0 = robust) |
+| `target_n` | Sample size at which the prediction resolves | Always — usually 100 (the SOL-bar minimum) |
+| `target_days` | Calendar days the prediction should hold | Always — calibrate based on filter coverage (rare filters need longer windows) |
+| `kill_criterion` | Free-text rule that flips auto_status to HIT-KILL | Always — use SOL-denominated forms |
+
+`prediction.kill_criterion` recognized forms (case-insensitive, prefer SOL-denominated):
+
+| Form | Trips when |
+|---|---|
+| `"n>=N and net_sol<X"` | `n_closed >= N AND net_sol < X` |
+| `"net_sol<X"` | `net_sol < X` (any n) |
+| `"n>=N and sol_per_mo<X"` | `n_closed >= N AND sol_per_mo < X` |
+| `"sol_per_mo<X"` | `sol_per_mo < X` (any n) |
+| `"n>=N and drop_top3<X"` | `n_closed >= N AND drop_top3 < X` |
+| `"n>=N and median<X"` | `n_closed >= N AND median < X` (**legacy** — backwards-compat only) |
+| `"median<X"` | `median < X` (**legacy** — backwards-compat only) |
+| `"win_rate<X"` | `win_rate < X` (any n, legacy) |
+
+Anything else parses as text and never trips HIT-KILL automatically. The journal `auto_status` evaluator prefers SOL-denominated targets when set (`target_net_sol` or `target_sol_per_mo`) and falls back to legacy `target_median_net_pct` only when no SOL target is present.
+
+Journal entries persist across strategy delete/disable — use `journal-delete` only when you want to forget a hypothesis entirely. `live_stats` on each entry now includes `net_sol`, `sol_per_mo`, `drop_top3` alongside the legacy median/mean/win_rate.
 
 **Daily-report actions** (added 2026-05-09): `report-upsert` (create or replace the daily report row for `date`), `report-append` (append a note to that day's update timeline), `action-item-update` (flip an action-item's status), `lesson-upsert` (create or replace a lesson-learned entry), `lesson-archive` (mark a lesson invalidated). Required fields per action:
 

@@ -1321,13 +1321,22 @@ export function deleteStrategyConfig(db: Database.Database, id: string): void {
 // underlying strategy is gone. strategy_id is therefore not a FK.
 
 export interface JournalPrediction {
-  /** Median net return % the strategy is expected to clear. */
+  /** @deprecated 2026-05-12 — use target_net_sol / target_sol_per_mo. Kept for backwards-compat with legacy entries. */
   target_median_net_pct?: number;
+  /** Total net SOL the strategy is expected to clear over its target_n trades. Primary success metric (SOL-bar Promotion Readiness scorecard). */
+  target_net_sol?: number;
+  /** Monthly run rate (SOL/mo) the strategy is expected to clear. Tracks the Promotion Readiness "monthly≥3.75 SOL" gate. */
+  target_sol_per_mo?: number;
+  /** Minimum drop_top3 (leave-one-out top-3-trades SOL drop) the strategy must clear (>0 = edge survives removing best 3 trades). Tracks the "drop_top3>0" gate. */
+  target_drop_top3?: number;
   /** Sample size at which the prediction should resolve. */
   target_n?: number;
   /** Calendar days the prediction should hold. */
   target_days?: number;
-  /** Free-text kill criterion — auto-status flips to HIT-KILL when satisfied. */
+  /** Free-text kill criterion — auto-status flips to HIT-KILL when satisfied.
+   *  Supported forms: "n>=N and net_sol<X", "net_sol<X", "n>=N and sol_per_mo<X",
+   *  "sol_per_mo<X", "n>=N and median<X", "median<X", "win_rate<X". Anything
+   *  else parses as text and never trips HIT-KILL automatically. */
   kill_criterion?: string;
 }
 
