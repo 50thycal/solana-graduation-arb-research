@@ -393,6 +393,8 @@ export function updateMomentumEnrichment(
   data: {
     holder_count?: number;
     top5_wallet_pct?: number;
+    top10_wallet_pct?: number;
+    wallet_gini_top20?: number;
     dev_wallet_pct?: number;
     token_age_seconds?: number;
     dev_wallet_address?: string;
@@ -403,6 +405,8 @@ export function updateMomentumEnrichment(
     UPDATE graduation_momentum SET
       holder_count           = COALESCE(@holder_count,           holder_count),
       top5_wallet_pct        = COALESCE(@top5_wallet_pct,        top5_wallet_pct),
+      top10_wallet_pct       = COALESCE(@top10_wallet_pct,       top10_wallet_pct),
+      wallet_gini_top20      = COALESCE(@wallet_gini_top20,      wallet_gini_top20),
       dev_wallet_pct         = COALESCE(@dev_wallet_pct,         dev_wallet_pct),
       token_age_seconds      = COALESCE(@token_age_seconds,      token_age_seconds),
       dev_wallet_address     = COALESCE(@dev_wallet_address,     dev_wallet_address),
@@ -412,6 +416,8 @@ export function updateMomentumEnrichment(
     graduation_id: graduationId,
     holder_count: data.holder_count ?? null,
     top5_wallet_pct: data.top5_wallet_pct ?? null,
+    top10_wallet_pct: data.top10_wallet_pct ?? null,
+    wallet_gini_top20: data.wallet_gini_top20 ?? null,
     dev_wallet_pct: data.dev_wallet_pct ?? null,
     token_age_seconds: data.token_age_seconds ?? null,
     dev_wallet_address: data.dev_wallet_address ?? null,
@@ -818,6 +824,35 @@ export function updateMomentumFlowVwap(
     metrics.price_vs_vwap_pct,
     graduationId,
   );
+}
+
+// ==================== C5 — confirmed dip-and-recover flags ====================
+
+/**
+ * Write recovery_t30_above_t15 / recovery_t45_above_t30 / confirmed_dip_recovery
+ * for a single graduation. Called at T+45 once pct_t45 has been recorded.
+ * NULL-safe via the IS NOT NULL guards — if any checkpoint is missing the row
+ * stays NULL and the boot-time backfill will fill it later if pct_t* arrives
+ * out-of-order. Idempotent: re-running just rewrites the same values.
+ */
+export function updateMomentumRecoveryFlags(
+  db: Database.Database,
+  graduationId: number,
+): void {
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET recovery_t30_above_t15 = CASE WHEN pct_t30 > pct_t15 THEN 1 ELSE 0 END,
+        recovery_t45_above_t30 = CASE WHEN pct_t45 > pct_t30 THEN 1 ELSE 0 END,
+        confirmed_dip_recovery = CASE
+          WHEN dip_and_recover_flag = 1
+            AND pct_t30 > pct_t15
+            AND pct_t45 > pct_t30
+          THEN 1 ELSE 0 END
+    WHERE graduation_id = ?
+      AND pct_t15 IS NOT NULL
+      AND pct_t30 IS NOT NULL
+      AND pct_t45 IS NOT NULL
+  `).run(graduationId);
 }
 
 // ==================== B3 — first-buyer wallet + priors ====================

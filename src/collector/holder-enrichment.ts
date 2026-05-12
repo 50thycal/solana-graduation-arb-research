@@ -18,10 +18,34 @@ export interface EnrichmentResult {
   holderCount: number;
   holderCountCapped: boolean; // true when true count >= HOLDER_COUNT_CAP (500)
   top5WalletPct: number;
+  /** C3 — supply % held by top 10 wallets (subset of getTokenLargestAccounts result). */
+  top10WalletPct?: number;
+  /** C3 — Gini coefficient across the top 20 wallets, 0 (uniform) to 1 (whale-dominated). */
+  walletGiniTop20?: number;
   devWalletPct: number;
   devWalletAddress?: string;       // wallet address of largest non-infrastructure holder
   creatorWalletAddress?: string;   // wallet that deployed the token on pump.fun
   tokenAgeSeconds?: number;
+}
+
+/**
+ * Gini coefficient across an array of non-negative balances.
+ * Formula: (2 * sum(i * x_i) - (N+1) * sum(x_i)) / (N * sum(x_i)) for sorted x_i.
+ * Returns 0 for uniform distribution, approaches 1 as concentration increases.
+ * Returns null when input is empty or sum is zero (no signal in either case).
+ */
+function gini(balances: number[]): number | null {
+  if (balances.length === 0) return null;
+  const sorted = [...balances].sort((a, b) => a - b);
+  const n = sorted.length;
+  let weightedSum = 0;
+  let total = 0;
+  for (let i = 0; i < n; i++) {
+    weightedSum += (i + 1) * sorted[i];
+    total += sorted[i];
+  }
+  if (total === 0) return null;
+  return (2 * weightedSum - (n + 1) * total) / (n * total);
 }
 
 
@@ -150,6 +174,17 @@ export class HolderEnrichment {
             return sum + (parseInt(acc.amount, 10) || 0);
           }, 0);
           result.top5WalletPct = (top5Amount / PUMP_TOTAL_SUPPLY_RAW) * 100;
+
+          // C3 — top 10 concentration + Gini across top 20. Reuses the same
+          // getTokenLargestAccounts response — zero additional RPC.
+          const top10Amount = realHolders.slice(0, 10).reduce((sum, acc) => {
+            return sum + (parseInt(acc.amount, 10) || 0);
+          }, 0);
+          result.top10WalletPct = (top10Amount / PUMP_TOTAL_SUPPLY_RAW) * 100;
+
+          const balances20 = realHolders.slice(0, 20).map(acc => parseInt(acc.amount, 10) || 0);
+          const giniVal = gini(balances20);
+          result.walletGiniTop20 = giniVal != null ? +giniVal.toFixed(4) : undefined;
 
           // Dev wallet heuristic: largest non-infrastructure holder
           if (realHolders.length > 0) {

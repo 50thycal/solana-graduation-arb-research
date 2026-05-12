@@ -279,6 +279,18 @@ function runMigrations(db: Database.Database): void {
       // at boot via the same chronological pass as sniper_wallet_velocity_avg.
       ['firstbuyer_wallet', 'TEXT'],                // wallet of first non-bot action='buy' in T+0..T+5s
       ['firstbuyer_priors', 'INTEGER'],             // # earlier grads this wallet sniped (PRIOR-only)
+      // C3 — wider holder concentration metrics. Same RPC as top5 (extends the
+      // existing getTokenLargestAccounts result). NULL on historical rows
+      // (raw holder lists weren't stored, so no backfill is possible).
+      ['top10_wallet_pct', 'REAL'],                 // supply % held by top 10 wallets
+      ['wallet_gini_top20', 'REAL'],                // Gini coefficient across top 20 wallets, 0..1
+      // C5 — confirmed dip-and-recover flags. Pure derivation from existing
+      // pct_t15/t30/t45 columns. Computed at T+45 snapshot time and backfilled
+      // at boot. Strategies using these fields must set entryTimingSec=45 so
+      // evaluation fires after the flags are populated.
+      ['recovery_t30_above_t15', 'INTEGER'],        // 1 if pct_t30 > pct_t15
+      ['recovery_t45_above_t30', 'INTEGER'],        // 1 if pct_t45 > pct_t30
+      ['confirmed_dip_recovery', 'INTEGER'],        // 1 if dip_and_recover_flag=1 AND both above
     ];
     // Every-5s price snapshots across the full 300s monitoring window — dedupes against
     // explicit entries above (t5, t10, ..., t60, t90, t120, t150, t180, t240, t300).
@@ -595,6 +607,25 @@ function runMigrations(db: Database.Database): void {
         .run('flow_vwap_backfill_v1', String(rowsToFill.length));
       logger.info({ graduationsUpdated: rowsToFill.length }, 'Backfilled flow_imbalance + vwap_0_30');
     }
+
+    // ── C5 backfill: recovery_t30_above_t15 / recovery_t45_above_t30 / confirmed_dip_recovery ──
+    // Pure derivation from pct_t15/t30/t45 (and existing dip_and_recover_flag).
+    // Idempotent — only touches rows where confirmed_dip_recovery IS NULL and
+    // all three pct checkpoints exist. Backfills historical rows for free.
+    db.exec(`
+      UPDATE graduation_momentum
+      SET recovery_t30_above_t15 = CASE WHEN pct_t30 > pct_t15 THEN 1 ELSE 0 END,
+          recovery_t45_above_t30 = CASE WHEN pct_t45 > pct_t30 THEN 1 ELSE 0 END,
+          confirmed_dip_recovery = CASE
+            WHEN dip_and_recover_flag = 1
+              AND pct_t30 > pct_t15
+              AND pct_t45 > pct_t30
+            THEN 1 ELSE 0 END
+      WHERE confirmed_dip_recovery IS NULL
+        AND pct_t15 IS NOT NULL
+        AND pct_t30 IS NOT NULL
+        AND pct_t45 IS NOT NULL
+    `);
   }
 
   // Add columns to graduations if they don't exist yet (safe migration)

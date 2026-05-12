@@ -9,6 +9,7 @@ import {
   updateMomentumOpenPrice,
   updateMomentumInitialLp,
   updateMomentumLpGrowth,
+  updateMomentumRecoveryFlags,
 } from '../db/queries';
 import { MomentumLabeler } from '../analysis/momentum-labeler';
 import { CompetitionDetector } from './competition-detector';
@@ -821,6 +822,17 @@ export class PriceCollector {
           },
           'Momentum checkpoint recorded'
         );
+
+        // C5 — recovery flags. pct_t15/t30 are in DB by the time t45 lands,
+        // so this is the natural slot to write recovery_* booleans. Idempotent.
+        if (targetSec === 45) {
+          try {
+            updateMomentumRecoveryFlags(this.db, graduationId);
+          } catch (err) {
+            logger.warn('Failed to write recovery flags for grad %d: %s',
+              graduationId, err instanceof Error ? err.message : String(err));
+          }
+        }
 
         // Compute derived path shape metrics at T+30 (pct_t30 is now in DB)
         if (targetSec === 30) {

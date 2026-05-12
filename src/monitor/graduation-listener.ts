@@ -941,6 +941,8 @@ export class GraduationListener {
       updateMomentumEnrichment(this.db, graduationId, {
         holder_count: enrichment.holderCount,
         top5_wallet_pct: enrichment.top5WalletPct,
+        top10_wallet_pct: enrichment.top10WalletPct,
+        wallet_gini_top20: enrichment.walletGiniTop20,
         dev_wallet_pct: enrichment.devWalletPct,
         token_age_seconds: enrichment.tokenAgeSeconds,
         dev_wallet_address: enrichment.devWalletAddress,
