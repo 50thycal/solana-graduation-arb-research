@@ -429,6 +429,27 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'firstbuyer_clean',         group: 'First Buyer', where: 'firstbuyer_priors IS NOT NULL AND firstbuyer_priors < 5' },
   { name: 'firstbuyer_known_sniper',  group: 'First Buyer', where: 'firstbuyer_priors IS NOT NULL AND firstbuyer_priors >= 20' },
   { name: 'firstbuyer_serial',        group: 'First Buyer', where: 'firstbuyer_priors IS NOT NULL AND firstbuyer_priors >= 50' },
+  // sniper_wallet_velocity_max — max # of earlier grads sniped by ANY single wallet
+  // in the T+0..T+2 batch. Column has been populated by the chronological backfill
+  // alongside _avg since the original sniper rollout; just hadn't been exposed as
+  // research filters until now. Pairs naturally with the _avg filters: a batch can
+  // have low avg but high max if one heavy-recidivist drags it (signature of either
+  // a coordinated bundle wallet or a single dominant sniper joining a clean cohort).
+  { name: 'max_sniper_vel < 5',   group: 'Sniper Vel Max', where: 'sniper_wallet_velocity_max IS NOT NULL AND sniper_wallet_velocity_max < 5' },
+  { name: 'max_sniper_vel < 10',  group: 'Sniper Vel Max', where: 'sniper_wallet_velocity_max IS NOT NULL AND sniper_wallet_velocity_max < 10' },
+  { name: 'max_sniper_vel >= 20', group: 'Sniper Vel Max', where: 'sniper_wallet_velocity_max IS NOT NULL AND sniper_wallet_velocity_max >= 20' },
+  { name: 'max_sniper_vel >= 50', group: 'Sniper Vel Max', where: 'sniper_wallet_velocity_max IS NOT NULL AND sniper_wallet_velocity_max >= 50' },
+  // Bundle proxy — canonical multi-wallet bundle signature built from existing
+  // columns (zero new RPC). The pattern: 3+ snipers in T+0..T+2 (multi-wallet),
+  // no single whale (each individually small — splits across top5 thresholds),
+  // all fresh-ish wallets (low max priors — purpose-deployed for this drop).
+  // Pair with productive combos to test whether removing bundle-suspects lifts
+  // their opt return; if no lift, B1's full RPC-cost bundle detector is unlikely
+  // to add edge over what we can already infer.
+  { name: 'bundle_suspect', group: 'Bundle Proxy', where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 >= 3 AND buy_pressure_whale_pct IS NOT NULL AND buy_pressure_whale_pct < 30 AND sniper_wallet_velocity_max IS NOT NULL AND sniper_wallet_velocity_max < 5' },
+  // Inverse: requires sniper data be present (so we know the row was actually
+  // evaluated against the bundle pattern) and the pattern is NOT matched.
+  { name: 'no_bundle', group: 'Bundle Proxy', where: 'sniper_count_t0_t2 IS NOT NULL AND NOT (sniper_count_t0_t2 >= 3 AND buy_pressure_whale_pct IS NOT NULL AND buy_pressure_whale_pct < 30 AND sniper_wallet_velocity_max IS NOT NULL AND sniper_wallet_velocity_max < 5)' },
 ];
 
 /** Entry gate shared by all candidates — kept at +5..+100 for research-side
