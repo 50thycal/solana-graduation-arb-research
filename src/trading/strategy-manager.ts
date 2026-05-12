@@ -211,24 +211,33 @@ export class StrategyManager {
 
       // Filters that source from competition_signals (buy_pressure_*, sniper_*,
       // flow_*, vwap_*, price_vs_vwap_*, firstbuyer_*) are written at T+35 by
-      // the same detectBuyPressure pass — strategies referencing any of those
-      // families must delay evaluation 5s past T+30. Keep this prefix list in
-      // sync with detectBuyPressure() in src/collector/competition-detector.ts.
-      const T35_PREFIXES = [
+      // the same detectBuyPressure pass. C5 recovery_* / confirmed_dip_* are
+      // written at T+45 by price-collector. Strategies referencing any of those
+      // families must delay evaluation 30s past T+30 — detectBuyPressure does
+      // up to 50 RPC tx parses (5–20s of work) and a 5s delay frequently saw
+      // NULL=FAIL on the new fields (root cause of v22 zero-trade bug
+      // 2026-05-12). Keep this prefix list in sync with detectBuyPressure() in
+      // src/collector/competition-detector.ts and updateMomentumRecoveryFlags
+      // in src/collector/price-collector.ts.
+      const LATE_PREFIXES = [
         'buy_pressure_',
         'sniper_',
         'flow_',
         'vwap_',
         'price_vs_vwap_',
         'firstbuyer_',
+        'recovery_',
+        'confirmed_dip_',
       ];
-      const needsT35 = instance.config.filters.some(
-        f => T35_PREFIXES.some(p => f.field.startsWith(p)),
+      const needsLate = instance.config.filters.some(
+        f => LATE_PREFIXES.some(p => f.field.startsWith(p)),
       );
 
       const entryTimingSec = instance.config.entryTimingSec ?? 30;
-      // Required wall-clock delay past T+30 before evaluating.
-      const delaySec = Math.max(entryTimingSec - 30, needsT35 ? 5 : 0);
+      // Required wall-clock delay past T+30 before evaluating. 30s gives
+      // detectBuyPressure and the T+45 recovery-flag write reliable time to
+      // complete (was 5s and frequently raced — see comment above).
+      const delaySec = Math.max(entryTimingSec - 30, needsLate ? 30 : 0);
 
       if (delaySec === 0) {
         promises.push(
@@ -284,7 +293,7 @@ export class StrategyManager {
       });
       promises.push(delayed);
       logger.debug(
-        { strategyId: instance.id, graduationId, delaySec, entryTimingSec, needsT35 },
+        { strategyId: instance.id, graduationId, delaySec, entryTimingSec, needsLate },
         'Delaying evaluation'
       );
     }

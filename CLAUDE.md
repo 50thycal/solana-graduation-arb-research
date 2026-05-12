@@ -94,7 +94,7 @@ Free to explore (see `FILTER_PRESET_GROUPS` in `src/utils/html-renderer.ts:3050`
 - **Dev wallet** (`dev_wallet_pct`): <3%, <5%
 - **Liquidity at T+30** (`liquidity_sol_t30`): >50, >100, >150
 - **Path shape (0–30s window)**: monotonicity, max_drawdown_0_30, sum_abs_returns_0_30, acceleration_t30
-- **Buy pressure** (computed at T+35): `buy_pressure_unique_buyers`, `buy_pressure_buy_ratio`, `buy_pressure_whale_pct`
+- **Buy pressure** (computed at T+35 — strategies auto-delay 30s): `buy_pressure_unique_buyers`, `buy_pressure_buy_ratio`, `buy_pressure_whale_pct`
 - **Snipers** (`sniper_count_t0_t2`, T+35): ≤2, ≤5, >5, >10
 - **Sniper wallet velocity** (`sniper_wallet_velocity_avg`, T+35): <5, <10, <20, ≥20 (avg # of EARLIER graduations these snipers also sniped — PRIOR-only)
 - **Creator reputation** (`creator_prior_*`): fresh_dev, repeat_dev≥3, clean_dev, serial_rugger, rapid_fire
@@ -313,13 +313,16 @@ Claude manages strategies via `strategy-commands.json` on the **main branch**. T
       "cohort_label": "v15",
       "hypothesis": "vel<5 + dev<3% should accumulate >= 0.5 SOL with drop_top3 > 0 on n>=125.",
       "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 5,
+        "target_drop_top3": 0,
         "target_n": 125,
         "target_days": 14,
-        "kill_criterion": "n>=50 and median<-5"
+        "kill_criterion": "n>=50 and net_sol<-1"
       },
       "status": "OPEN"
     },
-    { "action": "journal-update", "id": "v15-vel-dev-tight", "note": "n=42 after 5 days — pacing fine." },
+    { "action": "journal-update", "id": "v15-vel-dev-tight", "note": "n=42 after 5 days, net_sol +0.6 — pacing fine. No exit-mix surprises." },
     { "action": "journal-delete", "id": "v9-stale-entry" }
   ]
 }
@@ -328,6 +331,21 @@ Claude manages strategies via `strategy-commands.json` on the **main branch**. T
 **Strategy actions:** `upsert`, `delete`, `toggle`. Applied in order.
 
 **Journal actions** — `journal-upsert` (create or replace by `id`), `journal-update` (append a `note`), `journal-delete`. Required: `id`, `strategy_id`, `hypothesis` for upsert; `id` + `note` for update; `id` for delete. `prediction.kill_criterion` recognized forms: `"n>=N and median<X"`, `"median<X"`, `"win_rate<X"`. Other forms parse as text and never trip HIT-KILL automatically.
+
+**Prediction fields — universal guidance for AI sessions (2026-05-12):** journal predictions must be expressed in **SOL-denominated terms** matching the Promotion Readiness scorecard bar (`n≥100 · drop_top3>0 · total≥0.5 SOL · monthly≥3.75 SOL`). Do NOT use `target_median_net_pct` for new entries — median % was retired because it doesn't map to economic value. Use these instead:
+
+| Field | What it measures | When to set |
+|---|---|---|
+| `target_net_sol` | Total net SOL the strategy should clear over `target_n` trades | Always — the primary success metric |
+| `target_sol_per_mo` | Monthly run rate (SOL/mo) — bot revenue contribution | When the strategy needs to clear the monthly-revenue bar (≥3.75 SOL/mo to be promotable) |
+| `target_drop_top3` | Net SOL after dropping the top 3 winners (robustness) | When the edge needs to survive the absence of its best 3 trades (>0 = robust) |
+| `target_n` | Sample size at which the prediction resolves | Always — usually 100 (the SOL-bar minimum) |
+| `target_days` | Calendar days the prediction should hold | Always — calibrate based on filter coverage |
+| `kill_criterion` | Free-text rule that flips auto_status to HIT-KILL | Always — use SOL-denominated forms |
+
+`prediction.kill_criterion` recognized forms (case-insensitive, prefer SOL-denominated): `"n>=N and net_sol<X"`, `"net_sol<X"`, `"n>=N and sol_per_mo<X"`, `"sol_per_mo<X"`, `"n>=N and drop_top3<X"`, plus legacy `"n>=N and median<X"`, `"median<X"`, `"win_rate<X"`. Anything else parses as text and never trips HIT-KILL automatically. The auto_status evaluator prefers SOL targets when set, falls back to `target_median_net_pct` only when no SOL target is present.
+
+`live_stats` on each journal entry includes `net_sol`, `sol_per_mo`, `drop_top3` alongside legacy median/mean/win_rate. Entries persist across strategy delete/disable — use `journal-delete` only when forgetting a hypothesis entirely.
 
 **Daily-report actions** — `report-upsert`, `report-append`, `action-item-update` (status: PROPOSED / EXECUTED / DEFERRED / REJECTED), `lesson-upsert`, `lesson-archive`. The routine `/daily-report` slash command does the analysis + push for you on a daily cadence.
 
