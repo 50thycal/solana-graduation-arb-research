@@ -28,6 +28,13 @@ export function computeTradingData(
     ? opts.executionModeFilter
     : '';
 
+  // Per-strategy trade aggregates across the full trades_v2 history. The
+  // table includes rows for strategies that have been deleted/disabled and
+  // for old execution_mode rows that don't match the strategy's current mode
+  // (e.g. a strategy moved paper→shadow keeps its paper rows here forever).
+  // We filter both dimensions below — see strategyStats filter further down
+  // once strategies list is materialized — so the Performance by Strategy
+  // panel mirrors what's currently active.
   const strategyStats = getTradeStatsByStrategy(db);
 
   const performanceByMode = db.prepare(`
@@ -186,6 +193,21 @@ export function computeTradingData(
   const openPositions = smStats?.activePositionDetails ?? [];
   const strategies = strategyManager ? strategyManager.getStrategies() : [];
 
+  // Filter strategyStats to the currently-active (id, execution_mode) tuples.
+  // 2026-05-14: previously the Performance by Strategy panel showed every
+  // historical row including disabled-cohort strategies and stale execution-
+  // mode rows (e.g. a strategy moved paper→shadow kept its paper row showing).
+  // The panel now mirrors the enabled set 1:1.
+  const enabledTupleSet = new Set<string>();
+  for (const s of strategies as Array<{ id: string; enabled: boolean; params: any }>) {
+    if (!s.enabled) continue;
+    const mode = s.params?.executionMode ?? 'paper';
+    enabledTupleSet.add(`${s.id}:${mode}`);
+  }
+  const strategyStatsActive = (strategyStats as Array<any>).filter(
+    (row) => enabledTupleSet.has(`${row.strategy_id}:${row.execution_mode ?? 'paper'}`),
+  );
+
   const skipReasons = db.prepare(`
     SELECT skip_reason, COUNT(*) as count
     FROM trade_skips GROUP BY skip_reason ORDER BY count DESC
@@ -232,7 +254,7 @@ export function computeTradingData(
     performance_summary: performanceByMode,
     performance_by_execution_mode: performanceByExecutionMode,
     shadow_slippage_range: shadowSlippageRange,
-    strategy_stats: strategyStats,
+    strategy_stats: strategyStatsActive,
     recent_trades: recentTrades,
     skip_reason_counts: skipReasons,
     recent_skips: recentSkips,
