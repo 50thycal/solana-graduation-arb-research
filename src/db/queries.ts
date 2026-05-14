@@ -1580,6 +1580,65 @@ export function getDailyReport(db: Database.Database, date: string): DailyReport
     .get(date) as DailyReportRow | undefined;
 }
 
+/**
+ * Patch a subset of fields on an existing daily_reports row without touching
+ * unrelated columns. Used by the snapshot backfill (which only needs to
+ * inject `by_strategy_daily` into legacy rows) and by inline action-item
+ * dismiss/edit endpoints. Preserves all fields the caller didn't pass.
+ */
+export function patchDailyReport(
+  db: Database.Database,
+  date: string,
+  patch: {
+    by_strategy_daily?: unknown;
+    active_strategies_snapshot?: unknown;
+  },
+): { ok: boolean; error?: string } {
+  const row = getDailyReport(db, date);
+  if (!row) return { ok: false, error: `Daily report "${date}" not found` };
+
+  // Unwrap whichever shape is currently in patterns_json (legacy raw vs new
+  // wrapped object) and re-emit as the wrapped shape with the patch applied.
+  let parsed: unknown = null;
+  if (row.patterns_json) {
+    try { parsed = JSON.parse(row.patterns_json); } catch { parsed = null; }
+  }
+  let currentPatterns: unknown = null;
+  let currentByStrategyDaily: unknown = undefined;
+  let currentActive: unknown = undefined;
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const obj = parsed as Record<string, unknown>;
+    const isWrapped =
+      'by_strategy_daily' in obj ||
+      'active_strategies_snapshot' in obj ||
+      ('patterns' in obj && Object.keys(obj).some(k =>
+        k === 'by_strategy_daily' || k === 'active_strategies_snapshot',
+      ));
+    if (isWrapped) {
+      currentPatterns = obj.patterns ?? null;
+      currentByStrategyDaily = obj.by_strategy_daily;
+      currentActive = obj.active_strategies_snapshot;
+    } else {
+      currentPatterns = parsed;
+    }
+  } else if (parsed != null) {
+    currentPatterns = parsed;
+  }
+
+  const next = {
+    patterns: currentPatterns,
+    by_strategy_daily: patch.by_strategy_daily !== undefined
+      ? patch.by_strategy_daily
+      : currentByStrategyDaily,
+    active_strategies_snapshot: patch.active_strategies_snapshot !== undefined
+      ? patch.active_strategies_snapshot
+      : currentActive,
+  };
+  db.prepare('UPDATE daily_reports SET patterns_json = ? WHERE date = ?')
+    .run(JSON.stringify(next), date);
+  return { ok: true };
+}
+
 export function upsertDailyReport(
   db: Database.Database,
   entry: {
@@ -1659,6 +1718,51 @@ export function upsertDailyReport(
     action_items_json: actionItems,
     narrative: entry.narrative ?? null,
   });
+}
+
+/**
+ * Patch fields on a single action item inside a daily_reports row's
+ * action_items_json. Used by the dashboard inline edit endpoint. Mutates only
+ * the fields explicitly provided; leaves status/proposed_at/resolution_note
+ * untouched (status changes go through `updateActionItemStatus`).
+ */
+export function updateActionItemFields(
+  db: Database.Database,
+  date: string,
+  actionItemId: string,
+  fields: { kind?: string; target_id?: string; summary?: string },
+): { ok: boolean; error?: string } {
+  const row = getDailyReport(db, date);
+  if (!row) return { ok: false, error: `Daily report "${date}" not found` };
+
+  let items: ActionItem[];
+  try {
+    items = JSON.parse(row.action_items_json);
+    if (!Array.isArray(items)) items = [];
+  } catch {
+    items = [];
+  }
+  const idx = items.findIndex(i => i.id === actionItemId);
+  if (idx < 0) return { ok: false, error: `Action item "${actionItemId}" not found` };
+
+  items[idx] = {
+    ...items[idx],
+    kind: fields.kind ?? items[idx].kind,
+    target_id: fields.target_id ?? items[idx].target_id,
+    summary: fields.summary ?? items[idx].summary,
+  };
+  db.prepare('UPDATE daily_reports SET action_items_json = ? WHERE date = ?')
+    .run(JSON.stringify(items), date);
+  return { ok: true };
+}
+
+/** Record an inline dismissal so the unified action-items panel suppresses
+ *  the same auto-anomaly key for 24h. Idempotent. */
+export function dismissAnomaly(db: Database.Database, key: string): void {
+  db.prepare(`
+    INSERT INTO dismissed_anomalies (key, dismissed_at) VALUES (?, unixepoch())
+    ON CONFLICT(key) DO UPDATE SET dismissed_at = unixepoch()
+  `).run(key);
 }
 
 export function appendReportUpdate(

@@ -2,7 +2,7 @@ import express from 'express';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { backfillV3Metrics } from './db/backfill-v3-metrics';
-import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation } from './db/queries';
+import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation, updateActionItemStatus, updateActionItemFields, dismissAnomaly } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
 import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml } from './utils/html-renderer';
 import { computePipelineData } from './api/pipeline-data';
@@ -2630,6 +2630,55 @@ async function main() {
     const result = strategyManager.deleteStrategy(req.params.id);
     if (result.error) return res.status(400).json({ error: result.error });
     res.json({ ok: true });
+  });
+
+  // ── ACTION ITEM API ENDPOINTS ──────────────────────────────────────────
+  // Inline dismiss + edit from the /report Open Action Items panel. Dismiss
+  // flips status to EXECUTED (or another explicit terminal status); edit
+  // mutates kind / target_id / summary in place without touching status.
+  // Both write directly to the daily_reports.action_items_json blob — no
+  // gist-sync command roundtrip — so the operator gets immediate feedback.
+  app.post('/api/action-item/:date/:id/dismiss', (req, res) => {
+    const { date, id } = req.params;
+    const status = (req.body?.status as 'EXECUTED' | 'REJECTED' | 'DEFERRED' | undefined) ?? 'EXECUTED';
+    const note = typeof req.body?.note === 'string' ? req.body.note : undefined;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const r = updateActionItemStatus(db, date, id, status, note);
+    if (!r.ok) return res.status(404).json({ error: r.error });
+    res.json({ ok: true });
+  });
+
+  app.patch('/api/action-item/:date/:id', (req, res) => {
+    const { date, id } = req.params;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const { kind, target_id, summary } = req.body ?? {};
+    if (kind == null && target_id == null && summary == null) {
+      return res.status(400).json({ error: 'must supply at least one of kind / target_id / summary' });
+    }
+    const r = updateActionItemFields(db, date, id, {
+      kind: typeof kind === 'string' ? kind : undefined,
+      target_id: typeof target_id === 'string' ? target_id : undefined,
+      summary: typeof summary === 'string' ? summary : undefined,
+    });
+    if (!r.ok) return res.status(404).json({ error: r.error });
+    res.json({ ok: true });
+  });
+
+  app.post('/api/anomaly/dismiss', (req, res) => {
+    const { id } = req.body ?? {};
+    if (typeof id !== 'string' || !id) return res.status(400).json({ error: 'id required' });
+    // The unified panel encodes anomalies as `anomaly-<kind>-<target>` where
+    // <kind> is underscore-separated (edge_decay, exit_mix_shift, …) and
+    // <target> is a strategy_id that often contains hyphens
+    // (v21-bottom-excluded). Split at the FIRST hyphen after the "anomaly-"
+    // prefix so the target half stays intact.
+    const stripped = id.startsWith('anomaly-') ? id.slice('anomaly-'.length) : id;
+    const firstDash = stripped.indexOf('-');
+    const kind = firstDash > 0 ? stripped.slice(0, firstDash) : stripped;
+    const target = firstDash > 0 ? stripped.slice(firstDash + 1) : '';
+    const key = `${kind}|${target}`;
+    dismissAnomaly(db, key);
+    res.json({ ok: true, key });
   });
 
   // ── DEX LISTING CHECK ────────────────────────────────────────────────────

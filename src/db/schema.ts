@@ -831,6 +831,19 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_bot_errors_ts ON bot_errors(ts);
   `);
 
+  // Dismissed anomaly suppressions — the unified Action Items panel folds
+  // auto-detected anomalies in alongside Claude proposals. Dismissing one
+  // (via inline button on /report) stores the (kind, target_id) pair here for
+  // a rolling 24h suppression so the same anomaly doesn't re-spam the panel
+  // every render. Keyed by composite "kind|target_id" string.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dismissed_anomalies (
+      key TEXT PRIMARY KEY,
+      dismissed_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_dismissed_anomalies_at ON dismissed_anomalies(dismissed_at);
+  `);
+
   // Add strategy_id to trades_v2 and trade_skips (safe migration)
   {
     const tradeCols = db.prepare("PRAGMA table_info(trades_v2)").all() as Array<{ name: string }>;
