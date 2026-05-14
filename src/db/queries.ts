@@ -1560,7 +1560,14 @@ export interface DailyReportRow {
 
 export interface ActionItem {
   id: string;
-  kind: 'kill' | 'promote' | 'create' | 'watch' | 'investigate' | 'other';
+  /**
+   * Free-form kind. Common values: `kill`, `promote`, `watch`, `create_new`,
+   * `fix`, `update`, `investigate`. Was originally a strict union but the
+   * /daily-report skill + the live report-upsert payloads have always
+   * written values outside that union (e.g. `fix`, `update`, `create_new`),
+   * so the type is widened to `string` to match reality.
+   */
+  kind: string;
   target_id?: string;
   summary: string;
   status: 'PROPOSED' | 'EXECUTED' | 'DEFERRED' | 'REJECTED';
