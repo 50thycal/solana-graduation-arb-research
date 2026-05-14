@@ -148,17 +148,33 @@ export interface WeeklyBucket {
  * Stored on `today_auto` for the live render, and a copy is persisted into
  * each daily_reports row's `patterns_json` blob so per-strategy history can be
  * plotted as a time-series after rollout.
+ *
+ * Rows are keyed by `(strategy_id, execution_mode)`. The same strategy_id can
+ * appear twice (e.g. v21-bottom-excluded runs both shadow + paper); each gets
+ * its own row in the snapshot, matching the leave-one-out convention.
  */
 export interface PerStrategyDailySnapshot {
   strategy_id: string;
+  /** paper / shadow / live — the leave-one-out partition key. */
+  execution_mode: string;
   label: string;
   enabled: boolean;
   /** Trade count within today's trading-day window. */
   n_trades_today: number;
+  /** Trade count within yesterday's trading-day window (same mode). */
+  n_trades_yesterday: number;
   /** Net SOL realized today only. */
   net_sol_today: number;
+  /** Net SOL realized yesterday only. */
+  net_sol_yesterday: number;
   /** Composite 0–100 readiness score (null when strategy has no closed trades). */
   readiness_score: number | null;
+  /** Readiness score from the prior /daily-report snapshot, if available. */
+  readiness_score_yesterday: number | null;
+  /** Highest readiness score observed across `recent_reports[*].summary.by_strategy_daily`. */
+  readiness_score_alltime_high: number | null;
+  /** Lowest readiness score observed across `recent_reports[*].summary.by_strategy_daily`. */
+  readiness_score_alltime_low: number | null;
   /** Whether all four SOL-bar hard gates currently clear. */
   promotable: boolean;
   /** Lifetime cumulative trade count (from leave-one-out). */
@@ -195,6 +211,31 @@ export interface RosterDiff {
   toggled_off: ActiveStrategyEntry[];
   /** Strategies that flipped enabled=false → true. */
   toggled_on: ActiveStrategyEntry[];
+}
+
+/**
+ * Unified row for the consolidated action-items panel. Synthesizes
+ * Claude-authored `open_action_items` and auto-detected `anomalies_auto` into
+ * one shape so the dashboard renders a single table with inline dismiss + edit
+ * buttons.
+ *
+ * `source: "claude"` rows map to a stored `action_items_json` row keyed by
+ * (date, id). `source: "anomaly"` rows are render-time only; dismissing them
+ * stores a row in `dismissed_anomalies` for a 24h suppression window.
+ */
+export interface UnifiedActionItem {
+  id: string;
+  source: 'claude' | 'anomaly';
+  status: 'PROPOSED' | 'EXECUTED' | 'DEFERRED' | 'REJECTED' | 'AUTO';
+  kind: string;
+  target_id: string | null;
+  summary: string;
+  /** Date that owns this row (the action_items_json key). null for anomalies. */
+  from_date: string | null;
+  /** True when the action item references a strategy missing from strategies.json. */
+  stale: boolean;
+  /** For anomalies — copy of the original AutoAnomaly for context. */
+  anomaly?: AutoAnomaly;
 }
 
 export interface DailyReportView {
@@ -263,12 +304,32 @@ export interface DailyReportData {
     by_strategy_daily_snapshot: PerStrategyDailySnapshot[];
     /** Snapshot of which strategies are configured + enabled right now. */
     active_strategies_snapshot: ActiveStrategyEntry[];
+    /** Count of enabled strategies today. */
+    active_strategy_count: number;
+    /** Count from the most-recent stored snapshot (null on first day). */
+    active_strategy_count_yesterday: number | null;
+    /**
+     * Strategy with the most negative lifetime Net SOL (worst bleeder).
+     * Threshold n_trades_lifetime >= 30 to avoid noise from new strategies.
+     * null when no qualifying strategy exists.
+     */
+    worst_bleeder: {
+      strategy_id: string;
+      execution_mode: string;
+      label: string;
+      total_net_sol_lifetime: number;
+    } | null;
   };
   today_report: DailyReportView | null;
   recent_reports: DailyReportView[];
   weekly_aggregates: WeeklyBucket[];
   lessons: LessonRow[];
   open_action_items: Array<ActionItem & { from_date: string }>;
+  /**
+   * Consolidated action-items list — Claude proposals + auto-detected
+   * anomalies in one shape. Drives the unified dashboard panel.
+   */
+  unified_action_items: UnifiedActionItem[];
   /**
    * Day-over-day strategy roster diff (today vs the most-recent stored
    * snapshot in recent_reports[0]). All arrays are empty on the first day of
@@ -479,6 +540,40 @@ function aggregateByStrategy(
     });
   }
   out.sort((a, b) => b.n - a.n);
+  return out;
+}
+
+/**
+ * Aggregate by `(strategy_id, execution_mode)`. Matches the leave-one-out
+ * partition convention so the per-strategy snapshot can join with leave-one-out
+ * rows without collapsing paper + shadow variants of the same strategy_id.
+ */
+interface PerStrategyTodayByMode {
+  strategy_id: string;
+  execution_mode: string;
+  n: number;
+  net_profit_sol: number;
+}
+
+function aggregateByStrategyAndMode(trades: RawTradeRow[]): PerStrategyTodayByMode[] {
+  const buckets = new Map<string, { strategy_id: string; execution_mode: string; rows: RawTradeRow[] }>();
+  for (const t of trades) {
+    if (!t.strategy_id) continue;
+    const mode = t.execution_mode ?? 'paper';
+    const key = `${t.strategy_id}|${mode}`;
+    const bucket = buckets.get(key);
+    if (bucket) bucket.rows.push(t);
+    else buckets.set(key, { strategy_id: t.strategy_id, execution_mode: mode, rows: [t] });
+  }
+  const out: PerStrategyTodayByMode[] = [];
+  for (const { strategy_id, execution_mode, rows } of buckets.values()) {
+    out.push({
+      strategy_id,
+      execution_mode,
+      n: rows.length,
+      net_profit_sol: +rows.reduce((s, r) => s + (r.net_profit_sol ?? 0), 0).toFixed(4),
+    });
+  }
   return out;
 }
 
@@ -897,6 +992,31 @@ function rowToView(row: DailyReportRow): DailyReportView {
  * Win-rate sits as a sanity check, not a primary driver — extreme WRs aren't
  * killed because fat-tail strategies legitimately live there.
  */
+export function buildReadinessRowExported(row: LeaveOneOutRow): ReadinessRow {
+  return buildReadinessRow(row);
+}
+
+/**
+ * Resolve the trading-day window (06:00 CT → 06:00 CT next day) for a date
+ * string in `YYYY-MM-DD` form. Exported so the backfill script can drive
+ * the same windowing logic the live report uses.
+ */
+export function computeTradingDayWindowExported(dateStr: string): {
+  startSec: number;
+  endSec: number;
+  yesterdayStartSec: number;
+} {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const parts = { y, m, d };
+  const yesterday = previousCalendarDay(parts);
+  const tomorrow = nextCalendarDay(parts);
+  return {
+    startSec: sixAmCentralEpochSec(parts.y, parts.m, parts.d),
+    endSec: sixAmCentralEpochSec(tomorrow.y, tomorrow.m, tomorrow.d),
+    yesterdayStartSec: sixAmCentralEpochSec(yesterday.y, yesterday.m, yesterday.d),
+  };
+}
+
 function buildReadinessRow(row: LeaveOneOutRow): ReadinessRow {
   const gates = {
     n_trades_ge_100: row.n_trades >= 100,
@@ -958,6 +1078,47 @@ function buildReadinessRow(row: LeaveOneOutRow): ReadinessRow {
       days_active: row.days_active,
     },
   };
+}
+
+// ── Anomaly helpers (used by unified action-items panel) ───────────────
+
+/**
+ * Extract the strategy_id (or other actor) referenced by an anomaly. The
+ * detector encodes it differently per kind: edge_decay uses
+ * `metric.strategy_id`, exit_mix_shift puts the label in the detail prefix,
+ * strict_filter wraps the id in parentheses. We extract once here so the
+ * unified-action-items panel can show a target column consistently.
+ */
+function extractAnomalyTarget(a: AutoAnomaly): string | null {
+  if (a.metric && typeof a.metric === 'object') {
+    const m = a.metric as Record<string, unknown>;
+    if (typeof m.strategy_id === 'string') return m.strategy_id;
+  }
+  // Heuristic: most anomaly detail strings include `(strategy-id)` near the end.
+  const parenMatch = /\(([a-z0-9][a-z0-9-]*)\)/i.exec(a.detail);
+  if (parenMatch) return parenMatch[1];
+  return null;
+}
+
+/**
+ * 24-hour suppression window — anomalies dismissed via the inline button on
+ * /report stay suppressed for a day before reappearing. Long enough to clear
+ * one day of noise but short enough that systemic anomalies resurface.
+ */
+const ANOMALY_DISMISS_WINDOW_SEC = 24 * 3600;
+
+function loadDismissedAnomalies(db: Database.Database): Set<string> {
+  try {
+    const cutoff = Math.floor(Date.now() / 1000) - ANOMALY_DISMISS_WINDOW_SEC;
+    const rows = db.prepare(
+      'SELECT key FROM dismissed_anomalies WHERE dismissed_at >= ?',
+    ).all(cutoff) as Array<{ key: string }>;
+    return new Set(rows.map(r => r.key));
+  } catch {
+    // Table missing on first deploy of this code — schema migration creates
+    // it. Return empty set so anomalies render normally.
+    return new Set();
+  }
 }
 
 // ── Main compute ────────────────────────────────────────────────────────
@@ -1042,36 +1203,99 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
     'SELECT COUNT(*) as c FROM graduations WHERE timestamp >= ? AND timestamp < ?'
   ).get(yesterdayStartSec, todayStartSec) as { c: number }).c;
 
-  // Per-strategy daily snapshot — joins today-only activity, lifetime SOL, and
-  // composite readiness. Drives the dashboard's By-Strategy comparison panel
-  // and is persisted into each daily_reports row so a per-strategy
-  // time-series can be plotted across days.
-  const looByStrategy = new Map(leaveOneOut.rows.map(r => [r.strategy_id, r]));
-  const readinessByStrategy = new Map(readinessAll.map(r => [r.strategy_id, r]));
-  const todayByStrategy = new Map(byStrategyToday.map(s => [s.strategy_id, s]));
+  // Recent reports — read up-front because the snapshot build below uses the
+  // most-recent stored `by_strategy_daily` for yesterday's Δ Score column and
+  // all-time high/low score computation.
+  const reportRows = listDailyReports(db, 60);
+  const allViews = reportRows.map(rowToView);
+  const todayReport = allViews.find(v => v.date === todayDate) ?? null;
+  const recentReports = allViews.filter(v => v.date !== todayDate).slice(0, 14);
 
-  const enabledStrategyIds = new Set<string>();
-  for (const [id, cfg] of configMap.entries()) {
-    if (cfg.enabled) enabledStrategyIds.add(id);
+  // Per-strategy daily snapshot — joins today-only activity, lifetime SOL,
+  // and composite readiness. Keys are composite `(strategy_id, execution_mode)`
+  // because leave-one-out partitions rows by mode (a strategy can run both
+  // paper + shadow with different lifetime numbers). The pre-2026-05-14 bug
+  // where this Map was keyed by strategy_id alone collapsed paper into shadow
+  // and produced wildly different scores in the By-Strategy panel vs the
+  // Promotion Readiness Top 5 — those panels now agree.
+  const modeKey = (id: string, mode: string) => `${id}|${mode}`;
+  const looByMode = new Map(
+    leaveOneOut.rows.map(r => [modeKey(r.strategy_id, r.execution_mode), r]),
+  );
+  const readinessByMode = new Map(
+    readinessAll.map(r => [modeKey(r.strategy_id, r.execution_mode), r]),
+  );
+  const todayByModeArr = aggregateByStrategyAndMode(todayTrades);
+  const todayByMode = new Map(todayByModeArr.map(s => [modeKey(s.strategy_id, s.execution_mode), s]));
+  const yesterdayByMode = new Map(
+    aggregateByStrategyAndMode(yesterdayTrades).map(s => [modeKey(s.strategy_id, s.execution_mode), s]),
+  );
+
+  // Build the universe of (strategy_id, mode) keys to surface — every LOO row
+  // (covers history) ∪ every active-today row.
+  const snapshotKeys = new Set<string>();
+  for (const r of leaveOneOut.rows) snapshotKeys.add(modeKey(r.strategy_id, r.execution_mode));
+  for (const t of todayByModeArr) snapshotKeys.add(modeKey(t.strategy_id, t.execution_mode));
+
+  // Yesterday's readiness scores by (id, mode) — used for the Δ Score cell
+  // and to seed the all-time high/low scan when no further history exists.
+  const yesterdaySnapByMode = new Map<string, PerStrategyDailySnapshot>();
+  for (const r of (recentReports[0]?.summary?.by_strategy_daily || [])) {
+    yesterdaySnapByMode.set(modeKey(r.strategy_id, r.execution_mode ?? 'paper'), r);
   }
-  // Include any enabled strategy currently configured, plus any strategy that
-  // has activity today — keeps the snapshot honest if a strategy is toggled
-  // off mid-day but already produced trades.
-  for (const s of byStrategyToday) enabledStrategyIds.add(s.strategy_id);
+
+  // All-time high/low readiness across recent_reports — scan once into a Map
+  // keyed by (id, mode) so the per-row build is O(1).
+  const altimeScores = new Map<string, { high: number; low: number }>();
+  for (const day of recentReports) {
+    const dailyArr = day?.summary?.by_strategy_daily;
+    if (!Array.isArray(dailyArr)) continue;
+    for (const stat of dailyArr) {
+      if (stat.readiness_score == null) continue;
+      const key = modeKey(stat.strategy_id, stat.execution_mode ?? 'paper');
+      const cur = altimeScores.get(key);
+      if (!cur) altimeScores.set(key, { high: stat.readiness_score, low: stat.readiness_score });
+      else {
+        if (stat.readiness_score > cur.high) cur.high = stat.readiness_score;
+        if (stat.readiness_score < cur.low) cur.low = stat.readiness_score;
+      }
+    }
+  }
 
   const byStrategyDailySnapshot: PerStrategyDailySnapshot[] = [];
-  for (const id of enabledStrategyIds) {
-    const cfg = configMap.get(id);
-    const loo = looByStrategy.get(id);
-    const readiness = readinessByStrategy.get(id);
-    const today = todayByStrategy.get(id);
+  for (const key of snapshotKeys) {
+    const loo = looByMode.get(key);
+    const readiness = readinessByMode.get(key);
+    const today = todayByMode.get(key);
+    const yest = yesterdayByMode.get(key);
+    const ySnap = yesterdaySnapByMode.get(key);
+    const altime = altimeScores.get(key);
+    // Resolve strategy_id + mode from whichever source has them.
+    const strategyId = loo?.strategy_id ?? today?.strategy_id ?? key.split('|')[0];
+    const execMode = loo?.execution_mode ?? today?.execution_mode ?? key.split('|')[1] ?? 'paper';
+    const cfg = configMap.get(strategyId);
+    // The all-time high/low scan only covers stored history. Fold in today's
+    // and yesterday's live scores so the cell is honest on the first day
+    // after rollout — otherwise the cell would say null until 2 history rows
+    // existed.
+    const live = [readiness?.readiness_score, ySnap?.readiness_score].filter(
+      (v): v is number => v != null,
+    );
+    const high = altime ? Math.max(altime.high, ...live) : (live.length > 0 ? Math.max(...live) : null);
+    const low = altime ? Math.min(altime.low, ...live) : (live.length > 0 ? Math.min(...live) : null);
     byStrategyDailySnapshot.push({
-      strategy_id: id,
-      label: cfg?.label ?? loo?.label ?? id,
+      strategy_id: strategyId,
+      execution_mode: execMode,
+      label: cfg?.label ?? loo?.label ?? strategyId,
       enabled: cfg?.enabled ?? false,
       n_trades_today: today?.n ?? 0,
+      n_trades_yesterday: yest?.n ?? 0,
       net_sol_today: today?.net_profit_sol ?? 0,
+      net_sol_yesterday: yest?.net_profit_sol ?? 0,
       readiness_score: readiness?.readiness_score ?? null,
+      readiness_score_yesterday: ySnap?.readiness_score ?? null,
+      readiness_score_alltime_high: high,
+      readiness_score_alltime_low: low,
       promotable: readiness?.promotable ?? false,
       n_trades_lifetime: loo?.n_trades ?? 0,
       total_net_sol_lifetime: loo?.total_net_sol ?? 0,
@@ -1095,11 +1319,31 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
   }
   activeStrategiesSnapshot.sort((a, b) => a.strategy_id.localeCompare(b.strategy_id));
 
-  // Recent reports.
-  const reportRows = listDailyReports(db, 60);
-  const allViews = reportRows.map(rowToView);
-  const todayReport = allViews.find(v => v.date === todayDate) ?? null;
-  const recentReports = allViews.filter(v => v.date !== todayDate).slice(0, 14);
+  // Header stats: active strategy counts + worst bleeder. Counts compare
+  // today's enabled set against the most-recent stored snapshot. Worst
+  // bleeder scans by_strategy_daily_snapshot for the most-negative lifetime
+  // Net SOL among strategies with n_trades_lifetime >= 30 (threshold avoids
+  // noise from brand-new strategies that haven't accumulated meaningful data).
+  const activeStrategyCount = activeStrategiesSnapshot.filter(s => s.enabled).length;
+  const yesterdayActiveSnap = recentReports[0]?.summary?.active_strategies_snapshot;
+  const activeStrategyCountYesterday = Array.isArray(yesterdayActiveSnap)
+    ? yesterdayActiveSnap.filter((s: ActiveStrategyEntry) => s.enabled).length
+    : null;
+
+  const BLEEDER_MIN_N = 30;
+  let worstBleeder: DailyReportData['today_auto']['worst_bleeder'] = null;
+  for (const snap of byStrategyDailySnapshot) {
+    if (snap.n_trades_lifetime < BLEEDER_MIN_N) continue;
+    if (snap.total_net_sol_lifetime >= 0) continue;
+    if (!worstBleeder || snap.total_net_sol_lifetime < worstBleeder.total_net_sol_lifetime) {
+      worstBleeder = {
+        strategy_id: snap.strategy_id,
+        execution_mode: snap.execution_mode,
+        label: snap.label,
+        total_net_sol_lifetime: snap.total_net_sol_lifetime,
+      };
+    }
+  }
 
   // Day-over-day roster diff. Compare against the most-recent stored snapshot
   // (recent_reports[0]). Empty arrays on the first day of rollout — renderer
@@ -1126,6 +1370,54 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
   }
   openActionItems.sort((a, b) => b.proposed_at - a.proposed_at);
 
+  // Unified action items: Claude proposals + auto-detected anomalies in one
+  // shape. Drives the consolidated panel that replaces the old separate
+  // "Open Action Items", "Anomalies & Alerts", and "Recommendations" panels.
+  // Active strategy IDs used to flag rows whose target is already absent
+  // from strategies.json (the v17/v18 stale-target bug class).
+  const activeStrategyIds = new Set(activeStrategiesSnapshot.map(s => s.strategy_id));
+  const isStaleTarget = (targetId: string | null | undefined): boolean => {
+    if (!targetId) return false;
+    const targets = targetId.split(',').map(t => t.trim()).filter(Boolean);
+    if (targets.length === 0) return false;
+    return targets.every(t => !activeStrategyIds.has(t));
+  };
+  const dismissedAnomalies = loadDismissedAnomalies(db);
+  const anomalyKey = (a: AutoAnomaly): string => {
+    const target = extractAnomalyTarget(a) ?? '';
+    return `${a.kind}|${target}`;
+  };
+
+  const unifiedActionItems: UnifiedActionItem[] = [];
+  for (const item of openActionItems) {
+    unifiedActionItems.push({
+      id: item.id,
+      source: 'claude',
+      status: item.status,
+      kind: item.kind,
+      target_id: item.target_id ?? null,
+      summary: item.summary,
+      from_date: item.from_date,
+      stale: isStaleTarget(item.target_id),
+    });
+  }
+  for (const anomaly of anomalies) {
+    const target = extractAnomalyTarget(anomaly);
+    const key = anomalyKey(anomaly);
+    if (dismissedAnomalies.has(key)) continue;
+    unifiedActionItems.push({
+      id: `anomaly-${anomaly.kind}-${target ?? 'system'}`,
+      source: 'anomaly',
+      status: 'AUTO',
+      kind: anomaly.kind,
+      target_id: target,
+      summary: anomaly.detail,
+      from_date: null,
+      stale: false,
+      anomaly,
+    });
+  }
+
   return {
     generated_at,
     today_auto: {
@@ -1146,12 +1438,16 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
       promotion_readiness_all: readinessAll,
       by_strategy_daily_snapshot: byStrategyDailySnapshot,
       active_strategies_snapshot: activeStrategiesSnapshot,
+      active_strategy_count: activeStrategyCount,
+      active_strategy_count_yesterday: activeStrategyCountYesterday,
+      worst_bleeder: worstBleeder,
     },
     today_report: todayReport,
     recent_reports: recentReports,
     weekly_aggregates: weeklyAggregates,
     lessons,
     open_action_items: openActionItems,
+    unified_action_items: unifiedActionItems,
     roster_diff_vs_yesterday: rosterDiff,
     notes: [
       'today_auto is recomputed every gist-sync cycle — fresh numbers even if no Claude run has fired.',

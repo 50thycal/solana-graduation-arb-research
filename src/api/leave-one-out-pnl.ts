@@ -100,7 +100,15 @@ function safeContributionPct(part: number, whole: number): number | null {
   return +pct.toFixed(2);
 }
 
-export function computeLeaveOneOutPnl(db: Database.Database): LeaveOneOutData {
+/**
+ * Compute leave-one-out P&L using only trades with `exit_timestamp <= asOfSec`.
+ * Used by the backfill script to reconstruct per-day historical snapshots so
+ * the dashboard's time-series charts have meaningful history immediately
+ * (rather than waiting for new snapshots to accumulate going forward).
+ *
+ * Default behavior (`asOfSec` undefined) is identical to the original call.
+ */
+export function computeLeaveOneOutPnl(db: Database.Database, asOfSec?: number): LeaveOneOutData {
   const generated_at = new Date().toISOString();
 
   // Pull every closed trade for any strategy that has either:
@@ -114,7 +122,10 @@ export function computeLeaveOneOutPnl(db: Database.Database): LeaveOneOutData {
   const labelById = new Map(configs.map(c => [c.id, c.label]));
   const enabledById = new Map(configs.map(c => [c.id, c.enabled === 1]));
 
-  const trades = db.prepare(`
+  // asOfSec cap shifts this from "lifetime now" to "lifetime as of <date>" so
+  // the backfill produces historically accurate readiness scores.
+  const asOfClause = asOfSec != null ? 'AND exit_timestamp <= ?' : '';
+  const stmt = db.prepare(`
     SELECT
       strategy_id,
       COALESCE(execution_mode, 'paper') AS execution_mode,
@@ -126,7 +137,11 @@ export function computeLeaveOneOutPnl(db: Database.Database): LeaveOneOutData {
     WHERE status = 'closed'
       AND strategy_id IS NOT NULL
       AND (archived IS NULL OR archived = 0)
-  `).all() as TradeRow[];
+      ${asOfClause}
+  `);
+  const trades = (asOfSec != null
+    ? stmt.all(asOfSec)
+    : stmt.all()) as TradeRow[];
 
   // Bucket per (strategy_id, execution_mode). Same convention as
   // computeStrategyPercentiles + getTradeStatsByStrategy.

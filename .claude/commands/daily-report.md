@@ -23,7 +23,7 @@ The report key is the **UTC date** in `YYYY-MM-DD` form. Use today's UTC date.
 Read `strategies.json` and `leave-one-out-pnl.json` from `bot-status`. Build two arrays you'll persist with this run's `report-upsert`:
 
 - `active_strategies_snapshot`: every entry in `strategies.json` as `{ strategy_id, label, enabled }`. This snapshot is what tomorrow's session will diff against to detect kills, adds, and toggles.
-- `by_strategy_daily`: join `leave-one-out-pnl.json → rows[]` with the enabled-strategies set. Per-entry shape: `{ strategy_id, label, enabled, n_trades_today, net_sol_today, readiness_score, promotable, n_trades_lifetime, total_net_sol_lifetime, total_net_sol_drop_top3, monthly_run_rate_sol }`. `n_trades_today` + `net_sol_today` come from `report.json → today_auto.by_strategy[i].n` / `net_profit_sol` matched by `strategy_id`. `readiness_score` + `promotable` come from `report.json → today_auto.promotion_readiness_all[i]`. The remaining fields come straight from the leave-one-out row.
+- `by_strategy_daily`: join `leave-one-out-pnl.json → rows[]` with the enabled-strategies set. Per-entry shape: `{ strategy_id, execution_mode, label, enabled, n_trades_today, n_trades_yesterday, net_sol_today, net_sol_yesterday, readiness_score, readiness_score_yesterday, readiness_score_alltime_high, readiness_score_alltime_low, promotable, n_trades_lifetime, total_net_sol_lifetime, total_net_sol_drop_top3, monthly_run_rate_sol }`. **Key by `(strategy_id, execution_mode)`** — a strategy running both paper + shadow gets two entries (one per mode). `n_trades_today` + `net_sol_today` come from `today_auto.by_strategy_daily_snapshot[i]`; the field is already populated server-side, so the simplest path is to copy it into the upsert verbatim. Same for `active_strategies_snapshot`.
 
 These two arrays go into the `report-upsert` payload as top-level fields (see Step 8). The bot stores them inside `patterns_json` for back-compat, so no schema change is needed. Pre-rollout days lack these fields — that's OK; renderers tolerate `undefined`.
 
@@ -56,6 +56,8 @@ For each entry in `report.json → open_action_items`:
 - `watch <strategy_id>` — typically these resolve themselves once n hits 100 and a kill/promote decision happens. EXECUTED when the watched strategy gets a terminal verdict in journal. **Also EXECUTED if every listed target is now absent from `strategies.json`** — the watch is moot.
 
 For multi-target items (`target_id` is a comma-separated list like `"v18-calm-mkv-strict,v18-calm-mkv-exitonly"`), the item is EXECUTED when ALL listed targets are absent. If any one is still present, leave PROPOSED and call out the partial state in `action_item_note`.
+
+**Inline operator edits.** Action items can also be dismissed or edited by the operator directly on the /report dashboard (POST `/api/action-item/:date/:id/dismiss` or PATCH `/api/action-item/:date/:id`). Respect any `EXECUTED` / `REJECTED` / `DEFERRED` status already present in `report.json → open_action_items` — do NOT re-propose dismissed items in subsequent narratives. If the operator edited a `summary` or `kind`, the new text is authoritative; treat the original proposal as superseded.
 
 ## Step 2.5 — Diff yesterday vs today active strategies
 
