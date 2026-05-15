@@ -86,6 +86,13 @@ export interface ReadinessRow {
   execution_mode: string;
   /** 0–100 composite — surfaced first so the row is rankable at a glance. */
   readiness_score: number;
+  /**
+   * Edge-decay flag from `computeEdgeDecay(db)` keyed by (strategy_id, mode).
+   * Used to bias the readiness composite — DECAYING strategies lose 15 pts,
+   * STRENGTHENING gain 5, STABLE neutral. null when no decay data is
+   * available (e.g. in historical backfilled rows that don't carry it).
+   */
+  edge_flag: 'DECAYING' | 'STRENGTHENING' | 'STABLE' | 'LOW-N' | null;
   /** Whether all 4 hard gates pass. */
   promotable: boolean;
   /** Per-component score breakdown (sum equals readiness_score). */
@@ -95,6 +102,13 @@ export interface ReadinessRow {
     total_net_sol: number;     // 0–20
     monthly_run_rate: number;  // 0–20
     win_rate_sanity: number;   // 0–10
+    /**
+     * Trend bias (-15, 0, or +5). Decaying strategies should not rank
+     * alongside their pre-decay selves; this keeps the composite responsive
+     * to recent performance without throwing out the lifetime base. Score is
+     * clamped to [0, 100] after this is applied.
+     */
+    trend_modifier: number;
   };
   /** Hard gates — true means cleared. */
   gates: {
@@ -169,6 +183,8 @@ export interface PerStrategyDailySnapshot {
   net_sol_yesterday: number;
   /** Composite 0–100 readiness score (null when strategy has no closed trades). */
   readiness_score: number | null;
+  /** Edge-decay flag — null when no recent-30 sample exists yet. */
+  edge_flag: 'DECAYING' | 'STRENGTHENING' | 'STABLE' | 'LOW-N' | null;
   /** Readiness score from the prior /daily-report snapshot, if available. */
   readiness_score_yesterday: number | null;
   /** Highest readiness score observed across `recent_reports[*].summary.by_strategy_daily`. */
@@ -992,8 +1008,23 @@ function rowToView(row: DailyReportRow): DailyReportView {
  * Win-rate sits as a sanity check, not a primary driver — extreme WRs aren't
  * killed because fat-tail strategies legitimately live there.
  */
-export function buildReadinessRowExported(row: LeaveOneOutRow): ReadinessRow {
-  return buildReadinessRow(row);
+export function buildReadinessRowExported(
+  row: LeaveOneOutRow,
+  edgeFlag?: 'DECAYING' | 'STRENGTHENING' | 'STABLE' | 'LOW-N',
+): ReadinessRow {
+  return buildReadinessRow(row, edgeFlag);
+}
+
+/**
+ * Map an edge-decay flag to a readiness composite modifier. DECAYING is the
+ * biggest signal a "winning" strategy is going to keep bleeding — penalize
+ * it more than the reward for STRENGTHENING (asymmetric to bias toward
+ * caution). STABLE / LOW-N / undefined are neutral.
+ */
+function trendModifierFor(flag: 'DECAYING' | 'STRENGTHENING' | 'STABLE' | 'LOW-N' | undefined): number {
+  if (flag === 'DECAYING') return -15;
+  if (flag === 'STRENGTHENING') return 5;
+  return 0;
 }
 
 /**
@@ -1017,7 +1048,10 @@ export function computeTradingDayWindowExported(dateStr: string): {
   };
 }
 
-function buildReadinessRow(row: LeaveOneOutRow): ReadinessRow {
+function buildReadinessRow(
+  row: LeaveOneOutRow,
+  edgeFlag?: 'DECAYING' | 'STRENGTHENING' | 'STABLE' | 'LOW-N',
+): ReadinessRow {
   const gates = {
     n_trades_ge_100: row.n_trades >= 100,
     drop_top3_positive: row.total_net_sol_drop_top3 > 0,
@@ -1038,6 +1072,7 @@ function buildReadinessRow(row: LeaveOneOutRow): ReadinessRow {
   const wrSanity = row.win_rate_pct != null && row.win_rate_pct >= 30 && row.win_rate_pct <= 70
     ? 10
     : 5;
+  const trendMod = trendModifierFor(edgeFlag);
 
   const components = {
     sample_size: +sampleSize.toFixed(2),
@@ -1045,14 +1080,18 @@ function buildReadinessRow(row: LeaveOneOutRow): ReadinessRow {
     total_net_sol: +totalSol.toFixed(2),
     monthly_run_rate: +monthly.toFixed(2),
     win_rate_sanity: wrSanity,
+    trend_modifier: trendMod,
   };
-  const score = +(
+  // Base score from gate components, then apply trend bias and clamp [0, 100].
+  // The clamp matters because DECAYING (-15) on a low-base strategy could
+  // otherwise produce a negative score that confuses the sortable table.
+  const baseScore =
     components.sample_size +
     components.drop_top3_pnl +
     components.total_net_sol +
     components.monthly_run_rate +
-    components.win_rate_sanity
-  ).toFixed(2);
+    components.win_rate_sanity;
+  const score = +Math.max(0, Math.min(100, baseScore + trendMod)).toFixed(2);
 
   return {
     strategy_id: row.strategy_id,
@@ -1060,6 +1099,7 @@ function buildReadinessRow(row: LeaveOneOutRow): ReadinessRow {
     enabled: row.enabled,
     execution_mode: row.execution_mode,
     readiness_score: score,
+    edge_flag: edgeFlag ?? null,
     promotable: gates.n_trades_ge_100 && gates.drop_top3_positive
       && gates.total_net_sol_ge_0_5 && gates.monthly_run_rate_ge_3_75,
     components,
@@ -1188,9 +1228,22 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
   // is a long-horizon question. Computed by reusing the leave-one-out panel
   // (single SQL pass over closed trades).
   const leaveOneOut = computeLeaveOneOutPnl(db);
+  // Edge-decay flags by (strategy_id, mode) — folded into the readiness
+  // composite as a ±modifier so a DECAYING winner doesn't sit at score 100
+  // alongside its pre-decay self. STABLE / LOW-N are neutral.
+  let edgeFlagByMode: Map<string, 'DECAYING' | 'STRENGTHENING' | 'STABLE' | 'LOW-N'>;
+  try {
+    const ed = computeEdgeDecay(db);
+    edgeFlagByMode = new Map(ed.rows.map(r => [`${r.strategy_id}|${r.execution_mode}`, r.flag]));
+  } catch {
+    // edge-decay computation has its own SQL touchpoints; on the off-chance
+    // it throws (corrupt row, missing column on a stale deploy) we degrade
+    // gracefully — no flag means no modifier, scores stay on the old basis.
+    edgeFlagByMode = new Map();
+  }
   const readinessAll = leaveOneOut.rows
     .filter(r => r.enabled)
-    .map(buildReadinessRow)
+    .map(r => buildReadinessRow(r, edgeFlagByMode.get(`${r.strategy_id}|${r.execution_mode}`)))
     .sort((a, b) => b.readiness_score - a.readiness_score);
   const readinessTop5 = readinessAll.slice(0, 5);
 
@@ -1239,14 +1292,20 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
 
   // Yesterday's readiness scores by (id, mode) — used for the Δ Score cell
   // and to seed the all-time high/low scan when no further history exists.
+  // Mode-blind fallback Map covers legacy snapshots written before the
+  // 2026-05-14 mode-aware fix (no execution_mode field on those rows).
   const yesterdaySnapByMode = new Map<string, PerStrategyDailySnapshot>();
+  const yesterdaySnapBySid = new Map<string, PerStrategyDailySnapshot>();
   for (const r of (recentReports[0]?.summary?.by_strategy_daily || [])) {
     yesterdaySnapByMode.set(modeKey(r.strategy_id, r.execution_mode ?? 'paper'), r);
+    if (!yesterdaySnapBySid.has(r.strategy_id)) yesterdaySnapBySid.set(r.strategy_id, r);
   }
 
   // All-time high/low readiness across recent_reports — scan once into a Map
-  // keyed by (id, mode) so the per-row build is O(1).
+  // keyed by (id, mode) so the per-row build is O(1). Mirror into a
+  // strategy-only Map for the same legacy-snapshot fallback reason.
   const altimeScores = new Map<string, { high: number; low: number }>();
+  const altimeScoresBySid = new Map<string, { high: number; low: number }>();
   for (const day of recentReports) {
     const dailyArr = day?.summary?.by_strategy_daily;
     if (!Array.isArray(dailyArr)) continue;
@@ -1259,6 +1318,12 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
         if (stat.readiness_score > cur.high) cur.high = stat.readiness_score;
         if (stat.readiness_score < cur.low) cur.low = stat.readiness_score;
       }
+      const sidCur = altimeScoresBySid.get(stat.strategy_id);
+      if (!sidCur) altimeScoresBySid.set(stat.strategy_id, { high: stat.readiness_score, low: stat.readiness_score });
+      else {
+        if (stat.readiness_score > sidCur.high) sidCur.high = stat.readiness_score;
+        if (stat.readiness_score < sidCur.low) sidCur.low = stat.readiness_score;
+      }
     }
   }
 
@@ -1268,8 +1333,11 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
     const readiness = readinessByMode.get(key);
     const today = todayByMode.get(key);
     const yest = yesterdayByMode.get(key);
-    const ySnap = yesterdaySnapByMode.get(key);
-    const altime = altimeScores.get(key);
+    // Legacy snapshot rows lack execution_mode — fall back to strategy_id-only
+    // lookup so v21-bottom-excluded [shadow] still picks up its data even if
+    // yesterday's row had no mode field.
+    const ySnap = yesterdaySnapByMode.get(key) ?? yesterdaySnapBySid.get(key.split('|')[0]);
+    const altime = altimeScores.get(key) ?? altimeScoresBySid.get(key.split('|')[0]);
     // Resolve strategy_id + mode from whichever source has them.
     const strategyId = loo?.strategy_id ?? today?.strategy_id ?? key.split('|')[0];
     const execMode = loo?.execution_mode ?? today?.execution_mode ?? key.split('|')[1] ?? 'paper';
@@ -1293,6 +1361,7 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
       net_sol_today: today?.net_profit_sol ?? 0,
       net_sol_yesterday: yest?.net_profit_sol ?? 0,
       readiness_score: readiness?.readiness_score ?? null,
+      edge_flag: readiness?.edge_flag ?? edgeFlagByMode.get(key) ?? null,
       readiness_score_yesterday: ySnap?.readiness_score ?? null,
       readiness_score_alltime_high: high,
       readiness_score_alltime_low: low,

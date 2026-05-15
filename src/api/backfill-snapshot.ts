@@ -6,7 +6,7 @@
  * "all-time high / low score" cells all read from
  * `recent_reports[*].summary.by_strategy_daily`. That field didn't exist
  * before the 2026-05-13 schema change, so legacy rows render as "—" or
- * "history accumulating". This script reconstructs the snapshot from
+ * "history accumulating". This module reconstructs the snapshot from
  * `trades_v2` for every legacy date so the dashboard works with full history
  * immediately.
  *
@@ -24,11 +24,13 @@
  * historical enabled flags aren't recoverable. The roster-diff panel will
  * show empty for any day predating the rollout; that's accurate.
  *
- * Usage:
- *   npx ts-node src/api/backfill-snapshot.ts [--dry-run]
+ * Two entry points:
+ *   - CLI: npx ts-node src/api/backfill-snapshot.ts [--dry-run]
+ *   - HTTP: POST /api/admin/backfill-snapshot   (calls backfillSnapshots(db))
  */
 
 import path from 'path';
+import type Database from 'better-sqlite3';
 import { initDatabase } from '../db/schema';
 import { listDailyReports, patchDailyReport, type DailyReportRow } from '../db/queries';
 import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
@@ -36,7 +38,6 @@ import {
   buildReadinessRowExported,
   computeTradingDayWindowExported,
   type PerStrategyDailySnapshot,
-  type ActiveStrategyEntry,
 } from './daily-report';
 
 interface RawDailyTradeRow {
@@ -46,7 +47,7 @@ interface RawDailyTradeRow {
 }
 
 function aggregateTrades(
-  db: import('better-sqlite3').Database,
+  db: Database.Database,
   startSec: number,
   endSec: number,
 ): Map<string, { strategy_id: string; execution_mode: string; n: number; net_sol: number }> {
@@ -78,27 +79,42 @@ function aggregateTrades(
   return out;
 }
 
-async function main(): Promise<void> {
-  const dryRun = process.argv.includes('--dry-run');
-  const dataDir = process.env.DATA_DIR ?? path.join(process.cwd(), 'data');
-  const db = initDatabase(dataDir);
+export interface BackfillSummary {
+  total_rows: number;
+  updated: number;
+  skipped: number;
+  dry_run: boolean;
+  per_date: Array<{ date: string; outcome: 'updated' | 'skipped' | 'no-activity' | 'error'; n_rows: number; error?: string }>;
+}
 
+/**
+ * Walk every daily_reports row (oldest → newest), reconstruct the
+ * per-strategy snapshot, and patch it in. Idempotent: rows that already
+ * have a snapshot are skipped unless `overwrite: true`.
+ */
+export function backfillSnapshots(
+  db: Database.Database,
+  opts: { dryRun?: boolean; overwrite?: boolean; log?: (msg: string) => void } = {},
+): BackfillSummary {
+  const log = opts.log ?? (() => {});
   const rows = listDailyReports(db, 365) as DailyReportRow[];
-  console.log(`[backfill] Found ${rows.length} daily_reports rows. Dry-run=${dryRun}`);
+  log(`[backfill] Found ${rows.length} daily_reports rows. dry_run=${!!opts.dryRun} overwrite=${!!opts.overwrite}`);
 
-  let updated = 0;
-  let skipped = 0;
+  const summary: BackfillSummary = {
+    total_rows: rows.length,
+    updated: 0,
+    skipped: 0,
+    dry_run: !!opts.dryRun,
+    per_date: [],
+  };
+
   for (const row of [...rows].reverse()) { // oldest → newest
-    // Trading-day window for this date (06:00 CT → 06:00 CT next day).
     const { startSec, endSec, yesterdayStartSec } = computeTradingDayWindowExported(row.date);
-
-    // Today + yesterday trade activity within the window.
     const todayByMode = aggregateTrades(db, startSec, endSec);
     const yesterdayByMode = aggregateTrades(db, yesterdayStartSec, startSec);
 
     // Lifetime metrics + readiness AS OF end-of-day for this row's date.
     const loo = computeLeaveOneOutPnl(db, endSec);
-
     const looByMode = new Map(loo.rows.map(r => [`${r.strategy_id}|${r.execution_mode}`, r]));
 
     const snapshotKeys = new Set<string>();
@@ -122,6 +138,7 @@ async function main(): Promise<void> {
         net_sol_today: today != null ? +today.net_sol.toFixed(4) : 0,
         net_sol_yesterday: yest != null ? +yest.net_sol.toFixed(4) : 0,
         readiness_score: readiness?.readiness_score ?? null,
+        edge_flag: null, // edge-decay is a real-time signal; backfill leaves it unset
         readiness_score_yesterday: null, // not reconstructable retroactively
         readiness_score_alltime_high: null,
         readiness_score_alltime_low: null,
@@ -133,45 +150,56 @@ async function main(): Promise<void> {
       });
     }
 
-    // Skip rows that already have a non-empty snapshot — avoids overwriting
-    // post-rollout days with reconstructed-but-less-rich data.
-    const existingPatterns = row.patterns_json ? JSON.parse(row.patterns_json) : null;
-    if (existingPatterns
-      && typeof existingPatterns === 'object'
-      && Array.isArray((existingPatterns as { by_strategy_daily?: unknown }).by_strategy_daily)
-      && ((existingPatterns as { by_strategy_daily: unknown[] }).by_strategy_daily.length > 0)) {
-      skipped += 1;
-      continue;
+    // Skip rows that already have a non-empty snapshot unless overwriting.
+    if (!opts.overwrite) {
+      let parsed: unknown = null;
+      try { parsed = row.patterns_json ? JSON.parse(row.patterns_json) : null; } catch { /* noop */ }
+      if (parsed && typeof parsed === 'object'
+        && Array.isArray((parsed as { by_strategy_daily?: unknown }).by_strategy_daily)
+        && ((parsed as { by_strategy_daily: unknown[] }).by_strategy_daily.length > 0)) {
+        log(`[backfill] ${row.date}: snapshot present → skipped`);
+        summary.skipped += 1;
+        summary.per_date.push({ date: row.date, outcome: 'skipped', n_rows: 0 });
+        continue;
+      }
     }
 
     if (snapshot.length === 0) {
-      console.log(`[backfill] ${row.date}: no trade activity → skipped`);
-      skipped += 1;
+      log(`[backfill] ${row.date}: no trade activity → skipped`);
+      summary.skipped += 1;
+      summary.per_date.push({ date: row.date, outcome: 'no-activity', n_rows: 0 });
       continue;
     }
 
-    if (dryRun) {
-      console.log(`[backfill] ${row.date}: would write ${snapshot.length} snapshot rows (dry-run)`);
-    } else {
-      const res = patchDailyReport(db, row.date, { by_strategy_daily: snapshot });
-      if (!res.ok) {
-        console.error(`[backfill] ${row.date}: ERROR ${res.error}`);
-        continue;
-      }
-      console.log(`[backfill] ${row.date}: wrote ${snapshot.length} snapshot rows`);
-      updated += 1;
+    if (opts.dryRun) {
+      log(`[backfill] ${row.date}: would write ${snapshot.length} snapshot rows (dry-run)`);
+      summary.per_date.push({ date: row.date, outcome: 'updated', n_rows: snapshot.length });
+      continue;
     }
+
+    const res = patchDailyReport(db, row.date, { by_strategy_daily: snapshot });
+    if (!res.ok) {
+      log(`[backfill] ${row.date}: ERROR ${res.error}`);
+      summary.per_date.push({ date: row.date, outcome: 'error', n_rows: 0, error: res.error });
+      continue;
+    }
+    log(`[backfill] ${row.date}: wrote ${snapshot.length} snapshot rows`);
+    summary.updated += 1;
+    summary.per_date.push({ date: row.date, outcome: 'updated', n_rows: snapshot.length });
   }
 
-  console.log(`[backfill] Done. updated=${updated} skipped=${skipped}`);
-  // Suppress an unused import for ActiveStrategyEntry — it's exported alongside
-  // PerStrategyDailySnapshot from daily-report.ts; the type isn't reconstructed
-  // here but keeping the import documents which types this backfill could
-  // populate in future.
-  void ({} as ActiveStrategyEntry);
+  log(`[backfill] Done. updated=${summary.updated} skipped=${summary.skipped}`);
+  return summary;
 }
 
-main().catch(err => {
-  console.error('[backfill] FATAL', err);
-  process.exit(1);
-});
+// CLI entry point — only fires when this module is invoked directly via
+// `ts-node src/api/backfill-snapshot.ts`. Importing it from index.ts does NOT
+// trigger this branch.
+if (require.main === module) {
+  const dryRun = process.argv.includes('--dry-run');
+  const overwrite = process.argv.includes('--overwrite');
+  const dataDir = process.env.DATA_DIR ?? path.join(process.cwd(), 'data');
+  const db = initDatabase(dataDir);
+  const summary = backfillSnapshots(db, { dryRun, overwrite, log: console.log });
+  console.log(JSON.stringify({ updated: summary.updated, skipped: summary.skipped }, null, 2));
+}
