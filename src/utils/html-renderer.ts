@@ -7304,6 +7304,7 @@ export function renderReportHtml(data: any): string {
   };
 
   const byStrategyRows = sortedSnap.map((s: any) => {
+    const k = modeKey2(s.strategy_id, s.execution_mode);
     const promotableBadge = s.promotable
       ? ` <span style="color:#4ade80;font-size:10px" title="all four SOL-bar gates clear">★</span>` : '';
     const series = resolveHistory(s.strategy_id, s.execution_mode);
