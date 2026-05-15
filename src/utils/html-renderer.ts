@@ -7058,13 +7058,19 @@ export function renderReportHtml(data: any): string {
       ? ` <span class="badge" style="background:#3f1212;color:#fca5a5;font-size:10px" title="Target absent from strategies.json — likely already removed">stale</span>`
       : '';
     const rowBg = item.stale ? 'background:#1a0c0c;' : item.source === 'anomaly' ? 'background:#0e0d1f;' : '';
-    return `<tr data-item-id="${escapeHtml(item.id)}" data-item-source="${item.source}" data-item-date="${escapeHtml(item.from_date ?? '')}" style="${rowBg}">
+    // Inline rows carry the full text payload via data attributes so the
+    // copy buttons can grab a plain-text representation without re-parsing
+    // the cell DOM. Format mirrors what an operator would paste into an AI
+    // session — kind • target • summary, one item per block.
+    const copyText = `[${item.kind}] ${item.target_id ?? '—'}: ${item.summary}`;
+    return `<tr data-item-id="${escapeHtml(item.id)}" data-item-source="${item.source}" data-item-date="${escapeHtml(item.from_date ?? '')}" data-item-text="${escapeHtml(copyText)}" style="${rowBg}">
       <td>${statusBadge(item.status)}${staleBadge}</td>
       <td><span class="badge" style="background:${kbg};color:${kfg}">${escapeHtml(item.kind)}</span></td>
       <td style="font-family:monospace;font-size:11px">${escapeHtml(item.target_id ?? '')}</td>
       <td class="ai-summary" contenteditable="false">${escapeHtml(item.summary)}</td>
       <td style="color:#64748b;font-size:11px">${escapeHtml(item.from_date ?? (item.source === 'anomaly' ? 'auto' : ''))}</td>
       <td style="white-space:nowrap">
+        <button class="ai-copy-btn" type="button" style="background:#1e1b4b;color:#c4b5fd;border:1px solid #312e81;border-radius:3px;padding:2px 6px;cursor:pointer;font-size:11px;margin-right:4px" title="Copy this item">Copy</button>
         ${item.source === 'claude'
           ? `<button class="ai-edit-btn" type="button" style="background:#262640;color:#a5b4fc;border:1px solid #3a3a5a;border-radius:3px;padding:2px 6px;cursor:pointer;font-size:11px;margin-right:4px">Edit</button>`
           : ''}
@@ -7073,11 +7079,16 @@ export function renderReportHtml(data: any): string {
     </tr>`;
   };
   const actionItemsHtml = `<div class="card">
-    <h2>Open Action Items</h2>
-    <div class="desc">Claude proposals + auto-detected anomalies in one table. Click <em>Dismiss</em> to mark a proposal EXECUTED (or suppress an anomaly for 24h). Click <em>Edit</em> to inline-edit a proposal's kind / target / summary. Red rows = target absent from strategies.json (likely already removed).</div>
+    <h2>Open Action Items <span id="ai-count" style="font-size:12px;color:#64748b;font-weight:400">(${unifiedItems.length})</span></h2>
+    <div class="desc">Claude proposals + auto-detected anomalies in one table. Click <em>Dismiss</em> to mark a proposal EXECUTED (or suppress an anomaly for 24h). Click <em>Edit</em> to inline-edit a proposal's kind / target / summary. <em>Copy</em> grabs an item as plain text for an AI session. Red rows = target absent from strategies.json (likely already removed).</div>
     ${unifiedItems.length === 0
       ? `<div style="color:#64748b;font-style:italic;padding:8px 0">No open action items.</div>`
-      : `<table id="action-items-table"><thead><tr>
+      : `<div style="margin-bottom:8px;display:flex;gap:8px">
+          <button id="ai-copy-all-btn" type="button" style="background:#1e1b4b;color:#c4b5fd;border:1px solid #312e81;border-radius:3px;padding:4px 10px;cursor:pointer;font-size:12px">Copy all</button>
+          <button id="ai-clear-all-btn" type="button" style="background:#3f1212;color:#fca5a5;border:1px solid #7f1d1d;border-radius:3px;padding:4px 10px;cursor:pointer;font-size:12px">Dismiss all</button>
+          <span id="ai-bulk-status" style="color:#64748b;font-size:11px;align-self:center"></span>
+        </div>
+        <table id="action-items-table"><thead><tr>
           <th>Status</th><th>Kind</th><th>Target</th><th>Summary</th><th>From</th><th>Actions</th>
         </tr></thead><tbody>${unifiedItems.map(renderUnifiedRow).join('')}</tbody></table>
         <script>
@@ -7085,7 +7096,25 @@ export function renderReportHtml(data: any): string {
             var table = document.getElementById('action-items-table');
             if (!table) return;
             var KIND_OPTIONS = ['kill','promote','watch','create_new','fix','update'];
-            function dismiss(row){
+            function copyToClipboard(text, statusEl){
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function(){
+                  if (statusEl) { statusEl.textContent = 'copied ' + text.length + ' chars'; setTimeout(function(){ statusEl.textContent = ''; }, 2000); }
+                }).catch(function(){ fallbackCopy(text, statusEl); });
+              } else {
+                fallbackCopy(text, statusEl);
+              }
+            }
+            function fallbackCopy(text, statusEl){
+              var ta = document.createElement('textarea');
+              ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+              document.body.appendChild(ta); ta.select();
+              try { document.execCommand('copy'); if (statusEl) statusEl.textContent = 'copied (fallback)'; } catch(_){ alert('Copy failed; select manually.'); }
+              document.body.removeChild(ta);
+              if (statusEl) setTimeout(function(){ statusEl.textContent = ''; }, 2000);
+            }
+            function dismiss(row, opts){
+              opts = opts || {};
               var id = row.getAttribute('data-item-id');
               var source = row.getAttribute('data-item-source');
               var date = row.getAttribute('data-item-date');
@@ -7095,9 +7124,13 @@ export function renderReportHtml(data: any): string {
               var body = source === 'anomaly'
                 ? { id: id }
                 : { status: 'EXECUTED' };
-              fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-                .then(function(r){ if (r.ok) { row.style.opacity = '0.3'; row.style.textDecoration = 'line-through'; } else { alert('Dismiss failed: ' + r.status); } })
-                .catch(function(e){ alert('Dismiss error: ' + e); });
+              return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                .then(function(r){
+                  if (r.ok) { row.style.opacity = '0.3'; row.style.textDecoration = 'line-through'; return true; }
+                  if (!opts.silent) alert('Dismiss failed: ' + r.status);
+                  return false;
+                })
+                .catch(function(e){ if (!opts.silent) alert('Dismiss error: ' + e); return false; });
             }
             function startEdit(row){
               var id = row.getAttribute('data-item-id');
@@ -7132,13 +7165,50 @@ export function renderReportHtml(data: any): string {
                 if (r.ok) { location.reload(); } else { alert('Save failed: ' + r.status); }
               }).catch(function(e){ alert('Save error: ' + e); });
             }
+            var bulkStatus = document.getElementById('ai-bulk-status');
             table.addEventListener('click', function(e){
               var target = e.target;
-              if (target.classList && target.classList.contains('ai-dismiss-btn')) {
+              if (!target.classList) return;
+              if (target.classList.contains('ai-dismiss-btn')) {
                 dismiss(target.closest('tr'));
-              } else if (target.classList && target.classList.contains('ai-edit-btn')) {
+              } else if (target.classList.contains('ai-edit-btn')) {
                 startEdit(target.closest('tr'));
+              } else if (target.classList.contains('ai-copy-btn')) {
+                var row = target.closest('tr');
+                copyToClipboard(row.getAttribute('data-item-text') || '', bulkStatus);
               }
+            });
+            // Copy all open items as a bulleted list, ready to paste into an
+            // AI session. Skips rows already marked dismissed (opacity 0.3).
+            var copyAllBtn = document.getElementById('ai-copy-all-btn');
+            if (copyAllBtn) copyAllBtn.addEventListener('click', function(){
+              var rows = Array.from(table.querySelectorAll('tbody tr'))
+                .filter(function(r){ return r.style.opacity !== '0.3'; });
+              var text = rows.map(function(r){ return '- ' + (r.getAttribute('data-item-text') || ''); }).join('\\n');
+              copyToClipboard(text, bulkStatus);
+            });
+            // Dismiss all — fires sequentially, updates status as it goes.
+            // Claude proposals → EXECUTED, anomalies → 24h suppression.
+            var clearAllBtn = document.getElementById('ai-clear-all-btn');
+            if (clearAllBtn) clearAllBtn.addEventListener('click', function(){
+              if (!confirm('Dismiss every open action item? Claude proposals will be marked EXECUTED; anomalies suppressed for 24h.')) return;
+              var rows = Array.from(table.querySelectorAll('tbody tr'))
+                .filter(function(r){ return r.style.opacity !== '0.3'; });
+              if (rows.length === 0) { bulkStatus.textContent = 'nothing to dismiss'; return; }
+              clearAllBtn.disabled = true;
+              bulkStatus.textContent = 'dismissing 0 / ' + rows.length;
+              var done = 0;
+              rows.reduce(function(p, row){
+                return p.then(function(){
+                  return dismiss(row, { silent: true }).then(function(){
+                    done += 1;
+                    bulkStatus.textContent = 'dismissing ' + done + ' / ' + rows.length;
+                  });
+                });
+              }, Promise.resolve()).then(function(){
+                bulkStatus.textContent = 'dismissed ' + done + ' / ' + rows.length;
+                clearAllBtn.disabled = false;
+              });
             });
           })();
         </script>`}
@@ -7167,6 +7237,11 @@ export function renderReportHtml(data: any): string {
   // expand-row mini-charts. recent_reports is most-recent-first, so reverse.
   const modeKey2 = (sid: string, mode: string | undefined): string => `${sid}|${mode ?? 'paper'}`;
   const historyByKey = new Map<string, any[]>();
+  // Mode-blind fallback index: legacy snapshots (written before the 2026-05-14
+  // mode-aware fix) didn't carry execution_mode. When the composite-key
+  // lookup misses for a strategy/mode that exists today, fall through to the
+  // strategy_id-only key so the chart still picks up historical data.
+  const historyByStrategyOnly = new Map<string, any[]>();
   const orderedDays2 = [...recentReports].reverse();
   for (const day of orderedDays2) {
     const dayStats = day?.summary?.by_strategy_daily;
@@ -7176,6 +7251,11 @@ export function renderReportHtml(data: any): string {
       const series = historyByKey.get(k) || [];
       series.push({ date: day.date, ...stat });
       historyByKey.set(k, series);
+
+      const sidOnly = stat.strategy_id;
+      const sidSeries = historyByStrategyOnly.get(sidOnly) || [];
+      sidSeries.push({ date: day.date, ...stat });
+      historyByStrategyOnly.set(sidOnly, sidSeries);
     }
   }
   for (const t of todaySnap) {
@@ -7184,6 +7264,14 @@ export function renderReportHtml(data: any): string {
     series.push({ date: todayAuto.date, ...t });
     historyByKey.set(k, series);
   }
+  // Resolve a strategy's series with the mode-blind fallback applied.
+  const resolveHistory = (sid: string, mode: string | undefined): any[] => {
+    const exact = historyByKey.get(modeKey2(sid, mode));
+    if (exact && exact.length > 1) return exact;
+    const fallback = historyByStrategyOnly.get(sid);
+    if (fallback && fallback.length > (exact?.length ?? 0)) return fallback;
+    return exact ?? [];
+  };
 
   const fmtSigned = (v: number | null | undefined, d = 3): string =>
     v == null ? '—' : (v > 0 ? '+' : '') + v.toFixed(d);
@@ -7199,14 +7287,26 @@ export function renderReportHtml(data: any): string {
     return `<span class="badge" style="background:${bg};color:${fg};font-size:10px;margin-left:4px">${escapeHtml(mode)}</span>`;
   };
 
-  const sortedSnap = [...todaySnap].sort(
-    (a, b) => (b.readiness_score ?? -Infinity) - (a.readiness_score ?? -Infinity),
-  );
+  // Active strategies only — disabled/retired strategies (still tracked in
+  // leave-one-out for postmortem) belong in /trading or the archived view,
+  // not in the day-over-day comparison panel.
+  const sortedSnap = todaySnap
+    .filter((s: any) => s.enabled)
+    .slice()
+    .sort((a: any, b: any) => (b.readiness_score ?? -Infinity) - (a.readiness_score ?? -Infinity));
+
+  const decayChip = (flag: string | null | undefined): string => {
+    if (!flag || flag === 'STABLE' || flag === 'LOW-N') return '';
+    const [bg, fg, label] = flag === 'DECAYING'
+      ? ['#3f1212', '#fca5a5', '↓ DECAY']
+      : ['#14532d', '#86efac', '↑ STRENGTH'];
+    return ` <span class="badge" style="background:${bg};color:${fg};font-size:10px" title="edge-decay flag — folded into the composite score as ${flag === 'DECAYING' ? '−15' : '+5'} points">${label}</span>`;
+  };
+
   const byStrategyRows = sortedSnap.map((s: any) => {
-    const k = modeKey2(s.strategy_id, s.execution_mode);
     const promotableBadge = s.promotable
       ? ` <span style="color:#4ade80;font-size:10px" title="all four SOL-bar gates clear">★</span>` : '';
-    const series = historyByKey.get(k) || [];
+    const series = resolveHistory(s.strategy_id, s.execution_mode);
     const charts = series.length > 1 ? `
       ${renderMiniTimeseries(series.map(p => p.readiness_score ?? null), 'Readiness', '#a5b4fc', v => v.toFixed(0))}
       ${renderMiniTimeseries(series.map(p => p.n_trades_lifetime ?? null), 'N (lifetime)', '#93c5fd', v => v.toFixed(0))}
@@ -7243,7 +7343,7 @@ export function renderReportHtml(data: any): string {
         data-sort-drop3="${s.total_net_sol_drop_top3 ?? 0}"
         data-sort-monthly="${s.monthly_run_rate_sol ?? 0}"
         style="cursor:pointer">
-      <td>${escapeHtml(s.label)}${modeChip(s.execution_mode || 'paper')}${promotableBadge}<br><span style="color:#64748b;font-size:10px">${escapeHtml(s.strategy_id)}</span></td>
+      <td>${escapeHtml(s.label)}${modeChip(s.execution_mode || 'paper')}${promotableBadge}${decayChip(s.edge_flag)}<br><span style="color:#64748b;font-size:10px">${escapeHtml(s.strategy_id)}</span></td>
       <td>${scoreCell}</td>
       <td>${nCell}</td>
       <td style="text-align:right" class="${cls(s.net_sol_today)}">${fmtSigned(s.net_sol_today, 3)}</td>

@@ -6,6 +6,7 @@ import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTr
 import { GraduationListener } from './monitor/graduation-listener';
 import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml } from './utils/html-renderer';
 import { computePipelineData } from './api/pipeline-data';
+import { backfillSnapshots } from './api/backfill-snapshot';
 import { computePeakAnalysis } from './api/peak-analysis';
 import { computeExitSim } from './api/exit-sim';
 import { computeExitSimMatrix } from './api/exit-sim-matrix';
@@ -2662,6 +2663,21 @@ async function main() {
     });
     if (!r.ok) return res.status(404).json({ error: r.error });
     res.json({ ok: true });
+  });
+
+  app.post('/api/admin/backfill-snapshot', (req, res) => {
+    // Reconstructs `by_strategy_daily` for every daily_reports row so the
+    // /report dashboard has full chart history. Idempotent: skips rows that
+    // already have a snapshot unless `overwrite: true`. Pass `dry_run: true`
+    // to preview the work without writing.
+    const dryRun = req.body?.dry_run === true;
+    const overwrite = req.body?.overwrite === true;
+    try {
+      const summary = backfillSnapshots(db, { dryRun, overwrite });
+      res.json(summary);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
   });
 
   app.post('/api/anomaly/dismiss', (req, res) => {
