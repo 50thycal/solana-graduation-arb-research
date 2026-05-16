@@ -67,6 +67,7 @@ import {
   appendJournalUpdate,
   deleteJournalEntry,
   upsertDailyReport,
+  upsertSnapshotOnly,
   appendReportUpdate,
   updateActionItemStatus,
   upsertLesson,
@@ -846,6 +847,23 @@ export class GistSync {
     // dailyReport reads leaveOneOutPnl internally to populate
     // promotion_readiness_top5 — keep this ordering.
     const dailyReport = await timed('dailyReport', () => computeDailyReport(this.db));
+
+    // Auto-persist today's per-strategy + active-strategies snapshot every
+    // gist-sync cycle. Removes the dependency on Claude including these
+    // fields in /daily-report's report-upsert payload (May 14/15 reports
+    // collapsed patterns_json without the snapshot, costing day-over-day
+    // diff capability). upsertSnapshotOnly touches ONLY the snapshot fields —
+    // narrative / winners / recommendations stay intact if Claude wrote them.
+    try {
+      upsertSnapshotOnly(
+        this.db,
+        dailyReport.today_auto.date,
+        dailyReport.today_auto.by_strategy_daily_snapshot,
+        dailyReport.today_auto.active_strategies_snapshot,
+      );
+    } catch (err) {
+      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Auto-snapshot persist failed');
+    }
 
     const exitSimMatrix = HEAVY_PANELS_ENABLED
       ? await timed('exitSimMatrix', () => computeExitSimMatrix(this.db))
