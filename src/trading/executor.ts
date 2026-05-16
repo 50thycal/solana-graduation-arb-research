@@ -492,9 +492,17 @@ export class Executor {
     }
 
     // Measure fill: token balance delta in → tokens received; SOL delta out → actual cost.
-    // Poll briefly — balance updates can lag confirmation by a few hundred ms.
-    await this.sleep(800);
-    const baseBalAfter = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
+    // Jito's pollBundleStatus returns landed at "processed" commitment, but
+    // getTokenBalanceRaw reads at "confirmed" — a fresh ATA can lag several
+    // seconds across that gap on a busy cluster. Poll with backoff until the
+    // token balance updates or we hit a hard ceiling.
+    const fillDelaysMs = [750, 1000, 1500, 2000, 2500];
+    let baseBalAfter = baseBalBefore;
+    for (const dly of fillDelaysMs) {
+      await this.sleep(dly);
+      baseBalAfter = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
+      if (baseBalAfter > baseBalBefore) break;
+    }
     const walletSolAfter = await this.wallet.getSolBalance(this.connection);
     const tokensReceivedRaw = baseBalAfter - baseBalBefore;
     const tokensReceived = tokensReceivedRaw / 1e6;
@@ -630,8 +638,16 @@ export class Executor {
       };
     }
 
-    await this.sleep(800);
-    const walletSolAfter = await this.wallet.getSolBalance(this.connection);
+    // Mirror buy-side: Jito reports landed at "processed", but getSolBalance
+    // reads at "confirmed". Poll with backoff until the SOL credit is visible
+    // (or we exhaust the window) to avoid mis-recording the fill.
+    const fillDelaysMs = [750, 1000, 1500, 2000, 2500];
+    let walletSolAfter = walletSolBefore;
+    for (const dly of fillDelaysMs) {
+      await this.sleep(dly);
+      walletSolAfter = await this.wallet.getSolBalance(this.connection);
+      if (walletSolAfter > walletSolBefore) break;
+    }
     // (walletSolAfter - walletSolBefore) is net SOL into the wallet (swap gain
     // minus tip, tx fee; plus any wSOL ATA rent refund — we create+close it
     // in the same tx so it nets to 0). Add back the tip + fee to isolate the
