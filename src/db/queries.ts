@@ -1646,6 +1646,52 @@ export function patchDailyReport(
   return { ok: true };
 }
 
+/**
+ * Write only the snapshot fields onto a daily_reports row without touching
+ * narrative / winners / losers / recommendations / anomalies / action_items.
+ *
+ * Two modes:
+ *   - Row exists → delegate to patchDailyReport (merges into patterns_json).
+ *   - Row missing → INSERT a stub row with only the snapshot wrapped into
+ *     patterns_json. Every other column is null so Claude's later
+ *     report-upsert fills them in.
+ *
+ * Called from the gist-sync cycle so the per-strategy snapshot persists every
+ * ~2 minutes regardless of whether Claude has run /daily-report today. Before
+ * this existed, May 14 + May 15 reports lost their snapshots because Claude's
+ * report-upsert wrote `patterns_json` as a raw array and there was no
+ * background snapshot writer.
+ */
+export function upsertSnapshotOnly(
+  db: Database.Database,
+  date: string,
+  byStrategyDaily: unknown,
+  activeStrategiesSnapshot: unknown,
+): void {
+  const existing = getDailyReport(db, date);
+  if (existing) {
+    patchDailyReport(db, date, {
+      by_strategy_daily: byStrategyDaily,
+      active_strategies_snapshot: activeStrategiesSnapshot,
+    });
+    return;
+  }
+  // Insert stub row with snapshot-only patterns blob. Everything else is null
+  // and will be filled in by Claude's first /daily-report push for the day.
+  const patternsJson = JSON.stringify({
+    patterns: null,
+    by_strategy_daily: byStrategyDaily,
+    active_strategies_snapshot: activeStrategiesSnapshot,
+  });
+  db.prepare(`
+    INSERT INTO daily_reports (
+      date, generated_at, generated_by,
+      winners_json, losers_json, recommendations_json, anomalies_json,
+      patterns_json, action_items_json, narrative
+    ) VALUES (?, unixepoch(), 'bot-auto-snapshot', NULL, NULL, NULL, NULL, ?, '[]', NULL)
+  `).run(date, patternsJson);
+}
+
 export function upsertDailyReport(
   db: Database.Database,
   entry: {
@@ -1676,19 +1722,44 @@ export function upsertDailyReport(
     ? JSON.stringify(entry.action_items)
     : (existing?.action_items_json ?? '[]');
 
-  // Wrap patterns + history fields into a single JSON blob. The wrapper is
-  // only used when at least one of the new history fields is present; older
-  // callers passing only `patterns` keep emitting the legacy raw shape so
-  // existing downstream readers don't break mid-rollout.
+  // Recover any snapshot fields stored on the previous row so a Claude-only
+  // report-upsert (which usually doesn't carry by_strategy_daily /
+  // active_strategies_snapshot) doesn't wipe the data the bot wrote on a
+  // prior gist-sync cycle. The May 14 / May 15 bug — where Claude's upsert
+  // collapsed patterns_json into a raw array and lost the snapshot —
+  // happened because this preservation didn't exist.
+  let existingByStrategyDaily: unknown = undefined;
+  let existingActiveSnap: unknown = undefined;
+  if (existing?.patterns_json) {
+    try {
+      const parsed = JSON.parse(existing.patterns_json);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const obj = parsed as Record<string, unknown>;
+        if ('by_strategy_daily' in obj) existingByStrategyDaily = obj.by_strategy_daily;
+        if ('active_strategies_snapshot' in obj) existingActiveSnap = obj.active_strategies_snapshot;
+      }
+    } catch { /* legacy raw shape — no snapshot to recover */ }
+  }
+  const effectiveByStrategyDaily = entry.by_strategy_daily !== undefined
+    ? entry.by_strategy_daily
+    : existingByStrategyDaily;
+  const effectiveActiveSnap = entry.active_strategies_snapshot !== undefined
+    ? entry.active_strategies_snapshot
+    : existingActiveSnap;
+
+  // Wrap patterns + history fields into a single JSON blob. Use the wrapped
+  // shape whenever any snapshot field (incoming OR preserved from existing)
+  // is present — that way Claude's narrative-only upsert can't drop the bot-
+  // managed snapshot back to a legacy array.
   const hasHistoryFields =
-    entry.by_strategy_daily !== undefined ||
-    entry.active_strategies_snapshot !== undefined;
+    effectiveByStrategyDaily !== undefined ||
+    effectiveActiveSnap !== undefined;
   let patternsJson: string | null;
   if (hasHistoryFields) {
     patternsJson = JSON.stringify({
       patterns: entry.patterns ?? null,
-      by_strategy_daily: entry.by_strategy_daily,
-      active_strategies_snapshot: entry.active_strategies_snapshot,
+      by_strategy_daily: effectiveByStrategyDaily,
+      active_strategies_snapshot: effectiveActiveSnap,
     });
   } else {
     patternsJson = entry.patterns ? JSON.stringify(entry.patterns) : null;
