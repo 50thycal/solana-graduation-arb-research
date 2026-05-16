@@ -1158,9 +1158,27 @@ export function closeTrade(db: Database.Database, tradeId: number, data: TradeCl
   });
 }
 
-export function markTradeFailed(db: Database.Database, tradeId: number, reason: string): void {
-  db.prepare(`UPDATE trades_v2 SET status = 'failed', exit_reason = ? WHERE id = ?`)
-    .run(reason, tradeId);
+export function markTradeFailed(
+  db: Database.Database,
+  tradeId: number,
+  reason: string,
+  extras?: { txSignature?: string; txLandMs?: number; jitoTipSol?: number },
+): void {
+  db.prepare(`
+    UPDATE trades_v2 SET
+      status = 'failed',
+      exit_reason = @reason,
+      entry_tx_signature = COALESCE(@txSignature, entry_tx_signature),
+      tx_land_ms         = COALESCE(@txLandMs,    tx_land_ms),
+      jito_tip_sol       = COALESCE(@jitoTipSol,  jito_tip_sol)
+    WHERE id = @tradeId
+  `).run({
+    tradeId,
+    reason,
+    txSignature: extras?.txSignature ?? null,
+    txLandMs: extras?.txLandMs ?? null,
+    jitoTipSol: extras?.jitoTipSol ?? null,
+  });
 }
 
 /**

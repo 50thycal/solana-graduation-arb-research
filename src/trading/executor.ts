@@ -519,6 +519,35 @@ export class Executor {
     const swapCostLamports = solSpentLamports - overheadLamports;
     const swapCostSol = swapCostLamports / 1e9;
     if (tokensReceived <= 0 || swapCostLamports <= 0) {
+      // Recovery hatch: if real SOL left the wallet (genuine swap cost, not
+      // just overhead drift) but the token balance still isn't visible after
+      // our retry window, the buy almost certainly landed and the ATA just
+      // hasn't propagated to confirmed yet. Register the position anyway with
+      // a placeholder tokens-held — liveSell re-reads the wallet ATA at exit
+      // time (executor.ts liveSell), so it will drain whatever is actually
+      // there. Losing position visibility is strictly worse than booking
+      // approximate slippage metrics on a single trade.
+      const meaningfulSpend = swapCostLamports > Number(solInLamports) * 0.3;
+      if (tokensReceived <= 0 && meaningfulSpend) {
+        logger.error(
+          {
+            mint, mode, txSignature: submission.txSignature,
+            swapCostLamports, expectedBaseOutRaw: expectedBaseOutRaw.toString(),
+          },
+          'Live buy: SOL spent but no token delta after retries — registering recovery position',
+        );
+        const placeholderTokens = Number(expectedBaseOutRaw) / 1e6;
+        const recoveryEffectivePrice = swapCostSol / placeholderTokens;
+        return {
+          success: true,
+          effectivePrice: recoveryEffectivePrice,
+          tokensReceived: placeholderTokens,
+          txSignature: submission.txSignature,
+          dryRun: false, executionMode: mode,
+          jitoTipSol,
+          txLandMs: submission.latencyMs,
+        };
+      }
       return {
         success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
         dryRun: false, executionMode: mode,

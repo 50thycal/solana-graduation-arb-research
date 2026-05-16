@@ -44,7 +44,13 @@ export interface LiveExecutionStats {
     tradeId: number;
     strategy_id: string;
     execution_mode: string;
+    mint: string;
     exit_reason: string;
+    entry_pct_from_open: number | null;
+    trade_size_sol: number | null;
+    entry_tx_signature: string | null;
+    tx_land_ms: number | null;
+    jito_tip_sol: number | null;
     created_at: number;
   }>;
 }
@@ -92,7 +98,11 @@ export function computeLiveExecutionStats(db: Database.Database): LiveExecutionS
   `).all() as any[];
 
   const recentFailed = db.prepare(`
-    SELECT id AS tradeId, strategy_id, execution_mode, exit_reason, created_at
+    SELECT
+      id AS tradeId, strategy_id, execution_mode, mint, exit_reason,
+      entry_pct_from_open, trade_size_sol,
+      entry_tx_signature, tx_land_ms, jito_tip_sol,
+      created_at
     FROM trades_v2
     WHERE status = 'failed'
       AND execution_mode IN ('live_micro','live_full')
