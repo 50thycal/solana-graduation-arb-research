@@ -322,12 +322,28 @@ export class PositionManager extends EventEmitter {
     const now = Math.floor(Date.now() / 1000);
     const params = this.dynamicParams;
 
-    // 1. TIMEOUT CHECK (highest priority)
+    // 1. TIMEOUT CHECK (highest priority — except when trailing TP is armed)
+    //
+    // When trailingTpEnabled is on AND the position has already crossed the TP
+    // threshold (tpThresholdHit=true), the position is in trailing-TP mode
+    // letting the winner run. The maxHoldSeconds (default 300s) timeout would
+    // force-exit those still-running winners — defeating the purpose of
+    // trailing TP. Skip the timeout in that case and let the trailing-TP exit
+    // (drop% from postTpHighWaterMark) handle the exit instead.
+    //
+    // SAFETY: cap the trailing-TP extension at 3× maxHoldSeconds so a stuck
+    // RPC or stale price feed can't keep a position open indefinitely.
     if (now >= pos.maxExitTimestamp) {
-      const r = await this.tryFetchPrice(pos);
-      const exitPrice = r?.priceSol ?? pos.entryPriceSol;
-      this.triggerExit(pos, 'timeout', exitPrice);
-      return;
+      const trailingTpArmed = params.trailingTpEnabled && pos.tpThresholdHit;
+      const trailingTpHardCap = pos.entryTimestamp + (params.maxHoldSeconds * 3);
+      const hardCapHit = now >= trailingTpHardCap;
+      if (!trailingTpArmed || hardCapHit) {
+        const r = await this.tryFetchPrice(pos);
+        const exitPrice = r?.priceSol ?? pos.entryPriceSol;
+        this.triggerExit(pos, 'timeout', exitPrice);
+        return;
+      }
+      // else: fall through — trailing TP is armed, let it manage the exit
     }
 
     // 2. FETCH PRICE
