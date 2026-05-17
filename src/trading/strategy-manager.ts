@@ -170,7 +170,7 @@ export class StrategyManager {
           exitReason: 'killswitch',
           exitPriceSol: pos.highWaterMark || pos.entryPriceSol,
         };
-        this.handleExit(killEvent, instance.config).catch(err => {
+        this.handleExit(killEvent, instance.config, instance.positionManager).catch(err => {
           logger.error(
             'Killswitch force-close failed for trade %d: %s',
             pos.tradeId, err instanceof Error ? err.message : String(err),
@@ -816,9 +816,29 @@ export class StrategyManager {
     // retries the exit. After MAX_SELL_RETRIES, give up and surface as a
     // failed trade so manual intervention is visible on the dashboard.
     if (!sellResult.success && isLive) {
+      const errMsg = (sellResult as { errorMessage?: string }).errorMessage ?? 'unknown';
+      // Killswitch is operator-triggered "stop everything"; retrying on its
+      // behalf defeats the purpose AND races with safetyTick's synchronous
+      // removePosition. Fail-fast so the trade row reflects the failed exit
+      // and surfaces for manual intervention.
+      if (exitReason === 'killswitch') {
+        logger.error(
+          { tradeId: pos.tradeId, mint: pos.mint, mode: executionMode, errorMessage: errMsg },
+          'Killswitch sell failed — not retrying, marking needs_manual_close',
+        );
+        this.tradeLogger.failTrade(
+          pos.tradeId,
+          `killswitch_sell_failed: ${errMsg}`,
+          {
+            txSignature: (sellResult as { txSignature?: string }).txSignature,
+            txLandMs: (sellResult as { txLandMs?: number }).txLandMs,
+            jitoTipSol: (sellResult as { jitoTipSol?: number }).jitoTipSol,
+          },
+        );
+        return;
+      }
       const MAX_SELL_RETRIES = 5;
       const retries = (pos.sellRetryCount ?? 0) + 1;
-      const errMsg = (sellResult as { errorMessage?: string }).errorMessage ?? 'unknown';
       if (retries < MAX_SELL_RETRIES) {
         logger.error(
           {
