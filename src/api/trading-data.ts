@@ -109,6 +109,7 @@ export function computeTradingData(
         t.exit_price_sol, t.exit_reason,
         t.gross_return_pct, t.net_return_pct, t.gap_adjusted_return_pct,
         t.jito_tip_sol, t.trade_size_sol,
+        t.entry_tx_signature, t.exit_tx_signature, t.tx_land_ms,
         CASE WHEN t.status='closed'
                   AND t.shadow_measured_entry_slippage_pct IS NOT NULL
                   AND t.shadow_measured_exit_slippage_pct IS NOT NULL
