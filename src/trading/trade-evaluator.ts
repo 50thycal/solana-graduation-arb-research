@@ -190,7 +190,17 @@ export class TradeEvaluator {
         ctx.mint, cfg.tradeSizeSol, priceT30, slippageEstPct, poolCtx, executionMode,
       );
     } catch (err) {
-      this.tradeLogger.failTrade(tradeId, `buy_exception: ${err instanceof Error ? err.message : String(err)}`);
+      // Log the full stack — buy_exception was swallowing the line that threw
+      // (e.g., "Non-base58 character" from the PumpSwap SDK on a malformed
+      // pool account) which made root-cause diagnosis impossible from
+      // bot-status alone. Stack lands in diagnose.json → recent_errors.
+      const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      logger.error(
+        { tradeId, mint: ctx.mint, mode: executionMode, stack },
+        'Buy execution threw: %s', message,
+      );
+      this.tradeLogger.failTrade(tradeId, `buy_exception: ${message}`);
       return;
     }
 
