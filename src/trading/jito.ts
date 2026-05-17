@@ -66,6 +66,14 @@ export async function submitBundle(
   const timeoutMs = opts.timeoutMs ?? 3_000;
   const t0 = Date.now();
 
+  // Multi-tx bundles aren't supported by the RPC fallback path (line ~111
+  // submits only signedTxs[0]). Every current caller passes exactly one tx
+  // (swap + tip ix in the same tx) — this assert prevents a future caller
+  // from silently dropping the tail of a multi-tx bundle on fallback.
+  if (signedTxs.length !== 1) {
+    throw new Error(`submitBundle requires exactly 1 signed tx, got ${signedTxs.length} — RPC fallback would silently drop the rest`);
+  }
+
   // ── Try Jito first ────────────────────────────────────────────────
   const base64Txs = signedTxs.map((tx) => Buffer.from(tx).toString('base64'));
   try {
