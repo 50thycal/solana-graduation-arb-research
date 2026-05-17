@@ -48,6 +48,11 @@ export interface CloseTradeParams {
   jitoTipSol?: number;
   txLandMs?: number;
   executionMode?: ExecutionMode;
+  /** Set when the close fell back to a degraded modeling path — e.g. shadow
+   *  sell couldn't read the pool so net_return_pct is gap-penalty modeled
+   *  rather than measured. Surfaces on trading.json so promotion logic can
+   *  down-weight these rows. */
+  executionFailureReason?: string;
 }
 
 export class TradeLogger {
@@ -221,6 +226,7 @@ export class TradeLogger {
       shadow_measured_exit_slippage_pct: params.shadowMeasuredExitSlippagePct,
       jito_tip_sol: params.jitoTipSol,
       tx_land_ms: params.txLandMs,
+      execution_failure_reason: params.executionFailureReason,
     });
 
     logger.info(

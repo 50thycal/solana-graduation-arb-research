@@ -85,8 +85,10 @@ export async function submitBundle(
       throw new Error(`Jito sendBundle returned no bundleId: ${JSON.stringify(resp.data)}`);
     }
 
-    // Poll for bundle status up to timeoutMs. Jito typically lands in <1s.
-    const landed = await pollBundleStatus(bundleId, timeoutMs);
+    // Poll for bundle status up to max(timeoutMs, 4s). Jito typically lands in <1s
+    // but we extend the deadline so the Jito path doesn't fall through prematurely
+    // while the RPC fallback deadline is ~6s — keeps path: 'jito' the common case.
+    const landed = await pollBundleStatus(connection, bundleId, Math.max(timeoutMs, 4_000));
     if (landed) {
       return {
         landed: true,
@@ -144,8 +146,18 @@ export async function submitBundle(
   }
 }
 
-/** Poll Jito getBundleStatuses until the bundle lands or timeout elapses. */
+/**
+ * Poll Jito getBundleStatuses until the bundle lands or timeout elapses.
+ * Returns null on three "looks landed but isn't usable" cases that callers
+ * MUST NOT treat as success:
+ *   (a) bundle-level err is non-null (Jito reports the bundle failed)
+ *   (b) the tx itself reverted on-chain (RPC getSignatureStatuses returns err)
+ * Pre-fix, both cases caused phantom landings: bot recorded trades as
+ * filled when the swap had actually reverted. The 2026-05-17 strategy-manager
+ * phantom-close bug was one path; this is the other.
+ */
 async function pollBundleStatus(
+  connection: Connection,
   bundleId: string,
   timeoutMs: number,
 ): Promise<{ txSignature: string; landedSlot: number } | null> {
@@ -168,11 +180,36 @@ async function pollBundleStatus(
         transactions: string[];
         slot: number;
         confirmation_status: string;
+        err?: { Ok: null } | Record<string, unknown> | null;
       }> | undefined;
       const s = statuses?.[0];
-      if (s && (s.confirmation_status === 'confirmed' || s.confirmation_status === 'finalized')) {
-        return { txSignature: s.transactions[0], landedSlot: s.slot };
+      if (!s) {
+        await new Promise((r) => setTimeout(r, pollInterval));
+        continue;
       }
+      const conf = s.confirmation_status;
+      const isLanded = conf === 'processed' || conf === 'confirmed' || conf === 'finalized';
+      if (!isLanded) {
+        await new Promise((r) => setTimeout(r, pollInterval));
+        continue;
+      }
+      // Bundle-level err: Jito wraps success as { Ok: null }. Anything else is a failure.
+      const bundleErr = s.err && typeof s.err === 'object' && 'Ok' in s.err ? null : s.err ?? null;
+      if (bundleErr != null) {
+        logger.warn({ bundleId, bundleErr }, 'Jito bundle landed but bundle-level err non-null');
+        return null;
+      }
+      // Tx-level err: a bundle can land with confirmation_status=confirmed
+      // while its constituent tx reverted on-chain. Verify via RPC before
+      // returning success — Jito's bundle status doesn't always reflect this.
+      const sig = s.transactions[0];
+      const txStatuses = await connection.getSignatureStatuses([sig]).catch(() => null);
+      const txEntry = txStatuses?.value?.[0];
+      if (txEntry?.err != null) {
+        logger.warn({ bundleId, sig, txErr: txEntry.err }, 'Jito bundle landed but tx reverted');
+        return null;
+      }
+      return { txSignature: sig, landedSlot: s.slot };
     } catch {
       // transient poll failure — retry
     }

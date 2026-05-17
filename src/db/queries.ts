@@ -1118,6 +1118,10 @@ export interface TradeClose {
   shadow_measured_exit_slippage_pct?: number;
   jito_tip_sol?: number;
   tx_land_ms?: number;
+  /** Set when the exit closed via a degraded modeling path (e.g. shadow sell
+   *  fell back to gap-penalty because the on-chain pool read failed). NULL on
+   *  a normal exit. */
+  execution_failure_reason?: string;
 }
 
 export function closeTrade(db: Database.Database, tradeId: number, data: TradeClose): void {
@@ -1137,7 +1141,8 @@ export function closeTrade(db: Database.Database, tradeId: number, data: TradeCl
       measured_exit_slippage_pct = COALESCE(@measured_exit_slippage_pct, measured_exit_slippage_pct),
       shadow_measured_exit_slippage_pct = COALESCE(@shadow_measured_exit_slippage_pct, shadow_measured_exit_slippage_pct),
       jito_tip_sol = COALESCE(jito_tip_sol, 0) + COALESCE(@jito_tip_sol, 0),
-      tx_land_ms = COALESCE(@tx_land_ms, tx_land_ms)
+      tx_land_ms = COALESCE(@tx_land_ms, tx_land_ms),
+      execution_failure_reason = COALESCE(@execution_failure_reason, execution_failure_reason)
     WHERE id = @tradeId
   `).run({
     tradeId,
@@ -1155,6 +1160,7 @@ export function closeTrade(db: Database.Database, tradeId: number, data: TradeCl
     shadow_measured_exit_slippage_pct: data.shadow_measured_exit_slippage_pct ?? null,
     jito_tip_sol: data.jito_tip_sol ?? null,
     tx_land_ms: data.tx_land_ms ?? null,
+    execution_failure_reason: data.execution_failure_reason ?? null,
   });
 }
 

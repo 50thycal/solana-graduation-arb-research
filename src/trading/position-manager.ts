@@ -262,6 +262,24 @@ export class PositionManager extends EventEmitter {
 
   private scheduleCollectionChecks(pos: ActivePosition): void {
     const nowMs = Date.now();
+    const maxExitMs = pos.maxExitTimestamp * 1000;
+
+    // Recovery case: position is already past maxExit (bot was down longer than
+    // maxHoldSeconds, or trade was added via addPosition during retry after the
+    // window closed). Fire a checkPosition immediately so the timeout branch
+    // can resolve. Without this the position hangs in the monitoring set
+    // forever because all setTimeout calls below would be skipped or have
+    // negative delays.
+    if (nowMs >= maxExitMs) {
+      setImmediate(() => {
+        this.checkPosition(pos.tradeId).catch(err => {
+          logger.error('recovery-immediate check error for trade %d: %s', pos.tradeId, err instanceof Error ? err.message : String(err));
+        });
+      });
+      this.positionTimers.set(pos.tradeId, []);
+      return;
+    }
+
     const gradTimeMs = pos.graduationDetectedAt * 1000;
     const timers: NodeJS.Timeout[] = [];
 
@@ -269,7 +287,7 @@ export class PositionManager extends EventEmitter {
       const checkAtMs = gradTimeMs + offset * 1000;
       const delayMs = checkAtMs - nowMs;
       if (delayMs < 100) continue;                               // already past
-      if (checkAtMs > pos.maxExitTimestamp * 1000) continue;    // after max hold
+      if (checkAtMs > maxExitMs) continue;                       // after max hold
 
       timers.push(setTimeout(() => {
         this.checkPosition(pos.tradeId).catch(err => {
@@ -278,16 +296,14 @@ export class PositionManager extends EventEmitter {
       }, delayMs));
     }
 
-    // Guaranteed exit check 1s after maxExitTimestamp (catches timeout even if no
-    // collection offsets land exactly at maxExitTimestamp)
-    const timeoutDelayMs = pos.maxExitTimestamp * 1000 - nowMs + 1000;
-    if (timeoutDelayMs > 0) {
-      timers.push(setTimeout(() => {
-        this.checkPosition(pos.tradeId).catch(err => {
-          logger.error('timeout check error for trade %d: %s', pos.tradeId, err instanceof Error ? err.message : String(err));
-        });
-      }, timeoutDelayMs));
-    }
+    // Guaranteed exit check 1s after maxExitTimestamp. The negative-delay
+    // guard is no longer needed — the early return above handles that case.
+    const timeoutDelayMs = maxExitMs - nowMs + 1000;
+    timers.push(setTimeout(() => {
+      this.checkPosition(pos.tradeId).catch(err => {
+        logger.error('timeout check error for trade %d: %s', pos.tradeId, err instanceof Error ? err.message : String(err));
+      });
+    }, timeoutDelayMs));
 
     this.positionTimers.set(pos.tradeId, timers);
 
