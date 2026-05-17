@@ -1,0 +1,124 @@
+{
+  "generated_at": "2026-05-17T08:07:45.755Z",
+  "panelv3_4": {
+    "title": "max_tick_drop_0_30 — New Filter Dimension",
+    "description": "max_tick_drop_0_30 is the worst single 5s-interval price drop in the 0–30s pre-entry window, measured in percentage points. Values are ≤ 0; closer to 0 = smoother early path, more negative = a sudden flush before T+30. This panel tests it standalone and stacked on the legacy baseline composite (`vel<20 + top5<10%`) across thresholds {> −3, > −5, > −8, > −10, > −15}. Hypothesis: a large early tick-drop signals coordinated dumping that tends to continue post-entry. beats_baseline = opt_avg_ret > rolling ALL-labeled Panel 4 optimum (see constants.baseline_sim_return).",
+    "constants": {
+      "baseline_sim_return": -14.1,
+      "thresholds": [
+        -3,
+        -5,
+        -8,
+        -10,
+        -15
+      ],
+      "min_n_for_optimum": 30
+    },
+    "rows": [
+      {
+        "threshold": -3,
+        "mode": "standalone",
+        "n": 1134,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -8.2,
+        "opt_win_rate": 43,
+        "beats_baseline": true
+      },
+      {
+        "threshold": -3,
+        "mode": "stacked_baseline",
+        "n": 132,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": -8.3,
+        "opt_win_rate": 50,
+        "beats_baseline": true
+      },
+      {
+        "threshold": -5,
+        "mode": "standalone",
+        "n": 1757,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -9.4,
+        "opt_win_rate": 42,
+        "beats_baseline": true
+      },
+      {
+        "threshold": -5,
+        "mode": "stacked_baseline",
+        "n": 199,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": -8.7,
+        "opt_win_rate": 50,
+        "beats_baseline": true
+      },
+      {
+        "threshold": -8,
+        "mode": "standalone",
+        "n": 2805,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -10.3,
+        "opt_win_rate": 41,
+        "beats_baseline": true
+      },
+      {
+        "threshold": -8,
+        "mode": "stacked_baseline",
+        "n": 290,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -6.9,
+        "opt_win_rate": 48,
+        "beats_baseline": true
+      },
+      {
+        "threshold": -10,
+        "mode": "standalone",
+        "n": 3503,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -10.2,
+        "opt_win_rate": 41,
+        "beats_baseline": true
+      },
+      {
+        "threshold": -10,
+        "mode": "stacked_baseline",
+        "n": 350,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -4.8,
+        "opt_win_rate": 50,
+        "beats_baseline": true
+      },
+      {
+        "threshold": -15,
+        "mode": "standalone",
+        "n": 4767,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -11.2,
+        "opt_win_rate": 41,
+        "beats_baseline": true
+      },
+      {
+        "threshold": -15,
+        "mode": "stacked_baseline",
+        "n": 419,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -3.8,
+        "opt_win_rate": 51,
+        "beats_baseline": true
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 30,
+      "strong_n_threshold": 100
+    }
+  }
+}

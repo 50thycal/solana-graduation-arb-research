@@ -1,0 +1,79 @@
+{
+  "generated_at": "2026-05-17T08:07:45.755Z",
+  "verdict": "HEALTHY",
+  "next_action": "All checks pass. Safe to interpret /api/snapshot and /api/best-combos as real signal.",
+  "level1_bot_running": {
+    "pass": true,
+    "evidence": {
+      "total_graduations": 8982,
+      "last_graduation_seconds_ago": 285
+    },
+    "notes": "Bot is receiving graduations."
+  },
+  "level2_price_capture": {
+    "pass": true,
+    "evidence": {
+      "sample_size": 50,
+      "null_open_price_count": 0,
+      "null_open_price_rate": 0,
+      "null_pct_t300_count": 4,
+      "no_pumpswap_pool_count": 0,
+      "no_pumpswap_pool_rate": 0,
+      "first_bad_row_id": null
+    },
+    "notes": "Price capture looks clean — PumpSwap pool linked and prices populated on recent rows."
+  },
+  "level3_timestamps": {
+    "pass": true,
+    "evidence": {
+      "sample_size": 20,
+      "missing_price_checkpoints": 0,
+      "first_bad_row_id": null
+    },
+    "notes": "Checkpoint grid is consistent on recent rows."
+  },
+  "level4_label_logic": {
+    "pass": true,
+    "evidence": {
+      "sample_size": 20,
+      "mismatches": [],
+      "mismatch_count": 0
+    },
+    "notes": "Label logic matches expected rule on recent rows."
+  },
+  "level5_live_ready": {
+    "pass": true,
+    "evidence": {
+      "live_strategy_count": 2,
+      "live_strategies": [
+        "v9-velmono-dev-live-micro",
+        "v9-vel20-top5-live-micro"
+      ],
+      "killswitch_tripped": false,
+      "daily_live_net_profit_sol": -0.0505,
+      "daily_max_loss_sol": 1,
+      "circuit_breaker_tripped": false,
+      "wallet_env_set": true
+    },
+    "notes": "Live-mode prerequisites satisfied."
+  },
+  "pipeline_health": {
+    "ws_connected": true,
+    "last_graduation_sec_ago": 285,
+    "last_t30_callback_sec_ago": 255,
+    "last_paper_trade_sec_ago": 101556,
+    "last_shadow_trade_sec_ago": 225,
+    "last_candidate_sec_ago": 9,
+    "enabled_strategies": 48,
+    "channel_win_distribution": {
+      "pump_fun_ws_confirmed_pct": 0,
+      "pump_fun_ws_processed_pct": 100,
+      "pumpswap_ws_confirmed_pct": 0,
+      "rpc_poll_pct": 0,
+      "total_wins": 795
+    },
+    "verdict": "HEALTHY",
+    "notes": "Pipeline active — graduations, T+30 callbacks, and entries within thresholds."
+  },
+  "recent_errors": []
+}

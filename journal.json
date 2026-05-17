@@ -1,0 +1,1527 @@
+{
+  "generated_at": "2026-05-17T08:09:12.113Z",
+  "entry_count": 49,
+  "rows": [
+    {
+      "id": "v26-velmono-dev-ttp",
+      "strategy_id": "v26-velmono-dev-ttp",
+      "strategy_state": "enabled",
+      "strategy_label": "v26 v9shadow-velmono-dev mirror + trailingTP=10% [shadow]",
+      "cohort_label": "v26",
+      "hypothesis": "Mirror of v9shadow-velmono-dev (current #1 by net SOL: n=31, net +4.33, drop_top3 +2.67, mo +9.04 SOL/mo) with trailingTpEnabled=true and trailingTpDropPct=10. Hypothesis: the vel20-50+mono>0.5+dev>5% combo selects for tokens with strong path-shape signal — many of the TP-exits at +100% probably keep running. Trailing 10% from post-TP HWM should capture the right tail without giving back the whole pump. Requires the timeout fix (deployed alongside) so 300s maxHold doesn't force-exit trades still trailing.",
+      "prediction": {
+        "target_net_sol": 6,
+        "target_sol_per_mo": 15,
+        "target_drop_top3": 1,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=40 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "NO-DATA",
+      "created_at": 1778986053,
+      "updated_at": 1778986053,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 0,
+        "median_net_pct": null,
+        "mean_net_pct": null,
+        "win_rate_pct": null,
+        "net_sol": null,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v26-best-double-ttp",
+      "strategy_id": "v26-best-double-ttp",
+      "strategy_state": "enabled",
+      "strategy_label": "v26 v10-best-double mirror + trailingTP=10% [shadow]",
+      "cohort_label": "v26",
+      "hypothesis": "Mirror of v10-best-double (current #2 by net SOL: n=84, net +4.26, drop_top3 +1.94, mo +8.58 SOL/mo) with trailingTpEnabled=true / dropPct=10. v10-best-double uses TP=150/SL=25 on vel20-50+dd>-10%. The wider 150% TP already captures more of the right tail than 100% — adding trailing on top should compound. Tradeoff: with TP=150, trailing only activates on the +150% trades (the rarest), so the marginal impact is smaller than on TP=100 strategies.",
+      "prediction": {
+        "target_net_sol": 6,
+        "target_sol_per_mo": 12,
+        "target_drop_top3": 1,
+        "target_n": 120,
+        "target_days": 21,
+        "kill_criterion": "n>=60 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778986053,
+      "updated_at": 1778986053,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 1,
+        "median_net_pct": -28.87,
+        "mean_net_pct": -28.87,
+        "win_rate_pct": 0,
+        "net_sol": -0.1443,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v26-bot-excl-climbing-ttp",
+      "strategy_id": "v26-bot-excl-climbing-ttp",
+      "strategy_state": "enabled",
+      "strategy_label": "v26 v25-bot-excl-climbing mirror + trailingTP=10% [shadow]",
+      "cohort_label": "v26",
+      "hypothesis": "Mirror of v25-bot-excl-climbing (current #3 by net SOL, also TOP by monthly run rate at +36.75 SOL/mo: n=70, net +3.08, drop_top3 +1.44) with trailingTpEnabled=true / dropPct=10. The bottom-excluded + climbing_t30_t45 combo selects for tokens that have already shown confirmed upward path momentum by T+45 — these are exactly the tokens most likely to keep running past TP=100%. Trailing TP should have the largest expected lift on this strategy of all 5.",
+      "prediction": {
+        "target_net_sol": 5,
+        "target_sol_per_mo": 50,
+        "target_drop_top3": 1.5,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778986053,
+      "updated_at": 1778986053,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 9,
+        "median_net_pct": 1.16,
+        "mean_net_pct": 11.01,
+        "win_rate_pct": 55.6,
+        "net_sol": 0.4956,
+        "sol_per_mo": null,
+        "drop_top3": -0.1407
+      }
+    },
+    {
+      "id": "v26-vel2050-dd-base-ttp",
+      "strategy_id": "v26-vel2050-dd-base-ttp",
+      "strategy_state": "enabled",
+      "strategy_label": "v26 v20-vel2050-dd-base mirror + trailingTP=10% [shadow]",
+      "cohort_label": "v26",
+      "hypothesis": "Mirror of v20-vel2050-dd-base (current #4 by net SOL: n=34, net +3.06, drop_top3 +0.80, mo +14.45 SOL/mo) with trailingTpEnabled=true / dropPct=10. Same underlying filter universe as v10-best-double but with entry-gate [5,100] instead of [-99,1000] and SL=30 instead of 25. Cleaner test of the trailing-TP effect since the entry-gated population is more focused on healthy starts.",
+      "prediction": {
+        "target_net_sol": 5,
+        "target_sol_per_mo": 20,
+        "target_drop_top3": 0.8,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=40 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778986053,
+      "updated_at": 1778986053,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 1,
+        "median_net_pct": -35.91,
+        "mean_net_pct": -35.91,
+        "win_rate_pct": 0,
+        "net_sol": -0.1795,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v26-vel20-top5-ttp",
+      "strategy_id": "v26-vel20-top5-ttp",
+      "strategy_state": "enabled",
+      "strategy_label": "v26 v9shadow-vel20-top5 mirror + trailingTP=10% [shadow]",
+      "cohort_label": "v26",
+      "hypothesis": "Mirror of v9shadow-vel20-top5 (current #5 by net SOL: n=50, net +2.84, drop_top3 -0.21 [WARNING: lottery-ticket-driven], mo +5.29 SOL/mo) with trailingTpEnabled=true / dropPct=10. The drop_top3 is NEGATIVE on the base strategy — net is propped up by 3 outlier wins. The trailing-TP variant tests whether capturing more of the right tail on the existing winners produces a robust positive drop_top3 instead of relying on the same lottery tickets being even bigger. Higher kill bar reflects the questionable base-strategy edge.",
+      "prediction": {
+        "target_net_sol": 4,
+        "target_sol_per_mo": 8,
+        "target_drop_top3": 0.5,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and drop_top3<-0.5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "NO-DATA",
+      "created_at": 1778986053,
+      "updated_at": 1778986053,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 0,
+        "median_net_pct": null,
+        "mean_net_pct": null,
+        "win_rate_pct": null,
+        "net_sol": null,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v9-vel20-top5-live-micro",
+      "strategy_id": "v9-vel20-top5-live-micro",
+      "strategy_state": "enabled",
+      "strategy_label": "v9 vel<20 + top5<10% @ 150/30 [LIVE_MICRO 0.05 SOL]",
+      "cohort_label": "v9-live",
+      "hypothesis": "vel<20 + top5<10% with TP150/SL30 should accumulate net SOL on live on-chain fills, validating the shadow result (n=47, +3.44 SOL, drop_top3=+0.39, mo=+7.39, edge-decay STABLE, Panel 11 STABLE on n=235). Orthogonal in candidate space to v9-velmono-dev-live-micro (different vel band — vel<20 vs vel>=20) so the two cannot fire on the same graduation. Thinner drop_top3 than v9-velmono (edge leans more on tail wins) and demanding TP=150% — main risks are PumpSwap 6004 (ExceededSlippage) on fast-movers and same 5s-polling discretization that affects all fixed-TP strategies.",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 50,
+        "target_days": 30,
+        "kill_criterion": "n>=20 and net_sol<-0.5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778944698,
+      "updated_at": 1778944698,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 1,
+        "median_net_pct": -101.04,
+        "mean_net_pct": -101.04,
+        "win_rate_pct": 0,
+        "net_sol": -0.0505,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v14-snipers-liq",
+      "strategy_id": "v14-snipers-liq",
+      "strategy_state": "deleted",
+      "strategy_label": "v14-snipers-liq",
+      "cohort_label": "v14",
+      "hypothesis": "Tests snipers <= 2 + liq > 100 — clean snipe environment combined with adequate T+30 pool depth. Hypothesis: low sniper count screens out the bot-rush rugs, and the liquidity floor ensures the entry/exit can actually fill.",
+      "prediction": {
+        "target_net_sol": 1,
+        "target_sol_per_mo": 5,
+        "target_drop_top3": 0.2,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=100 and drop_top3<0"
+      },
+      "manual_status": "KILLED",
+      "auto_status": "KILLED",
+      "created_at": 1778944181,
+      "updated_at": 1778944181,
+      "updates": [
+        {
+          "at": 1778944181,
+          "note": "KILLED 2026-05-15 — INVALID at n=120: total_net_sol=-0.324, drop_top3=-3.295 SOL. The apparent +0.16 SOL net (Performance by Strategy panel) was driven by 3 lottery tickets — removing them flips the strategy to -3.3 SOL net. 3rd day on kill list. Lesson: the snipers<=2 + liq>100 combo doesn't actually produce edge after outlier-stripping; the sniper + liquidity signals together must NOT be additive on the win side."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 126,
+        "median_net_pct": -4.16,
+        "mean_net_pct": 1.38,
+        "win_rate_pct": 46,
+        "net_sol": 0.8682,
+        "sol_per_mo": 2.94,
+        "drop_top3": -2.1169
+      }
+    },
+    {
+      "id": "v9-velmono-dev-live-micro",
+      "strategy_id": "v9-velmono-dev-live-micro",
+      "strategy_state": "enabled",
+      "strategy_label": "v9 vel 20-50 + mono>0.5 + dev>5% @ 100/30 [LIVE_MICRO 0.05 SOL]",
+      "cohort_label": "v9-live",
+      "hypothesis": "vel 20-50 + mono>0.5 + dev>5% with TP100/SL30 should accumulate net SOL on live on-chain fills, validating that the shadow result (n=30, +4.81 SOL, drop_top3=+3.16, mo=+10.61) survives real tx costs (Jito tip ~0.0001 SOL, ATA rent ~0.002 SOL one-time, RPC submission failures). Live test at 0.05 SOL/trade. Shadow already measures slippage on real pool state so the main delta vs shadow should be tx fees + occasional failed txs.",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 50,
+        "target_days": 30,
+        "kill_criterion": "n>=20 and net_sol<-0.5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "NO-DATA",
+      "created_at": 1778860037,
+      "updated_at": 1778860037,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 0,
+        "median_net_pct": null,
+        "mean_net_pct": null,
+        "win_rate_pct": null,
+        "net_sol": null,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v25-bot-excl-climbing",
+      "strategy_id": "v25-bot-excl-climbing",
+      "strategy_state": "enabled",
+      "strategy_label": "v25 bot-excl + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow]",
+      "cohort_label": "v25",
+      "hypothesis": "v21-bottom-excluded is the front-runner at n=128, net +4.10 SOL, but 44 SL fires (34%) are dragging the avg. Hypothesis: adding climbing_t30_t45 (recovery_t45_above_t30=1) at entry will pre-filter out the trades destined to hit SL — the C5 climbing gate excludes tokens whose price is dropping between t30 and t45, which is exactly the population that goes on to hit -30% SL. Trade-off: ~50% lower n, entry at T+60 instead of T+30. If the climbing filter cuts SL rate from 34% to ~18% while keeping TP rate similar, net SOL per trade should rise sharply.",
+      "prediction": {
+        "target_net_sol": 2.5,
+        "target_sol_per_mo": 15,
+        "target_drop_top3": 0.5,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=40 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778761339,
+      "updated_at": 1778761339,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 79,
+        "median_net_pct": 1.08,
+        "mean_net_pct": 9.05,
+        "win_rate_pct": 50.6,
+        "net_sol": 3.5729,
+        "sol_per_mo": 38.967,
+        "drop_top3": 1.9388
+      }
+    },
+    {
+      "id": "v25-bot-excl-calm",
+      "strategy_id": "v25-bot-excl-calm",
+      "strategy_state": "deleted",
+      "strategy_label": "v25-bot-excl-calm",
+      "cohort_label": "v25",
+      "hypothesis": "v21-bottom-excluded variant: add sum_abs_returns_0_30 < 60 (realized vol proxy) to exclude whippy pre-entry tokens. Hypothesis: tokens with high pre-entry vol tend to whipsaw — the 30% SL is wide enough that the price spike upward looks like a winner, then a fast pullback hits the stop. Excluding whippy entries should preferentially cut SL count while preserving TP candidates. v17/v18 calm-survivor cohorts (sum_abs<60 + dd>-10) tested positive in early data. Different SL-reduction mechanism than the climbing variant: calmness is a population-shape filter (orthogonal to direction), climbing is a directional filter.",
+      "prediction": {
+        "target_net_sol": 2,
+        "target_sol_per_mo": 10,
+        "target_drop_top3": 0.4,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=40 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "HIT-KILL",
+      "created_at": 1778761339,
+      "updated_at": 1778944181,
+      "updates": [
+        {
+          "at": 1778944181,
+          "note": "KILLED 2026-05-15 — HIT-KILL: net -2.552 SOL, monthly -40.26 to -70.2 SOL/mo, drop_top3 -3.93. Extreme bleeder, no recovery path. Hypothesis falsified: the sum_abs<60 calmness filter on the bottom-excluded universe selects for the WORST subset, not the best. Calm pre-entry paths on the bottom-excluded population apparently correlate with subsequent dump (boredom signal) rather than steady appreciation. Lesson: sum_abs<60 is NOT universally protective — it depends on the underlying universe. Worked on v17/v18 (calm + dd>-10), failed catastrophically here."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 72,
+        "median_net_pct": -13.76,
+        "mean_net_pct": -5.25,
+        "win_rate_pct": 34.7,
+        "net_sol": -1.8898,
+        "sol_per_mo": -27.29,
+        "drop_top3": -3.4755
+      }
+    },
+    {
+      "id": "v25-bot-excl-breakeven",
+      "strategy_id": "v25-bot-excl-breakeven",
+      "strategy_state": "deleted",
+      "strategy_label": "v25-bot-excl-breakeven",
+      "cohort_label": "v25",
+      "hypothesis": "v21-bottom-excluded with breakevenStopPct=20 — same filters and TP/SL grid, but once a trade's HWM hits +20%, the SL line moves to 0%. Hypothesis: of the 44 current SL fires, some fraction touched +20% before bleeding back; those convert from -30% SL outcomes to 0% TO outcomes. Doesn't reduce SL COUNT but reduces SL MAGNITUDE on those trades. Cost: trades that briefly hit +20%, pull back, then would have recovered to a TP — get cut at 0% instead. If even 1/3 of current SL trades touched +20% first, this saves ~4 SOL of losses vs the baseline +4.10 SOL net.",
+      "prediction": {
+        "target_net_sol": 5.5,
+        "target_sol_per_mo": 25,
+        "target_drop_top3": 0.8,
+        "target_n": 150,
+        "target_days": 14,
+        "kill_criterion": "n>=75 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778761339,
+      "updated_at": 1778944181,
+      "updates": [
+        {
+          "at": 1778944181,
+          "note": "KILLED 2026-05-15 — HIT-KILL: net -1.185 SOL, monthly -18.70 to -25.3 SOL/mo, drop_top3 -2.57. The breakeven stop hypothesis (convert -30% SLs to 0% TOs by moving SL to 0 once HWM hits +20%) FAILED. Two possible mechanisms: (a) trades that touched +20% then pulled back to 0% were going to recover to TP — the breakeven cut them prematurely; (b) the +20% touch is the WHM peak, so by the time we get back to 0% the gap-penalty cost on a stop fill makes the realized exit worse than -30%/total_size_sol. The breakeven mechanic looks elegant but degraded the strategy materially vs the v21-bottom-excluded baseline (which is +4 SOL on similar n)."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 86,
+        "median_net_pct": -8.82,
+        "mean_net_pct": -0.96,
+        "win_rate_pct": 32.6,
+        "net_sol": -0.4132,
+        "sol_per_mo": -5.967,
+        "drop_top3": -2.1374
+      }
+    },
+    {
+      "id": "v25-bot-excl-tp150",
+      "strategy_id": "v25-bot-excl-tp150",
+      "strategy_state": "enabled",
+      "strategy_label": "v25 bot-excl + TP150/SL25 [shadow]",
+      "cohort_label": "v25",
+      "hypothesis": "v21-bottom-excluded with TP=150 (was 100) and SL=25 (was 30). Same filter universe. Hypothesis: top leaderboard combos use TP/SL ratios closer to 6:1 (TP=150/SL=25) than 3:1 (TP=100/SL=30) — e.g. `vel 20-50 + climbing_t30_t45` at n=131, opt +9.91% with TP=150/SL=25. The current strategy only captures 10% TP — many of those tokens that hit +100% keep running to +200%+. Wider TP captures the right tail while tighter SL caps losses. Tradeoff: trades that would have hit TP=100 keep running; some reverse and hit SL. Net effect should be positive if the right-tail-strength signal that the bottom-excluded universe selects for is real.",
+      "prediction": {
+        "target_net_sol": 5,
+        "target_sol_per_mo": 20,
+        "target_drop_top3": 0.7,
+        "target_n": 120,
+        "target_days": 14,
+        "kill_criterion": "n>=75 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "HIT-KILL",
+      "created_at": 1778761339,
+      "updated_at": 1778761339,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 130,
+        "median_net_pct": -21.01,
+        "mean_net_pct": -1.62,
+        "win_rate_pct": 33.1,
+        "net_sol": -1.0557,
+        "sol_per_mo": -11.376,
+        "drop_top3": -3.4739
+      }
+    },
+    {
+      "id": "v25-bot-excl-mono",
+      "strategy_id": "v25-bot-excl-mono",
+      "strategy_state": "enabled",
+      "strategy_label": "v25 bot-excl + mono>0.5 (TP100/SL30) [shadow]",
+      "cohort_label": "v25",
+      "hypothesis": "v21-bottom-excluded + monotonicity_0_30 > 0.5 overlay. Hypothesis: v21-bottom-excluded is unusual in being pure exclusion (top5/dd/vel/age) with no positive feature stacked. Leaderboard's strongest combos pair an exclusion with a positive feature like mono or climbing. Adding mono>0.5 (Cohen's d=0.42 — the strongest single-feature signal we have) should shift the population from `not the worst` to `trends positive AND not the worst`. Should compound the two effects without over-narrowing — mono>0.5 fires on ~25-50% of rows so coverage is reasonable.",
+      "prediction": {
+        "target_net_sol": 3,
+        "target_sol_per_mo": 15,
+        "target_drop_top3": 0.5,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778761339,
+      "updated_at": 1778761339,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 80,
+        "median_net_pct": -15,
+        "mean_net_pct": -1.2,
+        "win_rate_pct": 32.5,
+        "net_sol": -0.4814,
+        "sol_per_mo": -5.182,
+        "drop_top3": -2.217
+      }
+    },
+    {
+      "id": "v25-bot-excl-vel2050",
+      "strategy_id": "v25-bot-excl-vel2050",
+      "strategy_state": "enabled",
+      "strategy_label": "v25 bot-excl + vel 20-50 (TP100/SL30) [shadow]",
+      "cohort_label": "v25",
+      "hypothesis": "v21-bottom-excluded with vel<200 replaced by vel in [20, 50] band. Hypothesis: vel 20-50 is the magic band on the leaderboard — `vel 20-50 + dd>-10%` (n=128, opt +5.42%) AND `vel 20-50 + climbing_t30_t45` (n=131, opt +9.91%, current research baseline) both clear promotion. The current strategy's vel<200 captures the whole curve including slow/fast outliers; concentrating bets on the proven band should compound the exclusion + velocity effects. Tradeoff: ~40% lower trade count, loses the vel<20 and vel 50-200 trades currently in v21-bottom-excluded.",
+      "prediction": {
+        "target_net_sol": 3.5,
+        "target_sol_per_mo": 18,
+        "target_drop_top3": 0.6,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778761339,
+      "updated_at": 1778761339,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 21,
+        "median_net_pct": -34.87,
+        "mean_net_pct": 6.62,
+        "win_rate_pct": 38.1,
+        "net_sol": 0.6954,
+        "sol_per_mo": 7.977,
+        "drop_top3": -0.9224
+      }
+    },
+    {
+      "id": "v9shadow-vel5-10",
+      "strategy_id": "v9shadow-vel5-10",
+      "strategy_state": "deleted",
+      "strategy_label": "v9shadow-vel5-10",
+      "cohort_label": "v9",
+      "hypothesis": "Tests vel 5-10 SOL/min slice as a discrete velocity-band strategy. Hypothesis: tokens with steady-but-not-explosive bonding-curve fill velocity would have healthier post-graduation paths than the broader vel<20 universe.",
+      "prediction": {
+        "target_net_sol": 1,
+        "target_sol_per_mo": 5,
+        "target_drop_top3": 0.2,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "manual_status": "KILLED",
+      "auto_status": "KILLED",
+      "created_at": 1778728727,
+      "updated_at": 1778728727,
+      "updates": [
+        {
+          "at": 1778728727,
+          "note": "KILLED 2026-05-14 at n=86. Outcome: avg -1.82%, net -0.783 SOL, 67% SL exits (58/86). Vel 5-10 band did NOT meaningfully outperform broader universes; the strategy's biggest exit reason was hitting stop-loss before reaching TP. Cost model (gap penalties + round-trip slippage) eats the modest mean return. Lesson: a single velocity band in isolation is not enough — needs to be paired with a path-shape or concentration signal to clear the SOL bar."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 86,
+        "median_net_pct": 8.41,
+        "mean_net_pct": -1.82,
+        "win_rate_pct": 68.6,
+        "net_sol": -0.783,
+        "sol_per_mo": -1.693,
+        "drop_top3": -1.367
+      }
+    },
+    {
+      "id": "v14-vel5-10-dd-shadow",
+      "strategy_id": "v14-vel5-10-dd-shadow",
+      "strategy_state": "deleted",
+      "strategy_label": "v14-vel5-10-dd-shadow",
+      "cohort_label": "v14",
+      "hypothesis": "Vel 5-10 + max_drawdown_0_30 > -10% — combines the slow-velocity slice with a path-shape filter excluding deep pre-entry drawdowns. Hypothesis: slow steady graduation + healthy 0-30s price action would lift the vel 5-10 band into profitability via tail-trimming.",
+      "prediction": {
+        "target_net_sol": 1,
+        "target_sol_per_mo": 5,
+        "target_drop_top3": 0.2,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "manual_status": "KILLED",
+      "auto_status": "KILLED",
+      "created_at": 1778728727,
+      "updated_at": 1778728727,
+      "updates": [
+        {
+          "at": 1778728727,
+          "note": "KILLED 2026-05-14 at n=57. Outcome: avg -5.4%, net -1.5399 SOL, 61% SL exits (35/57). Even with the dd>-10% tail-trim filter, the vel 5-10 band failed to clear costs. Confirms the v9shadow-vel5-10 kill conclusion: the slow-velocity slice is fundamentally lower-EV than the vel 20-50 band (which IS positive — see v20/v23 baseline). Don't keep deploying vel 5-10 variants — the band itself is the problem, not the modifier filters stacked on top."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 57,
+        "median_net_pct": 7.75,
+        "mean_net_pct": -5.4,
+        "win_rate_pct": 61.4,
+        "net_sol": -1.5399,
+        "sol_per_mo": -7.528,
+        "drop_top3": -1.9189
+      }
+    },
+    {
+      "id": "v24-rugger-climbing",
+      "strategy_id": "v24-rugger-climbing",
+      "strategy_state": "enabled",
+      "strategy_label": "v24 serial_rugger + climbing_t30_t45 (TP150/SL25, entry@T+60) [shadow]",
+      "cohort_label": "v24",
+      "hypothesis": "LEADERBOARD-CONFIRMED inversion: serial_rugger (creator_prior_rug_rate >= 0.7) stacked with climbing_t30_t45 produces n=30 raw +8.33%, opt +8.16% / 47% opt WR at TP=150/SL=25. serial_rugger was ~-27% in Panel 7 standalone — strongly bearish. The pattern: dev-reputation filters are PRIORS that get dominated by POSTERIOR path evidence (climbing_t30_t45 confirms this specific token is pumping at the entry decision moment). When the path signal fires, the bad-dev population's typical dump behavior is no longer the right reference class — we're looking at the 30% of serial-rugger tokens that DO pump this drop. Test whether the inversion holds past n=100.",
+      "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 8,
+        "target_drop_top3": 0.3,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778727364,
+      "updated_at": 1778727364,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 2,
+        "median_net_pct": 11.28,
+        "mean_net_pct": 11.28,
+        "win_rate_pct": 50,
+        "net_sol": 0.1128,
+        "sol_per_mo": 3.267,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v24-flow-neg-vwap",
+      "strategy_id": "v24-flow-neg-vwap",
+      "strategy_state": "enabled",
+      "strategy_label": "v24 flow_imb<0 + vwap_pullback strict (TP75/SL30, entry@T+60) [shadow]",
+      "cohort_label": "v24",
+      "hypothesis": "LEADERBOARD-CONFIRMED inversion: flow_imb<0 (sells > buys in 0-30s window) stacked with vwap_pullback strict shows n=35 raw +16.63% / opt +5.44% / 63% opt WR at TP=75/SL=30. flow_imb<0 alone is bearish — net selling pressure. But when stacked with vwap_pullback strict (price 1-5% below VWAP + mono>0.5 = pulled back inside an overall uptrend), the combination flips bullish. Mechanism: sells dominating + recovering price = absorbed selling pressure, often the bottom of a healthy shakeout. Different mechanism from creator-rep inversion (flow is microstructure, not reputation) — testing whether the same prior-vs-posterior dynamic generalizes across signal classes.",
+      "prediction": {
+        "target_net_sol": 1,
+        "target_sol_per_mo": 5,
+        "target_drop_top3": 0.2,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778727364,
+      "updated_at": 1778727364,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 3,
+        "median_net_pct": 16.15,
+        "mean_net_pct": 26.1,
+        "win_rate_pct": 66.7,
+        "net_sol": 0.3914,
+        "sol_per_mo": 5.029,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v24-rapid-fire-recovery",
+      "strategy_id": "v24-rapid-fire-recovery",
+      "strategy_state": "enabled",
+      "strategy_label": "v24 rapid_fire + confirmed_recovery (TP75/SL30, entry@T+60) [shadow speculative]",
+      "cohort_label": "v24",
+      "hypothesis": "SPECULATIVE inversion test: rapid_fire (creator_last_token_age_hours < 1 — dev launched another token in the last hour) + confirmed_recovery. rapid_fire was traditionally a strong sell signal (rapid serial launchers are usually the most predatory rug pattern). Hypothesis: if the inversion thesis generalizes from serial_rugger/repeat_dev across the full creator-rep family, rapid_fire should also invert when path-confirmation is present. Completes the creator-rep inversion trio (repeat_dev>=3 in v23, serial_rugger in v24-rugger-climbing, rapid_fire here). Tighter kill (-1.5 SOL) reflects unverified direction. Coverage will be very sparse — rapid_fire requires prior token age data AND last-token-age<1hr AND confirmed_recovery, intersection might be 1-3% of population.",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3,
+        "target_drop_top3": 0.1,
+        "target_n": 60,
+        "target_days": 28,
+        "kill_criterion": "n>=30 and net_sol<-1.5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778727364,
+      "updated_at": 1778727364,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 1,
+        "median_net_pct": 81.31,
+        "mean_net_pct": 81.31,
+        "win_rate_pct": 100,
+        "net_sol": 0.4065,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v24-busy-batch-climbing",
+      "strategy_id": "v24-busy-batch-climbing",
+      "strategy_state": "enabled",
+      "strategy_label": "v24 busy_batch + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow speculative]",
+      "cohort_label": "v24",
+      "hypothesis": "SPECULATIVE inversion test: busy_batch (graduation_density_5min >= 5 — 5+ tokens graduated in trailing 5 min) + climbing_t30_t45. busy_batch was hypothesized as bearish in the B4 design — when many tokens graduate at once, retail attention is split per token. quiet_batch combos perform well on the leaderboard. Inverted hypothesis: when retail attention IS split but THIS token is climbing despite the split, that climb is a stronger signal than usual (the token is winning the attention war). Different mechanism from reputation inversions — this is attention-economy inversion rather than dev-reputation. If positive, suggests path confirmation dominates ANY adverse prior.",
+      "prediction": {
+        "target_net_sol": 1,
+        "target_sol_per_mo": 5,
+        "target_drop_top3": 0.2,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1.5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778727364,
+      "updated_at": 1778727364,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 3,
+        "median_net_pct": -35.12,
+        "mean_net_pct": 7.79,
+        "win_rate_pct": 33.3,
+        "net_sol": 0.1169,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v24-bundle-suspect-climbing",
+      "strategy_id": "v24-bundle-suspect-climbing",
+      "strategy_state": "enabled",
+      "strategy_label": "v24 bundle_suspect + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow speculative]",
+      "cohort_label": "v24",
+      "hypothesis": "SPECULATIVE inversion test: bundle_suspect (3+ snipers + no whale + all fresh wallets — the canonical coordinated-bundle-buy signature designed as a pre-RPC proxy for B1 bundle detection) + climbing_t30_t45. bundle_suspect was DESIGNED as a bearish exclusion filter. The inversion hypothesis: if multiple coordinated wallets are buying AND the price is climbing at T+45, that's a coordinated PUMP not a coordinated dump prep. Distinguishes pump-coordination from dump-coordination via the path signal. Most theoretically interesting because it tests whether even DESIGNED-bearish filters invert. Coverage will be quite sparse (bundle_suspect requires sniper data + whale data + max_vel data + climbing).",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3,
+        "target_drop_top3": 0.1,
+        "target_n": 60,
+        "target_days": 28,
+        "kill_criterion": "n>=30 and net_sol<-1.5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "NO-DATA",
+      "created_at": 1778727364,
+      "updated_at": 1778727364,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 0,
+        "median_net_pct": null,
+        "mean_net_pct": null,
+        "win_rate_pct": null,
+        "net_sol": null,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v23-vwap-climbing",
+      "strategy_id": "v23-vwap-climbing",
+      "strategy_state": "enabled",
+      "strategy_label": "v23 vwap_pullback strict + climbing_t30_t45 (TP75/SL30, entry@T+60) [shadow]",
+      "cohort_label": "v23",
+      "hypothesis": "NEW leaderboard #1: vwap_pullback strict + climbing_t30_t45 at n=48, raw +21.01%, opt +13.21% with 72.9% raw WR / 68.8% opt WR. Two newly-added filter dimensions (B5 VWAP × C5 recovery) stacked. Thesis: price pulled back 1-5% below VWAP with uptrending monotonicity AND a confirmed bounce from t30 to t45 = entry caught the bottom of a healthy retracement. entryTimingSec=60 used (not 45) to guarantee recovery_t45_above_t30 is written before eval — eliminates NULL=fail race risk. Entry price is at T+60 not T+30; ~10pp drift expected vs the leaderboard sim.",
+      "prediction": {
+        "target_median_net_pct": 8,
+        "target_n": 100,
+        "target_days": 14,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778608445,
+      "updated_at": 1778608445,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 4,
+        "median_net_pct": -13.17,
+        "mean_net_pct": -1.9,
+        "win_rate_pct": 50,
+        "net_sol": -0.038,
+        "sol_per_mo": -0.403,
+        "drop_top3": -0.2721
+      }
+    },
+    {
+      "id": "v23-vel2050-climbing",
+      "strategy_id": "v23-vel2050-climbing",
+      "strategy_state": "enabled",
+      "strategy_label": "v23 vel 20-50 + climbing_t30_t45 (TP150/SL25, entry@T+60) [shadow]",
+      "cohort_label": "v23",
+      "hypothesis": "NEW BASELINE row: vel 20-50 + climbing_t30_t45 at n=124, opt +8.74% (TP=150/SL=25), 59.7% opt WR — beats_baseline=true. Promoted from research to live shadow. Hypothesis: the productive velocity band (20-50 sol/min) combined with confirmed t30->t45 upward momentum is a robust, n-rich entry signal. Should accumulate trades faster than other v23 picks because vel 20-50 alone covers ~10% of the entry-gated population.",
+      "prediction": {
+        "target_median_net_pct": 5,
+        "target_n": 150,
+        "target_days": 14,
+        "kill_criterion": "n>=75 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778608445,
+      "updated_at": 1778608445,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 31,
+        "median_net_pct": -28.95,
+        "mean_net_pct": 2.03,
+        "win_rate_pct": 35.5,
+        "net_sol": 0.3149,
+        "sol_per_mo": 2.087,
+        "drop_top3": -1.4924
+      }
+    },
+    {
+      "id": "v23-repeat-recovery",
+      "strategy_id": "v23-repeat-recovery",
+      "strategy_state": "enabled",
+      "strategy_label": "v23 repeat_dev>=3 + confirmed_recovery (TP75/SL30, entry@T+60) [shadow]",
+      "cohort_label": "v23",
+      "hypothesis": "INVERSION test: repeat_dev>=3 + confirmed_recovery at n=31, opt +12.57%, 61.3% opt WR. repeat_dev>=3 historically tested as BEARISH in isolation (Panel 7: ~-20% test return). But when stacked with confirmed_recovery, it becomes a top-tier combo. Hypothesis: 'avoid repeat devs' is averaging across all repeat-dev tokens including the rugged ones — filtering for the recovery-confirmation signal SELECTS for the repeat devs who actually deliver this drop. If true, this is a major edge: a conventional exclusion rule that inverts into a positive filter via path confirmation. Wider kill criterion (median<-8) reflects counter-intuitive direction.",
+      "prediction": {
+        "target_median_net_pct": 6,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=40 and median<-8"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778608445,
+      "updated_at": 1778608445,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 10,
+        "median_net_pct": 21.01,
+        "mean_net_pct": 22.13,
+        "win_rate_pct": 50,
+        "net_sol": 1.1065,
+        "sol_per_mo": 10.313,
+        "drop_top3": -0.4001
+      }
+    },
+    {
+      "id": "v23-snipers5-recovery",
+      "strategy_id": "v23-snipers5-recovery",
+      "strategy_state": "enabled",
+      "strategy_label": "v23 snipers<=5 + confirmed_recovery (TP100/SL30, entry@T+60) [shadow]",
+      "cohort_label": "v23",
+      "hypothesis": "Sniper × C5 stack: snipers<=5 + confirmed_recovery at n=41, opt +8.66%, 61% opt WR — IDENTICAL numbers to no_bundle + confirmed_recovery in current data (the no_bundle disjunction's extra branches (whale_pct>=30 OR max_sniper_vel>=5) don't add many rows). Deploying snipers<=5 form since the trading filter pipeline is AND-only and can't express the no_bundle disjunction directly. Tests whether sticking the C5 confirmed_recovery filter on top of the existing 'clean snipe environment' (snipers<=5) signal compounds.",
+      "prediction": {
+        "target_median_net_pct": 4,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778608445,
+      "updated_at": 1778608445,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 21,
+        "median_net_pct": -33.82,
+        "mean_net_pct": 1.66,
+        "win_rate_pct": 42.9,
+        "net_sol": 0.1741,
+        "sol_per_mo": 1.464,
+        "drop_top3": -1.4951
+      }
+    },
+    {
+      "id": "v23-snipers-max-vel",
+      "strategy_id": "v23-snipers-max-vel",
+      "strategy_state": "enabled",
+      "strategy_label": "v23 snipers<=2 + max_sniper_vel<10 (TP100/SL25) [shadow]",
+      "cohort_label": "v23",
+      "hypothesis": "Newly-exposed sniper_wallet_velocity_max filter: snipers<=2 + max_sniper_vel<10 at n=30, opt +6.61% (TP=100/SL=25). Tests whether the MAX-priors-of-any-sniper filter improves on the AVG version (snipers<=2 + wallet_vel_avg<10 at opt +10.33%, n=31). Hypothesis: max captures 'no single heavy-recidivist in the batch' which is the bundle-pattern signature; avg can be diluted by a clean cohort even when one heavy sniper is present. Direct comparison to the avg-version cohort already running in v21 (v21-sniper-age-shadow).",
+      "prediction": {
+        "target_median_net_pct": 3,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778608445,
+      "updated_at": 1778608445,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 5,
+        "median_net_pct": -15.78,
+        "mean_net_pct": -12.4,
+        "win_rate_pct": 20,
+        "net_sol": -0.31,
+        "sol_per_mo": -2.469,
+        "drop_top3": -0.2662
+      }
+    },
+    {
+      "id": "v22-top5-vwap-strict",
+      "strategy_id": "v22-top5-vwap-strict",
+      "strategy_state": "enabled",
+      "strategy_label": "v22 top5<10% + vwap_pullback strict (TP75/SL30) [shadow]",
+      "cohort_label": "v22",
+      "hypothesis": "Standout new leaderboard row: top5<10% + vwap_pullback_strict shows n=30, raw 73% WR, opt +7.79% at TP=75/SL=30 with opt WR 70%. Hypothesis: clean concentration (top5<10%) + a pulled-back-but-uptrending price (price 1-5% below VWAP with mono>0.5) signals quality token mid-shakeout — entry below VWAP catches mean reversion in a healthy distribution. Highest opt WR of any new combo. If it holds past n=100 with similar profile, this is a strong promotion candidate.",
+      "prediction": {
+        "target_median_net_pct": 5,
+        "target_n": 100,
+        "target_days": 14,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778551122,
+      "updated_at": 1778551122,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 2,
+        "median_net_pct": 75.39,
+        "mean_net_pct": 75.39,
+        "win_rate_pct": 100,
+        "net_sol": 0.7539,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v22-quiet-vwap-strict",
+      "strategy_id": "v22-quiet-vwap-strict",
+      "strategy_state": "enabled",
+      "strategy_label": "v22 quiet_batch + vwap_pullback strict (TP100/SL30) [shadow]",
+      "cohort_label": "v22",
+      "hypothesis": "B4 × B5 stack: quiet_batch (graduation_density_5min <= 2 = uncrowded 5-min window) + vwap_pullback strict (pulled back below VWAP with uptrend intact). At n=63 raw +10.87% / opt +4.53% (TP=100/SL=30). Tests whether the attention-isolation hypothesis (fewer concurrent grads = retail bandwidth per token) compounds with the mean-reversion-after-pullback setup. Note: rank<=2+vwap_pullback strict shows identical numbers in current data — quiet_batch rows overlap heavily with rank<=2 because density<=2 implies rank<=2.",
+      "prediction": {
+        "target_median_net_pct": 2,
+        "target_n": 120,
+        "target_days": 14,
+        "kill_criterion": "n>=60 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778551122,
+      "updated_at": 1778551122,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 6,
+        "median_net_pct": 2.56,
+        "mean_net_pct": 3.62,
+        "win_rate_pct": 50,
+        "net_sol": 0.1086,
+        "sol_per_mo": 1.005,
+        "drop_top3": -0.4691
+      }
+    },
+    {
+      "id": "v22-mono-vwap",
+      "strategy_id": "v22-mono-vwap",
+      "strategy_state": "enabled",
+      "strategy_label": "v22 mono>0.66 + vwap_pullback (TP100/SL30) [shadow]",
+      "cohort_label": "v22",
+      "hypothesis": "Highest-n new combo: mono>0.66 + vwap_pullback (non-strict: price -10 to -1% vs VWAP) at n=99 raw +11.15% / opt +1.94% (TP=100/SL=30). Closest to n=100 promotion bar of any new row — should hit it within days. Mono>0.66 means 2/3+ of the 5s intervals in 0-30s were positive (front-loaded buyer interest), then a modest VWAP pullback gives a discounted entry. Lower opt than v22-top5-vwap-strict but much higher n stability.",
+      "prediction": {
+        "target_median_net_pct": 1,
+        "target_n": 200,
+        "target_days": 14,
+        "kill_criterion": "n>=100 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778551122,
+      "updated_at": 1778551122,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 9,
+        "median_net_pct": 10.52,
+        "mean_net_pct": 12.76,
+        "win_rate_pct": 55.6,
+        "net_sol": 0.5743,
+        "sol_per_mo": 5.317,
+        "drop_top3": -0.5254
+      }
+    },
+    {
+      "id": "v22-snipers-flow",
+      "strategy_id": "v22-snipers-flow",
+      "strategy_state": "deleted",
+      "strategy_label": "v22-snipers-flow",
+      "cohort_label": "v22",
+      "hypothesis": "Sniper + B5 flow combo: snipers<=2 (clean T+0..T+2 wallet count) + flow_imb>0.6 (60%+ of SOL flow was buys, not sells, in 0-30s). At n=62 raw +15.92% / opt +2.38% (TP=150/SL=30). Tests whether 'clean snipe + sustained buy pressure' is additive to the standalone snipers<=2+wallet_vel<10 combo (which is opt +10.33% at n=31). If flow_imb thresholding splits the existing sniper population sensibly, this should grow n faster than wallet_vel_avg (sniper coverage 22% × wallet velocity available = thin) by replacing wallet velocity with flow imbalance (~82% of rows have flow data).",
+      "prediction": {
+        "target_median_net_pct": 2,
+        "target_n": 120,
+        "target_days": 21,
+        "kill_criterion": "n>=60 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778551122,
+      "updated_at": 1778944181,
+      "updates": [
+        {
+          "at": 1778944181,
+          "note": "KILLED 2026-05-15 — n=36-51 across recent days, drop_top3=-2.47 to -3.298 SOL, monthly run rate -12.93 to -13.8 SOL/mo. Journal auto_status: DEGRADING/DECAYING. Was in 2026-05-14 kill narrative without action item — escalating today. Hypothesis (snipers<=2 + flow_imb>0.6 would compound clean-snipe + sustained-buy-pressure) is falsified: combining the two signals does NOT add edge over either alone, and the flow_imb>0.6 filter selects a population that systematically loses."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 53,
+        "median_net_pct": -10.89,
+        "mean_net_pct": -5.59,
+        "win_rate_pct": 37.7,
+        "net_sol": -1.4814,
+        "sol_per_mo": -11.987,
+        "drop_top3": -3.2687
+      }
+    },
+    {
+      "id": "v22-dev-firstbuyer",
+      "strategy_id": "v22-dev-firstbuyer",
+      "strategy_state": "enabled",
+      "strategy_label": "v22 dev<5% + firstbuyer_known_sniper (TP150/SL30) [shadow]",
+      "cohort_label": "v22",
+      "hypothesis": "B3 surprise — dev<5% + firstbuyer_known_sniper (firstbuyer_priors>=20: a wallet that's sniped 20+ prior grads is the first non-bot buyer in T+0..T+5s) at n=37 raw +17.29% / opt +2.09% (TP=150/SL=30). Counter-intuitive direction: I expected known-sniper first buyer to be BEARISH (fast exit, predictable dump). The data says the opposite when paired with clean dev<5%. Possible explanations: (a) sample noise at n=37; (b) recurring snipers cluster on legitimate tokens because they have detection infrastructure — their presence is a quality signal not a warning. KILL FAST if data shows the inverted direction was noise.",
+      "prediction": {
+        "target_median_net_pct": 1,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=40 and median<-8"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778551122,
+      "updated_at": 1778551122,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 9,
+        "median_net_pct": -11.77,
+        "mean_net_pct": -6.94,
+        "win_rate_pct": 33.3,
+        "net_sol": -0.3123,
+        "sol_per_mo": -3.542,
+        "drop_top3": -0.6916
+      }
+    },
+    {
+      "id": "v21-sniper-age-shadow",
+      "strategy_id": "v21-sniper-age-shadow",
+      "strategy_state": "enabled",
+      "strategy_label": "v21 snipers<=2 + walletVel<10 + age>10min (TP150/SL25) [shadow]",
+      "cohort_label": "v21",
+      "hypothesis": "snipers<=2 + wallet_vel<10 has the leaderboard's highest opt return (+10.88% @ n=30) but coverage is too sparse to hit n=100. Stacking age>10min should concentrate the edge by excluding rapid-fire/rug-style grads while still letting n grow on the legit-curve side. Sister combo liq>100 + snipers<=2 already shows n=118 raw +7.18% — the structural bet is sound.",
+      "prediction": {
+        "target_median_net_pct": 5,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778468113,
+      "updated_at": 1778468113,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 5,
+        "median_net_pct": -18.17,
+        "mean_net_pct": -23.46,
+        "win_rate_pct": 0,
+        "net_sol": -0.5865,
+        "sol_per_mo": -7.691,
+        "drop_top3": -0.3758
+      }
+    },
+    {
+      "id": "v21-early-exit-meanrev",
+      "strategy_id": "v21-early-exit-meanrev",
+      "strategy_state": "deleted",
+      "strategy_label": "v21-early-exit-meanrev",
+      "cohort_label": "v21",
+      "hypothesis": "Mean ALL-population price path peaks at +3.9% near T+65 then bleeds to -4.6% by T+300 (price-path-stats.json). Hypothesis: tight TP=10 / SL=15 / 90s-hold on the unfiltered entry-gated population would harvest the mean reversion before the bleed sets in. Bet on early-exit + filter-free deployment to capture the highest possible sample n.",
+      "prediction": {
+        "target_net_sol": 1,
+        "target_sol_per_mo": 5,
+        "target_drop_top3": 0.2,
+        "target_n": 200,
+        "target_days": 10,
+        "kill_criterion": "n>=100 and net_sol<-1"
+      },
+      "manual_status": "KILLED",
+      "auto_status": "KILLED",
+      "created_at": 1778468113,
+      "updated_at": 1778728727,
+      "updates": [
+        {
+          "at": 1778498790,
+          "note": "n=13 checkpoint: median=-5.3%, mean=-19.03%, WR=15.4%. Catastrophically bad early signal. Original kill criterion (n>=100 and median<-3) is too lenient given WR=15% at n=13. Tightening kill criterion to n>=30 and median<-5. If trend continues, expect kill before n=50. Structural issue: TP=10% in 90s with SL=15% on unfiltered tokens — too many tokens never reach TP in 90s, producing near-certain SL exits."
+        },
+        {
+          "at": 1778728727,
+          "note": "KILLED 2026-05-14 at n=206 (largest sample of any deployment to date). Outcome: avg -1.18%, net -1.2197 SOL. 52% SL exits (108/206) vs 35% timeouts (71) and only 13% TP hits (27). Hypothesis falsified: the +3.9% mean-path peak at T+65 visible in price-path-stats is NOT capturable in live trading because (a) the gap-penalty cost model on tight TP/SL eats most of the per-trade margin, and (b) the few trades that DO hit TP get offset by the SL fills on the bottom 50% of the distribution. Filter-free + tight-exit is structurally negative-EV on memecoins. Lesson: do not deploy filter-free strategies even on apparent mean-reversion signals — the cost model demands selection, and unfiltered universes have catastrophic tails that wider TPs cannot compensate for."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 221,
+        "median_net_pct": 3.04,
+        "mean_net_pct": -2.38,
+        "win_rate_pct": 53.4,
+        "net_sol": -2.6352,
+        "sol_per_mo": -26.314,
+        "drop_top3": -3.7881
+      }
+    },
+    {
+      "id": "v21-vel2050-dd-trail",
+      "strategy_id": "v21-vel2050-dd-trail",
+      "strategy_state": "deleted",
+      "strategy_label": "v21-vel2050-dd-trail",
+      "cohort_label": "v21",
+      "hypothesis": "vel20-50 + dd>-10% has 15pp gap between raw avg (+20.4%) and opt static cell (+5.36%) on n=112 — static TP=150 leaves runner profit on the table. Replace with momentum-reversal trailing exit (activate at +20% HWM, exit on 5% drop from HWM) to capture the trend without giving back the whole pump. exit-sim-matrix would confirm best_delta_pp > 0 but it's currently disabled — running this live is the next-best validation.",
+      "prediction": {
+        "target_median_net_pct": 3,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778468113,
+      "updated_at": 1778944181,
+      "updates": [
+        {
+          "at": 1778944181,
+          "note": "KILLED 2026-05-15 — n=22-25, drop_top3=-1.710 to -1.75 SOL, monthly -7.99 to -10.4 SOL/mo. The trailing-exit variant (trailingSlActivationPct=20, trailingSlDistancePct=5) consistently underperformed the static-TP version of vel 20-50 + dd>-10% (v20-vel2050-dd-base at +1.12 SOL net). Hypothesis falsified: the static-exit's 15pp gap between raw avg (+20.4%) and opt (+5.36%) is NOT runner-profit left on the table — it's tail-volatility absorbed by the static SL. The trailing exit triggers too eagerly (HWM-5% drop after +20% peak fires often), converting winners into break-even/small-loss exits. Lesson: leaderboard sim raw-vs-opt gap is not always reclaimable by dynamic exits — the static optimum may be globally optimal for that combo."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 26,
+        "median_net_pct": 3,
+        "mean_net_pct": -9.21,
+        "win_rate_pct": 53.8,
+        "net_sol": -1.1969,
+        "sol_per_mo": -7.101,
+        "drop_top3": -1.6873
+      }
+    },
+    {
+      "id": "v21-vel5-mono-dd",
+      "strategy_id": "v21-vel5-mono-dd",
+      "strategy_state": "deleted",
+      "strategy_label": "v21-vel5-mono-dd",
+      "cohort_label": "v21",
+      "hypothesis": "Path-shape Cohen's d ranks monotonicity_0_30 (0.42) and max_drawdown_0_30 (0.32) as the two strongest single-feature signals. vel<5 + mono>0.66 already shows n=344 raw +7.6% but opt -1.98% — tail losses kill it. Adding dd>-10% should excise the deep-dip pre-grad tokens that bleed post-grad, lifting opt while shrinking n. Three orthogonal path-shape axes stacked on top of the slow-velocity universe.",
+      "prediction": {
+        "target_median_net_pct": 2,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "HIT-KILL",
+      "created_at": 1778468113,
+      "updated_at": 1778944181,
+      "updates": [
+        {
+          "at": 1778944181,
+          "note": "KILLED 2026-05-15 — HIT-KILL at n=59, drop_top3=-2.802 SOL. Vel<5 + mono>0.66 + dd>-10% triple-stack on path-shape signals did not survive sample expansion. Confirms the v9shadow-vel5-10 and v14-vel5-10-dd-shadow kill pattern: the slow-velocity band (vel<5 or vel 5-10) is structurally negative-EV, no path-shape overlay rescues it. Even with the strongest single-feature signal (mono>0.66) and tail-trim (dd>-10), the underlying band's edge is missing. Don't keep deploying vel<5/5-10 variants — the band itself is the problem."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 64,
+        "median_net_pct": -15.28,
+        "mean_net_pct": -5.64,
+        "win_rate_pct": 39.1,
+        "net_sol": -1.8062,
+        "sol_per_mo": -9.95,
+        "drop_top3": -3.5031
+      }
+    },
+    {
+      "id": "v21-bottom-excluded",
+      "strategy_id": "v21-bottom-excluded",
+      "strategy_state": "enabled",
+      "strategy_label": "v21 universe minus path/concentration/velocity tail (TP100/SL30) [shadow]",
+      "cohort_label": "v21",
+      "hypothesis": "Rather than pick a positive filter, exclude the worst quintiles using fields populated for ~all entry-gated rows: top5<=30%, dd>-25%, vel<200, age>=60s. Avoids the NULL-fail trap that creator-rep/sniper exclusions hit (sniper coverage 22%, creator-rep NULLs on fresh devs). Hypothesis: if the bottom of each tail systematically underperforms, removing them should lift the rolling baseline from -11.22% without picking a specific cell. Big-n exclusion-only is robust to overfit.",
+      "prediction": {
+        "target_median_net_pct": -8,
+        "target_n": 200,
+        "target_days": 14,
+        "kill_criterion": "n>=100 and median<-15"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778468113,
+      "updated_at": 1778468113,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 269,
+        "median_net_pct": -8.03,
+        "mean_net_pct": 2.27,
+        "win_rate_pct": 42,
+        "net_sol": 3.0465,
+        "sol_per_mo": 14.765,
+        "drop_top3": 1.0458
+      }
+    },
+    {
+      "id": "v15-sumabs-cohort-postmortem",
+      "strategy_id": "v15-sumabs-shadow",
+      "strategy_state": "deleted",
+      "strategy_label": "v15-sumabs-shadow",
+      "cohort_label": "v15",
+      "hypothesis": "v15 = same path-shape signal (sum_abs_returns_0_30) as the v14 cohort, but with a +5..+90 entry gate (vs v14's wider gate). Hypothesis: tightening the entry window would surface lower-noise entries and improve net SOL accumulation. Direct 1:1 A/B vs v14 — same filter, only the entry gate differs.",
+      "prediction": {
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "underperforms v14 on net SOL accumulation"
+      },
+      "manual_status": "KILLED",
+      "auto_status": "KILLED",
+      "created_at": 1778457496,
+      "updated_at": 1778457496,
+      "updates": [
+        {
+          "at": 1778457496,
+          "note": "KILLED 2026-05-10. v15-sumabs-shadow and v15-sumabs-dd-shadow both finished at median -1.51%, timeout-dominated exits, no net SOL accumulation. Direct 1:1 vs v14 (same path-shape filter, no +5..+90 entry gate): v15 underperformed v14, so the narrower entry gate is not pulling weight on this signal. v14 cohort kept to continue collecting. Lesson: +5..+90 entry gate + sum_abs_returns_0_30 path-shape filter does not outperform the wider-gate equivalent."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 17,
+        "median_net_pct": -1.51,
+        "mean_net_pct": -4.51,
+        "win_rate_pct": 47.1,
+        "net_sol": -0.3833,
+        "sol_per_mo": -3.137,
+        "drop_top3": -0.7904
+      }
+    },
+    {
+      "id": "v19-cohort-journal",
+      "strategy_id": "v19-age10-top5-base",
+      "strategy_state": "enabled",
+      "strategy_label": "v19 age>10min + top5<10% @ 150/30 gate5-100 (leaderboard #1 mirror)",
+      "cohort_label": "v19",
+      "hypothesis": "age>10min + top5<10% is the new leaderboard #1 (n=117, opt +6.17% @ tp=150/sl=30, MODERATE wr_std_dev=10.6%, beats baseline by 17.4pp). Cohort tests three variants: v19-base mirrors the leaderboard exactly; v19-tight tightens top5 from <10% to <8% to test whether excluding moderate-concentration plays raises opt; v19-tp100 lowers TP from 150 to 100 to test whether earlier exits improve hit rate without losing too much per-win on live fills. At n=50 per variant, compare medians + SOL P&L; promote the strongest variant with stable regime.",
+      "prediction": {
+        "target_median_net_pct": 4,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "DEGRADING",
+      "created_at": 1778336342,
+      "updated_at": 1778336342,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 19,
+        "median_net_pct": -4.29,
+        "mean_net_pct": -6.56,
+        "win_rate_pct": 47.4,
+        "net_sol": -0.6233,
+        "sol_per_mo": -2.535,
+        "drop_top3": -1.1104
+      }
+    },
+    {
+      "id": "v20-cohort-journal",
+      "strategy_id": "v20-vel2050-dd-base",
+      "strategy_state": "enabled",
+      "strategy_label": "v20 vel 20-50 + dd>-10% @ 150/30 gate5-100 (corrected v10)",
+      "cohort_label": "v20",
+      "hypothesis": "vel 20-50 + dd>-10% is the most regime-stable combo in the catalog (n=111, opt +5.13% @ tp=150/sl=30, STABLE wr_std_dev=2.8%). Live v10-best-double underperforms research at median -4.34% on n=37, attributed to entry gate mismatch (-99..1000 vs research +5..+100) and possibly SL (25 vs grid-optimal 30). v20-base deploys corrected gate to A/B-test the gate hypothesis directly against v10 (kept untouched as control). v20-tight tightens dd from -10% to -7%. v20-sl20 stress-tests the SL grid optimum — at n=92 the optimum was sl=25, at n=111 it shifted to sl=30; if v20-sl20 outperforms v20-base, the grid optimum is noisy. At n=50 per variant, the gate hypothesis confirms if v20-base median > v10 median by 5pp+.",
+      "prediction": {
+        "target_median_net_pct": 4,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and median<-3"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "OPEN",
+      "created_at": 1778336342,
+      "updated_at": 1778336342,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 35,
+        "median_net_pct": -0.23,
+        "mean_net_pct": 16.46,
+        "win_rate_pct": 48.6,
+        "net_sol": 2.8813,
+        "sol_per_mo": 12.614,
+        "drop_top3": 0.6216
+      }
+    },
+    {
+      "id": "v19-age10-top5-shadow-proposal-2026-05-09",
+      "strategy_id": "v19-age10-top5-shadow",
+      "strategy_state": "deleted",
+      "strategy_label": "v19-age10-top5-shadow",
+      "cohort_label": "v19",
+      "hypothesis": "age>10min + top5<10% is the new leaderboard leader at n=117, opt +6.17% @ tp=150/sl=30, MODERATE regime (wr_std_dev=10.6%). The age>10min filter selects tokens that survived initial graduation volatility; top5<10% excludes concentrated whale plays. No live shadow strategy tests this combo. Deploy to measure whether the research edge translates to live shadow fills and whether MODERATE regime stability holds in real-time data.",
+      "prediction": {
+        "target_median_net_pct": 4,
+        "target_n": 100,
+        "target_days": 14,
+        "kill_criterion": "n>=50 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "NO-DATA",
+      "created_at": 1778326176,
+      "updated_at": 1778326176,
+      "updates": [],
+      "live_stats": {
+        "n_closed": 0,
+        "median_net_pct": null,
+        "mean_net_pct": null,
+        "win_rate_pct": null,
+        "net_sol": null,
+        "sol_per_mo": null,
+        "drop_top3": null
+      }
+    },
+    {
+      "id": "v18-calm-mkv-strict",
+      "strategy_id": "v18-calm-mkv-strict",
+      "strategy_state": "deleted",
+      "strategy_label": "v18-calm-mkv-strict",
+      "cohort_label": "v18",
+      "hypothesis": "First live test of the new Markov state-conditional exit DPM (deployed in PR #267). Same calm-survivor entry as v16-calm-base, plus a per-tick lookup against the 5526-path matrix on filter `dd>-10 + sum_abs<60` (n=938, baseline P_win=0.522). Strict default thresholds: exit when P(profit at T+300) drops below 0.30, hold past TP when P > 0.85 AND price > entry. The matrix cell needs n>=10 historical samples or the rule abstains and the fixed 25%SL/10%TP runs. Hypothesis: the 14pp mean-median gap on v16-calm-base (median +8.27% vs mean -6.09%) is driven by the loss tail running to ~-25%. Markov should kill those positions at T+60-T+120 once their (age, bucket) cell shows P_win < 0.30, lifting the mean meaningfully without touching the median win path. Predicted: median ~+7-8% (slight dip from occasional false-positive exits), mean ~-2 to 0% (loss tail trimmed ~5pp). If median holds and mean recovers, this is a v16 successor.",
+      "prediction": {
+        "target_median_net_pct": 7,
+        "target_n": 100,
+        "target_days": 10,
+        "kill_criterion": "n>=40 and median<0"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778295726,
+      "updated_at": 1778498790,
+      "updates": [
+        {
+          "at": 1778498790,
+          "note": "KILLED 2026-05-11. At n=68, v18-calm-mkv-strict is statistically identical to v18-calm-mkv-exitonly in every metric (median 8.46%, mean -4.12%, WR 60.3% — pixel-perfect match). Action item ai-2026-05-10-006 specified killing strict at n=50 if identical; executing now at n=68. The hold-side (hold>0.85) is confirmed inert: Markov adds zero value over the fixed-exit-only variant. Neither variant is SOL-positive (total=-1.401, drop3=-1.792), so the surviving exitonly is kept for comparison only, not as a promotion candidate. DECAYING edge flag (last-25 median -8.17%) confirms deteriorating conditions."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 68,
+        "median_net_pct": 8.46,
+        "mean_net_pct": -4.12,
+        "win_rate_pct": 60.3,
+        "net_sol": -1.4007,
+        "sol_per_mo": -19.221,
+        "drop_top3": -1.7924
+      }
+    },
+    {
+      "id": "v18-calm-mkv-exitonly",
+      "strategy_id": "v18-calm-mkv-exitonly",
+      "strategy_state": "deleted",
+      "strategy_label": "v18-calm-mkv-exitonly",
+      "cohort_label": "v18",
+      "hypothesis": "The clean test for whether Markov's value comes from the early-exit alone or from the let-winners-run side. Same entry + TP/SL as v16-calm-base. Markov exit threshold at 0.30 (active). Hold threshold at 0.99 — effectively unreachable, so the fixed TP=10 always fires when hit. Hypothesis: median should be essentially equal to v16-calm-base (~+8%) since the win path is unchanged, but mean should improve from -6.09% to ~0% to +1% if the early-exit mechanic actually rescues the loss tail. If exitonly lands at median +8 / mean ~0%, the early-exit is the entire story — we ship this as the v18 promotion candidate and the hold-side becomes optional sugar. If median drops alongside mean improving, then exits are catching too many noise pullbacks and v18-strict's hold-side is doing real work.",
+      "prediction": {
+        "target_median_net_pct": 8,
+        "target_n": 100,
+        "target_days": 10,
+        "kill_criterion": "n>=40 and median<-2"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778295726,
+      "updated_at": 1778585245,
+      "updates": [
+        {
+          "at": 1778585245,
+          "note": "KILLED 2026-05-12. n=106, total=−1.510 SOL, drop_top3=−2.054 SOL. Markov early-exit (P<0.30) confirmed: adds zero net-SOL value over static SL=25. The hold-side (v18-strict, already killed 2026-05-11) was confirmed inert, and the exit-side is now confirmed insufficient to overcome the calm-survivor structural loss tail. The Markov DPM experiment for this filter is complete."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 106,
+        "median_net_pct": 8.1,
+        "mean_net_pct": -2.85,
+        "win_rate_pct": 61.3,
+        "net_sol": -1.5102,
+        "sol_per_mo": -13.655,
+        "drop_top3": -2.0536
+      }
+    },
+    {
+      "id": "v18-calm-mkv-aggressive",
+      "strategy_id": "v18-calm-mkv-aggressive",
+      "strategy_state": "deleted",
+      "strategy_label": "v18-calm-mkv-aggressive",
+      "cohort_label": "v18",
+      "hypothesis": "Calibration boundary test. Exit threshold loosened to 0.40, hold threshold loosened to 0.80 — Markov fires more often on both sides. Hypothesis: aggressive exits will overshoot into the win path the same way v16-calm-be3 did at +3% (median crashed to +2.15% vs base +8.03%). Predicted: median drops below base (false-positive exits clip the win tail), mean improves further than strict (deeper loss-tail rescue) but at the cost of overall edge. If median crashes to <+3%, the strict thresholds are correctly calibrated and there's no headroom on the exit side. If median holds near base AND mean improves more than strict, we found a better calibration and v19 can iterate on it. Tighter kill criterion than other v18 variants — we expect this one to fail fast.",
+      "prediction": {
+        "target_median_net_pct": 5,
+        "target_n": 100,
+        "target_days": 10,
+        "kill_criterion": "n>=30 and median<-3"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "HIT-KILL",
+      "created_at": 1778295726,
+      "updated_at": 1778498790,
+      "updates": [
+        {
+          "at": 1778498790,
+          "note": "KILLED 2026-05-11. HIT-KILL criterion tripped: n=68, median=-8.51% (kill_criterion was n>=30 and median<-3). All SOL gates failed: total_net_sol=-1.223, drop_top3=-1.597, monthly=-16.78. Last-25 median -9.43%. Graduate 20564 single-event -91.1% confirms Markov matrix abstained (cell n<10) on exactly the worst tokens. Aggressive thresholds (exit<0.40/hold>0.80) over-clipped the win path as predicted. Edge-decay STABLE (meaning the decay is consistently bad)."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 68,
+        "median_net_pct": -8.51,
+        "mean_net_pct": -3.6,
+        "win_rate_pct": 47.1,
+        "net_sol": -1.2227,
+        "sol_per_mo": -16.779,
+        "drop_top3": -1.5972
+      }
+    },
+    {
+      "id": "v17-calm-be5",
+      "strategy_id": "v17-calm-be5",
+      "strategy_state": "deleted",
+      "strategy_label": "v17-calm-be5",
+      "cohort_label": "v17",
+      "hypothesis": "v16-calm-be3 failure analysis: BE@+3% sat inside the +/-5% noise band of these tokens, catching natural pullbacks instead of catastrophic reversals. v17 tests three BE triggers above that band. v17-calm-be5 is the 'just outside the noise band' test -- BE fires after price has moved +5%, which is past typical chop. Expect: (a) less BE-stop interference than be3 (median should recover from +2.15% toward base +8%), (b) some loss-tail rescue still preserved (mean better than base -6.5%). If be5 lands at median +6-7% with mean -3% to -5%, the BE concept works at this calibration. Same entry filter as v16-calm-base for direct comparison.",
+      "prediction": {
+        "target_median_net_pct": 6,
+        "target_n": 100,
+        "target_days": 10,
+        "kill_criterion": "n>=40 and median<0"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778292071,
+      "updated_at": 1778585245,
+      "updates": [
+        {
+          "at": 1778585245,
+          "note": "KILLED 2026-05-12. n=108, total=−1.418 SOL, drop_top3=−1.907 SOL. Crossed n=100 with all outlier-strip gates negative. BE@+5% improved mean by ~3pp vs v16-calm-base but could not overcome the structural loss tail of the calm-survivor filter. The filter selects a broad distribution including simultaneous SL-sweep tokens (grad 20564 −91%, grad 20849 −34%+). Calm-survivor entry + TP=10/SL=25 does not accumulate SOL."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 108,
+        "median_net_pct": 7.57,
+        "mean_net_pct": -2.63,
+        "win_rate_pct": 54.6,
+        "net_sol": -1.4182,
+        "sol_per_mo": -12.674,
+        "drop_top3": -1.9065
+      }
+    },
+    {
+      "id": "v17-calm-be7",
+      "strategy_id": "v17-calm-be7",
+      "strategy_state": "deleted",
+      "strategy_label": "v17-calm-be7",
+      "cohort_label": "v17",
+      "hypothesis": "Sweet-spot hypothesis. BE@+7% activates only after the trade has clearly committed direction (well past chop), but still leaves room for the trade to pull back through entry on a true reversal. Predicted best-of-cohort: (a) median ~equivalent to v16-calm-base (+8%) since BE rarely fires inside the win path, (b) mean meaningfully better than base (-3 to -4% vs -6.5%) because BE rescues the worst losers that pump-then-dump. If this hypothesis is correct, v17-calm-be7 is the v16 successor -- same entry, better cost-adjusted return.",
+      "prediction": {
+        "target_median_net_pct": 8,
+        "target_n": 100,
+        "target_days": 10,
+        "kill_criterion": "n>=40 and median<0"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778292071,
+      "updated_at": 1778585245,
+      "updates": [
+        {
+          "at": 1778585245,
+          "note": "KILLED 2026-05-12. n=108, total=−0.862 SOL, drop_top3=−1.406 SOL. BE@+7% was the best variant by mean (−1.6% vs be5 −2.63%) and appeared closest to breakeven, but drop_top3 confirms the apparent edge requires the top 3 lottery wins. Without them, −1.406 SOL. INVALID."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 108,
+        "median_net_pct": 8.08,
+        "mean_net_pct": -1.6,
+        "win_rate_pct": 60.2,
+        "net_sol": -0.8624,
+        "sol_per_mo": -7.707,
+        "drop_top3": -1.4059
+      }
+    },
+    {
+      "id": "v17-calm-be9",
+      "strategy_id": "v17-calm-be9",
+      "strategy_state": "deleted",
+      "strategy_label": "v17-calm-be9",
+      "cohort_label": "v17",
+      "hypothesis": "Upper-bound control. BE@+9% triggers only one tick before TP=10 fires -- so the BE almost never has time to actually rescue anything. Expect BE to be near-inert: median and mean both ~equivalent to v16-calm-base. This variant exists to confirm the BE effect is a function of trigger level, not a bug or unrelated factor. If be9 differs meaningfully from base, something else is going on. If be9 ~= base and be7 > base on mean, the BE recalibration thesis is confirmed.",
+      "prediction": {
+        "target_median_net_pct": 8,
+        "target_n": 100,
+        "target_days": 10,
+        "kill_criterion": "n>=40 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778292071,
+      "updated_at": 1778585245,
+      "updates": [
+        {
+          "at": 1778585245,
+          "note": "KILLED 2026-05-12. n=107, total=−1.148 SOL, drop_top3=−1.692 SOL. Best per-trade median of the v17 cohort (8.53%, STABLE edge-decay, last-25 median=8.68%) but net SOL after outlier strip is −1.692. The v17 BE-recalibration experiment is complete: trigger level (5/7/9%) affects noise-band interference but not the fundamental SOL deficit. The calm-survivor filter family cannot pass the promotion bar."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 107,
+        "median_net_pct": 8.53,
+        "mean_net_pct": -2.15,
+        "win_rate_pct": 65.4,
+        "net_sol": -1.1484,
+        "sol_per_mo": -10.262,
+        "drop_top3": -1.6919
+      }
+    },
+    {
+      "id": "v16-calm-base",
+      "strategy_id": "v16-calm-base",
+      "strategy_state": "deleted",
+      "strategy_label": "v16-calm-base",
+      "cohort_label": "v16",
+      "hypothesis": "Tokens that have moved but not too violently (sum_abs_returns_0_30 < 60), and haven't already drawn down (max_drawdown_0_30 > -10), hit a small TP cleanly more often than they blow through SL. The counterfactual on v9-vol-30-60 showed the lower bound `vol >= 30` was actively hurting (delta +4pp without it) -- opening to `sum_abs < 60` should expand n ~3x while preserving edge. dd>-10 strongly pulls weight (-5pp without on v13-vol3060-dd10). 10/25 matches the live-winning TP/SL across vol-30-60 / vel5-10 / v13-vol3060-dd10. This is the v16 control: no exit overlay, isolates whether the entry signal alone is enough.",
+      "prediction": {
+        "target_median_net_pct": 8,
+        "target_n": 100,
+        "target_days": 10,
+        "kill_criterion": "n>=40 and median<-5"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "ON-TRACK",
+      "created_at": 1778210214,
+      "updated_at": 1778292071,
+      "updates": [
+        {
+          "at": 1778292071,
+          "note": "n=46 readout (~24h after launch): median net +8.03%, mean -6.5%, WR 60.9%. ON-TRACK against target_median +8%. Cohort hit n=46/100 in <24h, well ahead of target_days=10 -- broader filter (sum_abs<60 instead of vol 30-60%) is delivering ~3x the trade rate as predicted. Mean negative due to expected loss tail; cumulative SOL P&L will improve once SL gap calibration catches up. Continue to n=100 for promotion check."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 58,
+        "median_net_pct": 7.76,
+        "mean_net_pct": -6.91,
+        "win_rate_pct": 58.6,
+        "net_sol": -2.003,
+        "sol_per_mo": -44.919,
+        "drop_top3": -2.4877
+      }
+    },
+    {
+      "id": "v16-calm-be3",
+      "strategy_id": "v16-calm-be3",
+      "strategy_state": "deleted",
+      "strategy_label": "v16-calm-be3",
+      "cohort_label": "v16",
+      "hypothesis": "Same calm-survivor entry as v16-calm-base, plus a breakeven stop at +3%. Hypothesis: ~25% of trades currently round-trip through the +5-7% zone before failing -- moving the SL to entry once price ticks +3% rescues those near-misses, converting ~10pp of loss tail to flat outcomes. Should produce the highest median of the v16 cohort. Exit-mechanic test: same filter as base, only the BE varies, so the median delta vs base is the BE rescue effect cleanly measured.",
+      "prediction": {
+        "target_median_net_pct": 11,
+        "target_n": 100,
+        "target_days": 10,
+        "kill_criterion": "n>=40 and median<-3"
+      },
+      "manual_status": "KILLED",
+      "auto_status": "KILLED",
+      "created_at": 1778210214,
+      "updated_at": 1778292071,
+      "updates": [
+        {
+          "at": 1778292071,
+          "note": "n=46 readout: median +2.15% vs target +11% -- predicted HIGHEST median in cohort, instead it's the LOWEST. Auto-status DEGRADING. Mean -3.54% vs base -6.5% (BE IS rescuing the loss tail by ~3pp), but median dropped from +8.03% to +2.15% (-5.8pp) and WR from 60.9% to 50% (-11pp). Diagnosis: BE@+3% is INSIDE the natural noise band of these tokens. Trades that pump to +3% then naturally pull back through entry now hit the BE-stop instead of riding to TP=10. We're catching noise pullbacks, not catastrophic reversals. Killing this strategy and rolling the BE-recalibration cohort (v17) at +5/+7/+9 to find the inflection point. Operator-killed (kill_criterion median<-3 not formally tripped -- bar was set too lenient given the +11 prediction)."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 46,
+        "median_net_pct": 2.15,
+        "mean_net_pct": -3.54,
+        "win_rate_pct": 50,
+        "net_sol": -0.814,
+        "sol_per_mo": null,
+        "drop_top3": -1.2986
+      }
+    },
+    {
+      "id": "v16-calm-trail5",
+      "strategy_id": "v16-calm-trail5",
+      "strategy_state": "deleted",
+      "strategy_label": "v16-calm-trail5",
+      "cohort_label": "v16",
+      "hypothesis": "Same calm-survivor entry as v16-calm-base, plus a trailing SL: activate at +5%, distance 3%. Hypothesis: TP=10 caps the right tail -- runners that would go +20-30% currently exit at +10. The trail activates after a small win is locked, then trails 3% behind peak, letting runners run. Expect: median slightly below base (TP fires fewer times before the trail catches up), but mean above base (fattens the right tail). If both base and be3 outperform on median, this variant is the runner-catcher and only wins on mean -- useful signal for portfolio construction either way.",
+      "prediction": {
+        "target_median_net_pct": 7,
+        "target_n": 100,
+        "target_days": 10,
+        "kill_criterion": "n>=40 and median<-7"
+      },
+      "manual_status": "OPEN",
+      "auto_status": "OPEN",
+      "created_at": 1778210214,
+      "updated_at": 1778292071,
+      "updates": [
+        {
+          "at": 1778292071,
+          "note": "n=46 readout: median +7.31%, mean -6.77%, WR 56.5%. Statistically indistinguishable from v16-calm-base (median +8.03%, mean -6.5%). Runner-catch hypothesis NOT validated -- at trail params (act=+5%, dist=3%) the runners aren't being preserved meaningfully more than TP=10 already captures. Either: (a) runners are too rare in this filter slice, (b) trail activates too early on false starts, or (c) dist=3% is too tight and trails out before runner runs. Continue to n=100 for the proper promotion check, but don't expect divergence from base. If still flat at n=100, runner mechanic needs different params (act=+8%/dist=5% would be the natural follow-up)."
+        }
+      ],
+      "live_stats": {
+        "n_closed": 58,
+        "median_net_pct": 4.02,
+        "mean_net_pct": -7.3,
+        "win_rate_pct": 53.4,
+        "net_sol": -2.1182,
+        "sol_per_mo": -47.502,
+        "drop_top3": -2.6029
+      }
+    }
+  ],
+  "notes": [
+    "Entries persist across strategy delete/disable by design — strategy_state flags whether the underlying strategy is currently enabled/disabled/deleted.",
+    "auto_status is computed every render against live closed-trade stats; manual_status (PROMOTED/KILLED/PAUSED) is operator-set and overrides auto.",
+    "kill_criterion supports SOL-denominated forms (preferred 2026-05-12): \"n>=N and net_sol<X\", \"net_sol<X\", \"n>=N and sol_per_mo<X\", \"sol_per_mo<X\", \"n>=N and drop_top3<X\" — plus legacy \"n>=N and median<X\", \"median<X\", \"win_rate<X\". Unparsed criteria never trip the HIT-KILL badge.",
+    "Predictions: prefer target_net_sol + target_sol_per_mo + target_drop_top3 (matches the Promotion Readiness scorecard bar: n≥100 · drop_top3>0 · total≥0.5 SOL · monthly≥3.75 SOL). target_median_net_pct kept for backwards-compat with pre-2026-05-12 entries.",
+    "Push journal-upsert / journal-update / journal-delete commands via strategy-commands.json on main; the bot ingests on the next sync cycle (~2 min)."
+  ]
+}

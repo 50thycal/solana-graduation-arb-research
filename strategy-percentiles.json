@@ -1,0 +1,4766 @@
+{
+  "generated_at": "2026-05-17T08:09:12.103Z",
+  "active_strategy_count": 48,
+  "total_closed_trades": 1364,
+  "rows": [
+    {
+      "strategy_id": "v24-rapid-fire-recovery",
+      "label": "v24 rapid_fire + confirmed_recovery (TP75/SL30, entry@T+60) [shadow speculative]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 1,
+      "n_closed": 1,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 0,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 0,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 81.31,
+        "median": 81.31,
+        "std_dev": 0,
+        "p10": 81.31,
+        "p25": 81.31,
+        "p75": 81.31,
+        "p90": 81.31,
+        "min": 81.31,
+        "max": 81.31
+      },
+      "gross_return_pct": {
+        "mean": 84.32,
+        "median": 84.32,
+        "std_dev": 0,
+        "p10": 84.32,
+        "p25": 84.32,
+        "p75": 84.32,
+        "p90": 84.32,
+        "min": 84.32,
+        "max": 84.32
+      },
+      "avg_execution_cost_pp": 3.01,
+      "total_net_profit_sol": 0.4065,
+      "first_trade_ts": 1778817063,
+      "last_trade_ts": 1778817063,
+      "top_winners": [
+        {
+          "trade_id": 9426,
+          "graduation_id": 21539,
+          "mint": "7meLoWBJZZVKViuziac1DQe1LDG3cAWxk6pBkspDpump",
+          "entry_pct_from_open": 83.19781565018403,
+          "gross_return_pct": 84.32334334539199,
+          "net_return_pct": 81.305392680354,
+          "exit_reason": "take_profit",
+          "held_seconds": 231
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9426,
+          "graduation_id": 21539,
+          "mint": "7meLoWBJZZVKViuziac1DQe1LDG3cAWxk6pBkspDpump",
+          "entry_pct_from_open": 83.19781565018403,
+          "gross_return_pct": 84.32334334539199,
+          "net_return_pct": 81.305392680354,
+          "exit_reason": "take_profit",
+          "held_seconds": 231
+        }
+      ]
+    },
+    {
+      "strategy_id": "v22-top5-vwap-strict",
+      "label": "v22 top5<10% + vwap_pullback strict (TP75/SL30) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 2,
+      "n_closed": 2,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 2,
+        "stop_loss": 0,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 0,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 75.39,
+        "median": 75.39,
+        "std_dev": 2.21,
+        "p10": 73.62,
+        "p25": 74.28,
+        "p75": 76.49,
+        "p90": 77.16,
+        "min": 73.17,
+        "max": 77.6
+      },
+      "gross_return_pct": {
+        "mean": 78.12,
+        "median": 78.12,
+        "std_dev": 2.06,
+        "p10": 76.47,
+        "p25": 77.09,
+        "p75": 79.15,
+        "p90": 79.77,
+        "min": 76.06,
+        "max": 80.18
+      },
+      "avg_execution_cost_pp": 2.73,
+      "total_net_profit_sol": 0.7539,
+      "first_trade_ts": 1778696403,
+      "last_trade_ts": 1778762436,
+      "top_winners": [
+        {
+          "trade_id": 8964,
+          "graduation_id": 21206,
+          "mint": "82ZmPRVn89XSmbK4dsqFwgTmr9xDBS7be7sjdBn6pump",
+          "entry_pct_from_open": 12.067902262088525,
+          "gross_return_pct": 80.17978427117778,
+          "net_return_pct": 77.59995317355497,
+          "exit_reason": "take_profit",
+          "held_seconds": 32
+        },
+        {
+          "trade_id": 9139,
+          "graduation_id": 21378,
+          "mint": "tF1XyhK4EhBRtzgNQnASKY4JnoQ2antssbJuXkdpump",
+          "entry_pct_from_open": 18.21416577160759,
+          "gross_return_pct": 76.06088266805163,
+          "net_return_pct": 73.17389855707808,
+          "exit_reason": "take_profit",
+          "held_seconds": 185
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9139,
+          "graduation_id": 21378,
+          "mint": "tF1XyhK4EhBRtzgNQnASKY4JnoQ2antssbJuXkdpump",
+          "entry_pct_from_open": 18.21416577160759,
+          "gross_return_pct": 76.06088266805163,
+          "net_return_pct": 73.17389855707808,
+          "exit_reason": "take_profit",
+          "held_seconds": 185
+        },
+        {
+          "trade_id": 8964,
+          "graduation_id": 21206,
+          "mint": "82ZmPRVn89XSmbK4dsqFwgTmr9xDBS7be7sjdBn6pump",
+          "entry_pct_from_open": 12.067902262088525,
+          "gross_return_pct": 80.17978427117778,
+          "net_return_pct": 77.59995317355497,
+          "exit_reason": "take_profit",
+          "held_seconds": 32
+        }
+      ]
+    },
+    {
+      "strategy_id": "v9shadow-velmono-dev",
+      "label": "v9 shadow vel 20-50 + mono>0.5 + dev>5% @ 100/30",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 32,
+      "n_closed": 31,
+      "n_open": 0,
+      "n_failed": 1,
+      "exit_reasons": {
+        "take_profit": 10,
+        "stop_loss": 11,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 10,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 27.91,
+        "median": 39.02,
+        "std_dev": 64.26,
+        "p10": -43.11,
+        "p25": -35.32,
+        "p75": 97.99,
+        "p90": 105.78,
+        "min": -96.96,
+        "max": 112.89
+      },
+      "gross_return_pct": {
+        "mean": 31.1,
+        "median": 42.07,
+        "std_dev": 64.39,
+        "p10": -40.06,
+        "p25": -32.14,
+        "p75": 101.44,
+        "p90": 108.85,
+        "min": -94.29,
+        "max": 116.31
+      },
+      "avg_execution_cost_pp": 3.19,
+      "total_net_profit_sol": 4.3267,
+      "first_trade_ts": 1777663573,
+      "last_trade_ts": 1778903709,
+      "top_winners": [
+        {
+          "trade_id": 9524,
+          "graduation_id": 21578,
+          "mint": "b77PRZ39rF5tWL89aARgsaCsC84K5M4Bq41mq7xpump",
+          "entry_pct_from_open": 17.05969374853044,
+          "gross_return_pct": 116.31339546435888,
+          "net_return_pct": 112.88662337428126,
+          "exit_reason": "take_profit",
+          "held_seconds": 129
+        },
+        {
+          "trade_id": 8472,
+          "graduation_id": 20746,
+          "mint": "BfgtAbXcFYrp4cbAWEKJpatga1o3Mkur3SiC1aefpump",
+          "entry_pct_from_open": -15.24260537633135,
+          "gross_return_pct": 115.37455145069934,
+          "net_return_pct": 111.91003860297309,
+          "exit_reason": "take_profit",
+          "held_seconds": 201
+        },
+        {
+          "trade_id": 6678,
+          "graduation_id": 19141,
+          "mint": "8L54b2fae6bZCYXr2hTEs8GEfe5rWWGQd5AUDqArpump",
+          "entry_pct_from_open": -42.57169634291601,
+          "gross_return_pct": 110.09425234417382,
+          "net_return_pct": 106.35293285125414,
+          "exit_reason": "take_profit",
+          "held_seconds": 87
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9783,
+          "graduation_id": 21752,
+          "mint": "9UovJjMVzSQjb4hPvcJeynTgn83KaadJSz23K2T6pump",
+          "entry_pct_from_open": 26.38753219363295,
+          "gross_return_pct": -94.2941652509201,
+          "net_return_pct": -96.96209203648058,
+          "exit_reason": "stop_loss",
+          "held_seconds": 266
+        },
+        {
+          "trade_id": 6757,
+          "graduation_id": 19203,
+          "mint": "6DBtk1Bzk5hijkAfmjUKkeqNGvYF2jpJjVibwDdxpump",
+          "entry_pct_from_open": -3.3431811557898374,
+          "gross_return_pct": -62.11692928993842,
+          "net_return_pct": -65.01209400760648,
+          "exit_reason": "stop_loss",
+          "held_seconds": 245
+        },
+        {
+          "trade_id": 9195,
+          "graduation_id": 21414,
+          "mint": "Bmf8EG6WQCg2exMNqSqVhA6r83EvJcYjXWtNAwxKpump",
+          "entry_pct_from_open": 11.751226005152473,
+          "gross_return_pct": -41.018535351662386,
+          "net_return_pct": -43.90796357430445,
+          "exit_reason": "stop_loss",
+          "held_seconds": 86
+        }
+      ]
+    },
+    {
+      "strategy_id": "v23-repeat-recovery",
+      "label": "v23 repeat_dev>=3 + confirmed_recovery (TP75/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 10,
+      "n_closed": 10,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 5,
+        "stop_loss": 5,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 0,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 22.13,
+        "median": 21.01,
+        "std_dev": 71.12,
+        "p10": -46.78,
+        "p25": -41.58,
+        "p75": 80.74,
+        "p90": 98.02,
+        "min": -76.22,
+        "max": 125
+      },
+      "gross_return_pct": {
+        "mean": 25.17,
+        "median": 24.05,
+        "std_dev": 71.24,
+        "p10": -43.77,
+        "p25": -38.68,
+        "p75": 83.84,
+        "p90": 101.17,
+        "min": -73.3,
+        "max": 128.11
+      },
+      "avg_execution_cost_pp": 3.04,
+      "total_net_profit_sol": 1.1065,
+      "first_trade_ts": 1778674521,
+      "last_trade_ts": 1778952594,
+      "top_winners": [
+        {
+          "trade_id": 9357,
+          "graduation_id": 21516,
+          "mint": "8tX4ZoxhnuaQrK2H59omSEQXCHTNwFn9vZUg1psh3W5Z",
+          "entry_pct_from_open": 58.11277006953199,
+          "gross_return_pct": 128.10574950766414,
+          "net_return_pct": 124.99590512783502,
+          "exit_reason": "take_profit",
+          "held_seconds": 36
+        },
+        {
+          "trade_id": 8874,
+          "graduation_id": 21129,
+          "mint": "pSwU3VnXkyGGDrdTRCo2rYjceAsTbwniXnxphYepump",
+          "entry_pct_from_open": 52.57419423976846,
+          "gross_return_pct": 98.18195013479813,
+          "net_return_pct": 95.02476781156118,
+          "exit_reason": "take_profit",
+          "held_seconds": 148
+        },
+        {
+          "trade_id": 9424,
+          "graduation_id": 21539,
+          "mint": "7meLoWBJZZVKViuziac1DQe1LDG3cAWxk6pBkspDpump",
+          "entry_pct_from_open": 83.19781565018403,
+          "gross_return_pct": 84.32334334539199,
+          "net_return_pct": 81.305392680354,
+          "exit_reason": "take_profit",
+          "held_seconds": 231
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 8946,
+          "graduation_id": 21189,
+          "mint": "EP7rDdaZK67LEMShEXjTvS3kpcTQgFRokZBZE79Dpump",
+          "entry_pct_from_open": 34.27656298947731,
+          "gross_return_pct": -73.30342593640098,
+          "net_return_pct": -76.21817644349872,
+          "exit_reason": "stop_loss",
+          "held_seconds": 27
+        },
+        {
+          "trade_id": 9088,
+          "graduation_id": 21306,
+          "mint": "BcP5Axd2T1kAncNxbRQAZ8bKE9YeYeKozn4rEUQVpump",
+          "entry_pct_from_open": 11.950645887381631,
+          "gross_return_pct": -40.48897231515498,
+          "net_return_pct": -43.505506220438356,
+          "exit_reason": "stop_loss",
+          "held_seconds": 103
+        },
+        {
+          "trade_id": 9684,
+          "graduation_id": 21690,
+          "mint": "8HcvRTuGfjJjQtiU9As3ACbu2nS24oUMuuCFXws8pump",
+          "entry_pct_from_open": 42.807244641920896,
+          "gross_return_pct": -39.56009111368534,
+          "net_return_pct": -42.46777095888772,
+          "exit_reason": "stop_loss",
+          "held_seconds": 136
+        }
+      ]
+    },
+    {
+      "strategy_id": "v24-flow-neg-vwap",
+      "label": "v24 flow_imb<0 + vwap_pullback strict (TP75/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 3,
+      "n_closed": 3,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 0,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 2,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 26.1,
+        "median": 16.15,
+        "std_dev": 35.09,
+        "p10": -5.6,
+        "p25": 2.56,
+        "p75": 44.66,
+        "p90": 61.77,
+        "min": -11.04,
+        "max": 73.17
+      },
+      "gross_return_pct": {
+        "mean": 29.1,
+        "median": 19.18,
+        "std_dev": 35,
+        "p10": -2.52,
+        "p25": 5.62,
+        "p75": 47.62,
+        "p90": 64.68,
+        "min": -7.94,
+        "max": 76.06
+      },
+      "avg_execution_cost_pp": 3,
+      "total_net_profit_sol": 0.3914,
+      "first_trade_ts": 1778762436,
+      "last_trade_ts": 1778963872,
+      "top_winners": [
+        {
+          "trade_id": 9143,
+          "graduation_id": 21378,
+          "mint": "tF1XyhK4EhBRtzgNQnASKY4JnoQ2antssbJuXkdpump",
+          "entry_pct_from_open": 8.984398852886965,
+          "gross_return_pct": 76.06088266805163,
+          "net_return_pct": 73.17389855707808,
+          "exit_reason": "take_profit",
+          "held_seconds": 185
+        },
+        {
+          "trade_id": 9803,
+          "graduation_id": 21755,
+          "mint": "BVQNrPcmDaGbCc3FF4zY2b1nF5azBhN3bdqVKTuopump",
+          "entry_pct_from_open": 25.267594516014153,
+          "gross_return_pct": 19.18015105392857,
+          "net_return_pct": 16.15356392069153,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 10012,
+          "graduation_id": 21900,
+          "mint": "6jRnXJ6PnhpAEaSZVtwysNkvBXAGo4fhp5swat8Qpump",
+          "entry_pct_from_open": 20.281553366305182,
+          "gross_return_pct": -7.944357487345664,
+          "net_return_pct": -11.042339449221961,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10012,
+          "graduation_id": 21900,
+          "mint": "6jRnXJ6PnhpAEaSZVtwysNkvBXAGo4fhp5swat8Qpump",
+          "entry_pct_from_open": 20.281553366305182,
+          "gross_return_pct": -7.944357487345664,
+          "net_return_pct": -11.042339449221961,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 9803,
+          "graduation_id": 21755,
+          "mint": "BVQNrPcmDaGbCc3FF4zY2b1nF5azBhN3bdqVKTuopump",
+          "entry_pct_from_open": 25.267594516014153,
+          "gross_return_pct": 19.18015105392857,
+          "net_return_pct": 16.15356392069153,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 9143,
+          "graduation_id": 21378,
+          "mint": "tF1XyhK4EhBRtzgNQnASKY4JnoQ2antssbJuXkdpump",
+          "entry_pct_from_open": 8.984398852886965,
+          "gross_return_pct": 76.06088266805163,
+          "net_return_pct": 73.17389855707808,
+          "exit_reason": "take_profit",
+          "held_seconds": 185
+        }
+      ]
+    },
+    {
+      "strategy_id": "v20-vel2050-dd-tight",
+      "label": "v20 vel 20-50 + dd>-7% @ 150/30 gate5-100 (tighter dd)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 19,
+      "n_closed": 19,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 8,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 10,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 18.41,
+        "median": 13.12,
+        "std_dev": 73.48,
+        "p10": -50.64,
+        "p25": -40.05,
+        "p75": 66.28,
+        "p90": 134.02,
+        "min": -96.96,
+        "max": 149.02
+      },
+      "gross_return_pct": {
+        "mean": 21.47,
+        "median": 16.3,
+        "std_dev": 73.72,
+        "p10": -47.79,
+        "p25": -37.01,
+        "p75": 69.46,
+        "p90": 137.48,
+        "min": -94.29,
+        "max": 152.51
+      },
+      "avg_execution_cost_pp": 3.06,
+      "total_net_profit_sol": 1.749,
+      "first_trade_ts": 1778453212,
+      "last_trade_ts": 1778950507,
+      "top_winners": [
+        {
+          "trade_id": 9527,
+          "graduation_id": 21578,
+          "mint": "b77PRZ39rF5tWL89aARgsaCsC84K5M4Bq41mq7xpump",
+          "entry_pct_from_open": 17.05969374853044,
+          "gross_return_pct": 152.50927420752035,
+          "net_return_pct": 149.01909117571395,
+          "exit_reason": "take_profit",
+          "held_seconds": 179
+        },
+        {
+          "trade_id": 9826,
+          "graduation_id": 21767,
+          "mint": "8L9uRvZWy18fC3Au5s4sPSsEyap2FPk4fDTNqhsApump",
+          "entry_pct_from_open": 17.283590982377092,
+          "gross_return_pct": 137.51328840341736,
+          "net_return_pct": 134.23776367407604,
+          "exit_reason": "timeout",
+          "held_seconds": 303
+        },
+        {
+          "trade_id": 9285,
+          "graduation_id": 21478,
+          "mint": "EjvsudvUcxrZwCWARwdS9BmEPisvZLjmnkdegeRbpump",
+          "entry_pct_from_open": 37.60879274397212,
+          "gross_return_pct": 137.47265566914032,
+          "net_return_pct": 133.96288401979047,
+          "exit_reason": "timeout",
+          "held_seconds": 303
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9786,
+          "graduation_id": 21752,
+          "mint": "9UovJjMVzSQjb4hPvcJeynTgn83KaadJSz23K2T6pump",
+          "entry_pct_from_open": 26.38753219363295,
+          "gross_return_pct": -94.2941652509201,
+          "net_return_pct": -96.96209203648058,
+          "exit_reason": "stop_loss",
+          "held_seconds": 266
+        },
+        {
+          "trade_id": 9410,
+          "graduation_id": 21536,
+          "mint": "ctf8D9Ny4Cn6Z123h9evvCS4fDretA1fhy3UJZApump",
+          "entry_pct_from_open": 13.126850949612411,
+          "gross_return_pct": -78.70345215325122,
+          "net_return_pct": -80.76976009974999,
+          "exit_reason": "stop_loss",
+          "held_seconds": 37
+        },
+        {
+          "trade_id": 8127,
+          "graduation_id": 20509,
+          "mint": "Hmp43JJ5WU8QncBTaihX3hBKf54Y8JofSnTWa5P4pump",
+          "entry_pct_from_open": 12.499741062445764,
+          "gross_return_pct": -40.061485644385236,
+          "net_return_pct": -43.10931220164392,
+          "exit_reason": "stop_loss",
+          "held_seconds": 129
+        }
+      ]
+    },
+    {
+      "strategy_id": "v12-vel2050-liq-dd15",
+      "label": "v12 vel 20-50 + liq>100 + max_dd>-15 @ 150/30 (panelv3_8 star)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 28,
+      "n_closed": 28,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 13,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 14,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 14.31,
+        "median": 12.06,
+        "std_dev": 61.64,
+        "p10": -42.21,
+        "p25": -37.2,
+        "p75": 52.69,
+        "p90": 109.22,
+        "min": -80.77,
+        "max": 148.72
+      },
+      "gross_return_pct": {
+        "mean": 17.28,
+        "median": 15.06,
+        "std_dev": 61.79,
+        "p10": -39.31,
+        "p25": -34.3,
+        "p75": 55.59,
+        "p90": 112.45,
+        "min": -78.7,
+        "max": 151.83
+      },
+      "avg_execution_cost_pp": 2.97,
+      "total_net_profit_sol": 2.003,
+      "first_trade_ts": 1777893065,
+      "last_trade_ts": 1778943456,
+      "top_winners": [
+        {
+          "trade_id": 7365,
+          "graduation_id": 19881,
+          "mint": "4ZvsSaMRUYzfyDT1dsb4cBaVVC2kJQeTRURoo3bepump",
+          "entry_pct_from_open": 64.98189488654347,
+          "gross_return_pct": 151.82734410981368,
+          "net_return_pct": 148.72251125430645,
+          "exit_reason": "take_profit",
+          "held_seconds": 237
+        },
+        {
+          "trade_id": 9824,
+          "graduation_id": 21767,
+          "mint": "8L9uRvZWy18fC3Au5s4sPSsEyap2FPk4fDTNqhsApump",
+          "entry_pct_from_open": 17.283590982377092,
+          "gross_return_pct": 137.51328840341736,
+          "net_return_pct": 134.23776367407604,
+          "exit_reason": "timeout",
+          "held_seconds": 303
+        },
+        {
+          "trade_id": 6963,
+          "graduation_id": 19364,
+          "mint": "HXVrYnXiHtbnUmDc95VUMiUARURXdgU3hzBVxKypump",
+          "entry_pct_from_open": 45.9567825682143,
+          "gross_return_pct": 121.07060749941496,
+          "net_return_pct": 117.76742322671055,
+          "exit_reason": "timeout",
+          "held_seconds": 306
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9408,
+          "graduation_id": 21536,
+          "mint": "ctf8D9Ny4Cn6Z123h9evvCS4fDretA1fhy3UJZApump",
+          "entry_pct_from_open": 13.126850949612411,
+          "gross_return_pct": -78.70345215325122,
+          "net_return_pct": -80.76976009974999,
+          "exit_reason": "stop_loss",
+          "held_seconds": 37
+        },
+        {
+          "trade_id": 9095,
+          "graduation_id": 21309,
+          "mint": "4NeDpvxyMicESgVtPJ1xzMq99rfT4DeF7BM3VcLMpump",
+          "entry_pct_from_open": 19.31090915555339,
+          "gross_return_pct": -46.22175133803052,
+          "net_return_pct": -49.05360385314986,
+          "exit_reason": "stop_loss",
+          "held_seconds": 90
+        },
+        {
+          "trade_id": 9197,
+          "graduation_id": 21414,
+          "mint": "Bmf8EG6WQCg2exMNqSqVhA6r83EvJcYjXWtNAwxKpump",
+          "entry_pct_from_open": 11.751226005152473,
+          "gross_return_pct": -41.018535351662386,
+          "net_return_pct": -43.90796357430445,
+          "exit_reason": "stop_loss",
+          "held_seconds": 86
+        }
+      ]
+    },
+    {
+      "strategy_id": "v24-rugger-climbing",
+      "label": "v24 serial_rugger + climbing_t30_t45 (TP150/SL25, entry@T+60) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 2,
+      "n_closed": 2,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 1,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 1,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 11.28,
+        "median": 11.28,
+        "std_dev": 45.01,
+        "p10": -24.72,
+        "p25": -11.22,
+        "p75": 33.79,
+        "p90": 47.29,
+        "min": -33.72,
+        "max": 56.29
+      },
+      "gross_return_pct": {
+        "mean": 14.28,
+        "median": 14.28,
+        "std_dev": 45.15,
+        "p10": -21.84,
+        "p25": -8.29,
+        "p75": 36.86,
+        "p90": 50.4,
+        "min": -30.87,
+        "max": 59.43
+      },
+      "avg_execution_cost_pp": 3,
+      "total_net_profit_sol": 0.1128,
+      "first_trade_ts": 1778815701,
+      "last_trade_ts": 1778904892,
+      "top_winners": [
+        {
+          "trade_id": 9793,
+          "graduation_id": 21754,
+          "mint": "4kjDYSxghCqwe1mCWowebbzoXzufvLAGkW3vBZQQpump",
+          "entry_pct_from_open": 22.99702728281495,
+          "gross_return_pct": 59.429531954519334,
+          "net_return_pct": 56.28922940978011,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 9397,
+          "graduation_id": 21532,
+          "mint": "9gTAr9EcRBv1BEU4YCLfCHzQethrHHaHxEmgm7Wopump",
+          "entry_pct_from_open": 48.00549487636717,
+          "gross_return_pct": -30.866602757949344,
+          "net_return_pct": -33.722714437719745,
+          "exit_reason": "stop_loss",
+          "held_seconds": 12
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9397,
+          "graduation_id": 21532,
+          "mint": "9gTAr9EcRBv1BEU4YCLfCHzQethrHHaHxEmgm7Wopump",
+          "entry_pct_from_open": 48.00549487636717,
+          "gross_return_pct": -30.866602757949344,
+          "net_return_pct": -33.722714437719745,
+          "exit_reason": "stop_loss",
+          "held_seconds": 12
+        },
+        {
+          "trade_id": 9793,
+          "graduation_id": 21754,
+          "mint": "4kjDYSxghCqwe1mCWowebbzoXzufvLAGkW3vBZQQpump",
+          "entry_pct_from_open": 22.99702728281495,
+          "gross_return_pct": 59.429531954519334,
+          "net_return_pct": 56.28922940978011,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        }
+      ]
+    },
+    {
+      "strategy_id": "v22-mono-vwap",
+      "label": "v22 mono>0.66 + vwap_pullback (TP100/SL30) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 9,
+      "n_closed": 9,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 3,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 5,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 12.76,
+        "median": 10.52,
+        "std_dev": 51,
+        "p10": -40.17,
+        "p25": -37.92,
+        "p75": 45.06,
+        "p90": 67.57,
+        "min": -43.43,
+        "max": 120.54
+      },
+      "gross_return_pct": {
+        "mean": 15.69,
+        "median": 13.4,
+        "std_dev": 50.96,
+        "p10": -37.4,
+        "p25": -34.94,
+        "p75": 48.36,
+        "p90": 70.38,
+        "min": -40.53,
+        "max": 123.15
+      },
+      "avg_execution_cost_pp": 2.93,
+      "total_net_profit_sol": 0.5743,
+      "first_trade_ts": 1778684180,
+      "last_trade_ts": 1778963872,
+      "top_winners": [
+        {
+          "trade_id": 8965,
+          "graduation_id": 21206,
+          "mint": "82ZmPRVn89XSmbK4dsqFwgTmr9xDBS7be7sjdBn6pump",
+          "entry_pct_from_open": 12.067902262088525,
+          "gross_return_pct": 123.15157691390995,
+          "net_return_pct": 120.53820899926752,
+          "exit_reason": "take_profit",
+          "held_seconds": 37
+        },
+        {
+          "trade_id": 9141,
+          "graduation_id": 21378,
+          "mint": "tF1XyhK4EhBRtzgNQnASKY4JnoQ2antssbJuXkdpump",
+          "entry_pct_from_open": 18.21416577160759,
+          "gross_return_pct": 57.183859512884084,
+          "net_return_pct": 54.3239066929904,
+          "exit_reason": "timeout",
+          "held_seconds": 300
+        },
+        {
+          "trade_id": 8901,
+          "graduation_id": 21152,
+          "mint": "J32CQXwSKLAUQ3ovxtiiqU6zGsmjjdiWd4xC1tBHpump",
+          "entry_pct_from_open": 21.745206325695264,
+          "gross_return_pct": 48.359192374418434,
+          "net_return_pct": 45.06292135585293,
+          "exit_reason": "timeout",
+          "held_seconds": 300
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 8954,
+          "graduation_id": 21198,
+          "mint": "JAr1LjqhjAvQ7rAu4Fqe3HiMQBd9kpdtGSxpUH5ypump",
+          "entry_pct_from_open": 50.54191644540107,
+          "gross_return_pct": -40.534758836344125,
+          "net_return_pct": -43.43162012467758,
+          "exit_reason": "stop_loss",
+          "held_seconds": 5
+        },
+        {
+          "trade_id": 9951,
+          "graduation_id": 21844,
+          "mint": "HWVjM9EtJMPKJYaGuP2YcLdGL2njRoiM3kwfzqZqpump",
+          "entry_pct_from_open": 44.47202971646246,
+          "gross_return_pct": -36.62160635135126,
+          "net_return_pct": -39.35456839915502,
+          "exit_reason": "stop_loss",
+          "held_seconds": 8
+        },
+        {
+          "trade_id": 9944,
+          "graduation_id": 21840,
+          "mint": "5tSk1MsgUBs4ntWcGppM63zUvJANWoCitjdJVxwqpump",
+          "entry_pct_from_open": 21.095982646535532,
+          "gross_return_pct": -34.94049984303913,
+          "net_return_pct": -37.91522331575581,
+          "exit_reason": "stop_loss",
+          "held_seconds": 193
+        }
+      ]
+    },
+    {
+      "strategy_id": "v11-vel20top5-liq100",
+      "label": "v11 liq overlay: vel<20+top5<10%+liq>100",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 11,
+      "n_closed": 11,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 2,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 8,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 9.66,
+        "median": 8.52,
+        "std_dev": 51.76,
+        "p10": -40.09,
+        "p25": -11.1,
+        "p75": 29.35,
+        "p90": 55.45,
+        "min": -98.64,
+        "max": 115
+      },
+      "gross_return_pct": {
+        "mean": 12.5,
+        "median": 11.54,
+        "std_dev": 51.92,
+        "p10": -37.16,
+        "p25": -8.9,
+        "p75": 32.43,
+        "p90": 58.53,
+        "min": -96.1,
+        "max": 118.13
+      },
+      "avg_execution_cost_pp": 2.84,
+      "total_net_profit_sol": 0.5314,
+      "first_trade_ts": 1777818185,
+      "last_trade_ts": 1778980312,
+      "top_winners": [
+        {
+          "trade_id": 6575,
+          "graduation_id": 19001,
+          "mint": "ZUjreg7vmgYtEbzyejEVFtitkK1hVoruT287ZmRBWwu",
+          "entry_pct_from_open": 34.22494332107992,
+          "gross_return_pct": 118.13421509220694,
+          "net_return_pct": 115.00113792870641,
+          "exit_reason": "take_profit",
+          "held_seconds": 119
+        },
+        {
+          "trade_id": 7935,
+          "graduation_id": 20394,
+          "mint": "aKcTd17qCWNGuRfdTpomzJL9Gdeu5fZYr6K7sQPpump",
+          "entry_pct_from_open": 49.847453712814435,
+          "gross_return_pct": 58.52664921314573,
+          "net_return_pct": 55.4461833499811,
+          "exit_reason": "timeout",
+          "held_seconds": 274
+        },
+        {
+          "trade_id": 7334,
+          "graduation_id": 19872,
+          "mint": "H3xzHMJMo7okVJXmdrerBxh5BDV67AsPD81T1DwGpump",
+          "entry_pct_from_open": 23.409058359494146,
+          "gross_return_pct": 36.007821910816325,
+          "net_return_pct": 33.02043769616164,
+          "exit_reason": "timeout",
+          "held_seconds": 273
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10048,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 7794,
+          "graduation_id": 20290,
+          "mint": "7iEHt5VNKJvsHcGks3JK4Qk6AksCmb9QRhMKkmGcpump",
+          "entry_pct_from_open": 36.34232142432617,
+          "gross_return_pct": -37.156102626330764,
+          "net_return_pct": -40.08572116920005,
+          "exit_reason": "stop_loss",
+          "held_seconds": 78
+        },
+        {
+          "trade_id": 7165,
+          "graduation_id": 19590,
+          "mint": "v19V51HvnVNdXnKAtaM4Bd4aQ9gPDmXM1YmCFEcpump",
+          "entry_pct_from_open": 10.196570682585373,
+          "gross_return_pct": -17.799580369326414,
+          "net_return_pct": -20.754002551147764,
+          "exit_reason": "timeout",
+          "held_seconds": 274
+        }
+      ]
+    },
+    {
+      "strategy_id": "v15-vel5-10-dd-shadow",
+      "label": "v15 vel 5-10+dd>-10 gate5-100 @ 10/30",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 52,
+      "n_closed": 52,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 35,
+        "stop_loss": 12,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 5,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -2,
+        "median": 8.34,
+        "std_dev": 25.67,
+        "p10": -38.32,
+        "p25": -11.2,
+        "p75": 11.73,
+        "p90": 18.84,
+        "min": -91.14,
+        "max": 49.07
+      },
+      "gross_return_pct": {
+        "mean": 1.11,
+        "median": 11.55,
+        "std_dev": 25.74,
+        "p10": -35.28,
+        "p25": -8.14,
+        "p75": 14.81,
+        "p90": 22.05,
+        "min": -88.38,
+        "max": 52.02
+      },
+      "avg_execution_cost_pp": 3.11,
+      "total_net_profit_sol": -0.5196,
+      "first_trade_ts": 1778125352,
+      "last_trade_ts": 1779003310,
+      "top_winners": [
+        {
+          "trade_id": 7225,
+          "graduation_id": 19671,
+          "mint": "4bCcwHAANr5dntJQmmZVqre6kxggchiuJRYiybBVpump",
+          "entry_pct_from_open": 10.027524621052885,
+          "gross_return_pct": 52.01918058942918,
+          "net_return_pct": 49.06779481022156,
+          "exit_reason": "take_profit",
+          "held_seconds": 11
+        },
+        {
+          "trade_id": 8546,
+          "graduation_id": 20800,
+          "mint": "TkEfcu8CJkLKgErG4uevaoKjDGVf8LWw1HqX6kjpump",
+          "entry_pct_from_open": 41.37536614786357,
+          "gross_return_pct": 32.532312110823504,
+          "net_return_pct": 29.361093718625206,
+          "exit_reason": "take_profit",
+          "held_seconds": 9
+        },
+        {
+          "trade_id": 7482,
+          "graduation_id": 19976,
+          "mint": "6AdkLNmnSfvnx5abZpCz8xDyR6rAf8AwsSXumAZ3pump",
+          "entry_pct_from_open": 12.831263777271323,
+          "gross_return_pct": 26.871214273825462,
+          "net_return_pct": 23.659161975675033,
+          "exit_reason": "take_profit",
+          "held_seconds": 15
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 8236,
+          "graduation_id": 20564,
+          "mint": "HghncYNUPpfudQ5cJDCGbp6D39vAt6w7E58vq7SHpump",
+          "entry_pct_from_open": 18.00284739500177,
+          "gross_return_pct": -88.37721840375701,
+          "net_return_pct": -91.13634938180316,
+          "exit_reason": "stop_loss",
+          "held_seconds": 36
+        },
+        {
+          "trade_id": 8430,
+          "graduation_id": 20708,
+          "mint": "BvWtpPVMTq3bNkF6X1L4t13w1pQNi17a2QyjkAVTmamN",
+          "entry_pct_from_open": 56.4920924375267,
+          "gross_return_pct": -53.12468569739206,
+          "net_return_pct": -55.95558382293067,
+          "exit_reason": "stop_loss",
+          "held_seconds": 52
+        },
+        {
+          "trade_id": 7608,
+          "graduation_id": 20145,
+          "mint": "bHkUvE1osPXfZCLBtRqEpofi1MfsfDAgyQKfQfUpump",
+          "entry_pct_from_open": 22.588128177184778,
+          "gross_return_pct": -42.03867378731021,
+          "net_return_pct": -45.11107944045593,
+          "exit_reason": "stop_loss",
+          "held_seconds": 53
+        }
+      ]
+    },
+    {
+      "strategy_id": "v19-age10-top5-tight",
+      "label": "v19 age>10min + top5<8% @ 150/30 gate5-100 (tighter top5)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 12,
+      "n_closed": 12,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 2,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 10,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -1.42,
+        "median": 7.21,
+        "std_dev": 37.34,
+        "p10": -45.16,
+        "p25": -8.31,
+        "p75": 22.64,
+        "p90": 26.99,
+        "min": -98.64,
+        "max": 45.2
+      },
+      "gross_return_pct": {
+        "mean": 1.66,
+        "median": 10.37,
+        "std_dev": 37.5,
+        "p10": -42.22,
+        "p25": -5.2,
+        "p75": 25.9,
+        "p90": 30.24,
+        "min": -96.1,
+        "max": 48.26
+      },
+      "avg_execution_cost_pp": 3.08,
+      "total_net_profit_sol": -0.0853,
+      "first_trade_ts": 1778342940,
+      "last_trade_ts": 1778980312,
+      "top_winners": [
+        {
+          "trade_id": 7937,
+          "graduation_id": 20394,
+          "mint": "aKcTd17qCWNGuRfdTpomzJL9Gdeu5fZYr6K7sQPpump",
+          "entry_pct_from_open": 49.847453712814435,
+          "gross_return_pct": 48.26474967709313,
+          "net_return_pct": 45.20291874471867,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 8506,
+          "graduation_id": 20763,
+          "mint": "6R9n7gVwu1Q7y6Wi216CN73m999D2XXvxLRzvUJXpump",
+          "entry_pct_from_open": 12.800185603076509,
+          "gross_return_pct": 30.466671139149614,
+          "net_return_pct": 27.211854892833458,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 8023,
+          "graduation_id": 20422,
+          "mint": "ABAKpdrrwWbQPVM1gqcMGRfEaidXzHZtnUueEZ75pump",
+          "entry_pct_from_open": 11.63680245916505,
+          "gross_return_pct": 28.21506824605735,
+          "net_return_pct": 25.01419703232646,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10051,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 8422,
+          "graduation_id": 20696,
+          "mint": "6qCGwh7YpQyCa4kcmHADEHj8ZaH95YrWZ3vLc94Bpump",
+          "entry_pct_from_open": 22.121572988736506,
+          "gross_return_pct": -45.82657517482135,
+          "net_return_pct": -48.7479468418328,
+          "exit_reason": "stop_loss",
+          "held_seconds": 155
+        },
+        {
+          "trade_id": 10020,
+          "graduation_id": 21905,
+          "mint": "eRT8rB2ESdQSsrazhZAWE1eWsrDVUHwH8ysQwfwpump",
+          "entry_pct_from_open": 14.549664873507695,
+          "gross_return_pct": -9.766528901854828,
+          "net_return_pct": -12.8733995468134,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        }
+      ]
+    },
+    {
+      "strategy_id": "v9shadow-velmid-liq-mono",
+      "label": "v9 shadow vel 20-50 + liq>100 + mono>0.33 @ 150/25",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 35,
+      "n_closed": 35,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 2,
+        "stop_loss": 17,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 16,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 14.47,
+        "median": 3.3,
+        "std_dev": 63.6,
+        "p10": -39.65,
+        "p25": -33.34,
+        "p75": 51.36,
+        "p90": 112.89,
+        "min": -99.21,
+        "max": 148.72
+      },
+      "gross_return_pct": {
+        "mean": 17.45,
+        "median": 6.31,
+        "std_dev": 63.76,
+        "p10": -36.82,
+        "p25": -30.43,
+        "p75": 54.47,
+        "p90": 116.15,
+        "min": -96.59,
+        "max": 151.85
+      },
+      "avg_execution_cost_pp": 2.98,
+      "total_net_profit_sol": 2.533,
+      "first_trade_ts": 1777827846,
+      "last_trade_ts": 1778943456,
+      "top_winners": [
+        {
+          "trade_id": 9419,
+          "graduation_id": 21539,
+          "mint": "7meLoWBJZZVKViuziac1DQe1LDG3cAWxk6pBkspDpump",
+          "entry_pct_from_open": 36.676439299651705,
+          "gross_return_pct": 151.84657894351275,
+          "net_return_pct": 148.57067117361942,
+          "exit_reason": "take_profit",
+          "held_seconds": 266
+        },
+        {
+          "trade_id": 7362,
+          "graduation_id": 19881,
+          "mint": "4ZvsSaMRUYzfyDT1dsb4cBaVVC2kJQeTRURoo3bepump",
+          "entry_pct_from_open": 64.98189488654347,
+          "gross_return_pct": 151.82734410981368,
+          "net_return_pct": 148.72251125430645,
+          "exit_reason": "take_profit",
+          "held_seconds": 237
+        },
+        {
+          "trade_id": 9822,
+          "graduation_id": 21767,
+          "mint": "8L9uRvZWy18fC3Au5s4sPSsEyap2FPk4fDTNqhsApump",
+          "entry_pct_from_open": 17.283590982377092,
+          "gross_return_pct": 137.51328840341736,
+          "net_return_pct": 134.23776367407604,
+          "exit_reason": "timeout",
+          "held_seconds": 303
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 8574,
+          "graduation_id": 20818,
+          "mint": "EwegwCADiA73FgHQ2paawwSHF5GBkKYFVMCKedRspump",
+          "entry_pct_from_open": 10.45273519335724,
+          "gross_return_pct": -96.59471361268615,
+          "net_return_pct": -99.21463965309475,
+          "exit_reason": "stop_loss",
+          "held_seconds": 126
+        },
+        {
+          "trade_id": 9406,
+          "graduation_id": 21536,
+          "mint": "ctf8D9Ny4Cn6Z123h9evvCS4fDretA1fhy3UJZApump",
+          "entry_pct_from_open": 13.126850949612411,
+          "gross_return_pct": -78.70345215325122,
+          "net_return_pct": -80.76976009974999,
+          "exit_reason": "stop_loss",
+          "held_seconds": 37
+        },
+        {
+          "trade_id": 9094,
+          "graduation_id": 21309,
+          "mint": "4NeDpvxyMicESgVtPJ1xzMq99rfT4DeF7BM3VcLMpump",
+          "entry_pct_from_open": 19.31090915555339,
+          "gross_return_pct": -46.22175133803052,
+          "net_return_pct": -49.05360385314986,
+          "exit_reason": "stop_loss",
+          "held_seconds": 90
+        }
+      ]
+    },
+    {
+      "strategy_id": "v22-quiet-vwap-strict",
+      "label": "v22 quiet_batch + vwap_pullback strict (TP100/SL30) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 6,
+      "n_closed": 6,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 2,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 4,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 3.62,
+        "median": 2.56,
+        "std_dev": 38.13,
+        "p10": -41.39,
+        "p25": -32.28,
+        "p75": 37.84,
+        "p90": 49.69,
+        "min": -43.43,
+        "max": 54.32
+      },
+      "gross_return_pct": {
+        "mean": 6.6,
+        "median": 5.62,
+        "std_dev": 38.21,
+        "p10": -38.58,
+        "p25": -29.45,
+        "p75": 41.06,
+        "p90": 52.77,
+        "min": -40.53,
+        "max": 57.18
+      },
+      "avg_execution_cost_pp": 2.98,
+      "total_net_profit_sol": 0.1086,
+      "first_trade_ts": 1778684180,
+      "last_trade_ts": 1778963872,
+      "top_winners": [
+        {
+          "trade_id": 9140,
+          "graduation_id": 21378,
+          "mint": "tF1XyhK4EhBRtzgNQnASKY4JnoQ2antssbJuXkdpump",
+          "entry_pct_from_open": 18.21416577160759,
+          "gross_return_pct": 57.183859512884084,
+          "net_return_pct": 54.3239066929904,
+          "exit_reason": "timeout",
+          "held_seconds": 300
+        },
+        {
+          "trade_id": 8900,
+          "graduation_id": 21152,
+          "mint": "J32CQXwSKLAUQ3ovxtiiqU6zGsmjjdiWd4xC1tBHpump",
+          "entry_pct_from_open": 21.745206325695264,
+          "gross_return_pct": 48.359192374418434,
+          "net_return_pct": 45.06292135585293,
+          "exit_reason": "timeout",
+          "held_seconds": 300
+        },
+        {
+          "trade_id": 9801,
+          "graduation_id": 21755,
+          "mint": "BVQNrPcmDaGbCc3FF4zY2b1nF5azBhN3bdqVKTuopump",
+          "entry_pct_from_open": 21.390892999207477,
+          "gross_return_pct": 19.18015105392857,
+          "net_return_pct": 16.15356392069153,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 8953,
+          "graduation_id": 21198,
+          "mint": "JAr1LjqhjAvQ7rAu4Fqe3HiMQBd9kpdtGSxpUH5ypump",
+          "entry_pct_from_open": 50.54191644540107,
+          "gross_return_pct": -40.534758836344125,
+          "net_return_pct": -43.43162012467758,
+          "exit_reason": "stop_loss",
+          "held_seconds": 5
+        },
+        {
+          "trade_id": 9950,
+          "graduation_id": 21844,
+          "mint": "HWVjM9EtJMPKJYaGuP2YcLdGL2njRoiM3kwfzqZqpump",
+          "entry_pct_from_open": 44.47202971646246,
+          "gross_return_pct": -36.62160635135126,
+          "net_return_pct": -39.35456839915502,
+          "exit_reason": "stop_loss",
+          "held_seconds": 8
+        },
+        {
+          "trade_id": 10010,
+          "graduation_id": 21900,
+          "mint": "6jRnXJ6PnhpAEaSZVtwysNkvBXAGo4fhp5swat8Qpump",
+          "entry_pct_from_open": 24.873100507925113,
+          "gross_return_pct": -7.944357487345664,
+          "net_return_pct": -11.042339449221961,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        }
+      ]
+    },
+    {
+      "strategy_id": "v9shadow-vel20-top5",
+      "label": "v9 shadow vel<20 + top5<10% @ 150/30",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 50,
+      "n_closed": 50,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 4,
+        "stop_loss": 11,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 35,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 11.36,
+        "median": 1.44,
+        "std_dev": 62.52,
+        "p10": -39.39,
+        "p25": -21.31,
+        "p75": 22.55,
+        "p90": 49.9,
+        "min": -98.64,
+        "max": 268.24
+      },
+      "gross_return_pct": {
+        "mean": 14.41,
+        "median": 4.6,
+        "std_dev": 62.65,
+        "p10": -36.31,
+        "p25": -18.24,
+        "p75": 25.81,
+        "p90": 53.14,
+        "min": -96.1,
+        "max": 271.77
+      },
+      "avg_execution_cost_pp": 3.05,
+      "total_net_profit_sol": 2.8398,
+      "first_trade_ts": 1777589756,
+      "last_trade_ts": 1778980312,
+      "top_winners": [
+        {
+          "trade_id": 6419,
+          "graduation_id": 18826,
+          "mint": "GHt1M3RCAqiw2Kxo3FUoDH4JoNUu3ec5hqVawziLpump",
+          "entry_pct_from_open": 26.836659249625033,
+          "gross_return_pct": 271.773483074386,
+          "net_return_pct": 268.23561934268884,
+          "exit_reason": "take_profit",
+          "held_seconds": 123
+        },
+        {
+          "trade_id": 6568,
+          "graduation_id": 19001,
+          "mint": "ZUjreg7vmgYtEbzyejEVFtitkK1hVoruT287ZmRBWwu",
+          "entry_pct_from_open": 34.22494332107992,
+          "gross_return_pct": 183.1983508030004,
+          "net_return_pct": 179.97771524804426,
+          "exit_reason": "take_profit",
+          "held_seconds": 124
+        },
+        {
+          "trade_id": 6748,
+          "graduation_id": 19198,
+          "mint": "8resiZ4QLEVq8RC85pXPXzArJSL7LzfMEJBg7dXopump",
+          "entry_pct_from_open": 8.181270809064218,
+          "gross_return_pct": 165.11626721109042,
+          "net_return_pct": 161.76473228271047,
+          "exit_reason": "take_profit",
+          "held_seconds": 222
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10045,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 6069,
+          "graduation_id": 18454,
+          "mint": "8dT8A5AyKCTYYxAWJWrZbw7cAbhL7fettwDmmmzTpump",
+          "entry_pct_from_open": 93.14697337221243,
+          "gross_return_pct": -64.84246507075169,
+          "net_return_pct": -67.56099493632811,
+          "exit_reason": "stop_loss",
+          "held_seconds": 119
+        },
+        {
+          "trade_id": 8419,
+          "graduation_id": 20696,
+          "mint": "6qCGwh7YpQyCa4kcmHADEHj8ZaH95YrWZ3vLc94Bpump",
+          "entry_pct_from_open": 22.121572988736506,
+          "gross_return_pct": -45.82657517482135,
+          "net_return_pct": -48.7479468418328,
+          "exit_reason": "stop_loss",
+          "held_seconds": 155
+        }
+      ]
+    },
+    {
+      "strategy_id": "v26-bot-excl-climbing-ttp",
+      "label": "v26 v25-bot-excl-climbing mirror + trailingTP=10% [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 9,
+      "n_closed": 9,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 0,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 9,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 11.01,
+        "median": 1.16,
+        "std_dev": 24.84,
+        "p10": -13.09,
+        "p25": -4.97,
+        "p75": 28.01,
+        "p90": 42.89,
+        "min": -19.59,
+        "max": 60.83
+      },
+      "gross_return_pct": {
+        "mean": 14.26,
+        "median": 4.11,
+        "std_dev": 24.77,
+        "p10": -9.98,
+        "p25": -1.93,
+        "p75": 31.23,
+        "p90": 46.09,
+        "min": -16.56,
+        "max": 63.8
+      },
+      "avg_execution_cost_pp": 3.25,
+      "total_net_profit_sol": 0.4956,
+      "first_trade_ts": 1778986600,
+      "last_trade_ts": 1779005040,
+      "top_winners": [
+        {
+          "trade_id": 10072,
+          "graduation_id": 21947,
+          "mint": "5NrgSWw5zFYkea4LC8G8XwyYMMxqGacYqGnvH84apump",
+          "entry_pct_from_open": 61.100740665920064,
+          "gross_return_pct": 63.79671915011985,
+          "net_return_pct": 60.8320673160737,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 10077,
+          "graduation_id": 21949,
+          "mint": "FHZMEx1WgznDS5fsQJvjxWNk2hKHCpkvxY49XedEpump",
+          "entry_pct_from_open": 46.37835734301312,
+          "gross_return_pct": 41.65906944063507,
+          "net_return_pct": 38.40259548430367,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        },
+        {
+          "trade_id": 10111,
+          "graduation_id": 21962,
+          "mint": "6w4bbXa2z47EWAvyuogSuT9k1k7qD27bLop7ZHxLpump",
+          "entry_pct_from_open": 18.326370290673292,
+          "gross_return_pct": 31.228568328058138,
+          "net_return_pct": 28.01264784123648,
+          "exit_reason": "timeout",
+          "held_seconds": 300
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10129,
+          "graduation_id": 21975,
+          "mint": "D9jsvBrZWPhrqytgmXzabK8727CkWmQCxaLT1Bkvpump",
+          "entry_pct_from_open": 32.15767373702847,
+          "gross_return_pct": -16.562121597302436,
+          "net_return_pct": -19.58580550707994,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        },
+        {
+          "trade_id": 10118,
+          "graduation_id": 21966,
+          "mint": "5iGjfEsX8CVSX9exKhqnLY84nrgbGiK7V4kpQhNYmB3h",
+          "entry_pct_from_open": 9.147531791160208,
+          "gross_return_pct": -8.330911676743806,
+          "net_return_pct": -11.463534793174029,
+          "exit_reason": "timeout",
+          "held_seconds": 303
+        },
+        {
+          "trade_id": 10085,
+          "graduation_id": 21951,
+          "mint": "PZr4UJxCkKeJk9zU3tbZZTsfAQuDm1bHMHr5Wz5pump",
+          "entry_pct_from_open": 41.95660039110171,
+          "gross_return_pct": -1.9256198997967287,
+          "net_return_pct": -4.9734961239883795,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        }
+      ]
+    },
+    {
+      "strategy_id": "v25-bot-excl-climbing",
+      "label": "v25 bot-excl + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 79,
+      "n_closed": 79,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 10,
+        "stop_loss": 23,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 46,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 9.05,
+        "median": 1.08,
+        "std_dev": 49.95,
+        "p10": -37.94,
+        "p25": -33.63,
+        "p75": 36.46,
+        "p90": 101.22,
+        "min": -98.02,
+        "max": 113.53
+      },
+      "gross_return_pct": {
+        "mean": 12.17,
+        "median": 4.11,
+        "std_dev": 50.05,
+        "p10": -34.89,
+        "p25": -30.7,
+        "p75": 39.51,
+        "p90": 104.51,
+        "min": -95.3,
+        "max": 116.76
+      },
+      "avg_execution_cost_pp": 3.12,
+      "total_net_profit_sol": 3.5729,
+      "first_trade_ts": 1778767679,
+      "last_trade_ts": 1779005040,
+      "top_winners": [
+        {
+          "trade_id": 9383,
+          "graduation_id": 21531,
+          "mint": "CQMtJmAwFv1oAobMwRfv6ir4efTWdhfNp7S1R72Rpump",
+          "entry_pct_from_open": 58.679065295114796,
+          "gross_return_pct": 116.75733015382986,
+          "net_return_pct": 113.5342646603123,
+          "exit_reason": "take_profit",
+          "held_seconds": 63
+        },
+        {
+          "trade_id": 9562,
+          "graduation_id": 21596,
+          "mint": "Bddrn4zHLzojb8QGUpbuzNQ98D8cELwF4PmwLut4pump",
+          "entry_pct_from_open": 13.962021670324532,
+          "gross_return_pct": 110.10137761577867,
+          "net_return_pct": 106.6982401599118,
+          "exit_reason": "take_profit",
+          "held_seconds": 56
+        },
+        {
+          "trade_id": 9919,
+          "graduation_id": 21820,
+          "mint": "DN9m8QwsqVmgs5NeLd9YtHyVxvd23rA7rSnkAZS7pump",
+          "entry_pct_from_open": 25.006823308857985,
+          "gross_return_pct": 109.9225978173036,
+          "net_return_pct": 106.57410072462663,
+          "exit_reason": "take_profit",
+          "held_seconds": 291
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9709,
+          "graduation_id": 21706,
+          "mint": "ALdqRWpN1RxLLBAk8zam5hRHB8hkwoFZ1p3QqiW9pump",
+          "entry_pct_from_open": 9.817116328502271,
+          "gross_return_pct": -95.30064579911767,
+          "net_return_pct": -98.02265214331963,
+          "exit_reason": "stop_loss",
+          "held_seconds": 129
+        },
+        {
+          "trade_id": 9375,
+          "graduation_id": 21529,
+          "mint": "5f6ZGKFzpzJWb4nJm3zwjNEiqirJEf2UL2ZYenVvpump",
+          "entry_pct_from_open": 54.474095739528124,
+          "gross_return_pct": -95.00991536484551,
+          "net_return_pct": -97.65846988582265,
+          "exit_reason": "stop_loss",
+          "held_seconds": 38
+        },
+        {
+          "trade_id": 9222,
+          "graduation_id": 21428,
+          "mint": "82qoECJ2sv2U6jbCMUhpqBoe9h96DTxFBh3KEcHZpump",
+          "entry_pct_from_open": 47.46485652028993,
+          "gross_return_pct": -55.474263686504166,
+          "net_return_pct": -58.378164372979015,
+          "exit_reason": "stop_loss",
+          "held_seconds": 188
+        }
+      ]
+    },
+    {
+      "strategy_id": "v20-vel2050-dd-base",
+      "label": "v20 vel 20-50 + dd>-10% @ 150/30 gate5-100 (corrected v10)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 35,
+      "n_closed": 35,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 2,
+        "stop_loss": 16,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 17,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 16.46,
+        "median": -0.23,
+        "std_dev": 70.18,
+        "p10": -42.81,
+        "p25": -39.64,
+        "p75": 64.85,
+        "p90": 134.13,
+        "min": -96.96,
+        "max": 154.01
+      },
+      "gross_return_pct": {
+        "mean": 19.53,
+        "median": 2.94,
+        "std_dev": 70.39,
+        "p10": -39.78,
+        "p25": -36.64,
+        "p75": 67.95,
+        "p90": 137.5,
+        "min": -94.29,
+        "max": 157.47
+      },
+      "avg_execution_cost_pp": 3.07,
+      "total_net_profit_sol": 2.8813,
+      "first_trade_ts": 1778401530,
+      "last_trade_ts": 1778993450,
+      "top_winners": [
+        {
+          "trade_id": 9270,
+          "graduation_id": 21466,
+          "mint": "BAGEvL7829KW5HG81qQU2NNbvFJrnsXMXqb24ZwXpump",
+          "entry_pct_from_open": 45.355938983226096,
+          "gross_return_pct": 157.47305949683238,
+          "net_return_pct": 154.00645934877778,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 9526,
+          "graduation_id": 21578,
+          "mint": "b77PRZ39rF5tWL89aARgsaCsC84K5M4Bq41mq7xpump",
+          "entry_pct_from_open": 17.05969374853044,
+          "gross_return_pct": 152.50927420752035,
+          "net_return_pct": 149.01909117571395,
+          "exit_reason": "take_profit",
+          "held_seconds": 179
+        },
+        {
+          "trade_id": 7880,
+          "graduation_id": 20359,
+          "mint": "4k95VBsznoxmq2AmPPmxjf5trBiaLWE2DPYHZqAvpump",
+          "entry_pct_from_open": 15.268908539535675,
+          "gross_return_pct": 152.3115418278881,
+          "net_return_pct": 148.91930727310876,
+          "exit_reason": "take_profit",
+          "held_seconds": 242
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9785,
+          "graduation_id": 21752,
+          "mint": "9UovJjMVzSQjb4hPvcJeynTgn83KaadJSz23K2T6pump",
+          "entry_pct_from_open": 26.38753219363295,
+          "gross_return_pct": -94.2941652509201,
+          "net_return_pct": -96.96209203648058,
+          "exit_reason": "stop_loss",
+          "held_seconds": 266
+        },
+        {
+          "trade_id": 9409,
+          "graduation_id": 21536,
+          "mint": "ctf8D9Ny4Cn6Z123h9evvCS4fDretA1fhy3UJZApump",
+          "entry_pct_from_open": 13.126850949612411,
+          "gross_return_pct": -78.70345215325122,
+          "net_return_pct": -80.76976009974999,
+          "exit_reason": "stop_loss",
+          "held_seconds": 37
+        },
+        {
+          "trade_id": 9198,
+          "graduation_id": 21414,
+          "mint": "Bmf8EG6WQCg2exMNqSqVhA6r83EvJcYjXWtNAwxKpump",
+          "entry_pct_from_open": 11.751226005152473,
+          "gross_return_pct": -41.018535351662386,
+          "net_return_pct": -43.90796357430445,
+          "exit_reason": "stop_loss",
+          "held_seconds": 86
+        }
+      ]
+    },
+    {
+      "strategy_id": "v5-velmono-opt",
+      "label": "v5 velmono opt (100/30)",
+      "enabled": true,
+      "execution_mode": "paper",
+      "n_total": 50,
+      "n_closed": 50,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 11,
+        "stop_loss": 15,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 24,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 9.61,
+        "median": -3.01,
+        "std_dev": 67.48,
+        "p10": -61.88,
+        "p25": -49.9,
+        "p75": 70.11,
+        "p90": 82.74,
+        "min": -101.92,
+        "max": 230.84
+      },
+      "gross_return_pct": {
+        "mean": 21.76,
+        "median": 1.53,
+        "std_dev": 72.43,
+        "p10": -46.76,
+        "p25": -31.68,
+        "p75": 74.57,
+        "p90": 108.08,
+        "min": -96.84,
+        "max": 272.72
+      },
+      "avg_execution_cost_pp": 12.15,
+      "total_net_profit_sol": 2.4029,
+      "first_trade_ts": 1776840406,
+      "last_trade_ts": 1778903709,
+      "top_winners": [
+        {
+          "trade_id": 4269,
+          "graduation_id": 17355,
+          "mint": "52XMdZ7ayFsMHkuPDLHLMzKz7cFDcJk71Tqm18Fnpump",
+          "entry_pct_from_open": 10.764309150965069,
+          "gross_return_pct": 272.7166914036706,
+          "net_return_pct": 230.84102226330353,
+          "exit_reason": "take_profit",
+          "held_seconds": 93
+        },
+        {
+          "trade_id": 4254,
+          "graduation_id": 17344,
+          "mint": "CR7jmUSTN5j7zZL837bfvUysP1MknMjndS3E17bApump",
+          "entry_pct_from_open": 23.792538373286238,
+          "gross_return_pct": 123.65958179076213,
+          "net_return_pct": 96.85162361168591,
+          "exit_reason": "take_profit",
+          "held_seconds": 214
+        },
+        {
+          "trade_id": 9523,
+          "graduation_id": 21578,
+          "mint": "b77PRZ39rF5tWL89aARgsaCsC84K5M4Bq41mq7xpump",
+          "entry_pct_from_open": 17.05969374853044,
+          "gross_return_pct": 114.75677121542756,
+          "net_return_pct": 88.64809409388481,
+          "exit_reason": "take_profit",
+          "held_seconds": 129
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 3716,
+          "graduation_id": 16370,
+          "mint": "EbAWn6J6oUTjr2bjjfwApbWLFaWpJi3xQNztSgCmpump",
+          "entry_pct_from_open": 33.038913334835335,
+          "gross_return_pct": -96.84018594931666,
+          "net_return_pct": -101.91614875945332,
+          "exit_reason": "stop_loss",
+          "held_seconds": 240
+        },
+        {
+          "trade_id": 4422,
+          "graduation_id": 17641,
+          "mint": "4WnxKfpyhxZ4bLv36jTYzSuW5N95q2Bw6UitU6WHpump",
+          "entry_pct_from_open": 8.050698269324622,
+          "gross_return_pct": -96.0721186113566,
+          "net_return_pct": -101.47969488908528,
+          "exit_reason": "stop_loss",
+          "held_seconds": 83
+        },
+        {
+          "trade_id": 3586,
+          "graduation_id": 16333,
+          "mint": "GyxG7Q4LRGnkmv7XMpQwbv52CD8c2gph4kYqCcKXpump",
+          "entry_pct_from_open": 5.576635338684997,
+          "gross_return_pct": -95.86997754383721,
+          "net_return_pct": -101.29398203506977,
+          "exit_reason": "stop_loss",
+          "held_seconds": 119
+        }
+      ]
+    },
+    {
+      "strategy_id": "v19-age10-top5-base",
+      "label": "v19 age>10min + top5<10% @ 150/30 gate5-100 (leaderboard #1 mirror)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 19,
+      "n_closed": 19,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 5,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 14,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -6.56,
+        "median": -4.29,
+        "std_dev": 33.05,
+        "p10": -42.42,
+        "p25": -23.23,
+        "p75": 20.36,
+        "p90": 25.45,
+        "min": -98.64,
+        "max": 45.2
+      },
+      "gross_return_pct": {
+        "mean": -3.47,
+        "median": -1.25,
+        "std_dev": 33.16,
+        "p10": -39.39,
+        "p25": -20.11,
+        "p75": 23.44,
+        "p90": 28.67,
+        "min": -96.1,
+        "max": 48.26
+      },
+      "avg_execution_cost_pp": 3.09,
+      "total_net_profit_sol": -0.6233,
+      "first_trade_ts": 1778342940,
+      "last_trade_ts": 1778980312,
+      "top_winners": [
+        {
+          "trade_id": 7936,
+          "graduation_id": 20394,
+          "mint": "aKcTd17qCWNGuRfdTpomzJL9Gdeu5fZYr6K7sQPpump",
+          "entry_pct_from_open": 49.847453712814435,
+          "gross_return_pct": 48.26474967709313,
+          "net_return_pct": 45.20291874471867,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 8505,
+          "graduation_id": 20763,
+          "mint": "6R9n7gVwu1Q7y6Wi216CN73m999D2XXvxLRzvUJXpump",
+          "entry_pct_from_open": 12.800185603076509,
+          "gross_return_pct": 30.466671139149614,
+          "net_return_pct": 27.211854892833458,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 8022,
+          "graduation_id": 20422,
+          "mint": "ABAKpdrrwWbQPVM1gqcMGRfEaidXzHZtnUueEZ75pump",
+          "entry_pct_from_open": 11.63680245916505,
+          "gross_return_pct": 28.21506824605735,
+          "net_return_pct": 25.01419703232646,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10050,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 8421,
+          "graduation_id": 20696,
+          "mint": "6qCGwh7YpQyCa4kcmHADEHj8ZaH95YrWZ3vLc94Bpump",
+          "entry_pct_from_open": 22.121572988736506,
+          "gross_return_pct": -45.82657517482135,
+          "net_return_pct": -48.7479468418328,
+          "exit_reason": "stop_loss",
+          "held_seconds": 155
+        },
+        {
+          "trade_id": 8908,
+          "graduation_id": 21153,
+          "mint": "GJw437FbTuDSxgctsW3G7ryhvrMkWxBHSHau2qy3pump",
+          "entry_pct_from_open": 6.056338708380584,
+          "gross_return_pct": -37.77899249869915,
+          "net_return_pct": -40.84283407980481,
+          "exit_reason": "stop_loss",
+          "held_seconds": 224
+        }
+      ]
+    },
+    {
+      "strategy_id": "v19-age10-top5-tp100",
+      "label": "v19 age>10min + top5<10% @ 100/30 gate5-100 (lower TP)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 19,
+      "n_closed": 19,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 5,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 14,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -6.56,
+        "median": -4.29,
+        "std_dev": 33.05,
+        "p10": -42.42,
+        "p25": -23.23,
+        "p75": 20.36,
+        "p90": 25.45,
+        "min": -98.64,
+        "max": 45.2
+      },
+      "gross_return_pct": {
+        "mean": -3.47,
+        "median": -1.25,
+        "std_dev": 33.16,
+        "p10": -39.39,
+        "p25": -20.11,
+        "p75": 23.44,
+        "p90": 28.67,
+        "min": -96.1,
+        "max": 48.26
+      },
+      "avg_execution_cost_pp": 3.09,
+      "total_net_profit_sol": -0.6233,
+      "first_trade_ts": 1778342940,
+      "last_trade_ts": 1778980312,
+      "top_winners": [
+        {
+          "trade_id": 7938,
+          "graduation_id": 20394,
+          "mint": "aKcTd17qCWNGuRfdTpomzJL9Gdeu5fZYr6K7sQPpump",
+          "entry_pct_from_open": 49.847453712814435,
+          "gross_return_pct": 48.26474967709313,
+          "net_return_pct": 45.20291874471867,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 8507,
+          "graduation_id": 20763,
+          "mint": "6R9n7gVwu1Q7y6Wi216CN73m999D2XXvxLRzvUJXpump",
+          "entry_pct_from_open": 12.800185603076509,
+          "gross_return_pct": 30.466671139149614,
+          "net_return_pct": 27.211854892833458,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 8024,
+          "graduation_id": 20422,
+          "mint": "ABAKpdrrwWbQPVM1gqcMGRfEaidXzHZtnUueEZ75pump",
+          "entry_pct_from_open": 11.63680245916505,
+          "gross_return_pct": 28.21506824605735,
+          "net_return_pct": 25.01419703232646,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10052,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 8423,
+          "graduation_id": 20696,
+          "mint": "6qCGwh7YpQyCa4kcmHADEHj8ZaH95YrWZ3vLc94Bpump",
+          "entry_pct_from_open": 22.121572988736506,
+          "gross_return_pct": -45.82657517482135,
+          "net_return_pct": -48.7479468418328,
+          "exit_reason": "stop_loss",
+          "held_seconds": 155
+        },
+        {
+          "trade_id": 8909,
+          "graduation_id": 21153,
+          "mint": "GJw437FbTuDSxgctsW3G7ryhvrMkWxBHSHau2qy3pump",
+          "entry_pct_from_open": 6.056338708380584,
+          "gross_return_pct": -37.77899249869915,
+          "net_return_pct": -40.84283407980481,
+          "exit_reason": "stop_loss",
+          "held_seconds": 224
+        }
+      ]
+    },
+    {
+      "strategy_id": "v14-sumabs-dd-shadow",
+      "label": "v14 sumabs + dd protection (vel<20+top5<10%+sum_abs<60+dd>-10 @ 100/30)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 32,
+      "n_closed": 32,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 6,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 26,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 0.04,
+        "median": -4.39,
+        "std_dev": 31.67,
+        "p10": -36.43,
+        "p25": -17.15,
+        "p75": 24.77,
+        "p90": 39.38,
+        "min": -92.68,
+        "max": 55.74
+      },
+      "gross_return_pct": {
+        "mean": 3.11,
+        "median": -1.31,
+        "std_dev": 31.69,
+        "p10": -33.22,
+        "p25": -13.96,
+        "p75": 27.9,
+        "p90": 42.49,
+        "min": -90.08,
+        "max": 57.82
+      },
+      "avg_execution_cost_pp": 3.07,
+      "total_net_profit_sol": 0.0063,
+      "first_trade_ts": 1778192536,
+      "last_trade_ts": 1778965361,
+      "top_winners": [
+        {
+          "trade_id": 8566,
+          "graduation_id": 20810,
+          "mint": "FWgBzdGaGZxnS9KGV8q2525kfyrqPyc8mA2Z2ZZqpump",
+          "entry_pct_from_open": -4.912689767988841,
+          "gross_return_pct": 57.821810814507316,
+          "net_return_pct": 55.740373495291486,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 7372,
+          "graduation_id": 19888,
+          "mint": "DmMSyxUfpcTbaQuiAPqzRRPJZTADTpzKBFVRmrLzpump",
+          "entry_pct_from_open": -2.387674707674501,
+          "gross_return_pct": 51.0668915571172,
+          "net_return_pct": 47.787904295726634,
+          "exit_reason": "timeout",
+          "held_seconds": 309
+        },
+        {
+          "trade_id": 8208,
+          "graduation_id": 20558,
+          "mint": "EkHkqbJcnh7TqvBqLbYGCVHzqDyJp5dxviWM1egFpump",
+          "entry_pct_from_open": 16.64284485715194,
+          "gross_return_pct": 49.35716133986033,
+          "net_return_pct": 46.1127181139322,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9042,
+          "graduation_id": 21260,
+          "mint": "H6Q23ry2Z2JncvgzJAmqcxUh43wVatwYNnfkuHfc4f4d",
+          "entry_pct_from_open": -2.42734648241336,
+          "gross_return_pct": -90.07601975521908,
+          "net_return_pct": -92.6847901292919,
+          "exit_reason": "stop_loss",
+          "held_seconds": 211
+        },
+        {
+          "trade_id": 8906,
+          "graduation_id": 21153,
+          "mint": "GJw437FbTuDSxgctsW3G7ryhvrMkWxBHSHau2qy3pump",
+          "entry_pct_from_open": 6.056338708380584,
+          "gross_return_pct": -37.77899249869915,
+          "net_return_pct": -40.84283407980481,
+          "exit_reason": "stop_loss",
+          "held_seconds": 224
+        },
+        {
+          "trade_id": 9314,
+          "graduation_id": 21497,
+          "mint": "4xq75kygeKHUeqZxAArMPXps6XYLcTkR8N5EpQA4pump",
+          "entry_pct_from_open": 11.721458057269784,
+          "gross_return_pct": -34.12718110859952,
+          "net_return_pct": -37.173160291916005,
+          "exit_reason": "stop_loss",
+          "held_seconds": 73
+        }
+      ]
+    },
+    {
+      "strategy_id": "v14-sumabs-shadow",
+      "label": "v14 sumabs mirror (vel<20+top5<10%+sum_abs<60 @ 100/30)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 48,
+      "n_closed": 48,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 9,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 38,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 0.53,
+        "median": -4.39,
+        "std_dev": 31.87,
+        "p10": -34.29,
+        "p25": -17.15,
+        "p75": 22.08,
+        "p90": 40.39,
+        "min": -92.68,
+        "max": 102
+      },
+      "gross_return_pct": {
+        "mean": 3.65,
+        "median": -1.31,
+        "std_dev": 31.93,
+        "p10": -31.14,
+        "p25": -13.96,
+        "p75": 25.36,
+        "p90": 43.58,
+        "min": -90.08,
+        "max": 105.55
+      },
+      "avg_execution_cost_pp": 3.12,
+      "total_net_profit_sol": 0.1282,
+      "first_trade_ts": 1778172803,
+      "last_trade_ts": 1778965361,
+      "top_winners": [
+        {
+          "trade_id": 7304,
+          "graduation_id": 19808,
+          "mint": "C6poT3pZ45rWUWwBrNrePJYwJtRRAFHiCDrVx6tHpump",
+          "entry_pct_from_open": -10.30540102311454,
+          "gross_return_pct": 105.54773814921667,
+          "net_return_pct": 101.99944076392701,
+          "exit_reason": "take_profit",
+          "held_seconds": 136
+        },
+        {
+          "trade_id": 8565,
+          "graduation_id": 20810,
+          "mint": "FWgBzdGaGZxnS9KGV8q2525kfyrqPyc8mA2Z2ZZqpump",
+          "entry_pct_from_open": -4.912689767988841,
+          "gross_return_pct": 57.821810814507316,
+          "net_return_pct": 55.740373495291486,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 7371,
+          "graduation_id": 19888,
+          "mint": "DmMSyxUfpcTbaQuiAPqzRRPJZTADTpzKBFVRmrLzpump",
+          "entry_pct_from_open": -2.387674707674501,
+          "gross_return_pct": 51.0668915571172,
+          "net_return_pct": 47.787904295726634,
+          "exit_reason": "timeout",
+          "held_seconds": 309
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9041,
+          "graduation_id": 21260,
+          "mint": "H6Q23ry2Z2JncvgzJAmqcxUh43wVatwYNnfkuHfc4f4d",
+          "entry_pct_from_open": -2.42734648241336,
+          "gross_return_pct": -90.07601975521908,
+          "net_return_pct": -92.6847901292919,
+          "exit_reason": "stop_loss",
+          "held_seconds": 211
+        },
+        {
+          "trade_id": 8905,
+          "graduation_id": 21153,
+          "mint": "GJw437FbTuDSxgctsW3G7ryhvrMkWxBHSHau2qy3pump",
+          "entry_pct_from_open": 6.056338708380584,
+          "gross_return_pct": -37.77899249869915,
+          "net_return_pct": -40.84283407980481,
+          "exit_reason": "stop_loss",
+          "held_seconds": 224
+        },
+        {
+          "trade_id": 9313,
+          "graduation_id": 21497,
+          "mint": "4xq75kygeKHUeqZxAArMPXps6XYLcTkR8N5EpQA4pump",
+          "entry_pct_from_open": 11.721458057269784,
+          "gross_return_pct": -34.12718110859952,
+          "net_return_pct": -37.173160291916005,
+          "exit_reason": "stop_loss",
+          "held_seconds": 73
+        }
+      ]
+    },
+    {
+      "strategy_id": "v11-age10dev3-liq100",
+      "label": "v11 liq overlay: age>10min+dev<3%+liq>100",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 14,
+      "n_closed": 14,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 2,
+        "stop_loss": 5,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 7,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 11.69,
+        "median": -4.9,
+        "std_dev": 78.6,
+        "p10": -43.26,
+        "p25": -36.22,
+        "p75": 21.8,
+        "p90": 135.89,
+        "min": -98.64,
+        "max": 193.78
+      },
+      "gross_return_pct": {
+        "mean": 14.63,
+        "median": -1.99,
+        "std_dev": 78.75,
+        "p10": -40.46,
+        "p25": -33.38,
+        "p75": 24.92,
+        "p90": 139.04,
+        "min": -96.1,
+        "max": 196.97
+      },
+      "avg_execution_cost_pp": 2.94,
+      "total_net_profit_sol": 0.8181,
+      "first_trade_ts": 1777818185,
+      "last_trade_ts": 1778980312,
+      "top_winners": [
+        {
+          "trade_id": 6665,
+          "graduation_id": 19118,
+          "mint": "Gpw8FwrKLDJ5KZSCkJKaMyBRodn2VNqptkb98wNwpump",
+          "entry_pct_from_open": 89.27156609343746,
+          "gross_return_pct": 196.97267831785413,
+          "net_return_pct": 193.7827741731077,
+          "exit_reason": "take_profit",
+          "held_seconds": 153
+        },
+        {
+          "trade_id": 6574,
+          "graduation_id": 19001,
+          "mint": "ZUjreg7vmgYtEbzyejEVFtitkK1hVoruT287ZmRBWwu",
+          "entry_pct_from_open": 34.22494332107992,
+          "gross_return_pct": 183.1983508030004,
+          "net_return_pct": 179.97771524804426,
+          "exit_reason": "take_profit",
+          "held_seconds": 124
+        },
+        {
+          "trade_id": 7333,
+          "graduation_id": 19872,
+          "mint": "H3xzHMJMo7okVJXmdrerBxh5BDV67AsPD81T1DwGpump",
+          "entry_pct_from_open": 23.409058359494146,
+          "gross_return_pct": 36.007821910816325,
+          "net_return_pct": 33.02043769616164,
+          "exit_reason": "timeout",
+          "held_seconds": 273
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10047,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 6545,
+          "graduation_id": 18965,
+          "mint": "H2e5f5bvMogLeEM8d2nudshXAPiTYFVerGzq82jspump",
+          "entry_pct_from_open": 78.35935244498886,
+          "gross_return_pct": -40.74077139670258,
+          "net_return_pct": -43.55273491071077,
+          "exit_reason": "stop_loss",
+          "held_seconds": 170
+        },
+        {
+          "trade_id": 7178,
+          "graduation_id": 19597,
+          "mint": "92TnFEn3BrVbBmEH35XXM96Bz9X9peDQSiWeNEqwpump",
+          "entry_pct_from_open": 6.324687366636672,
+          "gross_return_pct": -39.79447177075922,
+          "net_return_pct": -42.58571932580605,
+          "exit_reason": "stop_loss",
+          "held_seconds": 53
+        }
+      ]
+    },
+    {
+      "strategy_id": "v21-bottom-excluded",
+      "label": "v21 universe minus path/concentration/velocity tail (TP100/SL30) [shadow]",
+      "enabled": true,
+      "execution_mode": "paper",
+      "n_total": 11,
+      "n_closed": 11,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 4,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 7,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -8.26,
+        "median": -6.46,
+        "std_dev": 40.37,
+        "p10": -55.88,
+        "p25": -53.15,
+        "p75": 30.38,
+        "p90": 37.14,
+        "min": -67.22,
+        "max": 43.93
+      },
+      "gross_return_pct": {
+        "mean": 0.54,
+        "median": -1.97,
+        "std_dev": 35.25,
+        "p10": -38.92,
+        "p25": -35.74,
+        "p75": 34.63,
+        "p90": 41.61,
+        "min": -53.39,
+        "max": 48.52
+      },
+      "avg_execution_cost_pp": 8.8,
+      "total_net_profit_sol": -0.4544,
+      "first_trade_ts": 1778470115,
+      "last_trade_ts": 1778503425,
+      "top_winners": [
+        {
+          "trade_id": 8217,
+          "graduation_id": 20558,
+          "mint": "EkHkqbJcnh7TqvBqLbYGCVHzqDyJp5dxviWM1egFpump",
+          "entry_pct_from_open": 16.64284485715194,
+          "gross_return_pct": 48.51887678370089,
+          "net_return_pct": 43.92687678370089,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        },
+        {
+          "trade_id": 8232,
+          "graduation_id": 20560,
+          "mint": "EwXHsjQCfAAwLo7pAh77i7FbvdKkoUjdBUsGueEUpump",
+          "entry_pct_from_open": 37.13915152715341,
+          "gross_return_pct": 41.60549905443344,
+          "net_return_pct": 37.139499054433436,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 8195,
+          "graduation_id": 20555,
+          "mint": "sxzdVkWyej4yCP6S8CLntKYxtKAqsEqX8V9nuDwzART",
+          "entry_pct_from_open": 21.55211400432247,
+          "gross_return_pct": 37.26217866210623,
+          "net_return_pct": 32.70417866210623,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 8203,
+          "graduation_id": 20557,
+          "mint": "2EBbDgY2vk5kkYtynQCdyRirVJfQJJ2MKugPygp6pump",
+          "entry_pct_from_open": 6.9748074753738605,
+          "gross_return_pct": -53.39035745736336,
+          "net_return_pct": -67.22028596589068,
+          "exit_reason": "stop_loss",
+          "held_seconds": 112
+        },
+        {
+          "trade_id": 8253,
+          "graduation_id": 20566,
+          "mint": "8RNjdqQcqRANd5cAWCiLbJxxYLSUq8HiVtyAZWBppump",
+          "entry_pct_from_open": 10.734634790438376,
+          "gross_return_pct": -38.916306858463805,
+          "net_return_pct": -55.883045486771046,
+          "exit_reason": "stop_loss",
+          "held_seconds": 29
+        },
+        {
+          "trade_id": 8147,
+          "graduation_id": 20541,
+          "mint": "dickrndLen8WLNH8VoYxQYnVvm595RjieMeCJCFgR3p",
+          "entry_pct_from_open": 11.331819842334994,
+          "gross_return_pct": -36.754095354271584,
+          "net_return_pct": -53.97427628341726,
+          "exit_reason": "stop_loss",
+          "held_seconds": 211
+        }
+      ]
+    },
+    {
+      "strategy_id": "v21-bottom-excluded",
+      "label": "v21 universe minus path/concentration/velocity tail (TP100/SL30) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 258,
+      "n_closed": 258,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 30,
+        "stop_loss": 97,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 131,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 2.71,
+        "median": -9.16,
+        "std_dev": 51.11,
+        "p10": -44.14,
+        "p25": -35.74,
+        "p75": 27.37,
+        "p90": 99.24,
+        "min": -98.64,
+        "max": 141.6
+      },
+      "gross_return_pct": {
+        "mean": 5.84,
+        "median": -6.06,
+        "std_dev": 51.24,
+        "p10": -41.14,
+        "p25": -32.76,
+        "p75": 30.49,
+        "p90": 102.62,
+        "min": -96.1,
+        "max": 145.07
+      },
+      "avg_execution_cost_pp": 3.13,
+      "total_net_profit_sol": 3.501,
+      "first_trade_ts": 1778505880,
+      "last_trade_ts": 1779004632,
+      "top_winners": [
+        {
+          "trade_id": 8767,
+          "graduation_id": 20996,
+          "mint": "3rgcmsE1THQ2EhX28QkHdRVypmtsB3ErL8aBvKeSpump",
+          "entry_pct_from_open": 7.180854129165605,
+          "gross_return_pct": 145.06972405539892,
+          "net_return_pct": 141.60079479619176,
+          "exit_reason": "take_profit",
+          "held_seconds": 37
+        },
+        {
+          "trade_id": 8583,
+          "graduation_id": 20821,
+          "mint": "Xuozae7aYJ7dL1FnuuY2oFvQBxuDekZKbXU2z2spump",
+          "entry_pct_from_open": 6.482191989022383,
+          "gross_return_pct": 134.14407169149817,
+          "net_return_pct": 130.68629287032172,
+          "exit_reason": "take_profit",
+          "held_seconds": 153
+        },
+        {
+          "trade_id": 8447,
+          "graduation_id": 20726,
+          "mint": "GPXY56UALMCnKkbPnWKRdEeG6DWvbFafySsG48MRpump",
+          "entry_pct_from_open": 31.480321856512834,
+          "gross_return_pct": 131.2942886559048,
+          "net_return_pct": 127.8679491625432,
+          "exit_reason": "take_profit",
+          "held_seconds": 244
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10053,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 8564,
+          "graduation_id": 20804,
+          "mint": "BpyyNYYGDx766FXDAQV8XNSyHGCVu4oy3wmak9KYpump",
+          "entry_pct_from_open": 13.15467101685011,
+          "gross_return_pct": -95.76479372718225,
+          "net_return_pct": -98.42447544213856,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 9371,
+          "graduation_id": 21529,
+          "mint": "5f6ZGKFzpzJWb4nJm3zwjNEiqirJEf2UL2ZYenVvpump",
+          "entry_pct_from_open": 17.792297608312456,
+          "gross_return_pct": -94.06393751231322,
+          "net_return_pct": -96.77779126383423,
+          "exit_reason": "stop_loss",
+          "held_seconds": 68
+        }
+      ]
+    },
+    {
+      "strategy_id": "v10-best-double",
+      "label": "v10 vel 20-50 + dd > -10% (best double)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 85,
+      "n_closed": 85,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 5,
+        "stop_loss": 40,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 40,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 9.68,
+        "median": -10.74,
+        "std_dev": 63.41,
+        "p10": -41.64,
+        "p25": -32.88,
+        "p75": 43.13,
+        "p90": 118.41,
+        "min": -98.47,
+        "max": 158.81
+      },
+      "gross_return_pct": {
+        "mean": 12.81,
+        "median": -7.43,
+        "std_dev": 63.54,
+        "p10": -38.58,
+        "p25": -29.93,
+        "p75": 46.34,
+        "p90": 121.76,
+        "min": -95.77,
+        "max": 162.26
+      },
+      "avg_execution_cost_pp": 3.13,
+      "total_net_profit_sol": 4.1147,
+      "first_trade_ts": 1777663573,
+      "last_trade_ts": 1778993450,
+      "top_winners": [
+        {
+          "trade_id": 7286,
+          "graduation_id": 19775,
+          "mint": "7nxkhcsDWJDjrxR35VYKpq9gojnd23Cue6MQY1oapump",
+          "entry_pct_from_open": -0.5619370317460372,
+          "gross_return_pct": 162.25517422498734,
+          "net_return_pct": 158.80852970865595,
+          "exit_reason": "take_profit",
+          "held_seconds": 230
+        },
+        {
+          "trade_id": 9269,
+          "graduation_id": 21466,
+          "mint": "BAGEvL7829KW5HG81qQU2NNbvFJrnsXMXqb24ZwXpump",
+          "entry_pct_from_open": 45.355938983226096,
+          "gross_return_pct": 157.47305949683238,
+          "net_return_pct": 154.00645934877778,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 7555,
+          "graduation_id": 20045,
+          "mint": "3xQxrpyBgNoXSrAhfoL549HFPeB8WcJtHg5QJjTCpump",
+          "entry_pct_from_open": 0.5640039832842013,
+          "gross_return_pct": 155.45881603569086,
+          "net_return_pct": 152.00014007084047,
+          "exit_reason": "take_profit",
+          "held_seconds": 102
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9427,
+          "graduation_id": 21543,
+          "mint": "9YK6FUtBpxNptWH9H2L3d4er1ZZvdH4GSfRSpdYgpump",
+          "entry_pct_from_open": 1.3996738445289763,
+          "gross_return_pct": -95.76839958157043,
+          "net_return_pct": -98.46601528884204,
+          "exit_reason": "stop_loss",
+          "held_seconds": 211
+        },
+        {
+          "trade_id": 6360,
+          "graduation_id": 18620,
+          "mint": "3zmFH7wmgdSTCZJUiWLvwHJDcWhgTbHZDSis7Edfpump",
+          "entry_pct_from_open": 0.6388320140655954,
+          "gross_return_pct": -95.04482381023782,
+          "net_return_pct": -97.8098219014054,
+          "exit_reason": "stop_loss",
+          "held_seconds": 120
+        },
+        {
+          "trade_id": 9784,
+          "graduation_id": 21752,
+          "mint": "9UovJjMVzSQjb4hPvcJeynTgn83KaadJSz23K2T6pump",
+          "entry_pct_from_open": 26.38753219363295,
+          "gross_return_pct": -94.2941652509201,
+          "net_return_pct": -96.96209203648058,
+          "exit_reason": "stop_loss",
+          "held_seconds": 266
+        }
+      ]
+    },
+    {
+      "strategy_id": "v22-dev-firstbuyer",
+      "label": "v22 dev<5% + firstbuyer_known_sniper (TP150/SL30) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 9,
+      "n_closed": 9,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 3,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 6,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -6.94,
+        "median": -11.77,
+        "std_dev": 27.06,
+        "p10": -35.71,
+        "p25": -33.15,
+        "p75": 3.31,
+        "p90": 35,
+        "min": -40.1,
+        "max": 38.4
+      },
+      "gross_return_pct": {
+        "mean": -3.83,
+        "median": -8.59,
+        "std_dev": 27.12,
+        "p10": -32.69,
+        "p25": -30.14,
+        "p75": 6.47,
+        "p90": 38.12,
+        "min": -37.08,
+        "max": 41.66
+      },
+      "avg_execution_cost_pp": 3.11,
+      "total_net_profit_sol": -0.3123,
+      "first_trade_ts": 1778760263,
+      "last_trade_ts": 1778988495,
+      "top_winners": [
+        {
+          "trade_id": 10075,
+          "graduation_id": 21949,
+          "mint": "FHZMEx1WgznDS5fsQJvjxWNk2hKHCpkvxY49XedEpump",
+          "entry_pct_from_open": 13.448281451212543,
+          "gross_return_pct": 41.65906944063507,
+          "net_return_pct": 38.40259548430367,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        },
+        {
+          "trade_id": 9135,
+          "graduation_id": 21376,
+          "mint": "F2aSgQCGox2xN94qb8bcLUiskDBnhNWs2gRRpPN5pump",
+          "entry_pct_from_open": 16.722088824363922,
+          "gross_return_pct": 37.230036670575174,
+          "net_return_pct": 34.146811466217414,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        },
+        {
+          "trade_id": 9983,
+          "graduation_id": 21863,
+          "mint": "Ybi3haAD3d3vHpNdrr2dJgdawqsoaa1QrFGRoG7pump",
+          "entry_pct_from_open": 15.064589701071013,
+          "gross_return_pct": 6.4724710829776715,
+          "net_return_pct": 3.3100096143399353,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9327,
+          "graduation_id": 21497,
+          "mint": "4xq75kygeKHUeqZxAArMPXps6XYLcTkR8N5EpQA4pump",
+          "entry_pct_from_open": 11.721458057269784,
+          "gross_return_pct": -37.08268604262997,
+          "net_return_pct": -40.09644858454445,
+          "exit_reason": "stop_loss",
+          "held_seconds": 43
+        },
+        {
+          "trade_id": 9707,
+          "graduation_id": 21702,
+          "mint": "gjf1r19V7NgBWBoQ9XbzvYjm8cFjfwSU67VwS9Vpump",
+          "entry_pct_from_open": 5.394395931507667,
+          "gross_return_pct": -31.587448446145366,
+          "net_return_pct": -34.614910368166015,
+          "exit_reason": "stop_loss",
+          "held_seconds": 216
+        },
+        {
+          "trade_id": 9877,
+          "graduation_id": 21785,
+          "mint": "DhjeiVxowmjwF9hPwB3eHoGFBSf24SEb99FafFtgpump",
+          "entry_pct_from_open": 31.246860066228265,
+          "gross_return_pct": -30.138549684423843,
+          "net_return_pct": -33.148408211970164,
+          "exit_reason": "stop_loss",
+          "held_seconds": 82
+        }
+      ]
+    },
+    {
+      "strategy_id": "v23-vwap-climbing",
+      "label": "v23 vwap_pullback strict + climbing_t30_t45 (TP75/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 4,
+      "n_closed": 4,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 2,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 1,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -1.9,
+        "median": -13.17,
+        "std_dev": 49.42,
+        "p10": -49.16,
+        "p25": -41.25,
+        "p75": 26.17,
+        "p90": 54.37,
+        "min": -54.43,
+        "max": 73.17
+      },
+      "gross_return_pct": {
+        "mean": 1.13,
+        "median": -10.04,
+        "std_dev": 49.36,
+        "p10": -46.12,
+        "p25": -38.13,
+        "p75": 29.23,
+        "p90": 57.33,
+        "min": -51.45,
+        "max": 76.06
+      },
+      "avg_execution_cost_pp": 3.03,
+      "total_net_profit_sol": -0.038,
+      "first_trade_ts": 1778653616,
+      "last_trade_ts": 1778897947,
+      "top_winners": [
+        {
+          "trade_id": 9142,
+          "graduation_id": 21378,
+          "mint": "tF1XyhK4EhBRtzgNQnASKY4JnoQ2antssbJuXkdpump",
+          "entry_pct_from_open": 8.984398852886965,
+          "gross_return_pct": 76.06088266805163,
+          "net_return_pct": 73.17389855707808,
+          "exit_reason": "take_profit",
+          "held_seconds": 185
+        },
+        {
+          "trade_id": 8829,
+          "graduation_id": 21097,
+          "mint": "4TeoGDUn4gCdo4AdqyBTBeEuwCKgMqB7WKwRvkirpump",
+          "entry_pct_from_open": 27.503999966980647,
+          "gross_return_pct": 13.613956315356399,
+          "net_return_pct": 10.508278099319318,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 8813,
+          "graduation_id": 21081,
+          "mint": "toF8sz1ncfVD9pveQyDy3pa3fLtkxjyaNAMtu3upump",
+          "entry_pct_from_open": 5.135129051730293,
+          "gross_return_pct": -33.68579767187328,
+          "net_return_pct": -36.852812840458235,
+          "exit_reason": "stop_loss",
+          "held_seconds": 133
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9762,
+          "graduation_id": 21738,
+          "mint": "41PufhnETRKBqpLwV4qj7rDz3xfeHAfwFRWkbsdqpump",
+          "entry_pct_from_open": 14.51590224962365,
+          "gross_return_pct": -51.45078332748031,
+          "net_return_pct": -54.427986580062225,
+          "exit_reason": "stop_loss",
+          "held_seconds": 86
+        },
+        {
+          "trade_id": 8813,
+          "graduation_id": 21081,
+          "mint": "toF8sz1ncfVD9pveQyDy3pa3fLtkxjyaNAMtu3upump",
+          "entry_pct_from_open": 5.135129051730293,
+          "gross_return_pct": -33.68579767187328,
+          "net_return_pct": -36.852812840458235,
+          "exit_reason": "stop_loss",
+          "held_seconds": 133
+        },
+        {
+          "trade_id": 8829,
+          "graduation_id": 21097,
+          "mint": "4TeoGDUn4gCdo4AdqyBTBeEuwCKgMqB7WKwRvkirpump",
+          "entry_pct_from_open": 27.503999966980647,
+          "gross_return_pct": 13.613956315356399,
+          "net_return_pct": 10.508278099319318,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        }
+      ]
+    },
+    {
+      "strategy_id": "v25-bot-excl-mono",
+      "label": "v25 bot-excl + mono>0.5 (TP100/SL30) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 80,
+      "n_closed": 80,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 9,
+        "stop_loss": 32,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 39,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -1.2,
+        "median": -15,
+        "std_dev": 47.57,
+        "p10": -38.51,
+        "p25": -34.93,
+        "p75": 12.05,
+        "p90": 97.85,
+        "min": -98.64,
+        "max": 125.4
+      },
+      "gross_return_pct": {
+        "mean": 1.9,
+        "median": -11.9,
+        "std_dev": 47.68,
+        "p10": -35.47,
+        "p25": -31.91,
+        "p75": 15.05,
+        "p90": 101.16,
+        "min": -96.1,
+        "max": 128.67
+      },
+      "avg_execution_cost_pp": 3.1,
+      "total_net_profit_sol": -0.4814,
+      "first_trade_ts": 1778764131,
+      "last_trade_ts": 1779004632,
+      "top_winners": [
+        {
+          "trade_id": 9381,
+          "graduation_id": 21531,
+          "mint": "CQMtJmAwFv1oAobMwRfv6ir4efTWdhfNp7S1R72Rpump",
+          "entry_pct_from_open": 49.76460985552038,
+          "gross_return_pct": 128.67127964739205,
+          "net_return_pct": 125.39713605224,
+          "exit_reason": "take_profit",
+          "held_seconds": 93
+        },
+        {
+          "trade_id": 9534,
+          "graduation_id": 21578,
+          "mint": "b77PRZ39rF5tWL89aARgsaCsC84K5M4Bq41mq7xpump",
+          "entry_pct_from_open": 17.05969374853044,
+          "gross_return_pct": 116.31339546435888,
+          "net_return_pct": 112.88662337428126,
+          "exit_reason": "take_profit",
+          "held_seconds": 129
+        },
+        {
+          "trade_id": 10114,
+          "graduation_id": 21964,
+          "mint": "DFeoQbQDdpzZ1doCe3MC4bVoLqsG8dn1P8ymfEfGU5Pu",
+          "entry_pct_from_open": 25.074955562419067,
+          "gross_return_pct": 112.33000491363725,
+          "net_return_pct": 108.82480066409195,
+          "exit_reason": "take_profit",
+          "held_seconds": 283
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10055,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 9221,
+          "graduation_id": 21428,
+          "mint": "82qoECJ2sv2U6jbCMUhpqBoe9h96DTxFBh3KEcHZpump",
+          "entry_pct_from_open": 17.02338362993313,
+          "gross_return_pct": -51.510079104783166,
+          "net_return_pct": -54.46663592117069,
+          "exit_reason": "stop_loss",
+          "held_seconds": 218
+        },
+        {
+          "trade_id": 9908,
+          "graduation_id": 21811,
+          "mint": "3vSD9xyKCfRBpP3uDEUJaPyWGNWZDFkv4C4qHbjLpump",
+          "entry_pct_from_open": 15.649936612404893,
+          "gross_return_pct": -49.57990831681633,
+          "net_return_pct": -52.55025781369961,
+          "exit_reason": "stop_loss",
+          "held_seconds": 91
+        }
+      ]
+    },
+    {
+      "strategy_id": "v23-snipers-max-vel",
+      "label": "v23 snipers<=2 + max_sniper_vel<10 (TP100/SL25) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 5,
+      "n_closed": 5,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 1,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 4,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -12.4,
+        "median": -15.78,
+        "std_dev": 16.36,
+        "p10": -28.31,
+        "p25": -18.17,
+        "p75": -8.2,
+        "p90": 5.85,
+        "min": -35.06,
+        "max": 15.22
+      },
+      "gross_return_pct": {
+        "mean": -9.38,
+        "median": -12.67,
+        "std_dev": 16.34,
+        "p10": -25.33,
+        "p25": -15.12,
+        "p75": -5.08,
+        "p90": 8.83,
+        "min": -32.14,
+        "max": 18.11
+      },
+      "avg_execution_cost_pp": 3.02,
+      "total_net_profit_sol": -0.31,
+      "first_trade_ts": 1778667587,
+      "last_trade_ts": 1778992789,
+      "top_winners": [
+        {
+          "trade_id": 8849,
+          "graduation_id": 21112,
+          "mint": "7Y2vUcs5K3swzgW3z2AYQMB8Mg7dhtbV3dbWjkeJpump",
+          "entry_pct_from_open": 10.617469999709348,
+          "gross_return_pct": 18.110440491731254,
+          "net_return_pct": 15.218274283589706,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 9623,
+          "graduation_id": 21631,
+          "mint": "AcMLbkxafSPPXhn5R5vhx16pqczwKKXVBKKhTyubpump",
+          "entry_pct_from_open": 11.01698647474248,
+          "gross_return_pct": -5.0846975721942105,
+          "net_return_pct": -8.196465705126936,
+          "exit_reason": "timeout",
+          "held_seconds": 300
+        },
+        {
+          "trade_id": 10101,
+          "graduation_id": 21958,
+          "mint": "34wj8yM4Mf2SvX4i4A9uN6WBJtZKFCeUWAdkUWXgpump",
+          "entry_pct_from_open": 15.725218340675335,
+          "gross_return_pct": -12.66943445941418,
+          "net_return_pct": -15.779616077596899,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9720,
+          "graduation_id": 21708,
+          "mint": "9Sb5XtMAuci4kxBcJALXd1BAvgJMxfJDrq8Pk1jipump",
+          "entry_pct_from_open": 11.517939589297473,
+          "gross_return_pct": -32.135520816359275,
+          "net_return_pct": -35.06057264787118,
+          "exit_reason": "stop_loss",
+          "held_seconds": 65
+        },
+        {
+          "trade_id": 9457,
+          "graduation_id": 21549,
+          "mint": "BHppCpDxPH3fqzbUC6NCQRv3VQFQL91JgM8AEjf6pump",
+          "entry_pct_from_open": 16.91819377336126,
+          "gross_return_pct": -15.11679023940429,
+          "net_return_pct": -18.17171240779399,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 10101,
+          "graduation_id": 21958,
+          "mint": "34wj8yM4Mf2SvX4i4A9uN6WBJtZKFCeUWAdkUWXgpump",
+          "entry_pct_from_open": 15.725218340675335,
+          "gross_return_pct": -12.66943445941418,
+          "net_return_pct": -15.779616077596899,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        }
+      ]
+    },
+    {
+      "strategy_id": "v12-bcage1d-dd10",
+      "label": "v12 bc_age>1d + max_dd>-10 @ 150/25 (panelv3_8 promo)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 44,
+      "n_closed": 44,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 2,
+        "stop_loss": 15,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 27,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -0.09,
+        "median": -16.92,
+        "std_dev": 53.42,
+        "p10": -34.95,
+        "p25": -30.33,
+        "p75": 3.29,
+        "p90": 50.17,
+        "min": -98.64,
+        "max": 193.78
+      },
+      "gross_return_pct": {
+        "mean": 2.99,
+        "median": -13.84,
+        "std_dev": 53.51,
+        "p10": -31.98,
+        "p25": -27.2,
+        "p75": 6.47,
+        "p90": 53.22,
+        "min": -96.1,
+        "max": 196.97
+      },
+      "avg_execution_cost_pp": 3.08,
+      "total_net_profit_sol": -0.0189,
+      "first_trade_ts": 1777879563,
+      "last_trade_ts": 1779000465,
+      "top_winners": [
+        {
+          "trade_id": 6666,
+          "graduation_id": 19118,
+          "mint": "Gpw8FwrKLDJ5KZSCkJKaMyBRodn2VNqptkb98wNwpump",
+          "entry_pct_from_open": 89.27156609343746,
+          "gross_return_pct": 196.97267831785413,
+          "net_return_pct": 193.7827741731077,
+          "exit_reason": "take_profit",
+          "held_seconds": 153
+        },
+        {
+          "trade_id": 6576,
+          "graduation_id": 19001,
+          "mint": "ZUjreg7vmgYtEbzyejEVFtitkK1hVoruT287ZmRBWwu",
+          "entry_pct_from_open": 34.22494332107992,
+          "gross_return_pct": 183.1983508030004,
+          "net_return_pct": 179.97771524804426,
+          "exit_reason": "take_profit",
+          "held_seconds": 124
+        },
+        {
+          "trade_id": 7385,
+          "graduation_id": 19899,
+          "mint": "8rMfwTf4X5mXPe41fnt3XDKASVxxBFFaaBcq6xxjjnYJ",
+          "entry_pct_from_open": 5.095440190638813,
+          "gross_return_pct": 125.6505153485078,
+          "net_return_pct": 122.20193307968908,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10049,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 7179,
+          "graduation_id": 19597,
+          "mint": "92TnFEn3BrVbBmEH35XXM96Bz9X9peDQSiWeNEqwpump",
+          "entry_pct_from_open": 6.324687366636672,
+          "gross_return_pct": -39.79447177075922,
+          "net_return_pct": -42.58571932580605,
+          "exit_reason": "stop_loss",
+          "held_seconds": 53
+        },
+        {
+          "trade_id": 8255,
+          "graduation_id": 20567,
+          "mint": "4JrarqBBkE13v6kAAgmRWKwTCBxDku6t7ZquPdY7pump",
+          "entry_pct_from_open": 38.5790947853271,
+          "gross_return_pct": -34.24335766914993,
+          "net_return_pct": -37.22991799484337,
+          "exit_reason": "stop_loss",
+          "held_seconds": 51
+        }
+      ]
+    },
+    {
+      "strategy_id": "v15-snipervel-shadow",
+      "label": "v15 snipers<=2+wallet_vel_avg<20 gate5-100 @ 100/25",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 6,
+      "n_closed": 6,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 2,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 4,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -17.01,
+        "median": -16.98,
+        "std_dev": 18.16,
+        "p10": -37.58,
+        "p25": -30.84,
+        "p75": -10.09,
+        "p90": 3.51,
+        "min": -40.1,
+        "max": 15.22
+      },
+      "gross_return_pct": {
+        "mean": -14,
+        "median": -13.89,
+        "std_dev": 18.14,
+        "p10": -34.61,
+        "p25": -27.88,
+        "p75": -6.98,
+        "p90": 6.51,
+        "min": -37.08,
+        "max": 18.11
+      },
+      "avg_execution_cost_pp": 3.01,
+      "total_net_profit_sol": -0.5104,
+      "first_trade_ts": 1778667587,
+      "last_trade_ts": 1778992789,
+      "top_winners": [
+        {
+          "trade_id": 8844,
+          "graduation_id": 21112,
+          "mint": "7Y2vUcs5K3swzgW3z2AYQMB8Mg7dhtbV3dbWjkeJpump",
+          "entry_pct_from_open": 10.617469999709348,
+          "gross_return_pct": 18.110440491731254,
+          "net_return_pct": 15.218274283589706,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 9619,
+          "graduation_id": 21631,
+          "mint": "AcMLbkxafSPPXhn5R5vhx16pqczwKKXVBKKhTyubpump",
+          "entry_pct_from_open": 11.01698647474248,
+          "gross_return_pct": -5.0846975721942105,
+          "net_return_pct": -8.196465705126936,
+          "exit_reason": "timeout",
+          "held_seconds": 300
+        },
+        {
+          "trade_id": 10098,
+          "graduation_id": 21958,
+          "mint": "34wj8yM4Mf2SvX4i4A9uN6WBJtZKFCeUWAdkUWXgpump",
+          "entry_pct_from_open": 15.725218340675335,
+          "gross_return_pct": -12.66943445941418,
+          "net_return_pct": -15.779616077596899,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9323,
+          "graduation_id": 21497,
+          "mint": "4xq75kygeKHUeqZxAArMPXps6XYLcTkR8N5EpQA4pump",
+          "entry_pct_from_open": 11.721458057269784,
+          "gross_return_pct": -37.08268604262997,
+          "net_return_pct": -40.09644858454445,
+          "exit_reason": "stop_loss",
+          "held_seconds": 43
+        },
+        {
+          "trade_id": 9717,
+          "graduation_id": 21708,
+          "mint": "9Sb5XtMAuci4kxBcJALXd1BAvgJMxfJDrq8Pk1jipump",
+          "entry_pct_from_open": 11.517939589297473,
+          "gross_return_pct": -32.135520816359275,
+          "net_return_pct": -35.06057264787118,
+          "exit_reason": "stop_loss",
+          "held_seconds": 65
+        },
+        {
+          "trade_id": 9452,
+          "graduation_id": 21549,
+          "mint": "BHppCpDxPH3fqzbUC6NCQRv3VQFQL91JgM8AEjf6pump",
+          "entry_pct_from_open": 16.91819377336126,
+          "gross_return_pct": -15.11679023940429,
+          "net_return_pct": -18.17171240779399,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        }
+      ]
+    },
+    {
+      "strategy_id": "v21-sniper-age-shadow",
+      "label": "v21 snipers<=2 + walletVel<10 + age>10min (TP150/SL25) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 5,
+      "n_closed": 5,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 2,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 3,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -23.46,
+        "median": -18.17,
+        "std_dev": 12.09,
+        "p10": -38.08,
+        "p25": -35.06,
+        "p75": -15.78,
+        "p90": -11.23,
+        "min": -40.1,
+        "max": -8.2
+      },
+      "gross_return_pct": {
+        "mean": -20.42,
+        "median": -15.12,
+        "std_dev": 12.15,
+        "p10": -35.1,
+        "p25": -32.14,
+        "p75": -12.67,
+        "p90": -8.12,
+        "min": -37.08,
+        "max": -5.08
+      },
+      "avg_execution_cost_pp": 3.04,
+      "total_net_profit_sol": -0.5865,
+      "first_trade_ts": 1778795424,
+      "last_trade_ts": 1778992789,
+      "top_winners": [
+        {
+          "trade_id": 9621,
+          "graduation_id": 21631,
+          "mint": "AcMLbkxafSPPXhn5R5vhx16pqczwKKXVBKKhTyubpump",
+          "entry_pct_from_open": 11.01698647474248,
+          "gross_return_pct": -5.0846975721942105,
+          "net_return_pct": -8.196465705126936,
+          "exit_reason": "timeout",
+          "held_seconds": 300
+        },
+        {
+          "trade_id": 10100,
+          "graduation_id": 21958,
+          "mint": "34wj8yM4Mf2SvX4i4A9uN6WBJtZKFCeUWAdkUWXgpump",
+          "entry_pct_from_open": 15.725218340675335,
+          "gross_return_pct": -12.66943445941418,
+          "net_return_pct": -15.779616077596899,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 9454,
+          "graduation_id": 21549,
+          "mint": "BHppCpDxPH3fqzbUC6NCQRv3VQFQL91JgM8AEjf6pump",
+          "entry_pct_from_open": 16.91819377336126,
+          "gross_return_pct": -15.11679023940429,
+          "net_return_pct": -18.17171240779399,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9325,
+          "graduation_id": 21497,
+          "mint": "4xq75kygeKHUeqZxAArMPXps6XYLcTkR8N5EpQA4pump",
+          "entry_pct_from_open": 11.721458057269784,
+          "gross_return_pct": -37.08268604262997,
+          "net_return_pct": -40.09644858454445,
+          "exit_reason": "stop_loss",
+          "held_seconds": 43
+        },
+        {
+          "trade_id": 9719,
+          "graduation_id": 21708,
+          "mint": "9Sb5XtMAuci4kxBcJALXd1BAvgJMxfJDrq8Pk1jipump",
+          "entry_pct_from_open": 11.517939589297473,
+          "gross_return_pct": -32.135520816359275,
+          "net_return_pct": -35.06057264787118,
+          "exit_reason": "stop_loss",
+          "held_seconds": 65
+        },
+        {
+          "trade_id": 9454,
+          "graduation_id": 21549,
+          "mint": "BHppCpDxPH3fqzbUC6NCQRv3VQFQL91JgM8AEjf6pump",
+          "entry_pct_from_open": 16.91819377336126,
+          "gross_return_pct": -15.11679023940429,
+          "net_return_pct": -18.17171240779399,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        }
+      ]
+    },
+    {
+      "strategy_id": "v14-snipervel-shadow",
+      "label": "v14 snipers<=2 + wallet_vel_avg<20 @ 100/25",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 26,
+      "n_closed": 26,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 10,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 16,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -14.49,
+        "median": -19.44,
+        "std_dev": 32.35,
+        "p10": -37.58,
+        "p25": -32.88,
+        "p75": -10.56,
+        "p90": 5.83,
+        "min": -54.3,
+        "max": 110.75
+      },
+      "gross_return_pct": {
+        "mean": -11.31,
+        "median": -16.35,
+        "std_dev": 32.44,
+        "p10": -34.61,
+        "p25": -29.75,
+        "p75": -7.39,
+        "p90": 8.96,
+        "min": -51.23,
+        "max": 114.35
+      },
+      "avg_execution_cost_pp": 3.18,
+      "total_net_profit_sol": -1.8832,
+      "first_trade_ts": 1778647525,
+      "last_trade_ts": 1778992789,
+      "top_winners": [
+        {
+          "trade_id": 9368,
+          "graduation_id": 21525,
+          "mint": "BwWnQTZbQzUdaoXmFAp8anvkp3xACc9efcE6ksaAYQ1y",
+          "entry_pct_from_open": -4.6770590069653135,
+          "gross_return_pct": 114.35311218968864,
+          "net_return_pct": 110.75001488289267,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 9370,
+          "graduation_id": 21528,
+          "mint": "Ft9MU7SQcYBnHwjppHnjrfWNmREHHXpg6HHH7mX7pump",
+          "entry_pct_from_open": -16.935444350134755,
+          "gross_return_pct": 57.864931969510515,
+          "net_return_pct": 54.466589881734606,
+          "exit_reason": "timeout",
+          "held_seconds": 302
+        },
+        {
+          "trade_id": 8846,
+          "graduation_id": 21112,
+          "mint": "7Y2vUcs5K3swzgW3z2AYQMB8Mg7dhtbV3dbWjkeJpump",
+          "entry_pct_from_open": 10.617469999709348,
+          "gross_return_pct": 18.110440491731254,
+          "net_return_pct": 15.218274283589706,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9029,
+          "graduation_id": 21251,
+          "mint": "5wHAPnkvHvZcTPukJzLWUG5n9u8bJXPWrfiBD6VYpump",
+          "entry_pct_from_open": -9.050593767559867,
+          "gross_return_pct": -51.233670063991156,
+          "net_return_pct": -54.30340650370134,
+          "exit_reason": "stop_loss",
+          "held_seconds": 28
+        },
+        {
+          "trade_id": 9655,
+          "graduation_id": 21666,
+          "mint": "J3hhG87HZodnMvBk8t8tYgAy1pA5ftPoNiHtVUrB7pLB",
+          "entry_pct_from_open": -42.29094471434717,
+          "gross_return_pct": -39.77754361436655,
+          "net_return_pct": -43.0206513852277,
+          "exit_reason": "stop_loss",
+          "held_seconds": 80
+        },
+        {
+          "trade_id": 9324,
+          "graduation_id": 21497,
+          "mint": "4xq75kygeKHUeqZxAArMPXps6XYLcTkR8N5EpQA4pump",
+          "entry_pct_from_open": 11.721458057269784,
+          "gross_return_pct": -37.08268604262997,
+          "net_return_pct": -40.09644858454445,
+          "exit_reason": "stop_loss",
+          "held_seconds": 43
+        }
+      ]
+    },
+    {
+      "strategy_id": "v11-vel5dev3-liq100",
+      "label": "v11 liq overlay: vel<5+dev<3%+liq>100",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 11,
+      "n_closed": 11,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 2,
+        "stop_loss": 5,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 4,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 2.17,
+        "median": -20.75,
+        "std_dev": 64.48,
+        "p10": -43.55,
+        "p25": -39.46,
+        "p75": 29.35,
+        "p90": 115,
+        "min": -98.64,
+        "max": 119.42
+      },
+      "gross_return_pct": {
+        "mean": 5.1,
+        "median": -17.8,
+        "std_dev": 64.63,
+        "p10": -40.74,
+        "p25": -36.65,
+        "p75": 32.43,
+        "p90": 118.13,
+        "min": -96.1,
+        "max": 122.51
+      },
+      "avg_execution_cost_pp": 2.93,
+      "total_net_profit_sol": 0.1194,
+      "first_trade_ts": 1777818185,
+      "last_trade_ts": 1778980312,
+      "top_winners": [
+        {
+          "trade_id": 6664,
+          "graduation_id": 19118,
+          "mint": "Gpw8FwrKLDJ5KZSCkJKaMyBRodn2VNqptkb98wNwpump",
+          "entry_pct_from_open": 89.27156609343746,
+          "gross_return_pct": 122.51253101022405,
+          "net_return_pct": 119.41740181295206,
+          "exit_reason": "take_profit",
+          "held_seconds": 137
+        },
+        {
+          "trade_id": 6573,
+          "graduation_id": 19001,
+          "mint": "ZUjreg7vmgYtEbzyejEVFtitkK1hVoruT287ZmRBWwu",
+          "entry_pct_from_open": 34.22494332107992,
+          "gross_return_pct": 118.13421509220694,
+          "net_return_pct": 115.00113792870641,
+          "exit_reason": "take_profit",
+          "held_seconds": 119
+        },
+        {
+          "trade_id": 7332,
+          "graduation_id": 19872,
+          "mint": "H3xzHMJMo7okVJXmdrerBxh5BDV67AsPD81T1DwGpump",
+          "entry_pct_from_open": 23.409058359494146,
+          "gross_return_pct": 36.007821910816325,
+          "net_return_pct": 33.02043769616164,
+          "exit_reason": "timeout",
+          "held_seconds": 273
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10046,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 6544,
+          "graduation_id": 18965,
+          "mint": "H2e5f5bvMogLeEM8d2nudshXAPiTYFVerGzq82jspump",
+          "entry_pct_from_open": 78.35935244498886,
+          "gross_return_pct": -40.74077139670258,
+          "net_return_pct": -43.55273491071077,
+          "exit_reason": "stop_loss",
+          "held_seconds": 170
+        },
+        {
+          "trade_id": 7177,
+          "graduation_id": 19597,
+          "mint": "92TnFEn3BrVbBmEH35XXM96Bz9X9peDQSiWeNEqwpump",
+          "entry_pct_from_open": 6.324687366636672,
+          "gross_return_pct": -39.79447177075922,
+          "net_return_pct": -42.58571932580605,
+          "exit_reason": "stop_loss",
+          "held_seconds": 53
+        }
+      ]
+    },
+    {
+      "strategy_id": "v25-bot-excl-tp150",
+      "label": "v25 bot-excl + TP150/SL25 [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 130,
+      "n_closed": 130,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 2,
+        "stop_loss": 61,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 67,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -1.62,
+        "median": -21.01,
+        "std_dev": 51.53,
+        "p10": -40.18,
+        "p25": -32.3,
+        "p75": 19.11,
+        "p90": 74.01,
+        "min": -98.64,
+        "max": 180.62
+      },
+      "gross_return_pct": {
+        "mean": 1.48,
+        "median": -17.93,
+        "std_dev": 51.66,
+        "p10": -37.02,
+        "p25": -29.21,
+        "p75": 22.28,
+        "p90": 77.34,
+        "min": -96.1,
+        "max": 183.93
+      },
+      "avg_execution_cost_pp": 3.1,
+      "total_net_profit_sol": -1.0557,
+      "first_trade_ts": 1778764131,
+      "last_trade_ts": 1779004632,
+      "top_winners": [
+        {
+          "trade_id": 9356,
+          "graduation_id": 21516,
+          "mint": "8tX4ZoxhnuaQrK2H59omSEQXCHTNwFn9vZUg1psh3W5Z",
+          "entry_pct_from_open": 26.063282836022555,
+          "gross_return_pct": 183.933532329742,
+          "net_return_pct": 180.62036356945637,
+          "exit_reason": "take_profit",
+          "held_seconds": 66
+        },
+        {
+          "trade_id": 9275,
+          "graduation_id": 21466,
+          "mint": "BAGEvL7829KW5HG81qQU2NNbvFJrnsXMXqb24ZwXpump",
+          "entry_pct_from_open": 45.355938983226096,
+          "gross_return_pct": 157.47305949683238,
+          "net_return_pct": 154.00645934877778,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 9533,
+          "graduation_id": 21578,
+          "mint": "b77PRZ39rF5tWL89aARgsaCsC84K5M4Bq41mq7xpump",
+          "entry_pct_from_open": 17.05969374853044,
+          "gross_return_pct": 152.50927420752035,
+          "net_return_pct": 149.01909117571395,
+          "exit_reason": "take_profit",
+          "held_seconds": 179
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10054,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -96.09595692238044,
+          "net_return_pct": -98.64332189196685,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        },
+        {
+          "trade_id": 9374,
+          "graduation_id": 21529,
+          "mint": "5f6ZGKFzpzJWb4nJm3zwjNEiqirJEf2UL2ZYenVvpump",
+          "entry_pct_from_open": 17.792297608312456,
+          "gross_return_pct": -94.06393751231322,
+          "net_return_pct": -96.77779126383423,
+          "exit_reason": "stop_loss",
+          "held_seconds": 68
+        },
+        {
+          "trade_id": 9416,
+          "graduation_id": 21536,
+          "mint": "ctf8D9Ny4Cn6Z123h9evvCS4fDretA1fhy3UJZApump",
+          "entry_pct_from_open": 13.126850949612411,
+          "gross_return_pct": -78.70345215325122,
+          "net_return_pct": -80.76976009974999,
+          "exit_reason": "stop_loss",
+          "held_seconds": 37
+        }
+      ]
+    },
+    {
+      "strategy_id": "v20-vel2050-dd-sl20",
+      "label": "v20 vel 20-50 + dd>-10% @ 150/20 gate5-100 (tighter SL)",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 35,
+      "n_closed": 35,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 2,
+        "stop_loss": 20,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 13,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 11.34,
+        "median": -23.64,
+        "std_dev": 65.24,
+        "p10": -40.81,
+        "p25": -29.6,
+        "p75": 50.87,
+        "p90": 134.13,
+        "min": -96.96,
+        "max": 154.01
+      },
+      "gross_return_pct": {
+        "mean": 14.4,
+        "median": -20.66,
+        "std_dev": 65.41,
+        "p10": -37.77,
+        "p25": -26.59,
+        "p75": 54.02,
+        "p90": 137.5,
+        "min": -94.29,
+        "max": 157.47
+      },
+      "avg_execution_cost_pp": 3.06,
+      "total_net_profit_sol": 1.9849,
+      "first_trade_ts": 1778401530,
+      "last_trade_ts": 1778993450,
+      "top_winners": [
+        {
+          "trade_id": 9271,
+          "graduation_id": 21466,
+          "mint": "BAGEvL7829KW5HG81qQU2NNbvFJrnsXMXqb24ZwXpump",
+          "entry_pct_from_open": 45.355938983226096,
+          "gross_return_pct": 157.47305949683238,
+          "net_return_pct": 154.00645934877778,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        },
+        {
+          "trade_id": 9528,
+          "graduation_id": 21578,
+          "mint": "b77PRZ39rF5tWL89aARgsaCsC84K5M4Bq41mq7xpump",
+          "entry_pct_from_open": 17.05969374853044,
+          "gross_return_pct": 152.50927420752035,
+          "net_return_pct": 149.01909117571395,
+          "exit_reason": "take_profit",
+          "held_seconds": 179
+        },
+        {
+          "trade_id": 7881,
+          "graduation_id": 20359,
+          "mint": "4k95VBsznoxmq2AmPPmxjf5trBiaLWE2DPYHZqAvpump",
+          "entry_pct_from_open": 15.268908539535675,
+          "gross_return_pct": 152.3115418278881,
+          "net_return_pct": 148.91930727310876,
+          "exit_reason": "take_profit",
+          "held_seconds": 242
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9787,
+          "graduation_id": 21752,
+          "mint": "9UovJjMVzSQjb4hPvcJeynTgn83KaadJSz23K2T6pump",
+          "entry_pct_from_open": 26.38753219363295,
+          "gross_return_pct": -94.2941652509201,
+          "net_return_pct": -96.96209203648058,
+          "exit_reason": "stop_loss",
+          "held_seconds": 266
+        },
+        {
+          "trade_id": 8128,
+          "graduation_id": 20509,
+          "mint": "Hmp43JJ5WU8QncBTaihX3hBKf54Y8JofSnTWa5P4pump",
+          "entry_pct_from_open": 12.499741062445764,
+          "gross_return_pct": -40.061485644385236,
+          "net_return_pct": -43.10931220164392,
+          "exit_reason": "stop_loss",
+          "held_seconds": 129
+        },
+        {
+          "trade_id": 8380,
+          "graduation_id": 20670,
+          "mint": "FjYiVvjDKo9fp7H4sLSQkBVfHXNbWbt2E7HCVirupump",
+          "entry_pct_from_open": 13.341410453892328,
+          "gross_return_pct": -39.35142153389512,
+          "net_return_pct": -42.35591529424349,
+          "exit_reason": "stop_loss",
+          "held_seconds": 42
+        }
+      ]
+    },
+    {
+      "strategy_id": "v26-best-double-ttp",
+      "label": "v26 v10-best-double mirror + trailingTP=10% [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 1,
+      "n_closed": 1,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 1,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 0,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -28.87,
+        "median": -28.87,
+        "std_dev": 0,
+        "p10": -28.87,
+        "p25": -28.87,
+        "p75": -28.87,
+        "p90": -28.87,
+        "min": -28.87,
+        "max": -28.87
+      },
+      "gross_return_pct": {
+        "mean": -25.79,
+        "median": -25.79,
+        "std_dev": 0,
+        "p10": -25.79,
+        "p25": -25.79,
+        "p75": -25.79,
+        "p90": -25.79,
+        "min": -25.79,
+        "max": -25.79
+      },
+      "avg_execution_cost_pp": 3.08,
+      "total_net_profit_sol": -0.1443,
+      "first_trade_ts": 1778993450,
+      "last_trade_ts": 1778993450,
+      "top_winners": [
+        {
+          "trade_id": 10108,
+          "graduation_id": 21959,
+          "mint": "B9EPZNmWN1NMaMTZyURXDU56788uyQjTariNE2Supump",
+          "entry_pct_from_open": 5.053466061384244,
+          "gross_return_pct": -25.789655469381973,
+          "net_return_pct": -28.867077755361624,
+          "exit_reason": "stop_loss",
+          "held_seconds": 125
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10108,
+          "graduation_id": 21959,
+          "mint": "B9EPZNmWN1NMaMTZyURXDU56788uyQjTariNE2Supump",
+          "entry_pct_from_open": 5.053466061384244,
+          "gross_return_pct": -25.789655469381973,
+          "net_return_pct": -28.867077755361624,
+          "exit_reason": "stop_loss",
+          "held_seconds": 125
+        }
+      ]
+    },
+    {
+      "strategy_id": "v23-vel2050-climbing",
+      "label": "v23 vel 20-50 + climbing_t30_t45 (TP150/SL25, entry@T+60) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 31,
+      "n_closed": 31,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 18,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 12,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 2.03,
+        "median": -28.95,
+        "std_dev": 53.6,
+        "p10": -34.04,
+        "p25": -33.27,
+        "p75": 36.99,
+        "p90": 88.72,
+        "min": -59.55,
+        "max": 152.29
+      },
+      "gross_return_pct": {
+        "mean": 5.07,
+        "median": -25.93,
+        "std_dev": 53.69,
+        "p10": -31.2,
+        "p25": -30.25,
+        "p75": 39.97,
+        "p90": 91.75,
+        "min": -56.83,
+        "max": 155.69
+      },
+      "avg_execution_cost_pp": 3.04,
+      "total_net_profit_sol": 0.3149,
+      "first_trade_ts": 1778614311,
+      "last_trade_ts": 1779005040,
+      "top_winners": [
+        {
+          "trade_id": 8925,
+          "graduation_id": 21165,
+          "mint": "2zRJoY7uw5erDJ9Bu4GBYrndWqvf4YqBLupCqgbHpump",
+          "entry_pct_from_open": 19.287214518662267,
+          "gross_return_pct": 155.6885321348564,
+          "net_return_pct": 152.29354189436887,
+          "exit_reason": "take_profit",
+          "held_seconds": 70
+        },
+        {
+          "trade_id": 9537,
+          "graduation_id": 21578,
+          "mint": "b77PRZ39rF5tWL89aARgsaCsC84K5M4Bq41mq7xpump",
+          "entry_pct_from_open": 43.70049404516091,
+          "gross_return_pct": 110.43403963390304,
+          "net_return_pct": 107.15356332982479,
+          "exit_reason": "timeout",
+          "held_seconds": 304
+        },
+        {
+          "trade_id": 9278,
+          "graduation_id": 21466,
+          "mint": "BAGEvL7829KW5HG81qQU2NNbvFJrnsXMXqb24ZwXpump",
+          "entry_pct_from_open": 95.78933656161914,
+          "gross_return_pct": 105.22062871301692,
+          "net_return_pct": 102.02279355314023,
+          "exit_reason": "timeout",
+          "held_seconds": 301
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9098,
+          "graduation_id": 21309,
+          "mint": "4NeDpvxyMicESgVtPJ1xzMq99rfT4DeF7BM3VcLMpump",
+          "entry_pct_from_open": 48.7042103363601,
+          "gross_return_pct": -56.831347693177584,
+          "net_return_pct": -59.55168091555866,
+          "exit_reason": "stop_loss",
+          "held_seconds": 60
+        },
+        {
+          "trade_id": 8765,
+          "graduation_id": 20995,
+          "mint": "9Z4kTGvouopj86tfX3am1YMpX4oFGvE5Z267nRxfpump",
+          "entry_pct_from_open": 25.81930210327745,
+          "gross_return_pct": -44.17534086065039,
+          "net_return_pct": -47.122090500738295,
+          "exit_reason": "stop_loss",
+          "held_seconds": 44
+        },
+        {
+          "trade_id": 8985,
+          "graduation_id": 21225,
+          "mint": "2RRWcDowGupiXN7T7NJqb8UkRUfUPfwNoTpB4JdVpump",
+          "entry_pct_from_open": 44.10786347184326,
+          "gross_return_pct": -35.535390084162955,
+          "net_return_pct": -38.479199153859625,
+          "exit_reason": "stop_loss",
+          "held_seconds": 284
+        }
+      ]
+    },
+    {
+      "strategy_id": "v23-snipers5-recovery",
+      "label": "v23 snipers<=5 + confirmed_recovery (TP100/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 21,
+      "n_closed": 21,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 3,
+        "stop_loss": 11,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 7,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 1.66,
+        "median": -33.82,
+        "std_dev": 60.48,
+        "p10": -59.55,
+        "p25": -42.47,
+        "p75": 46.31,
+        "p90": 102.78,
+        "min": -76.22,
+        "max": 125.85
+      },
+      "gross_return_pct": {
+        "mean": 4.66,
+        "median": -30.74,
+        "std_dev": 60.62,
+        "p10": -56.83,
+        "p25": -39.56,
+        "p75": 49.33,
+        "p90": 106.17,
+        "min": -73.3,
+        "max": 129.27
+      },
+      "avg_execution_cost_pp": 3,
+      "total_net_profit_sol": 0.1741,
+      "first_trade_ts": 1778667587,
+      "last_trade_ts": 1778975733,
+      "top_winners": [
+        {
+          "trade_id": 8870,
+          "graduation_id": 21127,
+          "mint": "B21WSwwyBDv54Frwxwpu7MxMSke29QJCusYi31jgpump",
+          "entry_pct_from_open": 98.78230511900892,
+          "gross_return_pct": 129.2669429245758,
+          "net_return_pct": 125.84678891624836,
+          "exit_reason": "take_profit",
+          "held_seconds": 21
+        },
+        {
+          "trade_id": 9425,
+          "graduation_id": 21539,
+          "mint": "7meLoWBJZZVKViuziac1DQe1LDG3cAWxk6pBkspDpump",
+          "entry_pct_from_open": 83.19781565018403,
+          "gross_return_pct": 108.26129119072657,
+          "net_return_pct": 105.2101632546113,
+          "exit_reason": "take_profit",
+          "held_seconds": 286
+        },
+        {
+          "trade_id": 9889,
+          "graduation_id": 21789,
+          "mint": "6BonAuugSmeJa7r1kdj6xjbUayKi4EiwZBy5ZXtcpump",
+          "entry_pct_from_open": 9.334498760818166,
+          "gross_return_pct": 106.172117514663,
+          "net_return_pct": 102.78355882254795,
+          "exit_reason": "take_profit",
+          "held_seconds": 174
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 8947,
+          "graduation_id": 21189,
+          "mint": "EP7rDdaZK67LEMShEXjTvS3kpcTQgFRokZBZE79Dpump",
+          "entry_pct_from_open": 34.27656298947731,
+          "gross_return_pct": -73.30342593640098,
+          "net_return_pct": -76.21817644349872,
+          "exit_reason": "stop_loss",
+          "held_seconds": 27
+        },
+        {
+          "trade_id": 9653,
+          "graduation_id": 21660,
+          "mint": "HBX62NcaHM6Bc94CyxUABJBGMBtHD9jrHYqDCaSopump",
+          "entry_pct_from_open": 71.24593669696435,
+          "gross_return_pct": -70.71851354188706,
+          "net_return_pct": -73.44735927235772,
+          "exit_reason": "stop_loss",
+          "held_seconds": 29
+        },
+        {
+          "trade_id": 9099,
+          "graduation_id": 21309,
+          "mint": "4NeDpvxyMicESgVtPJ1xzMq99rfT4DeF7BM3VcLMpump",
+          "entry_pct_from_open": 48.7042103363601,
+          "gross_return_pct": -56.831347693177584,
+          "net_return_pct": -59.55168091555866,
+          "exit_reason": "stop_loss",
+          "held_seconds": 60
+        }
+      ]
+    },
+    {
+      "strategy_id": "v25-bot-excl-vel2050",
+      "label": "v25 bot-excl + vel 20-50 (TP100/SL30) [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 21,
+      "n_closed": 21,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 5,
+        "stop_loss": 12,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 4,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 6.62,
+        "median": -34.87,
+        "std_dev": 62.55,
+        "p10": -40.11,
+        "p25": -38.71,
+        "p75": 69.84,
+        "p90": 104.49,
+        "min": -80.77,
+        "max": 112.89
+      },
+      "gross_return_pct": {
+        "mean": 9.68,
+        "median": -31.88,
+        "std_dev": 62.75,
+        "p10": -37.2,
+        "p25": -35.72,
+        "p75": 72.95,
+        "p90": 107.95,
+        "min": -78.7,
+        "max": 116.31
+      },
+      "avg_execution_cost_pp": 3.06,
+      "total_net_profit_sol": 0.6954,
+      "first_trade_ts": 1778767649,
+      "last_trade_ts": 1778993450,
+      "top_winners": [
+        {
+          "trade_id": 9535,
+          "graduation_id": 21578,
+          "mint": "b77PRZ39rF5tWL89aARgsaCsC84K5M4Bq41mq7xpump",
+          "entry_pct_from_open": 17.05969374853044,
+          "gross_return_pct": 116.31339546435888,
+          "net_return_pct": 112.88662337428126,
+          "exit_reason": "take_profit",
+          "held_seconds": 129
+        },
+        {
+          "trade_id": 9277,
+          "graduation_id": 21466,
+          "mint": "BAGEvL7829KW5HG81qQU2NNbvFJrnsXMXqb24ZwXpump",
+          "entry_pct_from_open": 45.355938983226096,
+          "gross_return_pct": 109.55561076737197,
+          "net_return_pct": 106.16838170226774,
+          "exit_reason": "take_profit",
+          "held_seconds": 126
+        },
+        {
+          "trade_id": 9293,
+          "graduation_id": 21478,
+          "mint": "EjvsudvUcxrZwCWARwdS9BmEPisvZLjmnkdegeRbpump",
+          "entry_pct_from_open": 37.60879274397212,
+          "gross_return_pct": 107.94601555415801,
+          "net_return_pct": 104.48979503069891,
+          "exit_reason": "take_profit",
+          "held_seconds": 238
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9417,
+          "graduation_id": 21536,
+          "mint": "ctf8D9Ny4Cn6Z123h9evvCS4fDretA1fhy3UJZApump",
+          "entry_pct_from_open": 13.126850949612411,
+          "gross_return_pct": -78.70345215325122,
+          "net_return_pct": -80.76976009974999,
+          "exit_reason": "stop_loss",
+          "held_seconds": 37
+        },
+        {
+          "trade_id": 9201,
+          "graduation_id": 21414,
+          "mint": "Bmf8EG6WQCg2exMNqSqVhA6r83EvJcYjXWtNAwxKpump",
+          "entry_pct_from_open": 11.751226005152473,
+          "gross_return_pct": -41.018535351662386,
+          "net_return_pct": -43.90796357430445,
+          "exit_reason": "stop_loss",
+          "held_seconds": 86
+        },
+        {
+          "trade_id": 9518,
+          "graduation_id": 21574,
+          "mint": "DQT7qFaB4xEKZNjVSRAeaYS7aa33E4BeNkACnreXpump",
+          "entry_pct_from_open": 30.342445141382974,
+          "gross_return_pct": -37.20469949986481,
+          "net_return_pct": -40.105542323740536,
+          "exit_reason": "stop_loss",
+          "held_seconds": 67
+        }
+      ]
+    },
+    {
+      "strategy_id": "v24-busy-batch-climbing",
+      "label": "v24 busy_batch + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow speculative]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 3,
+      "n_closed": 3,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 1,
+        "stop_loss": 2,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 0,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": 7.79,
+        "median": -35.12,
+        "std_dev": 65.95,
+        "p10": -41,
+        "p25": -38.79,
+        "p75": 32.92,
+        "p90": 73.74,
+        "min": -42.47,
+        "max": 100.96
+      },
+      "gross_return_pct": {
+        "mean": 10.83,
+        "median": -32.13,
+        "std_dev": 66.08,
+        "p10": -38.07,
+        "p25": -35.85,
+        "p75": 36.03,
+        "p90": 76.92,
+        "min": -39.56,
+        "max": 104.19
+      },
+      "avg_execution_cost_pp": 3.04,
+      "total_net_profit_sol": 0.1169,
+      "first_trade_ts": 1778795155,
+      "last_trade_ts": 1778875744,
+      "top_winners": [
+        {
+          "trade_id": 9656,
+          "graduation_id": 21669,
+          "mint": "A5Qj766qYwq8TucM1JsR1yspf47MrSFeomV9kgN4pump",
+          "entry_pct_from_open": 70.05198703139018,
+          "gross_return_pct": 104.18881223710459,
+          "net_return_pct": 100.95901686959519,
+          "exit_reason": "take_profit",
+          "held_seconds": 133
+        },
+        {
+          "trade_id": 9310,
+          "graduation_id": 21495,
+          "mint": "5VVZ4Bb5JjRQKtQgtSUmTXstEsfXmQcwkjQikAKqpump",
+          "entry_pct_from_open": 24.78877858458446,
+          "gross_return_pct": -32.130541072920785,
+          "net_return_pct": -35.118994289686114,
+          "exit_reason": "stop_loss",
+          "held_seconds": 72
+        },
+        {
+          "trade_id": 9686,
+          "graduation_id": 21690,
+          "mint": "8HcvRTuGfjJjQtiU9As3ACbu2nS24oUMuuCFXws8pump",
+          "entry_pct_from_open": 42.807244641920896,
+          "gross_return_pct": -39.56009111368534,
+          "net_return_pct": -42.46777095888772,
+          "exit_reason": "stop_loss",
+          "held_seconds": 136
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 9686,
+          "graduation_id": 21690,
+          "mint": "8HcvRTuGfjJjQtiU9As3ACbu2nS24oUMuuCFXws8pump",
+          "entry_pct_from_open": 42.807244641920896,
+          "gross_return_pct": -39.56009111368534,
+          "net_return_pct": -42.46777095888772,
+          "exit_reason": "stop_loss",
+          "held_seconds": 136
+        },
+        {
+          "trade_id": 9310,
+          "graduation_id": 21495,
+          "mint": "5VVZ4Bb5JjRQKtQgtSUmTXstEsfXmQcwkjQikAKqpump",
+          "entry_pct_from_open": 24.78877858458446,
+          "gross_return_pct": -32.130541072920785,
+          "net_return_pct": -35.118994289686114,
+          "exit_reason": "stop_loss",
+          "held_seconds": 72
+        },
+        {
+          "trade_id": 9656,
+          "graduation_id": 21669,
+          "mint": "A5Qj766qYwq8TucM1JsR1yspf47MrSFeomV9kgN4pump",
+          "entry_pct_from_open": 70.05198703139018,
+          "gross_return_pct": 104.18881223710459,
+          "net_return_pct": 100.95901686959519,
+          "exit_reason": "take_profit",
+          "held_seconds": 133
+        }
+      ]
+    },
+    {
+      "strategy_id": "v26-vel2050-dd-base-ttp",
+      "label": "v26 v20-vel2050-dd-base mirror + trailingTP=10% [shadow]",
+      "enabled": true,
+      "execution_mode": "shadow",
+      "n_total": 1,
+      "n_closed": 1,
+      "n_open": 0,
+      "n_failed": 0,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 1,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 0,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -35.91,
+        "median": -35.91,
+        "std_dev": 0,
+        "p10": -35.91,
+        "p25": -35.91,
+        "p75": -35.91,
+        "p90": -35.91,
+        "min": -35.91,
+        "max": -35.91
+      },
+      "gross_return_pct": {
+        "mean": -32.85,
+        "median": -32.85,
+        "std_dev": 0,
+        "p10": -32.85,
+        "p25": -32.85,
+        "p75": -32.85,
+        "p90": -32.85,
+        "min": -32.85,
+        "max": -32.85
+      },
+      "avg_execution_cost_pp": 3.06,
+      "total_net_profit_sol": -0.1795,
+      "first_trade_ts": 1778993450,
+      "last_trade_ts": 1778993450,
+      "top_winners": [
+        {
+          "trade_id": 10109,
+          "graduation_id": 21959,
+          "mint": "B9EPZNmWN1NMaMTZyURXDU56788uyQjTariNE2Supump",
+          "entry_pct_from_open": 5.053466061384244,
+          "gross_return_pct": -32.8518902943357,
+          "net_return_pct": -35.90667984139636,
+          "exit_reason": "stop_loss",
+          "held_seconds": 145
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10109,
+          "graduation_id": 21959,
+          "mint": "B9EPZNmWN1NMaMTZyURXDU56788uyQjTariNE2Supump",
+          "entry_pct_from_open": 5.053466061384244,
+          "gross_return_pct": -32.8518902943357,
+          "net_return_pct": -35.90667984139636,
+          "exit_reason": "stop_loss",
+          "held_seconds": 145
+        }
+      ]
+    },
+    {
+      "strategy_id": "v9-vel20-top5-live-micro",
+      "label": "v9 vel<20 + top5<10% @ 150/30 [LIVE_MICRO 0.05 SOL]",
+      "enabled": true,
+      "execution_mode": "live_micro",
+      "n_total": 2,
+      "n_closed": 1,
+      "n_open": 0,
+      "n_failed": 1,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 1,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 0,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": -101.04,
+        "median": -101.04,
+        "std_dev": 0,
+        "p10": -101.04,
+        "p25": -101.04,
+        "p75": -101.04,
+        "p90": -101.04,
+        "min": -101.04,
+        "max": -101.04
+      },
+      "gross_return_pct": {
+        "mean": -95.89,
+        "median": -95.89,
+        "std_dev": 0,
+        "p10": -95.89,
+        "p25": -95.89,
+        "p75": -95.89,
+        "p90": -95.89,
+        "min": -95.89,
+        "max": -95.89
+      },
+      "avg_execution_cost_pp": 5.15,
+      "total_net_profit_sol": -0.0505,
+      "first_trade_ts": 1778965361,
+      "last_trade_ts": 1778980312,
+      "top_winners": [
+        {
+          "trade_id": 10056,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -95.888387586709,
+          "net_return_pct": -101.0387100693672,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        }
+      ],
+      "top_losers": [
+        {
+          "trade_id": 10056,
+          "graduation_id": 21938,
+          "mint": "AxjGfgaYmZcLRJopV6LQ5EHMG6mo4qZZftcNzZZwpump",
+          "entry_pct_from_open": 96.63096840012632,
+          "gross_return_pct": -95.888387586709,
+          "net_return_pct": -101.0387100693672,
+          "exit_reason": "stop_loss",
+          "held_seconds": 22
+        }
+      ]
+    },
+    {
+      "strategy_id": "v9-velmono-dev-live-micro",
+      "label": "v9 vel 20-50 + mono>0.5 + dev>5% @ 100/30 [LIVE_MICRO 0.05 SOL]",
+      "enabled": true,
+      "execution_mode": "live_micro",
+      "n_total": 1,
+      "n_closed": 0,
+      "n_open": 0,
+      "n_failed": 1,
+      "exit_reasons": {
+        "take_profit": 0,
+        "stop_loss": 0,
+        "trailing_stop": 0,
+        "breakeven_stop": 0,
+        "trailing_tp": 0,
+        "timeout": 0,
+        "killswitch": 0
+      },
+      "net_return_pct": {
+        "mean": null,
+        "median": null,
+        "std_dev": null,
+        "p10": null,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "min": null,
+        "max": null
+      },
+      "gross_return_pct": {
+        "mean": null,
+        "median": null,
+        "std_dev": null,
+        "p10": null,
+        "p25": null,
+        "p75": null,
+        "p90": null,
+        "min": null,
+        "max": null
+      },
+      "avg_execution_cost_pp": null,
+      "total_net_profit_sol": 0,
+      "first_trade_ts": 1778903709,
+      "last_trade_ts": 1778903709,
+      "top_winners": [],
+      "top_losers": []
+    }
+  ],
+  "notes": [
+    "Filtered to currently-enabled strategies (strategy_configs.enabled = 1).",
+    "Disabled strategies' historical trades remain in trades_v2 but drop off this panel; toggle on to re-surface.",
+    "Sorted by median net_return_pct desc — median is more robust than mean for strategies with the open -99..1000 entry gate.",
+    "avg_execution_cost_pp = mean(gross) − mean(net). Captures slippage + jito + tx-fee drag in pp.",
+    "Percentile method: linear-interpolated (NIST). p25/p50/p75 form the IQR; p10/p90 mark the tail edges."
+  ]
+}

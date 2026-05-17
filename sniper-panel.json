@@ -1,0 +1,425 @@
+{
+  "generated_at": "2026-05-17T08:09:11.766Z",
+  "population": {
+    "total_entry_gated": 2446,
+    "with_sniper_data": 884,
+    "coverage_pct": 36.1
+  },
+  "baseline": {
+    "filter": "ALL labeled (entry gate only)",
+    "n": 2446,
+    "opt_tp": 150,
+    "opt_sl": 30,
+    "opt_avg_ret": -11.35,
+    "opt_win_rate": 41.5
+  },
+  "sniper_count_thresholds": [
+    {
+      "filter": "snipers <= 2",
+      "group": "Snipers",
+      "where": "sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 2",
+      "n": 781,
+      "pump_rate_pct": 53.8,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -12.3,
+      "opt_win_rate": 38.8
+    },
+    {
+      "filter": "snipers <= 5",
+      "group": "Snipers",
+      "where": "sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 5",
+      "n": 846,
+      "pump_rate_pct": 52.8,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -12.26,
+      "opt_win_rate": 38.3
+    },
+    {
+      "filter": "snipers > 5",
+      "group": "Snipers",
+      "where": "sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 > 5",
+      "n": 38,
+      "pump_rate_pct": 42.1,
+      "opt_tp": 50,
+      "opt_sl": 30,
+      "opt_avg_ret": -10.65,
+      "opt_win_rate": 26.3
+    },
+    {
+      "filter": "snipers > 10",
+      "group": "Snipers",
+      "where": "sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 > 10",
+      "n": 14,
+      "pump_rate_pct": 28.6,
+      "opt_tp": null,
+      "opt_sl": null,
+      "opt_avg_ret": null,
+      "opt_win_rate": null
+    }
+  ],
+  "wallet_velocity_thresholds": [
+    {
+      "filter": "wallet_vel_avg < 5",
+      "group": "Sniper Vel",
+      "where": "sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 5",
+      "n": 57,
+      "pump_rate_pct": 43.9,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -7.38,
+      "opt_win_rate": 36.8
+    },
+    {
+      "filter": "wallet_vel_avg < 10",
+      "group": "Sniper Vel",
+      "where": "sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 10",
+      "n": 87,
+      "pump_rate_pct": 47.1,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -7.16,
+      "opt_win_rate": 33.3
+    },
+    {
+      "filter": "wallet_vel_avg < 20",
+      "group": "Sniper Vel",
+      "where": "sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 20",
+      "n": 123,
+      "pump_rate_pct": 45.5,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -7.33,
+      "opt_win_rate": 34.1
+    },
+    {
+      "filter": "wallet_vel_avg >= 20",
+      "group": "Sniper Vel",
+      "where": "sniper_wallet_velocity_avg >= 20",
+      "n": 40,
+      "pump_rate_pct": 37.5,
+      "opt_tp": 15,
+      "opt_sl": 25,
+      "opt_avg_ret": -11.72,
+      "opt_win_rate": 45
+    }
+  ],
+  "sniper_count_histogram": [
+    {
+      "label": "0",
+      "min": 0,
+      "max": 1,
+      "n": 721,
+      "pct_of_total": 81.6
+    },
+    {
+      "label": "1-2",
+      "min": 1,
+      "max": 3,
+      "n": 60,
+      "pct_of_total": 6.8
+    },
+    {
+      "label": "3-5",
+      "min": 3,
+      "max": 6,
+      "n": 65,
+      "pct_of_total": 7.4
+    },
+    {
+      "label": "6-10",
+      "min": 6,
+      "max": 11,
+      "n": 24,
+      "pct_of_total": 2.7
+    },
+    {
+      "label": "11-20",
+      "min": 11,
+      "max": 21,
+      "n": 14,
+      "pct_of_total": 1.6
+    },
+    {
+      "label": "21+",
+      "min": 21,
+      "max": 1000000000,
+      "n": 0,
+      "pct_of_total": 0
+    }
+  ],
+  "wallet_velocity_histogram": [
+    {
+      "label": "0",
+      "min": 0,
+      "max": 0.5,
+      "n": 16,
+      "pct_of_total": 9.8
+    },
+    {
+      "label": "<2",
+      "min": 0.5,
+      "max": 2,
+      "n": 17,
+      "pct_of_total": 10.4
+    },
+    {
+      "label": "2-5",
+      "min": 2,
+      "max": 5,
+      "n": 24,
+      "pct_of_total": 14.7
+    },
+    {
+      "label": "5-10",
+      "min": 5,
+      "max": 10,
+      "n": 30,
+      "pct_of_total": 18.4
+    },
+    {
+      "label": "10-20",
+      "min": 10,
+      "max": 20,
+      "n": 36,
+      "pct_of_total": 22.1
+    },
+    {
+      "label": "20+",
+      "min": 20,
+      "max": 1000000000,
+      "n": 40,
+      "pct_of_total": 24.5
+    }
+  ],
+  "top_combos_with_sniper": [
+    {
+      "filter_spec": "snipers <= 5 + confirmed_recovery",
+      "n": 72,
+      "win_rate_pct": 52.8,
+      "avg_return_t30_to_t300_pct": 5.4,
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": 7.32,
+      "opt_win_rate": 62.5,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "snipers <= 2 + confirmed_recovery",
+      "n": 71,
+      "win_rate_pct": 52.1,
+      "avg_return_t30_to_t300_pct": 5.22,
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": 7.23,
+      "opt_win_rate": 62,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "snipers <= 2 + wallet_vel_avg < 10",
+      "n": 37,
+      "win_rate_pct": 56.8,
+      "avg_return_t30_to_t300_pct": 28.82,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 6.7,
+      "opt_win_rate": 43.2,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "snipers <= 2 + wallet_vel_avg < 5",
+      "n": 31,
+      "win_rate_pct": 54.8,
+      "avg_return_t30_to_t300_pct": 22.91,
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 6.69,
+      "opt_win_rate": 51.6,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "snipers <= 2 + max_sniper_vel < 10",
+      "n": 35,
+      "win_rate_pct": 57.1,
+      "avg_return_t30_to_t300_pct": 20.2,
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 5.3,
+      "opt_win_rate": 45.7,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "snipers <= 2 + climbing_t30_t45",
+      "n": 391,
+      "win_rate_pct": 60.9,
+      "avg_return_t30_to_t300_pct": 11.67,
+      "opt_tp": 75,
+      "opt_sl": 30,
+      "opt_avg_ret": 1.75,
+      "opt_win_rate": 54.5,
+      "beats_baseline": true
+    },
+    {
+      "filter_spec": "snipers <= 5 + climbing_t30_t45",
+      "n": 429,
+      "win_rate_pct": 60.4,
+      "avg_return_t30_to_t300_pct": 10.1,
+      "opt_tp": 75,
+      "opt_sl": 30,
+      "opt_avg_ret": 1.44,
+      "opt_win_rate": 54.1,
+      "beats_baseline": true
+    },
+    {
+      "filter_spec": "snipers <= 2 + wallet_vel_avg < 20",
+      "n": 44,
+      "win_rate_pct": 52.3,
+      "avg_return_t30_to_t300_pct": 20.32,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 1.16,
+      "opt_win_rate": 40.9,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "wallet_vel_avg < 20 + climbing_t30_t45",
+      "n": 76,
+      "win_rate_pct": 55.3,
+      "avg_return_t30_to_t300_pct": 9.87,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.08,
+      "opt_win_rate": 40.8,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "dev < 3% + wallet_vel_avg < 20",
+      "n": 41,
+      "win_rate_pct": 48.8,
+      "avg_return_t30_to_t300_pct": 5.41,
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.89,
+      "opt_win_rate": 41.5,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "wallet_vel_avg < 10 + climbing_t30_t45",
+      "n": 59,
+      "win_rate_pct": 54.2,
+      "avg_return_t30_to_t300_pct": 9.81,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.4,
+      "opt_win_rate": 35.6,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "wallet_vel_avg < 5 + climbing_t30_t45",
+      "n": 35,
+      "win_rate_pct": 48.6,
+      "avg_return_t30_to_t300_pct": 6.36,
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.42,
+      "opt_win_rate": 40,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "wallet_vel_avg < 5 + no_bundle",
+      "n": 46,
+      "win_rate_pct": 45.7,
+      "avg_return_t30_to_t300_pct": 7.62,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.5,
+      "opt_win_rate": 39.1,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "dev < 5% + wallet_vel_avg < 5",
+      "n": 30,
+      "win_rate_pct": 46.7,
+      "avg_return_t30_to_t300_pct": -1.92,
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.58,
+      "opt_win_rate": 46.7,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "wallet_vel_avg < 20 + flow_imb > 0.6",
+      "n": 48,
+      "win_rate_pct": 50,
+      "avg_return_t30_to_t300_pct": 11.7,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.27,
+      "opt_win_rate": 37.5,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "snipers <= 5 + wallet_vel_avg < 10",
+      "n": 67,
+      "win_rate_pct": 52.2,
+      "avg_return_t30_to_t300_pct": 8.95,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.33,
+      "opt_win_rate": 38.8,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "wallet_vel_avg < 5 + quiet_batch",
+      "n": 47,
+      "win_rate_pct": 51.1,
+      "avg_return_t30_to_t300_pct": 10.68,
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.69,
+      "opt_win_rate": 44.7,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "wallet_vel_avg < 5 + rank <= 2",
+      "n": 47,
+      "win_rate_pct": 51.1,
+      "avg_return_t30_to_t300_pct": 10.68,
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.69,
+      "opt_win_rate": 44.7,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "top5 < 20% + wallet_vel_avg < 5",
+      "n": 37,
+      "win_rate_pct": 40.5,
+      "avg_return_t30_to_t300_pct": 5.32,
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.9,
+      "opt_win_rate": 40.5,
+      "beats_baseline": false
+    },
+    {
+      "filter_spec": "snipers <= 2 + firstbuyer_known_sniper",
+      "n": 42,
+      "win_rate_pct": 52.4,
+      "avg_return_t30_to_t300_pct": 9.95,
+      "opt_tp": 150,
+      "opt_sl": 25,
+      "opt_avg_ret": -2.96,
+      "opt_win_rate": 42.9,
+      "beats_baseline": false
+    }
+  ],
+  "notes": [
+    "sniper_count_t0_t2 = distinct wallets with a buy in T+0..T+2s window",
+    "sniper_wallet_velocity_avg = avg # of EARLIER graduations these snipers also sniped (PRIOR-only by construction)",
+    "Both fields written at T+35 alongside buy_pressure_*; strategies using them auto-delay 5s in StrategyManager",
+    "Threshold sweeps and top combos use the same simulateCombo() cost model as /api/best-combos (per-combo opt TP/SL across SIM_TP_GRID × SIM_SL_GRID)",
+    "beats_baseline column on top combos compares opt_avg_ret to ENTRY_GATE-only baseline + 0.3 pp at n >= 100"
+  ]
+}

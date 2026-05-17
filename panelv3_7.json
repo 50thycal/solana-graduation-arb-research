@@ -1,0 +1,818 @@
+{
+  "generated_at": "2026-05-17T08:07:45.755Z",
+  "panelv3_7": {
+    "title": "Regime Stability & Walk-Forward Validation — v3 Leaders",
+    "description": "For each of the top 10 pairs (Panel 6) and top 10 triples (v3 Panel 1 T+300), runs TWO stability checks: (a) walk-forward — train Panel 4's TP/SL optimum on the first 70% of rows by created_at, then evaluate THAT SAME coordinate (no re-optimization) on the held-out last 30%. Degradation = train_avg − test_avg. Verdict: ROBUST (<2pp), DEGRADED (2–5pp), OVERFIT (>5pp), INSUFFICIENT (train or test n<20). (b) Regime buckets — same 4 time-quartile buckets Panel 3/11 use. Per-bucket WR and avg return (T+30-anchored, cost-adjusted, no TP/SL). WR StdDev < 8 = STABLE, < 15 = MODERATE, ≥ 15 = CLUSTERED. A v3 leader that's both ROBUST and STABLE/MODERATE is a genuine promotion candidate; one that's OVERFIT or CLUSTERED is leaderboard noise.",
+    "constants": {
+      "wf_train_frac": 0.7,
+      "wf_min_n_half": 20,
+      "regime_bucket_count": 4
+    },
+    "rows": [
+      {
+        "name": "top5 < 10% + dev > 5%",
+        "kind": "pair",
+        "n_total": 60,
+        "opt_tp": 50,
+        "opt_sl": 20,
+        "opt_avg_ret": 5.9,
+        "n_train": 58,
+        "n_test": 2,
+        "train_tp": 50,
+        "train_sl": 20,
+        "train_avg_ret": 7.91,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 23,
+            "win_rate_pct": 73.9,
+            "avg_return_pct": 9.2
+          },
+          {
+            "n": 27,
+            "win_rate_pct": 66.7,
+            "avg_return_pct": 14.6
+          },
+          {
+            "n": 9,
+            "win_rate_pct": 11.1,
+            "avg_return_pct": -41.6
+          },
+          {
+            "n": 1,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 28.1,
+        "regime_stability": "CLUSTERED"
+      },
+      {
+        "name": "vel 20-50 sol/min + liquidity > 100 SOL",
+        "kind": "pair",
+        "n_total": 122,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 3.2,
+        "n_train": 91,
+        "n_test": 31,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 7.34,
+        "test_avg_ret": -8.82,
+        "degradation": 16.16,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 34,
+            "win_rate_pct": 76.5,
+            "avg_return_pct": 25.4
+          },
+          {
+            "n": 28,
+            "win_rate_pct": 71.4,
+            "avg_return_pct": -3.9
+          },
+          {
+            "n": 34,
+            "win_rate_pct": 64.7,
+            "avg_return_pct": 23.7
+          },
+          {
+            "n": 26,
+            "win_rate_pct": 61.5,
+            "avg_return_pct": -10.8
+          }
+        ],
+        "wr_std_dev": 5.8,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 5-10 sol/min + top5 < 10%",
+        "kind": "pair",
+        "n_total": 91,
+        "opt_tp": 30,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.5,
+        "n_train": 71,
+        "n_test": 20,
+        "train_tp": 30,
+        "train_sl": 30,
+        "train_avg_ret": -1.76,
+        "test_avg_ret": 4.02,
+        "degradation": -5.78,
+        "wf_verdict": "ROBUST",
+        "buckets": [
+          {
+            "n": 28,
+            "win_rate_pct": 67.9,
+            "avg_return_pct": -0.1
+          },
+          {
+            "n": 22,
+            "win_rate_pct": 50,
+            "avg_return_pct": -8.3
+          },
+          {
+            "n": 26,
+            "win_rate_pct": 42.3,
+            "avg_return_pct": 8
+          },
+          {
+            "n": 15,
+            "win_rate_pct": 66.7,
+            "avg_return_pct": 21.2
+          }
+        ],
+        "wr_std_dev": 10.9,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "vel 20-50 sol/min + max_dd > -10% (shallow)",
+        "kind": "pair",
+        "n_total": 228,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -0.6,
+        "n_train": 160,
+        "n_test": 68,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": -0.64,
+        "test_avg_ret": -0.52,
+        "degradation": -0.12,
+        "wf_verdict": "ROBUST",
+        "buckets": [
+          {
+            "n": 30,
+            "win_rate_pct": 73.3,
+            "avg_return_pct": 49
+          },
+          {
+            "n": 43,
+            "win_rate_pct": 48.8,
+            "avg_return_pct": -2.2
+          },
+          {
+            "n": 105,
+            "win_rate_pct": 53.3,
+            "avg_return_pct": -1.2
+          },
+          {
+            "n": 50,
+            "win_rate_pct": 60,
+            "avg_return_pct": 6.5
+          }
+        ],
+        "wr_std_dev": 9.2,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "bc_age > 10 min + top5 < 10%",
+        "kind": "pair",
+        "n_total": 282,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -2.7,
+        "n_train": 210,
+        "n_test": 72,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": -0.87,
+        "test_avg_ret": -7.95,
+        "degradation": 7.08,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 66,
+            "win_rate_pct": 54.5,
+            "avg_return_pct": 5
+          },
+          {
+            "n": 72,
+            "win_rate_pct": 41.7,
+            "avg_return_pct": -6.7
+          },
+          {
+            "n": 101,
+            "win_rate_pct": 40.6,
+            "avg_return_pct": 6.6
+          },
+          {
+            "n": 43,
+            "win_rate_pct": 51.2,
+            "avg_return_pct": 0.9
+          }
+        ],
+        "wr_std_dev": 6,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 10-20 sol/min + liquidity > 100 SOL",
+        "kind": "pair",
+        "n_total": 91,
+        "opt_tp": 30,
+        "opt_sl": 25,
+        "opt_avg_ret": -2.8,
+        "n_train": 72,
+        "n_test": 19,
+        "train_tp": 30,
+        "train_sl": 25,
+        "train_avg_ret": -2.78,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 19,
+            "win_rate_pct": 57.9,
+            "avg_return_pct": -26.6
+          },
+          {
+            "n": 25,
+            "win_rate_pct": 72,
+            "avg_return_pct": 10.8
+          },
+          {
+            "n": 30,
+            "win_rate_pct": 53.3,
+            "avg_return_pct": 6.2
+          },
+          {
+            "n": 17,
+            "win_rate_pct": 58.8,
+            "avg_return_pct": 48.1
+          }
+        ],
+        "wr_std_dev": 7,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "dev > 5% + liquidity > 100 SOL",
+        "kind": "pair",
+        "n_total": 338,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -3.3,
+        "n_train": 249,
+        "n_test": 89,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": -1.33,
+        "test_avg_ret": -8.78,
+        "degradation": 7.45,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 66,
+            "win_rate_pct": 68.2,
+            "avg_return_pct": 7.9
+          },
+          {
+            "n": 71,
+            "win_rate_pct": 71.8,
+            "avg_return_pct": 3
+          },
+          {
+            "n": 144,
+            "win_rate_pct": 47.2,
+            "avg_return_pct": -1.4
+          },
+          {
+            "n": 57,
+            "win_rate_pct": 54.4,
+            "avg_return_pct": 14.7
+          }
+        ],
+        "wr_std_dev": 10,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "vel 20-50 sol/min + mono > 0.66",
+        "kind": "pair",
+        "n_total": 229,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": -3.4,
+        "n_train": 167,
+        "n_test": 62,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": -2.8,
+        "test_avg_ret": -6.78,
+        "degradation": 3.98,
+        "wf_verdict": "DEGRADED",
+        "buckets": [
+          {
+            "n": 46,
+            "win_rate_pct": 63,
+            "avg_return_pct": 18.4
+          },
+          {
+            "n": 75,
+            "win_rate_pct": 56,
+            "avg_return_pct": 1
+          },
+          {
+            "n": 55,
+            "win_rate_pct": 49.1,
+            "avg_return_pct": 6.6
+          },
+          {
+            "n": 53,
+            "win_rate_pct": 58.5,
+            "avg_return_pct": 4.4
+          }
+        ],
+        "wr_std_dev": 5,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel < 5 sol/min + top5 < 10%",
+        "kind": "pair",
+        "n_total": 213,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -3.6,
+        "n_train": 158,
+        "n_test": 55,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": -0.1,
+        "test_avg_ret": -13.8,
+        "degradation": 13.7,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 49,
+            "win_rate_pct": 51,
+            "avg_return_pct": 7.1
+          },
+          {
+            "n": 57,
+            "win_rate_pct": 40.4,
+            "avg_return_pct": -5.6
+          },
+          {
+            "n": 76,
+            "win_rate_pct": 39.5,
+            "avg_return_pct": 6.1
+          },
+          {
+            "n": 31,
+            "win_rate_pct": 48.4,
+            "avg_return_pct": -7
+          }
+        ],
+        "wr_std_dev": 5,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "dev > 5% + max_dd > -10% (shallow)",
+        "kind": "pair",
+        "n_total": 527,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": -3.6,
+        "n_train": 364,
+        "n_test": 163,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": -2.39,
+        "test_avg_ret": -6.45,
+        "degradation": 4.06,
+        "wf_verdict": "DEGRADED",
+        "buckets": [
+          {
+            "n": 71,
+            "win_rate_pct": 56.3,
+            "avg_return_pct": 0.3
+          },
+          {
+            "n": 136,
+            "win_rate_pct": 58.8,
+            "avg_return_pct": 5.9
+          },
+          {
+            "n": 205,
+            "win_rate_pct": 52.7,
+            "avg_return_pct": 4.4
+          },
+          {
+            "n": 115,
+            "win_rate_pct": 48.7,
+            "avg_return_pct": -6
+          }
+        ],
+        "wr_std_dev": 3.8,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 20-50 sol/min + max_dd > -10% (shallow) + volatility 30-60%",
+        "kind": "triple",
+        "n_total": 39,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 19.4,
+        "n_train": 22,
+        "n_test": 17,
+        "train_tp": 75,
+        "train_sl": 30,
+        "train_avg_ret": 13.28,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 9,
+            "win_rate_pct": 77.8,
+            "avg_return_pct": 35.2
+          },
+          {
+            "n": 4,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          },
+          {
+            "n": 11,
+            "win_rate_pct": 72.7,
+            "avg_return_pct": -2.2
+          },
+          {
+            "n": 15,
+            "win_rate_pct": 80,
+            "avg_return_pct": 24.4
+          }
+        ],
+        "wr_std_dev": 3.1,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 20-50 sol/min + liquidity > 100 SOL + dev > 5%",
+        "kind": "triple",
+        "n_total": 68,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 16.3,
+        "n_train": 55,
+        "n_test": 13,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 21.63,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 22,
+            "win_rate_pct": 77.3,
+            "avg_return_pct": 41.5
+          },
+          {
+            "n": 13,
+            "win_rate_pct": 76.9,
+            "avg_return_pct": 8
+          },
+          {
+            "n": 22,
+            "win_rate_pct": 72.7,
+            "avg_return_pct": 36.1
+          },
+          {
+            "n": 11,
+            "win_rate_pct": 54.5,
+            "avg_return_pct": -14.3
+          }
+        ],
+        "wr_std_dev": 9.3,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "dev > 5% + liquidity > 100 SOL + vel 20-50 sol/min",
+        "kind": "triple",
+        "n_total": 68,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 16.3,
+        "n_train": 55,
+        "n_test": 13,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 21.63,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 22,
+            "win_rate_pct": 77.3,
+            "avg_return_pct": 41.5
+          },
+          {
+            "n": 13,
+            "win_rate_pct": 76.9,
+            "avg_return_pct": 8
+          },
+          {
+            "n": 22,
+            "win_rate_pct": 72.7,
+            "avg_return_pct": 36.1
+          },
+          {
+            "n": 11,
+            "win_rate_pct": 54.5,
+            "avg_return_pct": -14.3
+          }
+        ],
+        "wr_std_dev": 9.3,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "vel 20-50 sol/min + dev > 5% + liquidity > 100 SOL",
+        "kind": "triple",
+        "n_total": 68,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 16.3,
+        "n_train": 55,
+        "n_test": 13,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 21.63,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 22,
+            "win_rate_pct": 77.3,
+            "avg_return_pct": 41.5
+          },
+          {
+            "n": 13,
+            "win_rate_pct": 76.9,
+            "avg_return_pct": 8
+          },
+          {
+            "n": 22,
+            "win_rate_pct": 72.7,
+            "avg_return_pct": 36.1
+          },
+          {
+            "n": 11,
+            "win_rate_pct": 54.5,
+            "avg_return_pct": -14.3
+          }
+        ],
+        "wr_std_dev": 9.3,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "vel 5-10 sol/min + top5 < 10% + mono > 0.5",
+        "kind": "triple",
+        "n_total": 36,
+        "opt_tp": 100,
+        "opt_sl": 20,
+        "opt_avg_ret": 15.6,
+        "n_train": 27,
+        "n_test": 9,
+        "train_tp": 60,
+        "train_sl": 20,
+        "train_avg_ret": 8.35,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 9,
+            "win_rate_pct": 77.8,
+            "avg_return_pct": 5.3
+          },
+          {
+            "n": 9,
+            "win_rate_pct": 77.8,
+            "avg_return_pct": 8.6
+          },
+          {
+            "n": 12,
+            "win_rate_pct": 66.7,
+            "avg_return_pct": 27.8
+          },
+          {
+            "n": 6,
+            "win_rate_pct": 100,
+            "avg_return_pct": 41.6
+          }
+        ],
+        "wr_std_dev": 12.1,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "vel 20-50 sol/min + liquidity > 100 SOL + buy_ratio > 0.6",
+        "kind": "triple",
+        "n_total": 60,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 14.4,
+        "n_train": 49,
+        "n_test": 11,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 10.84,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 17,
+            "win_rate_pct": 76.5,
+            "avg_return_pct": 50.5
+          },
+          {
+            "n": 14,
+            "win_rate_pct": 57.1,
+            "avg_return_pct": -21.4
+          },
+          {
+            "n": 19,
+            "win_rate_pct": 73.7,
+            "avg_return_pct": 31.3
+          },
+          {
+            "n": 10,
+            "win_rate_pct": 90,
+            "avg_return_pct": 30.4
+          }
+        ],
+        "wr_std_dev": 11.7,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "top5 < 10% + dev > 5% + holders >= 18",
+        "kind": "triple",
+        "n_total": 53,
+        "opt_tp": 50,
+        "opt_sl": 20,
+        "opt_avg_ret": 12,
+        "n_train": 53,
+        "n_test": 0,
+        "train_tp": 50,
+        "train_sl": 20,
+        "train_avg_ret": 12.03,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 19,
+            "win_rate_pct": 78.9,
+            "avg_return_pct": 17.4
+          },
+          {
+            "n": 27,
+            "win_rate_pct": 66.7,
+            "avg_return_pct": 14.6
+          },
+          {
+            "n": 7,
+            "win_rate_pct": 14.3,
+            "avg_return_pct": -42.8
+          },
+          {
+            "n": 0,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 28,
+        "regime_stability": "CLUSTERED"
+      },
+      {
+        "name": "holders >= 18 + top5 < 10% + dev > 5%",
+        "kind": "triple",
+        "n_total": 53,
+        "opt_tp": 50,
+        "opt_sl": 20,
+        "opt_avg_ret": 12,
+        "n_train": 53,
+        "n_test": 0,
+        "train_tp": 50,
+        "train_sl": 20,
+        "train_avg_ret": 12.03,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 19,
+            "win_rate_pct": 78.9,
+            "avg_return_pct": 17.4
+          },
+          {
+            "n": 27,
+            "win_rate_pct": 66.7,
+            "avg_return_pct": 14.6
+          },
+          {
+            "n": 7,
+            "win_rate_pct": 14.3,
+            "avg_return_pct": -42.8
+          },
+          {
+            "n": 0,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 28,
+        "regime_stability": "CLUSTERED"
+      },
+      {
+        "name": "vel 20-50 sol/min + liquidity > 100 SOL + max_dd > -10% (shallow)",
+        "kind": "triple",
+        "n_total": 67,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 11.2,
+        "n_train": 46,
+        "n_test": 21,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 20.42,
+        "test_avg_ret": -9.15,
+        "degradation": 29.57,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 16,
+            "win_rate_pct": 81.3,
+            "avg_return_pct": 59.4
+          },
+          {
+            "n": 12,
+            "win_rate_pct": 83.3,
+            "avg_return_pct": 7.2
+          },
+          {
+            "n": 21,
+            "win_rate_pct": 71.4,
+            "avg_return_pct": 23.8
+          },
+          {
+            "n": 18,
+            "win_rate_pct": 66.7,
+            "avg_return_pct": -9.4
+          }
+        ],
+        "wr_std_dev": 6.9,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 20-50 sol/min + max_dd > -10% (shallow) + liquidity > 100 SOL",
+        "kind": "triple",
+        "n_total": 67,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 11.2,
+        "n_train": 46,
+        "n_test": 21,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 20.42,
+        "test_avg_ret": -9.15,
+        "degradation": 29.57,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 16,
+            "win_rate_pct": 81.3,
+            "avg_return_pct": 59.4
+          },
+          {
+            "n": 12,
+            "win_rate_pct": 83.3,
+            "avg_return_pct": 7.2
+          },
+          {
+            "n": 21,
+            "win_rate_pct": 71.4,
+            "avg_return_pct": 23.8
+          },
+          {
+            "n": 18,
+            "win_rate_pct": 66.7,
+            "avg_return_pct": -9.4
+          }
+        ],
+        "wr_std_dev": 6.9,
+        "regime_stability": "STABLE"
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 30,
+      "strong_n_threshold": 100
+    }
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "disabled": true,
+  "panel": "wallet-rep-analysis",
+  "reason": "Heavy compute panel disabled (SYNC_HEAVY_PANELS!=true) to keep the dashboard responsive. Set SYNC_HEAVY_PANELS=true to re-enable.",
+  "generated_at": "2026-05-17T08:09:12.323Z"
+}

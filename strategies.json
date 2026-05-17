@@ -1,0 +1,2492 @@
+{
+  "generated_at": "2026-05-17T08:07:45.755Z",
+  "count": 51,
+  "strategies": [
+    {
+      "id": "default",
+      "label": "Default",
+      "enabled": false,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 30,
+        "stopLossPct": 10,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 5,
+            "label": "vel>=5"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 20,
+            "label": "vel<20"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v5-velmono-opt",
+      "label": "v5 velmono opt (100/30)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel>=20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel<50"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.5,
+            "label": "mono>0.5"
+          },
+          {
+            "field": "dev_wallet_pct",
+            "operator": ">",
+            "value": 5,
+            "label": "dev>5%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "takeProfitPct": 100,
+        "stopLossPct": 30
+      }
+    },
+    {
+      "id": "v9shadow-vel20-top5",
+      "label": "v9 shadow vel<20 + top5<10% @ 150/30",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 20,
+            "label": "vel<20"
+          },
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 10,
+            "label": "top5<10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "id": "v9shadow-velmid-liq-mono",
+      "label": "v9 shadow vel 20-50 + liq>100 + mono>0.33 @ 150/25",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel>=20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel<50"
+          },
+          {
+            "field": "liquidity_sol_t30",
+            "operator": ">",
+            "value": 100,
+            "label": "liq>100"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.33,
+            "label": "mono>0.33"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "id": "v9shadow-velmono-dev",
+      "label": "v9 shadow vel 20-50 + mono>0.5 + dev>5% @ 100/30",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel>=20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel<50"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.5,
+            "label": "mono>0.5"
+          },
+          {
+            "field": "dev_wallet_pct",
+            "operator": ">",
+            "value": 5,
+            "label": "dev>5%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "id": "v10-snipers-base",
+      "label": "v10 snipers <= 2 (baseline)",
+      "enabled": false,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 100,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "sniper_count_t0_t2",
+            "operator": "<=",
+            "value": 2,
+            "label": "snipers <= 2"
+          }
+        ],
+        "entryTimingSec": 30,
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "jitoTipSol": 0.0001,
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v10-best-double",
+      "label": "v10 vel 20-50 + dd > -10% (best double)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel >= 20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel < 50"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -10,
+            "label": "dd > -10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v11-vel5dev3-liq100",
+      "label": "v11 liq overlay: vel<5+dev<3%+liq>100",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 270,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 5,
+            "label": "vel<5"
+          },
+          {
+            "field": "dev_wallet_pct",
+            "operator": "<",
+            "value": 3,
+            "label": "dev<3%"
+          },
+          {
+            "field": "liquidity_sol_t30",
+            "operator": ">",
+            "value": 100,
+            "label": "liq>100"
+          }
+        ],
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v11-age10dev3-liq100",
+      "label": "v11 liq overlay: age>10min+dev<3%+liq>100",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 270,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "token_age_seconds",
+            "operator": ">",
+            "value": 600,
+            "label": "age>10min"
+          },
+          {
+            "field": "dev_wallet_pct",
+            "operator": "<",
+            "value": 3,
+            "label": "dev<3%"
+          },
+          {
+            "field": "liquidity_sol_t30",
+            "operator": ">",
+            "value": 100,
+            "label": "liq>100"
+          }
+        ],
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v11-vel20top5-liq100",
+      "label": "v11 liq overlay: vel<20+top5<10%+liq>100",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 75,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 270,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 20,
+            "label": "vel<20"
+          },
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 10,
+            "label": "top5<10%"
+          },
+          {
+            "field": "liquidity_sol_t30",
+            "operator": ">",
+            "value": 100,
+            "label": "liq>100"
+          }
+        ],
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v11-vel100-holders-lotto",
+      "label": "v11 lottery: vel>100+holders>=10 TP200/SL10",
+      "enabled": false,
+      "params": {
+        "tradeSizeSol": 0.1,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 200,
+        "stopLossPct": 10,
+        "maxHoldSeconds": 270,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">",
+            "value": 100,
+            "label": "vel>100"
+          },
+          {
+            "field": "holder_count",
+            "operator": ">=",
+            "value": 10,
+            "label": "holders>=10"
+          }
+        ],
+        "entryTimingSec": 30,
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "jitoTipSol": 0.0001,
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v12-bcage1d-dd10",
+      "label": "v12 bc_age>1d + max_dd>-10 @ 150/25 (panelv3_8 promo)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "token_age_seconds",
+            "operator": ">",
+            "value": 86400,
+            "label": "bc_age > 1d"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -10,
+            "label": "dd > -10%"
+          }
+        ],
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v12-vel2050-liq-dd15",
+      "label": "v12 vel 20-50 + liq>100 + max_dd>-15 @ 150/30 (panelv3_8 star)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel >= 20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel < 50"
+          },
+          {
+            "field": "liquidity_sol_t30",
+            "operator": ">",
+            "value": 100,
+            "label": "liq > 100"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -15,
+            "label": "dd > -15%"
+          }
+        ],
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v15-snipervel-shadow",
+      "label": "v15 snipers<=2+wallet_vel_avg<20 gate5-100 @ 100/25",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "sniper_count_t0_t2",
+            "operator": "<=",
+            "value": 2,
+            "label": "snipers<=2"
+          },
+          {
+            "field": "sniper_wallet_velocity_avg",
+            "operator": "<",
+            "value": 20,
+            "label": "wallet_vel_avg<20"
+          }
+        ],
+        "entryTimingSec": 30,
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v15-vel5-10-dd-shadow",
+      "label": "v15 vel 5-10+dd>-10 gate5-100 @ 10/30",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 10,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 5,
+            "label": "vel>=5"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 10,
+            "label": "vel<10"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -10,
+            "label": "dd>-10%"
+          }
+        ],
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v14-sumabs-shadow",
+      "label": "v14 sumabs mirror (vel<20+top5<10%+sum_abs<60 @ 100/30)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 20,
+            "label": "vel<20"
+          },
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 10,
+            "label": "top5<10%"
+          },
+          {
+            "field": "sum_abs_returns_0_30",
+            "operator": "<",
+            "value": 60,
+            "label": "sum_abs<60"
+          }
+        ],
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v14-sumabs-dd-shadow",
+      "label": "v14 sumabs + dd protection (vel<20+top5<10%+sum_abs<60+dd>-10 @ 100/30)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 20,
+            "label": "vel<20"
+          },
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 10,
+            "label": "top5<10%"
+          },
+          {
+            "field": "sum_abs_returns_0_30",
+            "operator": "<",
+            "value": 60,
+            "label": "sum_abs<60"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -10,
+            "label": "dd>-10%"
+          }
+        ],
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v14-snipervel-shadow",
+      "label": "v14 snipers<=2 + wallet_vel_avg<20 @ 100/25",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 100,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "sniper_count_t0_t2",
+            "operator": "<=",
+            "value": 2,
+            "label": "snipers<=2"
+          },
+          {
+            "field": "sniper_wallet_velocity_avg",
+            "operator": "<",
+            "value": 20,
+            "label": "wallet_vel_avg<20"
+          }
+        ],
+        "entryTimingSec": 30,
+        "executionMode": "shadow",
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v19-age10-top5-base",
+      "label": "v19 age>10min + top5<10% @ 150/30 gate5-100 (leaderboard #1 mirror)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "token_age_seconds",
+            "operator": ">",
+            "value": 600,
+            "label": "age > 10min"
+          },
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 10,
+            "label": "top5 < 10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v19-age10-top5-tight",
+      "label": "v19 age>10min + top5<8% @ 150/30 gate5-100 (tighter top5)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "token_age_seconds",
+            "operator": ">",
+            "value": 600,
+            "label": "age > 10min"
+          },
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 8,
+            "label": "top5 < 8%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v19-age10-top5-tp100",
+      "label": "v19 age>10min + top5<10% @ 100/30 gate5-100 (lower TP)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "token_age_seconds",
+            "operator": ">",
+            "value": 600,
+            "label": "age > 10min"
+          },
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 10,
+            "label": "top5 < 10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v20-vel2050-dd-base",
+      "label": "v20 vel 20-50 + dd>-10% @ 150/30 gate5-100 (corrected v10)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel >= 20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel < 50"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -10,
+            "label": "dd > -10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v20-vel2050-dd-tight",
+      "label": "v20 vel 20-50 + dd>-7% @ 150/30 gate5-100 (tighter dd)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel >= 20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel < 50"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -7,
+            "label": "dd > -7%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v20-vel2050-dd-sl20",
+      "label": "v20 vel 20-50 + dd>-10% @ 150/20 gate5-100 (tighter SL)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 20,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel >= 20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel < 50"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -10,
+            "label": "dd > -10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500
+      }
+    },
+    {
+      "id": "v21-sniper-age-shadow",
+      "label": "v21 snipers<=2 + walletVel<10 + age>10min (TP150/SL25) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "sniper_count_t0_t2",
+            "operator": "<=",
+            "value": 2,
+            "label": "snipers<=2"
+          },
+          {
+            "field": "sniper_wallet_velocity_avg",
+            "operator": "<",
+            "value": 10,
+            "label": "wallet_vel<10"
+          },
+          {
+            "field": "token_age_seconds",
+            "operator": ">",
+            "value": 600,
+            "label": "age>10min"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v21-bottom-excluded",
+      "label": "v21 universe minus path/concentration/velocity tail (TP100/SL30) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<=",
+            "value": 30,
+            "label": "top5<=30%"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -25,
+            "label": "dd>-25%"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 200,
+            "label": "vel<200"
+          },
+          {
+            "field": "token_age_seconds",
+            "operator": ">=",
+            "value": 60,
+            "label": "age>=60s"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v22-top5-vwap-strict",
+      "label": "v22 top5<10% + vwap_pullback strict (TP75/SL30) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 75,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 10,
+            "label": "top5<10%"
+          },
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": ">=",
+            "value": -5,
+            "label": "vwap_pull>=-5"
+          },
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": "<=",
+            "value": -1,
+            "label": "vwap_pull<=-1"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.5,
+            "label": "mono>0.5"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v22-quiet-vwap-strict",
+      "label": "v22 quiet_batch + vwap_pullback strict (TP100/SL30) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "graduation_density_5min",
+            "operator": "<=",
+            "value": 2,
+            "label": "quiet_batch"
+          },
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": ">=",
+            "value": -5,
+            "label": "vwap_pull>=-5"
+          },
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": "<=",
+            "value": -1,
+            "label": "vwap_pull<=-1"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.5,
+            "label": "mono>0.5"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v22-mono-vwap",
+      "label": "v22 mono>0.66 + vwap_pullback (TP100/SL30) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.66,
+            "label": "mono>0.66"
+          },
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": ">=",
+            "value": -10,
+            "label": "vwap_pull>=-10"
+          },
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": "<=",
+            "value": -1,
+            "label": "vwap_pull<=-1"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v22-dev-firstbuyer",
+      "label": "v22 dev<5% + firstbuyer_known_sniper (TP150/SL30) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "dev_wallet_pct",
+            "operator": "<",
+            "value": 5,
+            "label": "dev<5%"
+          },
+          {
+            "field": "firstbuyer_priors",
+            "operator": ">=",
+            "value": 20,
+            "label": "firstbuyer_known_sniper"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v23-vwap-climbing",
+      "label": "v23 vwap_pullback strict + climbing_t30_t45 (TP75/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 75,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": ">=",
+            "value": -5,
+            "label": "vwap_pull>=-5"
+          },
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": "<=",
+            "value": -1,
+            "label": "vwap_pull<=-1"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.5,
+            "label": "mono>0.5"
+          },
+          {
+            "field": "recovery_t45_above_t30",
+            "operator": "==",
+            "value": 1,
+            "label": "climbing_t30_t45"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v23-vel2050-climbing",
+      "label": "v23 vel 20-50 + climbing_t30_t45 (TP150/SL25, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel>=20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel<50"
+          },
+          {
+            "field": "recovery_t45_above_t30",
+            "operator": "==",
+            "value": 1,
+            "label": "climbing_t30_t45"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v23-repeat-recovery",
+      "label": "v23 repeat_dev>=3 + confirmed_recovery (TP75/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 75,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "creator_prior_token_count",
+            "operator": ">=",
+            "value": 3,
+            "label": "repeat_dev>=3"
+          },
+          {
+            "field": "confirmed_dip_recovery",
+            "operator": "==",
+            "value": 1,
+            "label": "confirmed_recovery"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v23-snipers5-recovery",
+      "label": "v23 snipers<=5 + confirmed_recovery (TP100/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "sniper_count_t0_t2",
+            "operator": "<=",
+            "value": 5,
+            "label": "snipers<=5"
+          },
+          {
+            "field": "confirmed_dip_recovery",
+            "operator": "==",
+            "value": 1,
+            "label": "confirmed_recovery"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v23-snipers-max-vel",
+      "label": "v23 snipers<=2 + max_sniper_vel<10 (TP100/SL25) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "sniper_count_t0_t2",
+            "operator": "<=",
+            "value": 2,
+            "label": "snipers<=2"
+          },
+          {
+            "field": "sniper_wallet_velocity_max",
+            "operator": "<",
+            "value": 10,
+            "label": "max_sniper_vel<10"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v24-rugger-climbing",
+      "label": "v24 serial_rugger + climbing_t30_t45 (TP150/SL25, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "creator_prior_rug_rate",
+            "operator": ">=",
+            "value": 0.7,
+            "label": "serial_rugger"
+          },
+          {
+            "field": "recovery_t45_above_t30",
+            "operator": "==",
+            "value": 1,
+            "label": "climbing_t30_t45"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v24-flow-neg-vwap",
+      "label": "v24 flow_imb<0 + vwap_pullback strict (TP75/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 75,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "flow_imbalance_t30",
+            "operator": "<",
+            "value": 0,
+            "label": "flow_imb<0"
+          },
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": ">=",
+            "value": -5,
+            "label": "vwap_pull>=-5"
+          },
+          {
+            "field": "price_vs_vwap_t30_pct",
+            "operator": "<=",
+            "value": -1,
+            "label": "vwap_pull<=-1"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.5,
+            "label": "mono>0.5"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v24-rapid-fire-recovery",
+      "label": "v24 rapid_fire + confirmed_recovery (TP75/SL30, entry@T+60) [shadow speculative]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 75,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "creator_last_token_age_hours",
+            "operator": "<",
+            "value": 1,
+            "label": "rapid_fire"
+          },
+          {
+            "field": "confirmed_dip_recovery",
+            "operator": "==",
+            "value": 1,
+            "label": "confirmed_recovery"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v24-busy-batch-climbing",
+      "label": "v24 busy_batch + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow speculative]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "graduation_density_5min",
+            "operator": ">=",
+            "value": 5,
+            "label": "busy_batch"
+          },
+          {
+            "field": "recovery_t45_above_t30",
+            "operator": "==",
+            "value": 1,
+            "label": "climbing_t30_t45"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v24-bundle-suspect-climbing",
+      "label": "v24 bundle_suspect + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow speculative]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "sniper_count_t0_t2",
+            "operator": ">=",
+            "value": 3,
+            "label": "bundle_snipers>=3"
+          },
+          {
+            "field": "buy_pressure_whale_pct",
+            "operator": "<",
+            "value": 30,
+            "label": "bundle_no_whale"
+          },
+          {
+            "field": "sniper_wallet_velocity_max",
+            "operator": "<",
+            "value": 5,
+            "label": "bundle_fresh_wallets"
+          },
+          {
+            "field": "recovery_t45_above_t30",
+            "operator": "==",
+            "value": 1,
+            "label": "climbing_t30_t45"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v25-bot-excl-climbing",
+      "label": "v25 bot-excl + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<=",
+            "value": 30,
+            "label": "top5<=30%"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -25,
+            "label": "dd>-25%"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 200,
+            "label": "vel<200"
+          },
+          {
+            "field": "token_age_seconds",
+            "operator": ">=",
+            "value": 60,
+            "label": "age>=60s"
+          },
+          {
+            "field": "recovery_t45_above_t30",
+            "operator": "==",
+            "value": 1,
+            "label": "climbing_t30_t45"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v25-bot-excl-tp150",
+      "label": "v25 bot-excl + TP150/SL25 [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<=",
+            "value": 30,
+            "label": "top5<=30%"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -25,
+            "label": "dd>-25%"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 200,
+            "label": "vel<200"
+          },
+          {
+            "field": "token_age_seconds",
+            "operator": ">=",
+            "value": 60,
+            "label": "age>=60s"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v25-bot-excl-mono",
+      "label": "v25 bot-excl + mono>0.5 (TP100/SL30) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<=",
+            "value": 30,
+            "label": "top5<=30%"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -25,
+            "label": "dd>-25%"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 200,
+            "label": "vel<200"
+          },
+          {
+            "field": "token_age_seconds",
+            "operator": ">=",
+            "value": 60,
+            "label": "age>=60s"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.5,
+            "label": "mono>0.5"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v25-bot-excl-vel2050",
+      "label": "v25 bot-excl + vel 20-50 (TP100/SL30) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<=",
+            "value": 30,
+            "label": "top5<=30%"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -25,
+            "label": "dd>-25%"
+          },
+          {
+            "field": "token_age_seconds",
+            "operator": ">=",
+            "value": 60,
+            "label": "age>=60s"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel>=20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel<50"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v9-velmono-dev-live-micro",
+      "label": "v9 vel 20-50 + mono>0.5 + dev>5% @ 100/30 [LIVE_MICRO 0.05 SOL]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.05,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel>=20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel<50"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.5,
+            "label": "mono>0.5"
+          },
+          {
+            "field": "dev_wallet_pct",
+            "operator": ">",
+            "value": 5,
+            "label": "dev>5%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "live_micro"
+      }
+    },
+    {
+      "id": "v9-vel20-top5-live-micro",
+      "label": "v9 vel<20 + top5<10% @ 150/30 [LIVE_MICRO 0.05 SOL]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.05,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 20,
+            "label": "vel<20"
+          },
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 10,
+            "label": "top5<10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "live_micro"
+      }
+    },
+    {
+      "id": "v26-velmono-dev-ttp",
+      "label": "v26 v9shadow-velmono-dev mirror + trailingTP=10% [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel>=20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel<50"
+          },
+          {
+            "field": "monotonicity_0_30",
+            "operator": ">",
+            "value": 0.5,
+            "label": "mono>0.5"
+          },
+          {
+            "field": "dev_wallet_pct",
+            "operator": ">",
+            "value": 5,
+            "label": "dev>5%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": true,
+        "trailingTpDropPct": 10,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v26-best-double-ttp",
+      "label": "v26 v10-best-double mirror + trailingTP=10% [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel >= 20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel < 50"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -10,
+            "label": "dd > -10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": true,
+        "trailingTpDropPct": 10,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v26-bot-excl-climbing-ttp",
+      "label": "v26 v25-bot-excl-climbing mirror + trailingTP=10% [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<=",
+            "value": 30,
+            "label": "top5<=30%"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -25,
+            "label": "dd>-25%"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 200,
+            "label": "vel<200"
+          },
+          {
+            "field": "token_age_seconds",
+            "operator": ">=",
+            "value": 60,
+            "label": "age>=60s"
+          },
+          {
+            "field": "recovery_t45_above_t30",
+            "operator": "==",
+            "value": 1,
+            "label": "climbing_t30_t45"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": true,
+        "trailingTpDropPct": 10,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v26-vel2050-dd-base-ttp",
+      "label": "v26 v20-vel2050-dd-base mirror + trailingTP=10% [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": ">=",
+            "value": 20,
+            "label": "vel >= 20"
+          },
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 50,
+            "label": "vel < 50"
+          },
+          {
+            "field": "max_drawdown_0_30",
+            "operator": ">",
+            "value": -10,
+            "label": "dd > -10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": true,
+        "trailingTpDropPct": 10,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "id": "v26-vel20-top5-ttp",
+      "label": "v26 v9shadow-vel20-top5 mirror + trailingTP=10% [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {
+            "field": "bc_velocity_sol_per_min",
+            "operator": "<",
+            "value": 20,
+            "label": "vel<20"
+          },
+          {
+            "field": "top5_wallet_pct",
+            "operator": "<",
+            "value": 10,
+            "label": "top5<10%"
+          }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": true,
+        "trailingTpDropPct": 10,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    }
+  ]
+}
