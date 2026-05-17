@@ -796,6 +796,19 @@ export class StrategyManager {
       } as Awaited<ReturnType<typeof this.executor.sell>>;
     }
 
+    // Non-live (shadow/paper) sell that returned !success: there's no on-chain
+    // state to reconcile, so we still close the trade — but record the failure
+    // reason so promotion logic can spot degraded shadow rows. Pre-fix,
+    // shadowSell fake-succeeded on pool read failure and these rows looked
+    // indistinguishable from clean shadow exits.
+    if (!sellResult.success && !isLive) {
+      const reason = (sellResult as { errorMessage?: string }).errorMessage ?? 'unknown';
+      logger.warn(
+        { tradeId: pos.tradeId, mint: pos.mint, mode: executionMode, exitReason, reason },
+        'Non-live sell modeled via gap-penalty — pool read or context unavailable',
+      );
+    }
+
     // Live mode + failed sell: tokens are still on-chain. We MUST NOT mark the
     // trade closed with phantom exit numbers — that hides the real state and
     // strands the user's tokens (the 2026-05-17 silent-close bug). Re-arm the
@@ -850,6 +863,9 @@ export class StrategyManager {
       jitoTipSol: sellResult.jitoTipSol,
       txLandMs: sellResult.txLandMs,
       executionMode,
+      executionFailureReason: !sellResult.success
+        ? (sellResult as { errorMessage?: string }).errorMessage ?? 'unknown'
+        : undefined,
     });
   }
 

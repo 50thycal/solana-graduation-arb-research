@@ -361,17 +361,22 @@ export class Executor {
     exitPriceSol: number,
     poolCtx?: PoolContext,
   ): Promise<ExecutionResult> {
+    // Mirror shadowBuy: report failure on missing context / pool read failure
+    // instead of fake-succeeding. Pre-fix, these paths silently inflated shadow
+    // success metrics that feed live-strategy promotion decisions.
     if (!this.connection || !poolCtx?.baseVault || !poolCtx?.quoteVault) {
       return {
-        success: true, effectivePrice: exitPriceSol, tokensReceived: 0,
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
         dryRun: true, executionMode: 'shadow',
+        errorMessage: 'shadow: missing pool context',
       };
     }
     const pool = await fetchVaultPrice(this.connection, poolCtx.baseVault, poolCtx.quoteVault, true);
     if (!pool) {
       return {
-        success: true, effectivePrice: exitPriceSol, tokensReceived: 0,
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
         dryRun: true, executionMode: 'shadow',
+        errorMessage: 'shadow: pool read failed',
       };
     }
     const solRes = BigInt(Math.floor(pool.solReserves * 1e9));

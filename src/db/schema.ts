@@ -877,6 +877,11 @@ function runMigrations(db: Database.Database): void {
       ['measured_exit_slippage_pct', 'REAL'],
       ['jito_tip_sol', 'REAL'],
       ['tx_land_ms', 'INTEGER'],
+      // Populated when a non-live exit closes via a degraded path — e.g. shadow
+      // sell fell back to gap-penalty modeling because the pool read failed.
+      // Lets promotion logic down-weight shadow trades whose measured-slippage
+      // numbers are actually modeled, not measured.
+      ['execution_failure_reason', 'TEXT'],
     ];
     for (const [col, type] of newTradeCols) {
       if (!tradeExistingLive.has(col)) {
