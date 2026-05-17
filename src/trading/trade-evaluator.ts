@@ -195,7 +195,11 @@ export class TradeEvaluator {
     }
 
     if (!entryResult.success) {
-      this.tradeLogger.failTrade(tradeId, `buy_failed: ${entryResult.errorMessage ?? 'unknown'}`);
+      this.tradeLogger.failTrade(tradeId, `buy_failed: ${entryResult.errorMessage ?? 'unknown'}`, {
+        txSignature: entryResult.txSignature,
+        txLandMs: entryResult.txLandMs,
+        jitoTipSol: entryResult.jitoTipSol,
+      });
       return;
     }
 

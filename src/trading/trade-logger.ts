@@ -235,10 +235,16 @@ export class TradeLogger {
     );
   }
 
-  /** Mark a trade as failed (entry tx failed, etc.) */
-  failTrade(tradeId: number, reason: string): void {
-    markTradeFailed(this.db, tradeId, reason);
-    logger.warn({ tradeId, reason }, 'Trade failed');
+  /** Mark a trade as failed (entry tx failed, etc.). Optional tx context is
+   *  persisted so post-mortems have on-chain evidence even when the buy
+   *  bailed before the success path could record it. */
+  failTrade(
+    tradeId: number,
+    reason: string,
+    extras?: { txSignature?: string; txLandMs?: number; jitoTipSol?: number },
+  ): void {
+    markTradeFailed(this.db, tradeId, reason, extras);
+    logger.warn({ tradeId, reason, txSignature: extras?.txSignature }, 'Trade failed');
   }
 
   /**
