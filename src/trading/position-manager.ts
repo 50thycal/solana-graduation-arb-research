@@ -49,6 +49,11 @@ export interface ActivePosition {
   /** Filter-set key (sorted, " + "-joined filter labels) used to look up the
    *  Markov transition matrix. Set when the strategy registers its filter. */
   markovFilterKey?: string;
+  /** Count of consecutive failed live-sell attempts. Incremented by handleExit
+   *  when an exit fails and the position is re-armed for retry. After
+   *  MAX_SELL_RETRIES the trade is force-failed with manual-intervention
+   *  status instead of looping forever burning Jito tips. */
+  sellRetryCount?: number;
 }
 
 export type ExitReason =

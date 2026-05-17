@@ -752,7 +752,7 @@ export class StrategyManager {
     // creation-time local) so hot-swapped TP/SL/gap values are always used.
     positionManager.on('exit', (event: ExitEvent) => {
       const liveConfig = this.strategies.get(id)?.config ?? config;
-      this.handleExit(event, liveConfig).catch(err => {
+      this.handleExit(event, liveConfig, positionManager).catch(err => {
         logger.error(
           'Exit handler error for trade %d (strategy %s): %s',
           event.position.tradeId,
@@ -765,10 +765,15 @@ export class StrategyManager {
     this.strategies.set(id, { id, label, enabled, config, evaluator, positionManager, markovFilterKey });
   }
 
-  private async handleExit(event: ExitEvent, config: TradingConfig): Promise<void> {
+  private async handleExit(
+    event: ExitEvent,
+    config: TradingConfig,
+    positionManager: PositionManager,
+  ): Promise<void> {
     const { position: pos, exitReason, exitPriceSol } = event;
 
     const executionMode = pos.executionMode ?? config.executionMode ?? 'paper';
+    const isLive = executionMode === 'live_micro' || executionMode === 'live_full';
     const poolCtx = (pos.baseVault && pos.quoteVault)
       ? { poolAddress: pos.poolAddress, baseVault: pos.baseVault, quoteVault: pos.quoteVault }
       : undefined;
@@ -779,11 +784,51 @@ export class StrategyManager {
         pos.mint, pos.tokensHeld, exitPriceSol, pos.slippageEstPct, poolCtx, executionMode,
       );
     } catch (err) {
-      logger.error({ tradeId: pos.tradeId }, 'Sell execution threw: %s', err instanceof Error ? err.message : String(err));
+      const errMsg = err instanceof Error ? err.message : String(err);
+      logger.error(
+        { tradeId: pos.tradeId, mint: pos.mint, mode: executionMode },
+        'Sell execution threw: %s', errMsg,
+      );
       sellResult = {
-        success: true, effectivePrice: exitPriceSol, tokensReceived: 0,
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
         dryRun: executionMode === 'paper' || executionMode === 'shadow',
+        errorMessage: errMsg,
       } as Awaited<ReturnType<typeof this.executor.sell>>;
+    }
+
+    // Live mode + failed sell: tokens are still on-chain. We MUST NOT mark the
+    // trade closed with phantom exit numbers — that hides the real state and
+    // strands the user's tokens (the 2026-05-17 silent-close bug). Re-arm the
+    // position with an incremented retry counter so the next monitor cycle
+    // retries the exit. After MAX_SELL_RETRIES, give up and surface as a
+    // failed trade so manual intervention is visible on the dashboard.
+    if (!sellResult.success && isLive) {
+      const MAX_SELL_RETRIES = 5;
+      const retries = (pos.sellRetryCount ?? 0) + 1;
+      const errMsg = (sellResult as { errorMessage?: string }).errorMessage ?? 'unknown';
+      if (retries < MAX_SELL_RETRIES) {
+        logger.error(
+          {
+            tradeId: pos.tradeId, mint: pos.mint, mode: executionMode,
+            exitReason, exitPriceSol, retries, errorMessage: errMsg,
+          },
+          'Live sell failed — re-arming position for retry',
+        );
+        positionManager.addPosition({ ...pos, sellRetryCount: retries });
+        return;
+      }
+      logger.error(
+        {
+          tradeId: pos.tradeId, mint: pos.mint, mode: executionMode,
+          exitReason, exitPriceSol, retries, errorMessage: errMsg,
+        },
+        'Live sell failed after MAX retries — marking trade as needs_manual_close',
+      );
+      this.tradeLogger.failTrade(
+        pos.tradeId,
+        `live_sell_failed_after_${MAX_SELL_RETRIES}_retries: ${errMsg}`,
+      );
+      return;
     }
 
     // closeTrade applies either measured slippage (live modes) or gap
