@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { Connection } from '@solana/web3.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import {
   loadTradingConfig,
   describeTradingConfig,
@@ -9,8 +9,8 @@ import {
   mergeStrategyParams,
 } from './config';
 import { TradeLogger } from './trade-logger';
-import { Executor } from './executor';
-import { PositionManager, ExitEvent, DynamicMonitorParams } from './position-manager';
+import { Executor, fetchVaultPrice } from './executor';
+import { PositionManager, ExitEvent, DynamicMonitorParams, ActivePosition } from './position-manager';
 import { TradeEvaluator } from './trade-evaluator';
 import { MarkovMatrixStore, REFIT_PATHS_THRESHOLD } from './markov-matrix';
 import { PriceCollector, ObservationContext } from '../collector/price-collector';
@@ -121,8 +121,14 @@ export class StrategyManager {
       }
     }
 
-    // Recover open positions from previous run
-    this.recoverOpenPositions();
+    // Recover open positions from previous run. Async (per-position wallet
+    // balance checks for live trades) — fire-and-forget so the constructor
+    // returns immediately. Position managers (started below) only iterate
+    // positions currently in their map, so a slight delay before recovered
+    // positions register simply means they start being monitored a beat later.
+    this.recoverOpenPositions().catch(err => {
+      logger.error('recoverOpenPositions failed: %s', err instanceof Error ? err.message : String(err));
+    });
 
     // Start all position managers
     for (const instance of this.strategies.values()) {
@@ -163,14 +169,11 @@ export class StrategyManager {
     for (const instance of this.strategies.values()) {
       for (const pos of instance.positionManager.getPositions()) {
         if (pos.mode !== 'live') continue;
-        // Fire the exit event with the last known price — the sell path will
-        // re-quote live price before submitting, so this is a safe approximation.
-        const killEvent: ExitEvent = {
-          position: pos,
-          exitReason: 'killswitch',
-          exitPriceSol: pos.highWaterMark || pos.entryPriceSol,
-        };
-        this.handleExit(killEvent, instance.config, instance.positionManager).catch(err => {
+        // Fire-and-forget: each position's force-close runs independently so
+        // the safety loop doesn't block on RPC. removePosition is synchronous
+        // — done after kicking off to prevent the next tick from re-iterating
+        // the same position.
+        this.forceCloseLivePosition(pos, instance).catch(err => {
           logger.error(
             'Killswitch force-close failed for trade %d: %s',
             pos.tradeId, err instanceof Error ? err.message : String(err),
@@ -765,6 +768,21 @@ export class StrategyManager {
     this.strategies.set(id, { id, label, enabled, config, evaluator, positionManager, markovFilterKey });
   }
 
+  /** Killswitch helper: fetch a fresh pool price (so the trade row records
+   *  reality, not a cached HWM) and route through handleExit. Falls back to
+   *  the cached high-water-mark or entry price if RPC is unreachable. */
+  private async forceCloseLivePosition(pos: ActivePosition, instance: StrategyInstance): Promise<void> {
+    let exitPriceSol = pos.highWaterMark || pos.entryPriceSol;
+    if (this.connection && pos.baseVault && pos.quoteVault) {
+      const pool = await fetchVaultPrice(
+        this.connection, pos.baseVault, pos.quoteVault, true,
+      ).catch(() => null);
+      if (pool && pool.priceSol > 0) exitPriceSol = pool.priceSol;
+    }
+    const killEvent: ExitEvent = { position: pos, exitReason: 'killswitch', exitPriceSol };
+    await this.handleExit(killEvent, instance.config, instance.positionManager);
+  }
+
   private async handleExit(
     event: ExitEvent,
     config: TradingConfig,
@@ -889,7 +907,7 @@ export class StrategyManager {
     });
   }
 
-  private recoverOpenPositions(): void {
+  private async recoverOpenPositions(): Promise<void> {
     const openTrades = getOpenTrades(this.db) as any[];
     if (openTrades.length === 0) return;
 
@@ -938,6 +956,28 @@ export class StrategyManager {
         continue;
       }
 
+      // Wallet validation: if the bot crashed after a successful sell but
+      // before closeTrade committed, the wallet is empty but the DB still
+      // says open. Re-adding such a position would burn ~5 retry cycles of
+      // Jito tips before MAX_SELL_RETRIES gives up. Fast-fail here instead.
+      const walletBal = this.wallet && this.connection
+        ? await this.wallet.getTokenBalanceRaw(this.connection, new PublicKey(trade.mint)).catch(() => null)
+        : null;
+      if (walletBal !== null && walletBal === 0) {
+        logger.warn(
+          { tradeId: trade.id, mint: trade.mint, strategyId },
+          'Recovery: wallet empty but trade row open — sold elsewhere or prior bot lost track. Fast-failing.',
+        );
+        this.tradeLogger.failTrade(trade.id, 'recovery_wallet_empty');
+        continue;
+      }
+      // Prefer actual on-chain balance over DB value — covers the edge case
+      // where recordEntryFill stored a placeholder (recovery position from
+      // the buy-side ATA propagation fix, executor.ts liveBuy).
+      const tokensHeldRaw = walletBal != null && walletBal > 0
+        ? walletBal / 1e6
+        : (trade.entry_tokens_received ?? 0);
+
       const entryPrice = trade.entry_effective_price ?? trade.entry_price_sol;
       const slPriceSol = entryPrice * (1 - trade.stop_loss_pct / 100);
       instance.positionManager.addPosition({
@@ -952,7 +992,7 @@ export class StrategyManager {
         tpPriceSol: entryPrice * (1 + trade.take_profit_pct / 100),
         slPriceSol,
         maxExitTimestamp: trade.entry_timestamp + trade.max_hold_seconds,
-        tokensHeld: trade.entry_tokens_received ?? 0,
+        tokensHeld: tokensHeldRaw,
         mode: 'live',
         executionMode: (trade.execution_mode as any) ?? 'live_full',
         // graduation_timestamp not stored on trades_v2; approximate from entry
@@ -965,7 +1005,10 @@ export class StrategyManager {
         effectiveSlPriceSol: slPriceSol,
         markovFilterKey: instance.markovFilterKey,
       });
-      logger.info({ tradeId: trade.id, strategyId }, 'Live position recovered for monitoring');
+      logger.info(
+        { tradeId: trade.id, strategyId, tokensHeld: tokensHeldRaw, walletChecked: walletBal !== null },
+        'Live position recovered for monitoring',
+      );
     }
   }
 }
