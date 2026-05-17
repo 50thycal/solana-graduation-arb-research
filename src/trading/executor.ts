@@ -9,7 +9,7 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 import type { ExecutionMode } from './config';
 import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL } from './config';
-import { Wallet, WSOL_MINT, getAssociatedTokenAddress } from './wallet';
+import { Wallet, WSOL_MINT, getAssociatedTokenAddress, getMintTokenProgram } from './wallet';
 import {
   buildBuyInstructions,
   buildSellInstructions,
@@ -448,8 +448,13 @@ export class Executor {
     //   baseBalBefore       — raw u64 tokens already in wallet (0 if fresh)
     //   baseAtaExistsBefore — was the ATA already paid-for? drives rent subtraction
     //   walletSolBefore     — lamports before tx
+    // Detect the mint's token program first — PumpFun has been migrating to
+    // Token-2022, and the ATA address depends on the program. Pre-fix, this
+    // always derived the standard SPL ATA, so for Token-2022 mints we were
+    // checking a phantom address and miscounting rent overhead.
     const walletPk = this.wallet.pubkey;
-    const baseAta = getAssociatedTokenAddress(mintPk, walletPk);
+    const baseTokenProgram = await getMintTokenProgram(this.connection, mintPk);
+    const baseAta = getAssociatedTokenAddress(mintPk, walletPk, baseTokenProgram);
     const baseAtaInfoBefore = await this.connection.getAccountInfo(baseAta, 'confirmed').catch(() => null);
     const baseAtaExistsBefore = !!baseAtaInfoBefore;
     const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);

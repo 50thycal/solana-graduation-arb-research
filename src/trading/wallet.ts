@@ -69,16 +69,60 @@ function parseSecretKey(raw: string): Keypair {
 
 // ── SPL token constants (inlined to avoid @solana/spl-token dependency) ──────
 export const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+export const TOKEN_2022_PROGRAM_ID = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb');
 export const ASSOCIATED_TOKEN_PROGRAM_ID = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL');
 export const WSOL_MINT = new PublicKey('So11111111111111111111111111111111111111112');
 
 /**
- * Derive the associated token account address for (owner, mint).
- * Mirrors @solana/spl-token's getAssociatedTokenAddressSync.
+ * Cache (mint pubkey base58 → token program id) for the lifetime of the
+ * process. PumpFun has been quietly migrating tokens to Token-2022 (with
+ * extensions like transfer fees, metadata pointer). The ATA address depends
+ * on the program, so we MUST consult the mint's actual owner before deriving.
+ * The 2026-05-17 'no tokens in wallet to sell' bug was caused by hardcoding
+ * the standard SPL Token program — buys landed at the Token-2022 ATA, but
+ * the bot's balance reads checked the (empty) standard ATA.
  */
-export function getAssociatedTokenAddress(mint: PublicKey, owner: PublicKey): PublicKey {
+const mintProgramCache = new Map<string, PublicKey>();
+
+export async function getMintTokenProgram(
+  connection: Connection,
+  mint: PublicKey,
+): Promise<PublicKey> {
+  const key = mint.toBase58();
+  const cached = mintProgramCache.get(key);
+  if (cached) return cached;
+  try {
+    const info = await connection.getAccountInfo(mint, 'confirmed');
+    if (!info) {
+      // Mint account not found — default to standard SPL. Downstream reads
+      // will return 0 anyway and the caller's error handling kicks in.
+      return TOKEN_PROGRAM_ID;
+    }
+    const program = info.owner.equals(TOKEN_2022_PROGRAM_ID)
+      ? TOKEN_2022_PROGRAM_ID
+      : TOKEN_PROGRAM_ID;
+    mintProgramCache.set(key, program);
+    return program;
+  } catch {
+    // RPC failure — default to standard. Don't crash the trade path.
+    return TOKEN_PROGRAM_ID;
+  }
+}
+
+/**
+ * Derive the associated token account address for (owner, mint).
+ * Mirrors @solana/spl-token's getAssociatedTokenAddressSync. The token
+ * program ID is part of the ATA derivation seeds — for Token-2022 mints
+ * the resulting ATA differs from the standard SPL ATA. Use getMintTokenProgram
+ * to fetch the right ID when the program isn't already known.
+ */
+export function getAssociatedTokenAddress(
+  mint: PublicKey,
+  owner: PublicKey,
+  tokenProgramId: PublicKey = TOKEN_PROGRAM_ID,
+): PublicKey {
   const [address] = PublicKey.findProgramAddressSync(
-    [owner.toBuffer(), TOKEN_PROGRAM_ID.toBuffer(), mint.toBuffer()],
+    [owner.toBuffer(), tokenProgramId.toBuffer(), mint.toBuffer()],
     ASSOCIATED_TOKEN_PROGRAM_ID,
   );
   return address;
@@ -129,14 +173,23 @@ export class Wallet {
    * Return raw token amount held in the wallet's ATA for `mint`, or 0 if the
    * ATA does not exist. Used pre/post-swap to measure actual fill size.
    * Raw amount = on-chain u64 (caller divides by 10^decimals).
+   *
+   * Detects the mint's token program (standard SPL vs Token-2022) before
+   * deriving the ATA — the same `amount` u64 LE at offset 64 layout applies
+   * to both program token-account layouts. The 2026-05-17 'no tokens in
+   * wallet to sell' bug was this function reading the standard SPL ATA on a
+   * Token-2022 mint, finding nothing, and returning 0.
    */
   async getTokenBalanceRaw(connection: Connection, mint: PublicKey): Promise<number> {
-    const ata = getAssociatedTokenAddress(mint, this.pubkey);
+    const tokenProgram = await getMintTokenProgram(connection, mint);
+    const ata = getAssociatedTokenAddress(mint, this.pubkey, tokenProgram);
     await globalRpcLimiter.throttle();
     try {
       const info = await connection.getAccountInfo(ata, 'confirmed');
       if (!info || !info.data) return 0;
-      // SPL token account: amount is u64 LE at offset 64
+      // SPL token account: amount is u64 LE at offset 64 (same offset for
+      // both Token and Token-2022 base layouts; Token-2022 extensions append
+      // AFTER byte 165 so the amount field is unaffected).
       const data = info.data as Buffer;
       if (data.length < 72) return 0;
       // Read as BigInt to avoid precision loss, then coerce to number for
