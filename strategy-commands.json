@@ -1,0 +1,204 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-05-17",
+      "date": "2026-05-17",
+      "generated_by": "claude",
+      "narrative": "## Roster Changes Since Yesterday\n\nNo roster changes detected since yesterday. The 51-strategy roster is identical to the 2026-05-16 snapshot: no additions, deletions, or toggled strategies. Previously proposed kills (v14-snipers-liq, v22-snipers-flow, v25-bot-excl-calm, v25-bot-excl-breakeven, v21-vel5-mono-dd, v21-vel2050-dd-trail) remain absent from the roster — those executions appear to have been applied prior to yesterday's session.\n\n## Headline\n\n**v21-bottom-excluded clears all 4 SOL-bar gates for the 4th consecutive day — propose live promotion now.** v25-bot-excl-climbing (score 100, STRENGTHENING) is the standout watch at n=84. v25-bot-excl-tp150 has accumulated -1.72 SOL with drop3=-4.14 and should be killed immediately.\n\n## SOL Accumulated vs Bled\n\n**Accumulating (lifetime, outlier-stripped):**\n- v9shadow-velmono-dev: +4.33 SOL total, drop3=+2.67 SOL (best drop3 in the roster relative to sample size), monthly=+9.04 SOL/mo. n=31 — remarkable edge quality at low-N.\n- v10-best-double: +4.11 SOL total, drop3=+1.79 SOL, monthly=+8.02 SOL/mo. n=85, DECAYING flag (median-based), but drop3 still positive.\n- v25-bot-excl-climbing: +3.43 SOL total, drop3=+1.80 SOL, monthly=+35.93 SOL/mo. STRENGTHENING. 16 more trades from n=100 gate.\n- v21-bottom-excluded: +2.94 SOL total, drop3=+0.94 SOL, monthly=+14.96 SOL/mo. **PROMOTABLE** — all 4 gates clear.\n- v20-vel2050-dd-base: +2.88 SOL total, drop3=+0.62 SOL, monthly=+12.62 SOL/mo. DECAYING flag but drop3 positive.\n\n**Bleeding (largest absolute losses, enabled only):**\n- v25-bot-excl-tp150: -1.72 SOL total, drop3=-4.14 SOL, monthly=-17.76 SOL/mo. n=137 — fully INVALID on 2 hard gates. Structural loser: TP150 overshoots on this fat-tail universe.\n- v14-snipervel-shadow: -1.88 SOL total, drop3=-2.79 SOL, n=26. Still pre-100 but trajectory is deeply negative.\n- v25-bot-excl-mono: -0.34 SOL total, drop3=-2.08 SOL. n=83, sub-100. Kill criterion: drop3 ≤ 0 at n=100.\n\n## Honest Outlier Check\n\nv21-bottom-excluded has top3_contribution_pct=68% — the top 3 trades account for 68% of gross P&L. However, drop3=+0.94 SOL is positive, confirming the remaining 262 trades still accumulate net-positive SOL after removing those 3. This is a fat-tail strategy behaving correctly: winners are fat, but the floor is real. The drop3 gate is designed exactly for this check. Edge is distributed, not a 3-ticket lottery.\n\nv9shadow-velmono-dev has top3_contribution_pct=38% and drop3=+2.67 SOL — the outlier-stripping barely dents it. This is the highest quality edge in the roster by outlier robustness per trade (drop3/n).\n\nv10-best-double: DECAYING median (recent-30 median -23.23% vs all -10.74%) but drop3=+1.79 still positive. Per CLAUDE.md rules, do not kill on median alone. Watch for drop3 crossing zero at n=100.\n\n## Cross-Day Pattern Observations\n\n- v21-bottom-excluded promote recommendation has appeared in 4 consecutive daily reports (2026-05-14 through today) without operator execution. Escalating to the highest-priority action item.\n- Four strategies flagged DECAYING by median: v9shadow-velmid-liq-mono, v9shadow-vel20-top5, v20-vel2050-dd-base, v10-best-double. All have positive drop3 today — the decay is median-signal-only and does not meet CLAUDE.md kill criteria. Continue monitoring.\n- v25-bot-excl-tp150 (n=137) has been bleeding quietly — it reached n=100 without a kill recommendation in prior sessions. This cycle corrects that: propose kill.\n- best-combos leaderboard shows \"vel 20-50 + climbing_t30_t45\" at n=146 with opt_avg_ret=10.74% as the only combo beating baseline (top-10 research leaderboard). v23-vel2050-climbing is currently shadow-testing this at TP150/SL25 (n=32, score=44, drop3=-1.43). The live shadow n is smaller than research n — may need more time. \"vwap_pullback strict + climbing_t30_t45\" (n=51, opt=17.51%) has no dedicated shadow test yet.\n\n## Operator Next Step\n\nExecute the kill of v25-bot-excl-tp150 and the promotion of v21-bottom-excluded to live (0.1 SOL micro-size per CLAUDE.md convention) via strategy-commands.json. Both are unambiguous by the data.\n",
+      "winners": [
+        {
+          "strategy_id": "v9shadow-velmono-dev",
+          "execution_mode": "shadow",
+          "n_trades": 31,
+          "total_net_sol": 4.3267,
+          "drop3": 2.6709,
+          "monthly": 9.0447
+        },
+        {
+          "strategy_id": "v10-best-double",
+          "execution_mode": "shadow",
+          "n_trades": 85,
+          "total_net_sol": 4.1147,
+          "drop3": 1.7906,
+          "monthly": 8.0219
+        },
+        {
+          "strategy_id": "v25-bot-excl-climbing",
+          "execution_mode": "shadow",
+          "n_trades": 84,
+          "total_net_sol": 3.4322,
+          "drop3": 1.7982,
+          "monthly": 35.9305
+        },
+        {
+          "strategy_id": "v21-bottom-excluded",
+          "execution_mode": "shadow",
+          "n_trades": 265,
+          "total_net_sol": 2.9416,
+          "drop3": 0.9408,
+          "monthly": 14.9627
+        },
+        {
+          "strategy_id": "v20-vel2050-dd-base",
+          "execution_mode": "shadow",
+          "n_trades": 35,
+          "total_net_sol": 2.8813,
+          "drop3": 0.6216,
+          "monthly": 12.6205
+        }
+      ],
+      "losers": [
+        {
+          "strategy_id": "v14-snipervel-shadow",
+          "execution_mode": "shadow",
+          "n_trades": 26,
+          "total_net_sol": -1.8832,
+          "drop3": -2.7854,
+          "monthly": -14.1379
+        },
+        {
+          "strategy_id": "v25-bot-excl-tp150",
+          "execution_mode": "shadow",
+          "n_trades": 137,
+          "total_net_sol": -1.7222,
+          "drop3": -4.1404,
+          "monthly": -17.7559
+        },
+        {
+          "strategy_id": "v19-age10-top5-base",
+          "execution_mode": "shadow",
+          "n_trades": 19,
+          "total_net_sol": -0.6233,
+          "drop3": -1.1104,
+          "monthly": -2.5359
+        },
+        {
+          "strategy_id": "v19-age10-top5-tp100",
+          "execution_mode": "shadow",
+          "n_trades": 19,
+          "total_net_sol": -0.6233,
+          "drop3": -1.1104,
+          "monthly": -2.5359
+        },
+        {
+          "strategy_id": "v21-sniper-age-shadow",
+          "execution_mode": "shadow",
+          "n_trades": 5,
+          "total_net_sol": -0.5865,
+          "drop3": -0.3758,
+          "monthly": -7.6928
+        }
+      ],
+      "anomalies": [
+        {
+          "severity": "high",
+          "kind": "invalid_strategy_active",
+          "detail": "v25-bot-excl-tp150 is INVALID: n=137 >= 100, total_net_sol=-1.72, drop3=-4.14 SOL. Both total and drop3 gate fail. Strategy is still enabled and accumulating losses.",
+          "metric": {"strategy_id": "v25-bot-excl-tp150", "n_trades": 137, "total_net_sol": -1.722, "drop3": -4.14}
+        },
+        {
+          "severity": "med",
+          "kind": "edge_decay",
+          "detail": "v9shadow-velmid-liq-mono flagged DECAYING — recent-30 median -12.6% vs all median +3.3%. drop3=+0.375 SOL still positive; not a kill trigger per CLAUDE.md.",
+          "metric": {"strategy_id": "v9shadow-velmid-liq-mono", "recent_30_median_pct": -12.6, "all_median_pct": 3.3}
+        },
+        {
+          "severity": "med",
+          "kind": "edge_decay",
+          "detail": "v9shadow-vel20-top5 DECAYING — recent-30 median -4.36% vs all +1.44%. drop3=-0.210 at n=50 sub-100; monitor.",
+          "metric": {"strategy_id": "v9shadow-vel20-top5", "recent_30_median_pct": -4.36, "all_median_pct": 1.44}
+        },
+        {
+          "severity": "med",
+          "kind": "edge_decay",
+          "detail": "v20-vel2050-dd-base DECAYING — recent-30 median -20.29% vs all -0.23%. drop3=+0.622 positive; median decay with positive drop3 is fat-tail behavior, not kill trigger.",
+          "metric": {"strategy_id": "v20-vel2050-dd-base", "recent_30_median_pct": -20.29, "all_median_pct": -0.23}
+        },
+        {
+          "severity": "med",
+          "kind": "edge_decay",
+          "detail": "v10-best-double DECAYING — recent-30 median -23.23% vs all -10.74%. drop3=+1.791 still positive at n=85. Watch for drop3 crossing zero at n=100.",
+          "metric": {"strategy_id": "v10-best-double", "recent_30_median_pct": -23.23, "all_median_pct": -10.74}
+        }
+      ],
+      "patterns": [
+        "v21-bottom-excluded promote recommendation appears in 4 consecutive daily reports (May 14-17) — escalated to highest-priority action item.",
+        "DECAYING flag (median-based) on 4 strategies (velmid-liq-mono, vel20-top5, vel2050-dd-base, best-double); all have positive drop3 — fat-tail regime, not kill territory per CLAUDE.md.",
+        "v25-bot-excl-tp150 crossed n=100 without a kill action item being created in prior sessions — structural TP150 overshoot on fat-tail universe. Correcting this cycle.",
+        "vwap_pullback strict + climbing_t30_t45 (n=51, opt=17.51%) has no dedicated shadow strategy; candidate for v27 cohort.",
+        "vel 20-50 + climbing_t30_t45 (n=146 in research) is the only combo beating baseline in the top-10 leaderboard; v23-vel2050-climbing (n=32) tracks it with drop3=-1.43 — live results lagging research numbers."
+      ],
+      "recommendations": {
+        "promote": [
+          {
+            "strategy_id": "v21-bottom-excluded",
+            "reason": "4th consecutive daily recommendation. All 4 SOL gates clear: n=265, drop3=+0.941 SOL, total=+2.942 SOL, monthly=+14.96 SOL/mo. STABLE edge, composite score 100/100. Closest panel11 filter analogs (age>10min+dd>-10%, vel<20+mono>0.66) all STABLE (wr_std ≤ 3%). Panel7 filters DEGRADED not OVERFIT. Propose promote to live at 0.1 SOL micro-size with 20-trade review gate."
+          }
+        ],
+        "kill": [
+          {
+            "strategy_id": "v25-bot-excl-tp150",
+            "reason": "n=137, total_net_sol=-1.722 SOL, drop3=-4.140 SOL, monthly=-17.76 SOL/mo. INVALID on 2 hard gates (total < 0.5 and drop3 ≤ 0). TP150 systematically overshoots on the fat-tail bot-excl universe — the winning variant uses TP100 (v25-bot-excl-climbing, score=100). Recommend kill."
+          }
+        ],
+        "watch": [
+          {
+            "strategy_id": "v25-bot-excl-climbing",
+            "reason": "Score 100, STRENGTHENING. n=84 (16 trades from n=100 gate). drop3=+1.798 SOL, monthly=+35.93 SOL/mo — highest monthly run rate in the roster. Top priority watch; propose promote at n=100 if drop3 stays positive."
+          },
+          {
+            "strategy_id": "v9shadow-velmono-dev",
+            "reason": "n=31, drop3=+2.671 SOL (best outlier robustness per trade in roster), monthly=+9.04 SOL/mo, score=86.2. Needs 69 more trades. STABLE. Live micro test active."
+          },
+          {
+            "strategy_id": "v10-best-double",
+            "reason": "n=85, DECAYING on median, drop3=+1.791 still positive. Kill if drop3 ≤ 0 at n=100."
+          },
+          {
+            "strategy_id": "v20-vel2050-dd-base",
+            "reason": "n=35, drop3=+0.622 SOL (thin but positive), monthly=+12.62 SOL/mo. DECAYING median is fat-tail behavior. Watch for n=100; caveat Panel7 vel20-50 DEGRADED."
+          },
+          {
+            "strategy_id": "v25-bot-excl-mono",
+            "reason": "n=83, drop3=-2.076 SOL (negative). Sub-100 so cannot kill yet. Kill if drop3 ≤ 0 at n=100."
+          }
+        ],
+        "create_new": [
+          {
+            "strategy_id": "v27-vwap-climbing",
+            "hypothesis": "vwap_pullback strict + climbing_t30_t45 shows opt_avg_ret=17.51% at TP150/SL30 in research (n=51, 74.5% WR). Closest analog strategies (v25-bot-excl-climbing) are STRENGTHENING. Propose shadow test at TP150/SL30, entry@T+60, to validate research vs live.",
+            "prediction": {
+              "target_net_sol": 1.0,
+              "target_sol_per_mo": 4.0,
+              "target_drop_top3": 0.0,
+              "target_n": 100,
+              "target_days": 21,
+              "kill_criterion": "n>=50 and total_net_sol_drop_top3<0"
+            },
+            "cohort_label": "v27"
+          }
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-05-17-001",
+          "kind": "promote",
+          "target_id": "v21-bottom-excluded",
+          "summary": "Promote v21-bottom-excluded (shadow) to live — 4th consecutive day all 4 SOL gates clear. n=265, drop3=+0.941, total=+2.942, monthly=+14.96 SOL/mo. Propose live at 0.1 SOL micro-size.",
+          "status": "PROPOSED",
+          "proposed_at": 1747482000
+        },
+        {
+          "id": "ai-2026-05-17-002",
+          "kind": "kill",
+          "target_id": "v25-bot-excl-tp150",
+          "summary": "Kill v25-bot-excl-tp150 — n=137, INVALID: total=-1.72 SOL, drop3=-4.14 SOL. Two hard gates fail. TP150 overshoots the fat-tail bot-excl universe; TP100 variant (v25-bot-excl-climbing) is score=100.",
+          "status": "PROPOSED",
+          "proposed_at": 1747482000
+        }
+      ],
+      "auto_journal": true
+    }
+  ]
+}
