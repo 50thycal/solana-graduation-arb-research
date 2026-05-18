@@ -48,6 +48,10 @@ import { computeSniperPanel } from './sniper-panel';
 import { computeStrategyPercentiles } from './strategy-percentiles';
 import { computeJournal } from './journal';
 import { computeEdgeDecay } from './edge-decay';
+import { computeTrendsTime } from './trends-time';
+import { computeSlPrecursor } from './sl-precursor';
+import { computePortfolioCorr } from './portfolio-corr';
+import { computeTrendsMarket } from './trends-market';
 import { computeCounterfactual } from './counterfactual';
 import { computeLossPostmortem } from './loss-postmortem';
 import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
@@ -841,6 +845,10 @@ export class GistSync {
     // yields between filters internally.
     const journal = await timed('journal', () => computeJournal(this.db));
     const edgeDecay = await timed('edgeDecay', () => computeEdgeDecay(this.db));
+    const trendsTime = await timed('trendsTime', () => computeTrendsTime(this.db));
+    const slPrecursor = await timed('slPrecursor', () => computeSlPrecursor(this.db));
+    const portfolioCorr = await timed('portfolioCorr', () => computePortfolioCorr(this.db));
+    const trendsMarket = await timed('trendsMarket', () => computeTrendsMarket(this.db));
     // counterfactual now runs in the gist-sync worker — see top of buildPayloads.
     const lossPostmortem = await timed('lossPostmortem', () => computeLossPostmortem(this.db));
     const leaveOneOutPnl = await timed('leaveOneOutPnl', () => computeLeaveOneOutPnl(this.db));
@@ -1017,6 +1025,10 @@ export class GistSync {
       'strategy-percentiles.json': JSON.stringify(strategyPercentiles, null, 2),
       'journal.json': JSON.stringify(journal, null, 2),
       'edge-decay.json': JSON.stringify(edgeDecay, null, 2),
+      'trends-time.json': JSON.stringify(trendsTime, null, 2),
+      'sl-precursor.json': JSON.stringify(slPrecursor, null, 2),
+      'portfolio-corr.json': JSON.stringify(portfolioCorr, null, 2),
+      'trends-market.json': JSON.stringify(trendsMarket, null, 2),
       'counterfactual.json': JSON.stringify(counterfactual, null, 2),
       'loss-postmortem.json': JSON.stringify(lossPostmortem, null, 2),
       'leave-one-out-pnl.json': JSON.stringify(leaveOneOutPnl, null, 2),

@@ -27,6 +27,7 @@ import { installStderrThrottle } from './utils/stderr-throttle';
 import { startEventLoopLagMonitor } from './utils/event-loop-lag-monitor';
 import { registerApiRoutes } from './api/routes';
 import { GistSync } from './api/gist-sync';
+import { MarketDataFetcher } from './collector/market-data-fetcher';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
 import { computePanel11 } from './api/panel11';
 import { HolderEnrichment } from './collector/holder-enrichment';
@@ -3124,6 +3125,15 @@ ${rows.map(r => {
     logger.warn('GITHUB_TOKEN not set — Gist sync disabled. Add it to Railway env vars to enable self-service for Claude.');
   }
 
+  // Market data fetcher — daily SOL/USD + BTC/USD OHLC + Fear & Greed index.
+  // Standalone class on its own hourly cadence; not coupled to gist-sync. Free-
+  // tier endpoints (CoinGecko + alternative.me), no API key required. Failure
+  // is non-fatal: any fetch error logs a warning and retries next interval.
+  const marketDataFetcher = new MarketDataFetcher(db);
+  marketDataFetcher.start().catch((err) =>
+    logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'MarketDataFetcher initial start failed'),
+  );
+
   // Start graduation listener (after Express so health endpoint is available)
   // Note: `listener` is declared earlier in main() so /api routes can reference it.
   try {
@@ -3165,6 +3175,7 @@ ${rows.map(r => {
     logger.info('Shutting down...');
     if (strategyManager) strategyManager.stop();
     if (listener) await listener.stop();
+    marketDataFetcher.stop();
     db.close();
     process.exit(0);
   };
