@@ -45,6 +45,10 @@ import { computeSniperPanel } from './sniper-panel';
 import { computeStrategyPercentiles } from './strategy-percentiles';
 import { computeJournal } from './journal';
 import { computeEdgeDecay } from './edge-decay';
+import { computeTrendsTime } from './trends-time';
+import { computeSlPrecursor } from './sl-precursor';
+import { computePortfolioCorr } from './portfolio-corr';
+import { computeTrendsMarket } from './trends-market';
 import { computeCounterfactual } from './counterfactual';
 import { computeLossPostmortem } from './loss-postmortem';
 import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
@@ -58,6 +62,10 @@ import {
   renderRecentTradesPanel,
   renderRecentSkipsPanel,
   renderReportHtml,
+  renderTrendsTimePanel,
+  renderSlPrecursorPanel,
+  renderPortfolioCorrPanel,
+  renderTrendsMarketPanel,
 } from '../utils/html-renderer';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computeTradingData } from './trading-data';
@@ -458,6 +466,71 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       return;
     }
     res.json(computeJournal(db));
+  }));
+
+  // ── /api/trends-time ──
+  // Calendar / temporal trends: day-of-week, hour-of-day, weekday vs weekend
+  // buckets (all UTC). Per-strategy pacing Pearson (graduations/day vs net
+  // SOL/day) + lag-1 autocorrelation on daily net-SOL series.
+  app.get('/api/trends-time', wrap(async (req, res) => {
+    if (wantsHtml(req)) {
+      const cached = htmlMemoGet('trends-time');
+      if (cached) { sendPanelHtml(res, cached); return; }
+      const html = renderTrendsTimePanel({ trends_time: computeTrendsTime(db) });
+      htmlMemoSet('trends-time', html, 30_000);
+      sendPanelHtml(res, html);
+      return;
+    }
+    res.json(computeTrendsTime(db));
+  }));
+
+  // ── /api/trends-market ──
+  // Per-strategy P&L bucketed by SOL/BTC daily-return quintile + Fear & Greed
+  // regime. Joins trades to market_daily on date(entry_timestamp). Quintiles
+  // computed in JS over distinct market-data days; falls back to terciles
+  // when sample is thin.
+  app.get('/api/trends-market', wrap(async (req, res) => {
+    if (wantsHtml(req)) {
+      const cached = htmlMemoGet('trends-market');
+      if (cached) { sendPanelHtml(res, cached); return; }
+      const html = renderTrendsMarketPanel({ trends_market: computeTrendsMarket(db) });
+      htmlMemoSet('trends-market', html, 60_000);
+      sendPanelHtml(res, html);
+      return;
+    }
+    res.json(computeTrendsMarket(db));
+  }));
+
+  // ── /api/sl-precursor ──
+  // Per-strategy SL pattern mining: time-to-SL distribution, Cohen's d on
+  // T+30 features between SL and TP cohorts, 30-min-bin clustering test,
+  // near-miss winning trades, exit-reason mix by UTC calendar bucket.
+  app.get('/api/sl-precursor', wrap(async (req, res) => {
+    if (wantsHtml(req)) {
+      const cached = htmlMemoGet('sl-precursor');
+      if (cached) { sendPanelHtml(res, cached); return; }
+      const html = renderSlPrecursorPanel({ sl_precursor: computeSlPrecursor(db) });
+      htmlMemoSet('sl-precursor', html, 60_000);
+      sendPanelHtml(res, html);
+      return;
+    }
+    res.json(computeSlPrecursor(db));
+  }));
+
+  // ── /api/portfolio-corr ──
+  // Cross-strategy portfolio: pairwise Pearson on daily net SOL, redundancy
+  // / diversifier surfacing, combined-portfolio equity curve with Sharpe +
+  // max drawdown, and daily concentration (top-1 share).
+  app.get('/api/portfolio-corr', wrap(async (req, res) => {
+    if (wantsHtml(req)) {
+      const cached = htmlMemoGet('portfolio-corr');
+      if (cached) { sendPanelHtml(res, cached); return; }
+      const html = renderPortfolioCorrPanel({ portfolio_corr: computePortfolioCorr(db) });
+      htmlMemoSet('portfolio-corr', html, 30_000);
+      sendPanelHtml(res, html);
+      return;
+    }
+    res.json(computePortfolioCorr(db));
   }));
 
   // ── /api/edge-decay ──

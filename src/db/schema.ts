@@ -816,6 +816,29 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_lessons_archived ON lessons_learned(archived);
   `);
 
+  // Market regime context — daily SOL/USD + BTC/USD OHLC + Fear & Greed
+  // Index. One row per UTC date. Populated by MarketDataFetcher (CoinGecko
+  // + alternative.me). Used by the trends-market panel to bucket trades by
+  // external-market regime (SOL return quintile, BTC return quintile, F&G).
+  // Safe ALTER TABLE pattern not needed — schema is fixed at table creation.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS market_daily (
+      date TEXT PRIMARY KEY,                -- 'YYYY-MM-DD' UTC
+      sol_usd_open REAL,
+      sol_usd_high REAL,
+      sol_usd_low REAL,
+      sol_usd_close REAL,
+      btc_usd_open REAL,
+      btc_usd_high REAL,
+      btc_usd_low REAL,
+      btc_usd_close REAL,
+      fear_greed_value INTEGER,
+      fear_greed_label TEXT,
+      fetched_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_market_daily_fetched ON market_daily(fetched_at);
+  `);
+
   // Bot error log — one row per uncaught exception / unhandled rejection so
   // /api/snapshot can surface the last crash without depending on Railway logs.
   db.exec(`

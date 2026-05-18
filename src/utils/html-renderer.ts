@@ -4293,6 +4293,526 @@ export function renderEdgeDecayPanel(data: any): string {
     </div>`;
 }
 
+/** Calendar / temporal trends panel — day-of-week, hour-of-day, weekday vs
+ *  weekend, plus pacing Pearson and lag-1 autocorrelation per strategy. */
+export function renderTrendsTimePanel(data: any): string {
+  const t = data.trends_time;
+  if (!t || t.total_closed_trades === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Trends — Calendar / Temporal</div>
+      <p style="color:#94a3b8">No closed trades yet — nothing to bucket.</p>
+    </div>`;
+  }
+
+  const fmtSol = (v: number): string => {
+    const color = v > 0 ? '#22d3ee' : v < 0 ? '#f87171' : '#94a3b8';
+    return `<span style="color:${color}">${v > 0 ? '+' : ''}${v.toFixed(3)}</span>`;
+  };
+  const fmtPct = (v: number | null): string => v == null
+    ? '<span style="color:#64748b">-</span>'
+    : `<span style="color:${v > 0 ? '#22d3ee' : '#f87171'}">${v > 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
+  const fmtWr = (s: any): string => {
+    if (s.win_rate == null) return `<span style="color:#64748b">n=${s.n}</span>`;
+    return `<span>${s.win_rate.toFixed(1)}%</span><span style="color:#64748b;font-size:10px"> [${s.win_rate_ci_lower?.toFixed(1)}, ${s.win_rate_ci_upper?.toFixed(1)}] n=${s.n}</span>`;
+  };
+  const fmtCorr = (r: number | null, n: number): string => {
+    if (r == null) return `<span style="color:#64748b">- (n=${n})</span>`;
+    const color = Math.abs(r) >= 0.3 ? (r > 0 ? '#22d3ee' : '#f87171') : '#94a3b8';
+    return `<span style="color:${color}">${r > 0 ? '+' : ''}${r.toFixed(3)}</span><span style="color:#64748b;font-size:10px"> (n=${n})</span>`;
+  };
+
+  const dowRow = (r: any): string => `
+    <tr>
+      <td><b>${r.label}</b></td>
+      <td>${r.n}</td>
+      <td>${fmtSol(r.total_net_sol)}</td>
+      <td>${fmtPct(r.avg_net_pct)}</td>
+      <td>${fmtWr(r)}</td>
+      <td>${fmtSol(r.drop_top3_net_sol)}</td>
+    </tr>`;
+
+  const hourRow = (r: any): string => `
+    <tr>
+      <td>${String(r.hour).padStart(2, '0')}:00</td>
+      <td>${r.n}</td>
+      <td>${fmtSol(r.total_net_sol)}</td>
+      <td>${fmtPct(r.avg_net_pct)}</td>
+      <td>${fmtWr(r)}</td>
+    </tr>`;
+
+  const aggDowTable = `
+    <div style="overflow-x:auto"><table class="table">
+      <thead><tr>
+        <th>DOW (UTC)</th><th>n</th><th>Net SOL</th><th>Avg %</th>
+        <th>Win % [95% CI]</th><th>Drop-top3 SOL</th>
+      </tr></thead>
+      <tbody>${t.aggregate.by_dow.map(dowRow).join('')}</tbody>
+    </table></div>`;
+
+  const aggHourTable = `
+    <div style="overflow-x:auto"><table class="table" style="font-size:11px">
+      <thead><tr>
+        <th>Hour (UTC)</th><th>n</th><th>Net SOL</th><th>Avg %</th><th>Win % [95% CI]</th>
+      </tr></thead>
+      <tbody>${t.aggregate.by_hour.map(hourRow).join('')}</tbody>
+    </table></div>`;
+
+  const wkdyRow = (label: string, s: any): string => `
+    <tr>
+      <td><b>${label}</b></td>
+      <td>${s.n}</td>
+      <td>${fmtSol(s.total_net_sol)}</td>
+      <td>${fmtPct(s.avg_net_pct)}</td>
+      <td>${fmtWr(s)}</td>
+      <td>${fmtSol(s.drop_top3_net_sol)}</td>
+    </tr>`;
+  const wkdyTable = `
+    <div style="overflow-x:auto"><table class="table">
+      <thead><tr>
+        <th>Bucket</th><th>n</th><th>Net SOL</th><th>Avg %</th>
+        <th>Win % [95% CI]</th><th>Drop-top3 SOL</th>
+      </tr></thead>
+      <tbody>
+        ${wkdyRow('Weekday (Mon-Fri)', t.aggregate.weekday)}
+        ${wkdyRow('Weekend (Sat-Sun)', t.aggregate.weekend)}
+      </tbody>
+    </table></div>`;
+
+  const strategyRow = (s: any): string => {
+    const wkdy = s.weekday;
+    const wknd = s.weekend;
+    const gap = +(wkdy.total_net_sol - wknd.total_net_sol).toFixed(3);
+    const sidEsc = escHtml(s.strategy_id);
+    return `
+      <tr>
+        <td>
+          <div><span style="color:#a78bfa;font-weight:600">${sidEsc}</span></div>
+          <div style="color:#64748b;font-size:11px">${escHtml(s.label)}</div>
+        </td>
+        <td>${s.n_total}</td>
+        <td>${fmtSol(wkdy.total_net_sol)}<span style="color:#64748b;font-size:10px"> (n=${wkdy.n})</span></td>
+        <td>${fmtSol(wknd.total_net_sol)}<span style="color:#64748b;font-size:10px"> (n=${wknd.n})</span></td>
+        <td>${fmtSol(gap)}</td>
+        <td>${fmtCorr(s.pacing_pearson, s.pacing_days_used)}</td>
+        <td>${fmtCorr(s.autocorr_lag1, s.autocorr_days_used)}</td>
+      </tr>`;
+  };
+  const perStrategyTable = t.by_strategy.length === 0
+    ? '<p style="color:#94a3b8">No strategies with ≥30 closed trades.</p>'
+    : `<div style="overflow-x:auto"><table class="table">
+        <thead><tr>
+          <th>Strategy</th><th>n total</th>
+          <th>Weekday SOL</th><th>Weekend SOL</th><th>Wkdy − Wknd</th>
+          <th title="Pearson(graduations/day, strategy net SOL/day)">Pacing r</th>
+          <th title="Lag-1 autocorrelation of strategy's daily net SOL series">Lag-1 acorr</th>
+        </tr></thead>
+        <tbody>${t.by_strategy.map(strategyRow).join('')}</tbody>
+      </table></div>`;
+
+  const pacingGlobal = t.pacing_global.pearson == null
+    ? '<span style="color:#64748b">insufficient overlapping days</span>'
+    : fmtCorr(t.pacing_global.pearson, t.pacing_global.days_used);
+
+  return `
+    <div class="card">
+      <div class="card-title">Trends — Calendar / Temporal
+        <span style="color:#64748b;font-size:11px;font-weight:400">— all bucketing UTC · n=${t.total_closed_trades} closed trades</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px">
+        <div>
+          <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">By Day of Week (aggregate)</div>
+          ${aggDowTable}
+        </div>
+        <div>
+          <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Weekday vs Weekend (aggregate)</div>
+          ${wkdyTable}
+          <div style="margin-top:8px;color:#94a3b8;font-size:11px">
+            Pacing global r = ${pacingGlobal}
+            <span style="color:#64748b;font-size:10px"> · Pearson(graduations/day, total net SOL/day)</span>
+          </div>
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">By Hour of Day (aggregate)</div>
+        ${aggHourTable}
+      </div>
+      <div>
+        <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Per-Strategy Calendar Sensitivity (≥30 trades, sorted by |wkdy − wknd| gap)</div>
+        ${perStrategyTable}
+      </div>
+    </div>`;
+}
+
+/** External market regime panel — per-strategy P&L bucketed by SOL/BTC
+ *  daily return quintile + F&G regime. */
+export function renderTrendsMarketPanel(data: any): string {
+  const d = data.trends_market;
+  if (!d || !d.market_data_present) {
+    return `
+    <div class="card">
+      <div class="card-title">Trends — External Market Regime</div>
+      <p style="color:#94a3b8">${d?.notes?.[0] ?? 'No market data yet — MarketDataFetcher must run first.'}</p>
+      ${d?.notes?.[1] ? `<p style="color:#64748b;font-size:11px">${escHtml(d.notes[1])}</p>` : ''}
+    </div>`;
+  }
+  if (d.by_strategy.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Trends — External Market Regime
+        <span style="color:#64748b;font-size:11px;font-weight:400">— ${d.market_days} market days · ${d.date_range.earliest} → ${d.date_range.latest}</span>
+      </div>
+      <p style="color:#94a3b8">${d.notes[0]}</p>
+    </div>`;
+  }
+
+  const fmtSol = (v: number): string => {
+    const color = v > 0 ? '#22d3ee' : v < 0 ? '#f87171' : '#94a3b8';
+    return `<span style="color:${color}">${v > 0 ? '+' : ''}${v.toFixed(3)}</span>`;
+  };
+  const fmtPct = (v: number | null): string => v == null
+    ? '<span style="color:#64748b">-</span>'
+    : `<span style="color:${v > 0 ? '#22d3ee' : '#f87171'}">${v > 0 ? '+' : ''}${v.toFixed(2)}%</span>`;
+  const fmtWr = (v: number | null): string => v == null
+    ? '<span style="color:#64748b">-</span>'
+    : `<span>${v.toFixed(1)}%</span>`;
+
+  const fngDist = d.fng_distribution.map((b: any) => `${b.label}=${b.n}`).join(' · ');
+
+  const quintileTable = (kind: 'SOL' | 'BTC', q: any): string => {
+    const rows = q.buckets.map((b: any) => `
+      <tr>
+        <td><b>Q${b.bucket}</b><span style="color:#64748b;font-size:10px"> ${b.range_label}</span></td>
+        <td>${b.n}</td>
+        <td>${fmtSol(b.total_net_sol)}</td>
+        <td>${fmtPct(b.avg_net_pct)}</td>
+        <td>${fmtWr(b.win_rate)}</td>
+        <td>${fmtSol(b.drop_top3_net_sol)}</td>
+      </tr>`).join('');
+    const unknownRow = q.unknown
+      ? `<tr style="background:#33415522">
+          <td><span style="color:#94a3b8">unknown</span><span style="color:#64748b;font-size:10px"> (no market row)</span></td>
+          <td>${q.unknown.n}</td>
+          <td>${fmtSol(q.unknown.total_net_sol)}</td>
+          <td>${fmtPct(q.unknown.avg_net_pct)}</td>
+          <td>${fmtWr(q.unknown.win_rate)}</td>
+          <td>${fmtSol(q.unknown.drop_top3_net_sol)}</td>
+        </tr>`
+      : '';
+    const flag = q.low_sample ? '<span style="color:#fbbf24;font-size:10px">⚠ terciles fallback (low sample)</span>' : '';
+    return `
+      <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">
+        ${kind}/USD daily return ${flag}
+      </div>
+      <table class="table" style="font-size:11px">
+        <thead><tr><th>Bucket</th><th>n</th><th>Net SOL</th><th>Avg %</th><th>Win %</th><th>Drop-top3</th></tr></thead>
+        <tbody>${rows}${unknownRow}</tbody>
+      </table>`;
+  };
+
+  const fngTable = (s: any): string => {
+    const rows = s.fear_greed.buckets.map((b: any) => `
+      <tr>
+        <td><b>${b.label}</b><span style="color:#64748b;font-size:10px"> (${b.value_range})</span></td>
+        <td>${b.n}</td>
+        <td>${fmtSol(b.total_net_sol)}</td>
+        <td>${fmtPct(b.avg_net_pct)}</td>
+        <td>${fmtWr(b.win_rate)}</td>
+      </tr>`).join('');
+    return `
+      <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Fear & Greed regime</div>
+      <table class="table" style="font-size:11px">
+        <thead><tr><th>Regime</th><th>n</th><th>Net SOL</th><th>Avg %</th><th>Win %</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  };
+
+  const strategyCards = d.by_strategy.map((s: any) => `
+    <div data-strategy="${escHtml(s.strategy_id)}" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:12px">
+      <div style="margin-bottom:8px">
+        <span style="color:#a78bfa;font-weight:600">${escHtml(s.strategy_id)}</span>
+        <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(s.label)}</span>
+        <span style="color:#64748b;font-size:11px;margin-left:8px">n=${s.n_total}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+        <div>${quintileTable('SOL', s.sol_return)}</div>
+        <div>${quintileTable('BTC', s.btc_return)}</div>
+      </div>
+      <div>${fngTable(s)}</div>
+    </div>`).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">Trends — External Market Regime
+        <span style="color:#64748b;font-size:11px;font-weight:400">— ${d.market_days} market days (${d.date_range.earliest} → ${d.date_range.latest}) · ${d.bucketing_mode} · F&G dist: ${fngDist}</span>
+      </div>
+      ${strategyCards}
+    </div>`;
+}
+
+/** SL precursor / pattern panel — per-strategy time-to-SL, feature signature,
+ *  clustering test, near-miss recoveries, exit-mix calendar. */
+export function renderSlPrecursorPanel(data: any): string {
+  const d = data.sl_precursor;
+  if (!d || !Array.isArray(d.strategies) || d.strategies.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">SL Precursor — Stop-Loss Pattern Mining</div>
+      <p style="color:#94a3b8">No strategies with ≥ ${d?.config?.min_trades_per_strategy ?? 50} closed trades yet.</p>
+    </div>`;
+  }
+
+  const fmtPct = (v: number | null, suffix = '%'): string => v == null
+    ? '<span style="color:#64748b">-</span>'
+    : `<span style="color:${v > 0 ? '#22d3ee' : '#f87171'}">${v > 0 ? '+' : ''}${v}${suffix}</span>`;
+  const fmtNum = (v: number | null): string => v == null
+    ? '<span style="color:#64748b">-</span>'
+    : `<span>${v}</span>`;
+  const fmtD = (v: number | null): string => {
+    if (v == null) return '<span style="color:#64748b">-</span>';
+    const color = Math.abs(v) > 0.3 ? (v > 0 ? '#f87171' : '#22d3ee') : '#94a3b8';
+    return `<span style="color:${color}">${v > 0 ? '+' : ''}${v.toFixed(3)}</span>`;
+  };
+  const clusterBadge = (flag: string, ratio: number | null) => {
+    const styles: Record<string, { bg: string; fg: string; border: string }> = {
+      'clustered':              { bg: '#7f1d1d33', fg: '#f87171', border: '#7f1d1d' },
+      'under-dispersed':        { bg: '#065f4633', fg: '#4ade80', border: '#065f46' },
+      'independent':            { bg: '#33415533', fg: '#94a3b8', border: '#334155' },
+      'insufficient-windows':   { bg: '#33415533', fg: '#64748b', border: '#334155' },
+    };
+    const s = styles[flag] ?? styles['independent'];
+    const ratioStr = ratio == null ? '' : ` · ratio ${ratio}`;
+    return `<span style="background:${s.bg};color:${s.fg};border:1px solid ${s.border};padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600">${flag}${ratioStr}</span>`;
+  };
+
+  const stratCards = d.strategies.map((s: any) => {
+    const sidEsc = escHtml(s.strategy_id);
+
+    const ttslRows = s.time_to_sl.map((b: any) => `
+      <tr>
+        <td>${b.range_label}</td>
+        <td>${b.n}</td>
+        <td>${b.share_of_sls_pct}%</td>
+        <td>${fmtPct(b.mean_net_pct)}</td>
+      </tr>`).join('');
+    const ttslTable = `<table class="table" style="font-size:11px">
+      <thead><tr><th>Held</th><th>n</th><th>Share of SLs</th><th>Mean exit %</th></tr></thead>
+      <tbody>${ttslRows}</tbody>
+    </table>`;
+
+    const precursorRows = s.precursors.map((p: any) => `
+      <tr style="${p.notable ? 'background:#3b1d1d22' : ''}">
+        <td><code style="color:${p.notable ? '#fbbf24' : '#94a3b8'}">${p.feature}</code></td>
+        <td>${fmtNum(p.sl_mean)}<span style="color:#64748b;font-size:10px"> (n=${p.sl_n})</span></td>
+        <td>${fmtNum(p.tp_mean)}<span style="color:#64748b;font-size:10px"> (n=${p.tp_n})</span></td>
+        <td>${fmtD(p.cohens_d)}</td>
+      </tr>`).join('');
+    const precursorTable = `<table class="table" style="font-size:11px">
+      <thead><tr><th>Feature</th><th>SL mean</th><th>TP mean</th><th title="(mean_SL - mean_TP) / pooled_sd">Cohen's d</th></tr></thead>
+      <tbody>${precursorRows}</tbody>
+    </table>`;
+    const topPrec = s.top_precursors.length === 0
+      ? '<p style="color:#64748b;font-size:11px;margin:4px 0">No notable precursors (no feature with |d| > 0.3 and cohort sizes met).</p>'
+      : `<p style="color:#94a3b8;font-size:11px;margin:4px 0">Top precursors: ${s.top_precursors.map((p: any) => `<code style="color:#fbbf24">${p.feature}</code> (d=${fmtD(p.cohens_d).replace(/<[^>]+>/g, '')})`).join(' · ')}</p>`;
+
+    const nm = s.near_miss;
+    const nmRows = (nm.rows || []).slice(0, 10).map((r: any) => `
+      <tr>
+        <td><code style="color:#94a3b8;font-size:10px">${escHtml(r.mint).slice(0, 8)}…</code></td>
+        <td>${r.intra_low_at_t_sec}s</td>
+        <td>${r.pct_above_sl.toFixed(3)}%</td>
+        <td>${fmtPct(r.net_return_pct)}</td>
+        <td><span style="color:#94a3b8;font-size:10px">${r.exit_reason}</span></td>
+      </tr>`).join('');
+    const nmTable = nmRows
+      ? `<table class="table" style="font-size:11px">
+          <thead><tr><th>Mint</th><th>Low at t</th><th>% above SL</th><th>Net</th><th>Exit</th></tr></thead>
+          <tbody>${nmRows}</tbody>
+        </table>`
+      : '<p style="color:#64748b;font-size:11px;margin:4px 0">No near-miss recoveries.</p>';
+
+    const c = s.clustering;
+    const clusterLine = `
+      <p style="color:#94a3b8;font-size:11px;margin:4px 0">
+        Clustering: ${clusterBadge(c.flag, c.variance_ratio)} · ${c.windows_used} windows used (${c.windows_skipped_low_n} skipped &lt;${d.config.cluster_min_trades_per_window})
+        · pooled SL rate ${c.pooled_sl_rate == null ? '-' : (c.pooled_sl_rate * 100).toFixed(1) + '%'}
+      </p>`;
+
+    const dowHeader = `<tr><th>Bucket</th><th>n</th><th>TP</th><th>SL</th><th>Trail-SL</th><th>Trail-TP</th><th>BE</th><th>Timeout</th></tr>`;
+    const mixRow = (r: any) => `<tr>
+      <td>${r.bucket}</td><td>${r.n}</td><td>${r.take_profit}</td><td>${r.stop_loss}</td>
+      <td>${r.trailing_stop}</td><td>${r.trailing_tp}</td><td>${r.breakeven_stop}</td><td>${r.timeout}</td>
+    </tr>`;
+    const dowMix = `<table class="table" style="font-size:10px"><thead>${dowHeader}</thead><tbody>${s.exit_mix_by_dow.map(mixRow).join('')}</tbody></table>`;
+
+    return `
+      <div data-strategy="${sidEsc}" style="background:#0f172a;border:1px solid #334155;border-radius:6px;padding:12px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div>
+            <span style="color:#a78bfa;font-weight:600">${sidEsc}</span>
+            <span style="color:#94a3b8;font-size:12px;margin-left:6px">${escHtml(s.label)}</span>
+            <span style="color:#64748b;font-size:11px;margin-left:8px">n=${s.n_closed} · SLs=${s.n_sl} (${s.sl_rate_pct}%)</span>
+          </div>
+        </div>
+        ${clusterLine}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px">
+          <div>
+            <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Time-to-SL distribution</div>
+            ${ttslTable}
+          </div>
+          <div>
+            <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Near-miss recoveries (within ${nm.threshold_pct}% of SL)</div>
+            <p style="color:#94a3b8;font-size:11px;margin:0 0 4px">${nm.n_near_miss} near-miss / ${nm.n_winners_checked} winners checked</p>
+            ${nmTable}
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Precursor signature (SL vs TP cohorts)</div>
+          ${topPrec}
+          ${precursorTable}
+        </div>
+        <div style="margin-top:12px">
+          <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Exit-reason mix by UTC day-of-week</div>
+          ${dowMix}
+        </div>
+      </div>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-title">SL Precursor — Stop-Loss Pattern Mining
+        <span style="color:#64748b;font-size:11px;font-weight:400">— per-strategy precursor signature · clustering · near-miss recoveries · exit-mix by calendar</span>
+      </div>
+      ${stratCards}
+    </div>`;
+}
+
+/** Cross-strategy portfolio panel — pairwise Pearson, combined equity, concentration. */
+export function renderPortfolioCorrPanel(data: any): string {
+  const d = data.portfolio_corr;
+  if (!d || d.strategy_count === 0 || d.matrix.strategies.length === 0) {
+    return `
+    <div class="card">
+      <div class="card-title">Portfolio — Cross-Strategy Correlation</div>
+      <p style="color:#94a3b8">${d?.notes?.[0] ?? 'No enabled strategies — toggle one on to populate.'}</p>
+    </div>`;
+  }
+
+  const fmtCorr = (r: number | null): string => {
+    if (r == null) return '<span style="color:#64748b">-</span>';
+    const a = Math.abs(r);
+    let color = '#94a3b8';
+    if (a >= 0.7) color = r > 0 ? '#f87171' : '#22d3ee';
+    else if (a >= 0.3) color = r > 0 ? '#fbbf24' : '#67e8f9';
+    return `<span style="color:${color}">${r > 0 ? '+' : ''}${r.toFixed(3)}</span>`;
+  };
+  const fmtSol = (v: number): string => {
+    const color = v > 0 ? '#22d3ee' : v < 0 ? '#f87171' : '#94a3b8';
+    return `<span style="color:${color}">${v > 0 ? '+' : ''}${v.toFixed(3)}</span>`;
+  };
+
+  // Matrix header + rows
+  const sids = d.matrix.strategies;
+  const matrixHeader = `<tr><th></th>${sids.map((s: string) => `<th style="font-size:10px;writing-mode:vertical-rl;transform:rotate(180deg);padding:4px 2px">${escHtml(s)}</th>`).join('')}</tr>`;
+  const matrixRows = sids.map((sa: string, i: number) => `
+    <tr>
+      <td style="font-size:10px"><b>${escHtml(sa)}</b></td>
+      ${d.matrix.rows[i].map((r: number | null, j: number) => {
+        if (i === j) return `<td style="text-align:center;color:#475569;font-size:10px">·</td>`;
+        return `<td style="text-align:center">${fmtCorr(r)}</td>`;
+      }).join('')}
+    </tr>`).join('');
+
+  const pairRow = (p: any) => `
+    <tr>
+      <td><code style="color:#a78bfa">${escHtml(p.strategy_a)}</code></td>
+      <td><code style="color:#a78bfa">${escHtml(p.strategy_b)}</code></td>
+      <td>${fmtCorr(p.pearson)}</td>
+      <td>${p.overlap_days}</td>
+    </tr>`;
+  const redundancyTable = d.redundancy_top.length === 0
+    ? '<p style="color:#94a3b8;font-size:11px;margin:0">No qualifying pairs.</p>'
+    : `<table class="table" style="font-size:11px">
+        <thead><tr><th>Strategy A</th><th>Strategy B</th><th>Pearson</th><th>Overlap (d)</th></tr></thead>
+        <tbody>${d.redundancy_top.map(pairRow).join('')}</tbody>
+      </table>`;
+  const diversifierTable = d.diversifier_top.length === 0
+    ? '<p style="color:#94a3b8;font-size:11px;margin:0">No qualifying pairs.</p>'
+    : `<table class="table" style="font-size:11px">
+        <thead><tr><th>Strategy A</th><th>Strategy B</th><th>Pearson</th><th>Overlap (d)</th></tr></thead>
+        <tbody>${d.diversifier_top.map(pairRow).join('')}</tbody>
+      </table>`;
+
+  const c = d.combined;
+  const equityStats = `
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:8px">
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:4px;padding:8px">
+        <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.05em">Terminal SOL</div>
+        <div style="font-size:14px;font-weight:600;margin-top:2px">${fmtSol(c.terminal_sol)}</div>
+      </div>
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:4px;padding:8px">
+        <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.05em">Sharpe (ann.)</div>
+        <div style="font-size:14px;font-weight:600;margin-top:2px;color:${c.sharpe_annualized != null && c.sharpe_annualized > 0 ? '#22d3ee' : '#f87171'}">${c.sharpe_annualized == null ? '-' : c.sharpe_annualized.toFixed(2)}</div>
+      </div>
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:4px;padding:8px">
+        <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.05em">Max DD SOL</div>
+        <div style="font-size:14px;font-weight:600;margin-top:2px;color:#f87171">${c.max_drawdown_sol.toFixed(3)}${c.max_drawdown_pct == null ? '' : ` <span style="color:#64748b;font-size:10px">(${c.max_drawdown_pct.toFixed(1)}%)</span>`}</div>
+      </div>
+      <div style="background:#0f172a;border:1px solid #334155;border-radius:4px;padding:8px">
+        <div style="color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.05em">Active days</div>
+        <div style="font-size:14px;font-weight:600;margin-top:2px">${c.days}</div>
+      </div>
+    </div>`;
+
+  // Simple equity sparkline (cum_net_sol)
+  const cumValues = c.equity_curve.map((p: any) => p.cum_net_sol);
+  const equitySparkline = cumValues.length > 0
+    ? `<div style="margin-bottom:12px">${renderSparkline(cumValues, 600, 80)}</div>`
+    : '';
+
+  const conc = d.concentration;
+  const concSummary = conc.median_max_share_pct == null
+    ? '<p style="color:#94a3b8;font-size:11px;margin:0">Insufficient daily data.</p>'
+    : `<p style="color:#94a3b8;font-size:12px;margin:0">
+        Median top-1 share: <b>${conc.median_max_share_pct}%</b> ·
+        p90: <b>${conc.p90_max_share_pct}%</b> ·
+        ${conc.daily.length} days
+       </p>`;
+
+  return `
+    <div class="card">
+      <div class="card-title">Portfolio — Cross-Strategy Correlation
+        <span style="color:#64748b;font-size:11px;font-weight:400">— ${d.strategy_count} enabled strategies · pairwise Pearson on daily net SOL</span>
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Combined portfolio equity (all enabled strategies summed daily)</div>
+        ${equityStats}
+        ${equitySparkline}
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:14px">
+        <div>
+          <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Redundancy top (highest |r|)</div>
+          ${redundancyTable}
+        </div>
+        <div>
+          <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Diversifier top (lowest |r|)</div>
+          ${diversifierTable}
+        </div>
+      </div>
+      <div style="margin-bottom:14px">
+        <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Concentration: top-1 strategy share of daily |net SOL|</div>
+        ${concSummary}
+      </div>
+      <div>
+        <div style="color:#94a3b8;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Pearson matrix</div>
+        <div style="overflow-x:auto"><table class="table" style="font-size:11px">
+          <thead>${matrixHeader}</thead>
+          <tbody>${matrixRows}</tbody>
+        </table></div>
+      </div>
+    </div>`;
+}
+
 /** Filter + TP/SL counterfactual panel. */
 export function renderCounterfactualPanel(data: any): string {
   const cf = data.counterfactual;
