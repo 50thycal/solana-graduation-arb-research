@@ -1,0 +1,10 @@
+{
+  "commands": [
+    { "action": "delete", "id": "v25-bot-excl-tp150" },
+    {
+      "action": "journal-update",
+      "id": "v25-bot-excl-tp150",
+      "note": "KILLED 2026-05-17 — INVALID at n=137: total_net_sol=-1.72 SOL, drop_top3=-4.14 SOL. Two hard SOL-bar gates failed (total<0 AND drop_top3<0). Hypothesis falsified: widening TP to 150 + tightening SL to 25 on the bot-excluded universe does NOT capture more right-tail value — the fat-tail population this universe selects for doesn't reliably reach +150%, and the trades that would've exited cleanly at TP=100 either kept running but reversed to SL=25 or timed out at break-even. The same universe with TP=100 (v25-bot-excl-climbing) currently scores 100 on the Promotion Readiness scorecard. Lesson: TP/SL ratio is universe-dependent — wider TP requires a universe with reliable right-tail extension (e.g. vel 20-50 + climbing where +150% is on-distribution), NOT the bot-excluded universe which has fat tails but inconsistent magnitude."
+    }
+  ]
+}
