@@ -2,6 +2,7 @@ import {
   Connection,
   PublicKey,
   Transaction,
+  TransactionInstruction,
   ComputeBudgetProgram,
 } from '@solana/web3.js';
 import BN from 'bn.js';
@@ -9,7 +10,7 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 import type { ExecutionMode } from './config';
 import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL } from './config';
-import { Wallet, WSOL_MINT, getAssociatedTokenAddress, getMintTokenProgram } from './wallet';
+import { Wallet, WSOL_MINT, getAssociatedTokenAddress } from './wallet';
 import {
   buildBuyInstructions,
   buildSellInstructions,
@@ -17,16 +18,24 @@ import {
   computeExpectedQuoteOut,
 } from './pumpswap-swap';
 import { buildJitoTipIx, submitBundle } from './jito';
+import {
+  getMintProfile,
+  buildIdempotentAtaCreateIx,
+  getTransferFeeForRawAmount,
+} from './token-2022';
 
 const logger = makeLogger('trading-executor');
 
-// ── Fill-attribution constants ──────────────────────────────────────────────
+// ── Fill-attribution constants ────────────────────────────────────
 // Tx signatures cost 5000 lamports per signer. Our buy/sell txs have one signer.
 const TX_FEE_LAMPORTS = 5_000;
 // SPL token account rent-exempt minimum (165-byte account). This is what the
 // idempotent create-ATA ix pays when the ATA doesn't already exist — and it
 // stays locked up in the account until we close it. To keep per-trade slippage
 // measurement honest we subtract this from solSpent on any fresh-ATA buy.
+// For Token-2022 mints with holder-side extensions the actual rent is higher
+// (~2.5–3.0M lamports depending on extensions) — slippage attribution will be
+// off by the delta on those, but the trade itself succeeds.
 const TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
 
 export interface PoolPriceResult {
@@ -75,7 +84,7 @@ export function readTokenAccountAmount(data: Buffer): number | null {
   }
 }
 
-// ── Vault price deduplication cache ────────────────────────────────────────
+// ── Vault price deduplication cache ────────────────────────────────
 //
 // Multiple strategies may have positions on the same pool. Without dedup,
 // 6 strategies = 6 identical RPC calls per 5-second tick. This cache ensures
@@ -311,7 +320,7 @@ export class Executor {
     return this.liveSell(mint, tokensHeld, exitPriceSol, poolCtx, effectiveMode);
   }
 
-  // ── Shadow: quote on-chain, don't submit ─────────────────────────────────
+  // ── Shadow: quote on-chain, don't submit ─────────────────────────
 
   private async shadowBuy(
     mint: string,
@@ -399,7 +408,7 @@ export class Executor {
     };
   }
 
-  // ── Live: build, sign, submit, measure ────────────────────────────────────
+  // ── Live: build, sign, submit, measure ───────────────────────────
 
   private async liveBuy(
     mint: string,
@@ -435,30 +444,40 @@ export class Executor {
         errorMessage: 'live: pool reserves read failed',
       };
     }
-    const solInLamports = BigInt(Math.floor(amountSol * 1e9));
-    const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
-    const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
-    const expectedBaseOutRaw = computeExpectedBaseOut(solRes, tokRes, solInLamports);
-    // 5% slippage tolerance on the on-chain guardrail — our safety preflight
-    // has already enforced a tighter bound, this is the last-resort backstop.
-    const minBaseOutRaw = (expectedBaseOutRaw * 95n) / 100n;
-    const maxQuoteInLamports = (solInLamports * 105n) / 100n;
 
-    // Pre-fill snapshot for fill attribution:
-    //   baseBalBefore       — raw u64 tokens already in wallet (0 if fresh)
-    //   baseAtaExistsBefore — was the ATA already paid-for? drives rent subtraction
-    //   walletSolBefore     — lamports before tx
-    // Detect the mint's token program first — PumpFun has been migrating to
-    // Token-2022, and the ATA address depends on the program. Pre-fix, this
-    // always derived the standard SPL ATA, so for Token-2022 mints we were
-    // checking a phantom address and miscounting rent overhead.
+    // Detect mint program + extensions before AMM math. PumpFun has migrated
+    // graduations to Token-2022 with extensions — we need the program ID for
+    // ATA derivation and the extension list to (a) discount the transfer fee
+    // from min_base_out and (b) pre-create a correctly-sized holder ATA.
+    // Pre-fix, the standard SPL ATA was always derived, the transfer fee was
+    // ignored, and trade 10424 (PURPLECUP, T-2022 + extensions) reverted
+    // with InsufficientFundsForRent.
     const walletPk = this.wallet.pubkey;
-    const baseTokenProgram = await getMintTokenProgram(this.connection, mintPk);
+    const mintProfile = await getMintProfile(this.connection, mintPk);
+    const baseTokenProgram = mintProfile.tokenProgram;
     const baseAta = getAssociatedTokenAddress(mintPk, walletPk, baseTokenProgram);
     const baseAtaInfoBefore = await this.connection.getAccountInfo(baseAta, 'confirmed').catch(() => null);
     const baseAtaExistsBefore = !!baseAtaInfoBefore;
     const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
     const walletSolBefore = await this.wallet.getSolBalance(this.connection);
+
+    const solInLamports = BigInt(Math.floor(amountSol * 1e9));
+    const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
+    const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
+    const expectedBaseOutRaw = computeExpectedBaseOut(solRes, tokRes, solInLamports);
+    // Token-2022 TransferFeeConfig: the program withholds a fee on the
+    // base tokens delivered to us. PumpSwap's on-chain slippage check
+    // (custom error 6004) compares post-fee delivery against min_base_out,
+    // so we pre-discount the expected amount or the program rejects a fill
+    // that satisfied the AMM math itself.
+    const transferFeeOnExpected = mintProfile.hasTransferFee
+      ? await getTransferFeeForRawAmount(this.connection, mintPk, baseTokenProgram, expectedBaseOutRaw)
+      : 0n;
+    const feeAdjustedExpectedBaseOut = expectedBaseOutRaw - transferFeeOnExpected;
+    // 5% slippage tolerance on the on-chain guardrail — our safety preflight
+    // has already enforced a tighter bound, this is the last-resort backstop.
+    const minBaseOutRaw = (feeAdjustedExpectedBaseOut * 95n) / 100n;
+    const maxQuoteInLamports = (solInLamports * 105n) / 100n;
 
     // SDK returns the full swap sequence: ATA-create-idempotent (base + wSOL),
     // wSOL wrap+sync to maxQuoteIn, the swap with all IDL accounts + cashback /
@@ -474,13 +493,43 @@ export class Executor {
     const jitoTipSol = DEFAULT_JITO_TIP_SOL;
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
 
+    // Pre-create the receiver ATA when it doesn't already exist. The SPL ATA
+    // program inspects the mint and allocates the holder account at the
+    // correct size for any declared Token-2022 extensions — funded from our
+    // wallet here. Pre-fix, the PumpSwap SDK's own idempotent ATA-create
+    // sized the account for a standard 165-byte SPL token account, so a
+    // mint with holder-side extensions (e.g. TransferHookAccount) caused
+    // the swap ix to revert with InsufficientFundsForRent when it tried
+    // to write the extension data. With this ix in front, the SDK's
+    // create becomes a no-op (idempotent) and the swap writes into a
+    // properly-sized ATA. Caused trade 10424's failure mode.
+    const ataPreCreateIxs: TransactionInstruction[] = baseAtaExistsBefore
+      ? []
+      : [buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram)];
+
+    if (mintProfile.hasTransferHook) {
+      // TransferHook mints require the swap ix to include the hook program's
+      // ExtraAccountMetaList accounts in remaining_accounts. PumpSwap SDK
+      // v1.15.x does not supply those by default — the swap is likely to
+      // revert with the hook program's own error code. Log so the failure
+      // pattern is visible in the operator's recent-errors view; we'll
+      // decide whether to fork the SDK or hand-roll the ix once we have
+      // enough live samples to know how common this is.
+      logger.warn(
+        { mint, extensions: mintProfile.extensionTypes },
+        'Token-2022 mint declares TransferHook — swap may revert if SDK omits hook extra accounts',
+      );
+    }
+
     const ixs = [
       // 200k CU limit covers the ~123k buy / ~111k sell measured via
       // /api/verify-pumpswap simulation against live chain (2026-04-25),
       // with ~80k headroom for the Jito tip ix + live-blockhash variance.
-      // Was 400k — cut for priority-fee savings before shadow rollout.
+      // The pre-create ATA ix (when present) adds ~12k CU for standard SPL
+      // and ~20k for Token-2022 with extensions — still well within budget.
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
+      ...ataPreCreateIxs,
       ...swapIxs,
       buildJitoTipIx(walletPk, jitoTipLamports),
     ];
@@ -523,6 +572,9 @@ export class Executor {
     //   (d) token-account rent if the baseMint ATA was freshly created
     // wSOL ATA is created AND closed in the same tx, so its rent nets to 0.
     // Subtracting (b–d) gives us the isolated swap cost for slippage attribution.
+    // For Token-2022 mints with holder-side extensions the actual rent
+    // on (d) is higher than the constant — attribution will be slightly
+    // off for those, but the trade itself succeeds.
     const overheadLamports =
       jitoTipLamports + TX_FEE_LAMPORTS + (baseAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS);
     const solSpentLamports = walletSolBefore - walletSolAfter;
@@ -576,6 +628,8 @@ export class Executor {
         swapCostSol, overheadLamports, effectivePrice,
         measuredSlippagePct: measuredSlippagePct.toFixed(3),
         latencyMs: submission.latencyMs,
+        isToken2022: mintProfile.isToken2022,
+        hasTransferFee: mintProfile.hasTransferFee,
       },
       'Live buy filled'
     );
@@ -632,11 +686,27 @@ export class Executor {
         errorMessage: 'live: pool reserves read failed',
       };
     }
+    // Mirror the buy-side TransferFee adjustment: only (baseIn - fee) actually
+    // reaches the pool, so the AMM quote must be computed against the post-fee
+    // amount or min_quote_out is set higher than the program will deliver and
+    // the swap reverts on the on-chain slippage check.
     const baseInRaw = BigInt(actualBaseRaw);
+    const sellMintProfile = await getMintProfile(this.connection, mintPk);
+    const transferFeeOnIn = sellMintProfile.hasTransferFee
+      ? await getTransferFeeForRawAmount(this.connection, mintPk, sellMintProfile.tokenProgram, baseInRaw)
+      : 0n;
+    const effectiveBaseIn = baseInRaw - transferFeeOnIn;
     const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
     const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
-    const expectedSolOut = computeExpectedQuoteOut(solRes, tokRes, baseInRaw);
+    const expectedSolOut = computeExpectedQuoteOut(solRes, tokRes, effectiveBaseIn);
     const minQuoteOut = (expectedSolOut * 95n) / 100n;
+
+    if (sellMintProfile.hasTransferHook) {
+      logger.warn(
+        { mint, extensions: sellMintProfile.extensionTypes },
+        'Token-2022 mint declares TransferHook on sell — swap may revert if SDK omits hook extra accounts',
+      );
+    }
 
     // SDK builds the full sell sequence: ATA-create-idempotent for wSOL, the
     // sell ix (with cashback / poolV2 / buyback remaining accounts), and the
@@ -702,6 +772,8 @@ export class Executor {
         mint, mode, path: submission.path, solReceived, effectivePrice,
         measuredSlippagePct: measuredSlippagePct.toFixed(3),
         latencyMs: submission.latencyMs,
+        isToken2022: sellMintProfile.isToken2022,
+        hasTransferFee: sellMintProfile.hasTransferFee,
       },
       'Live sell filled'
     );
