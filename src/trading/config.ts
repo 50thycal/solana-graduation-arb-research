@@ -130,6 +130,29 @@ export interface StrategyParams {
   entryHourUtcMin?: number;
   /** Inclusive end of allowed UTC entry hour (0-23). See entryHourUtcMin. */
   entryHourUtcMax?: number;
+
+  // ── Market-regime gate (optional, uses market_daily) ─────────────────
+  // All three filters are independent. If set, the trade's entry UTC date
+  // must match the strategy's filter for entry to proceed. When the
+  // market_daily row for the entry date is missing (e.g. CoinGecko fetch
+  // lag), the gate is permissive (allows trade + logs a warning) to avoid
+  // blackholing trades during transient fetcher outages.
+  //
+  // SOL daily return = (sol_usd_close - sol_usd_open) / sol_usd_open * 100.
+  // Same formula for BTC. Fear & Greed value is the raw 0-100 index.
+  /** Min SOL daily return % for entry (inclusive). E.g. -1.0 = only trade
+   *  when SOL is down less than 1% or up. */
+  entrySolReturnPctMin?: number;
+  /** Max SOL daily return % for entry (inclusive). */
+  entrySolReturnPctMax?: number;
+  /** Min BTC daily return % for entry. */
+  entryBtcReturnPctMin?: number;
+  /** Max BTC daily return % for entry. */
+  entryBtcReturnPctMax?: number;
+  /** Min Fear & Greed value 0-100 (inclusive). 45 = Neutral+. */
+  entryFngValueMin?: number;
+  /** Max Fear & Greed value 0-100 (inclusive). */
+  entryFngValueMax?: number;
 }
 
 export interface TradingConfig {
@@ -203,6 +226,14 @@ export interface TradingConfig {
   // ── Time-of-day gate (UTC, optional) ────────────────────────────────────
   entryHourUtcMin?: number;
   entryHourUtcMax?: number;
+
+  // ── Market-regime gate (optional) ───────────────────────────────────────
+  entrySolReturnPctMin?: number;
+  entrySolReturnPctMax?: number;
+  entryBtcReturnPctMin?: number;
+  entryBtcReturnPctMax?: number;
+  entryFngValueMin?: number;
+  entryFngValueMax?: number;
 }
 
 /** Default filter preset: vel 5-20 sol/min — the primary confirmed signal */
@@ -311,6 +342,12 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     maxSlippageBps: cfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
     entryHourUtcMin: cfg.entryHourUtcMin,
     entryHourUtcMax: cfg.entryHourUtcMax,
+    entrySolReturnPctMin: cfg.entrySolReturnPctMin,
+    entrySolReturnPctMax: cfg.entrySolReturnPctMax,
+    entryBtcReturnPctMin: cfg.entryBtcReturnPctMin,
+    entryBtcReturnPctMax: cfg.entryBtcReturnPctMax,
+    entryFngValueMin: cfg.entryFngValueMin,
+    entryFngValueMax: cfg.entryFngValueMax,
   };
 }
 
@@ -349,6 +386,12 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     maxSlippageBps: params.maxSlippageBps ?? globalCfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
     entryHourUtcMin: params.entryHourUtcMin ?? globalCfg.entryHourUtcMin,
     entryHourUtcMax: params.entryHourUtcMax ?? globalCfg.entryHourUtcMax,
+    entrySolReturnPctMin: params.entrySolReturnPctMin ?? globalCfg.entrySolReturnPctMin,
+    entrySolReturnPctMax: params.entrySolReturnPctMax ?? globalCfg.entrySolReturnPctMax,
+    entryBtcReturnPctMin: params.entryBtcReturnPctMin ?? globalCfg.entryBtcReturnPctMin,
+    entryBtcReturnPctMax: params.entryBtcReturnPctMax ?? globalCfg.entryBtcReturnPctMax,
+    entryFngValueMin: params.entryFngValueMin ?? globalCfg.entryFngValueMin,
+    entryFngValueMax: params.entryFngValueMax ?? globalCfg.entryFngValueMax,
   };
 }
 

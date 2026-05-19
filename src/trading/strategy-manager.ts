@@ -720,6 +720,18 @@ export class StrategyManager {
         errors.push('entryHourUtcMax must be an integer 0-23');
       }
     }
+    // Market-regime gate bounds. Each pair (min, max) is independent.
+    const checkRange = (
+      name: string, min: number | undefined, max: number | undefined,
+      lo: number, hi: number,
+    ): void => {
+      if (min != null && (!isFinite(min) || min < lo || min > hi)) errors.push(`${name}Min must be in [${lo}, ${hi}]`);
+      if (max != null && (!isFinite(max) || max < lo || max > hi)) errors.push(`${name}Max must be in [${lo}, ${hi}]`);
+      if (min != null && max != null && min > max) errors.push(`${name}Min must be <= ${name}Max`);
+    };
+    checkRange('entrySolReturnPct', p.entrySolReturnPctMin, p.entrySolReturnPctMax, -100, 1000);
+    checkRange('entryBtcReturnPct', p.entryBtcReturnPctMin, p.entryBtcReturnPctMax, -100, 1000);
+    checkRange('entryFngValue', p.entryFngValueMin, p.entryFngValueMax, 0, 100);
     if (errors.length > 0) {
       throw new Error(`Invalid strategy params: ${errors.join('; ')}`);
     }
