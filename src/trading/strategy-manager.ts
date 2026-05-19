@@ -348,9 +348,10 @@ export class StrategyManager {
   }
 
   upsertStrategy(id: string, label: string, params: StrategyParams, enabled: boolean = true): void {
-    // Validate ID format
-    if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(id)) {
-      throw new Error('Strategy ID must be lowercase alphanumeric + hyphens, 1-32 chars');
+    // Validate ID format. Allow lowercase + uppercase alphanumerics, hyphens,
+    // and dots so cohort-numbered IDs like V29.1 round-trip cleanly. 1-32 chars.
+    if (!/^[A-Za-z0-9][A-Za-z0-9.\-]{0,31}$/.test(id)) {
+      throw new Error('Strategy ID must be alphanumeric + hyphens + dots, 1-32 chars');
     }
 
     // Fix Issue 6: validate numeric params at the API boundary
