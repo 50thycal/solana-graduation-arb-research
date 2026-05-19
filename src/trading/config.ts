@@ -121,6 +121,15 @@ export interface StrategyParams {
   jitoTipSol?: number;
   /** Reject entry if expected slippage > this (bps). Undefined = DEFAULT_MAX_SLIPPAGE_BPS. */
   maxSlippageBps?: number;
+
+  // ── Time-of-day gate (optional, UTC) ──────────────────────────────────
+  /** Inclusive start of allowed UTC entry hour (0-23). If min > max, the
+   *  window wraps around midnight (e.g. min=22, max=6 → 22,23,0..6 allowed).
+   *  Both min and max must be set together; if either is undefined the gate
+   *  is disabled. */
+  entryHourUtcMin?: number;
+  /** Inclusive end of allowed UTC entry hour (0-23). See entryHourUtcMin. */
+  entryHourUtcMax?: number;
 }
 
 export interface TradingConfig {
@@ -190,6 +199,10 @@ export interface TradingConfig {
   // ── Late entry (per-strategy override of T+30 default) ──────────────────
   /** Wall-clock seconds after graduation at which to enter. Default 30. */
   entryTimingSec?: number;
+
+  // ── Time-of-day gate (UTC, optional) ────────────────────────────────────
+  entryHourUtcMin?: number;
+  entryHourUtcMax?: number;
 }
 
 /** Default filter preset: vel 5-20 sol/min — the primary confirmed signal */
@@ -296,6 +309,8 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     executionMode: cfg.executionMode ?? 'paper',
     jitoTipSol: cfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
     maxSlippageBps: cfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
+    entryHourUtcMin: cfg.entryHourUtcMin,
+    entryHourUtcMax: cfg.entryHourUtcMax,
   };
 }
 
@@ -332,5 +347,24 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     executionMode: params.executionMode ?? globalCfg.executionMode ?? 'paper',
     jitoTipSol: params.jitoTipSol ?? globalCfg.jitoTipSol ?? DEFAULT_JITO_TIP_SOL,
     maxSlippageBps: params.maxSlippageBps ?? globalCfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
+    entryHourUtcMin: params.entryHourUtcMin ?? globalCfg.entryHourUtcMin,
+    entryHourUtcMax: params.entryHourUtcMax ?? globalCfg.entryHourUtcMax,
   };
+}
+
+/** Returns true if `hour` (0-23 UTC) falls within the inclusive [min, max]
+ *  window. Wraps around midnight when min > max (e.g. min=22, max=6 → allowed
+ *  hours are 22,23,0,1,2,3,4,5,6). When either bound is undefined, returns
+ *  true (gate is disabled). Caller is responsible for clamping inputs to 0-23. */
+export function isHourInUtcWindow(
+  hour: number,
+  min: number | undefined,
+  max: number | undefined,
+): boolean {
+  if (min == null || max == null) return true;
+  const m = Math.max(0, Math.min(23, Math.floor(min)));
+  const x = Math.max(0, Math.min(23, Math.floor(max)));
+  if (m <= x) return hour >= m && hour <= x;
+  // Wraps midnight: allowed = [m..23] ∪ [0..x]
+  return hour >= m || hour <= x;
 }

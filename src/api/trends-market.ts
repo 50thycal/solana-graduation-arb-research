@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import type { MarketDataFetcherStatus } from '../collector/market-data-fetcher';
 
 /**
  * External market regime panel. Joins closed trades to `market_daily` on
@@ -82,6 +83,10 @@ export interface TrendsMarketData {
   bucketing_mode: 'quintiles' | 'terciles' | 'none';
   fng_distribution: Array<{ label: string; n: number }>;
   by_strategy: StrategyMarketRow[];
+  /** MarketDataFetcher status surfaced from src/index.ts. Null when fetcher
+   *  is not wired in (e.g. during unit tests). Use this from bot-status to
+   *  see if/when the last fetch attempt happened and what the error was. */
+  fetcher_status: MarketDataFetcherStatus | null;
   notes: string[];
 }
 
@@ -171,7 +176,10 @@ function rangeLabelForBucket(bucket: number, cutoffs: number[]): string {
 
 // ── Main compute ──────────────────────────────────────────────────────────
 
-export function computeTrendsMarket(db: Database.Database): TrendsMarketData {
+export function computeTrendsMarket(
+  db: Database.Database,
+  fetcherStatus: MarketDataFetcherStatus | null = null,
+): TrendsMarketData {
   const generated_at = new Date().toISOString();
 
   const marketRows = db.prepare(`
@@ -190,9 +198,13 @@ export function computeTrendsMarket(db: Database.Database): TrendsMarketData {
       bucketing_mode: 'none',
       fng_distribution: [],
       by_strategy: [],
+      fetcher_status: fetcherStatus,
       notes: [
         'No market_daily rows yet — MarketDataFetcher has not populated the table.',
-        'Check GITHUB_TOKEN env (lifecycle hook in src/index.ts) and outbound network to api.coingecko.com.',
+        fetcherStatus?.last_error
+          ? `Last fetcher error: ${fetcherStatus.last_error}`
+          : 'No fetch attempt recorded yet — bot may have just restarted (backfill takes a few seconds).',
+        'Check outbound network access to api.coingecko.com and api.alternative.me from Railway.',
       ],
     };
   }
@@ -254,6 +266,7 @@ export function computeTrendsMarket(db: Database.Database): TrendsMarketData {
       bucketing_mode: bucketingMode,
       fng_distribution: fngDistribution,
       by_strategy: [],
+      fetcher_status: fetcherStatus,
       notes: [`No strategies with >= ${MIN_TRADES_PER_STRATEGY} closed trades — nothing to bucket.`],
     };
   }
@@ -390,6 +403,7 @@ export function computeTrendsMarket(db: Database.Database): TrendsMarketData {
     bucketing_mode: bucketingMode,
     fng_distribution: fngDistribution,
     by_strategy: byStrategy,
+    fetcher_status: fetcherStatus,
     notes: [
       `Per-strategy gate: >= ${MIN_TRADES_PER_STRATEGY} closed trades.`,
       `Bucketing: ${bucketingMode} (need >= ${MIN_DAYS_FOR_QUINTILES} distinct market-data days for quintiles).`,

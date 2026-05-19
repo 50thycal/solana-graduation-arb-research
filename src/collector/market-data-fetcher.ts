@@ -43,28 +43,66 @@ interface FearGreedRow {
   label: string;
 }
 
+export interface MarketDataFetcherStatus {
+  /** Unix seconds of the last fetch attempt (success or failure). */
+  last_attempt_at: number | null;
+  /** Unix seconds of the last successful upsert. */
+  last_success_at: number | null;
+  /** Last error message, or null if last attempt succeeded. */
+  last_error: string | null;
+  /** Whether the initial backfill has completed at least once. */
+  backfill_done: boolean;
+  /** Configured hourly cadence, in ms. */
+  interval_ms: number;
+}
+
 export class MarketDataFetcher {
   private timer: NodeJS.Timeout | null = null;
   private stopped = false;
+  private lastAttemptAt: number | null = null;
+  private lastSuccessAt: number | null = null;
+  private lastError: string | null = null;
+  private backfillDone = false;
 
   constructor(private db: Database.Database) {}
+
+  getStatus(): MarketDataFetcherStatus {
+    return {
+      last_attempt_at: this.lastAttemptAt,
+      last_success_at: this.lastSuccessAt,
+      last_error: this.lastError,
+      backfill_done: this.backfillDone,
+      interval_ms: FETCH_INTERVAL_MS,
+    };
+  }
 
   async start(): Promise<void> {
     const existingCount = (this.db.prepare(`SELECT COUNT(*) AS n FROM market_daily`).get() as { n: number }).n;
     const needsBackfill = existingCount < BACKFILL_DAYS;
+    this.lastAttemptAt = Math.floor(Date.now() / 1000);
     if (needsBackfill) {
       logger.info({ existing: existingCount, target: BACKFILL_DAYS }, 'Market data backfill starting');
       try {
         await this.backfill(BACKFILL_DAYS);
+        this.lastSuccessAt = Math.floor(Date.now() / 1000);
+        this.lastError = null;
+        this.backfillDone = true;
       } catch (err) {
-        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Market data backfill failed (will retry next cycle)');
+        const msg = err instanceof Error ? err.message : String(err);
+        this.lastError = `backfill: ${msg}`;
+        logger.warn({ err: msg }, 'Market data backfill failed (will retry next cycle)');
       }
     } else {
+      this.backfillDone = true;
       logger.info({ existing: existingCount }, 'Market data already backfilled');
       try {
         await this.fetchOnce();
+        this.lastSuccessAt = Math.floor(Date.now() / 1000);
+        this.lastError = null;
       } catch (err) {
-        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Initial market data refresh failed');
+        const msg = err instanceof Error ? err.message : String(err);
+        this.lastError = `fetch: ${msg}`;
+        logger.warn({ err: msg }, 'Initial market data refresh failed');
       }
     }
     this.scheduleNext();
@@ -78,10 +116,15 @@ export class MarketDataFetcher {
   private scheduleNext(): void {
     if (this.stopped) return;
     this.timer = setTimeout(async () => {
+      this.lastAttemptAt = Math.floor(Date.now() / 1000);
       try {
         await this.fetchOnce();
+        this.lastSuccessAt = Math.floor(Date.now() / 1000);
+        this.lastError = null;
       } catch (err) {
-        logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Market data refresh failed (will retry next cycle)');
+        const msg = err instanceof Error ? err.message : String(err);
+        this.lastError = `fetch: ${msg}`;
+        logger.warn({ err: msg }, 'Market data refresh failed (will retry next cycle)');
       } finally {
         this.scheduleNext();
       }

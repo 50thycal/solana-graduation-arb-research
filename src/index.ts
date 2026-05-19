@@ -3133,6 +3133,7 @@ ${rows.map(r => {
   marketDataFetcher.start().catch((err) =>
     logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'MarketDataFetcher initial start failed'),
   );
+  if (gistSync) gistSync.setMarketDataFetcher(marketDataFetcher);
 
   // Start graduation listener (after Express so health endpoint is available)
   // Note: `listener` is declared earlier in main() so /api routes can reference it.

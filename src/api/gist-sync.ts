@@ -81,6 +81,7 @@ import {
 } from '../db/queries';
 import type { StrategyManager } from '../trading/strategy-manager';
 import type { StrategyParams } from '../trading/config';
+import type { MarketDataFetcher } from '../collector/market-data-fetcher';
 import { makeLogger } from '../utils/logger';
 import type { LogBuffer } from '../utils/log-buffer';
 
@@ -320,6 +321,7 @@ export class GistSync {
   private readonly token: string;
   private readonly intervalMs: number;
   private strategyManager: StrategyManager | null = null;
+  private marketDataFetcher: MarketDataFetcher | null = null;
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -361,6 +363,11 @@ export class GistSync {
   /** Wire up the strategy manager so inbound commands can be applied live */
   setStrategyManager(sm: StrategyManager): void {
     this.strategyManager = sm;
+  }
+
+  /** Wire up the market-data fetcher so its status surfaces in trends-market.json */
+  setMarketDataFetcher(fetcher: MarketDataFetcher): void {
+    this.marketDataFetcher = fetcher;
   }
 
   async start(): Promise<void> {
@@ -848,7 +855,10 @@ export class GistSync {
     const trendsTime = await timed('trendsTime', () => computeTrendsTime(this.db));
     const slPrecursor = await timed('slPrecursor', () => computeSlPrecursor(this.db));
     const portfolioCorr = await timed('portfolioCorr', () => computePortfolioCorr(this.db));
-    const trendsMarket = await timed('trendsMarket', () => computeTrendsMarket(this.db));
+    const trendsMarket = await timed('trendsMarket', () => computeTrendsMarket(
+      this.db,
+      this.marketDataFetcher?.getStatus() ?? null,
+    ));
     // counterfactual now runs in the gist-sync worker — see top of buildPayloads.
     const lossPostmortem = await timed('lossPostmortem', () => computeLossPostmortem(this.db));
     const leaveOneOutPnl = await timed('leaveOneOutPnl', () => computeLeaveOneOutPnl(this.db));

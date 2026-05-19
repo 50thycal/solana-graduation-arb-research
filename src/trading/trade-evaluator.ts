@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { Connection } from '@solana/web3.js';
 import { makeLogger } from '../utils/logger';
-import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS } from './config';
+import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, isHourInUtcWindow } from './config';
 import { runFilterPipeline } from './filter-pipeline';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
@@ -73,6 +73,19 @@ export class TradeEvaluator {
         'Entry gate failed'
       );
       return;
+    }
+
+    // ── 1b. Time-of-day gate (optional, UTC) ────────────────────────────────
+    if (cfg.entryHourUtcMin != null && cfg.entryHourUtcMax != null) {
+      const hour = new Date().getUTCHours();
+      if (!isHourInUtcWindow(hour, cfg.entryHourUtcMin, cfg.entryHourUtcMax)) {
+        this.tradeLogger.logSkipped(graduationId, 'time_gate', hour, pctT30, this.strategyId);
+        logger.debug(
+          { graduationId, hour, window: `${cfg.entryHourUtcMin}-${cfg.entryHourUtcMax}`, strategy: this.strategyId },
+          'Time-of-day gate blocked entry'
+        );
+        return;
+      }
     }
 
     // ── 2. Capacity check ────────────────────────────────────────────────────
