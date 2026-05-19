@@ -1,0 +1,57 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v28-best-double-utc-am",
+      "label": "v28 v10-best-double + UTC hour 02-10 [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel >= 20" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel < 50" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -10, "label": "dd > -10%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500,
+        "entryHourUtcMin": 2,
+        "entryHourUtcMax": 10
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v28-best-double-utc-am",
+      "strategy_id": "v28-best-double-utc-am",
+      "cohort_label": "v28",
+      "hypothesis": "Restricting v10-best-double to UTC 02-10 (the +17pp best-hour band per trends-time.json aggregate) reduces SL frequency and lifts per-trade EV vs the unrestricted base. The 5/17-18 bot-wide bleed traded heavily in UTC 14-21 (worst-hour band, -16.5% avg at 18:00 UTC). Time-gating to the best-hour band should improve Sharpe and reduce regime-shift exposure on bad afternoons.",
+      "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 4.0,
+        "target_drop_top3": 0.5,
+        "target_n": 100,
+        "target_days": 75,
+        "kill_criterion": "n>=50 and net_sol<-0.5"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
