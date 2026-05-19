@@ -26,16 +26,8 @@ import {
 
 const logger = makeLogger('trading-executor');
 
-// ── Fill-attribution constants ────────────────────────────────────
-// Tx signatures cost 5000 lamports per signer. Our buy/sell txs have one signer.
+// ── Fill-attribution constants ──────────────────────────────
 const TX_FEE_LAMPORTS = 5_000;
-// SPL token account rent-exempt minimum (165-byte account). This is what the
-// idempotent create-ATA ix pays when the ATA doesn't already exist — and it
-// stays locked up in the account until we close it. To keep per-trade slippage
-// measurement honest we subtract this from solSpent on any fresh-ATA buy.
-// For Token-2022 mints with holder-side extensions the actual rent is higher
-// (~2.5–3.0M lamports depending on extensions) — slippage attribution will be
-// off by the delta on those, but the trade itself succeeds.
 const TOKEN_ACCOUNT_RENT_LAMPORTS = 2_039_280;
 
 export interface PoolPriceResult {
@@ -44,9 +36,6 @@ export interface PoolPriceResult {
   tokenReserves: number;
 }
 
-/** Pool + creator context needed to build a PumpSwap swap. Resolved by the
- *  evaluator (buy) / position manager (sell) from existing ObservationContext
- *  / ActivePosition state. Creator is looked up lazily from the pool account. */
 export interface PoolContext {
   poolAddress: string;
   baseVault: string;
@@ -60,21 +49,12 @@ export interface ExecutionResult {
   txSignature?: string;
   errorMessage?: string;
   dryRun: boolean;
-  /** Execution phase this fill came from — drives downstream accounting. */
   executionMode?: ExecutionMode;
-  /** Measured slippage at fill vs spot price at submission (%). Live + shadow only. */
   measuredSlippagePct?: number;
-  /** Jito tip actually paid (SOL). Undefined in paper/shadow. */
   jitoTipSol?: number;
-  /** Submit → confirm latency in ms. Undefined in paper/shadow. */
   txLandMs?: number;
 }
 
-/**
- * Read the u64 amount from an SPL token account.
- * Layout: [32] mint, [32] owner, [8] amount (little-endian u64) at offset 64.
- * Replicates the logic in PriceCollector.readTokenAccountAmount.
- */
 export function readTokenAccountAmount(data: Buffer): number | null {
   if (data.length < 72) return null;
   try {
@@ -84,38 +64,17 @@ export function readTokenAccountAmount(data: Buffer): number | null {
   }
 }
 
-// ── Vault price deduplication cache ────────────────────────────────
-//
-// Multiple strategies may have positions on the same pool. Without dedup,
-// 6 strategies = 6 identical RPC calls per 5-second tick. This cache ensures
-// only 1 RPC call per unique vault pair per TTL window. In-flight requests
-// are coalesced — concurrent callers share the same promise.
-//
-const VAULT_CACHE_TTL_MS = 4_000; // 4 seconds (shorter than the 5s poll interval)
+const VAULT_CACHE_TTL_MS = 4_000;
 
 interface CachedVaultPrice {
   result: PoolPriceResult | null;
   fetchedAt: number;
 }
 
-/** Settled results cache: key = `${baseVault}:${quoteVault}` */
 const vaultPriceCache = new Map<string, CachedVaultPrice>();
-
-/** In-flight promises: callers arriving while a fetch is in progress share the same promise */
 const inflightFetches = new Map<string, Promise<PoolPriceResult | null>>();
-
-/** Stats for monitoring dedup effectiveness */
 export const vaultPriceCacheStats = { hits: 0, misses: 0, coalesced: 0 };
 
-/**
- * Fetch the current pool price by reading both vault token accounts in a single RPC call.
- * Deduplicates concurrent requests for the same vault pair — multiple strategies monitoring
- * the same pool share a single RPC call per tick.
- *
- * @param critical  When true, uses throttle() (always waits) instead of throttleOrDrop().
- *                  Use critical=true for active position SL/TP monitoring — a missed check
- *                  could mean a late SL exit and much larger losses than expected.
- */
 export async function fetchVaultPrice(
   connection: Connection,
   baseVault: string,
@@ -123,34 +82,21 @@ export async function fetchVaultPrice(
   critical: boolean = false,
 ): Promise<PoolPriceResult | null> {
   const cacheKey = `${baseVault}:${quoteVault}`;
-
-  // 1. Check settled cache (recent result within TTL)
   const cached = vaultPriceCache.get(cacheKey);
   if (cached && (Date.now() - cached.fetchedAt) < VAULT_CACHE_TTL_MS) {
     vaultPriceCacheStats.hits++;
     return cached.result;
   }
-
-  // 2. Check in-flight: if another caller is already fetching this pair, wait for it
   const inflight = inflightFetches.get(cacheKey);
   if (inflight) {
     vaultPriceCacheStats.coalesced++;
     return inflight;
   }
-
-  // 3. No cache, no in-flight — make the actual RPC call
   vaultPriceCacheStats.misses++;
   const fetchPromise = fetchVaultPriceRpc(connection, baseVault, quoteVault, critical);
-
-  // Register in-flight so concurrent callers share this promise
   inflightFetches.set(cacheKey, fetchPromise);
-
   try {
     const result = await fetchPromise;
-    // Only cache successful reads. Caching null poisons subsequent buys/sells
-    // for the full TTL window — multiple shadow strategies firing on the same
-    // graduation would all see a transient null until the cache expired.
-    // Coalescing via inflightFetches still dedupes truly-concurrent calls.
     if (result !== null) {
       vaultPriceCache.set(cacheKey, { result, fetchedAt: Date.now() });
     }
@@ -160,7 +106,6 @@ export async function fetchVaultPrice(
   }
 }
 
-/** Single-pass RPC fetch. Returns null on any failure mode and logs the cause. */
 async function fetchVaultPriceRpcOnce(
   connection: Connection,
   baseVault: string,
@@ -171,7 +116,6 @@ async function fetchVaultPriceRpcOnce(
       new PublicKey(baseVault),
       new PublicKey(quoteVault),
     ]);
-
     if (!accounts[0]?.data || !accounts[1]?.data) {
       logger.debug(
         { baseVault, quoteVault, hasBase: !!accounts[0]?.data, hasQuote: !!accounts[1]?.data },
@@ -179,10 +123,8 @@ async function fetchVaultPriceRpcOnce(
       );
       return null;
     }
-
     const baseAmount = readTokenAccountAmount(accounts[0].data as Buffer);
     const quoteAmount = readTokenAccountAmount(accounts[1].data as Buffer);
-
     if (baseAmount === null || quoteAmount === null) {
       logger.debug({ baseVault, quoteVault }, 'fetchVaultPrice: token amount parse failed');
       return null;
@@ -191,13 +133,9 @@ async function fetchVaultPriceRpcOnce(
       logger.debug({ baseVault, quoteVault, baseAmount, quoteAmount }, 'fetchVaultPrice: zero reserves');
       return null;
     }
-
-    // base = graduated token (6 decimals), quote = wSOL (9 decimals)
     const tokenReserves = baseAmount / 1_000_000;
     const solReserves   = quoteAmount / 1_000_000_000;
-
     if (tokenReserves <= 0 || solReserves <= 0) return null;
-
     return { priceSol: solReserves / tokenReserves, solReserves, tokenReserves };
   } catch (err) {
     logger.debug('fetchVaultPrice RPC error: %s', err instanceof Error ? err.message : String(err));
@@ -205,12 +143,6 @@ async function fetchVaultPriceRpcOnce(
   }
 }
 
-/** Raw RPC fetch — called only when cache misses and no in-flight request exists.
- *  On `critical=true` paths, retries up to 2 times at 500ms intervals (~1s total
- *  wait worst case) to absorb transient RPC errors and the short window right
- *  after graduation when vault accounts may not yet be visible on the connected
- *  RPC node. The 250ms single retry was insufficient — observed cohort-wide
- *  failures on single mints persisted past one retry. */
 const CRITICAL_READ_RETRIES = 2;
 const CRITICAL_READ_RETRY_DELAY_MS = 500;
 
@@ -221,16 +153,12 @@ async function fetchVaultPriceRpc(
   critical: boolean,
 ): Promise<PoolPriceResult | null> {
   if (critical) {
-    // Position monitoring + buys/sells: always wait for a slot — never silently skip
     await globalRpcLimiter.throttle();
   } else if (!await globalRpcLimiter.throttleOrDrop(5)) {
-    // Non-critical callers: yield under load
     return null;
   }
-
   const first = await fetchVaultPriceRpcOnce(connection, baseVault, quoteVault);
   if (first !== null || !critical) return first;
-
   for (let attempt = 1; attempt <= CRITICAL_READ_RETRIES; attempt++) {
     await new Promise(resolve => setTimeout(resolve, CRITICAL_READ_RETRY_DELAY_MS));
     await globalRpcLimiter.throttle();
@@ -245,11 +173,6 @@ export class Executor {
   private readonly wallet: Wallet | null;
   private readonly connection: Connection | null;
 
-  /**
-   * @param globalMode  Global fallback mode (from env). Per-call `mode` overrides it.
-   * @param connection  Solana RPC connection (null → live/shadow unavailable)
-   * @param wallet      Signer keypair (null → live unavailable; shadow still works)
-   */
   constructor(
     globalMode: ExecutionMode = 'paper',
     connection: Connection | null = null,
@@ -260,12 +183,6 @@ export class Executor {
     this.wallet = wallet;
   }
 
-  /** Simulate or execute a buy. Dispatch by execution mode:
-   *   paper      — compute effective price from slippage estimate, no chain read
-   *   shadow     — read live pool reserves, compute measured slippage, no tx
-   *   live_micro — override amount to MICRO_TRADE_SIZE_SOL, then live path
-   *   live_full  — live path at provided amount
-   */
   async buy(
     mint: string,
     amountSol: number,
@@ -275,7 +192,6 @@ export class Executor {
     mode?: ExecutionMode,
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
-
     if (effectiveMode === 'paper') {
       const slippagePct = (slippageEstPct != null && slippageEstPct > 0) ? slippageEstPct : 1.75;
       const effectivePrice = expectedPriceSol * (1 + slippagePct / 100);
@@ -284,17 +200,13 @@ export class Executor {
         success: true, effectivePrice, tokensReceived, dryRun: true, executionMode: 'paper',
       };
     }
-
     if (effectiveMode === 'shadow') {
       return this.shadowBuy(mint, amountSol, expectedPriceSol, poolCtx);
     }
-
-    // Hard override to micro size on live_micro, regardless of strategy config.
     const actualAmount = effectiveMode === 'live_micro' ? MICRO_TRADE_SIZE_SOL : amountSol;
     return this.liveBuy(mint, actualAmount, expectedPriceSol, poolCtx, effectiveMode);
   }
 
-  /** Simulate or execute a sell — same mode dispatch as buy. */
   async sell(
     mint: string,
     tokensHeld: number,
@@ -304,7 +216,6 @@ export class Executor {
     mode?: ExecutionMode,
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
-
     if (effectiveMode === 'paper') {
       const slippagePct = (slippageEstPct != null && slippageEstPct > 0) ? slippageEstPct : 1.75;
       const effectivePrice = exitPriceSol * (1 - slippagePct / 100);
@@ -312,15 +223,11 @@ export class Executor {
         success: true, effectivePrice, tokensReceived: 0, dryRun: true, executionMode: 'paper',
       };
     }
-
     if (effectiveMode === 'shadow') {
       return this.shadowSell(mint, tokensHeld, exitPriceSol, poolCtx);
     }
-
     return this.liveSell(mint, tokensHeld, exitPriceSol, poolCtx, effectiveMode);
   }
-
-  // ── Shadow: quote on-chain, don't submit ─────────────────────────
 
   private async shadowBuy(
     mint: string,
@@ -357,9 +264,6 @@ export class Executor {
     return {
       success: true, effectivePrice, tokensReceived,
       dryRun: true, executionMode: 'shadow', measuredSlippagePct,
-      // Simulate the Jito tip cost a live fill would have paid. Not a real
-      // expense in shadow, but recorded so net_return_pct reflects what live
-      // would actually net out.
       jitoTipSol: DEFAULT_JITO_TIP_SOL,
     };
   }
@@ -370,9 +274,6 @@ export class Executor {
     exitPriceSol: number,
     poolCtx?: PoolContext,
   ): Promise<ExecutionResult> {
-    // Mirror shadowBuy: report failure on missing context / pool read failure
-    // instead of fake-succeeding. Pre-fix, these paths silently inflated shadow
-    // success metrics that feed live-strategy promotion decisions.
     if (!this.connection || !poolCtx?.baseVault || !poolCtx?.quoteVault) {
       return {
         success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
@@ -394,7 +295,6 @@ export class Executor {
     const solOut = computeExpectedQuoteOut(solRes, tokRes, baseIn);
     const solReceived = Number(solOut) / 1e9;
     const effectivePrice = solReceived / tokensHeld;
-    // Exit slippage is measured the same way — how much worse our fill is vs spot.
     const measuredSlippagePct = (1 - effectivePrice / pool.priceSol) * 100;
     logger.info(
       { mint, tokensHeld, spotPrice: pool.priceSol, measuredSlippagePct: measuredSlippagePct.toFixed(3) },
@@ -403,12 +303,9 @@ export class Executor {
     return {
       success: true, effectivePrice, tokensReceived: 0,
       dryRun: true, executionMode: 'shadow', measuredSlippagePct,
-      // Simulate the exit-side Jito tip — same rationale as shadowBuy.
       jitoTipSol: DEFAULT_JITO_TIP_SOL,
     };
   }
-
-  // ── Live: build, sign, submit, measure ───────────────────────────
 
   private async liveBuy(
     mint: string,
@@ -435,7 +332,6 @@ export class Executor {
     const mintPk = new PublicKey(mint);
     const poolPk = new PublicKey(poolCtx.poolAddress);
 
-    // Measure spot + quote expected output for slippage attribution post-fill.
     const pool = await fetchVaultPrice(this.connection, poolCtx.baseVault, poolCtx.quoteVault, true);
     if (!pool) {
       return {
@@ -445,13 +341,6 @@ export class Executor {
       };
     }
 
-    // Detect mint program + extensions before AMM math. PumpFun has migrated
-    // graduations to Token-2022 with extensions — we need the program ID for
-    // ATA derivation and the extension list to (a) discount the transfer fee
-    // from min_base_out and (b) pre-create a correctly-sized holder ATA.
-    // Pre-fix, the standard SPL ATA was always derived, the transfer fee was
-    // ignored, and trade 10424 (PURPLECUP, T-2022 + extensions) reverted
-    // with InsufficientFundsForRent.
     const walletPk = this.wallet.pubkey;
     const mintProfile = await getMintProfile(this.connection, mintPk);
     const baseTokenProgram = mintProfile.tokenProgram;
@@ -465,24 +354,13 @@ export class Executor {
     const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
     const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
     const expectedBaseOutRaw = computeExpectedBaseOut(solRes, tokRes, solInLamports);
-    // Token-2022 TransferFeeConfig: the program withholds a fee on the
-    // base tokens delivered to us. PumpSwap's on-chain slippage check
-    // (custom error 6004) compares post-fee delivery against min_base_out,
-    // so we pre-discount the expected amount or the program rejects a fill
-    // that satisfied the AMM math itself.
     const transferFeeOnExpected = mintProfile.hasTransferFee
       ? await getTransferFeeForRawAmount(this.connection, mintPk, baseTokenProgram, expectedBaseOutRaw)
       : 0n;
     const feeAdjustedExpectedBaseOut = expectedBaseOutRaw - transferFeeOnExpected;
-    // 5% slippage tolerance on the on-chain guardrail — our safety preflight
-    // has already enforced a tighter bound, this is the last-resort backstop.
     const minBaseOutRaw = (feeAdjustedExpectedBaseOut * 95n) / 100n;
     const maxQuoteInLamports = (solInLamports * 105n) / 100n;
 
-    // SDK returns the full swap sequence: ATA-create-idempotent (base + wSOL),
-    // wSOL wrap+sync to maxQuoteIn, the swap with all IDL accounts + cashback /
-    // poolV2 / buyback remaining accounts, and wSOL close. We frame it with
-    // compute-budget on the front and a Jito tip at the back.
     const swapIxs = await buildBuyInstructions(this.connection, {
       pool: poolPk,
       wallet: walletPk,
@@ -493,28 +371,11 @@ export class Executor {
     const jitoTipSol = DEFAULT_JITO_TIP_SOL;
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
 
-    // Pre-create the receiver ATA when it doesn't already exist. The SPL ATA
-    // program inspects the mint and allocates the holder account at the
-    // correct size for any declared Token-2022 extensions — funded from our
-    // wallet here. Pre-fix, the PumpSwap SDK's own idempotent ATA-create
-    // sized the account for a standard 165-byte SPL token account, so a
-    // mint with holder-side extensions (e.g. TransferHookAccount) caused
-    // the swap ix to revert with InsufficientFundsForRent when it tried
-    // to write the extension data. With this ix in front, the SDK's
-    // create becomes a no-op (idempotent) and the swap writes into a
-    // properly-sized ATA. Caused trade 10424's failure mode.
     const ataPreCreateIxs: TransactionInstruction[] = baseAtaExistsBefore
       ? []
       : [buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram)];
 
     if (mintProfile.hasTransferHook) {
-      // TransferHook mints require the swap ix to include the hook program's
-      // ExtraAccountMetaList accounts in remaining_accounts. PumpSwap SDK
-      // v1.15.x does not supply those by default — the swap is likely to
-      // revert with the hook program's own error code. Log so the failure
-      // pattern is visible in the operator's recent-errors view; we'll
-      // decide whether to fork the SDK or hand-roll the ix once we have
-      // enough live samples to know how common this is.
       logger.warn(
         { mint, extensions: mintProfile.extensionTypes },
         'Token-2022 mint declares TransferHook — swap may revert if SDK omits hook extra accounts',
@@ -522,11 +383,6 @@ export class Executor {
     }
 
     const ixs = [
-      // 200k CU limit covers the ~123k buy / ~111k sell measured via
-      // /api/verify-pumpswap simulation against live chain (2026-04-25),
-      // with ~80k headroom for the Jito tip ix + live-blockhash variance.
-      // The pre-create ATA ix (when present) adds ~12k CU for standard SPL
-      // and ~20k for Token-2022 with extensions — still well within budget.
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
       ...ataPreCreateIxs,
@@ -542,19 +398,43 @@ export class Executor {
     this.wallet.invalidateSolBalance();
 
     if (!submission.landed) {
+      // Diagnostic snapshot — the next operator session needs the tx sig (when
+      // present) plus the mint's extension profile to identify which on-chain
+      // account caused the revert. Pre-fix this path returned without the sig
+      // even when the RPC fallback successfully captured it (audit gap on
+      // trades 10400 / 10424 / 10882). With the sig populated the operator
+      // can paste it into Solscan and read the failing account_index directly.
+      logger.error(
+        {
+          mint, mode,
+          path: submission.path,
+          txSignature: submission.txSignature,
+          solscanUrl: submission.txSignature
+            ? `https://solscan.io/tx/${submission.txSignature}`
+            : null,
+          err: submission.errorMessage,
+          isToken2022: mintProfile.isToken2022,
+          hasTransferFee: mintProfile.hasTransferFee,
+          hasTransferHook: mintProfile.hasTransferHook,
+          extensionTypes: mintProfile.extensionTypes,
+          ataPreCreated: !baseAtaExistsBefore,
+          baseTokenProgram: baseTokenProgram.toBase58(),
+          expectedBaseOutRaw: expectedBaseOutRaw.toString(),
+          minBaseOutRaw: minBaseOutRaw.toString(),
+          maxQuoteInLamports: maxQuoteInLamports.toString(),
+          latencyMs: submission.latencyMs,
+        },
+        'Live buy failed to land — diagnostic snapshot for post-mortem',
+      );
       return {
         success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
         dryRun: false, executionMode: mode,
         errorMessage: `live: tx did not land (${submission.path}): ${submission.errorMessage ?? 'unknown'}`,
+        txSignature: submission.txSignature,
         txLandMs: submission.latencyMs,
       };
     }
 
-    // Measure fill: token balance delta in → tokens received; SOL delta out → actual cost.
-    // Jito's pollBundleStatus returns landed at "processed" commitment, but
-    // getTokenBalanceRaw reads at "confirmed" — a fresh ATA can lag several
-    // seconds across that gap on a busy cluster. Poll with backoff until the
-    // token balance updates or we hit a hard ceiling.
     const fillDelaysMs = [750, 1000, 1500, 2000, 2500];
     let baseBalAfter = baseBalBefore;
     for (const dly of fillDelaysMs) {
@@ -565,30 +445,12 @@ export class Executor {
     const walletSolAfter = await this.wallet.getSolBalance(this.connection);
     const tokensReceivedRaw = baseBalAfter - baseBalBefore;
     const tokensReceived = tokensReceivedRaw / 1e6;
-    // walletSolBefore - walletSolAfter includes everything that left the wallet:
-    //   (a) actual swap payment into quote_vault  ← what we want
-    //   (b) Jito tip (separate ix, same tx)
-    //   (c) 5000 lamports tx fee
-    //   (d) token-account rent if the baseMint ATA was freshly created
-    // wSOL ATA is created AND closed in the same tx, so its rent nets to 0.
-    // Subtracting (b–d) gives us the isolated swap cost for slippage attribution.
-    // For Token-2022 mints with holder-side extensions the actual rent
-    // on (d) is higher than the constant — attribution will be slightly
-    // off for those, but the trade itself succeeds.
     const overheadLamports =
       jitoTipLamports + TX_FEE_LAMPORTS + (baseAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS);
     const solSpentLamports = walletSolBefore - walletSolAfter;
     const swapCostLamports = solSpentLamports - overheadLamports;
     const swapCostSol = swapCostLamports / 1e9;
     if (tokensReceived <= 0 || swapCostLamports <= 0) {
-      // Recovery hatch: if real SOL left the wallet (genuine swap cost, not
-      // just overhead drift) but the token balance still isn't visible after
-      // our retry window, the buy almost certainly landed and the ATA just
-      // hasn't propagated to confirmed yet. Register the position anyway with
-      // a placeholder tokens-held — liveSell re-reads the wallet ATA at exit
-      // time (executor.ts liveSell), so it will drain whatever is actually
-      // there. Losing position visibility is strictly worse than booking
-      // approximate slippage metrics on a single trade.
       const meaningfulSpend = swapCostLamports > Number(solInLamports) * 0.3;
       if (tokensReceived <= 0 && meaningfulSpend) {
         logger.error(
@@ -669,7 +531,6 @@ export class Executor {
     const poolPk = new PublicKey(poolCtx.poolAddress);
     const walletPk = this.wallet.pubkey;
 
-    // Re-read actual token balance — tokensHeld may drift from DB (should be tight)
     const actualBaseRaw = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
     if (actualBaseRaw <= 0) {
       return {
@@ -686,10 +547,6 @@ export class Executor {
         errorMessage: 'live: pool reserves read failed',
       };
     }
-    // Mirror the buy-side TransferFee adjustment: only (baseIn - fee) actually
-    // reaches the pool, so the AMM quote must be computed against the post-fee
-    // amount or min_quote_out is set higher than the program will deliver and
-    // the swap reverts on the on-chain slippage check.
     const baseInRaw = BigInt(actualBaseRaw);
     const sellMintProfile = await getMintProfile(this.connection, mintPk);
     const transferFeeOnIn = sellMintProfile.hasTransferFee
@@ -708,9 +565,6 @@ export class Executor {
       );
     }
 
-    // SDK builds the full sell sequence: ATA-create-idempotent for wSOL, the
-    // sell ix (with cashback / poolV2 / buyback remaining accounts), and the
-    // wSOL close to reclaim rent + receive proceeds.
     const swapIxs = await buildSellInstructions(this.connection, {
       pool: poolPk,
       wallet: walletPk,
@@ -722,8 +576,6 @@ export class Executor {
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
 
     const ixs = [
-      // Same 200k limit as buy — measured ~111k via verify-pumpswap sim,
-      // ~80k headroom for tip + variance. Was 300k.
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
       ...swapIxs,
@@ -739,17 +591,35 @@ export class Executor {
     this.wallet.invalidateSolBalance();
 
     if (!submission.landed) {
+      logger.error(
+        {
+          mint, mode,
+          path: submission.path,
+          txSignature: submission.txSignature,
+          solscanUrl: submission.txSignature
+            ? `https://solscan.io/tx/${submission.txSignature}`
+            : null,
+          err: submission.errorMessage,
+          isToken2022: sellMintProfile.isToken2022,
+          hasTransferFee: sellMintProfile.hasTransferFee,
+          hasTransferHook: sellMintProfile.hasTransferHook,
+          extensionTypes: sellMintProfile.extensionTypes,
+          baseTokenProgram: sellMintProfile.tokenProgram.toBase58(),
+          baseInRaw: baseInRaw.toString(),
+          minQuoteOut: minQuoteOut.toString(),
+          latencyMs: submission.latencyMs,
+        },
+        'Live sell failed to land — diagnostic snapshot for post-mortem',
+      );
       return {
         success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
         dryRun: false, executionMode: mode,
         errorMessage: `live sell: tx did not land: ${submission.errorMessage ?? 'unknown'}`,
+        txSignature: submission.txSignature,
         txLandMs: submission.latencyMs,
       };
     }
 
-    // Mirror buy-side: Jito reports landed at "processed", but getSolBalance
-    // reads at "confirmed". Poll with backoff until the SOL credit is visible
-    // (or we exhaust the window) to avoid mis-recording the fill.
     const fillDelaysMs = [750, 1000, 1500, 2000, 2500];
     let walletSolAfter = walletSolBefore;
     for (const dly of fillDelaysMs) {
@@ -757,10 +627,6 @@ export class Executor {
       walletSolAfter = await this.wallet.getSolBalance(this.connection);
       if (walletSolAfter > walletSolBefore) break;
     }
-    // (walletSolAfter - walletSolBefore) is net SOL into the wallet (swap gain
-    // minus tip, tx fee; plus any wSOL ATA rent refund — we create+close it
-    // in the same tx so it nets to 0). Add back the tip + fee to isolate the
-    // swap proceeds for slippage attribution.
     const solReceivedLamports =
       walletSolAfter - walletSolBefore + jitoTipLamports + TX_FEE_LAMPORTS;
     const solReceived = solReceivedLamports / 1e9;
