@@ -1,0 +1,10 @@
+{
+  "commands": [
+    { "action": "delete", "id": "v25-bot-excl-mono" },
+    {
+      "action": "journal-update",
+      "id": "v25-bot-excl-mono",
+      "note": "KILLED 2026-05-18 — INVALID at n=111: total_net_sol=-0.68 SOL, drop_top3=-2.42 SOL. Two hard SOL-bar gates failed at promotion-bar n. Hypothesis falsified: adding monotonicity_0_30 > 0.5 as a positive overlay on the bottom-excluded universe did NOT improve performance — it actively hurt. Likely mechanism: the bottom-excluded universe (top5<=30 + dd>-25 + vel<200 + age>=60s) is already implicitly selecting for mono-positive paths because the dd>-25% gate excludes the most monotonically-negative pre-entry rows. Stacking explicit mono>0.5 on top shrinks n by ~50% while filtering out borderline-mono trades that were actually contributing positive expected value (the +0-30% peak cluster). FOURTH v25 variant to fail (after calm, breakeven, tp150) — only v25-bot-excl-climbing and v25-bot-excl-vel2050 survive. Pattern: this universe responds poorly to most overlay filters; pure exclusion (v21-bottom-excluded) and the specific C5 climbing overlay (v25-bot-excl-climbing) are the only configurations that work. Future iterations should focus on exit-side tuning (TP/SL) — see v27 cohort — rather than entry-side overlay stacking."
+    }
+  ]
+}
