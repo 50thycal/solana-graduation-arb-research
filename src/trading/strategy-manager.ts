@@ -700,6 +700,11 @@ export class StrategyManager {
         errors.push(`entryTimingSec must be one of ${allowed.join(', ')}`);
       }
     }
+    if (p.pollIntervalSec != null) {
+      if (!Number.isInteger(p.pollIntervalSec) || p.pollIntervalSec < 1 || p.pollIntervalSec > 5) {
+        errors.push('pollIntervalSec must be an integer in [1, 5]');
+      }
+    }
     if (errors.length > 0) {
       throw new Error(`Invalid strategy params: ${errors.join('; ')}`);
     }
@@ -709,6 +714,7 @@ export class StrategyManager {
     return {
       stopLossPct: cfg.stopLossPct,
       maxHoldSeconds: cfg.maxHoldSeconds,
+      pollIntervalSec: Math.max(1, Math.min(5, cfg.pollIntervalSec ?? 5)),
       trailingSlActivationPct: cfg.trailingSlActivationPct ?? 0,
       trailingSlDistancePct: cfg.trailingSlDistancePct ?? 5,
       slActivationDelaySec: cfg.slActivationDelaySec ?? 0,

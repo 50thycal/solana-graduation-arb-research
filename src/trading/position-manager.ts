@@ -70,6 +70,10 @@ export type ExitReason =
 export interface DynamicMonitorParams {
   stopLossPct: number;
   maxHoldSeconds: number;
+  /** Poll cadence in seconds for five_second mode. Default 5; tighter values
+   *  (down to 1) trade RPC budget for faster SL/TP fill timing on fast moves.
+   *  Range capped [1, 5] in config.ts. */
+  pollIntervalSec: number;
   trailingSlActivationPct: number;
   trailingSlDistancePct: number;
   slActivationDelaySec: number;
@@ -112,6 +116,7 @@ export class PositionManager extends EventEmitter {
     this.dynamicParams = dynamicParams ?? {
       stopLossPct: 10,
       maxHoldSeconds: 300,
+      pollIntervalSec: 5,
       trailingSlActivationPct: 0,
       trailingSlDistancePct: 5,
       slActivationDelaySec: 0,
@@ -196,14 +201,17 @@ export class PositionManager extends EventEmitter {
     this.running = true;
 
     if (this.monitorMode === 'five_second') {
-      // Independent 5s polling — matches the price collector's first-60s snapshot
-      // frequency and continues at 5s even after T+60 (more responsive to fast moves).
+      // Independent polling at dynamicParams.pollIntervalSec (1–5s). 5s is the
+      // default (matches the price collector's snapshot grid). 1s opt-in via
+      // strategy param is the v28 cohort's tight-SL/trailing-TP experiment —
+      // reduces fill-vs-trigger lag on fast moves at the cost of more RPC.
+      const intervalSec = Math.max(1, Math.min(5, this.dynamicParams.pollIntervalSec || 5));
       this.pollTimer = setInterval(() => {
         this.poll().catch(err => {
           logger.error('Position poll error: %s', err instanceof Error ? err.message : String(err));
         });
-      }, 5_000);
-      logger.info('Position manager started (five_second mode)');
+      }, intervalSec * 1000);
+      logger.info({ pollIntervalSec: intervalSec }, 'Position manager started (five_second mode)');
     } else {
       // match_collection mode: no global interval — schedule per-position timeouts.
       // Handle any positions already in the map (recovered on restart before start()).
