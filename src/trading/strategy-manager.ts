@@ -705,6 +705,20 @@ export class StrategyManager {
         errors.push('pollIntervalSec must be an integer in [1, 5]');
       }
     }
+    // entry-hour-utc window: either both set or neither.
+    const hourMinSet = p.entryHourUtcMin != null;
+    const hourMaxSet = p.entryHourUtcMax != null;
+    if (hourMinSet !== hourMaxSet) {
+      errors.push('entryHourUtcMin and entryHourUtcMax must be set together (both or neither)');
+    }
+    if (hourMinSet && hourMaxSet) {
+      if (!Number.isInteger(p.entryHourUtcMin) || p.entryHourUtcMin! < 0 || p.entryHourUtcMin! > 23) {
+        errors.push('entryHourUtcMin must be an integer 0-23');
+      }
+      if (!Number.isInteger(p.entryHourUtcMax) || p.entryHourUtcMax! < 0 || p.entryHourUtcMax! > 23) {
+        errors.push('entryHourUtcMax must be an integer 0-23');
+      }
+    }
     if (errors.length > 0) {
       throw new Error(`Invalid strategy params: ${errors.join('; ')}`);
     }
