@@ -1,0 +1,161 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "V29.1",
+      "label": "V29.1 v10-best-double + UTC 02-10 [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel >= 20" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel < 50" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -10, "label": "dd > -10%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "maxSlippageBps": 500,
+        "entryHourUtcMin": 2,
+        "entryHourUtcMax": 10
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "V29.1",
+      "strategy_id": "V29.1",
+      "cohort_label": "V29",
+      "hypothesis": "Restricting v10-best-double to UTC 02-10 (the +17pp best-hour band per trends-time.json aggregate) reduces SL frequency and lifts per-trade EV vs the unrestricted base. Caveat: v10-best-double is a SOL-BULL strategy (does better when SOL is up) per trends-market.json, so result will be muddled by SOL/BTC regime noise.",
+      "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 4.0,
+        "target_drop_top3": 0.5,
+        "target_n": 100,
+        "target_days": 75,
+        "kill_criterion": "n>=50 and net_sol<-0.5"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "upsert",
+      "id": "V29.2",
+      "label": "V29.2 v9-velmono-dev + UTC 02-10 [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel>=20" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel<50" },
+          { "field": "monotonicity_0_30", "operator": ">", "value": 0.5, "label": "mono>0.5" },
+          { "field": "dev_wallet_pct", "operator": ">", "value": 5, "label": "dev>5%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "entryHourUtcMin": 2,
+        "entryHourUtcMax": 10
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "V29.2",
+      "strategy_id": "V29.2",
+      "cohort_label": "V29",
+      "hypothesis": "Restricting v9shadow-velmono-dev (#1 by drop_top3 +2.42 SOL, monthly +6.84 SOL) to UTC 02-10. Base has best outlier robustness in roster, so the gate is reducing tail-risk exposure during the bad afternoon band (UTC 14-21).",
+      "prediction": {
+        "target_net_sol": 2.0,
+        "target_sol_per_mo": 5.0,
+        "target_drop_top3": 1.0,
+        "target_n": 100,
+        "target_days": 90,
+        "kill_criterion": "n>=50 and net_sol<-0.5"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "upsert",
+      "id": "V29.3",
+      "label": "V29.3 v9-vel20-top5 + UTC 02-10 [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 20, "label": "vel<20" },
+          { "field": "top5_wallet_pct", "operator": "<", "value": 10, "label": "top5<10%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "entryHourUtcMin": 2,
+        "entryHourUtcMax": 10
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "V29.3",
+      "strategy_id": "V29.3",
+      "cohort_label": "V29",
+      "hypothesis": "Restricting v9shadow-vel20-top5 (n=59, monthly +5.18, distinct filter: low velocity + low top5) to UTC 02-10. Higher-volume v9 leg of V29 cohort; tests whether the hour gate is universal-positive across v9 filter compositions or specific to dev/mono combos.",
+      "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 4.0,
+        "target_drop_top3": 0.3,
+        "target_n": 100,
+        "target_days": 75,
+        "kill_criterion": "n>=50 and net_sol<-0.5"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
