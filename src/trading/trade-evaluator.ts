@@ -88,6 +88,66 @@ export class TradeEvaluator {
       }
     }
 
+    // ── 1c. Market-regime gate (optional, uses market_daily) ────────────────
+    // Apply only if at least one of the six bounds is set. Query today's UTC
+    // date once and check SOL / BTC return % and F&G value against the
+    // strategy's allowed ranges. Permissive on missing market_daily row —
+    // we'd rather trade than blackhole during a fetcher hiccup.
+    const hasMarketGate =
+      cfg.entrySolReturnPctMin != null || cfg.entrySolReturnPctMax != null
+      || cfg.entryBtcReturnPctMin != null || cfg.entryBtcReturnPctMax != null
+      || cfg.entryFngValueMin != null || cfg.entryFngValueMax != null;
+    if (hasMarketGate) {
+      const todayUtc = new Date().toISOString().slice(0, 10);
+      const mr = this.db.prepare(`
+        SELECT sol_usd_open, sol_usd_close, btc_usd_open, btc_usd_close, fear_greed_value
+        FROM market_daily WHERE date = ?
+      `).get(todayUtc) as {
+        sol_usd_open: number | null;
+        sol_usd_close: number | null;
+        btc_usd_open: number | null;
+        btc_usd_close: number | null;
+        fear_greed_value: number | null;
+      } | undefined;
+
+      if (!mr) {
+        logger.warn(
+          { graduationId, strategy: this.strategyId, date: todayUtc },
+          'market_daily missing for today — market-regime gate is permissive, allowing entry'
+        );
+      } else {
+        const solRet = (mr.sol_usd_open != null && mr.sol_usd_close != null && mr.sol_usd_open > 0)
+          ? ((mr.sol_usd_close - mr.sol_usd_open) / mr.sol_usd_open) * 100
+          : null;
+        const btcRet = (mr.btc_usd_open != null && mr.btc_usd_close != null && mr.btc_usd_open > 0)
+          ? ((mr.btc_usd_close - mr.btc_usd_open) / mr.btc_usd_open) * 100
+          : null;
+        const fng = mr.fear_greed_value;
+
+        const outOfRange = (v: number | null, min: number | undefined, max: number | undefined): boolean => {
+          if (v == null) return false;  // missing data = permissive
+          if (min != null && v < min) return true;
+          if (max != null && v > max) return true;
+          return false;
+        };
+        if (outOfRange(solRet, cfg.entrySolReturnPctMin, cfg.entrySolReturnPctMax)) {
+          this.tradeLogger.logSkipped(graduationId, 'market_gate_sol', solRet, pctT30, this.strategyId);
+          logger.debug({ graduationId, solRet, strategy: this.strategyId }, 'SOL-return gate blocked entry');
+          return;
+        }
+        if (outOfRange(btcRet, cfg.entryBtcReturnPctMin, cfg.entryBtcReturnPctMax)) {
+          this.tradeLogger.logSkipped(graduationId, 'market_gate_btc', btcRet, pctT30, this.strategyId);
+          logger.debug({ graduationId, btcRet, strategy: this.strategyId }, 'BTC-return gate blocked entry');
+          return;
+        }
+        if (outOfRange(fng, cfg.entryFngValueMin, cfg.entryFngValueMax)) {
+          this.tradeLogger.logSkipped(graduationId, 'market_gate_fng', fng, pctT30, this.strategyId);
+          logger.debug({ graduationId, fng, strategy: this.strategyId }, 'F&G gate blocked entry');
+          return;
+        }
+      }
+    }
+
     // ── 2. Capacity check ────────────────────────────────────────────────────
     if (this.positionManager.activeCount() >= cfg.maxConcurrentPositions) {
       this.tradeLogger.logSkipped(graduationId, 'max_positions', this.positionManager.activeCount(), pctT30, this.strategyId);
