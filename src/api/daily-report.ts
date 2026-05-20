@@ -122,7 +122,9 @@ export interface ReadinessRow {
     total_net_sol: number;
     total_net_sol_drop_top1: number;
     total_net_sol_drop_top3: number;
-    monthly_run_rate_sol: number;
+    monthly_run_rate_sol: number | null;
+    monthly_run_rate_sol_drop_top3: number | null;
+    trades_per_day: number;
     win_rate_pct: number | null;
     mean_net_pct: number | null;
     trimmed_mean_net_pct: number | null;
@@ -199,8 +201,15 @@ export interface PerStrategyDailySnapshot {
   total_net_sol_lifetime: number;
   /** Lifetime Net SOL with the top-3 winners stripped (outlier-robust). */
   total_net_sol_drop_top3: number;
-  /** 30-day projection (lifetime total / days_active × 30). */
-  monthly_run_rate_sol: number;
+  /**
+   * 30-day projection: `lifetime total / max(now − first_exit, 7 days) × 30`.
+   * null when lifetime n_trades < 30 (projection not credible yet).
+   */
+  monthly_run_rate_sol: number | null;
+  /** Same projection on the drop-top3 sum — guards against lottery-driven readings. */
+  monthly_run_rate_sol_drop_top3: number | null;
+  /** n_trades / days_active. Surfaces how thinly populated the projection is. */
+  trades_per_day: number;
 }
 
 /**
@@ -1052,11 +1061,18 @@ function buildReadinessRow(
   row: LeaveOneOutRow,
   edgeFlag?: 'DECAYING' | 'STRENGTHENING' | 'STABLE' | 'LOW-N',
 ): ReadinessRow {
+  // Gate requires BOTH the raw monthly rate AND the outlier-stripped variant
+  // to clear 3.75 — a strategy whose projection is propped up by 1-3 lottery
+  // winners (raw clears, drop_top3 doesn't) is exactly the failure mode the
+  // composite is supposed to surface. null rates (n < 30) fail both gates.
+  const monthlyRaw = row.monthly_run_rate_sol;
+  const monthlyDropTop3 = row.monthly_run_rate_sol_drop_top3;
   const gates = {
     n_trades_ge_100: row.n_trades >= 100,
     drop_top3_positive: row.total_net_sol_drop_top3 > 0,
     total_net_sol_ge_0_5: row.total_net_sol >= 0.5,
-    monthly_run_rate_ge_3_75: row.monthly_run_rate_sol >= 3.75,
+    monthly_run_rate_ge_3_75: monthlyRaw != null && monthlyRaw >= 3.75
+      && monthlyDropTop3 != null && monthlyDropTop3 >= 3.75,
   };
 
   const sampleSize = Math.min(row.n_trades / 100, 1) * 20;
@@ -1068,7 +1084,10 @@ function buildReadinessRow(
   }
 
   const totalSol = Math.min(Math.max(row.total_net_sol, 0) / 0.5, 1) * 20;
-  const monthly = Math.min(Math.max(row.monthly_run_rate_sol, 0) / 3.75, 1) * 20;
+  // Score the robust (drop_top3) monthly rate when available, falling back to
+  // the raw rate. Null (n < 30) contributes 0 — projection isn't credible yet.
+  const monthlyForScore = monthlyDropTop3 ?? monthlyRaw ?? 0;
+  const monthly = Math.min(Math.max(monthlyForScore, 0) / 3.75, 1) * 20;
   const wrSanity = row.win_rate_pct != null && row.win_rate_pct >= 30 && row.win_rate_pct <= 70
     ? 10
     : 5;
@@ -1110,6 +1129,8 @@ function buildReadinessRow(
       total_net_sol_drop_top1: row.total_net_sol_drop_top1,
       total_net_sol_drop_top3: row.total_net_sol_drop_top3,
       monthly_run_rate_sol: row.monthly_run_rate_sol,
+      monthly_run_rate_sol_drop_top3: row.monthly_run_rate_sol_drop_top3,
+      trades_per_day: row.trades_per_day,
       win_rate_pct: row.win_rate_pct,
       mean_net_pct: row.mean_net_pct,
       trimmed_mean_net_pct: row.trimmed_mean_net_pct,
@@ -1369,7 +1390,9 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
       n_trades_lifetime: loo?.n_trades ?? 0,
       total_net_sol_lifetime: loo?.total_net_sol ?? 0,
       total_net_sol_drop_top3: loo?.total_net_sol_drop_top3 ?? 0,
-      monthly_run_rate_sol: loo?.monthly_run_rate_sol ?? 0,
+      monthly_run_rate_sol: loo?.monthly_run_rate_sol ?? null,
+      monthly_run_rate_sol_drop_top3: loo?.monthly_run_rate_sol_drop_top3 ?? null,
+      trades_per_day: loo?.trades_per_day ?? 0,
     });
   }
   byStrategyDailySnapshot.sort((a, b) =>
