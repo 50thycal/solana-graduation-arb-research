@@ -7491,7 +7491,7 @@ export function renderReportHtml(data: any): string {
   const readinessRows = todayAuto.promotion_readiness_top5 || [];
   const readinessHtml = `<div class="card">
     <h2>Promotion Readiness — Top 5 Closest to Bar</h2>
-    <div class="desc">Composite 0–100 score against the SOL bar (n≥100 · drop_top3&gt;0 · total≥0.5 SOL · monthly≥3.75 SOL). Lifetime data, not today-only. Source: leave-one-out-pnl.json.</div>
+    <div class="desc">Composite 0–100 score against the SOL bar (n≥100 · drop_top3&gt;0 · total≥0.5 SOL · monthly≥3.75 SOL on BOTH raw and drop_top3 variants). SOL/mo is suppressed when n&lt;30 (projection not credible). Span = now − first_exit, floored at 7 days. Lifetime data, not today-only. Source: leave-one-out-pnl.json.</div>
     ${readinessRows.length === 0
       ? `<div style="color:#64748b;font-style:italic">No enabled strategies with closed trades yet.</div>`
       : `<table><thead><tr>
@@ -7501,7 +7501,9 @@ export function renderReportHtml(data: any): string {
           <th style="text-align:right">Net SOL</th>
           <th style="text-align:right">Drop top1</th>
           <th style="text-align:right">Drop top3</th>
-          <th style="text-align:right">SOL/mo</th>
+          <th style="text-align:right" title="Raw 30-day projection — null when n<30">SOL/mo</th>
+          <th style="text-align:right" title="Outlier-stripped 30-day projection (drop top 3 winners)">SOL/mo (drop3)</th>
+          <th style="text-align:right" title="n_trades / days_active">Trades/day</th>
           <th style="text-align:right">WR</th>
           <th style="text-align:center">Gates</th>
         </tr></thead><tbody>
@@ -7529,6 +7531,8 @@ export function renderReportHtml(data: any): string {
               <td style="text-align:right" class="${cls(raw.total_net_sol_drop_top1)}">${fmt(raw.total_net_sol_drop_top1)}</td>
               <td style="text-align:right" class="${cls(raw.total_net_sol_drop_top3)}">${fmt(raw.total_net_sol_drop_top3)}</td>
               <td style="text-align:right" class="${cls(raw.monthly_run_rate_sol)}">${fmt(raw.monthly_run_rate_sol, 2)}</td>
+              <td style="text-align:right" class="${cls(raw.monthly_run_rate_sol_drop_top3)}">${fmt(raw.monthly_run_rate_sol_drop_top3, 2)}</td>
+              <td style="text-align:right" style="color:#94a3b8">${raw.trades_per_day != null ? raw.trades_per_day.toFixed(2) : '—'}</td>
               <td style="text-align:right">${raw.win_rate_pct != null ? raw.win_rate_pct.toFixed(0) + '%' : '—'}</td>
               <td style="text-align:center">${gates}</td>
             </tr>`;

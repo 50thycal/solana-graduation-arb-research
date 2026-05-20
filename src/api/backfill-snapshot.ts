@@ -146,7 +146,9 @@ export function backfillSnapshots(
         n_trades_lifetime: looRow?.n_trades ?? 0,
         total_net_sol_lifetime: looRow?.total_net_sol ?? 0,
         total_net_sol_drop_top3: looRow?.total_net_sol_drop_top3 ?? 0,
-        monthly_run_rate_sol: looRow?.monthly_run_rate_sol ?? 0,
+        monthly_run_rate_sol: looRow?.monthly_run_rate_sol ?? null,
+        monthly_run_rate_sol_drop_top3: looRow?.monthly_run_rate_sol_drop_top3 ?? null,
+        trades_per_day: looRow?.trades_per_day ?? 0,
       });
     }
 

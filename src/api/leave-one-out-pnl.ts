@@ -35,9 +35,26 @@ export interface LeaveOneOutRow {
   /** Mean after dropping top/bottom 5% by net_return_pct (NIST-interpolated cuts). */
   trimmed_mean_net_pct: number | null;
   win_rate_pct: number | null;
-  /** (total_net_sol / max(days_active, 1)) * 30. Projects to monthly run rate. */
-  monthly_run_rate_sol: number;
-  /** First-to-last exit_timestamp span in days (floored at 1). */
+  /**
+   * (total_net_sol / max(days_active, 7)) * 30. Projects to monthly run rate.
+   * null when n_trades < 30 — the projection isn't credible below that sample
+   * size, so we suppress rather than report fantasy numbers.
+   */
+  monthly_run_rate_sol: number | null;
+  /**
+   * Same projection but on `total_net_sol_drop_top3` instead of `total_net_sol`.
+   * This is the outlier-robust monthly rate — a strategy that fails this gate
+   * is projecting on lottery tickets. null when n_trades < 30.
+   */
+  monthly_run_rate_sol_drop_top3: number | null;
+  /** n_trades / days_active. Lets a reader gauge how thinly populated the projection is. */
+  trades_per_day: number;
+  /**
+   * Span used as the projection denominator: `now - first_exit` (or
+   * `asOfSec - first_exit` during backfill), floored at 7 days. Captures
+   * dormant tail and forces an early-stage strategy to wait for enough
+   * elapsed time before the rate can clear the bar.
+   */
   days_active: number;
   /** UTC ISO of first / last closed trade in this bucket. */
   first_exit_ts: number | null;
@@ -108,8 +125,16 @@ function safeContributionPct(part: number, whole: number): number | null {
  *
  * Default behavior (`asOfSec` undefined) is identical to the original call.
  */
+/** Minimum sample size before the monthly run-rate projection is reported. */
+const MIN_N_FOR_MONTHLY_RATE = 30;
+/** Minimum elapsed days used in the projection denominator. */
+const MIN_DAYS_ACTIVE = 7;
+
 export function computeLeaveOneOutPnl(db: Database.Database, asOfSec?: number): LeaveOneOutData {
   const generated_at = new Date().toISOString();
+  // "Now" for the run-rate denominator. During backfill we use the as-of cap
+  // so historical snapshots reproduce; live computation uses wall clock.
+  const nowSec = asOfSec ?? Math.floor(Date.now() / 1000);
 
   // Pull every closed trade for any strategy that has either:
   //   (a) currently enabled in strategy_configs, OR
@@ -184,9 +209,20 @@ export function computeLeaveOneOutPnl(db: Database.Database, asOfSec?: number): 
     const exitTs = group.map(t => t.exit_timestamp).filter((v): v is number => v != null);
     const firstTs = exitTs.length > 0 ? Math.min(...exitTs) : null;
     const lastTs = exitTs.length > 0 ? Math.max(...exitTs) : null;
-    const spanSec = firstTs != null && lastTs != null ? lastTs - firstTs : 0;
-    const daysActive = Math.max(spanSec / 86400, 1);
-    const monthlyRunRate = (profitSum / daysActive) * 30;
+    // Span runs from first exit to "now" so dormant tail days count against
+    // the rate (a strategy whose last trade was a week ago shouldn't be
+    // projected as if it's still firing). Floor protects against the
+    // single-day-of-activity inflation that used to read +15 SOL/mo off a
+    // pair of trades 30 minutes apart.
+    const spanSec = firstTs != null ? Math.max(nowSec - firstTs, 0) : 0;
+    const daysActive = Math.max(spanSec / 86400, MIN_DAYS_ACTIVE);
+    const tradesPerDay = group.length / daysActive;
+    // Suppress the projection below the minimum sample size — anything less
+    // is extrapolating from noise. Consumers treat null as "not yet
+    // credible" (gate fails, score contributes 0).
+    const eligible = group.length >= MIN_N_FOR_MONTHLY_RATE;
+    const monthlyRunRate = eligible ? (profitSum / daysActive) * 30 : null;
+    const monthlyRunRateDropTop3 = eligible ? (dropTop3 / daysActive) * 30 : null;
 
     rows.push({
       strategy_id: strategyId,
@@ -204,7 +240,9 @@ export function computeLeaveOneOutPnl(db: Database.Database, asOfSec?: number): 
       mean_net_pct: meanNet != null ? +meanNet.toFixed(2) : null,
       trimmed_mean_net_pct: trimmed != null ? +trimmed.toFixed(2) : null,
       win_rate_pct: winRatePct,
-      monthly_run_rate_sol: +monthlyRunRate.toFixed(4),
+      monthly_run_rate_sol: monthlyRunRate != null ? +monthlyRunRate.toFixed(4) : null,
+      monthly_run_rate_sol_drop_top3: monthlyRunRateDropTop3 != null ? +monthlyRunRateDropTop3.toFixed(4) : null,
+      trades_per_day: +tradesPerDay.toFixed(3),
       days_active: +daysActive.toFixed(2),
       first_exit_ts: firstTs,
       last_exit_ts: lastTs,
@@ -212,10 +250,16 @@ export function computeLeaveOneOutPnl(db: Database.Database, asOfSec?: number): 
   }
 
   // Sort: enabled strategies first, then by monthly_run_rate_sol desc — surfaces
-  // closest-to-bar at the top. Disabled rows fall through for postmortem context.
+  // closest-to-bar at the top. Rows with a null rate (n < MIN_N_FOR_MONTHLY_RATE)
+  // sort below ones with a value so the credible projections come first.
   rows.sort((a, b) => {
     if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
-    return b.monthly_run_rate_sol - a.monthly_run_rate_sol;
+    const av = a.monthly_run_rate_sol;
+    const bv = b.monthly_run_rate_sol;
+    if (av == null && bv == null) return b.total_net_sol - a.total_net_sol;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return bv - av;
   });
 
   const enabledCount = rows.filter(r => r.enabled).length;
@@ -234,7 +278,11 @@ export function computeLeaveOneOutPnl(db: Database.Database, asOfSec?: number): 
     notes: [
       'Outlier-robustness panel: total_net_sol_drop_top1 / drop_top3 strip the largest 1 and 3 winners by net_profit_sol.',
       'A strategy whose drop_top3 is <= 0 has no real edge — the apparent profit was 1-3 trades of luck.',
-      'monthly_run_rate_sol = (total_net_sol / max(days_active, 1)) * 30. Promotion bar is >= 3.75 SOL/month (~$300/month at current SOL).',
+      `monthly_run_rate_sol = (total_net_sol / max(now - first_exit, ${MIN_DAYS_ACTIVE} days)) * 30. Span runs to now so dormant tail days count against the projection. Floored at ${MIN_DAYS_ACTIVE} days so a fresh strategy can't project an inflated rate off a single day of activity.`,
+      `monthly_run_rate_sol is null when n_trades < ${MIN_N_FOR_MONTHLY_RATE} — projecting on smaller samples is extrapolation from noise.`,
+      'monthly_run_rate_sol_drop_top3 is the same projection on the outlier-stripped sum. A strategy whose raw monthly rate clears 3.75 but whose drop-top3 monthly doesn\'t is propping its projection up with 1-3 lottery winners.',
+      'trades_per_day = n_trades / days_active. Surfaces how thinly populated the projection is (0.1 trades/day × 1.6 SOL/trade looks identical to 3/day × 0.05 SOL/trade on the raw rate, but is one lottery away from collapse).',
+      'Promotion bar is monthly_run_rate_sol >= 3.75 SOL/month (~$300/month at current SOL) AND monthly_run_rate_sol_drop_top3 >= 3.75.',
       'trimmed_mean_net_pct strips top/bottom 5% by net_return_pct; null when n < 20 (cuts unreliable on small samples).',
       'Per-strategy buckets are split by execution_mode (paper / shadow / live) — same convention as /api/strategy-percentiles.',
       'Rows include disabled strategies that have closed trades, flagged by enabled=false, for postmortem context.',
