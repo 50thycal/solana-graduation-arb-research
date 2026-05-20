@@ -28,6 +28,8 @@ const COINGECKO_OHLC = (id: string, days: number) =>
 const FEAR_GREED = (limit: number) =>
   `https://api.alternative.me/fng/?limit=${limit}`;
 const REQUEST_TIMEOUT_MS = 15_000;
+const BACKFILL_TIMEOUT_MS = 60_000;                // CoinGecko 90-day fetch can take 20-40s
+const BACKFILL_MAX_RETRIES = 3;
 
 interface OhlcCandle {
   date: string;        // 'YYYY-MM-DD' UTC
@@ -147,18 +149,63 @@ export class MarketDataFetcher {
     // CoinGecko OHLC `days` param: 1, 7, 14, 30, 90, 180, 365 (daily granularity
     // is auto for days >=2). Pick the smallest value covering our window.
     const cgDays = days <= 7 ? 7 : days <= 14 ? 14 : days <= 30 ? 30 : days <= 90 ? 90 : 180;
-    const [solOhlc, btcOhlc, fng] = await Promise.all([
-      this.fetchOhlc('solana', cgDays),
-      this.fetchOhlc('bitcoin', cgDays),
-      this.fetchFearGreed(days),
-    ]);
+    // Run the three fetches SEQUENTIALLY (not Promise.all) and with the longer
+    // BACKFILL_TIMEOUT_MS — CoinGecko free-tier under concurrent load
+    // intermittently aborts large historical fetches at the 15s default.
+    // Each call retries internally on transient failure.
+    const solOhlc = await this.fetchOhlcWithRetry('solana', cgDays);
+    const btcOhlc = await this.fetchOhlcWithRetry('bitcoin', cgDays);
+    const fng = await this.fetchFearGreedWithRetry(days);
     this.upsertCandles(solOhlc, btcOhlc, fng);
     logger.info({ sol_n: solOhlc.length, btc_n: btcOhlc.length, fng_n: fng.length }, 'Market data backfill complete');
   }
 
-  private async fetchOhlc(coinId: string, days: number): Promise<OhlcCandle[]> {
+  /** Retry the OHLC fetch up to BACKFILL_MAX_RETRIES with exponential backoff
+   *  (1s, 2s, 4s) on AbortError / network error / non-2xx response. Uses the
+   *  longer BACKFILL_TIMEOUT_MS per attempt. */
+  private async fetchOhlcWithRetry(coinId: string, days: number): Promise<OhlcCandle[]> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= BACKFILL_MAX_RETRIES; attempt++) {
+      try {
+        return await this.fetchOhlc(coinId, days, BACKFILL_TIMEOUT_MS);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < BACKFILL_MAX_RETRIES) {
+          const backoffMs = 1000 * Math.pow(2, attempt - 1);
+          logger.warn(
+            { coinId, days, attempt, backoffMs, err: err instanceof Error ? err.message : String(err) },
+            'OHLC backfill attempt failed — retrying'
+          );
+          await new Promise(r => setTimeout(r, backoffMs));
+        }
+      }
+    }
+    throw lastErr;
+  }
+
+  private async fetchFearGreedWithRetry(limit: number): Promise<FearGreedRow[]> {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= BACKFILL_MAX_RETRIES; attempt++) {
+      try {
+        return await this.fetchFearGreed(limit, BACKFILL_TIMEOUT_MS);
+      } catch (err) {
+        lastErr = err;
+        if (attempt < BACKFILL_MAX_RETRIES) {
+          const backoffMs = 1000 * Math.pow(2, attempt - 1);
+          logger.warn(
+            { limit, attempt, backoffMs, err: err instanceof Error ? err.message : String(err) },
+            'F&G backfill attempt failed — retrying'
+          );
+          await new Promise(r => setTimeout(r, backoffMs));
+        }
+      }
+    }
+    throw lastErr;
+  }
+
+  private async fetchOhlc(coinId: string, days: number, timeoutMs?: number): Promise<OhlcCandle[]> {
     const url = COINGECKO_OHLC(coinId, days);
-    const json = await this.fetchJson<Array<[number, number, number, number, number]>>(url);
+    const json = await this.fetchJson<Array<[number, number, number, number, number]>>(url, timeoutMs);
     // CoinGecko returns [[timestamp_ms, open, high, low, close], ...] in 4h
     // candles for days <= 30, daily for days > 30. We need daily — aggregate
     // by UTC date.
@@ -179,9 +226,9 @@ export class MarketDataFetcher {
     return Array.from(byDate.values()).sort((a, b) => a.date.localeCompare(b.date));
   }
 
-  private async fetchFearGreed(limit: number): Promise<FearGreedRow[]> {
+  private async fetchFearGreed(limit: number, timeoutMs?: number): Promise<FearGreedRow[]> {
     const url = FEAR_GREED(limit);
-    const json = await this.fetchJson<{ data: Array<{ value: string; value_classification: string; timestamp: string }> }>(url);
+    const json = await this.fetchJson<{ data: Array<{ value: string; value_classification: string; timestamp: string }> }>(url, timeoutMs);
     return json.data
       .map(r => ({
         date: new Date(Number(r.timestamp) * 1000).toISOString().slice(0, 10),
@@ -243,9 +290,9 @@ export class MarketDataFetcher {
     tx(rows);
   }
 
-  private async fetchJson<T>(url: string): Promise<T> {
+  private async fetchJson<T>(url: string, timeoutMs: number = REQUEST_TIMEOUT_MS): Promise<T> {
     const controller = new AbortController();
-    const t = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const t = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const resp = await fetch(url, {
         signal: controller.signal,
