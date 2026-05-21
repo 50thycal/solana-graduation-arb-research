@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { Connection } from '@solana/web3.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import { makeLogger } from '../utils/logger';
 import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourInUtcWindow } from './config';
 import { runFilterPipeline } from './filter-pipeline';
@@ -194,6 +194,34 @@ export class TradeEvaluator {
     const effectiveTradeSize = executionMode === 'live_micro'
       ? MICRO_TRADE_SIZE_SOL
       : cfg.tradeSizeSol;
+
+    // Reject live entries when the pool address is synthetic (e.g. "vaults:abc")
+    // or otherwise not a valid base58 Solana address. The listener stores
+    // synthetic placeholders when the pool PDA couldn't be extracted from the
+    // migration tx — these work for vault-based price reads (paper/shadow) but
+    // would crash the live executor at `new PublicKey(poolAddress)` with a
+    // "Non-base58 character" error. Better to skip cleanly than burn a failed
+    // trade row. 2026-05-21 bug fix (saw it crash v25-bot-excl-climbing-live-micro).
+    const isLive = executionMode === 'live_micro' || executionMode === 'live_full';
+    if (isLive && ctx.poolAddress) {
+      try {
+        new PublicKey(ctx.poolAddress);
+      } catch {
+        this.tradeLogger.logSkipped(
+          graduationId,
+          'safety:invalid_pool_address',
+          null,
+          pctT30,
+          this.strategyId,
+        );
+        logger.info(
+          { graduationId, mint: ctx.mint, poolAddress: ctx.poolAddress, strategyId: this.strategyId },
+          'Skipping live entry — synthetic or invalid pool address (vault-based modes still work)'
+        );
+        return;
+      }
+    }
+
     if (this.connection) {
       const preflight = await runEntryPreflight({
         db: this.db,
