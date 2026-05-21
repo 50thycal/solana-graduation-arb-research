@@ -640,6 +640,10 @@ export class StrategyManager {
     if (!isFinite(ttpd) || ttpd <= 0 || ttpd > 100) {
       errors.push('trailingTpDropPct must be between 0 and 100');
     }
+    const ttpMinLift = p.trailingTpMinPeakLiftPct ?? 0;
+    if (!isFinite(ttpMinLift) || ttpMinLift < 0 || ttpMinLift > 500) {
+      errors.push('trailingTpMinPeakLiftPct must be between 0 and 500');
+    }
     const t1 = p.tightenSlAtPctTime ?? 0;
     const t2 = p.tightenSlAtPctTime2 ?? 0;
     if (!isFinite(t1) || t1 < 0 || t1 > 100) {
@@ -747,6 +751,7 @@ export class StrategyManager {
       slActivationDelaySec: cfg.slActivationDelaySec ?? 0,
       trailingTpEnabled: cfg.trailingTpEnabled ?? false,
       trailingTpDropPct: cfg.trailingTpDropPct ?? 5,
+      trailingTpMinPeakLiftPct: cfg.trailingTpMinPeakLiftPct ?? 0,
       tightenSlAtPctTime: cfg.tightenSlAtPctTime ?? 0,
       tightenSlTargetPct: cfg.tightenSlTargetPct ?? 7,
       tightenSlAtPctTime2: cfg.tightenSlAtPctTime2 ?? 0,
