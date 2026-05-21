@@ -319,6 +319,9 @@ export class TradeEvaluator {
         txSignature: entryResult.txSignature,
         txLandMs: entryResult.txLandMs,
         jitoTipSol: entryResult.jitoTipSol,
+        failurePath: entryResult.failurePath,
+        mintExtensionFlags: entryResult.mintExtensionFlags ?? null,
+        failureContext: entryResult.failureContext,
       });
       return;
     }

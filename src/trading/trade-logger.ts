@@ -243,14 +243,26 @@ export class TradeLogger {
 
   /** Mark a trade as failed (entry tx failed, etc.). Optional tx context is
    *  persisted so post-mortems have on-chain evidence even when the buy
-   *  bailed before the success path could record it. */
+   *  bailed before the success path could record it. failureContext captures
+   *  the full executor diagnostic snapshot (jito vs rpc path, mint extensions,
+   *  expected/min out amounts, latency) for the dashboard / DB query path. */
   failTrade(
     tradeId: number,
     reason: string,
-    extras?: { txSignature?: string; txLandMs?: number; jitoTipSol?: number },
+    extras?: {
+      txSignature?: string;
+      txLandMs?: number;
+      jitoTipSol?: number;
+      failurePath?: string;
+      mintExtensionFlags?: string | null;
+      failureContext?: Record<string, unknown>;
+    },
   ): void {
     markTradeFailed(this.db, tradeId, reason, extras);
-    logger.warn({ tradeId, reason, txSignature: extras?.txSignature }, 'Trade failed');
+    logger.warn(
+      { tradeId, reason, txSignature: extras?.txSignature, failurePath: extras?.failurePath },
+      'Trade failed',
+    );
   }
 
   /**

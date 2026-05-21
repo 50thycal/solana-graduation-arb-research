@@ -905,6 +905,16 @@ function runMigrations(db: Database.Database): void {
       // Lets promotion logic down-weight shadow trades whose measured-slippage
       // numbers are actually modeled, not measured.
       ['execution_failure_reason', 'TEXT'],
+      // Diagnostic context for failed live trades. JSON blob containing path
+      // (jito/rpc), mint extensions (token2022, transfer_fee, transfer_hook),
+      // expected/min out amounts, latency. Populated by markTradeFailed when a
+      // live buy/sell tx doesn't land. Lets the dashboard + post-mortem
+      // analyses see WHY a tx failed without scraping logs. Added 2026-05-21.
+      ['failure_context_json', 'TEXT'],
+      // Structured columns lifted from failure_context_json for quick filtering.
+      // Both default NULL on paper/shadow rows.
+      ['tx_failure_path', 'TEXT'],
+      ['mint_extension_flags', 'TEXT'],
     ];
     for (const [col, type] of newTradeCols) {
       if (!tradeExistingLive.has(col)) {
