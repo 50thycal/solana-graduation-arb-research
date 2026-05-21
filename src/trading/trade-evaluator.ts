@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { Connection } from '@solana/web3.js';
 import { makeLogger } from '../utils/logger';
-import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, isHourInUtcWindow } from './config';
+import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourInUtcWindow } from './config';
 import { runFilterPipeline } from './filter-pipeline';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
@@ -184,14 +184,23 @@ export class TradeEvaluator {
     }
 
     // ── 4b. Safety preflight (killswitch + circuit breaker + balance + slippage) ──
+    //
+    // For live_micro the executor hard-overrides amountSol to MICRO_TRADE_SIZE_SOL
+    // (see executor.ts:206). The safety preflight must use the SAME effective size
+    // or it'll reject live_micro entries against the strategy's configured
+    // tradeSizeSol — a strategy with tradeSizeSol=0.5 in live_micro mode needs
+    // only 0.05+buffer SOL in the wallet, not 0.5+buffer. 2026-05-21 bug fix.
     const executionMode = cfg.executionMode;
+    const effectiveTradeSize = executionMode === 'live_micro'
+      ? MICRO_TRADE_SIZE_SOL
+      : cfg.tradeSizeSol;
     if (this.connection) {
       const preflight = await runEntryPreflight({
         db: this.db,
         executionMode,
         wallet: this.wallet,
         connection: this.connection,
-        tradeSizeSol: cfg.tradeSizeSol,
+        tradeSizeSol: effectiveTradeSize,
         solReserves,
         tokenReserves: solReserves / priceT30,
         maxSlippageBps: cfg.maxSlippageBps ?? DEFAULT_MAX_SLIPPAGE_BPS,
