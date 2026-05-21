@@ -1,0 +1,22 @@
+{
+  "commands": [
+    { "action": "delete", "id": "v14-snipervel-shadow" },
+    { "action": "delete", "id": "v23-vel2050-climbing" },
+    { "action": "delete", "id": "v25-bot-excl-vel2050" },
+    {
+      "action": "journal-update",
+      "id": "v14-snipervel-shadow",
+      "note": "KILLED 2026-05-21 — INVALID at n=37: total=-2.069 SOL, monthly=-7.51 SOL/mo. Worst bleeder in active roster with no recovery signal — bleeding accelerating across recent windows. Confirms the broader vN-snipervel-shadow pattern (already killed v14-snipervel-shadow, v15-snipervel-shadow): the snipers<=2 + wallet_vel_avg<20 combo doesn't survive once gap penalty + 1s-poll-corrected slippage is applied. Sniper-velocity signal alone is insufficient — needs to be combined with path confirmation (e.g. confirmed_recovery) to be useful."
+    },
+    {
+      "action": "journal-update",
+      "id": "v23-vel2050-climbing",
+      "note": "KILLED 2026-05-21 — n=50, total=-1.590 SOL, monthly=-5.52 SOL/mo. The vel 20-50 + climbing_t30_t45 combo is bleeding and not recovering. Notable failure: this combo is the LEADERBOARD baseline (research-side opt +9.87% on n=158), but live deployment with entryTimingSec=60 has been net negative. Live-vs-sim drift is the most plausible explanation — entering at price_t60 (later) on a climbing-confirmed path catches lower upside than the sim's T+30 assumption, and the sim cost model underestimates measured slippage on this universe. Lesson: leaderboard opts using look-ahead-corrected fields (recovery_t45_above_t30) cannot be deployed at T+60 entry without expecting drift."
+    },
+    {
+      "action": "journal-update",
+      "id": "v25-bot-excl-vel2050",
+      "note": "KILLED 2026-05-21 — n=45, total=-1.327 SOL, monthly=-5.69 SOL/mo. Contrasts SHARPLY with sibling v25-bot-excl-climbing (+2.86 SOL net, score=100, PROMOTABLE today). Same exclusion base (top5<=30 + dd>-25 + age>=60s) — only difference is the vel filter: vel 20-50 here vs climbing_t30_t45 in the sibling. The vel 20-50 leg is the problem; climbing_t30_t45 is the working overlay. Lesson confirmed across the v25 cohort: the bottom-excluded universe responds well to PATH-CONFIRMATION overlays (climbing) and poorly to STATIC-FEATURE overlays (mono, vel-band, calm)."
+    }
+  ]
+}
