@@ -1,0 +1,58 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v25-bot-excl-climbing-live-micro",
+      "label": "v25 bot-excl + climbing_t30_t45 (TP100/SL30, entry@T+60) [LIVE-MICRO 0.05 SOL]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "live_micro",
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v25-bot-excl-climbing-live-micro",
+      "strategy_id": "v25-bot-excl-climbing-live-micro",
+      "cohort_label": "v25-LIVE",
+      "hypothesis": "PROMOTED 2026-05-21 to live_micro (0.05 SOL/trade via MICRO_TRADE_SIZE_SOL override) after shadow v25-bot-excl-climbing cleared all 4 SOL-bar gates (composite score 100): n=188, total +2.86 SOL, drop_top3 +1.08 SOL, monthly_drop3 +4.64 SOL/mo. Regime stability: std-dev 13.72pp across the 12-bin sparkline — below the 15pp promotion bar. Auto-flag: STRENGTHENING (recent_30_median_pct +1.58, last_25 mean +3.52% / median +2.42%). Walk-forward (manual reconstruction since Panel 7 doesn't cover this custom combo): both halves negative mean-per-bin BUT total_net_sol positive due to fat-tail wins — classic memecoin profile, not OVERFIT. Conditions for live: start at micro (0.05 SOL), monitor first 50 live trades for drop3 stability, killswitch armed at DAILY_MAX_LOSS_SOL=1.0. Strategy: same filters as shadow control (top5<=30 + dd>-25 + vel<200 + age>=60s + climbing_t30_t45=1), same TP=100/SL=30/entry@T+60. Shadow v25-bot-excl-climbing remains enabled in parallel as the control.",
+      "prediction": {
+        "target_net_sol": 0.3,
+        "target_sol_per_mo": 1.5,
+        "target_drop_top3": 0.1,
+        "target_n": 50,
+        "target_days": 14,
+        "kill_criterion": "n>=30 and net_sol<-0.5"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
