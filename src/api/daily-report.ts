@@ -1425,6 +1425,12 @@ export function computeDailyReport(db: Database.Database): DailyReportData {
   const BLEEDER_MIN_N = 30;
   let worstBleeder: DailyReportData['today_auto']['worst_bleeder'] = null;
   for (const snap of byStrategyDailySnapshot) {
+    // Only consider currently-enabled strategies — surfacing inactive bleeders
+    // is misleading (operator can't act on them). Bug fix 2026-05-21: previously
+    // the loop didn't filter on enabled state, so a long-dead strategy like
+    // v7shadow-vol-open could show as the "worst bleeder" even though it
+    // hadn't traded in weeks.
+    if (!snap.enabled) continue;
     if (snap.n_trades_lifetime < BLEEDER_MIN_N) continue;
     if (snap.total_net_sol_lifetime >= 0) continue;
     if (!worstBleeder || snap.total_net_sol_lifetime < worstBleeder.total_net_sol_lifetime) {
