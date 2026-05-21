@@ -79,6 +79,12 @@ export interface DynamicMonitorParams {
   slActivationDelaySec: number;
   trailingTpEnabled: boolean;
   trailingTpDropPct: number;
+  /** Trailing TP only activates once the post-entry peak has cleared
+   *  TP × (1 + minPeakLiftPct/100). 0 (default) preserves legacy behavior
+   *  (trail from any TP touch). Used to filter out the "near-miss" failure
+   *  mode where a trade briefly touches TP, drops 10%, and exits below the
+   *  static TP threshold. Added 2026-05-21 for the v34 cohort experiment. */
+  trailingTpMinPeakLiftPct: number;
   tightenSlAtPctTime: number;
   tightenSlTargetPct: number;
   tightenSlAtPctTime2: number;
@@ -122,6 +128,7 @@ export class PositionManager extends EventEmitter {
       slActivationDelaySec: 0,
       trailingTpEnabled: false,
       trailingTpDropPct: 5,
+      trailingTpMinPeakLiftPct: 0,
       tightenSlAtPctTime: 0,
       tightenSlTargetPct: 7,
       tightenSlAtPctTime2: 0,
@@ -481,11 +488,30 @@ export class PositionManager extends EventEmitter {
 
     // 7. TP CHECK
     if (params.trailingTpEnabled) {
-      // Trailing TP mode: when price first hits TP, start trailing
-      if (priceSol >= pos.tpPriceSol) {
+      // Trailing TP mode with optional minimum-peak-lift gate.
+      //
+      // The "near-miss" failure mode: a trade briefly touches TP, immediately
+      // drops trailingTpDropPct%, and exits BELOW the static TP threshold.
+      // When trailingTpMinPeakLiftPct > 0, trailing only activates once the
+      // post-entry peak has cleared TP × (1 + minLift/100). For trades that
+      // touch TP but never clear the min-lift threshold, fall back to static
+      // TP behavior: exit when price retraces back below the TP threshold.
+      //
+      // Semantics summary (v26 = pure trail, v34 = trail with min-lift):
+      //   minLift=0:  trail from any TP touch (legacy v26 behavior).
+      //   minLift>0:  trail only if peak >= TP × (1 + minLift/100), else
+      //               exit at static TP if price retraces below TP.
+      const minLiftPct = params.trailingTpMinPeakLiftPct ?? 0;
+      const minLiftPrice = pos.tpPriceSol * (1 + minLiftPct / 100);
+      const everTouchedTp = pos.highWaterMark >= pos.tpPriceSol;
+      const peakClearedMinLift = pos.highWaterMark >= minLiftPrice;
+
+      if (everTouchedTp && peakClearedMinLift) {
         pos.tpThresholdHit = true;
       }
+
       if (pos.tpThresholdHit) {
+        // Full trailing mode
         if (priceSol > pos.postTpHighWaterMark) {
           pos.postTpHighWaterMark = priceSol;
         }
@@ -494,6 +520,12 @@ export class PositionManager extends EventEmitter {
           this.triggerExit(pos, 'trailing_tp', priceSol);
           return;
         }
+      } else if (everTouchedTp && minLiftPct > 0 && priceSol < pos.tpPriceSol) {
+        // Touched TP, didn't clear min-lift, price has retraced below TP.
+        // Static TP fallback so near-miss trades exit at the threshold
+        // (matches what a pure-static strategy would do).
+        this.triggerExit(pos, 'take_profit', priceSol);
+        return;
       }
     } else {
       // Fixed TP mode (current behavior). When markovHoldActive, skip the

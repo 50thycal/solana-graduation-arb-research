@@ -91,6 +91,13 @@ export interface StrategyParams {
   trailingTpEnabled: boolean;
   /** Trailing TP: exit when price drops this % from post-TP peak. e.g. 5 → 5% drop. */
   trailingTpDropPct: number;
+  /** Trailing TP only activates once the post-entry peak has cleared
+   *  TP × (1 + minPeakLiftPct/100). 0 (default) preserves legacy behavior
+   *  (trail from any TP touch). When > 0, near-miss trades that touch TP but
+   *  don't clear the min-lift threshold exit at static TP if price retraces
+   *  below TP — eliminates the "barely touched TP then dropped 10%" failure
+   *  mode that hurt the v26 trailing-TP cohort. Added 2026-05-21 for v34. */
+  trailingTpMinPeakLiftPct: number;
   /** Tighten SL at this % of maxHoldSeconds elapsed. 0 = disabled. e.g. 50. */
   tightenSlAtPctTime: number;
   /** Tighten SL to this % at stage 1. e.g. 7 → SL becomes 7%. */
@@ -193,6 +200,7 @@ export interface TradingConfig {
   slActivationDelaySec: number;
   trailingTpEnabled: boolean;
   trailingTpDropPct: number;
+  trailingTpMinPeakLiftPct: number;
   tightenSlAtPctTime: number;
   tightenSlTargetPct: number;
   tightenSlAtPctTime2: number;
@@ -271,6 +279,7 @@ export function loadTradingConfig(): TradingConfig {
     slActivationDelaySec: parseInt(process.env.SL_ACTIVATION_DELAY_SEC || '0', 10),
     trailingTpEnabled: process.env.TRAILING_TP_ENABLED === 'true',
     trailingTpDropPct: parseFloat(process.env.TRAILING_TP_DROP_PCT || '5'),
+    trailingTpMinPeakLiftPct: parseFloat(process.env.TRAILING_TP_MIN_PEAK_LIFT_PCT || '0'),
     tightenSlAtPctTime: parseFloat(process.env.TIGHTEN_SL_AT_PCT_TIME || '0'),
     tightenSlTargetPct: parseFloat(process.env.TIGHTEN_SL_TARGET_PCT || '7'),
     tightenSlAtPctTime2: parseFloat(process.env.TIGHTEN_SL_AT_PCT_TIME2 || '0'),
@@ -329,6 +338,7 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     slActivationDelaySec: cfg.slActivationDelaySec ?? 0,
     trailingTpEnabled: cfg.trailingTpEnabled ?? false,
     trailingTpDropPct: cfg.trailingTpDropPct ?? 5,
+    trailingTpMinPeakLiftPct: cfg.trailingTpMinPeakLiftPct ?? 0,
     tightenSlAtPctTime: cfg.tightenSlAtPctTime ?? 0,
     tightenSlTargetPct: cfg.tightenSlTargetPct ?? 7,
     tightenSlAtPctTime2: cfg.tightenSlAtPctTime2 ?? 0,
@@ -373,6 +383,7 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     slActivationDelaySec: params.slActivationDelaySec ?? 0,
     trailingTpEnabled: params.trailingTpEnabled ?? false,
     trailingTpDropPct: params.trailingTpDropPct ?? 5,
+    trailingTpMinPeakLiftPct: params.trailingTpMinPeakLiftPct ?? globalCfg.trailingTpMinPeakLiftPct ?? 0,
     tightenSlAtPctTime: params.tightenSlAtPctTime ?? 0,
     tightenSlTargetPct: params.tightenSlTargetPct ?? 7,
     tightenSlAtPctTime2: params.tightenSlAtPctTime2 ?? 0,
