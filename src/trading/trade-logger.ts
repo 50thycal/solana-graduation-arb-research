@@ -8,7 +8,17 @@ import {
   backfillTradeMomentum,
   updateTradeEntryFill,
 } from '../db/queries';
-import { TradingConfig, ExecutionMode } from './config';
+import { TradingConfig, ExecutionMode, MICRO_TRADE_SIZE_SOL } from './config';
+
+/** Effective on-chain trade size in SOL — accounts for the live_micro hard
+ *  override that the executor applies. Without this helper the dashboard's
+ *  net_profit_sol on live_micro rows was 10x too large because the strategy
+ *  config's tradeSizeSol (0.5) was being multiplied into net % returns even
+ *  though the actual swap only moved MICRO_TRADE_SIZE_SOL (0.05). 2026-05-22
+ *  fix — see schema.ts backfill for historical rows. */
+function effectiveTradeSize(tradeSizeSol: number, mode?: ExecutionMode): number {
+  return mode === 'live_micro' ? MICRO_TRADE_SIZE_SOL : tradeSizeSol;
+}
 import { FilterStageResult } from './filter-pipeline';
 
 const logger = makeLogger('trade-logger');
@@ -89,7 +99,7 @@ export class TradeLogger {
       entry_price_sol: params.entryPriceSol,
       entry_pct_from_open: params.entryPctFromOpen,
       entry_liquidity_sol: params.entryLiquiditySol,
-      trade_size_sol: params.config.tradeSizeSol,
+      trade_size_sol: effectiveTradeSize(params.config.tradeSizeSol, executionMode),
       take_profit_pct: params.config.takeProfitPct,
       stop_loss_pct: params.config.stopLossPct,
       max_hold_seconds: params.config.maxHoldSeconds,
@@ -164,6 +174,13 @@ export class TradeLogger {
       (params.executionMode === 'live_micro' || params.executionMode === 'live_full');
     const isShadow = params.executionMode === 'shadow';
 
+    // Effective on-chain trade size. For live_micro the executor hard-overrides
+    // to MICRO_TRADE_SIZE_SOL (0.05) regardless of the strategy's configured
+    // tradeSizeSol. Use this for ALL SOL-denominated calcs (overhead %, fees,
+    // net_profit_sol) so they match reality. Without this the Performance by
+    // Strategy panel showed Net P&L 10x too negative for live_micro rows.
+    const tradeSizeForCalc = effectiveTradeSize(params.tradeSizeSol, params.executionMode);
+
     if (isShadow) {
       // Measured-cost model. shadow_measured_*_slippage_pct already includes
       // LP fee + spread + price impact at our trade size, so don't stack a
@@ -175,20 +192,20 @@ export class TradeLogger {
       // approximation; exact compounding diverges by < 0.05 pp at < 5% slip).
       const slipAdjustedReturnPct = grossReturnPct - entrySlip - exitSlip;
       // Simulated execution overhead: jito tips (entry already on row, exit
-      // arrives via params) + 2 × tx fee. tradeSizeSol denominates both.
+      // arrives via params) + 2 × tx fee. tradeSizeForCalc denominates both.
       const totalJitoTipSol = (entryJitoTipSol ?? 0) + (params.jitoTipSol ?? 0);
       const txOverheadSol = (5_000 * 2) / 1e9; // 2 × TX_FEE_LAMPORTS
       const overheadSol = totalJitoTipSol + txOverheadSol;
-      const overheadPct = params.tradeSizeSol > 0
-        ? (overheadSol / params.tradeSizeSol) * 100
+      const overheadPct = tradeSizeForCalc > 0
+        ? (overheadSol / tradeSizeForCalc) * 100
         : 0;
       netReturnPct = slipAdjustedReturnPct - overheadPct;
-      estimatedFeesSol = overheadSol + params.tradeSizeSol * (entrySlip + exitSlip) / 100;
+      estimatedFeesSol = overheadSol + tradeSizeForCalc * (entrySlip + exitSlip) / 100;
     } else if (isLiveFill) {
       effectiveExitPrice = exitPriceSol * (1 - (params.measuredExitSlippagePct as number) / 100);
       const gapAdjustedReturnPct = ((effectiveExitPrice - entryPriceSol) / entryPriceSol) * 100;
       const roundTripCostPct = measuredRoundTripPct ?? 1.75;
-      estimatedFeesSol = params.tradeSizeSol * (roundTripCostPct / 100);
+      estimatedFeesSol = tradeSizeForCalc * (roundTripCostPct / 100);
       netReturnPct = gapAdjustedReturnPct - roundTripCostPct;
     } else {
       // Paper — unchanged. Static gap penalty + measured/default round-trip cost.
@@ -203,12 +220,12 @@ export class TradeLogger {
       }
       const gapAdjustedReturnPct = ((effectiveExitPrice - entryPriceSol) / entryPriceSol) * 100;
       const roundTripCostPct = measuredRoundTripPct ?? 1.75;
-      estimatedFeesSol = params.tradeSizeSol * (roundTripCostPct / 100);
+      estimatedFeesSol = tradeSizeForCalc * (roundTripCostPct / 100);
       netReturnPct = gapAdjustedReturnPct - roundTripCostPct;
     }
 
     const gapAdjustedReturnPct = ((effectiveExitPrice - entryPriceSol) / entryPriceSol) * 100;
-    const netProfitSol = params.tradeSizeSol * (netReturnPct / 100);
+    const netProfitSol = tradeSizeForCalc * (netReturnPct / 100);
     void entrySlippagePct; // captured for future use; not currently in net calc
 
     closeTrade(this.db, params.tradeId, {
