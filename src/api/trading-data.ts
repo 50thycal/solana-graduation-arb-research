@@ -13,6 +13,7 @@
 import type Database from 'better-sqlite3';
 import { getTradeStatsByStrategy } from '../db/queries';
 import type { StrategyManager } from '../trading/strategy-manager';
+import { getPoolResolverMetrics } from '../trading/pool-resolver';
 
 /** Safe JSON.parse — returns null on invalid input instead of throwing.
  *  Used for failure_context_json which may be malformed if an older bot
@@ -277,6 +278,7 @@ export function computeTradingData(
     skip_reason_counts: skipReasons,
     recent_skips: recentSkips,
     top_pairs: opts?.topPairs ?? [],
+    pool_resolver: getPoolResolverMetrics(),
   };
 }
 
