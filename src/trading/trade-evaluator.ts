@@ -5,6 +5,7 @@ import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourIn
 import { runFilterPipeline } from './filter-pipeline';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
+import { getMintProfile } from './token-2022';
 import { PositionManager, ActivePosition } from './position-manager';
 import { ObservationContext } from '../collector/price-collector';
 import { runEntryPreflight, maybeLogKillswitchTripped, isKillswitchTripped } from './safety';
@@ -219,6 +220,57 @@ export class TradeEvaluator {
           'Skipping live entry — synthetic or invalid pool address (vault-based modes still work)'
         );
         return;
+      }
+    }
+
+    // Reject live entries on Token-2022 mints with extensions. These mints can
+    // have TransferHook (custom transfer logic — often honeypot pattern) or
+    // require additional rent-exempt accounts for their extensions that the
+    // bot's standard swap instruction doesn't budget for. Observed crash:
+    // trade 11713 (2026-05-22 06:00) on a Token-2022 mint with extensions
+    // [TransferHook, MetadataPointer] hit InsufficientFundsForRent on
+    // account_index 3 during the swap instruction. Paper/shadow modes still
+    // trade these (no real exposure, useful data). Adds 1 RPC call per live
+    // eval to fetch the mint profile — acceptable cost for the live wallet
+    // protection.
+    if (isLive && this.connection) {
+      try {
+        const mintProfile = await getMintProfile(this.connection, new PublicKey(ctx.mint));
+        if (mintProfile.isToken2022) {
+          this.tradeLogger.logSkipped(
+            graduationId,
+            'safety:token2022_not_supported',
+            null,
+            pctT30,
+            this.strategyId,
+          );
+          logger.info(
+            {
+              graduationId,
+              mint: ctx.mint,
+              isToken2022: true,
+              hasTransferFee: mintProfile.hasTransferFee,
+              hasTransferHook: mintProfile.hasTransferHook,
+              extensionTypes: mintProfile.extensionTypes,
+              strategyId: this.strategyId,
+            },
+            'Skipping live entry — Token-2022 mint with extensions not supported (paper/shadow still trade)'
+          );
+          return;
+        }
+      } catch (err) {
+        // Mint profile fetch failed — log + proceed (defensive: don't block
+        // entry on a transient RPC blip). The downstream executor will hit
+        // the same call and fail there with a clearer error if needed.
+        logger.warn(
+          {
+            graduationId,
+            mint: ctx.mint,
+            err: err instanceof Error ? err.message : String(err),
+            strategyId: this.strategyId,
+          },
+          'getMintProfile failed in live preflight — proceeding to executor'
+        );
       }
     }
 
