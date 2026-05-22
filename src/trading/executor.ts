@@ -53,6 +53,17 @@ export interface ExecutionResult {
   measuredSlippagePct?: number;
   jitoTipSol?: number;
   txLandMs?: number;
+  /** 'jito' or 'rpc' — which submission path attempted the tx. Only set on
+   *  live executions; undefined for paper/shadow. Useful for the post-mortem
+   *  diagnostic surface in trading.json. Added 2026-05-21. */
+  failurePath?: string;
+  /** Comma-joined list of mint extension flags (e.g. "token2022,transfer_fee").
+   *  Empty string when the mint is plain SPL. Captured at buy time. */
+  mintExtensionFlags?: string;
+  /** Full diagnostic snapshot for failed live txs — same fields as the
+   *  "Live buy/sell failed to land" log entry. Stored verbatim in
+   *  trades_v2.failure_context_json on the failed row. */
+  failureContext?: Record<string, unknown>;
 }
 
 export function readTokenAccountAmount(data: Buffer): number | null {
@@ -404,26 +415,30 @@ export class Executor {
       // even when the RPC fallback successfully captured it (audit gap on
       // trades 10400 / 10424 / 10882). With the sig populated the operator
       // can paste it into Solscan and read the failing account_index directly.
+      const extensionFlags: string[] = [];
+      if (mintProfile.isToken2022) extensionFlags.push('token2022');
+      if (mintProfile.hasTransferFee) extensionFlags.push('transfer_fee');
+      if (mintProfile.hasTransferHook) extensionFlags.push('transfer_hook');
+      const failureContext = {
+        path: submission.path,
+        txSignature: submission.txSignature,
+        solscanUrl: submission.txSignature
+          ? `https://solscan.io/tx/${submission.txSignature}`
+          : null,
+        err: submission.errorMessage,
+        isToken2022: mintProfile.isToken2022,
+        hasTransferFee: mintProfile.hasTransferFee,
+        hasTransferHook: mintProfile.hasTransferHook,
+        extensionTypes: mintProfile.extensionTypes,
+        ataPreCreated: !baseAtaExistsBefore,
+        baseTokenProgram: baseTokenProgram.toBase58(),
+        expectedBaseOutRaw: expectedBaseOutRaw.toString(),
+        minBaseOutRaw: minBaseOutRaw.toString(),
+        maxQuoteInLamports: maxQuoteInLamports.toString(),
+        latencyMs: submission.latencyMs,
+      };
       logger.error(
-        {
-          mint, mode,
-          path: submission.path,
-          txSignature: submission.txSignature,
-          solscanUrl: submission.txSignature
-            ? `https://solscan.io/tx/${submission.txSignature}`
-            : null,
-          err: submission.errorMessage,
-          isToken2022: mintProfile.isToken2022,
-          hasTransferFee: mintProfile.hasTransferFee,
-          hasTransferHook: mintProfile.hasTransferHook,
-          extensionTypes: mintProfile.extensionTypes,
-          ataPreCreated: !baseAtaExistsBefore,
-          baseTokenProgram: baseTokenProgram.toBase58(),
-          expectedBaseOutRaw: expectedBaseOutRaw.toString(),
-          minBaseOutRaw: minBaseOutRaw.toString(),
-          maxQuoteInLamports: maxQuoteInLamports.toString(),
-          latencyMs: submission.latencyMs,
-        },
+        { mint, mode, ...failureContext },
         'Live buy failed to land — diagnostic snapshot for post-mortem',
       );
       return {
@@ -432,6 +447,9 @@ export class Executor {
         errorMessage: `live: tx did not land (${submission.path}): ${submission.errorMessage ?? 'unknown'}`,
         txSignature: submission.txSignature,
         txLandMs: submission.latencyMs,
+        failurePath: submission.path,
+        mintExtensionFlags: extensionFlags.join(','),
+        failureContext,
       };
     }
 
@@ -591,24 +609,28 @@ export class Executor {
     this.wallet.invalidateSolBalance();
 
     if (!submission.landed) {
+      const sellExtensionFlags: string[] = [];
+      if (sellMintProfile.isToken2022) sellExtensionFlags.push('token2022');
+      if (sellMintProfile.hasTransferFee) sellExtensionFlags.push('transfer_fee');
+      if (sellMintProfile.hasTransferHook) sellExtensionFlags.push('transfer_hook');
+      const sellFailureContext = {
+        path: submission.path,
+        txSignature: submission.txSignature,
+        solscanUrl: submission.txSignature
+          ? `https://solscan.io/tx/${submission.txSignature}`
+          : null,
+        err: submission.errorMessage,
+        isToken2022: sellMintProfile.isToken2022,
+        hasTransferFee: sellMintProfile.hasTransferFee,
+        hasTransferHook: sellMintProfile.hasTransferHook,
+        extensionTypes: sellMintProfile.extensionTypes,
+        baseTokenProgram: sellMintProfile.tokenProgram.toBase58(),
+        baseInRaw: baseInRaw.toString(),
+        minQuoteOut: minQuoteOut.toString(),
+        latencyMs: submission.latencyMs,
+      };
       logger.error(
-        {
-          mint, mode,
-          path: submission.path,
-          txSignature: submission.txSignature,
-          solscanUrl: submission.txSignature
-            ? `https://solscan.io/tx/${submission.txSignature}`
-            : null,
-          err: submission.errorMessage,
-          isToken2022: sellMintProfile.isToken2022,
-          hasTransferFee: sellMintProfile.hasTransferFee,
-          hasTransferHook: sellMintProfile.hasTransferHook,
-          extensionTypes: sellMintProfile.extensionTypes,
-          baseTokenProgram: sellMintProfile.tokenProgram.toBase58(),
-          baseInRaw: baseInRaw.toString(),
-          minQuoteOut: minQuoteOut.toString(),
-          latencyMs: submission.latencyMs,
-        },
+        { mint, mode, ...sellFailureContext },
         'Live sell failed to land — diagnostic snapshot for post-mortem',
       );
       return {
@@ -617,6 +639,9 @@ export class Executor {
         errorMessage: `live sell: tx did not land: ${submission.errorMessage ?? 'unknown'}`,
         txSignature: submission.txSignature,
         txLandMs: submission.latencyMs,
+        failurePath: submission.path,
+        mintExtensionFlags: sellExtensionFlags.join(','),
+        failureContext: sellFailureContext,
       };
     }
 
