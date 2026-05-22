@@ -419,7 +419,7 @@ export class Executor {
       if (mintProfile.isToken2022) extensionFlags.push('token2022');
       if (mintProfile.hasTransferFee) extensionFlags.push('transfer_fee');
       if (mintProfile.hasTransferHook) extensionFlags.push('transfer_hook');
-      const failureContext = {
+      const failureContext: Record<string, unknown> = {
         path: submission.path,
         txSignature: submission.txSignature,
         solscanUrl: submission.txSignature
@@ -437,6 +437,18 @@ export class Executor {
         maxQuoteInLamports: maxQuoteInLamports.toString(),
         latencyMs: submission.latencyMs,
       };
+      // Pull on-chain program logs for the failed tx so the actual revert
+      // cause (PumpSwap Anchor error name, runtime rent failure account
+      // details, etc.) lands in trading.json instead of requiring a manual
+      // Solscan inspection on every failure.
+      if (submission.txSignature) {
+        const logsInfo = await this.fetchFailureLogs(submission.txSignature);
+        if (logsInfo) {
+          failureContext.programLogs = logsInfo.programLogs;
+          failureContext.failingProgram = logsInfo.failingProgram;
+          failureContext.failingInstructionIndex = logsInfo.failingInstructionIndex;
+        }
+      }
       logger.error(
         { mint, mode, ...failureContext },
         'Live buy failed to land — diagnostic snapshot for post-mortem',
@@ -613,7 +625,7 @@ export class Executor {
       if (sellMintProfile.isToken2022) sellExtensionFlags.push('token2022');
       if (sellMintProfile.hasTransferFee) sellExtensionFlags.push('transfer_fee');
       if (sellMintProfile.hasTransferHook) sellExtensionFlags.push('transfer_hook');
-      const sellFailureContext = {
+      const sellFailureContext: Record<string, unknown> = {
         path: submission.path,
         txSignature: submission.txSignature,
         solscanUrl: submission.txSignature
@@ -629,6 +641,14 @@ export class Executor {
         minQuoteOut: minQuoteOut.toString(),
         latencyMs: submission.latencyMs,
       };
+      if (submission.txSignature) {
+        const logsInfo = await this.fetchFailureLogs(submission.txSignature);
+        if (logsInfo) {
+          sellFailureContext.programLogs = logsInfo.programLogs;
+          sellFailureContext.failingProgram = logsInfo.failingProgram;
+          sellFailureContext.failingInstructionIndex = logsInfo.failingInstructionIndex;
+        }
+      }
       logger.error(
         { mint, mode, ...sellFailureContext },
         'Live sell failed to land — diagnostic snapshot for post-mortem',
@@ -676,6 +696,59 @@ export class Executor {
       measuredSlippagePct, jitoTipSol,
       txLandMs: submission.latencyMs,
     };
+  }
+
+  /**
+   * Fetch on-chain program logs for a failed tx and pull out the lines
+   * around the failure. Used to enrich `failureContext` so the operator
+   * doesn't have to open Solscan to see why the swap reverted.
+   *
+   * Best-effort — if the tx isn't queryable yet (RPC hasn't indexed it),
+   * we retry briefly then give up and return null. Never throws.
+   */
+  private async fetchFailureLogs(txSignature: string): Promise<{
+    programLogs: string[];
+    failingProgram: string | null;
+    failingInstructionIndex: number | null;
+  } | null> {
+    if (!this.connection) return null;
+    const retryDelaysMs = [800, 1500, 2500];
+    let tx = null;
+    for (const delay of retryDelaysMs) {
+      try {
+        tx = await this.connection.getTransaction(txSignature, {
+          maxSupportedTransactionVersion: 0,
+          commitment: 'confirmed',
+        });
+        if (tx) break;
+      } catch {
+        // Swallow — we retry, then return null
+      }
+      await this.sleep(delay);
+    }
+    if (!tx?.meta) return null;
+    const logs = tx.meta.logMessages ?? [];
+    // Find the program that emitted the failure: look for the last
+    // "Program <id> failed" line. Anchor errors usually log `Custom: N`
+    // right above; Solana runtime errors (InsufficientFundsForRent) show
+    // an `Error processing Instruction <n>:` line.
+    let failingProgram: string | null = null;
+    let failingInstructionIndex: number | null = null;
+    for (let i = logs.length - 1; i >= 0; i--) {
+      const line = logs[i];
+      const failMatch = line.match(/Program (\S+) failed: /);
+      if (failMatch && !failingProgram) failingProgram = failMatch[1];
+      const ixMatch = line.match(/Error processing Instruction (\d+)/);
+      if (ixMatch && failingInstructionIndex == null) {
+        failingInstructionIndex = parseInt(ixMatch[1], 10);
+      }
+      if (failingProgram && failingInstructionIndex != null) break;
+    }
+    // Tail the last ~25 lines — enough to capture the failing program's
+    // context without bloating the row. If we ever need more we can pull
+    // by sig directly from RPC.
+    const programLogs = logs.slice(-25);
+    return { programLogs, failingProgram, failingInstructionIndex };
   }
 
   private sleep(ms: number): Promise<void> {
