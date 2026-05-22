@@ -1,0 +1,16 @@
+{
+  "commands": [
+    { "action": "delete", "id": "v12-bcage1d-dd10" },
+    { "action": "delete", "id": "v14-sumabs-shadow" },
+    {
+      "action": "journal-update",
+      "id": "v12-bcage1d-dd10",
+      "note": "KILLED 2026-05-22 — INVALID at n=77 (close to n=100 threshold but downward trajectory). total=-1.32 SOL, drop_top3=-3.9 SOL. Lottery-ticket structure: the small apparent edge collapsed when leave-one-out stripped the top 3 winners. Same failure pattern as v21-bottom-excluded (front-runner that decayed past n=200) and v9shadow-vel20-top5 (still has positive drop3 but on a thin margin). Lesson confirmed again: drop_top3 must be re-checked as n grows; passing the SOL bar at low n is necessary but not sufficient."
+    },
+    {
+      "action": "journal-update",
+      "id": "v14-sumabs-shadow",
+      "note": "KILLED 2026-05-22 — INVALID at n=79. total=-0.77 SOL, drop_top3=-2.2 SOL. Outlier-masked losses: total looks modestly negative but drop_top3 is dramatically worse, meaning the wins were exactly 1-3 lottery trades. No gate cleared. The sum_abs_returns_0_30 calmness filter family (v17/v18/v14 variants) has now produced multiple INVALIDs across different universes — the filter selects for low-vol pre-entry paths but those paths systematically dump post-graduation on the populations where it's been tested. Specifically: paper sample showed +3% avg early but live shadow shows the cost model eats it. Don't redeploy sum_abs as a standalone filter; only useful when paired with a strongly positive overlay (and even then needs verification per-universe)."
+    }
+  ]
+}
