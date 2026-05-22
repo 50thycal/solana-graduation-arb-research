@@ -9,6 +9,7 @@ import { getMintProfile } from './token-2022';
 import { PositionManager, ActivePosition } from './position-manager';
 import { ObservationContext } from '../collector/price-collector';
 import { runEntryPreflight, maybeLogKillswitchTripped, isKillswitchTripped } from './safety';
+import { resolvePoolFromVault } from './pool-resolver';
 import type { Wallet } from './wallet';
 
 const logger = makeLogger('trade-evaluator');
@@ -196,18 +197,52 @@ export class TradeEvaluator {
       ? MICRO_TRADE_SIZE_SOL
       : cfg.tradeSizeSol;
 
-    // Reject live entries when the pool address is synthetic (e.g. "vaults:abc")
-    // or otherwise not a valid base58 Solana address. The listener stores
-    // synthetic placeholders when the pool PDA couldn't be extracted from the
-    // migration tx — these work for vault-based price reads (paper/shadow) but
-    // would crash the live executor at `new PublicKey(poolAddress)` with a
-    // "Non-base58 character" error. Better to skip cleanly than burn a failed
-    // trade row. 2026-05-21 bug fix (saw it crash v25-bot-excl-climbing-live-micro).
+    // Validate the pool address for live entries. The listener stores a
+    // synthetic placeholder of the form `vaults:<base8>` when it couldn't
+    // extract the real PumpSwap pool PDA from the migrate tx (a known
+    // upstream parsing gap). Those addresses work fine for vault-based
+    // price reads (paper / shadow) but `new PublicKey("vaults:abc")` throws
+    // "Non-base58 character" in the live executor.
+    //
+    // Resolution path (2026-05-22): when the stored address is synthetic,
+    // try resolving the real PDA on-the-fly by reading the SPL Token
+    // account at baseVault and pulling its `owner` field — that's the pool
+    // PDA. One RPC call per cache miss, write-back to graduations table so
+    // future evaluations skip the resolver. Only if resolution fails do
+    // we skip with `safety:invalid_pool_address`. See pool-resolver.ts.
     const isLive = executionMode === 'live_micro' || executionMode === 'live_full';
     if (isLive && ctx.poolAddress) {
+      let poolValid = false;
       try {
         new PublicKey(ctx.poolAddress);
+        poolValid = true;
       } catch {
+        poolValid = false;
+      }
+      if (!poolValid && this.connection && ctx.baseVault) {
+        const resolved = await resolvePoolFromVault({
+          connection: this.connection,
+          mint: ctx.mint,
+          baseVault: ctx.baseVault,
+          graduationId,
+          db: this.db,
+        });
+        if (resolved) {
+          logger.info(
+            {
+              graduationId,
+              mint: ctx.mint,
+              strategyId: this.strategyId,
+              priorPoolAddress: ctx.poolAddress,
+              resolvedPoolAddress: resolved,
+            },
+            'Synthetic pool address resolved via baseVault.owner — live entry unblocked'
+          );
+          ctx.poolAddress = resolved;
+          poolValid = true;
+        }
+      }
+      if (!poolValid) {
         this.tradeLogger.logSkipped(
           graduationId,
           'safety:invalid_pool_address',
@@ -216,8 +251,15 @@ export class TradeEvaluator {
           this.strategyId,
         );
         logger.info(
-          { graduationId, mint: ctx.mint, poolAddress: ctx.poolAddress, strategyId: this.strategyId },
-          'Skipping live entry — synthetic or invalid pool address (vault-based modes still work)'
+          {
+            graduationId,
+            mint: ctx.mint,
+            poolAddress: ctx.poolAddress,
+            hasBaseVault: !!ctx.baseVault,
+            hasConnection: !!this.connection,
+            strategyId: this.strategyId,
+          },
+          'Skipping live entry — pool address invalid and resolver failed (vault-based modes still work)'
         );
         return;
       }

@@ -320,6 +320,27 @@ export function runDiagnosis(
     const dailyPnl = getDailyLiveNetProfitSol(db);
     const walletEnvSet = !!process.env.WALLET_PRIVATE_KEY;
     const circuitTripped = dailyPnl <= -DAILY_MAX_LOSS_SOL;
+
+    // Synthetic pool address coverage on recent graduations. When the
+    // migrate-tx parser can't extract the real PumpSwap pool PDA, the
+    // listener stores a `vaults:<base8>` placeholder. Pre-2026-05-22 this
+    // blocked all live entries (safety:invalid_pool_address); now the
+    // on-demand pool-resolver patches the row on first live attempt. This
+    // surface tells future sessions whether the upstream parsing gap has
+    // crept back without inspecting trades_v2.skip_reason directly.
+    const syntheticPoolRow = db.prepare(`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN new_pool_address LIKE 'vaults:%' THEN 1 ELSE 0 END) AS synthetic,
+        SUM(CASE WHEN new_pool_address IS NULL THEN 1 ELSE 0 END) AS null_pool
+      FROM (
+        SELECT new_pool_address FROM graduations ORDER BY id DESC LIMIT 50
+      )
+    `).get() as { total: number; synthetic: number; null_pool: number };
+    const syntheticPct = syntheticPoolRow.total > 0
+      ? +(100 * syntheticPoolRow.synthetic / syntheticPoolRow.total).toFixed(1)
+      : 0;
+
     const allOk = !killswitch && !circuitTripped && walletEnvSet;
     level5 = {
       pass: allOk,
@@ -331,6 +352,9 @@ export function runDiagnosis(
         daily_max_loss_sol: DAILY_MAX_LOSS_SOL,
         circuit_breaker_tripped: circuitTripped,
         wallet_env_set: walletEnvSet,
+        synthetic_pool_pct_last_50: syntheticPct,
+        synthetic_pool_count_last_50: syntheticPoolRow.synthetic,
+        null_pool_count_last_50: syntheticPoolRow.null_pool,
       },
       notes: !walletEnvSet
         ? 'Live strategies configured but WALLET_PRIVATE_KEY not set — entries will fail.'
