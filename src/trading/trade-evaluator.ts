@@ -265,23 +265,29 @@ export class TradeEvaluator {
       }
     }
 
-    // Reject live entries on Token-2022 mints with extensions. These mints can
-    // have TransferHook (custom transfer logic — often honeypot pattern) or
-    // require additional rent-exempt accounts for their extensions that the
-    // bot's standard swap instruction doesn't budget for. Observed crash:
-    // trade 11713 (2026-05-22 06:00) on a Token-2022 mint with extensions
-    // [TransferHook, MetadataPointer] hit InsufficientFundsForRent on
-    // account_index 3 during the swap instruction. Paper/shadow modes still
-    // trade these (no real exposure, useful data). Adds 1 RPC call per live
-    // eval to fetch the mint profile — acceptable cost for the live wallet
-    // protection.
+    // Reject live entries only on Token-2022 mints with a TransferHook
+    // extension. TransferHook installs custom on-chain transfer logic and is
+    // the standard honeypot pattern — the buy succeeds, then the sell hook
+    // blocks the transfer and the position is stuck at 100% loss.
+    //
+    // Plain Token-2022 (with MetadataPointer / TransferFeeConfig / etc.) is
+    // now the standard mint format, so the previous wholesale isToken2022
+    // block was rejecting valid trades. Trade 11713's InsufficientFundsForRent
+    // crash (the original reason the broad block was added) was actually a
+    // rent-budget shortfall in our swap ix on TransferHook extension
+    // accounts — TransferHook tokens reliably hit that path because of the
+    // extra `extra_account_metas` PDA they require. Blocking TransferHook
+    // alone removes both the rent-failure case and the honeypot risk.
+    //
+    // We always run the profile fetch on live mode so the mint flags are
+    // available for diagnostics whether the trade fires or not.
     if (isLive && this.connection) {
       try {
         const mintProfile = await getMintProfile(this.connection, new PublicKey(ctx.mint));
-        if (mintProfile.isToken2022) {
+        if (mintProfile.hasTransferHook) {
           this.tradeLogger.logSkipped(
             graduationId,
-            'safety:token2022_not_supported',
+            'safety:transfer_hook_honeypot_risk',
             null,
             pctT30,
             this.strategyId,
@@ -290,15 +296,27 @@ export class TradeEvaluator {
             {
               graduationId,
               mint: ctx.mint,
-              isToken2022: true,
+              isToken2022: mintProfile.isToken2022,
               hasTransferFee: mintProfile.hasTransferFee,
-              hasTransferHook: mintProfile.hasTransferHook,
+              hasTransferHook: true,
               extensionTypes: mintProfile.extensionTypes,
               strategyId: this.strategyId,
             },
-            'Skipping live entry — Token-2022 mint with extensions not supported (paper/shadow still trade)'
+            'Skipping live entry — TransferHook extension present (honeypot risk: sell hook can block exit)'
           );
           return;
+        }
+        if (mintProfile.isToken2022) {
+          logger.info(
+            {
+              graduationId,
+              mint: ctx.mint,
+              hasTransferFee: mintProfile.hasTransferFee,
+              extensionTypes: mintProfile.extensionTypes,
+              strategyId: this.strategyId,
+            },
+            'Live entry on Token-2022 mint — allowed (no TransferHook)'
+          );
         }
       } catch (err) {
         // Mint profile fetch failed — log + proceed (defensive: don't block
