@@ -882,13 +882,24 @@ export class StrategyManager {
           { tradeId: pos.tradeId, mint: pos.mint, mode: executionMode, errorMessage: errMsg },
           'Killswitch sell failed — not retrying, marking needs_manual_close',
         );
+        const killswitchSr = sellResult as {
+          txSignature?: string;
+          txLandMs?: number;
+          jitoTipSol?: number;
+          failurePath?: string;
+          mintExtensionFlags?: string | null;
+          failureContext?: Record<string, unknown>;
+        };
         this.tradeLogger.failTrade(
           pos.tradeId,
           `killswitch_sell_failed: ${errMsg}`,
           {
-            txSignature: (sellResult as { txSignature?: string }).txSignature,
-            txLandMs: (sellResult as { txLandMs?: number }).txLandMs,
-            jitoTipSol: (sellResult as { jitoTipSol?: number }).jitoTipSol,
+            txSignature: killswitchSr.txSignature,
+            txLandMs: killswitchSr.txLandMs,
+            jitoTipSol: killswitchSr.jitoTipSol,
+            failurePath: killswitchSr.failurePath,
+            mintExtensionFlags: killswitchSr.mintExtensionFlags,
+            failureContext: killswitchSr.failureContext,
           },
         );
         return;
@@ -913,9 +924,31 @@ export class StrategyManager {
         },
         'Live sell failed after MAX retries — marking trade as needs_manual_close',
       );
+      // Pass the full sellResult diagnostic surface (signatures, failure
+      // path, mint extension flags, on-chain program logs from the
+      // executor's fetchFailureLogs hop) through to the trade row. Prior
+      // to this fix the sell-failure path called failTrade(tradeId,
+      // reason) only, so post-mortem on stuck positions required a
+      // manual Solscan visit. 2026-05-22.
+      const sr = sellResult as {
+        txSignature?: string;
+        txLandMs?: number;
+        jitoTipSol?: number;
+        failurePath?: string;
+        mintExtensionFlags?: string | null;
+        failureContext?: Record<string, unknown>;
+      };
       this.tradeLogger.failTrade(
         pos.tradeId,
         `live_sell_failed_after_${MAX_SELL_RETRIES}_retries: ${errMsg}`,
+        {
+          txSignature: sr.txSignature,
+          txLandMs: sr.txLandMs,
+          jitoTipSol: sr.jitoTipSol,
+          failurePath: sr.failurePath,
+          mintExtensionFlags: sr.mintExtensionFlags,
+          failureContext: sr.failureContext,
+        },
       );
       return;
     }

@@ -22,6 +22,21 @@ export const MICRO_TRADE_SIZE_SOL = parseFloat(process.env.MICRO_TRADE_SIZE_SOL 
 export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL || '0.0001');
 /** Max acceptable expected slippage at entry. 500 = 5%. */
 export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAGE_BPS || '500', 10);
+/**
+ * Quote-side slippage tolerance on the actual swap ix (basis points).
+ * 1000 = 10%. Distinct from DEFAULT_MAX_SLIPPAGE_BPS (entry preflight gate).
+ * On buy: maxQuoteAmountIn = solIn * (10000 + bps) / 10000
+ * On sell: minQuoteOut = expectedSolOut * (10000 - bps) / 10000
+ *
+ * 2026-05-22: bumped from 5% → 10% after program logs revealed Custom 6004
+ * (Anchor ExceededSlippage) was responsible for ~10 buy failures and ~2
+ * stuck-position sell-side retries on grad 23066. Successful exits measured
+ * ~1.68% slippage; the prior 5% margin couldn't absorb the protocol fee +
+ * pool fee + price impact stack on volatile graduations. Stuck positions
+ * are far more expensive than mild slippage, so a wider tolerance is worth
+ * accepting up to 10% worse fills on the long tail.
+ */
+export const SWAP_SLIPPAGE_BPS = parseInt(process.env.SWAP_SLIPPAGE_BPS || '1000', 10);
 /** SOL kept as buffer above tradeSize for tx fees + ATA rent. */
 export const WALLET_SOL_BUFFER = parseFloat(process.env.WALLET_SOL_BUFFER || '0.02');
 /** Regional Jito block engine endpoint. Frankfurt/NY/Amsterdam/Tokyo also available. */

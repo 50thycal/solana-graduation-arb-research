@@ -9,7 +9,7 @@ import BN from 'bn.js';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 import type { ExecutionMode } from './config';
-import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL } from './config';
+import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL, SWAP_SLIPPAGE_BPS } from './config';
 import { Wallet, WSOL_MINT, getAssociatedTokenAddress } from './wallet';
 import {
   buildBuyInstructions,
@@ -369,8 +369,9 @@ export class Executor {
       ? await getTransferFeeForRawAmount(this.connection, mintPk, baseTokenProgram, expectedBaseOutRaw)
       : 0n;
     const feeAdjustedExpectedBaseOut = expectedBaseOutRaw - transferFeeOnExpected;
-    const minBaseOutRaw = (feeAdjustedExpectedBaseOut * 95n) / 100n;
-    const maxQuoteInLamports = (solInLamports * 105n) / 100n;
+    const slipBpsBn = BigInt(SWAP_SLIPPAGE_BPS);
+    const minBaseOutRaw = (feeAdjustedExpectedBaseOut * (10000n - slipBpsBn)) / 10000n;
+    const maxQuoteInLamports = (solInLamports * (10000n + slipBpsBn)) / 10000n;
 
     const swapIxs = await buildBuyInstructions(this.connection, {
       pool: poolPk,
@@ -586,7 +587,8 @@ export class Executor {
     const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
     const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
     const expectedSolOut = computeExpectedQuoteOut(solRes, tokRes, effectiveBaseIn);
-    const minQuoteOut = (expectedSolOut * 95n) / 100n;
+    const sellSlipBpsBn = BigInt(SWAP_SLIPPAGE_BPS);
+    const minQuoteOut = (expectedSolOut * (10000n - sellSlipBpsBn)) / 10000n;
 
     if (sellMintProfile.hasTransferHook) {
       logger.warn(
