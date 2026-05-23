@@ -141,9 +141,32 @@ export class PositionManager extends EventEmitter {
     this.markovStore = markovStore;
   }
 
-  /** Hot-swap dynamic monitoring params without replacing the manager */
+  /** Hot-swap dynamic monitoring params without replacing the manager. If
+   *  pollIntervalSec changed while the timer is running, restart the interval
+   *  so the new cadence takes effect immediately (otherwise the setInterval
+   *  created at start() would keep firing at the old rate). */
   updateDynamicParams(params: DynamicMonitorParams): void {
+    const prevInterval = this.dynamicParams.pollIntervalSec;
     this.dynamicParams = params;
+
+    if (
+      this.running &&
+      this.monitorMode === 'five_second' &&
+      this.pollTimer !== null &&
+      prevInterval !== params.pollIntervalSec
+    ) {
+      clearInterval(this.pollTimer);
+      const intervalSec = Math.max(1, Math.min(5, params.pollIntervalSec || 5));
+      this.pollTimer = setInterval(() => {
+        this.poll().catch(err => {
+          logger.error('Position poll error: %s', err instanceof Error ? err.message : String(err));
+        });
+      }, intervalSec * 1000);
+      logger.info(
+        { prevIntervalSec: prevInterval, pollIntervalSec: intervalSec },
+        'Position manager poll interval hot-swapped',
+      );
+    }
   }
 
   getDynamicParams(): DynamicMonitorParams {
