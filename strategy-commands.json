@@ -1,0 +1,46 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v25-bot-excl-climbing-live-micro",
+      "label": "v25 bot-excl + climbing_t30_t45 (TP100/SL30, entry@T+60) [LIVE-MICRO 0.05 SOL]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.05,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "live_micro",
+        "filters": [
+          { "field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200" },
+          { "field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s" },
+          { "field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "journal-update",
+      "id": "v25-bot-excl-climbing-live-micro",
+      "note": "2026-05-23: fix — re-upserted with the 5 filters from shadow counterpart (top5<=30%, dd>-25%, vel<200, age>=60s, climbing_t30_t45) + entryTimingSec=60. The original live_micro deploy went out with filters=[], which meant the strategy was shotgunning every grad passing the +5..+100 entry gate. 4h of empty-filter operation produced 8 consecutive SL exits at -32 to -48% (-0.16 SOL drawdown). Restoring the validated shadow filter set."
+    }
+  ]
+}
