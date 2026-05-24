@@ -10,7 +10,7 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 import type { ExecutionMode } from './config';
 import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL } from './config';
-import { Wallet, WSOL_MINT, getAssociatedTokenAddress } from './wallet';
+import { Wallet, WSOL_MINT, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from './wallet';
 import {
   buildBuyInstructions,
   buildSellInstructions,
@@ -331,7 +331,81 @@ export class Executor {
 
     const mintPk = new PublicKey(mint);
     const poolPk = new PublicKey(poolCtx.poolAddress);
+    const walletPk = this.wallet.pubkey;
 
+    // ── 1. Prerequisites that don't depend on fresh pool state ───────────────
+    // These reads (mint profile, ATA checks, wallet balances) take ~5-8 RPC
+    // calls totalling 500ms-1s. Doing them BEFORE the pool fetch means the
+    // pool reserves we use for slippage math are as fresh as possible at
+    // swap-build time — reduces Custom 6004 slippage rejections caused by
+    // price drift in the quote-to-submit window.
+    const mintProfile = await getMintProfile(this.connection, mintPk);
+    const baseTokenProgram = mintProfile.tokenProgram;
+    const baseAta = getAssociatedTokenAddress(mintPk, walletPk, baseTokenProgram);
+    const baseAtaInfoBefore = await this.connection.getAccountInfo(baseAta, 'confirmed').catch(() => null);
+    const baseAtaExistsBefore = !!baseAtaInfoBefore;
+    // Pre-flight check for the WSOL quote-side ATA too. The PumpSwap SDK
+    // assumes this exists at swap time; if it doesn't and the SDK tries to
+    // fund inline without enough lamports, the on-chain runtime rejects with
+    // InsufficientFundsForRent on the quote ATA account index. Pre-creating
+    // it ourselves with the SPL ATA program funds rent from our wallet at
+    // the correct size. Idempotent — no-op if it already exists.
+    const quoteAta = getAssociatedTokenAddress(WSOL_MINT, walletPk, TOKEN_PROGRAM_ID);
+    const quoteAtaInfoBefore = await this.connection.getAccountInfo(quoteAta, 'confirmed').catch(() => null);
+    const quoteAtaExistsBefore = !!quoteAtaInfoBefore;
+    const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
+    const walletSolBefore = await this.wallet.getSolBalance(this.connection);
+
+    const jitoTipSol = DEFAULT_JITO_TIP_SOL;
+    const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
+    const solInLamports = BigInt(Math.floor(amountSol * 1e9));
+
+    // ── 2. Wallet pre-flight (using upper-bound estimate of outflow) ─────────
+    // maxQuoteInLamports = solInLamports * 1.05 (5% slippage buffer ceiling).
+    // We can compute it without pool state. Floor is 0.1 SOL post-trade per
+    // operator policy (2026-05-24).
+    const WALLET_MIN_FLOOR_LAMPORTS = 100_000_000;
+    const estimatedMaxQuoteInLamports = (solInLamports * 105n) / 100n;
+    const newAtaRentCount =
+      (baseAtaExistsBefore ? 0 : 1) + (quoteAtaExistsBefore ? 0 : 1);
+    const projectedOutflowLamports =
+      Number(estimatedMaxQuoteInLamports) +
+      jitoTipLamports +
+      TX_FEE_LAMPORTS +
+      newAtaRentCount * TOKEN_ACCOUNT_RENT_LAMPORTS;
+    if (walletSolBefore < projectedOutflowLamports + WALLET_MIN_FLOOR_LAMPORTS) {
+      const balSol = walletSolBefore / 1e9;
+      const needSol = (projectedOutflowLamports + WALLET_MIN_FLOOR_LAMPORTS) / 1e9;
+      logger.warn(
+        {
+          mint, mode,
+          walletSol: balSol.toFixed(4),
+          projectedOutflowSol: (projectedOutflowLamports / 1e9).toFixed(4),
+          floorSol: WALLET_MIN_FLOOR_LAMPORTS / 1e9,
+          needSol: needSol.toFixed(4),
+          newAtaCount: newAtaRentCount,
+        },
+        'Live buy aborted — wallet below safety floor',
+      );
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: `live: wallet_low (balance=${balSol.toFixed(4)} SOL, need>=${needSol.toFixed(4)} SOL = trade+tip+fee+rent+0.1 floor)`,
+      };
+    }
+
+    if (mintProfile.hasTransferHook) {
+      logger.warn(
+        { mint, extensions: mintProfile.extensionTypes },
+        'Token-2022 mint declares TransferHook — swap may revert if SDK omits hook extra accounts',
+      );
+    }
+
+    // ── 3. Fetch pool state LAST, immediately before swap build ──────────────
+    // Minimizes the window between our slippage-math quote and the on-chain
+    // execution. Combined with the SDK's own swapSolanaState fetch (~50ms
+    // later inside buildBuyInstructions), the quote-to-instruction drift
+    // window shrinks from ~500ms+ to ~50ms.
     const pool = await fetchVaultPrice(this.connection, poolCtx.baseVault, poolCtx.quoteVault, true);
     if (!pool) {
       return {
@@ -341,16 +415,6 @@ export class Executor {
       };
     }
 
-    const walletPk = this.wallet.pubkey;
-    const mintProfile = await getMintProfile(this.connection, mintPk);
-    const baseTokenProgram = mintProfile.tokenProgram;
-    const baseAta = getAssociatedTokenAddress(mintPk, walletPk, baseTokenProgram);
-    const baseAtaInfoBefore = await this.connection.getAccountInfo(baseAta, 'confirmed').catch(() => null);
-    const baseAtaExistsBefore = !!baseAtaInfoBefore;
-    const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
-    const walletSolBefore = await this.wallet.getSolBalance(this.connection);
-
-    const solInLamports = BigInt(Math.floor(amountSol * 1e9));
     const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
     const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
     const expectedBaseOutRaw = computeExpectedBaseOut(solRes, tokRes, solInLamports);
@@ -368,49 +432,16 @@ export class Executor {
       maxQuoteAmountIn: maxQuoteInLamports,
     });
 
-    const jitoTipSol = DEFAULT_JITO_TIP_SOL;
-    const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
-
-    const ataPreCreateIxs: TransactionInstruction[] = baseAtaExistsBefore
-      ? []
-      : [buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram)];
-
-    if (mintProfile.hasTransferHook) {
-      logger.warn(
-        { mint, extensions: mintProfile.extensionTypes },
-        'Token-2022 mint declares TransferHook — swap may revert if SDK omits hook extra accounts',
+    const ataPreCreateIxs: TransactionInstruction[] = [];
+    if (!baseAtaExistsBefore) {
+      ataPreCreateIxs.push(
+        buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram),
       );
     }
-
-    // Wallet pre-flight: refuse to submit if the wallet can't cover the worst-
-    // case outflow PLUS a 0.1 SOL safety floor. Catches the InsufficientFunds-
-    // ForRent class of buy failures before they burn an RPC roundtrip + tip.
-    // Per-operator policy (2026-05-24): floor=0.1 SOL — wallet typically sits
-    // at 0.2-0.5 SOL with 0.05 SOL trade size, so 0.1 leaves comfortable margin.
-    const WALLET_MIN_FLOOR_LAMPORTS = 100_000_000;
-    const projectedOutflowLamports =
-      Number(maxQuoteInLamports) +
-      jitoTipLamports +
-      TX_FEE_LAMPORTS +
-      (baseAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS);
-    if (walletSolBefore < projectedOutflowLamports + WALLET_MIN_FLOOR_LAMPORTS) {
-      const balSol = walletSolBefore / 1e9;
-      const needSol = (projectedOutflowLamports + WALLET_MIN_FLOOR_LAMPORTS) / 1e9;
-      logger.warn(
-        {
-          mint, mode,
-          walletSol: balSol.toFixed(4),
-          projectedOutflowSol: (projectedOutflowLamports / 1e9).toFixed(4),
-          floorSol: WALLET_MIN_FLOOR_LAMPORTS / 1e9,
-          needSol: needSol.toFixed(4),
-        },
-        'Live buy aborted — wallet below safety floor',
+    if (!quoteAtaExistsBefore) {
+      ataPreCreateIxs.push(
+        buildIdempotentAtaCreateIx(walletPk, quoteAta, walletPk, WSOL_MINT, TOKEN_PROGRAM_ID),
       );
-      return {
-        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
-        dryRun: false, executionMode: mode,
-        errorMessage: `live: wallet_low (balance=${balSol.toFixed(4)} SOL, need>=${needSol.toFixed(4)} SOL = trade+tip+fee+rent+0.1 floor)`,
-      };
     }
 
     const ixs = [
@@ -448,7 +479,8 @@ export class Executor {
           hasTransferFee: mintProfile.hasTransferFee,
           hasTransferHook: mintProfile.hasTransferHook,
           extensionTypes: mintProfile.extensionTypes,
-          ataPreCreated: !baseAtaExistsBefore,
+          baseAtaPreCreated: !baseAtaExistsBefore,
+          quoteAtaPreCreated: !quoteAtaExistsBefore,
           baseTokenProgram: baseTokenProgram.toBase58(),
           expectedBaseOutRaw: expectedBaseOutRaw.toString(),
           minBaseOutRaw: minBaseOutRaw.toString(),
@@ -477,7 +509,10 @@ export class Executor {
     const tokensReceivedRaw = baseBalAfter - baseBalBefore;
     const tokensReceived = tokensReceivedRaw / 1e6;
     const overheadLamports =
-      jitoTipLamports + TX_FEE_LAMPORTS + (baseAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS);
+      jitoTipLamports +
+      TX_FEE_LAMPORTS +
+      (baseAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS) +
+      (quoteAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS);
     const solSpentLamports = walletSolBefore - walletSolAfter;
     const swapCostLamports = solSpentLamports - overheadLamports;
     const swapCostSol = swapCostLamports / 1e9;
