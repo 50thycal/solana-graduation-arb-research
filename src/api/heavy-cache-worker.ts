@@ -19,7 +19,8 @@ import { parentPort, workerData } from 'worker_threads';
 import Database from 'better-sqlite3';
 import { computeFilterV2Data } from './filter-v2-data';
 import { computePricePathData } from './price-path-data';
-import { renderPricePathHtml } from '../utils/html-renderer';
+import { computePricePathV2Data } from './price-path-v2-data';
+import { renderPricePathHtml, renderPricePathV2Html } from '../utils/html-renderer';
 
 interface WorkerInput {
   dbPath: string;
@@ -41,12 +42,16 @@ async function main(): Promise<void> {
     const v2 = await computeFilterV2Data(db);
     const pricePathDetail = computePricePathData(db);
     const pricePathHtml = renderPricePathHtml(db);
+    const pricePathV2Detail = computePricePathV2Data(db);
+    const pricePathV2Html = renderPricePathV2Html(pricePathV2Detail);
 
     parentPort.postMessage({
       ok: true,
       v2,
       pricePathDetail,
       pricePathHtml,
+      pricePathV2Detail,
+      pricePathV2Html,
     });
   } catch (err) {
     parentPort.postMessage({

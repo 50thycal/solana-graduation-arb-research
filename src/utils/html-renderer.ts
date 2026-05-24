@@ -17,6 +17,7 @@ const NAV_LINKS = [
   { path: '/exit-sim', label: 'Exit Sim' },
   { path: '/exit-sim-matrix', label: 'Exit Matrix' },
   { path: '/price-path', label: 'Price Path' },
+  { path: '/price-path-v2', label: 'Price Path V2' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
@@ -8074,4 +8075,391 @@ export function renderReportHtml(data: any): string {
     + rosterHtml; // Roster Changes pinned at the bottom per operator request.
 
   return shell('Daily Report', '/report', body, data);
+}
+
+// ── PRICE PATH V2 ────────────────────────────────────────────────────────
+// Feature-investigator dashboard: winner vs loser cohorts × every whitelisted
+// predictor. Renders the precomputed PricePathV2Data — all heavy work lives
+// in src/api/price-path-v2-data.ts. Client-side toggles flip cohort A/B and
+// full/drop_top3 variants without a server roundtrip; the JSON for all four
+// (cohort × variant) combinations is embedded once.
+
+export function renderPricePathV2Html(data: unknown): string {
+  // Embed JSON safely: escape </script> and U+2028/U+2029 line separators
+  // that JSON.stringify allows but break HTML parsing.
+  const json = JSON.stringify(data)
+    .replace(/<\/script/gi, '<\\/script')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+
+  const extraStyles = `
+    .pp2-controls{display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:#262640;border-radius:6px}
+    .pp2-controls label{color:#94a3b8;font-size:12px}
+    .pp2-controls select{background:#0f0f1a;color:#e2e8f0;border:1px solid #334155;padding:4px 10px;border-radius:4px;font-size:12px;cursor:pointer;margin-left:4px}
+    .pp2-controls select:hover{border-color:#60a5fa}
+    .pp2-summary{color:#94a3b8;font-size:11px;margin-left:auto}
+    .pp2-cohort-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+    .pp2-cohort-card{background:#1a1a2e;border:1px solid #333;padding:10px 12px;border-radius:6px}
+    .pp2-cohort-card h3{margin:0 0 8px;color:#60a5fa;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+    .pp2-cohort-card .row{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;border-bottom:1px solid #222}
+    .pp2-cohort-card .row .k{color:#94a3b8}
+    .pp2-cov-always{color:#4ade80;font-size:10px;text-transform:uppercase;letter-spacing:.3px}
+    .pp2-cov-auto-backfill{color:#60a5fa;font-size:10px;text-transform:uppercase;letter-spacing:.3px}
+    .pp2-cov-new-only{color:#f59e0b;font-size:10px;text-transform:uppercase;letter-spacing:.3px}
+    .pp2-d-strong{color:#4ade80;font-weight:600}
+    .pp2-d-medium{color:#facc15;font-weight:600}
+    .pp2-d-weak{color:#94a3b8}
+    .pp2-d-null{color:#4b5563;font-style:italic}
+    .pp2-low-conf td{opacity:.55}
+    .pp2-low-conf td .lc{color:#f59e0b;font-size:10px;margin-left:6px;font-style:italic}
+    .pp2-fi-table{width:100%;border-collapse:collapse;font-size:11px}
+    .pp2-fi-table th{cursor:pointer;user-select:none;font-size:10px}
+    .pp2-fi-table td{font-variant-numeric:tabular-nums}
+    .pp2-fi-table td.col-display{font-weight:600;color:#e2e8f0}
+    .pp2-fi-table td.col-units{color:#94a3b8;font-size:10px}
+    .pp2-dist-svg{display:block;margin:8px auto;background:#0f0f1a;border-radius:4px}
+    .pp2-dist-stats{display:flex;gap:18px;flex-wrap:wrap;color:#94a3b8;font-size:11px;margin:8px 0}
+    .pp2-dist-stats .k{color:#60a5fa;margin-right:4px}
+    .pp2-heatmap-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(380px,1fr));gap:14px;margin-top:10px}
+    .pp2-heatmap-card{background:#1a1a2e;border:1px solid #333;padding:10px;border-radius:6px}
+    .pp2-heatmap-card h4{margin:0 0 6px;color:#a5b4fc;font-size:12px}
+    .pp2-heatmap-svg{display:block;margin:6px auto;background:#0f0f1a;border-radius:4px}
+    .pp2-heatmap-note{color:#64748b;font-size:10px;margin-top:4px}
+    .pp2-truncation-note{color:#f59e0b;font-size:10px;margin-top:4px;font-style:italic}
+    .pp2-notes{background:#1a1a2e;border:1px solid #333;padding:10px 14px;border-radius:6px;color:#94a3b8;font-size:11px;line-height:1.5}
+    .pp2-notes li{margin:3px 0}
+    .pp2-empty{color:#64748b;font-style:italic;padding:20px;text-align:center}
+  `;
+
+  const body = `
+    <style>${extraStyles}</style>
+
+    <div class="card">
+      <h2>Price Path V2 — Winner vs Loser Feature Investigator</h2>
+      <div class="desc">
+        Pick a cohort definition, then see which features distinguish winners from losers.
+        Cohort A uses the always-populated <code>max_peak_pct</code> outcome (maximal n).
+        Cohort B uses realized SOL P&amp;L from <code>trades_v2</code>
+        (cross-strategy, closed unarchived trades only — answers "did this token make us money in practice?").
+        The <em>drop top 3 winners</em> toggle strips the 3 max-outcome rows from the eligible set
+        before percentile cuts — the lottery-ticket robustness check from <code>leave-one-out-pnl.json</code>.
+      </div>
+      <div class="pp2-controls">
+        <label>Cohort:
+          <select id="pp2-cohort">
+            <option value="cohort_a">A — Peak return (max_peak_pct)</option>
+            <option value="cohort_b">B — Realized PnL (SUM net_profit_sol)</option>
+          </select>
+        </label>
+        <label>Variant:
+          <select id="pp2-variant">
+            <option value="full">Full</option>
+            <option value="drop_top3">Drop top 3 winners</option>
+          </select>
+        </label>
+        <span class="pp2-summary" id="pp2-summary"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Panel 1 — Cohort metadata</h2>
+      <div class="desc">Sample sizes, percentile thresholds, coverage. Always read these before interpreting Panels 2-4.</div>
+      <div class="pp2-cohort-grid" id="pp2-cohort-meta"></div>
+    </div>
+
+    <div class="card">
+      <h2>Panel 2 — Feature importance</h2>
+      <div class="desc">
+        Every whitelisted predictor ranked by <strong>|Cohen's d|</strong>.
+        Signed d: positive = winners have higher values. KS = max distribution-shape distance.
+        r_pb = point-biserial correlation. Top/Bot Q WR = winner-rate within top/bottom quartile of the feature, with Wilson 95% CI.
+        Rows flagged <em>low_conf</em> have either cohort side with n&lt;30 — interpret cautiously.
+        Click a row to view its distribution in Panel 3.
+      </div>
+      <table class="pp2-fi-table">
+        <thead><tr>
+          <th>Feature</th>
+          <th>Cov</th>
+          <th>d</th>
+          <th>|d|</th>
+          <th>KS</th>
+          <th>r_pb</th>
+          <th>Win n</th>
+          <th>Los n</th>
+          <th>Win med</th>
+          <th>Los med</th>
+          <th>Top-Q WR</th>
+          <th>Bot-Q WR</th>
+        </tr></thead>
+        <tbody id="pp2-fi-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Panel 3 — Univariate distribution comparator</h2>
+      <div class="desc">Winner vs loser histograms. Pick a feature; overlay shows where the two cohorts diverge.</div>
+      <label style="color:#94a3b8;font-size:12px">Feature:
+        <select id="pp2-feature" style="background:#0f0f1a;color:#e2e8f0;border:1px solid #334155;padding:4px 10px;border-radius:4px;font-size:12px;margin-left:6px"></select>
+      </label>
+      <div class="pp2-dist-stats" id="pp2-dist-stats"></div>
+      <div id="pp2-dist-chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>Panel 4 — Bivariate heatmaps</h2>
+      <div class="desc">
+        For each curated feature pair, a 6×6 quartile grid colored by mean outcome.
+        Cohort A → mean(max_peak_pct). Cohort B → mean(realized_net_sol).
+        Bright cells (rows × columns) reveal where the joint signal beats the marginals.
+      </div>
+      <div class="pp2-heatmap-grid" id="pp2-heatmaps"></div>
+    </div>
+
+    <div class="card">
+      <h2>Notes &amp; caveats</h2>
+      <ul class="pp2-notes" id="pp2-notes"></ul>
+    </div>
+
+    <script>
+    (function(){
+      const DATA = ${json};
+
+      const cohortSel = document.getElementById('pp2-cohort');
+      const variantSel = document.getElementById('pp2-variant');
+      const featureSel = document.getElementById('pp2-feature');
+
+      function active() {
+        return { cohort: cohortSel.value, variant: variantSel.value };
+      }
+
+      function dClass(d) {
+        if (d === null || d === undefined) return 'pp2-d-null';
+        const a = Math.abs(d);
+        if (a >= 0.5) return 'pp2-d-strong';
+        if (a >= 0.2) return 'pp2-d-medium';
+        return 'pp2-d-weak';
+      }
+
+      function fmtNum(v, digits) {
+        if (v === null || v === undefined) return '—';
+        if (!isFinite(v)) return '—';
+        return Number(v).toFixed(digits);
+      }
+
+      function fmtPct(v) {
+        if (v === null || v === undefined) return '—';
+        return (Number(v) * 100).toFixed(1) + '%';
+      }
+
+      function ci(arr) {
+        if (!arr) return '';
+        return ' <span style="color:#64748b;font-size:10px">[' + fmtPct(arr[0]) + '..' + fmtPct(arr[1]) + ']</span>';
+      }
+
+      function renderCohortMeta() {
+        const { cohort } = active();
+        const a = DATA.cohort_definitions.cohort_a;
+        const b = DATA.cohort_definitions.cohort_b;
+        const summary = (() => {
+          const c = cohort === 'cohort_a' ? a : b;
+          const v = variantSel.value;
+          const winN = v === 'drop_top3' ? c.winner_n_drop_top3 : c.winner_n;
+          return c.name + ' · variant=' + v + ' · winners=' + winN + ' · losers=' + c.loser_n + ' · outcome n=' + c.rows_with_outcome + ' (' + c.outcome_coverage_pct + '% of ' + c.total_rows_considered + ' rows)';
+        })();
+        document.getElementById('pp2-summary').textContent = summary;
+
+        const cardHtml = (c, accent) => {
+          const notesHtml = (c.notes || []).map(n => '<div class="row" style="color:#94a3b8;font-style:italic">' + n + '</div>').join('');
+          return '<div class="pp2-cohort-card" style="border-color:' + accent + '">'
+            + '<h3 style="color:' + accent + '">' + c.name + '</h3>'
+            + '<div class="row"><span class="k">Outcome</span><span><code>' + c.outcome_field + '</code></span></div>'
+            + '<div class="row"><span class="k">Rows considered</span><span>' + c.total_rows_considered + '</span></div>'
+            + '<div class="row"><span class="k">Rows with outcome</span><span>' + c.rows_with_outcome + ' (' + c.outcome_coverage_pct + '%)</span></div>'
+            + '<div class="row"><span class="k">Winner threshold (P90)</span><span>' + fmtNum(c.winner_threshold, 4) + '</span></div>'
+            + '<div class="row"><span class="k">Loser threshold (P10)</span><span>' + fmtNum(c.loser_threshold, 4) + '</span></div>'
+            + '<div class="row"><span class="k">Winner n / Loser n</span><span><span class="green">' + c.winner_n + '</span> / <span class="red">' + c.loser_n + '</span></span></div>'
+            + '<div class="row"><span class="k">Winner n (drop top 3)</span><span>' + c.winner_n_drop_top3 + '</span></div>'
+            + '<div class="row" style="color:#64748b;font-size:10px">' + c.description + '</div>'
+            + notesHtml
+            + '</div>';
+        };
+
+        document.getElementById('pp2-cohort-meta').innerHTML =
+          cardHtml(a, '#60a5fa') + cardHtml(b, '#a5b4fc');
+      }
+
+      function renderFeatureImportance() {
+        const { cohort, variant } = active();
+        const panel = DATA.feature_importance[cohort][variant];
+        const rows = panel.rows.map(r => {
+          const lcMark = r.low_confidence ? ' <span class="lc">low_conf</span>' : '';
+          return '<tr class="' + (r.low_confidence ? 'pp2-low-conf' : '') + '" data-feature="' + r.col + '" style="cursor:pointer">'
+            + '<td class="col-display">' + r.display + lcMark + '</td>'
+            + '<td><span class="pp2-cov-' + r.coverage + '">' + r.coverage + '</span></td>'
+            + '<td class="' + dClass(r.cohens_d) + '">' + fmtNum(r.cohens_d, 3) + '</td>'
+            + '<td>' + fmtNum(r.abs_cohens_d, 3) + '</td>'
+            + '<td>' + fmtNum(r.ks_statistic, 3) + '</td>'
+            + '<td>' + fmtNum(r.point_biserial_r, 3) + '</td>'
+            + '<td>' + r.winner_n_with_data + '</td>'
+            + '<td>' + r.loser_n_with_data + '</td>'
+            + '<td>' + fmtNum(r.winner_median, 3) + '</td>'
+            + '<td>' + fmtNum(r.loser_median, 3) + '</td>'
+            + '<td>' + fmtPct(r.top_quartile_winner_rate) + ci(r.top_quartile_wilson_ci) + '</td>'
+            + '<td>' + fmtPct(r.bottom_quartile_winner_rate) + ci(r.bottom_quartile_wilson_ci) + '</td>'
+            + '</tr>';
+        }).join('');
+        document.getElementById('pp2-fi-body').innerHTML = rows || '<tr><td colspan="12" class="pp2-empty">No features ranked — cohort sizes may be too small.</td></tr>';
+
+        // Wire row-click to switch the distribution panel
+        document.querySelectorAll('#pp2-fi-body tr[data-feature]').forEach(tr => {
+          tr.addEventListener('click', () => {
+            featureSel.value = tr.getAttribute('data-feature');
+            renderDistribution();
+            document.getElementById('pp2-dist-chart').scrollIntoView({ behavior: 'smooth', block: 'center' });
+          });
+        });
+      }
+
+      function populateFeatureSelect() {
+        const { cohort, variant } = active();
+        const dists = DATA.distributions[cohort][variant].by_feature;
+        const keys = Object.keys(dists);
+        const prev = featureSel.value;
+        featureSel.innerHTML = keys.map(k => '<option value="' + k + '">' + dists[k].display + '</option>').join('');
+        if (prev && keys.indexOf(prev) >= 0) featureSel.value = prev;
+      }
+
+      function renderDistribution() {
+        const { cohort, variant } = active();
+        const dists = DATA.distributions[cohort][variant].by_feature;
+        const f = dists[featureSel.value];
+        const chart = document.getElementById('pp2-dist-chart');
+        const stats = document.getElementById('pp2-dist-stats');
+        if (!f) {
+          chart.innerHTML = '<div class="pp2-empty">No distribution data for this feature in this cohort.</div>';
+          stats.innerHTML = '';
+          return;
+        }
+        const w = 880, h = 240, padL = 50, padR = 14, padT = 14, padB = 38;
+        const innerW = w - padL - padR;
+        const innerH = h - padT - padB;
+        const maxBin = Math.max(...f.winner_bins, ...f.loser_bins, 1);
+        const barW = innerW / f.bin_count;
+        const bars = [];
+        for (let i = 0; i < f.bin_count; i++) {
+          const x = padL + i * barW;
+          const winH = (f.winner_bins[i] / maxBin) * innerH;
+          const losH = (f.loser_bins[i] / maxBin) * innerH;
+          // Overlay: winner (green, semi-transparent) + loser (red, semi-transparent)
+          bars.push('<rect x="' + x.toFixed(1) + '" y="' + (padT + innerH - losH).toFixed(1) + '" width="' + Math.max(0, barW - 1).toFixed(1) + '" height="' + losH.toFixed(1) + '" fill="#ef4444" opacity="0.55"/>');
+          bars.push('<rect x="' + x.toFixed(1) + '" y="' + (padT + innerH - winH).toFixed(1) + '" width="' + Math.max(0, barW - 1).toFixed(1) + '" height="' + winH.toFixed(1) + '" fill="#4ade80" opacity="0.55"/>');
+        }
+        // Median markers
+        const xAt = (v) => padL + ((v - f.bin_min) / (f.bin_max - f.bin_min)) * innerW;
+        const medLines = [];
+        if (f.winner_median !== null && f.winner_median >= f.bin_min && f.winner_median <= f.bin_max) {
+          medLines.push('<line x1="' + xAt(f.winner_median).toFixed(1) + '" x2="' + xAt(f.winner_median).toFixed(1) + '" y1="' + padT + '" y2="' + (padT + innerH) + '" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="4,3"/>');
+        }
+        if (f.loser_median !== null && f.loser_median >= f.bin_min && f.loser_median <= f.bin_max) {
+          medLines.push('<line x1="' + xAt(f.loser_median).toFixed(1) + '" x2="' + xAt(f.loser_median).toFixed(1) + '" y1="' + padT + '" y2="' + (padT + innerH) + '" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4,3"/>');
+        }
+        // X-axis ticks (6)
+        const ticks = [];
+        for (let t = 0; t <= 5; t++) {
+          const v = f.bin_min + (t / 5) * (f.bin_max - f.bin_min);
+          const x = padL + (t / 5) * innerW;
+          ticks.push('<line x1="' + x.toFixed(1) + '" x2="' + x.toFixed(1) + '" y1="' + (padT + innerH) + '" y2="' + (padT + innerH + 4) + '" stroke="#475569"/>');
+          ticks.push('<text x="' + x.toFixed(1) + '" y="' + (padT + innerH + 18) + '" fill="#94a3b8" font-size="10" text-anchor="middle">' + v.toFixed(2) + '</text>');
+        }
+        ticks.push('<text x="' + (padL + innerW / 2) + '" y="' + (h - 6) + '" fill="#94a3b8" font-size="11" text-anchor="middle">' + f.display + ' (' + f.units + ')</text>');
+        // Y-axis label
+        ticks.push('<text x="14" y="' + (padT + innerH / 2) + '" fill="#94a3b8" font-size="11" text-anchor="middle" transform="rotate(-90 14,' + (padT + innerH / 2) + ')">count</text>');
+        // Legend
+        const legend = '<g><rect x="' + (padL + 6) + '" y="' + (padT + 6) + '" width="10" height="10" fill="#4ade80" opacity="0.55"/><text x="' + (padL + 22) + '" y="' + (padT + 15) + '" fill="#4ade80" font-size="11">winners (n=' + f.winner_n + ')</text><rect x="' + (padL + 130) + '" y="' + (padT + 6) + '" width="10" height="10" fill="#ef4444" opacity="0.55"/><text x="' + (padL + 146) + '" y="' + (padT + 15) + '" fill="#ef4444" font-size="11">losers (n=' + f.loser_n + ')</text></g>';
+        const svg = '<svg class="pp2-dist-svg" width="' + w + '" height="' + h + '">' + bars.join('') + medLines.join('') + ticks.join('') + legend + '</svg>';
+        const trunc = f.truncation_note ? '<div class="pp2-truncation-note">' + f.truncation_note + '</div>' : '';
+        chart.innerHTML = svg + trunc;
+        stats.innerHTML =
+          '<span><span class="k">Winner median:</span><span class="green">' + fmtNum(f.winner_median, 3) + '</span></span>'
+          + '<span><span class="k">Loser median:</span><span class="red">' + fmtNum(f.loser_median, 3) + '</span></span>'
+          + '<span><span class="k">Winner mean:</span><span class="green">' + fmtNum(f.winner_mean, 3) + '</span></span>'
+          + '<span><span class="k">Loser mean:</span><span class="red">' + fmtNum(f.loser_mean, 3) + '</span></span>'
+          + '<span><span class="k">Cohen\\'s d:</span><span class="' + dClass(f.cohens_d) + '">' + fmtNum(f.cohens_d, 3) + '</span></span>';
+      }
+
+      function renderHeatmaps() {
+        const { cohort, variant } = active();
+        const panel = DATA.heatmaps[cohort][variant];
+        const wrap = document.getElementById('pp2-heatmaps');
+        if (!panel.pairs || panel.pairs.length === 0) {
+          wrap.innerHTML = '<div class="pp2-empty">No bivariate heatmaps available — cohort sizes may be too small.</div>';
+          return;
+        }
+        // Find min/max mean across all cells of all pairs in this panel for shared color scale
+        let gMin = Infinity, gMax = -Infinity;
+        for (const p of panel.pairs) {
+          for (const c of p.cells) {
+            if (c.mean_outcome === null) continue;
+            if (c.mean_outcome < gMin) gMin = c.mean_outcome;
+            if (c.mean_outcome > gMax) gMax = c.mean_outcome;
+          }
+        }
+        if (!isFinite(gMin) || !isFinite(gMax)) { gMin = 0; gMax = 1; }
+        const span = gMax - gMin || 1;
+        const color = (v) => {
+          if (v === null || v === undefined) return '#222';
+          const t = Math.max(0, Math.min(1, (v - gMin) / span));
+          // Red → yellow → green
+          const r = t < 0.5 ? 239 : Math.round(239 - (239 - 74) * (t - 0.5) * 2);
+          const g = t < 0.5 ? Math.round(68 + (204 - 68) * t * 2) : Math.round(204 + (222 - 204) * (t - 0.5) * 2);
+          const b = t < 0.5 ? Math.round(68 + (21 - 68) * t * 2) : Math.round(21 + (128 - 21) * (t - 0.5) * 2);
+          return 'rgb(' + r + ',' + g + ',' + b + ')';
+        };
+        const cellW = 50, cellH = 32, padL = 8, padT = 22, padR = 8, padB = 36;
+        const blocks = panel.pairs.map(p => {
+          const w = padL + p.grid_size * cellW + padR;
+          const h = padT + p.grid_size * cellH + padB;
+          const cells = p.cells.map(c => {
+            const x = padL + c.ix * cellW;
+            const y = padT + (p.grid_size - 1 - c.iy) * cellH; // flip so higher-y = top
+            const fill = color(c.mean_outcome);
+            const label = c.n_count === 0 ? '' : ('n=' + c.n_count + (c.mean_outcome !== null ? ' / μ=' + c.mean_outcome.toFixed(2) : ''));
+            return '<g><rect x="' + x + '" y="' + y + '" width="' + cellW + '" height="' + cellH + '" fill="' + fill + '" stroke="#0f0f1a" stroke-width="1"/>'
+              + (c.n_count > 0 ? '<title>' + label + '</title><text x="' + (x + cellW / 2) + '" y="' + (y + cellH / 2 + 3) + '" fill="#0f0f1a" font-size="9" text-anchor="middle">' + c.n_count + '</text>' : '')
+              + '</g>';
+          }).join('');
+          const xLabel = '<text x="' + (padL + (p.grid_size * cellW) / 2) + '" y="' + (h - 6) + '" fill="#94a3b8" font-size="11" text-anchor="middle">' + p.x_display + ' →</text>';
+          const yLabel = '<text x="14" y="' + (padT + (p.grid_size * cellH) / 2) + '" fill="#94a3b8" font-size="11" text-anchor="middle" transform="rotate(-90 14,' + (padT + (p.grid_size * cellH) / 2) + ')">↑ ' + p.y_display + '</text>';
+          return '<div class="pp2-heatmap-card">'
+            + '<h4>' + p.y_display + ' × ' + p.x_display + '</h4>'
+            + '<svg class="pp2-heatmap-svg" width="' + w + '" height="' + h + '">' + cells + xLabel + yLabel + '</svg>'
+            + '<div class="pp2-heatmap-note">n=' + p.n_total + ' (dropped ' + p.n_dropped_no_data + ' with missing axis); shared color scale across all pairs in this view.</div>'
+            + '</div>';
+        }).join('');
+        wrap.innerHTML = blocks;
+      }
+
+      function renderNotes() {
+        document.getElementById('pp2-notes').innerHTML = DATA.notes.map(n => '<li>' + n + '</li>').join('');
+      }
+
+      function renderAll() {
+        populateFeatureSelect();
+        renderCohortMeta();
+        renderFeatureImportance();
+        renderDistribution();
+        renderHeatmaps();
+      }
+
+      cohortSel.addEventListener('change', renderAll);
+      variantSel.addEventListener('change', renderAll);
+      featureSel.addEventListener('change', renderDistribution);
+
+      renderNotes();
+      renderAll();
+    })();
+    </script>
+  `;
+
+  return shell('Price Path V2', '/price-path-v2', body, data as object);
 }
