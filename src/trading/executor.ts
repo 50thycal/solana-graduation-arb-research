@@ -382,6 +382,37 @@ export class Executor {
       );
     }
 
+    // Wallet pre-flight: refuse to submit if the wallet can't cover the worst-
+    // case outflow PLUS a 0.1 SOL safety floor. Catches the InsufficientFunds-
+    // ForRent class of buy failures before they burn an RPC roundtrip + tip.
+    // Per-operator policy (2026-05-24): floor=0.1 SOL — wallet typically sits
+    // at 0.2-0.5 SOL with 0.05 SOL trade size, so 0.1 leaves comfortable margin.
+    const WALLET_MIN_FLOOR_LAMPORTS = 100_000_000;
+    const projectedOutflowLamports =
+      Number(maxQuoteInLamports) +
+      jitoTipLamports +
+      TX_FEE_LAMPORTS +
+      (baseAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS);
+    if (walletSolBefore < projectedOutflowLamports + WALLET_MIN_FLOOR_LAMPORTS) {
+      const balSol = walletSolBefore / 1e9;
+      const needSol = (projectedOutflowLamports + WALLET_MIN_FLOOR_LAMPORTS) / 1e9;
+      logger.warn(
+        {
+          mint, mode,
+          walletSol: balSol.toFixed(4),
+          projectedOutflowSol: (projectedOutflowLamports / 1e9).toFixed(4),
+          floorSol: WALLET_MIN_FLOOR_LAMPORTS / 1e9,
+          needSol: needSol.toFixed(4),
+        },
+        'Live buy aborted — wallet below safety floor',
+      );
+      return {
+        success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: `live: wallet_low (balance=${balSol.toFixed(4)} SOL, need>=${needSol.toFixed(4)} SOL = trade+tip+fee+rent+0.1 floor)`,
+      };
+    }
+
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
@@ -453,23 +484,50 @@ export class Executor {
     if (tokensReceived <= 0 || swapCostLamports <= 0) {
       const meaningfulSpend = swapCostLamports > Number(solInLamports) * 0.3;
       if (tokensReceived <= 0 && meaningfulSpend) {
+        // Final extended re-read before committing a recovery position. The
+        // pre-fix path registered a phantom position using expectedBaseOutRaw
+        // as a placeholder; if tokens never actually arrived in the wallet,
+        // the later sell would fail with "no tokens in wallet to sell" after
+        // 5 retries (trade 12266 / 2026-05-24). Wait one more 5s window and
+        // re-verify before claiming the tokens.
+        await this.sleep(5000);
+        const finalBalRaw = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
+        if (finalBalRaw > baseBalBefore) {
+          const lateTokensReceivedRaw = finalBalRaw - baseBalBefore;
+          const lateTokensReceived = lateTokensReceivedRaw / 1e6;
+          const lateEffectivePrice = swapCostSol / lateTokensReceived;
+          logger.warn(
+            {
+              mint, mode, txSignature: submission.txSignature,
+              firstReadTokens: tokensReceivedRaw, finalReadTokens: lateTokensReceivedRaw,
+              swapCostSol,
+            },
+            'Live buy: tokens arrived on extended re-read — using actual measurement',
+          );
+          return {
+            success: true,
+            effectivePrice: lateEffectivePrice,
+            tokensReceived: lateTokensReceived,
+            txSignature: submission.txSignature,
+            dryRun: false, executionMode: mode,
+            jitoTipSol,
+            txLandMs: submission.latencyMs,
+          };
+        }
         logger.error(
           {
             mint, mode, txSignature: submission.txSignature,
             swapCostLamports, expectedBaseOutRaw: expectedBaseOutRaw.toString(),
           },
-          'Live buy: SOL spent but no token delta after retries — registering recovery position',
+          'Live buy: SOL spent but no token delta even after extended retry — failing trade',
         );
-        const placeholderTokens = Number(expectedBaseOutRaw) / 1e6;
-        const recoveryEffectivePrice = swapCostSol / placeholderTokens;
         return {
-          success: true,
-          effectivePrice: recoveryEffectivePrice,
-          tokensReceived: placeholderTokens,
-          txSignature: submission.txSignature,
+          success: false, effectivePrice: expectedPriceSol, tokensReceived: 0,
           dryRun: false, executionMode: mode,
-          jitoTipSol,
+          errorMessage: `live: SOL spent (${swapCostLamports} lamports) but no tokens after extended retry`,
+          txSignature: submission.txSignature,
           txLandMs: submission.latencyMs,
+          jitoTipSol,
         };
       }
       return {
@@ -583,6 +641,24 @@ export class Executor {
     ];
 
     const walletSolBefore = await this.wallet.getSolBalance(this.connection);
+
+    // Wallet pre-flight (sell): sells produce SOL, but still need enough
+    // for tip + tx fee up front. No 0.1 SOL floor here — sells recover
+    // value, so as long as we can afford the submission cost we're fine.
+    const sellOverheadLamports = jitoTipLamports + TX_FEE_LAMPORTS;
+    if (walletSolBefore < sellOverheadLamports) {
+      const balSol = walletSolBefore / 1e9;
+      logger.warn(
+        { mint, mode, walletSol: balSol.toFixed(4), needSol: (sellOverheadLamports / 1e9).toFixed(4) },
+        'Live sell aborted — wallet cannot cover tip + tx fee',
+      );
+      return {
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: `live sell: wallet_low (balance=${balSol.toFixed(4)} SOL, need>=${(sellOverheadLamports / 1e9).toFixed(4)} SOL for tip+fee)`,
+      };
+    }
+
     const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
     const tx = new Transaction({ feePayer: walletPk, recentBlockhash: blockhash }).add(...ixs);
     this.wallet.sign(tx);
