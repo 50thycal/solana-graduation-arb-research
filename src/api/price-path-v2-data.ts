@@ -206,22 +206,28 @@ function cohensD(a: number[], b: number[]): number | null {
   return +((ma - mb) / pooled).toFixed(4);
 }
 
-/** KS two-sample statistic (max |F_a(x) - F_b(x)|). Both arrays mutated. */
+/** KS two-sample statistic (max |F_a(x) - F_b(x)|). O(n_a + n_b) merge-walk. */
 function ksStatistic(a: number[], b: number[]): number | null {
   if (a.length < 5 || b.length < 5) return null;
   const sa = [...a].sort((x, y) => x - y);
   const sb = [...b].sort((x, y) => x - y);
-  const all = [...new Set([...sa, ...sb])].sort((x, y) => x - y);
-  let maxDiff = 0;
   const na = sa.length;
   const nb = sb.length;
-  for (const x of all) {
-    // count <= x
-    let ca = 0;
-    while (ca < na && sa[ca] <= x) ca++;
-    let cb = 0;
-    while (cb < nb && sb[cb] <= x) cb++;
-    const diff = Math.abs(ca / na - cb / nb);
+  // Merge-walk: at each step, the next "x" to evaluate is the smaller of
+  // sa[i] / sb[j]. Both i and j advance past every value <= x. The outer loop
+  // does at most na+nb iterations because each iteration consumes at least
+  // one element. Total work O(na + nb).
+  let i = 0;
+  let j = 0;
+  let maxDiff = 0;
+  while (i < na || j < nb) {
+    let x: number;
+    if (i >= na) x = sb[j];
+    else if (j >= nb) x = sa[i];
+    else x = sa[i] <= sb[j] ? sa[i] : sb[j];
+    while (i < na && sa[i] <= x) i++;
+    while (j < nb && sb[j] <= x) j++;
+    const diff = Math.abs(i / na - j / nb);
     if (diff > maxDiff) maxDiff = diff;
   }
   return +maxDiff.toFixed(4);
