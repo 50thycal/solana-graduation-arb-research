@@ -35,7 +35,8 @@ import { Worker } from 'worker_threads';
 import type Database from 'better-sqlite3';
 import { computeFilterV2Data, type FilterV2Data } from './filter-v2-data';
 import { computePricePathData } from './price-path-data';
-import { renderPricePathHtml } from '../utils/html-renderer';
+import { computePricePathV2Data, type PricePathV2Data } from './price-path-v2-data';
+import { renderPricePathHtml, renderPricePathV2Html } from '../utils/html-renderer';
 import type { StrategyManager } from '../trading/strategy-manager';
 import { makeLogger } from '../utils/logger';
 
@@ -52,12 +53,17 @@ const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // matrix). The cached blob from the prior code didn't have the panelv3_8 key,
 // so the bot was re-publishing v2.panelv3_8=undefined into bot-status forever.
 // (Skipped v3 because of the 2026-05-01 attempt.)
-const CACHE_KEY = 'heavy_data_v4';
+// 2026-05-24: bumped to v5 for the price-path-v2 addition (PricePathV2Data +
+// renderPricePathV2Html). Same invalidation reason as v4 — old blobs lack the
+// new keys and would publish undefined.
+const CACHE_KEY = 'heavy_data_v5';
 
 interface HeavyData {
   v2: FilterV2Data;
   pricePathDetail: ReturnType<typeof computePricePathData>;
   pricePathHtml: string;
+  pricePathV2Detail: PricePathV2Data;
+  pricePathV2Html: string;
   computedAt: number;
 }
 
@@ -89,6 +95,8 @@ function saveToDisk(db: Database.Database, data: HeavyData): void {
       v2: data.v2,
       pricePathDetail: data.pricePathDetail,
       pricePathHtml: data.pricePathHtml,
+      pricePathV2Detail: data.pricePathV2Detail,
+      pricePathV2Html: data.pricePathV2Html,
     });
     db.prepare(`
       INSERT INTO cache_kv (key, value_json, computed_at)
@@ -112,6 +120,8 @@ interface WorkerResult {
   v2?: FilterV2Data;
   pricePathDetail?: ReturnType<typeof computePricePathData>;
   pricePathHtml?: string;
+  pricePathV2Detail?: PricePathV2Data;
+  pricePathV2Html?: string;
 }
 
 function resolveDbPath(db: Database.Database): string {
@@ -149,11 +159,17 @@ function runInWorker(dbPath: string): Promise<Omit<HeavyData, 'computedAt'>> {
     worker.once('message', (msg: WorkerResult) => {
       if (settled) return;
       settled = true;
-      if (msg.ok && msg.v2 && msg.pricePathDetail !== undefined && msg.pricePathHtml !== undefined) {
+      if (
+        msg.ok && msg.v2
+        && msg.pricePathDetail !== undefined && msg.pricePathHtml !== undefined
+        && msg.pricePathV2Detail !== undefined && msg.pricePathV2Html !== undefined
+      ) {
         resolve({
           v2: msg.v2,
           pricePathDetail: msg.pricePathDetail,
           pricePathHtml: msg.pricePathHtml,
+          pricePathV2Detail: msg.pricePathV2Detail,
+          pricePathV2Html: msg.pricePathV2Html,
         });
       } else {
         reject(new Error(`Worker reported failure: ${msg.error || 'unknown'}`));
@@ -177,7 +193,9 @@ async function doRefreshInProcess(db: Database.Database): Promise<Omit<HeavyData
   const v2 = await computeFilterV2Data(db);
   const pricePathDetail = computePricePathData(db);
   const pricePathHtml = renderPricePathHtml(db);
-  return { v2, pricePathDetail, pricePathHtml };
+  const pricePathV2Detail = computePricePathV2Data(db);
+  const pricePathV2Html = renderPricePathV2Html(pricePathV2Detail);
+  return { v2, pricePathDetail, pricePathHtml, pricePathV2Detail, pricePathV2Html };
 }
 
 async function doRefresh(

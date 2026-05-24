@@ -9,7 +9,7 @@ import BN from 'bn.js';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 import type { ExecutionMode } from './config';
-import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL } from './config';
+import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL, SWAP_SLIPPAGE_BPS } from './config';
 import { Wallet, WSOL_MINT, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from './wallet';
 import {
   buildBuyInstructions,
@@ -53,6 +53,17 @@ export interface ExecutionResult {
   measuredSlippagePct?: number;
   jitoTipSol?: number;
   txLandMs?: number;
+  /** 'jito' or 'rpc' — which submission path attempted the tx. Only set on
+   *  live executions; undefined for paper/shadow. Useful for the post-mortem
+   *  diagnostic surface in trading.json. Added 2026-05-21. */
+  failurePath?: string;
+  /** Comma-joined list of mint extension flags (e.g. "token2022,transfer_fee").
+   *  Empty string when the mint is plain SPL. Captured at buy time. */
+  mintExtensionFlags?: string;
+  /** Full diagnostic snapshot for failed live txs — same fields as the
+   *  "Live buy/sell failed to land" log entry. Stored verbatim in
+   *  trades_v2.failure_context_json on the failed row. */
+  failureContext?: Record<string, unknown>;
 }
 
 export function readTokenAccountAmount(data: Buffer): number | null {
@@ -361,11 +372,14 @@ export class Executor {
     const solInLamports = BigInt(Math.floor(amountSol * 1e9));
 
     // ── 2. Wallet pre-flight (using upper-bound estimate of outflow) ─────────
-    // maxQuoteInLamports = solInLamports * 1.05 (5% slippage buffer ceiling).
-    // We can compute it without pool state. Floor is 0.1 SOL post-trade per
-    // operator policy (2026-05-24).
+    // maxQuoteInLamports = solInLamports * (1 + SWAP_SLIPPAGE_BPS/10000). We
+    // can compute it without pool state (matches the bound applied to the
+    // actual swap below). Floor is 0.1 SOL post-trade per operator policy
+    // (2026-05-24).
     const WALLET_MIN_FLOOR_LAMPORTS = 100_000_000;
-    const estimatedMaxQuoteInLamports = (solInLamports * 105n) / 100n;
+    const slipBpsForPreflight = BigInt(SWAP_SLIPPAGE_BPS);
+    const estimatedMaxQuoteInLamports =
+      (solInLamports * (10000n + slipBpsForPreflight)) / 10000n;
     const newAtaRentCount =
       (baseAtaExistsBefore ? 0 : 1) + (quoteAtaExistsBefore ? 0 : 1);
     const projectedOutflowLamports =
@@ -422,8 +436,9 @@ export class Executor {
       ? await getTransferFeeForRawAmount(this.connection, mintPk, baseTokenProgram, expectedBaseOutRaw)
       : 0n;
     const feeAdjustedExpectedBaseOut = expectedBaseOutRaw - transferFeeOnExpected;
-    const minBaseOutRaw = (feeAdjustedExpectedBaseOut * 95n) / 100n;
-    const maxQuoteInLamports = (solInLamports * 105n) / 100n;
+    const slipBpsBn = BigInt(SWAP_SLIPPAGE_BPS);
+    const minBaseOutRaw = (feeAdjustedExpectedBaseOut * (10000n - slipBpsBn)) / 10000n;
+    const maxQuoteInLamports = (solInLamports * (10000n + slipBpsBn)) / 10000n;
 
     const swapIxs = await buildBuyInstructions(this.connection, {
       pool: poolPk,
@@ -466,27 +481,43 @@ export class Executor {
       // even when the RPC fallback successfully captured it (audit gap on
       // trades 10400 / 10424 / 10882). With the sig populated the operator
       // can paste it into Solscan and read the failing account_index directly.
+      const extensionFlags: string[] = [];
+      if (mintProfile.isToken2022) extensionFlags.push('token2022');
+      if (mintProfile.hasTransferFee) extensionFlags.push('transfer_fee');
+      if (mintProfile.hasTransferHook) extensionFlags.push('transfer_hook');
+      const failureContext: Record<string, unknown> = {
+        path: submission.path,
+        txSignature: submission.txSignature,
+        solscanUrl: submission.txSignature
+          ? `https://solscan.io/tx/${submission.txSignature}`
+          : null,
+        err: submission.errorMessage,
+        isToken2022: mintProfile.isToken2022,
+        hasTransferFee: mintProfile.hasTransferFee,
+        hasTransferHook: mintProfile.hasTransferHook,
+        extensionTypes: mintProfile.extensionTypes,
+        baseAtaPreCreated: !baseAtaExistsBefore,
+        quoteAtaPreCreated: !quoteAtaExistsBefore,
+        baseTokenProgram: baseTokenProgram.toBase58(),
+        expectedBaseOutRaw: expectedBaseOutRaw.toString(),
+        minBaseOutRaw: minBaseOutRaw.toString(),
+        maxQuoteInLamports: maxQuoteInLamports.toString(),
+        latencyMs: submission.latencyMs,
+      };
+      // Pull on-chain program logs for the failed tx so the actual revert
+      // cause (PumpSwap Anchor error name, runtime rent failure account
+      // details, etc.) lands in trading.json instead of requiring a manual
+      // Solscan inspection on every failure.
+      if (submission.txSignature) {
+        const logsInfo = await this.fetchFailureLogs(submission.txSignature);
+        if (logsInfo) {
+          failureContext.programLogs = logsInfo.programLogs;
+          failureContext.failingProgram = logsInfo.failingProgram;
+          failureContext.failingInstructionIndex = logsInfo.failingInstructionIndex;
+        }
+      }
       logger.error(
-        {
-          mint, mode,
-          path: submission.path,
-          txSignature: submission.txSignature,
-          solscanUrl: submission.txSignature
-            ? `https://solscan.io/tx/${submission.txSignature}`
-            : null,
-          err: submission.errorMessage,
-          isToken2022: mintProfile.isToken2022,
-          hasTransferFee: mintProfile.hasTransferFee,
-          hasTransferHook: mintProfile.hasTransferHook,
-          extensionTypes: mintProfile.extensionTypes,
-          baseAtaPreCreated: !baseAtaExistsBefore,
-          quoteAtaPreCreated: !quoteAtaExistsBefore,
-          baseTokenProgram: baseTokenProgram.toBase58(),
-          expectedBaseOutRaw: expectedBaseOutRaw.toString(),
-          minBaseOutRaw: minBaseOutRaw.toString(),
-          maxQuoteInLamports: maxQuoteInLamports.toString(),
-          latencyMs: submission.latencyMs,
-        },
+        { mint, mode, ...failureContext },
         'Live buy failed to land — diagnostic snapshot for post-mortem',
       );
       return {
@@ -495,6 +526,9 @@ export class Executor {
         errorMessage: `live: tx did not land (${submission.path}): ${submission.errorMessage ?? 'unknown'}`,
         txSignature: submission.txSignature,
         txLandMs: submission.latencyMs,
+        failurePath: submission.path,
+        mintExtensionFlags: extensionFlags.join(','),
+        failureContext,
       };
     }
 
@@ -649,7 +683,8 @@ export class Executor {
     const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
     const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
     const expectedSolOut = computeExpectedQuoteOut(solRes, tokRes, effectiveBaseIn);
-    const minQuoteOut = (expectedSolOut * 95n) / 100n;
+    const sellSlipBpsBn = BigInt(SWAP_SLIPPAGE_BPS);
+    const minQuoteOut = (expectedSolOut * (10000n - sellSlipBpsBn)) / 10000n;
 
     if (sellMintProfile.hasTransferHook) {
       logger.warn(
@@ -702,24 +737,36 @@ export class Executor {
     this.wallet.invalidateSolBalance();
 
     if (!submission.landed) {
+      const sellExtensionFlags: string[] = [];
+      if (sellMintProfile.isToken2022) sellExtensionFlags.push('token2022');
+      if (sellMintProfile.hasTransferFee) sellExtensionFlags.push('transfer_fee');
+      if (sellMintProfile.hasTransferHook) sellExtensionFlags.push('transfer_hook');
+      const sellFailureContext: Record<string, unknown> = {
+        path: submission.path,
+        txSignature: submission.txSignature,
+        solscanUrl: submission.txSignature
+          ? `https://solscan.io/tx/${submission.txSignature}`
+          : null,
+        err: submission.errorMessage,
+        isToken2022: sellMintProfile.isToken2022,
+        hasTransferFee: sellMintProfile.hasTransferFee,
+        hasTransferHook: sellMintProfile.hasTransferHook,
+        extensionTypes: sellMintProfile.extensionTypes,
+        baseTokenProgram: sellMintProfile.tokenProgram.toBase58(),
+        baseInRaw: baseInRaw.toString(),
+        minQuoteOut: minQuoteOut.toString(),
+        latencyMs: submission.latencyMs,
+      };
+      if (submission.txSignature) {
+        const logsInfo = await this.fetchFailureLogs(submission.txSignature);
+        if (logsInfo) {
+          sellFailureContext.programLogs = logsInfo.programLogs;
+          sellFailureContext.failingProgram = logsInfo.failingProgram;
+          sellFailureContext.failingInstructionIndex = logsInfo.failingInstructionIndex;
+        }
+      }
       logger.error(
-        {
-          mint, mode,
-          path: submission.path,
-          txSignature: submission.txSignature,
-          solscanUrl: submission.txSignature
-            ? `https://solscan.io/tx/${submission.txSignature}`
-            : null,
-          err: submission.errorMessage,
-          isToken2022: sellMintProfile.isToken2022,
-          hasTransferFee: sellMintProfile.hasTransferFee,
-          hasTransferHook: sellMintProfile.hasTransferHook,
-          extensionTypes: sellMintProfile.extensionTypes,
-          baseTokenProgram: sellMintProfile.tokenProgram.toBase58(),
-          baseInRaw: baseInRaw.toString(),
-          minQuoteOut: minQuoteOut.toString(),
-          latencyMs: submission.latencyMs,
-        },
+        { mint, mode, ...sellFailureContext },
         'Live sell failed to land — diagnostic snapshot for post-mortem',
       );
       return {
@@ -728,6 +775,9 @@ export class Executor {
         errorMessage: `live sell: tx did not land: ${submission.errorMessage ?? 'unknown'}`,
         txSignature: submission.txSignature,
         txLandMs: submission.latencyMs,
+        failurePath: submission.path,
+        mintExtensionFlags: sellExtensionFlags.join(','),
+        failureContext: sellFailureContext,
       };
     }
 
@@ -762,6 +812,59 @@ export class Executor {
       measuredSlippagePct, jitoTipSol,
       txLandMs: submission.latencyMs,
     };
+  }
+
+  /**
+   * Fetch on-chain program logs for a failed tx and pull out the lines
+   * around the failure. Used to enrich `failureContext` so the operator
+   * doesn't have to open Solscan to see why the swap reverted.
+   *
+   * Best-effort — if the tx isn't queryable yet (RPC hasn't indexed it),
+   * we retry briefly then give up and return null. Never throws.
+   */
+  private async fetchFailureLogs(txSignature: string): Promise<{
+    programLogs: string[];
+    failingProgram: string | null;
+    failingInstructionIndex: number | null;
+  } | null> {
+    if (!this.connection) return null;
+    const retryDelaysMs = [800, 1500, 2500];
+    let tx = null;
+    for (const delay of retryDelaysMs) {
+      try {
+        tx = await this.connection.getTransaction(txSignature, {
+          maxSupportedTransactionVersion: 0,
+          commitment: 'confirmed',
+        });
+        if (tx) break;
+      } catch {
+        // Swallow — we retry, then return null
+      }
+      await this.sleep(delay);
+    }
+    if (!tx?.meta) return null;
+    const logs = tx.meta.logMessages ?? [];
+    // Find the program that emitted the failure: look for the last
+    // "Program <id> failed" line. Anchor errors usually log `Custom: N`
+    // right above; Solana runtime errors (InsufficientFundsForRent) show
+    // an `Error processing Instruction <n>:` line.
+    let failingProgram: string | null = null;
+    let failingInstructionIndex: number | null = null;
+    for (let i = logs.length - 1; i >= 0; i--) {
+      const line = logs[i];
+      const failMatch = line.match(/Program (\S+) failed: /);
+      if (failMatch && !failingProgram) failingProgram = failMatch[1];
+      const ixMatch = line.match(/Error processing Instruction (\d+)/);
+      if (ixMatch && failingInstructionIndex == null) {
+        failingInstructionIndex = parseInt(ixMatch[1], 10);
+      }
+      if (failingProgram && failingInstructionIndex != null) break;
+    }
+    // Tail the last ~25 lines — enough to capture the failing program's
+    // context without bloating the row. If we ever need more we can pull
+    // by sig directly from RPC.
+    const programLogs = logs.slice(-25);
+    return { programLogs, failingProgram, failingInstructionIndex };
   }
 
   private sleep(ms: number): Promise<void> {

@@ -805,6 +805,17 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     res.json((await getHeavyData(db, sm)).pricePathDetail);
   }));
 
+  // ── /api/price-path-v2-detail ──
+  // Winner-vs-loser feature investigator payload. Two cohorts (peak-return
+  // decile + realized-PnL decile) × two variants (full / drop top 3 winners).
+  // Per-feature: Cohen's d, KS, point-biserial r, Wilson CIs on top/bottom
+  // quartile winner-rate. Distributions (30-bin) and curated bivariate
+  // heatmaps. Served from the 24h heavy cache. See src/api/price-path-v2-data.ts.
+  app.get('/api/price-path-v2-detail', wrap(async (_req, res) => {
+    const sm = getStrategyManager ? getStrategyManager() : null;
+    res.json((await getHeavyData(db, sm)).pricePathV2Detail);
+  }));
+
   // ── /api/trading ──
   // Full /trading dashboard data: open positions, per-strategy performance,
   // recent trades (50), skip reasons + recent skips, active strategy configs.

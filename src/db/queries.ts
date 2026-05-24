@@ -1168,15 +1168,30 @@ export function markTradeFailed(
   db: Database.Database,
   tradeId: number,
   reason: string,
-  extras?: { txSignature?: string; txLandMs?: number; jitoTipSol?: number },
+  extras?: {
+    txSignature?: string;
+    txLandMs?: number;
+    jitoTipSol?: number;
+    /** 'jito' or 'rpc' — which submission path attempted the tx. */
+    failurePath?: string;
+    /** Comma-joined list of mint extension flags (e.g. "token2022,transfer_fee").
+     *  Empty string when the mint is plain SPL. NULL when not captured. */
+    mintExtensionFlags?: string | null;
+    /** Full diagnostic snapshot for post-mortem (path, mint profile, expected/min
+     *  out amounts, latency, etc.). Stored as JSON string in failure_context_json. */
+    failureContext?: Record<string, unknown>;
+  },
 ): void {
   db.prepare(`
     UPDATE trades_v2 SET
       status = 'failed',
       exit_reason = @reason,
-      entry_tx_signature = COALESCE(@txSignature, entry_tx_signature),
-      tx_land_ms         = COALESCE(@txLandMs,    tx_land_ms),
-      jito_tip_sol       = COALESCE(@jitoTipSol,  jito_tip_sol)
+      entry_tx_signature   = COALESCE(@txSignature, entry_tx_signature),
+      tx_land_ms           = COALESCE(@txLandMs,    tx_land_ms),
+      jito_tip_sol         = COALESCE(@jitoTipSol,  jito_tip_sol),
+      tx_failure_path      = COALESCE(@failurePath, tx_failure_path),
+      mint_extension_flags = COALESCE(@mintExtensionFlags, mint_extension_flags),
+      failure_context_json = COALESCE(@failureContextJson, failure_context_json)
     WHERE id = @tradeId
   `).run({
     tradeId,
@@ -1184,6 +1199,9 @@ export function markTradeFailed(
     txSignature: extras?.txSignature ?? null,
     txLandMs: extras?.txLandMs ?? null,
     jitoTipSol: extras?.jitoTipSol ?? null,
+    failurePath: extras?.failurePath ?? null,
+    mintExtensionFlags: extras?.mintExtensionFlags ?? null,
+    failureContextJson: extras?.failureContext ? JSON.stringify(extras.failureContext) : null,
   });
 }
 

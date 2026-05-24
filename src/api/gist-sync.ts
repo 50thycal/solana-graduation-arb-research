@@ -217,6 +217,7 @@ export interface StatusUrls {
   panel9: string;
   panel10: string;
   price_path_detail: string;
+  price_path_v2: string;
   trading: string;
   wallet_rep_analysis: string;
   sniper_panel: string;
@@ -413,6 +414,7 @@ export class GistSync {
       panel9: `${base}/panel9.json`,
       panel10: `${base}/panel10.json`,
       price_path_detail: `${base}/price-path-detail.json`,
+      price_path_v2: `${base}/price-path-v2.json`,
       trading: `${base}/trading.json`,
       wallet_rep_analysis: `${base}/wallet-rep-analysis.json`,
       sniper_panel: `${base}/sniper-panel.json`,
@@ -979,6 +981,7 @@ export class GistSync {
     const heavy = await getHeavyData(this.db, this.strategyManager);
     const v2 = heavy.v2;
     const pricePathDetail = heavy.pricePathDetail;
+    const pricePathV2Detail = heavy.pricePathV2Detail;
     // Don't reuse heavy.tradingData — strategies/config can drift from what
     // was captured at the last heavy cache refresh (up to 24h old). Recompute
     // fresh each sync cycle so trading.json on bot-status reflects live
@@ -1111,6 +1114,7 @@ export class GistSync {
       'panelv3_7.json': JSON.stringify({ generated_at: genAt, panelv3_7: v2.panelv3_7 }, null, 2),
       'panelv3_8.json': JSON.stringify({ generated_at: genAt, panelv3_8: v2.panelv3_8 }, null, 2),
       'price-path-detail.json': JSON.stringify(pricePathDetail, null, 2),
+      'price-path-v2.json': JSON.stringify(pricePathV2Detail, null, 2),
       'trading.json': JSON.stringify(tradingData, null, 2),
       'live-execution.json': JSON.stringify(liveExecutionStats, null, 2),
     };

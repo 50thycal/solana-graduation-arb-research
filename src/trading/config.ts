@@ -22,6 +22,26 @@ export const MICRO_TRADE_SIZE_SOL = parseFloat(process.env.MICRO_TRADE_SIZE_SOL 
 export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL || '0.0001');
 /** Max acceptable expected slippage at entry. 500 = 5%. */
 export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAGE_BPS || '500', 10);
+/**
+ * Quote-side slippage tolerance on the actual swap ix (basis points).
+ * 500 = 5%. Distinct from DEFAULT_MAX_SLIPPAGE_BPS (entry preflight gate).
+ * On buy: maxQuoteAmountIn = solIn * (10000 + bps) / 10000
+ * On sell: minQuoteOut = expectedSolOut * (10000 - bps) / 10000
+ *
+ * 2026-05-22: bumped to 10% to absorb pool fee + protocol fee + price
+ * impact on volatile graduations, fixing Custom 6004 (ExceededSlippage)
+ * crashes and stuck-position sell retries on grad 23066.
+ *
+ * 2026-05-23: reverted to 5%. The wider tolerance let SL exits land at
+ * -33% to -48% (vs configured 30%), turning prevented stuck-positions
+ * into much larger realized losses (-0.16 SOL drawdown on v25-bot-excl-
+ * climbing-live-micro in a 4h window). 5% rejects bad fills and forces
+ * a retry — stuck positions are recoverable, bad fills are not. The
+ * underlying v25 misconfiguration (filters=[] in live_micro vs 5 filters
+ * in shadow) was the real cause of the SL hits; once filters are
+ * restored, 5% buffer is the right default again.
+ */
+export const SWAP_SLIPPAGE_BPS = parseInt(process.env.SWAP_SLIPPAGE_BPS || '500', 10);
 /** SOL kept as buffer above tradeSize for tx fees + ATA rent. */
 export const WALLET_SOL_BUFFER = parseFloat(process.env.WALLET_SOL_BUFFER || '0.02');
 /** Regional Jito block engine endpoint. Frankfurt/NY/Amsterdam/Tokyo also available. */

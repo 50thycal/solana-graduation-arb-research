@@ -905,6 +905,16 @@ function runMigrations(db: Database.Database): void {
       // Lets promotion logic down-weight shadow trades whose measured-slippage
       // numbers are actually modeled, not measured.
       ['execution_failure_reason', 'TEXT'],
+      // Diagnostic context for failed live trades. JSON blob containing path
+      // (jito/rpc), mint extensions (token2022, transfer_fee, transfer_hook),
+      // expected/min out amounts, latency. Populated by markTradeFailed when a
+      // live buy/sell tx doesn't land. Lets the dashboard + post-mortem
+      // analyses see WHY a tx failed without scraping logs. Added 2026-05-21.
+      ['failure_context_json', 'TEXT'],
+      // Structured columns lifted from failure_context_json for quick filtering.
+      // Both default NULL on paper/shadow rows.
+      ['tx_failure_path', 'TEXT'],
+      ['mint_extension_flags', 'TEXT'],
     ];
     for (const [col, type] of newTradeCols) {
       if (!tradeExistingLive.has(col)) {
@@ -964,6 +974,36 @@ function runMigrations(db: Database.Database): void {
       db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
         .run('shadow_net_return_backfill_v1', String(result.changes));
       logger.info({ rowsUpdated: result.changes }, 'Backfilled net_return_pct on closed shadow trades (measured-cost model)');
+    }
+
+    // 2026-05-22 fix: live_micro trades pre-fix had trade_size_sol=0.5 (the
+    // strategy's configured tradeSizeSol) but the executor only actually swaps
+    // MICRO_TRADE_SIZE_SOL (0.05). Their net_profit_sol = trade_size_sol × pct
+    // was therefore 10x too negative. Backfill those rows: set trade_size_sol
+    // to 0.05 and recompute net_profit_sol against the correct size.
+    // Idempotent via bot_settings marker.
+    const microFixDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('live_micro_trade_size_backfill_v1') != null;
+    if (!microFixDone) {
+      const MICRO_SIZE = 0.05;
+      const result = db.prepare(`
+        UPDATE trades_v2
+        SET trade_size_sol = ?,
+            net_profit_sol = CASE
+              WHEN net_return_pct IS NOT NULL
+                THEN ROUND(? * (net_return_pct / 100), 8)
+              ELSE net_profit_sol
+            END
+        WHERE execution_mode = 'live_micro'
+          AND trade_size_sol IS NOT NULL
+          AND trade_size_sol > ?
+      `).run(MICRO_SIZE, MICRO_SIZE, MICRO_SIZE);
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('live_micro_trade_size_backfill_v1', String(result.changes));
+      logger.info(
+        { rowsUpdated: result.changes },
+        'Backfilled live_micro trade_size_sol → 0.05 + recomputed net_profit_sol',
+      );
     }
   }
 

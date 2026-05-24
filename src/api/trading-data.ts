@@ -13,6 +13,14 @@
 import type Database from 'better-sqlite3';
 import { getTradeStatsByStrategy } from '../db/queries';
 import type { StrategyManager } from '../trading/strategy-manager';
+import { getPoolResolverMetrics } from '../trading/pool-resolver';
+
+/** Safe JSON.parse — returns null on invalid input instead of throwing.
+ *  Used for failure_context_json which may be malformed if an older bot
+ *  version wrote a non-JSON string (defensive parse for forward compat). */
+function safeParseJson(s: string): unknown {
+  try { return JSON.parse(s); } catch { return null; }
+}
 
 export function computeTradingData(
   db: Database.Database,
@@ -126,7 +134,10 @@ export function computeTradingData(
         datetime(t.exit_timestamp, 'unixepoch') as exit_dt,
         CASE WHEN t.exit_timestamp IS NOT NULL AND t.entry_timestamp IS NOT NULL
              THEN t.exit_timestamp - t.entry_timestamp END as held_seconds,
-        t.filter_results_json
+        t.filter_results_json,
+        t.tx_failure_path,
+        t.mint_extension_flags,
+        t.failure_context_json
       FROM trades_v2 t ${whereSql}
       ORDER BY t.created_at DESC LIMIT 50`;
 
@@ -134,6 +145,12 @@ export function computeTradingData(
     ...t,
     filter_results: t.filter_results_json ? JSON.parse(t.filter_results_json) : null,
     filter_results_json: undefined,
+    // Parse failure context for failed live trades. Each failed live trade
+    // gets the full executor diagnostic snapshot (jito vs rpc path, mint
+    // extensions, expected/min out amounts, latency). For paper/shadow rows
+    // this is NULL — no diagnostic recorded.
+    failure_context: t.failure_context_json ? safeParseJson(t.failure_context_json) : null,
+    failure_context_json: undefined,
   }));
 
   // ── Shadow slippage range ───────────────────────────────────────────────
@@ -261,6 +278,7 @@ export function computeTradingData(
     skip_reason_counts: skipReasons,
     recent_skips: recentSkips,
     top_pairs: opts?.topPairs ?? [],
+    pool_resolver: getPoolResolverMetrics(),
   };
 }
 

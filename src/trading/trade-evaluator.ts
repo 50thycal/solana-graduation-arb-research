@@ -5,9 +5,11 @@ import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourIn
 import { runFilterPipeline } from './filter-pipeline';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
+import { getMintProfile } from './token-2022';
 import { PositionManager, ActivePosition } from './position-manager';
 import { ObservationContext } from '../collector/price-collector';
 import { runEntryPreflight, maybeLogKillswitchTripped, isKillswitchTripped } from './safety';
+import { resolvePoolFromVault } from './pool-resolver';
 import type { Wallet } from './wallet';
 
 const logger = makeLogger('trade-evaluator');
@@ -195,18 +197,52 @@ export class TradeEvaluator {
       ? MICRO_TRADE_SIZE_SOL
       : cfg.tradeSizeSol;
 
-    // Reject live entries when the pool address is synthetic (e.g. "vaults:abc")
-    // or otherwise not a valid base58 Solana address. The listener stores
-    // synthetic placeholders when the pool PDA couldn't be extracted from the
-    // migration tx — these work for vault-based price reads (paper/shadow) but
-    // would crash the live executor at `new PublicKey(poolAddress)` with a
-    // "Non-base58 character" error. Better to skip cleanly than burn a failed
-    // trade row. 2026-05-21 bug fix (saw it crash v25-bot-excl-climbing-live-micro).
+    // Validate the pool address for live entries. The listener stores a
+    // synthetic placeholder of the form `vaults:<base8>` when it couldn't
+    // extract the real PumpSwap pool PDA from the migrate tx (a known
+    // upstream parsing gap). Those addresses work fine for vault-based
+    // price reads (paper / shadow) but `new PublicKey("vaults:abc")` throws
+    // "Non-base58 character" in the live executor.
+    //
+    // Resolution path (2026-05-22): when the stored address is synthetic,
+    // try resolving the real PDA on-the-fly by reading the SPL Token
+    // account at baseVault and pulling its `owner` field — that's the pool
+    // PDA. One RPC call per cache miss, write-back to graduations table so
+    // future evaluations skip the resolver. Only if resolution fails do
+    // we skip with `safety:invalid_pool_address`. See pool-resolver.ts.
     const isLive = executionMode === 'live_micro' || executionMode === 'live_full';
     if (isLive && ctx.poolAddress) {
+      let poolValid = false;
       try {
         new PublicKey(ctx.poolAddress);
+        poolValid = true;
       } catch {
+        poolValid = false;
+      }
+      if (!poolValid && this.connection && ctx.baseVault) {
+        const resolved = await resolvePoolFromVault({
+          connection: this.connection,
+          mint: ctx.mint,
+          baseVault: ctx.baseVault,
+          graduationId,
+          db: this.db,
+        });
+        if (resolved) {
+          logger.info(
+            {
+              graduationId,
+              mint: ctx.mint,
+              strategyId: this.strategyId,
+              priorPoolAddress: ctx.poolAddress,
+              resolvedPoolAddress: resolved,
+            },
+            'Synthetic pool address resolved via baseVault.owner — live entry unblocked'
+          );
+          ctx.poolAddress = resolved;
+          poolValid = true;
+        }
+      }
+      if (!poolValid) {
         this.tradeLogger.logSkipped(
           graduationId,
           'safety:invalid_pool_address',
@@ -215,10 +251,86 @@ export class TradeEvaluator {
           this.strategyId,
         );
         logger.info(
-          { graduationId, mint: ctx.mint, poolAddress: ctx.poolAddress, strategyId: this.strategyId },
-          'Skipping live entry — synthetic or invalid pool address (vault-based modes still work)'
+          {
+            graduationId,
+            mint: ctx.mint,
+            poolAddress: ctx.poolAddress,
+            hasBaseVault: !!ctx.baseVault,
+            hasConnection: !!this.connection,
+            strategyId: this.strategyId,
+          },
+          'Skipping live entry — pool address invalid and resolver failed (vault-based modes still work)'
         );
         return;
+      }
+    }
+
+    // Reject live entries only on Token-2022 mints with a TransferHook
+    // extension. TransferHook installs custom on-chain transfer logic and is
+    // the standard honeypot pattern — the buy succeeds, then the sell hook
+    // blocks the transfer and the position is stuck at 100% loss.
+    //
+    // Plain Token-2022 (with MetadataPointer / TransferFeeConfig / etc.) is
+    // now the standard mint format, so the previous wholesale isToken2022
+    // block was rejecting valid trades. Trade 11713's InsufficientFundsForRent
+    // crash (the original reason the broad block was added) was actually a
+    // rent-budget shortfall in our swap ix on TransferHook extension
+    // accounts — TransferHook tokens reliably hit that path because of the
+    // extra `extra_account_metas` PDA they require. Blocking TransferHook
+    // alone removes both the rent-failure case and the honeypot risk.
+    //
+    // We always run the profile fetch on live mode so the mint flags are
+    // available for diagnostics whether the trade fires or not.
+    if (isLive && this.connection) {
+      try {
+        const mintProfile = await getMintProfile(this.connection, new PublicKey(ctx.mint));
+        if (mintProfile.hasTransferHook) {
+          this.tradeLogger.logSkipped(
+            graduationId,
+            'safety:transfer_hook_honeypot_risk',
+            null,
+            pctT30,
+            this.strategyId,
+          );
+          logger.info(
+            {
+              graduationId,
+              mint: ctx.mint,
+              isToken2022: mintProfile.isToken2022,
+              hasTransferFee: mintProfile.hasTransferFee,
+              hasTransferHook: true,
+              extensionTypes: mintProfile.extensionTypes,
+              strategyId: this.strategyId,
+            },
+            'Skipping live entry — TransferHook extension present (honeypot risk: sell hook can block exit)'
+          );
+          return;
+        }
+        if (mintProfile.isToken2022) {
+          logger.info(
+            {
+              graduationId,
+              mint: ctx.mint,
+              hasTransferFee: mintProfile.hasTransferFee,
+              extensionTypes: mintProfile.extensionTypes,
+              strategyId: this.strategyId,
+            },
+            'Live entry on Token-2022 mint — allowed (no TransferHook)'
+          );
+        }
+      } catch (err) {
+        // Mint profile fetch failed — log + proceed (defensive: don't block
+        // entry on a transient RPC blip). The downstream executor will hit
+        // the same call and fail there with a clearer error if needed.
+        logger.warn(
+          {
+            graduationId,
+            mint: ctx.mint,
+            err: err instanceof Error ? err.message : String(err),
+            strategyId: this.strategyId,
+          },
+          'getMintProfile failed in live preflight — proceeding to executor'
+        );
       }
     }
 
@@ -319,6 +431,9 @@ export class TradeEvaluator {
         txSignature: entryResult.txSignature,
         txLandMs: entryResult.txLandMs,
         jitoTipSol: entryResult.jitoTipSol,
+        failurePath: entryResult.failurePath,
+        mintExtensionFlags: entryResult.mintExtensionFlags ?? null,
+        failureContext: entryResult.failureContext,
       });
       return;
     }
