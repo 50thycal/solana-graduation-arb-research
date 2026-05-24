@@ -44,6 +44,7 @@ const NAV_LINKS = [
   { path: '/filter-analysis-v2', label: 'Filters V2' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/price-path', label: 'Price Path' },
+  { path: '/price-path-v2', label: 'Price Path V2' },
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
@@ -2385,6 +2386,20 @@ async function main() {
       const { pricePathHtml } = await getHeavyData(db, strategyManager);
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
       res.send(pricePathHtml);
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── PRICE PATH V2 (winner-vs-loser feature investigator) ────────────────
+  // Cohort selector + feature-importance ranking + univariate distribution
+  // comparator + curated bivariate heatmaps. Pre-rendered HTML cached
+  // alongside other heavy payloads. See src/api/price-path-v2-data.ts.
+  app.get('/price-path-v2', async (_req, res) => {
+    try {
+      const { pricePathV2Html } = await getHeavyData(db, strategyManager);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(pricePathV2Html);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
