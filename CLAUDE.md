@@ -185,7 +185,7 @@ Use `WebFetch` against `https://raw.githubusercontent.com/50thycal/solana-gradua
 
 1. **`diagnose.json`** → confirm `verdict: "HEALTHY"`. If not, fix the reported level before doing anything else.
 2. **`report.json`** → cross-session memory. Read `today_auto.promotion_readiness_top5` first (top 5 closest-to-bar with composite scores), then `today_report.recommendations`, `open_action_items`, and `lessons[]`. Tells you what was proposed yesterday, what was acted on, and persistent institutional memory.
-3. **`leave-one-out-pnl.json`** → outlier-robust per-strategy P&L: `total_net_sol`, `total_net_sol_drop_top1/3`, `monthly_run_rate_sol`, trimmed mean. Use as the canonical evaluation source — never call a strategy "winning" without checking drop_top3 here.
+3. **`leave-one-out-pnl.json`** → outlier-robust per-strategy P&L: `total_net_sol`, `total_net_sol_drop_top1/3`, `monthly_run_rate_sol`, trimmed mean. Use as the canonical evaluation source — never call a strategy "winning" without checking drop_top3 here. **Multi-row caveat:** `rows[]` is partitioned by `(strategy_id, execution_mode)` — the same `strategy_id` can appear with both a `paper` row (historical backfill) and a `shadow` row (real-time shadow trades), and those rows can have wildly different numbers. The `/trading` dashboard shows the live execution mode (typically `shadow`). When you collapse rows by `strategy_id` alone, the second row silently overwrites the first and you'll report numbers that don't match the dashboard. Always either (a) key your lookup by `(strategy_id, execution_mode)`, or (b) dedup with priority `shadow > live / live_micro > paper`. See the Python snippet below.
 4. **`snapshot.json`** → counts, scorecard, data quality, recent graduations, last error.
 5. **`best-combos.json`** → leaderboard ranked by `opt_avg_ret` at each combo's own TP/SL optimum. `baseline_avg_return_pct` is the rolling entry-gated floor (informational; the live promotion bar is in leave-one-out-pnl.json).
 6. **`strategy-percentiles.json`** → per-strategy median / p10 / p25 / p75 / p90 / std dev / min / max + `top_winners` and `top_losers` (top 3 each, with mint + graduation_id). Diagnostic — surfaces the *shape* of the return distribution.
@@ -225,15 +225,25 @@ mcp__github__get_file_contents(owner=50thycal, repo=solana-graduation-arb-resear
 # 2. Parse the MCP response (it wraps content in [{type, text}] array)
 python3 -c "
 import json
+from collections import defaultdict
 with open('<temp_file_path>') as f:
     raw = json.load(f)
 text = raw[1]['text']
 data = json.loads(text[text.find('{'):])
-# Top 10 by monthly run rate, enabled only
-rows = [r for r in data['rows'] if r['enabled']]
+# CRITICAL: dedup by (strategy_id, execution_mode) before keying by strategy_id.
+# rows[] can have both a paper row (backfill) and a shadow row (live) for the
+# same strategy — naive {r['strategy_id']: r for r in rows} drops one and
+# silently mis-reports vs the /trading dashboard. Prefer shadow > live > paper.
+MODE_PRIORITY = {'shadow': 0, 'live_micro': 1, 'live': 1, 'paper': 2}
+groups = defaultdict(list)
+for r in data['rows']:
+    groups[r['strategy_id']].append(r)
+deduped = [sorted(rs, key=lambda r: MODE_PRIORITY.get(r.get('execution_mode',''), 99))[0]
+           for rs in groups.values()]
+rows = [r for r in deduped if r['enabled'] and r.get('monthly_run_rate_sol') is not None]
 rows.sort(key=lambda r: r['monthly_run_rate_sol'], reverse=True)
 for r in rows[:10]:
-    print(f\"{r['label']:30s} n={r['n_trades']:4d} total={r['total_net_sol']:+.3f} drop3={r['total_net_sol_drop_top3']:+.3f} monthly={r['monthly_run_rate_sol']:+.2f}\")
+    print(f\"{r['label']:30s} mode={r['execution_mode']:<8s} n={r['n_trades']:4d} total={r['total_net_sol']:+.3f} drop3={r['total_net_sol_drop_top3']:+.3f} monthly={r['monthly_run_rate_sol']:+.2f}\")
 "
 ```
 
