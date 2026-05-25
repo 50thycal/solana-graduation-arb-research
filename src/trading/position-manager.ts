@@ -50,10 +50,16 @@ export interface ActivePosition {
    *  Markov transition matrix. Set when the strategy registers its filter. */
   markovFilterKey?: string;
   /** Count of consecutive failed live-sell attempts. Incremented by handleExit
-   *  when an exit fails and the position is re-armed for retry. After
-   *  MAX_SELL_RETRIES the trade is force-failed with manual-intervention
-   *  status instead of looping forever burning Jito tips. */
+   *  when an exit fails and the position is re-armed for retry. Used to
+   *  compute backoff via nextSellAttemptAt — no hard cap; we retry until the
+   *  sell lands (tokens remain stuck on chain if we give up, and the user's
+   *  buy cost goes silently unaccounted in net P&L). 2026-05-26. */
   sellRetryCount?: number;
+  /** Unix-ms timestamp before which checkPosition should NOT re-trigger the
+   *  exit on a re-armed retry. Implements exponential-ish backoff between
+   *  failed live-sell attempts so we don't hammer the chain at pollIntervalSec
+   *  cadence (1s) burning Jito tips. Unset means no backoff active. */
+  nextSellAttemptAt?: number;
 }
 
 export type ExitReason =
@@ -356,6 +362,15 @@ export class PositionManager extends EventEmitter {
   private async checkPosition(tradeId: number): Promise<void> {
     const pos = this.positions.get(tradeId);
     if (!pos || !this.connection) return;
+
+    // 0. SELL-RETRY BACKOFF. When a live sell failed previously, handleExit
+    // re-armed this position with a nextSellAttemptAt that delays the next
+    // attempt. Without this gate, the position-manager poll (every 1s)
+    // re-fires the exit immediately on each tick, burning Jito tips on every
+    // retry. Backoff is set by strategy-manager.handleExit using sellRetryCount.
+    if (pos.nextSellAttemptAt && Date.now() < pos.nextSellAttemptAt) {
+      return;
+    }
 
     const now = Math.floor(Date.now() / 1000);
     const params = this.dynamicParams;

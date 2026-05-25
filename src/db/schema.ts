@@ -915,6 +915,14 @@ function runMigrations(db: Database.Database): void {
       // Both default NULL on paper/shadow rows.
       ['tx_failure_path', 'TEXT'],
       ['mint_extension_flags', 'TEXT'],
+      // SOL spent on ATA rent at buy time. The PumpSwap swap creates ATAs that
+      // are NOT closed at sell time, so rent is a permanent wallet outflow per
+      // unique mint (~0.00204 SOL × number of new ATAs created at buy). Stored
+      // here so closeTrade can deduct it from net_profit_sol — without this,
+      // accumulated rent showed up as a 0.10–0.20 SOL "missing" gap between
+      // sum-of-strategy-net_sol and actual wallet delta (audited 2026-05-26).
+      // Populated only on live_micro/live_full rows where ATAs were pre-created.
+      ['entry_ata_rent_sol', 'REAL'],
     ];
     for (const [col, type] of newTradeCols) {
       if (!tradeExistingLive.has(col)) {
@@ -1003,6 +1011,114 @@ function runMigrations(db: Database.Database): void {
       logger.info(
         { rowsUpdated: result.changes },
         'Backfilled live_micro trade_size_sol → 0.05 + recomputed net_profit_sol',
+      );
+    }
+
+    // 2026-05-26 fix: closed live trades' net_profit_sol pre-fix used
+    // measuredRoundTripPct (~1.75% modeling shadow slippage) and ignored
+    // ATA rent entirely. Actual per-trade overhead is:
+    //   entry tip + exit tip + 2 × tx fee + ATA rent (~0.00204 SOL per new mint)
+    // ATA rent dominates on micro trades — 0.00204 SOL on 0.05 SOL is 4 pp,
+    // way more than the 1.75% the old math assumed. Aggregate impact was
+    // ~0.15-0.20 SOL of unrecognized losses across ~100 historical live
+    // trades. Backfill: assume every live trade created a new base ATA
+    // (true since each mint is unique post-graduation) and apply the new
+    // math. Skip already-closed-with-correct-math via marker.
+    const liveOverheadFixDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('live_overhead_recompute_v1') != null;
+    if (!liveOverheadFixDone) {
+      const TOKEN_ACCOUNT_RENT_SOL = 0.00203928;  // TOKEN_ACCOUNT_RENT_LAMPORTS / 1e9
+      const TX_OVERHEAD_SOL = 0.00001;            // 2 × 5_000 lamports
+      const DEFAULT_TIP_SOL = 0.0001;             // DEFAULT_JITO_TIP_SOL fallback
+      // Set entry_ata_rent_sol on all live closed trades that don't have it
+      // (every live trade is on a unique mint = new base ATA was created).
+      db.prepare(`
+        UPDATE trades_v2
+        SET entry_ata_rent_sol = ?
+        WHERE execution_mode IN ('live_micro', 'live_full')
+          AND entry_ata_rent_sol IS NULL
+      `).run(TOKEN_ACCOUNT_RENT_SOL);
+      // Recompute net_profit_sol + net_return_pct using the new live overhead
+      // formula. We approximate exit tip via the same DEFAULT_TIP_SOL since
+      // per-row exit-side tip wasn't persisted on most pre-fix rows (jito_tip_sol
+      // captures the most-recent leg of the last submission; not strictly entry
+      // OR exit). Conservative — uses gross_return_pct adjusted by overhead %.
+      const result = db.prepare(`
+        UPDATE trades_v2
+        SET net_return_pct = ROUND(
+              COALESCE(gap_adjusted_return_pct, gross_return_pct)
+              - ((? + ? + ? + COALESCE(entry_ata_rent_sol, 0)) / NULLIF(trade_size_sol, 0)) * 100
+            , 6),
+            net_profit_sol = ROUND(
+              trade_size_sol * (
+                COALESCE(gap_adjusted_return_pct, gross_return_pct)
+                - ((? + ? + ? + COALESCE(entry_ata_rent_sol, 0)) / NULLIF(trade_size_sol, 0)) * 100
+              ) / 100
+            , 8),
+            estimated_fees_sol = ROUND(
+              ? + ? + ? + COALESCE(entry_ata_rent_sol, 0)
+            , 8)
+        WHERE status = 'closed'
+          AND execution_mode IN ('live_micro', 'live_full')
+          AND gross_return_pct IS NOT NULL
+          AND trade_size_sol IS NOT NULL
+          AND trade_size_sol > 0
+      `).run(
+        DEFAULT_TIP_SOL, DEFAULT_TIP_SOL, TX_OVERHEAD_SOL,  // net_return_pct
+        DEFAULT_TIP_SOL, DEFAULT_TIP_SOL, TX_OVERHEAD_SOL,  // net_profit_sol
+        DEFAULT_TIP_SOL, DEFAULT_TIP_SOL, TX_OVERHEAD_SOL,  // estimated_fees_sol
+      );
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('live_overhead_recompute_v1', String(result.changes));
+      logger.info(
+        { rowsUpdated: result.changes },
+        'Backfilled live trade overhead (tips + fees + ATA rent) into net_profit_sol',
+      );
+    }
+
+    // 2026-05-26 fix: convert historical live trades stuck at status='failed'
+    // with exit_reason starting 'live_sell_failed_after_' into status='closed'
+    // with net_profit_sol = -(entry cost + overhead). Pre-fix the bot gave up
+    // after 5 sell-retry attempts and marked the trade failed, hiding the
+    // ~0.05 SOL buy cost loss from every strategy's net P&L. Tokens are
+    // realistically stuck on-chain — for accounting purposes treat them as
+    // worthless. (Future failed sells are retried indefinitely with backoff
+    // via 2b — this only backfills the historical orphans.) Idempotent.
+    const stuckSellFixDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('live_stuck_failed_sells_v1') != null;
+    if (!stuckSellFixDone) {
+      const DEFAULT_TIP_SOL = 0.0001;
+      const TX_OVERHEAD_SOL = 0.00001;
+      // For each stuck sell: net_profit_sol = -(trade_size + entry_tip + exit_tip
+      // estimate + 2×tx_fee + entry_ata_rent). The tokens are treated as
+      // worthless (sell never landed).
+      const result = db.prepare(`
+        UPDATE trades_v2
+        SET status = 'closed',
+            net_profit_sol = ROUND(
+              -1 * (trade_size_sol
+                    + COALESCE(jito_tip_sol, ?)
+                    + ?
+                    + ?
+                    + COALESCE(entry_ata_rent_sol, 0))
+            , 8),
+            net_return_pct = -100,
+            estimated_fees_sol = ROUND(
+              COALESCE(jito_tip_sol, ?) + ? + ? + COALESCE(entry_ata_rent_sol, 0)
+            , 8)
+        WHERE status = 'failed'
+          AND execution_mode IN ('live_micro', 'live_full')
+          AND exit_reason LIKE 'live_sell_failed_after_%'
+          AND trade_size_sol IS NOT NULL
+      `).run(
+        DEFAULT_TIP_SOL, DEFAULT_TIP_SOL, TX_OVERHEAD_SOL,  // net_profit_sol
+        DEFAULT_TIP_SOL, DEFAULT_TIP_SOL, TX_OVERHEAD_SOL,  // estimated_fees_sol
+      );
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('live_stuck_failed_sells_v1', String(result.changes));
+      logger.info(
+        { rowsUpdated: result.changes },
+        'Converted historical stuck-sell failures to closed losses',
       );
     }
   }

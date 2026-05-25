@@ -1220,6 +1220,7 @@ export function updateTradeEntryFill(
     shadow_measured_entry_slippage_pct?: number;
     jito_tip_sol?: number;
     tx_land_ms?: number;
+    entry_ata_rent_sol?: number;
   }
 ): void {
   db.prepare(`
@@ -1229,7 +1230,8 @@ export function updateTradeEntryFill(
       entry_tx_signature    = @entry_tx_signature,
       shadow_measured_entry_slippage_pct = COALESCE(@shadow_measured_entry_slippage_pct, shadow_measured_entry_slippage_pct),
       jito_tip_sol          = COALESCE(@jito_tip_sol, jito_tip_sol),
-      tx_land_ms            = COALESCE(@tx_land_ms, tx_land_ms)
+      tx_land_ms            = COALESCE(@tx_land_ms, tx_land_ms),
+      entry_ata_rent_sol    = COALESCE(@entry_ata_rent_sol, entry_ata_rent_sol)
     WHERE id = @tradeId
   `).run({
     tradeId,
@@ -1239,6 +1241,7 @@ export function updateTradeEntryFill(
     shadow_measured_entry_slippage_pct: data.shadow_measured_entry_slippage_pct ?? null,
     jito_tip_sol: data.jito_tip_sol ?? null,
     tx_land_ms: data.tx_land_ms ?? null,
+    entry_ata_rent_sol: data.entry_ata_rent_sol ?? null,
   });
 }
 
