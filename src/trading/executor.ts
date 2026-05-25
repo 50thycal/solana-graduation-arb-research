@@ -10,7 +10,7 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 import type { ExecutionMode } from './config';
 import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL, SWAP_SLIPPAGE_BPS } from './config';
-import { Wallet, WSOL_MINT, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from './wallet';
+import { Wallet, WSOL_MINT, getAssociatedTokenAddress } from './wallet';
 import {
   buildBuyInstructions,
   buildSellInstructions,
@@ -359,15 +359,17 @@ export class Executor {
     const baseAta = getAssociatedTokenAddress(mintPk, walletPk, baseTokenProgram);
     const baseAtaInfoBefore = await this.connection.getAccountInfo(baseAta, 'confirmed').catch(() => null);
     const baseAtaExistsBefore = !!baseAtaInfoBefore;
-    // Pre-flight check for the WSOL quote-side ATA too. The PumpSwap SDK
-    // assumes this exists at swap time; if it doesn't and the SDK tries to
-    // fund inline without enough lamports, the on-chain runtime rejects with
-    // InsufficientFundsForRent on the quote ATA account index. Pre-creating
-    // it ourselves with the SPL ATA program funds rent from our wallet at
-    // the correct size. Idempotent — no-op if it already exists.
-    const quoteAta = getAssociatedTokenAddress(WSOL_MINT, walletPk, TOKEN_PROGRAM_ID);
-    const quoteAtaInfoBefore = await this.connection.getAccountInfo(quoteAta, 'confirmed').catch(() => null);
-    const quoteAtaExistsBefore = !!quoteAtaInfoBefore;
+    // We deliberately do NOT pre-create the WSOL quote ATA. The PumpSwap SDK
+    // owns the WSOL ATA lifecycle inline (create → wrap → swap → close — see
+    // pumpswap-verify.ts:50 "Number of ixs in the SDK output (ATA, wsol prep,
+    // swap, close, etc.)"). When we pre-created it ourselves (2026-05-25
+    // experiment, commit 52f65a9), the InsufficientFundsForRent failures
+    // INCREASED rather than decreased: post-fix solscan trace on trade 12898
+    // showed our pre-create at ix #4, SDK's idempotent no-op at ix #5, then
+    // SDK's CloseAccount at ix #10 against our-created account — runtime
+    // rent-exempt validation tripped at tx-end on account_index=6. Letting
+    // the SDK own the WSOL ATA matches the SDK's expected flow. The base ATA
+    // we still pre-create for Token-2022 sizing reasons (per token-2022.ts:5).
     const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
     const walletSolBefore = await this.wallet.getSolBalance(this.connection);
 
@@ -384,8 +386,13 @@ export class Executor {
     const slipBpsForPreflight = BigInt(SWAP_SLIPPAGE_BPS);
     const estimatedMaxQuoteInLamports =
       (solInLamports * (10000n + slipBpsForPreflight)) / 10000n;
-    const newAtaRentCount =
-      (baseAtaExistsBefore ? 0 : 1) + (quoteAtaExistsBefore ? 0 : 1);
+    // ATA rent budget: 1 for our base ATA if new, plus 2 for SDK-managed
+    // ATAs that PumpSwap creates inline (its WSOL session ATA + any
+    // fee-recipient WSOL ATAs that don't exist yet). 2 is a worst-case
+    // upper bound — most trades create 0-1 inline ATAs since fee recipients
+    // accumulate WSOL ATAs across many buyers.
+    const SDK_MAX_INLINE_ATAS = 2;
+    const newAtaRentCount = (baseAtaExistsBefore ? 0 : 1) + SDK_MAX_INLINE_ATAS;
     const projectedOutflowLamports =
       Number(estimatedMaxQuoteInLamports) +
       jitoTipLamports +
@@ -401,7 +408,7 @@ export class Executor {
           projectedOutflowSol: (projectedOutflowLamports / 1e9).toFixed(4),
           floorSol: WALLET_MIN_FLOOR_LAMPORTS / 1e9,
           needSol: needSol.toFixed(4),
-          newAtaCount: newAtaRentCount,
+          assumedAtaCount: newAtaRentCount,
         },
         'Live buy aborted — wallet below safety floor',
       );
@@ -451,17 +458,9 @@ export class Executor {
       maxQuoteAmountIn: maxQuoteInLamports,
     });
 
-    const ataPreCreateIxs: TransactionInstruction[] = [];
-    if (!baseAtaExistsBefore) {
-      ataPreCreateIxs.push(
-        buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram),
-      );
-    }
-    if (!quoteAtaExistsBefore) {
-      ataPreCreateIxs.push(
-        buildIdempotentAtaCreateIx(walletPk, quoteAta, walletPk, WSOL_MINT, TOKEN_PROGRAM_ID),
-      );
-    }
+    const ataPreCreateIxs: TransactionInstruction[] = baseAtaExistsBefore
+      ? []
+      : [buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram)];
 
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
@@ -501,7 +500,6 @@ export class Executor {
         hasTransferHook: mintProfile.hasTransferHook,
         extensionTypes: mintProfile.extensionTypes,
         baseAtaPreCreated: !baseAtaExistsBefore,
-        quoteAtaPreCreated: !quoteAtaExistsBefore,
         baseTokenProgram: baseTokenProgram.toBase58(),
         expectedBaseOutRaw: expectedBaseOutRaw.toString(),
         minBaseOutRaw: minBaseOutRaw.toString(),
@@ -549,8 +547,13 @@ export class Executor {
     const overheadLamports =
       jitoTipLamports +
       TX_FEE_LAMPORTS +
-      (baseAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS) +
-      (quoteAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS);
+      (baseAtaExistsBefore ? 0 : TOKEN_ACCOUNT_RENT_LAMPORTS);
+    // Note: the SDK's own WSOL session ATA gets closed at tx end (refund
+    // to user, net 0). Fee-recipient ATAs the SDK may create inline DO
+    // persist with our rent in them — but we can't observe per-trade
+    // which were created without parsing inner instructions, so they're
+    // captured in the pre-flight buffer (SDK_MAX_INLINE_ATAS) rather than
+    // here in the post-trade overhead.
     const solSpentLamports = walletSolBefore - walletSolAfter;
     const swapCostLamports = solSpentLamports - overheadLamports;
     const swapCostSol = swapCostLamports / 1e9;
@@ -577,7 +580,13 @@ export class Executor {
             },
             'Live buy: tokens arrived on extended re-read — using actual measurement',
           );
-          const lateAtaRentLamports = newAtaRentCount * TOKEN_ACCOUNT_RENT_LAMPORTS;
+          // entry_ata_rent_sol tracks PERMANENT outflow only — base ATA we
+          // own (kept across all trades on this mint). SDK-managed WSOL ATAs
+          // close at tx-end (net 0). Any SDK-created fee-recipient ATAs that
+          // do persist are captured by the wallet pre-flight buffer.
+          const recordedAtaRentLamports = baseAtaExistsBefore
+            ? 0
+            : TOKEN_ACCOUNT_RENT_LAMPORTS;
           return {
             success: true,
             effectivePrice: lateEffectivePrice,
@@ -586,7 +595,7 @@ export class Executor {
             dryRun: false, executionMode: mode,
             jitoTipSol,
             txLandMs: submission.latencyMs,
-            ataRentCostSol: lateAtaRentLamports / 1e9,
+            ataRentCostSol: recordedAtaRentLamports / 1e9,
           };
         }
         logger.error(
@@ -629,15 +638,21 @@ export class Executor {
       'Live buy filled'
     );
 
-    const ataRentLamports = newAtaRentCount * TOKEN_ACCOUNT_RENT_LAMPORTS;
-    const ataRentCostSol = ataRentLamports / 1e9;
+    // entry_ata_rent_sol tracks PERMANENT outflow only — base ATA if newly
+    // created. SDK's WSOL session ATA closes at tx end (refunded, net 0).
+    // Any SDK-created fee-recipient ATAs (creator/protocol-fee WSOL ATAs)
+    // also stick around if new, but we can't cheaply observe per-trade
+    // which were created; absorbed by the pre-flight buffer.
+    const recordedAtaRentLamports = baseAtaExistsBefore
+      ? 0
+      : TOKEN_ACCOUNT_RENT_LAMPORTS;
     return {
       success: true, effectivePrice, tokensReceived,
       txSignature: submission.txSignature,
       dryRun: false, executionMode: mode,
       measuredSlippagePct, jitoTipSol,
       txLandMs: submission.latencyMs,
-      ataRentCostSol,
+      ataRentCostSol: recordedAtaRentLamports / 1e9,
     };
   }
 
