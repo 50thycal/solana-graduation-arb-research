@@ -284,7 +284,7 @@ export function computeLeaveOneOutPnl(db: Database.Database, asOfSec?: number): 
       'trades_per_day = n_trades / days_active. Surfaces how thinly populated the projection is (0.1 trades/day × 1.6 SOL/trade looks identical to 3/day × 0.05 SOL/trade on the raw rate, but is one lottery away from collapse).',
       'Promotion bar is monthly_run_rate_sol >= 3.75 SOL/month (~$300/month at current SOL) AND monthly_run_rate_sol_drop_top3 >= 3.75.',
       'trimmed_mean_net_pct strips top/bottom 5% by net_return_pct; null when n < 20 (cuts unreliable on small samples).',
-      'Per-strategy buckets are split by execution_mode (paper / shadow / live) — same convention as /api/strategy-percentiles.',
+      'Per-strategy buckets are split by execution_mode (paper / shadow / live) — same convention as /api/strategy-percentiles. CONSUMER WARNING: a single strategy_id can appear MULTIPLE times in rows[] (one row per mode). Never key a lookup map by strategy_id alone; use the composite (strategy_id, execution_mode). To match the /trading dashboard for a given strategy, prefer rows in this priority: shadow > live / live_micro > paper.',
       'Rows include disabled strategies that have closed trades, flagged by enabled=false, for postmortem context.',
     ],
   };
