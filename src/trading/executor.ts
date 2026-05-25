@@ -64,6 +64,10 @@ export interface ExecutionResult {
    *  "Live buy/sell failed to land" log entry. Stored verbatim in
    *  trades_v2.failure_context_json on the failed row. */
   failureContext?: Record<string, unknown>;
+  /** SOL paid for ATA rent at buy time (live mode only). Permanent wallet
+   *  outflow since the swap doesn't close ATAs at sell. Persisted to
+   *  entry_ata_rent_sol so closeTrade can deduct it from net_profit_sol. */
+  ataRentCostSol?: number;
 }
 
 export function readTokenAccountAmount(data: Buffer): number | null {
@@ -573,6 +577,7 @@ export class Executor {
             },
             'Live buy: tokens arrived on extended re-read — using actual measurement',
           );
+          const lateAtaRentLamports = newAtaRentCount * TOKEN_ACCOUNT_RENT_LAMPORTS;
           return {
             success: true,
             effectivePrice: lateEffectivePrice,
@@ -581,6 +586,7 @@ export class Executor {
             dryRun: false, executionMode: mode,
             jitoTipSol,
             txLandMs: submission.latencyMs,
+            ataRentCostSol: lateAtaRentLamports / 1e9,
           };
         }
         logger.error(
@@ -623,12 +629,15 @@ export class Executor {
       'Live buy filled'
     );
 
+    const ataRentLamports = newAtaRentCount * TOKEN_ACCOUNT_RENT_LAMPORTS;
+    const ataRentCostSol = ataRentLamports / 1e9;
     return {
       success: true, effectivePrice, tokensReceived,
       txSignature: submission.txSignature,
       dryRun: false, executionMode: mode,
       measuredSlippagePct, jitoTipSol,
       txLandMs: submission.latencyMs,
+      ataRentCostSol,
     };
   }
 
@@ -674,7 +683,16 @@ export class Executor {
         errorMessage: 'live: pool reserves read failed',
       };
     }
-    const baseInRaw = BigInt(actualBaseRaw);
+    // Cap sell amount at our strategy's tokensHeld, NOT the full wallet balance.
+    // Without this, when two live strategies hold the same mint, whichever sells
+    // first drains the entire wallet position — leaving the other(s) with
+    // actualBaseRaw=0 on their sell attempt → "no tokens in wallet" failures +
+    // mis-attributed proceeds (the seller divides 2x proceeds by 1x tokensHeld).
+    // Discovered 2026-05-26 from on-wallet activity showing 2 buys + 1 combined
+    // sell. tokensHeld is in human-decimal units (entry_tokens_received), so
+    // convert to raw u64 via × 1e6.
+    const ourTokensRaw = BigInt(Math.floor(tokensHeld * 1e6));
+    const baseInRaw = ourTokensRaw < BigInt(actualBaseRaw) ? ourTokensRaw : BigInt(actualBaseRaw);
     const sellMintProfile = await getMintProfile(this.connection, mintPk);
     const transferFeeOnIn = sellMintProfile.hasTransferFee
       ? await getTransferFeeForRawAmount(this.connection, mintPk, sellMintProfile.tokenProgram, baseInRaw)
@@ -791,7 +809,12 @@ export class Executor {
     const solReceivedLamports =
       walletSolAfter - walletSolBefore + jitoTipLamports + TX_FEE_LAMPORTS;
     const solReceived = solReceivedLamports / 1e9;
-    const effectivePrice = solReceived > 0 ? solReceived / tokensHeld : exitPriceSol;
+    // baseInRaw was capped at min(tokensHeld*1e6, actualBaseRaw). Use the cap
+    // value (in human units) for effective-price calc, not tokensHeld blindly —
+    // otherwise an underfilled wallet (we expected tokensHeld but had less)
+    // would compute price against a number we didn't actually sell.
+    const tokensSold = Number(baseInRaw) / 1e6;
+    const effectivePrice = solReceived > 0 && tokensSold > 0 ? solReceived / tokensSold : exitPriceSol;
     const measuredSlippagePct = (1 - effectivePrice / pool.priceSol) * 100;
 
     logger.info(

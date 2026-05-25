@@ -147,12 +147,14 @@ export class TradeLogger {
     let entrySlippagePct: number | null = null;
     let shadowEntrySlipPct: number | null = null;
     let entryJitoTipSol: number | null = null;
+    let entryAtaRentSol: number | null = null;
     let measuredRoundTripPct: number | null = null;
     try {
       const row = this.db.prepare(
         `SELECT t.entry_slippage_pct,
                 t.shadow_measured_entry_slippage_pct,
                 t.jito_tip_sol AS entry_jito_tip_sol,
+                t.entry_ata_rent_sol,
                 gm.round_trip_slippage_pct
          FROM trades_v2 t
          LEFT JOIN graduation_momentum gm ON gm.graduation_id = t.graduation_id
@@ -162,6 +164,7 @@ export class TradeLogger {
         entrySlippagePct = row.entry_slippage_pct ?? null;
         shadowEntrySlipPct = row.shadow_measured_entry_slippage_pct ?? null;
         entryJitoTipSol = row.entry_jito_tip_sol ?? null;
+        entryAtaRentSol = row.entry_ata_rent_sol ?? null;
         measuredRoundTripPct = row.round_trip_slippage_pct ?? null;
       }
     } catch { /* use defaults */ }
@@ -202,11 +205,36 @@ export class TradeLogger {
       netReturnPct = slipAdjustedReturnPct - overheadPct;
       estimatedFeesSol = overheadSol + tradeSizeForCalc * (entrySlip + exitSlip) / 100;
     } else if (isLiveFill) {
+      // Live mode: entry_effective_price and effective_exit_price (after
+      // measured exit slip) both EXCLUDE overhead (executor strips tip + fee
+      // + rent from solSpent/solReceived before computing per-token price).
+      // So gapAdjustedReturnPct is the pure-swap return — we need to subtract
+      // overhead separately in absolute SOL terms.
+      //
+      // Overhead components:
+      //   - entry Jito tip       (entry_jito_tip_sol on row)
+      //   - exit Jito tip        (params.jitoTipSol)
+      //   - 2 × tx fee           (2 × 5_000 lamports)
+      //   - entry ATA rent       (entry_ata_rent_sol on row; permanent outflow
+      //                           since ATAs aren't closed at sell time)
+      //
+      // Pre-fix this branch used `measuredRoundTripPct ?? 1.75` which models
+      // shadow-side AMM slippage — irrelevant to live where slippage is
+      // already in the effective prices, AND missed ATA rent entirely (the
+      // dominant cost on micro trades — ~0.00204 SOL per new mint dwarfs the
+      // ~0.0004 SOL tip+fee on a 0.05 SOL trade). Audited 2026-05-26 against
+      // wallet delta of +0.061 SOL vs reported net P&L of +0.297 SOL.
       effectiveExitPrice = exitPriceSol * (1 - (params.measuredExitSlippagePct as number) / 100);
       const gapAdjustedReturnPct = ((effectiveExitPrice - entryPriceSol) / entryPriceSol) * 100;
-      const roundTripCostPct = measuredRoundTripPct ?? 1.75;
-      estimatedFeesSol = tradeSizeForCalc * (roundTripCostPct / 100);
-      netReturnPct = gapAdjustedReturnPct - roundTripCostPct;
+      const totalJitoTipSol = (entryJitoTipSol ?? 0) + (params.jitoTipSol ?? 0);
+      const txOverheadSol = (5_000 * 2) / 1e9;
+      const ataRentSol = entryAtaRentSol ?? 0;
+      const overheadSol = totalJitoTipSol + txOverheadSol + ataRentSol;
+      const overheadPct = tradeSizeForCalc > 0
+        ? (overheadSol / tradeSizeForCalc) * 100
+        : 0;
+      estimatedFeesSol = overheadSol;
+      netReturnPct = gapAdjustedReturnPct - overheadPct;
     } else {
       // Paper — unchanged. Static gap penalty + measured/default round-trip cost.
       if (exitReason === 'stop_loss') {
@@ -296,6 +324,7 @@ export class TradeLogger {
       shadowMeasuredEntrySlippagePct?: number;
       jitoTipSol?: number;
       txLandMs?: number;
+      ataRentCostSol?: number;
     },
   ): void {
     updateTradeEntryFill(this.db, tradeId, {
@@ -305,6 +334,7 @@ export class TradeLogger {
       shadow_measured_entry_slippage_pct: extras?.shadowMeasuredEntrySlippagePct,
       jito_tip_sol: extras?.jitoTipSol,
       tx_land_ms: extras?.txLandMs,
+      entry_ata_rent_sol: extras?.ataRentCostSol,
     });
     logger.debug(
       { tradeId, effectivePrice, tokensReceived, hasTx: !!txSignature },

@@ -30,6 +30,17 @@ const logger = makeLogger('strategy-manager');
 
 const BACKFILL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
+/** Backoff schedule for live-sell retries. Indexed by retry count starting at 1.
+ *  Caps at 60s — beyond ~5 retries each subsequent attempt waits 60s. Total
+ *  wait through retry 10 is ~10 minutes which keeps things responsive while
+ *  avoiding hot-loop spam on chain congestion. 2026-05-26. */
+const SELL_RETRY_BACKOFF_MS = [2_000, 5_000, 10_000, 30_000, 60_000];
+function sellRetryBackoffMs(retries: number): number {
+  if (retries < 1) return 0;
+  const idx = Math.min(retries - 1, SELL_RETRY_BACKOFF_MS.length - 1);
+  return SELL_RETRY_BACKOFF_MS[idx];
+}
+
 interface StrategyInstance {
   id: string;
   label: string;
@@ -904,52 +915,24 @@ export class StrategyManager {
         );
         return;
       }
-      const MAX_SELL_RETRIES = 5;
+      // Retry indefinitely with exponential-ish backoff (2026-05-26). Pre-fix
+      // we gave up after MAX_SELL_RETRIES=5 attempts and marked the trade
+      // failed, which stranded the buy cost (~0.05 SOL) outside of any
+      // strategy's net P&L while the tokens sat in the wallet. Operator
+      // policy: keep retrying. Tokens stay on-chain anyway, so eventually
+      // the sell lands or the operator intervenes — either way, the position
+      // remains tracked rather than silently dropped.
       const retries = (pos.sellRetryCount ?? 0) + 1;
-      if (retries < MAX_SELL_RETRIES) {
-        logger.error(
-          {
-            tradeId: pos.tradeId, mint: pos.mint, mode: executionMode,
-            exitReason, exitPriceSol, retries, errorMessage: errMsg,
-          },
-          'Live sell failed — re-arming position for retry',
-        );
-        positionManager.addPosition({ ...pos, sellRetryCount: retries });
-        return;
-      }
+      const backoffMs = sellRetryBackoffMs(retries);
+      const nextSellAttemptAt = Date.now() + backoffMs;
       logger.error(
         {
           tradeId: pos.tradeId, mint: pos.mint, mode: executionMode,
-          exitReason, exitPriceSol, retries, errorMessage: errMsg,
+          exitReason, exitPriceSol, retries, backoffMs, errorMessage: errMsg,
         },
-        'Live sell failed after MAX retries — marking trade as needs_manual_close',
+        'Live sell failed — re-arming position for retry with backoff',
       );
-      // Pass the full sellResult diagnostic surface (signatures, failure
-      // path, mint extension flags, on-chain program logs from the
-      // executor's fetchFailureLogs hop) through to the trade row. Prior
-      // to this fix the sell-failure path called failTrade(tradeId,
-      // reason) only, so post-mortem on stuck positions required a
-      // manual Solscan visit. 2026-05-22.
-      const sr = sellResult as {
-        txSignature?: string;
-        txLandMs?: number;
-        jitoTipSol?: number;
-        failurePath?: string;
-        mintExtensionFlags?: string | null;
-        failureContext?: Record<string, unknown>;
-      };
-      this.tradeLogger.failTrade(
-        pos.tradeId,
-        `live_sell_failed_after_${MAX_SELL_RETRIES}_retries: ${errMsg}`,
-        {
-          txSignature: sr.txSignature,
-          txLandMs: sr.txLandMs,
-          jitoTipSol: sr.jitoTipSol,
-          failurePath: sr.failurePath,
-          mintExtensionFlags: sr.mintExtensionFlags,
-          failureContext: sr.failureContext,
-        },
-      );
+      positionManager.addPosition({ ...pos, sellRetryCount: retries, nextSellAttemptAt });
       return;
     }
 

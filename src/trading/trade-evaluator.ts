@@ -451,6 +451,7 @@ export class TradeEvaluator {
         shadowMeasuredEntrySlippagePct: isShadow ? entryResult.measuredSlippagePct : undefined,
         jitoTipSol: entryResult.jitoTipSol,
         txLandMs: entryResult.txLandMs,
+        ataRentCostSol: entryResult.ataRentCostSol,
       },
     );
 
