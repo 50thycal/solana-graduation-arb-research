@@ -1,0 +1,119 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v37-whale-conviction",
+      "label": "v37 Whale conviction (whale≥0.25 + buyers≤15)",
+      "enabled": true,
+      "params": {
+        "executionMode": "shadow",
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 50,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {"field": "buy_pressure_whale_pct", "operator": ">=", "value": 0.25, "label": "whale≥0.25"},
+          {"field": "buy_pressure_unique_buyers", "operator": "<=", "value": 15, "label": "buyers≤15"}
+        ],
+        "positionMonitorMode": "five_second"
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v37-whale-conviction",
+      "strategy_id": "v37-whale-conviction",
+      "cohort_label": "v37",
+      "hypothesis": "Loosened version of v36-conviction-buyers (which fired 0 trades in 36h). Cohort B Panel 2: whale_pct d=+0.224, unique_buyers d=-0.280. Untraded panel: both clean (|d|<0.15). Only 2 existing strategies reference these fields. Captures 'few large conviction buyers' pattern — real demand concentrated in whales, not coordinated sniper bots. Thresholds set from cohort B medians: whale_pct >= 0.25 (winner median 0.296, loser 0.236) and unique_buyers <= 15 (winner median 12, loser 18, loosened from 5 for fill rate). TP/SL=50/30 from best-combos empirical consensus.",
+      "prediction": {
+        "target_net_sol": 1.0,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 14,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "upsert",
+      "id": "v37-creator-clean",
+      "label": "v37 Creator clean (prior_rug_rate<0.30)",
+      "enabled": true,
+      "params": {
+        "executionMode": "shadow",
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 50,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {"field": "creator_prior_rug_rate", "operator": "<", "value": 0.30, "label": "rug_rate<0.30"}
+        ],
+        "positionMonitorMode": "five_second"
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v37-creator-clean",
+      "strategy_id": "v37-creator-clean",
+      "cohort_label": "v37",
+      "hypothesis": "Creator reputation filter on prior rug rate. Cohort B Panel 2: d=-0.201, with striking quartile gap — Bot-Q WR (creators with lowest rug rates) = 96.3% winner vs Top-Q WR (highest rug rates) = 55.6%. Panel 5: untraded d=-0.105 (very clean — no existing roster bias). Only 1 existing strategy uses this column. Threshold: prior_rug_rate < 0.30 (winner median 0.25, loser 0.37). Sample sizes smaller than other v37 candidates (winner_n=67, loser_n=42) but n>30 per side so not low-conf. TP/SL=50/30.",
+      "prediction": {
+        "target_net_sol": 1.0,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 14,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "upsert",
+      "id": "v37-flow-sells-light",
+      "label": "v37 Flow sells light (flow_sells<5 SOL)",
+      "enabled": true,
+      "params": {
+        "executionMode": "shadow",
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 50,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {"field": "flow_sol_sells_0_30", "operator": "<", "value": 5, "label": "sells<5SOL"}
+        ],
+        "positionMonitorMode": "five_second"
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v37-flow-sells-light",
+      "strategy_id": "v37-flow-sells-light",
+      "cohort_label": "v37",
+      "hypothesis": "Pure flow-sells filter — zero existing strategies use flow_sol_sells_0_30, so this is a truly novel signal. Cohort B Panel 2: d=-0.223 (lower sells = winner). Quartile gap: Bot-Q WR (lowest sells) = 62.4% winner vs Top-Q WR (highest sells) = 40.9%. Panel 5: untraded d very low (<0.10 — completely clean). Threshold: flow_sol_sells_0_30 < 5 SOL (winner median 3.95, loser 6.06; slightly above winner median to balance signal vs fill rate). Captures 'tokens where dumpers aren't piling on in the first 30s' which is intuitively the early-rug filter the bot doesn't currently have. TP/SL=50/30.",
+      "prediction": {
+        "target_net_sol": 1.0,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 14,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
