@@ -60,7 +60,11 @@ const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // (cross_cohort_d / cross_cohort_ratio / existing_strategies_using_field on
 // each FeatureImportanceRow, plus untraded_analysis panel). Without the bump
 // the v5 blob would publish undefined for the new fields.
-const CACHE_KEY = 'heavy_data_v6';
+// 2026-05-26: bumped to v7 for Panel 6 — auto-pair scanner. The cached HTML
+// from v6 doesn't contain the Panel 6 section markup at all (it was rendered
+// before this code existed), and the JSON-side fallback can't add markup that
+// isn't there. Forced cold rebuild required.
+const CACHE_KEY = 'heavy_data_v7';
 
 interface HeavyData {
   v2: FilterV2Data;
