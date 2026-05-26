@@ -8144,6 +8144,18 @@ export function renderPricePathV2Html(data: unknown): string {
     .pp2-untraded-table td{padding:5px 8px;border-bottom:1px solid #222;font-variant-numeric:tabular-nums}
     .pp2-untraded-table td.col-display{font-weight:600;color:#e2e8f0}
     .pp2-untraded-bias-high{background:rgba(251,191,36,0.08)}
+    /* Panel 6 — auto-pair scanner */
+    .pp2-autopairs-table{width:100%;border-collapse:collapse;font-size:11px}
+    .pp2-autopairs-table th{font-size:10px;text-align:left;padding:6px 8px;background:#262640;color:#94a3b8;white-space:nowrap}
+    .pp2-autopairs-table td{padding:5px 8px;border-bottom:1px solid #222;font-variant-numeric:tabular-nums}
+    .pp2-autopairs-table td.rule-cell{font-family:monospace;font-size:10.5px;color:#e2e8f0;line-height:1.45}
+    .pp2-autopairs-novel{background:rgba(74,222,128,0.07);border-left:3px solid #4ade80}
+    .pp2-autopairs-novel td.rule-cell{color:#bbf7d0;font-weight:600}
+    .pp2-lift-pos{color:#4ade80;font-weight:600}
+    .pp2-lift-neg{color:#94a3b8}
+    .pp2-pnl-pos{color:#4ade80;font-weight:600}
+    .pp2-pnl-neg{color:#f87171;font-weight:600}
+    .pp2-novel-star{color:#4ade80;font-size:13px}
   `;
 
   const body = `
@@ -8264,6 +8276,42 @@ export function renderPricePathV2Html(data: unknown): string {
           <th>Interpretation</th>
         </tr></thead>
         <tbody id="pp2-untraded-body"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Panel 6 — Auto-pair scanner (exhaustive 2-feature rule search)</h2>
+      <div class="desc">
+        Goes beyond Panel 4's 8 hand-picked pairs. For <strong>every</strong> 2-feature combination from the predictor whitelist,
+        splits each feature at its median and evaluates all 4 directional quadrants as a 2D filter rule on traded tokens.
+        Each row below is one candidate rule, ranked by <strong>mean realized PnL per matched trade</strong>.
+        <br><br>
+        <strong>Columns:</strong>
+        <code>rule</code> = the candidate 2D filter ·
+        <code>n</code> = matched trades ·
+        <code>mean PnL</code> = mean realized_net_sol within the matched cell ·
+        <code>WR</code> with Wilson 95% CI ·
+        <code>lift</code> = mean_pnl minus the better of the two single-feature marginals (positive = the joint cell actually beats either feature alone) ·
+        <code>X uses</code> / <code>Y uses</code> = existing-strategy usage on each axis (low = clean / not already over-extracted) ·
+        <code>★ novel</code> = both fields used by ≤2 strategies AND positive lift = clean candidate for a new shadow strategy.
+        <br><br>
+        <strong>How to read:</strong> a row with high mean PnL but lift ≤ 0 means one feature dominates and the pair adds nothing — same edge as the single-feature filter.
+        Rows with positive lift AND ★ novel are the truly interesting ones — joint signals that current strategies don't capture.
+      </div>
+      <div id="pp2-autopairs-summary" style="color:#94a3b8;font-size:11px;margin-bottom:10px"></div>
+      <table class="pp2-autopairs-table">
+        <thead><tr>
+          <th>Rule (2D filter)</th>
+          <th>n</th>
+          <th>mean PnL</th>
+          <th>total PnL</th>
+          <th>WR</th>
+          <th>lift</th>
+          <th>X uses</th>
+          <th>Y uses</th>
+          <th>novel</th>
+        </tr></thead>
+        <tbody id="pp2-autopairs-body"></tbody>
       </table>
     </div>
 
@@ -8551,6 +8599,48 @@ export function renderPricePathV2Html(data: unknown): string {
         document.getElementById('pp2-untraded-body').innerHTML = rows;
       }
 
+      // 2026-05-26: Panel 6 — auto-pair scanner. Doesn't depend on cohort/
+      // variant selectors (same exhaustive scan over all traded tokens).
+      function renderAutoPairs() {
+        const ap = DATA.auto_pairs;
+        const tbody = document.getElementById('pp2-autopairs-body');
+        const summary = document.getElementById('pp2-autopairs-summary');
+        if (!ap || !ap.rows) {
+          if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="pp2-empty">Auto-pair scanner not in payload yet — wait for next cache refresh.</td></tr>';
+          if (summary) summary.textContent = '';
+          return;
+        }
+        const baseStr = ap.baseline_mean_pnl === null
+          ? 'baseline n=' + ap.baseline_n
+          : 'baseline: n=' + ap.baseline_n + ', mean PnL ' + ap.baseline_mean_pnl.toFixed(4) + ' SOL, WR ' + (ap.baseline_win_rate * 100).toFixed(1) + '%';
+        summary.textContent =
+          'Evaluated ' + ap.total_pairs_evaluated + ' pairs × 4 quadrants = ' + ap.total_cells_evaluated + ' candidate rules; ' + ap.total_cells_qualifying + ' qualified at n>=' + ap.min_cell_n + '. Top ' + ap.rows.length + ' surfaced by mean PnL.  ·  ' + baseStr;
+        const rows = ap.rows.map(r => {
+          const pnlCls = r.mean_pnl > 0 ? 'pp2-pnl-pos' : 'pp2-pnl-neg';
+          const liftCls = r.interaction_lift > 0 ? 'pp2-lift-pos' : 'pp2-lift-neg';
+          const trCls = r.novel_combination ? 'pp2-autopairs-novel' : '';
+          const novelStar = r.novel_combination ? '<span class="pp2-novel-star" title="Both features used by <=2 strategies AND positive lift — clean candidate for new shadow strategy">★</span>' : '';
+          const wilsonCi = ' <span style="color:#64748b;font-size:10px">[' + (r.wilson_ci_low * 100).toFixed(0) + '..' + (r.wilson_ci_high * 100).toFixed(0) + ']</span>';
+          return '<tr class="' + trCls + '">'
+            + '<td class="rule-cell">' + r.rule_text + '</td>'
+            + '<td>' + r.n_cell + '</td>'
+            + '<td class="' + pnlCls + '">' + (r.mean_pnl >= 0 ? '+' : '') + r.mean_pnl.toFixed(4) + '</td>'
+            + '<td>' + (r.total_pnl >= 0 ? '+' : '') + r.total_pnl.toFixed(3) + '</td>'
+            + '<td>' + (r.win_rate * 100).toFixed(1) + '%' + wilsonCi + '</td>'
+            + '<td class="' + liftCls + '">' + (r.interaction_lift >= 0 ? '+' : '') + r.interaction_lift.toFixed(4) + '</td>'
+            + '<td>' + stratUseInline(r.x_existing_strategies) + '</td>'
+            + '<td>' + stratUseInline(r.y_existing_strategies) + '</td>'
+            + '<td>' + novelStar + '</td>'
+            + '</tr>';
+        }).join('');
+        tbody.innerHTML = rows;
+      }
+      function stratUseInline(n) {
+        if (!n) return '<span class="pp2-stratuse-low">0</span>';
+        const cls = n >= 10 ? 'pp2-stratuse-high' : n >= 3 ? 'pp2-stratuse-mid' : 'pp2-stratuse-low';
+        return '<span class="' + cls + '">' + n + '</span>';
+      }
+
       function renderAll() {
         populateFeatureSelect();
         renderCohortMeta();
@@ -8565,6 +8655,7 @@ export function renderPricePathV2Html(data: unknown): string {
 
       renderNotes();
       renderUntraded();
+      renderAutoPairs();
       renderAll();
     })();
     </script>

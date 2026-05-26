@@ -49,6 +49,12 @@ export interface PricePathV2Data {
    * the ones our existing filter set is selecting on — both intentionally
    * (via explicit filters) and accidentally (via correlated filters). */
   untraded_analysis: UntradedAnalysisPanel;
+  /** 2026-05-26 addition: exhaustive 2-feature interaction scanner. Goes
+   * beyond Panel 4's 8 hand-picked pairs by evaluating every (X, Y)
+   * combination from PREDICTOR_WHITELIST, computing median-split 2D
+   * filter rules, and ranking by realized mean PnL per matched cell.
+   * Surfaces JOINT signals that single-feature analysis misses. */
+  auto_pairs?: AutoPairScannerPanel;
   notes: string[];
 }
 
@@ -151,6 +157,57 @@ export interface UntradedAnalysisRow {
   untraded_mean: number | null;
   cohens_d: number | null;
   abs_cohens_d: number | null;
+}
+
+/** Auto-pair scanner: exhaustive evaluation of every 2-feature combination
+ * as a median-split 2D filter rule, ranked by realized mean PnL on traded
+ * tokens. Each cell is one of the 4 directional quadrants per pair (low/low,
+ * low/high, high/low, high/high). */
+export interface AutoPairScannerPanel {
+  total_pairs_evaluated: number;
+  total_cells_evaluated: number;
+  total_cells_qualifying: number;
+  min_cell_n: number;
+  baseline_mean_pnl: number | null;
+  baseline_n: number;
+  baseline_win_rate: number | null;
+  rows: AutoPairResult[];
+  notes: string[];
+}
+
+export interface AutoPairResult {
+  x_col: string;
+  y_col: string;
+  x_display: string;
+  y_display: string;
+  /** Median split thresholds — the rule splits at these values. */
+  x_threshold: number;
+  y_threshold: number;
+  /** 'low' = matched cell uses `x < x_threshold`; 'high' = `x >= x_threshold`. */
+  x_direction: 'low' | 'high';
+  y_direction: 'low' | 'high';
+  /** Human-readable rule (e.g., "top10 < 25.3 AND velocity >= 8.2"). */
+  rule_text: string;
+  n_cell: number;
+  mean_pnl: number;
+  total_pnl: number;
+  win_rate: number;
+  wilson_ci_low: number;
+  wilson_ci_high: number;
+  /** Lift over the better of the two single-feature marginals — quantifies
+   * whether the pair is a real interaction or just one feature dominating.
+   * Positive lift = the joint cell beats either feature alone. */
+  marginal_x_mean_pnl: number;
+  marginal_y_mean_pnl: number;
+  marginal_x_n: number;
+  marginal_y_n: number;
+  interaction_lift: number;
+  /** Selection-bias indicators — how many existing strategies use either field. */
+  x_existing_strategies: number;
+  y_existing_strategies: number;
+  /** True if BOTH features have low strategy usage AND positive lift → novel
+   * combination worth a shadow strategy. */
+  novel_combination: boolean;
 }
 
 export interface DistributionsSection {
@@ -835,6 +892,197 @@ function computeUntradedAnalysis(allRows: BaseRow[]): UntradedAnalysisPanel {
   };
 }
 
+// ── Auto-pair scanner ───────────────────────────────────────────────────
+// Goes beyond Panel 4's 8 hand-picked pairs. For every (X, Y) combination
+// from PREDICTOR_WHITELIST, splits each at its median and evaluates the
+// 4 directional quadrants as 2D filter rules on traded tokens, ranking by
+// realized mean PnL. Surfaces joint signals that single-feature analysis
+// misses.
+//
+// Score: mean_pnl (not lower-bound Wilson) — the question is "what filter
+// rule would have made the most money per trade?", not "what rule has the
+// highest WR confidence". We hard-gate cells at n_cell >= 30 so noise
+// doesn't dominate the top of the list, but the user still sees Wilson CI
+// per row to gauge confidence.
+
+const AUTO_PAIR_MIN_CELL_N = 30;
+const AUTO_PAIR_MIN_PAIR_N = 80;
+const AUTO_PAIR_TOP_N = 40;
+
+function computeAutoPairScanner(
+  allRows: BaseRow[],
+  usageCounts: Map<string, number>,
+): AutoPairScannerPanel {
+  // Only use rows that were actually traded — auto-pair surfaces filters
+  // for trading decisions, not peak-prediction artifacts.
+  const traded = allRows.filter(r => r.realized_net_sol !== null);
+
+  // Baseline: what's the mean PnL across all traded tokens? Auto-pair rules
+  // need to beat this to be useful.
+  const allPnls = traded.map(r => r.realized_net_sol as number);
+  const baselineMean = allPnls.length === 0 ? null : +mean(allPnls).toFixed(4);
+  const baselineWR = allPnls.length === 0 ? null
+    : +(allPnls.filter(p => p > 0).length / allPnls.length).toFixed(4);
+
+  // Pre-compute medians + marginal stats per feature so we don't recompute
+  // them inside the inner loop.
+  interface FeatureMeta {
+    def: PredictorDef;
+    median: number | null;
+    lowRows: BaseRow[];   // rows with feature < median (incl. null exclusion)
+    highRows: BaseRow[];  // rows with feature >= median
+    lowMeanPnl: number;
+    highMeanPnl: number;
+    lowN: number;
+    highN: number;
+  }
+  const featureMetas: FeatureMeta[] = [];
+  for (const p of PREDICTOR_WHITELIST) {
+    const vals = collectFeature(traded, p.col);
+    if (vals.length < AUTO_PAIR_MIN_PAIR_N) {
+      featureMetas.push({ def: p, median: null, lowRows: [], highRows: [], lowMeanPnl: 0, highMeanPnl: 0, lowN: 0, highN: 0 });
+      continue;
+    }
+    const sorted = [...vals].sort((a, b) => a - b);
+    const med = percentile(sorted, 0.5);
+    if (med === null) {
+      featureMetas.push({ def: p, median: null, lowRows: [], highRows: [], lowMeanPnl: 0, highMeanPnl: 0, lowN: 0, highN: 0 });
+      continue;
+    }
+    const lowRows: BaseRow[] = [];
+    const highRows: BaseRow[] = [];
+    for (const r of traded) {
+      const v = getNum(r, p.col);
+      if (v === null) continue;
+      if (v < med) lowRows.push(r);
+      else highRows.push(r);
+    }
+    const lowPnls = lowRows.map(r => r.realized_net_sol as number);
+    const highPnls = highRows.map(r => r.realized_net_sol as number);
+    featureMetas.push({
+      def: p,
+      median: med,
+      lowRows,
+      highRows,
+      lowMeanPnl: lowPnls.length === 0 ? 0 : mean(lowPnls),
+      highMeanPnl: highPnls.length === 0 ? 0 : mean(highPnls),
+      lowN: lowRows.length,
+      highN: highRows.length,
+    });
+  }
+
+  // Build a set of graduation_ids per feature/direction for fast intersection.
+  // Keyed by `${feature_idx}|${dir}`. Set membership lookup is O(1).
+  const dirSet = new Map<string, Set<number>>();
+  for (let i = 0; i < featureMetas.length; i++) {
+    const fm = featureMetas[i];
+    if (fm.median === null) continue;
+    dirSet.set(`${i}|low`, new Set(fm.lowRows.map(r => r.graduation_id)));
+    dirSet.set(`${i}|high`, new Set(fm.highRows.map(r => r.graduation_id)));
+  }
+
+  // Map graduation_id → realized_net_sol for fast cell PnL aggregation.
+  const pnlByGrad = new Map<number, number>();
+  for (const r of traded) pnlByGrad.set(r.graduation_id, r.realized_net_sol as number);
+
+  let pairsEvaluated = 0;
+  let cellsEvaluated = 0;
+  let cellsQualifying = 0;
+  const results: AutoPairResult[] = [];
+
+  for (let i = 0; i < featureMetas.length; i++) {
+    const fx = featureMetas[i];
+    if (fx.median === null) continue;
+    for (let j = i + 1; j < featureMetas.length; j++) {
+      const fy = featureMetas[j];
+      if (fy.median === null) continue;
+      pairsEvaluated++;
+
+      for (const xDir of ['low', 'high'] as const) {
+        for (const yDir of ['low', 'high'] as const) {
+          cellsEvaluated++;
+          const xSet = dirSet.get(`${i}|${xDir}`)!;
+          const ySet = dirSet.get(`${j}|${yDir}`)!;
+          // Intersect: iterate the smaller set, lookup in the larger.
+          const [smaller, larger] = xSet.size <= ySet.size ? [xSet, ySet] : [ySet, xSet];
+          const cellGrads: number[] = [];
+          for (const gid of smaller) {
+            if (larger.has(gid)) cellGrads.push(gid);
+          }
+          if (cellGrads.length < AUTO_PAIR_MIN_CELL_N) continue;
+          cellsQualifying++;
+          const cellPnls = cellGrads.map(gid => pnlByGrad.get(gid) as number);
+          const cellMean = mean(cellPnls);
+          const cellTotal = cellPnls.reduce((a, b) => a + b, 0);
+          const wins = cellPnls.filter(p => p > 0).length;
+          const wr = wins / cellPnls.length;
+          const wilson = wilsonInterval(wins, cellPnls.length);
+
+          const marginalX = xDir === 'low' ? fx.lowMeanPnl : fx.highMeanPnl;
+          const marginalY = yDir === 'low' ? fy.lowMeanPnl : fy.highMeanPnl;
+          const marginalXN = xDir === 'low' ? fx.lowN : fx.highN;
+          const marginalYN = yDir === 'low' ? fy.lowN : fy.highN;
+          const lift = +(cellMean - Math.max(marginalX, marginalY)).toFixed(4);
+
+          const xStratUse = usageCounts.get(fx.def.col) || 0;
+          const yStratUse = usageCounts.get(fy.def.col) || 0;
+          const novel = xStratUse <= 2 && yStratUse <= 2 && lift > 0;
+
+          const xRule = `${fx.def.display} ${xDir === 'low' ? '<' : '>='} ${fx.median.toFixed(3)}`;
+          const yRule = `${fy.def.display} ${yDir === 'low' ? '<' : '>='} ${fy.median.toFixed(3)}`;
+
+          results.push({
+            x_col: fx.def.col,
+            y_col: fy.def.col,
+            x_display: fx.def.display,
+            y_display: fy.def.display,
+            x_threshold: +fx.median.toFixed(4),
+            y_threshold: +fy.median.toFixed(4),
+            x_direction: xDir,
+            y_direction: yDir,
+            rule_text: `${xRule} AND ${yRule}`,
+            n_cell: cellPnls.length,
+            mean_pnl: +cellMean.toFixed(4),
+            total_pnl: +cellTotal.toFixed(4),
+            win_rate: +wr.toFixed(4),
+            wilson_ci_low: wilson ? wilson[0] : 0,
+            wilson_ci_high: wilson ? wilson[1] : 1,
+            marginal_x_mean_pnl: +marginalX.toFixed(4),
+            marginal_y_mean_pnl: +marginalY.toFixed(4),
+            marginal_x_n: marginalXN,
+            marginal_y_n: marginalYN,
+            interaction_lift: lift,
+            x_existing_strategies: xStratUse,
+            y_existing_strategies: yStratUse,
+            novel_combination: novel,
+          });
+        }
+      }
+    }
+  }
+
+  results.sort((a, b) => b.mean_pnl - a.mean_pnl);
+
+  return {
+    total_pairs_evaluated: pairsEvaluated,
+    total_cells_evaluated: cellsEvaluated,
+    total_cells_qualifying: cellsQualifying,
+    min_cell_n: AUTO_PAIR_MIN_CELL_N,
+    baseline_mean_pnl: baselineMean,
+    baseline_n: allPnls.length,
+    baseline_win_rate: baselineWR,
+    rows: results.slice(0, AUTO_PAIR_TOP_N),
+    notes: [
+      `Exhaustive scan: ${pairsEvaluated} feature pairs × 4 directional quadrants = ${cellsEvaluated} candidate 2D filter rules. ${cellsQualifying} cells had n>=${AUTO_PAIR_MIN_CELL_N} traded matches.`,
+      `Ranked by mean realized PnL per cell. Top ${AUTO_PAIR_TOP_N} surfaced.`,
+      `Baseline (all traded tokens): n=${allPnls.length}, mean_pnl=${baselineMean === null ? '—' : baselineMean.toFixed(4)} SOL, WR=${baselineWR === null ? '—' : (baselineWR * 100).toFixed(1) + '%'}. Cells must beat this to add value.`,
+      `Thresholds are MEDIANS — for a pair (X, Y), each is split at its own median across the traded population, giving 4 quadrants.`,
+      `interaction_lift = cell_mean_pnl - max(X_marginal, Y_marginal). Positive lift = the joint cell beats either feature alone. Lift <= 0 means one feature dominates and the pair adds nothing.`,
+      `novel_combination = both fields have <=2 existing strategies using them AND lift > 0. These are the cleanest candidates for new shadow strategies.`,
+    ],
+  };
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────
 
 export function computePricePathV2Data(db: Database.Database): PricePathV2Data {
@@ -934,8 +1182,13 @@ export function computePricePathV2Data(db: Database.Database): PricePathV2Data {
   //    glance — many "peak predictor" signals don't survive to PnL.
   // 2) Selection-bias counts so users see which features are tautologically
   //    over-represented in Cohort B due to existing-strategy filters.
+  const usageCounts = loadFieldUsageCounts(db);
   attachCrossCohortReferences(data);
-  attachSelectionBiasCounts(data, loadFieldUsageCounts(db));
+  attachSelectionBiasCounts(data, usageCounts);
+
+  // 2026-05-26: auto-pair scanner — exhaustive 2-feature interaction search.
+  // Goes beyond Panel 4's 8 hand-picked pairs to surface novel joint signals.
+  data.auto_pairs = computeAutoPairScanner(baseRows, usageCounts);
 
   return data;
 }
