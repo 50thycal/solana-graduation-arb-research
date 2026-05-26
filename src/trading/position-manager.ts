@@ -70,7 +70,14 @@ export type ExitReason =
   | 'breakeven_stop'
   | 'timeout'
   | 'markov_exit'
-  | 'killswitch';
+  | 'killswitch'
+  /** Terminal sell-side failure — tokens are confirmed absent from the wallet
+   *  (sold externally, lost track, or never received). Stops the indefinite
+   *  retry loop introduced 2026-05-26 (commit 6158b1a); without it, such
+   *  positions stay open forever burning Jito tips on every retry. The trade
+   *  is closed via the standard closeTrade path with exit_price_sol=0 to
+   *  realize the loss in net_profit_sol. */
+  | 'sell_failed_terminal';
 
 /** Dynamic monitoring parameters — subset of strategy params needed by PositionManager */
 export interface DynamicMonitorParams {
