@@ -915,6 +915,48 @@ export class StrategyManager {
         );
         return;
       }
+      // Terminal sell-side failure: tokens are confirmed absent from the
+      // wallet (sold externally / never landed / lost track). liveSell
+      // returns this when wallet.getTokenBalanceRaw == 0; that's a
+      // definitive on-chain RPC read, not a transient RPC error. Retrying
+      // forever would loop forever burning Jito tips since the tokens
+      // won't reappear. Close the trade as a realized 100% loss via the
+      // standard closeTrade path so net_profit_sol reflects reality.
+      // (Audited 2026-05-26 — two v25-bot-excl / v9-velmono-dev positions
+      // on mint 7zKmeEDS... were stuck open 7+ hours after the operator
+      // manually sold the tokens; the indefinite-retry loop from commit
+      // 6158b1a had no escape hatch for this terminal class.)
+      const isTerminalSellFailure = errMsg.toLowerCase().includes('no tokens in wallet');
+      if (isTerminalSellFailure) {
+        logger.error(
+          {
+            tradeId: pos.tradeId, mint: pos.mint, mode: executionMode,
+            exitReason, exitPriceSol, errorMessage: errMsg,
+          },
+          'Live sell terminal failure (tokens absent from wallet) — closing trade as realized loss',
+        );
+        // Pass measuredExitSlippagePct=0 so closeTrade routes through the
+        // live-overhead branch (deducts entry tip + tx fees + ATA rent
+        // from net_profit_sol). exit_price_sol=0 yields a -100% raw return
+        // before overhead — the realized loss when the position can't be
+        // sold.
+        this.tradeLogger.closeTrade({
+          tradeId: pos.tradeId,
+          entryPriceSol: pos.entryPriceSol,
+          exitPriceSol: 0,
+          exitReason: 'sell_failed_terminal',
+          tradeSizeSol: liveConfig.tradeSizeSol,
+          takeProfitPct: liveConfig.takeProfitPct,
+          stopLossPct: liveConfig.stopLossPct,
+          slGapPenaltyPct: liveConfig.slGapPenaltyPct,
+          tpGapPenaltyPct: liveConfig.tpGapPenaltyPct,
+          executionMode,
+          measuredExitSlippagePct: 0,
+          executionFailureReason: `sell_terminal: ${errMsg}`,
+        });
+        return;
+      }
+
       // Retry indefinitely with exponential-ish backoff (2026-05-26). Pre-fix
       // we gave up after MAX_SELL_RETRIES=5 attempts and marked the trade
       // failed, which stranded the buy cost (~0.05 SOL) outside of any
@@ -1011,18 +1053,36 @@ export class StrategyManager {
       }
 
       // Wallet validation: if the bot crashed after a successful sell but
-      // before closeTrade committed, the wallet is empty but the DB still
-      // says open. Re-adding such a position would burn ~5 retry cycles of
-      // Jito tips before MAX_SELL_RETRIES gives up. Fast-fail here instead.
+      // before closeTrade committed, OR if the operator manually sold the
+      // tokens elsewhere, the wallet is empty but the DB still says open.
+      // Re-adding the position would loop forever in the indefinite-retry
+      // path (commit 6158b1a) since liveSell would keep returning "no
+      // tokens in wallet". Close as a realized terminal loss instead — the
+      // tokens are gone, the buy cost is sunk, surface it in net_profit_sol.
+      // 2026-05-26: switched from failTrade (which hid the loss outside any
+      // strategy's P&L) to closeTrade with sell_failed_terminal.
       const walletBal = this.wallet && this.connection
         ? await this.wallet.getTokenBalanceRaw(this.connection, new PublicKey(trade.mint)).catch(() => null)
         : null;
       if (walletBal !== null && walletBal === 0) {
         logger.warn(
           { tradeId: trade.id, mint: trade.mint, strategyId },
-          'Recovery: wallet empty but trade row open — sold elsewhere or prior bot lost track. Fast-failing.',
+          'Recovery: wallet empty but trade row open — closing as terminal loss',
         );
-        this.tradeLogger.failTrade(trade.id, 'recovery_wallet_empty');
+        this.tradeLogger.closeTrade({
+          tradeId: trade.id,
+          entryPriceSol: trade.entry_effective_price ?? trade.entry_price_sol,
+          exitPriceSol: 0,
+          exitReason: 'sell_failed_terminal',
+          tradeSizeSol: trade.trade_size_sol,
+          takeProfitPct: trade.take_profit_pct,
+          stopLossPct: trade.stop_loss_pct,
+          slGapPenaltyPct: instance.config.slGapPenaltyPct,
+          tpGapPenaltyPct: instance.config.tpGapPenaltyPct,
+          executionMode: trade.execution_mode ?? 'live_full',
+          measuredExitSlippagePct: 0,
+          executionFailureReason: 'recovery_wallet_empty',
+        });
         continue;
       }
       // Prefer actual on-chain balance over DB value — covers the edge case
