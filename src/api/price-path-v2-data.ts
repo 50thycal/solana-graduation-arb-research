@@ -42,6 +42,13 @@ export interface PricePathV2Data {
   feature_importance: FeatureImportanceSection;
   distributions: DistributionsSection;
   heatmaps: HeatmapsSection;
+  /** 2026-05-26 addition: feature distribution among traded vs untraded
+   * graduations. Addresses the selection-bias issue where Cohort B only
+   * includes the ~24% of grads that some strategy chose to trade. The
+   * features that systematically differ between traded and untraded are
+   * the ones our existing filter set is selecting on — both intentionally
+   * (via explicit filters) and accidentally (via correlated filters). */
+  untraded_analysis: UntradedAnalysisPanel;
   notes: string[];
 }
 
@@ -98,6 +105,52 @@ export interface FeatureImportanceRow {
   bottom_quartile_wilson_ci: [number, number] | null;
   low_confidence: boolean;
   note: string | null;
+  /** 2026-05-26 additions for trade-relevance diagnostics:
+   *   cross_cohort_d        the same feature's signed Cohen's d in the OTHER
+   *                         cohort (A↔B). Lets the user see whether a "peak
+   *                         predictor" signal also predicts realized PnL.
+   *   cross_cohort_ratio    |cross_cohort_d| / |cohens_d|. <0.3 means the
+   *                         signal collapses in the other cohort — likely
+   *                         peak-prediction artifact, not trading edge.
+   *   existing_strategies_using_field  number of currently-enabled strategies
+   *                         whose filter set references this column. High
+   *                         values flag selection-bias risk: any Cohort B
+   *                         d-value here is partly tautological because the
+   *                         feature is already overrepresented in the traded
+   *                         population.
+   */
+  cross_cohort_d: number | null;
+  cross_cohort_ratio: number | null;
+  existing_strategies_using_field: number;
+}
+
+export interface UntradedAnalysisPanel {
+  /** Total graduations split traded vs untraded (the universe and what's in/out). */
+  traded_n: number;
+  untraded_n: number;
+  traded_pct: number;
+  /** Per-feature comparison: signed Cohen's d treating traded=winners,
+   * untraded=losers. Reading: positive d means our existing roster trades
+   * tokens with HIGHER values of this feature than the population. Use to
+   * spot what filter-expansion would do — features with |d|>0.3 are
+   * already heavily biasing the traded pool. */
+  rows: UntradedAnalysisRow[];
+  notes: string[];
+}
+
+export interface UntradedAnalysisRow {
+  col: string;
+  display: string;
+  units: string;
+  coverage: CoverageClass;
+  traded_n_with_data: number;
+  untraded_n_with_data: number;
+  traded_median: number | null;
+  untraded_median: number | null;
+  traded_mean: number | null;
+  untraded_mean: number | null;
+  cohens_d: number | null;
+  abs_cohens_d: number | null;
 }
 
 export interface DistributionsSection {
@@ -517,6 +570,10 @@ function computeFeatureImportance(winners: BaseRow[], losers: BaseRow[]): Featur
       bottom_quartile_wilson_ci: botQCI,
       low_confidence: lowConfidence,
       note,
+      // Filled in by the cross-reference pass + selection-bias pass below.
+      cross_cohort_d: null,
+      cross_cohort_ratio: null,
+      existing_strategies_using_field: 0,
     });
   }
 
@@ -655,6 +712,129 @@ function computeHeatmaps(
   return { pairs };
 }
 
+// ── Selection-bias diagnostic: how many existing strategies reference each field?
+// Used to flag features where a Cohort B d-value is partly tautological because
+// the existing roster already over-selects on that column.
+function loadFieldUsageCounts(db: Database.Database): Map<string, number> {
+  const rows = db.prepare(`
+    SELECT config_json FROM strategy_configs WHERE enabled = 1
+  `).all() as Array<{ config_json: string }>;
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    try {
+      const params = JSON.parse(row.config_json) as { filters?: Array<{ field?: string }> };
+      const filters = params.filters || [];
+      // Count UNIQUE fields per strategy so a strategy referencing the same column
+      // twice (e.g., >X AND <Y) is counted once.
+      const seenInThisStrategy = new Set<string>();
+      for (const f of filters) {
+        if (f.field && !seenInThisStrategy.has(f.field)) {
+          seenInThisStrategy.add(f.field);
+          counts.set(f.field, (counts.get(f.field) || 0) + 1);
+        }
+      }
+    } catch {
+      // Bad JSON on a strategy config — skip it, don't blow up the whole compute.
+    }
+  }
+  return counts;
+}
+
+// ── Cross-cohort A↔B reference: for each feature, attach the OTHER cohort's
+// signed d-value + the magnitude ratio. Lets the UI flag "peak predictor but
+// not a PnL predictor" signals at a glance.
+function attachCrossCohortReferences(panel: PricePathV2Data): void {
+  for (const variant of ['full', 'drop_top3'] as const) {
+    const aRows = panel.feature_importance.cohort_a[variant].rows;
+    const bRows = panel.feature_importance.cohort_b[variant].rows;
+    const aByCol = new Map(aRows.map(r => [r.col, r]));
+    const bByCol = new Map(bRows.map(r => [r.col, r]));
+    for (const r of aRows) {
+      const other = bByCol.get(r.col);
+      r.cross_cohort_d = other?.cohens_d ?? null;
+      if (r.cohens_d !== null && other?.cohens_d !== null && other?.cohens_d !== undefined
+          && Math.abs(r.cohens_d) > 1e-6) {
+        r.cross_cohort_ratio = +(Math.abs(other.cohens_d) / Math.abs(r.cohens_d)).toFixed(3);
+      } else {
+        r.cross_cohort_ratio = null;
+      }
+    }
+    for (const r of bRows) {
+      const other = aByCol.get(r.col);
+      r.cross_cohort_d = other?.cohens_d ?? null;
+      if (r.cohens_d !== null && other?.cohens_d !== null && other?.cohens_d !== undefined
+          && Math.abs(r.cohens_d) > 1e-6) {
+        r.cross_cohort_ratio = +(Math.abs(other.cohens_d) / Math.abs(r.cohens_d)).toFixed(3);
+      } else {
+        r.cross_cohort_ratio = null;
+      }
+    }
+  }
+}
+
+function attachSelectionBiasCounts(panel: PricePathV2Data, usage: Map<string, number>): void {
+  for (const variant of ['full', 'drop_top3'] as const) {
+    for (const cohort of ['cohort_a', 'cohort_b'] as const) {
+      for (const r of panel.feature_importance[cohort][variant].rows) {
+        r.existing_strategies_using_field = usage.get(r.col) || 0;
+      }
+    }
+  }
+}
+
+// ── Untraded vs traded analysis ─────────────────────────────────────────
+// The fundamental selection-bias question: of all graduations the bot saw,
+// which features differ systematically between the ones we chose to trade
+// and the ones we skipped? Features with |d|>0.3 here mean our existing
+// filter set is already heavily selecting on them — Cohort B d-values for
+// those features should be discounted.
+
+function computeUntradedAnalysis(allRows: BaseRow[]): UntradedAnalysisPanel {
+  const traded = allRows.filter(r => r.realized_net_sol !== null);
+  const untraded = allRows.filter(r => r.realized_net_sol === null);
+  const totalN = allRows.length;
+  const rows: UntradedAnalysisRow[] = [];
+
+  for (const p of PREDICTOR_WHITELIST) {
+    const tVals = collectFeature(traded, p.col);
+    const uVals = collectFeature(untraded, p.col);
+    const tSorted = [...tVals].sort((a, b) => a - b);
+    const uSorted = [...uVals].sort((a, b) => a - b);
+    // Treat traded=group A, untraded=group B in Cohen's d. Positive d means
+    // our existing roster trades tokens with HIGHER values of this feature.
+    const d = cohensD(tVals, uVals);
+    rows.push({
+      col: p.col,
+      display: p.display,
+      units: p.units,
+      coverage: p.coverage,
+      traded_n_with_data: tVals.length,
+      untraded_n_with_data: uVals.length,
+      traded_median: median(tSorted),
+      untraded_median: median(uSorted),
+      traded_mean: tVals.length === 0 ? null : +mean(tVals).toFixed(4),
+      untraded_mean: uVals.length === 0 ? null : +mean(uVals).toFixed(4),
+      cohens_d: d,
+      abs_cohens_d: d === null ? null : +Math.abs(d).toFixed(4),
+    });
+  }
+  rows.sort((a, b) => (b.abs_cohens_d ?? -1) - (a.abs_cohens_d ?? -1));
+
+  return {
+    traded_n: traded.length,
+    untraded_n: untraded.length,
+    traded_pct: totalN === 0 ? 0 : +(traded.length / totalN * 100).toFixed(2),
+    rows,
+    notes: [
+      'Compares features across tokens our existing strategy roster traded vs skipped.',
+      'Signed Cohen\'s d: positive = traded tokens have HIGHER values of this feature.',
+      'Features with |d|>=0.3 are heavily over-selected by the existing roster — any Cohort B d-value on these is partly tautological (selection bias).',
+      'Features with |d|<0.1 are unaffected by current selection — clean candidates for new filter hypotheses.',
+      'Tokens with NULL realized_net_sol are "untraded" (no strategy chose to enter).',
+    ],
+  };
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────
 
 export function computePricePathV2Data(db: Database.Database): PricePathV2Data {
@@ -744,8 +924,18 @@ export function computePricePathV2Data(db: Database.Database): PricePathV2Data {
       "Coverage classes: 'always' (full historical coverage), 'auto-backfill' (backfilled at boot via bot_settings markers — safe on historical), 'new-only' (permanent NULL on pre-rollout rows; see winner_n_with_data vs winner_n for the gap).",
       'Heatmap cell mean_outcome = mean(max_peak_pct) for cohort A, mean(realized_net_sol) for cohort B.',
       'Histograms clip the value range at P1-P99 to keep heavy-tail outliers from collapsing the bins; see per-feature truncation_note.',
+      "2026-05-26: each feature row now carries cross_cohort_d + cross_cohort_ratio (does the signal survive A↔B?) and existing_strategies_using_field (selection-bias indicator). Untraded analysis panel surfaces features over-selected by the existing roster.",
     ],
+    untraded_analysis: computeUntradedAnalysis(baseRows),
   };
+
+  // ── Trade-relevance diagnostics (2026-05-26):
+  // 1) Cross-cohort references so users see A→B magnitude collapse at a
+  //    glance — many "peak predictor" signals don't survive to PnL.
+  // 2) Selection-bias counts so users see which features are tautologically
+  //    over-represented in Cohort B due to existing-strategy filters.
+  attachCrossCohortReferences(data);
+  attachSelectionBiasCounts(data, loadFieldUsageCounts(db));
 
   return data;
 }
