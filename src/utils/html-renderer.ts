@@ -8129,6 +8129,21 @@ export function renderPricePathV2Html(data: unknown): string {
     .pp2-notes{background:#1a1a2e;border:1px solid #333;padding:10px 14px;border-radius:6px;color:#94a3b8;font-size:11px;line-height:1.5}
     .pp2-notes li{margin:3px 0}
     .pp2-empty{color:#64748b;font-style:italic;padding:20px;text-align:center}
+    /* 2026-05-26 additions for trade-relevance diagnostics */
+    .pp2-ratio-bad{color:#f87171;font-weight:600}
+    .pp2-ratio-ok{color:#facc15}
+    .pp2-ratio-good{color:#4ade80}
+    .pp2-ratio-collapsed td{opacity:.45}
+    .pp2-ratio-collapsed td .collapsed-tag{color:#f87171;font-size:10px;font-style:italic;margin-left:6px}
+    .pp2-strat-bias{color:#fbbf24;font-weight:600}
+    .pp2-stratuse-high{color:#fbbf24;font-weight:600}
+    .pp2-stratuse-mid{color:#facc15}
+    .pp2-stratuse-low{color:#94a3b8}
+    .pp2-untraded-table{width:100%;border-collapse:collapse;font-size:11px}
+    .pp2-untraded-table th{font-size:10px;text-align:left;padding:6px 8px;background:#262640;color:#94a3b8}
+    .pp2-untraded-table td{padding:5px 8px;border-bottom:1px solid #222;font-variant-numeric:tabular-nums}
+    .pp2-untraded-table td.col-display{font-weight:600;color:#e2e8f0}
+    .pp2-untraded-bias-high{background:rgba(251,191,36,0.08)}
   `;
 
   const body = `
@@ -8147,8 +8162,8 @@ export function renderPricePathV2Html(data: unknown): string {
       <div class="pp2-controls">
         <label>Cohort:
           <select id="pp2-cohort">
-            <option value="cohort_a">A — Peak return (max_peak_pct)</option>
-            <option value="cohort_b">B — Realized PnL (SUM net_profit_sol)</option>
+            <option value="cohort_b" selected>B — Realized PnL (SUM net_profit_sol) — DEFAULT (trade-relevant)</option>
+            <option value="cohort_a">A — Peak return (max_peak_pct) — diagnostic only</option>
           </select>
         </label>
         <label>Variant:
@@ -8173,8 +8188,13 @@ export function renderPricePathV2Html(data: unknown): string {
         Every whitelisted predictor ranked by <strong>|Cohen's d|</strong>.
         Signed d: positive = winners have higher values. KS = max distribution-shape distance.
         r_pb = point-biserial correlation. Top/Bot Q WR = winner-rate within top/bottom quartile of the feature, with Wilson 95% CI.
-        Rows flagged <em>low_conf</em> have either cohort side with n&lt;30 — interpret cautiously.
-        Click a row to view its distribution in Panel 3.
+        <br><br>
+        <strong style="color:#fbbf24">New columns (2026-05-26):</strong>
+        <span style="color:#fbbf24"><strong>Other d</strong></span> = same feature's signed d in the OTHER cohort (A↔B cross-check).
+        <span style="color:#fbbf24"><strong>A↔B</strong></span> = magnitude ratio: |other_d| / |d|. <span class="pp2-ratio-bad">&lt;0.3 means the signal collapses when measured against the other cohort</span> — usually a peak-prediction artifact, not real trading edge.
+        <span style="color:#fbbf24"><strong>StratUse</strong></span> = number of currently-enabled strategies whose filter set references this column. <span class="pp2-strat-bias">High values flag selection bias</span> — Cohort B d-values for these features are partly tautological because the existing roster already over-selects on them.
+        <br>
+        Rows flagged <em>low_conf</em> have either cohort side with n&lt;30 — interpret cautiously. Click a row to view its distribution in Panel 3.
       </div>
       <table class="pp2-fi-table">
         <thead><tr>
@@ -8182,6 +8202,9 @@ export function renderPricePathV2Html(data: unknown): string {
           <th>Cov</th>
           <th>d</th>
           <th>|d|</th>
+          <th>Other d</th>
+          <th>A↔B</th>
+          <th>StratUse</th>
           <th>KS</th>
           <th>r_pb</th>
           <th>Win n</th>
@@ -8213,6 +8236,35 @@ export function renderPricePathV2Html(data: unknown): string {
         Bright cells (rows × columns) reveal where the joint signal beats the marginals.
       </div>
       <div class="pp2-heatmap-grid" id="pp2-heatmaps"></div>
+    </div>
+
+    <div class="card">
+      <h2>Panel 5 — Untraded vs Traded (selection-bias diagnostic)</h2>
+      <div class="desc">
+        Compares feature distributions between graduations the existing strategy roster traded vs the ones it skipped.
+        Signed Cohen's d: <strong>positive</strong> = traded tokens have HIGHER values of this feature than skipped tokens.
+        <br>
+        <strong>How to read this:</strong> features with <span class="pp2-strat-bias">|d| ≥ 0.3</span> are heavily over-selected
+        by the existing roster — any Cohort B d-value on these is partly tautological (selection bias). Features with |d| &lt; 0.1
+        are unaffected by current selection and are cleaner candidates for new filter hypotheses.
+        <br>
+        This panel does not change with the Cohort selector — it's always the same traded-vs-untraded split.
+      </div>
+      <div id="pp2-untraded-summary" style="color:#94a3b8;font-size:12px;margin-bottom:8px"></div>
+      <table class="pp2-untraded-table">
+        <thead><tr>
+          <th>Feature</th>
+          <th>Cov</th>
+          <th>d (traded − untraded)</th>
+          <th>|d|</th>
+          <th>Traded n</th>
+          <th>Untraded n</th>
+          <th>Traded med</th>
+          <th>Untraded med</th>
+          <th>Interpretation</th>
+        </tr></thead>
+        <tbody id="pp2-untraded-body"></tbody>
+      </table>
     </div>
 
     <div class="card">
@@ -8288,16 +8340,37 @@ export function renderPricePathV2Html(data: unknown): string {
           cardHtml(a, '#60a5fa') + cardHtml(b, '#a5b4fc');
       }
 
+      function ratioCell(ratio) {
+        if (ratio === null || ratio === undefined) return '<td>—</td>';
+        const cls = ratio < 0.3 ? 'pp2-ratio-bad' : ratio < 0.7 ? 'pp2-ratio-ok' : 'pp2-ratio-good';
+        return '<td><span class="' + cls + '">' + ratio.toFixed(2) + 'x</span></td>';
+      }
+      function stratUseCell(n) {
+        if (!n) return '<td><span class="pp2-stratuse-low">0</span></td>';
+        const cls = n >= 10 ? 'pp2-stratuse-high' : n >= 3 ? 'pp2-stratuse-mid' : 'pp2-stratuse-low';
+        return '<td><span class="' + cls + '">' + n + '</span></td>';
+      }
       function renderFeatureImportance() {
         const { cohort, variant } = active();
         const panel = DATA.feature_importance[cohort][variant];
         const rows = panel.rows.map(r => {
           const lcMark = r.low_confidence ? ' <span class="lc">low_conf</span>' : '';
-          return '<tr class="' + (r.low_confidence ? 'pp2-low-conf' : '') + '" data-feature="' + r.col + '" style="cursor:pointer">'
-            + '<td class="col-display">' + r.display + lcMark + '</td>'
+          // 2026-05-26: flag rows whose signal collapses in the other cohort
+          // (peak-prediction artifact). Visually dim these.
+          const collapsed = r.cross_cohort_ratio !== null && r.cross_cohort_ratio !== undefined
+            && r.cross_cohort_ratio < 0.3 && (r.abs_cohens_d ?? 0) >= 0.2;
+          const collapsedTag = collapsed ? ' <span class="collapsed-tag">collapses in ' + (cohort === 'cohort_a' ? 'B' : 'A') + '</span>' : '';
+          const trClass = [];
+          if (r.low_confidence) trClass.push('pp2-low-conf');
+          if (collapsed) trClass.push('pp2-ratio-collapsed');
+          return '<tr class="' + trClass.join(' ') + '" data-feature="' + r.col + '" style="cursor:pointer">'
+            + '<td class="col-display">' + r.display + lcMark + collapsedTag + '</td>'
             + '<td><span class="pp2-cov-' + r.coverage + '">' + r.coverage + '</span></td>'
             + '<td class="' + dClass(r.cohens_d) + '">' + fmtNum(r.cohens_d, 3) + '</td>'
             + '<td>' + fmtNum(r.abs_cohens_d, 3) + '</td>'
+            + '<td class="' + dClass(r.cross_cohort_d) + '">' + fmtNum(r.cross_cohort_d, 3) + '</td>'
+            + ratioCell(r.cross_cohort_ratio)
+            + stratUseCell(r.existing_strategies_using_field)
             + '<td>' + fmtNum(r.ks_statistic, 3) + '</td>'
             + '<td>' + fmtNum(r.point_biserial_r, 3) + '</td>'
             + '<td>' + r.winner_n_with_data + '</td>'
@@ -8308,7 +8381,7 @@ export function renderPricePathV2Html(data: unknown): string {
             + '<td>' + fmtPct(r.bottom_quartile_winner_rate) + ci(r.bottom_quartile_wilson_ci) + '</td>'
             + '</tr>';
         }).join('');
-        document.getElementById('pp2-fi-body').innerHTML = rows || '<tr><td colspan="12" class="pp2-empty">No features ranked — cohort sizes may be too small.</td></tr>';
+        document.getElementById('pp2-fi-body').innerHTML = rows || '<tr><td colspan="15" class="pp2-empty">No features ranked — cohort sizes may be too small.</td></tr>';
 
         // Wire row-click to switch the distribution panel
         document.querySelectorAll('#pp2-fi-body tr[data-feature]').forEach(tr => {
@@ -8443,6 +8516,41 @@ export function renderPricePathV2Html(data: unknown): string {
         document.getElementById('pp2-notes').innerHTML = DATA.notes.map(n => '<li>' + n + '</li>').join('');
       }
 
+      // 2026-05-26: untraded vs traded selection-bias diagnostic. Doesn't
+      // depend on cohort/variant — same data regardless of selectors.
+      function renderUntraded() {
+        const ua = DATA.untraded_analysis;
+        if (!ua) {
+          document.getElementById('pp2-untraded-body').innerHTML = '<tr><td colspan="9" class="pp2-empty">Untraded analysis not in payload (older bot version).</td></tr>';
+          return;
+        }
+        document.getElementById('pp2-untraded-summary').textContent =
+          'Traded: ' + ua.traded_n + ' grads (' + ua.traded_pct + '%)  ·  Untraded: ' + ua.untraded_n + ' grads (' + (100 - ua.traded_pct).toFixed(1) + '%)';
+        const rows = ua.rows.map(r => {
+          const d = r.cohens_d;
+          const absD = r.abs_cohens_d ?? 0;
+          let interp = '';
+          if (d === null || d === undefined) interp = 'no data';
+          else if (absD >= 0.5) interp = 'STRONGLY ' + (d > 0 ? 'over-selected' : 'under-selected');
+          else if (absD >= 0.3) interp = 'over/under-selected — selection bias';
+          else if (absD >= 0.15) interp = 'mildly selected';
+          else interp = 'roughly neutral — clean for new hypotheses';
+          const highlight = absD >= 0.3 ? ' pp2-untraded-bias-high' : '';
+          return '<tr class="' + highlight + '">'
+            + '<td class="col-display">' + r.display + '</td>'
+            + '<td><span class="pp2-cov-' + r.coverage + '">' + r.coverage + '</span></td>'
+            + '<td class="' + dClass(d) + '">' + fmtNum(d, 3) + '</td>'
+            + '<td>' + fmtNum(absD, 3) + '</td>'
+            + '<td>' + r.traded_n_with_data + '</td>'
+            + '<td>' + r.untraded_n_with_data + '</td>'
+            + '<td>' + fmtNum(r.traded_median, 3) + '</td>'
+            + '<td>' + fmtNum(r.untraded_median, 3) + '</td>'
+            + '<td style="font-size:10px;color:#94a3b8">' + interp + '</td>'
+            + '</tr>';
+        }).join('');
+        document.getElementById('pp2-untraded-body').innerHTML = rows;
+      }
+
       function renderAll() {
         populateFeatureSelect();
         renderCohortMeta();
@@ -8456,6 +8564,7 @@ export function renderPricePathV2Html(data: unknown): string {
       featureSel.addEventListener('change', renderDistribution);
 
       renderNotes();
+      renderUntraded();
       renderAll();
     })();
     </script>

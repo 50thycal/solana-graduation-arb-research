@@ -56,7 +56,11 @@ const TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 // 2026-05-24: bumped to v5 for the price-path-v2 addition (PricePathV2Data +
 // renderPricePathV2Html). Same invalidation reason as v4 — old blobs lack the
 // new keys and would publish undefined.
-const CACHE_KEY = 'heavy_data_v5';
+// 2026-05-26: bumped to v6 for trade-relevance diagnostics on PricePathV2Data
+// (cross_cohort_d / cross_cohort_ratio / existing_strategies_using_field on
+// each FeatureImportanceRow, plus untraded_analysis panel). Without the bump
+// the v5 blob would publish undefined for the new fields.
+const CACHE_KEY = 'heavy_data_v6';
 
 interface HeavyData {
   v2: FilterV2Data;
