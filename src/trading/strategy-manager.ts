@@ -41,6 +41,29 @@ function sellRetryBackoffMs(retries: number): number {
   return SELL_RETRY_BACKOFF_MS[idx];
 }
 
+/** Hard cap on live-sell retry attempts before declaring the position
+ *  terminally lost. Backoff caps at 60s, so MAX_SELL_RETRIES_BEFORE_TERMINAL=20
+ *  gives ~20 minutes of attempts for transient errors (RPC outages, network
+ *  congestion) to resolve. Beyond that, the failure is almost certainly
+ *  structural — pool dead, tokens unsellable, wallet drift, etc. — and
+ *  retrying further is hopeless. Closes the trade as a realized loss so
+ *  net_profit_sol reflects reality and the position-manager isn't held
+ *  hostage indefinitely. 2026-05-26: added after observing two 7zKmeEDS
+ *  positions stuck >9 hours despite the "no tokens in wallet" terminal
+ *  detection in commit fc9e76f — the actual error pattern was something
+ *  else (pool dead, residual wallet dust, or similar) that the narrow
+ *  terminal pattern didn't catch. */
+const MAX_SELL_RETRIES_BEFORE_TERMINAL = 20;
+
+/** Error patterns that indicate a sell will never succeed — close terminally
+ *  immediately instead of waiting for MAX_SELL_RETRIES_BEFORE_TERMINAL. Pattern
+ *  match is case-insensitive substring. */
+const TERMINAL_SELL_ERROR_PATTERNS = [
+  'no tokens in wallet',           // wallet is confirmed empty for this mint
+  'pool reserves read failed',     // pool is dead / migrated / removed
+  'pool context incomplete',       // pool was never resolvable
+];
+
 interface StrategyInstance {
   id: string;
   label: string;
@@ -915,25 +938,33 @@ export class StrategyManager {
         );
         return;
       }
-      // Terminal sell-side failure: tokens are confirmed absent from the
-      // wallet (sold externally / never landed / lost track). liveSell
-      // returns this when wallet.getTokenBalanceRaw == 0; that's a
-      // definitive on-chain RPC read, not a transient RPC error. Retrying
-      // forever would loop forever burning Jito tips since the tokens
-      // won't reappear. Close the trade as a realized 100% loss via the
-      // standard closeTrade path so net_profit_sol reflects reality.
-      // (Audited 2026-05-26 — two v25-bot-excl / v9-velmono-dev positions
-      // on mint 7zKmeEDS... were stuck open 7+ hours after the operator
-      // manually sold the tokens; the indefinite-retry loop from commit
-      // 6158b1a had no escape hatch for this terminal class.)
-      const isTerminalSellFailure = errMsg.toLowerCase().includes('no tokens in wallet');
+      // Decide whether this retry is terminal. Two paths:
+      //   1. Error message matches a known-terminal pattern → close on first hit.
+      //   2. Retry count has exceeded MAX_SELL_RETRIES_BEFORE_TERMINAL →
+      //      structural failure regardless of error string. Safety net.
+      //
+      // Both close via standard closeTrade so net_profit_sol reflects the
+      // realized loss. Without this, the indefinite-retry loop from commit
+      // 6158b1a strands positions forever (audited 2026-05-26: 7zKmeEDS
+      // stuck >9 hours; the original narrow "no tokens in wallet" detection
+      // didn't catch the actual error class hitting these trades).
+      const retries = (pos.sellRetryCount ?? 0) + 1;
+      const lowerErr = errMsg.toLowerCase();
+      const matchedPattern = TERMINAL_SELL_ERROR_PATTERNS.find(p => lowerErr.includes(p));
+      const exceededRetryCap = retries > MAX_SELL_RETRIES_BEFORE_TERMINAL;
+      const isTerminalSellFailure = !!matchedPattern || exceededRetryCap;
       if (isTerminalSellFailure) {
         logger.error(
           {
             tradeId: pos.tradeId, mint: pos.mint, mode: executionMode,
             exitReason, exitPriceSol, errorMessage: errMsg,
+            retries,
+            matchedPattern: matchedPattern ?? null,
+            exceededRetryCap,
           },
-          'Live sell terminal failure (tokens absent from wallet) — closing trade as realized loss',
+          matchedPattern
+            ? `Live sell terminal failure (matched "${matchedPattern}") — closing trade as realized loss`
+            : `Live sell terminal failure (exceeded ${MAX_SELL_RETRIES_BEFORE_TERMINAL} retries) — closing trade as realized loss`,
         );
         // Pass measuredExitSlippagePct=0 so closeTrade routes through the
         // live-overhead branch (deducts entry tip + tx fees + ATA rent
@@ -961,10 +992,11 @@ export class StrategyManager {
       // we gave up after MAX_SELL_RETRIES=5 attempts and marked the trade
       // failed, which stranded the buy cost (~0.05 SOL) outside of any
       // strategy's net P&L while the tokens sat in the wallet. Operator
-      // policy: keep retrying. Tokens stay on-chain anyway, so eventually
-      // the sell lands or the operator intervenes — either way, the position
-      // remains tracked rather than silently dropped.
-      const retries = (pos.sellRetryCount ?? 0) + 1;
+      // policy: keep retrying up to MAX_SELL_RETRIES_BEFORE_TERMINAL. Tokens
+      // stay on-chain anyway, so eventually the sell lands or the operator
+      // intervenes — either way, the position remains tracked rather than
+      // silently dropped. The `retries` variable was computed above for the
+      // terminal-failure check; reuse it here.
       const backoffMs = sellRetryBackoffMs(retries);
       const nextSellAttemptAt = Date.now() + backoffMs;
       logger.error(
