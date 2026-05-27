@@ -1,0 +1,28 @@
+{
+  "commands": [
+    { "action": "delete", "id": "v36-sniper-light" },
+    {
+      "action": "journal-update",
+      "id": "v36-sniper-light",
+      "note": "KILLED 2026-05-26: hit auto-kill (n=80, total_net_sol=-1.378, drop_top3=-2.792). Kill criterion 'n>=50 and net_sol<-1' satisfied. LESSON: backwards-looking Cohort B Cohen's d (-0.38, the 'headline finding') did not translate forward. Root causes: (1) selection bias — 7 existing strategies already filtered on sniper_count_t0_t2, contaminating the historical Cohort B sample; (2) the 100% bottom-quartile WR figure was on n=50 historical cells which over-fit. The improved v2 dashboard's StratUse column would have flagged this immediately."
+    },
+    { "action": "delete", "id": "v36-smooth-momentum" },
+    {
+      "action": "journal-update",
+      "id": "v36-smooth-momentum",
+      "note": "KILLED 2026-05-26: hit auto-kill (n=92, total_net_sol=-1.088, drop_top3=-2.267). Kill criterion 'n>=60 and net_sol<-1' satisfied. Was profitable briefly (n=39, +0.49 SOL) but fully reverted as predicted by lottery-ticket warning. LESSON: monotonicity_0_30 was the canonical peak-prediction artifact. Cohort A d=+1.53 but Cohort B d=+0.12 (A↔B ratio 0.08x — 92% signal collapse). Also 17 existing strategies already filter on monotonicity — pure tautological discovery. The cross_cohort_ratio + StratUse columns added in the v2 dashboard would have rejected this candidate at design time."
+    },
+    { "action": "delete", "id": "v36-init-lp-flow" },
+    {
+      "action": "journal-update",
+      "id": "v36-init-lp-flow",
+      "note": "KILLED 2026-05-26: hit auto-kill (n=60, total_net_sol=-1.811, drop_top3=-3.225). Kill criterion 'n>=50 and net_sol<-1' satisfied. LESSON: the 'init_lp >= 15' thesis was a misread of best-combos.json. The cited combo (init_lp > 15 + confirmed_recovery, +10.42%) drew its edge from confirmed_recovery, not init_lp. init_lp alone or paired with flow_imbalance has no forward edge. Going forward, when borrowing thresholds from best-combos.json, isolate the actual edge driver before promoting to a new strategy."
+    },
+    { "action": "delete", "id": "v36-conviction-buyers" },
+    {
+      "action": "journal-update",
+      "id": "v36-conviction-buyers",
+      "note": "KILLED 2026-05-26: 0 trades over 3+ days (fill rate 0.0/day). Original thresholds (whale_pct >= 50 AND buyers <= 5) were too tight to ever match. LESSON: thesis was correct (whale-concentration + low-buyer-diversity matters in Cohort B) but threshold combo was unrunnable. The successor v37-whale-conviction loosened thresholds to (whale_pct >= 0.25 AND buyers <= 15) and is now firing successfully (n=28, +0.295 SOL). When a multi-filter combo has expected fill rate < 1/day at design time, loosen ONE axis first before adding the second."
+    }
+  ]
+}
