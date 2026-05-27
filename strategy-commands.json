@@ -1,0 +1,488 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-05-27",
+      "date": "2026-05-27",
+      "generated_by": "claude",
+      "narrative": "**Roster:** No changes since yesterday — 95 strategies in roster (92 active), identical to 2026-05-26 snapshot. No adds, removes, or toggles.\n\n**⚠️ PIPELINE STALLED — operational priority.** `diagnose.json` shows `PIPELINE_STALLED`: no paper or shadow trades in 1,800+ seconds as of 11:03 UTC. The bot is detecting graduations (10,896 total, last 229s ago) and all Level 1–4 checks pass, but every T+30 candidate is being filtered or rejected. Live sell-failure errors were logged at 06:08, 06:40, and 09:40 UTC — suggesting live positions may have been stuck on exit retries. Separately, 54% of the last 50 pools were marked `synthetic_pool`, which could be pushing the effective pass-through rate below entry-gate thresholds. **Recommend the operator check `/api/skips?limit=50` immediately to confirm which filter is blanket-rejecting all candidates.**\n\n**Two strategies are now PROMOTABLE.** `v25-bot-excl-climbing` (score=100) leads the board: n=333, total=+4.632 SOL, `drop_top3`=+2.320 SOL (50% of P&L survives the outlier strip — genuine fat-tail edge, not lottery), monthly=+10.80 SOL/mo, edge_flag=STABLE with a 7-day readiness score of 100/100/100/85/85/100/100. All four promotion gates clear by a wide margin. `v28-bot-excl-climbing-1s-ttp` (score=87) also clears all four gates: n=195, total=+3.709 SOL, `drop_top3`=+0.343 SOL, monthly=+14.51 SOL/mo. However, top3 concentration is 91% — the outlier-strip is thin. This is a conditional promote: edge survives the strip, but recommend conservative position sizing until drop3 widens with more n.\n\n**Six INVALID strategies recommend killing.** `v34-bot-excl-climbing-minlift` (n=154, drop3=−1.232), `v33-bot-excl-climbing-ttp5` (n=152, drop3=−1.005), and `v32-bot-excl-climbing-1s` (n=150, drop3=−1.014) are variants of v25 with worse exit configs — P&L evaporates entirely when top 3 wins are stripped. `v10-best-double` (n=140, drop3=−0.605, monthly=+2.19) fails both drop3 and monthly gates. `v14-sumabs-shadow` (n=105, total=−1.849, drop3=−3.331) accumulates losses. `v25-bot-excl-climbing-live-micro` — the only **live** strategy among the INVALID cohort — has n=126, total=−0.027 SOL with 3 sell failures today; recommend disabling to stop live capital exposure.\n\n**Three shadow strategies are pacing toward the bar.** `v9shadow-velmono-dev` (n=62, drop3=+2.106, monthly=+4.49 SOL/mo) is the strongest: at ~2.4 trades/day it should reach n=100 in ~16 days with both drop3 and monthly well above bar. `v9shadow-velmid-liq-mono` (n=63, drop3=+0.845, monthly=+4.05) and `v9shadow-vel20-top5` (n=75, drop3=+0.374, monthly=+3.88) also pacing. All three STABLE in edge_flag with consistent readiness scores over 7 days.\n\n**Two v35 strategies are pre-emptive kill candidates.** `v35-vel2050-holders10` (n=74, total=−3.352 SOL, monthly=−14.36 SOL) and `v35-vel2050-top10-40` (n=75, total=−2.313 SOL, monthly=−9.91 SOL) haven't hit n=100 but are already deeply negative across all metrics. At ~1 trade/day each, reaching n=100 would require 25+ more days of continued losses. Recommend killing both now.\n\n**Best-combos surface a new testable hypothesis.** `buy_ratio > 0.6 + confirmed_recovery` (n=100, opt_avg_ret=+8.36% at TP75/SL30) is the only leaderboard combo with sufficient sample size and positive opt_avg_ret. `vwap_pullback strict + climbing_t30_t45` (n=56, opt=+14.67%) is promising but needs more data. Recommend launching a shadow test for `buy_ratio>0.6 + confirmed_recovery` as v39.\n\n**Operator's single most important action today:** (1) Investigate and fix the pipeline stall (check skips); (2) Approve the promote of v25-bot-excl-climbing; (3) Approve the INVALID kills to free capacity.",
+      "winners": [],
+      "losers": [],
+      "anomalies": [
+        {
+          "kind": "pipeline_stalled",
+          "severity": "critical",
+          "message": "No paper/shadow trades in 1800s — all T+30 candidates being filtered/rejected. 54% synthetic pools in last 50. Live sell failures at 06:08, 06:40, 09:40 UTC."
+        },
+        {
+          "kind": "graduation_rate_drop",
+          "severity": "high",
+          "message": "today_auto shows 0 trades vs 779 yesterday. diagnose verdict: PIPELINE_STALLED."
+        },
+        {
+          "kind": "live_sell_failures",
+          "severity": "high",
+          "message": "3 live sell failures today (06:08, 06:40, 09:40 UTC). v25-bot-excl-climbing-live-micro total=-0.027 SOL."
+        },
+        {
+          "kind": "invalid_cluster_n100",
+          "severity": "med",
+          "message": "6 enabled strategies have n>=100 and fail drop_top3 gate: v34/v33/v32 climbing variants, v10-best-double, v14-sumabs-shadow, v25-live-micro."
+        },
+        {
+          "kind": "v35_deep_losses",
+          "severity": "med",
+          "message": "v35-vel2050-holders10 monthly=-14.36 SOL, v35-vel2050-top10-40 monthly=-9.91 SOL. Pre-emptive kill candidates."
+        }
+      ],
+      "patterns": [
+        {
+          "pattern": "v25-bot-excl-climbing 7-day readiness: 100/100/100/85/85/100/100 — sustained promotable plateau",
+          "type": "recurring_winner"
+        },
+        {
+          "pattern": "v32/v33/v34 climbing variants score 50 for 3+ consecutive days — all fail drop_top3 with n>=150. P&L concentrated in 1-3 lottery trades.",
+          "type": "recurring_invalid"
+        },
+        {
+          "pattern": "v9shadow trio (velmono-dev, velmid-liq-mono, vel20-top5) trending upward in n with positive drop_top3 across 7 days.",
+          "type": "watch_pacing"
+        },
+        {
+          "pattern": "Live sell failures repeated 3x today. live-micro strategy continues to bleed. Structural exit-reliability issue on live mode.",
+          "type": "anomaly_recurrence"
+        }
+      ],
+      "by_strategy_daily": [
+        {
+          "strategy_id": "v25-bot-excl-climbing",
+          "execution_mode": "shadow",
+          "label": "v25 bot-excl + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 26,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.3989,
+          "readiness_score": 100,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 100,
+          "readiness_score_alltime_high": 100,
+          "readiness_score_alltime_low": 55,
+          "promotable": true,
+          "n_trades_lifetime": 333,
+          "total_net_sol_lifetime": 4.6324,
+          "total_net_sol_drop_top3": 2.3196,
+          "monthly_run_rate_sol": 10.7982,
+          "monthly_run_rate_sol_drop_top3": 5.4071,
+          "trades_per_day": 25.874
+        },
+        {
+          "strategy_id": "v28-bot-excl-climbing-1s-ttp",
+          "execution_mode": "shadow",
+          "label": "v28 v25-bot-excl-climbing mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 26,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.2902,
+          "readiness_score": 87.15,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 87.16,
+          "readiness_score_alltime_high": 87.16,
+          "readiness_score_alltime_low": 9.2,
+          "promotable": false,
+          "n_trades_lifetime": 195,
+          "total_net_sol_lifetime": 3.7095,
+          "total_net_sol_drop_top3": 0.343,
+          "monthly_run_rate_sol": 14.5075,
+          "monthly_run_rate_sol_drop_top3": 1.3415,
+          "trades_per_day": 25.421
+        },
+        {
+          "strategy_id": "v9shadow-velmono-dev",
+          "execution_mode": "shadow",
+          "label": "v9 shadow vel 20-50 + mono>0.5 + dev>5% @ 100/30",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 8,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.0004,
+          "readiness_score": 85.54,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 85.54,
+          "readiness_score_alltime_high": 88,
+          "readiness_score_alltime_low": 71.36,
+          "promotable": false,
+          "n_trades_lifetime": 62,
+          "total_net_sol_lifetime": 3.8359,
+          "total_net_sol_drop_top3": 2.1061,
+          "monthly_run_rate_sol": 4.487,
+          "monthly_run_rate_sol_drop_top3": 2.4636,
+          "trades_per_day": 2.417
+        },
+        {
+          "strategy_id": "v9shadow-velmid-liq-mono",
+          "execution_mode": "shadow",
+          "label": "v9 shadow vel 20-50 + liq>100 + mono>0.33 @ 150/25",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 6,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.0603,
+          "readiness_score": 78.29,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 78.3,
+          "readiness_score_alltime_high": 88.2,
+          "readiness_score_alltime_low": 25.6,
+          "promotable": false,
+          "n_trades_lifetime": 63,
+          "total_net_sol_lifetime": 3.2031,
+          "total_net_sol_drop_top3": 0.8452,
+          "monthly_run_rate_sol": 4.0463,
+          "monthly_run_rate_sol_drop_top3": 1.0678,
+          "trades_per_day": 2.653
+        },
+        {
+          "strategy_id": "v9shadow-vel20-top5",
+          "execution_mode": "shadow",
+          "label": "v9 shadow vel<20 + top5<10% @ 150/30",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 1,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.2465,
+          "readiness_score": 77.26,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 77.26,
+          "readiness_score_alltime_high": 92.4,
+          "readiness_score_alltime_low": 45,
+          "promotable": false,
+          "n_trades_lifetime": 75,
+          "total_net_sol_lifetime": 3.4242,
+          "total_net_sol_drop_top3": 0.3743,
+          "monthly_run_rate_sol": 3.8757,
+          "monthly_run_rate_sol_drop_top3": 0.4237,
+          "trades_per_day": 2.83
+        },
+        {
+          "strategy_id": "v34-bot-excl-climbing-minlift",
+          "execution_mode": "shadow",
+          "label": "v34 v25-bot-excl-climbing mirror + trailingTP 10% drop + minLift 20pp [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 30,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.474,
+          "readiness_score": 50,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 50,
+          "readiness_score_alltime_high": 50,
+          "readiness_score_alltime_low": 25.24,
+          "promotable": false,
+          "n_trades_lifetime": 154,
+          "total_net_sol_lifetime": 2.135,
+          "total_net_sol_drop_top3": -1.2315,
+          "monthly_run_rate_sol": 9.1499,
+          "monthly_run_rate_sol_drop_top3": -5.2778,
+          "trades_per_day": 22
+        },
+        {
+          "strategy_id": "v33-bot-excl-climbing-ttp5",
+          "execution_mode": "shadow",
+          "label": "v33 v25-bot-excl-climbing mirror + trailingTP 5% drop [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 30,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.474,
+          "readiness_score": 50,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 50,
+          "readiness_score_alltime_high": 50,
+          "readiness_score_alltime_low": 25.24,
+          "promotable": false,
+          "n_trades_lifetime": 152,
+          "total_net_sol_lifetime": 1.6549,
+          "total_net_sol_drop_top3": -1.0053,
+          "monthly_run_rate_sol": 7.0923,
+          "monthly_run_rate_sol_drop_top3": -4.3086,
+          "trades_per_day": 21.714
+        },
+        {
+          "strategy_id": "v32-bot-excl-climbing-1s",
+          "execution_mode": "shadow",
+          "label": "v32 v25-bot-excl-climbing mirror + 1s poll (no trailing TP) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 29,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.269,
+          "readiness_score": 50,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 50,
+          "readiness_score_alltime_high": 50,
+          "readiness_score_alltime_low": 29.1,
+          "promotable": false,
+          "n_trades_lifetime": 150,
+          "total_net_sol_lifetime": 1.2983,
+          "total_net_sol_drop_top3": -1.0145,
+          "monthly_run_rate_sol": 5.5642,
+          "monthly_run_rate_sol_drop_top3": -4.3477,
+          "trades_per_day": 21.429
+        },
+        {
+          "strategy_id": "v10-best-double",
+          "execution_mode": "shadow",
+          "label": "v10 vel 20-50 + dd > -10% (best double)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 12,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.6419,
+          "readiness_score": 50,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 50,
+          "readiness_score_alltime_high": 89.57,
+          "readiness_score_alltime_low": 50,
+          "promotable": false,
+          "n_trades_lifetime": 140,
+          "total_net_sol_lifetime": 1.8738,
+          "total_net_sol_drop_top3": -0.6054,
+          "monthly_run_rate_sol": 2.1918,
+          "monthly_run_rate_sol_drop_top3": -0.7081,
+          "trades_per_day": 5.459
+        },
+        {
+          "strategy_id": "v14-sumabs-shadow",
+          "execution_mode": "shadow",
+          "label": "v14 sumabs mirror (vel<20+top5<10%+sum_abs<60 @ 100/30)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 5,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.4247,
+          "readiness_score": 15,
+          "edge_flag": "DECAYING",
+          "readiness_score_yesterday": 15,
+          "readiness_score_alltime_high": 34,
+          "readiness_score_alltime_low": 8,
+          "promotable": false,
+          "n_trades_lifetime": 105,
+          "total_net_sol_lifetime": -1.849,
+          "total_net_sol_drop_top3": -3.3307,
+          "monthly_run_rate_sol": -2.8079,
+          "monthly_run_rate_sol_drop_top3": -5.058,
+          "trades_per_day": 5.315
+        },
+        {
+          "strategy_id": "v25-bot-excl-climbing-live-micro",
+          "execution_mode": "live_micro",
+          "label": "v25 bot-excl + climbing_t30_t45 (TP100/SL30, entry@T+60) [LIVE-MICRO 0.05 SOL]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 20,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.042,
+          "readiness_score": 30,
+          "edge_flag": "STABLE",
+          "readiness_score_yesterday": 30,
+          "readiness_score_alltime_high": 37.35,
+          "readiness_score_alltime_low": 12.4,
+          "promotable": false,
+          "n_trades_lifetime": 126,
+          "total_net_sol_lifetime": -0.0266,
+          "total_net_sol_drop_top3": -0.3615,
+          "monthly_run_rate_sol": -0.1142,
+          "monthly_run_rate_sol_drop_top3": -1.5492,
+          "trades_per_day": 18
+        },
+        {
+          "strategy_id": "v35-vel2050-holders10",
+          "execution_mode": "shadow",
+          "label": "v35 vel 20-50 + holders>=10 (TP150/SL25) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 27,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.1573,
+          "readiness_score": 29.8,
+          "edge_flag": "STRENGTHENING",
+          "readiness_score_yesterday": 29.8,
+          "readiness_score_alltime_high": 29.8,
+          "readiness_score_alltime_low": 5.6,
+          "promotable": false,
+          "n_trades_lifetime": 74,
+          "total_net_sol_lifetime": -3.3517,
+          "total_net_sol_drop_top3": -5.7925,
+          "monthly_run_rate_sol": -14.3642,
+          "monthly_run_rate_sol_drop_top3": -24.8248,
+          "trades_per_day": 10.571
+        },
+        {
+          "strategy_id": "v35-vel2050-top10-40",
+          "execution_mode": "shadow",
+          "label": "v35 vel 20-50 + top10<40% (TP150/SL25) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 28,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.3335,
+          "readiness_score": 30,
+          "edge_flag": "STRENGTHENING",
+          "readiness_score_yesterday": 30,
+          "readiness_score_alltime_high": 30,
+          "readiness_score_alltime_low": 5.6,
+          "promotable": false,
+          "n_trades_lifetime": 75,
+          "total_net_sol_lifetime": -2.3131,
+          "total_net_sol_drop_top3": -4.7539,
+          "monthly_run_rate_sol": -9.9131,
+          "monthly_run_rate_sol_drop_top3": -20.3737,
+          "trades_per_day": 10.714
+        }
+      ],
+      "recommendations": {
+        "promote": [
+          {
+            "strategy_id": "v25-bot-excl-climbing",
+            "reason": "All 4 gates clear: n=333, drop_top3=+2.320 SOL (robust), total=+4.632 SOL, monthly=+10.80 SOL/mo. Score=100. STABLE 7-day trend."
+          },
+          {
+            "strategy_id": "v28-bot-excl-climbing-1s-ttp",
+            "reason": "All 4 gates clear: n=195, drop_top3=+0.343 SOL (thin, 91% top3 concentration), total=+3.709 SOL, monthly=+14.51 SOL/mo. Score=87. Conditional: recommend conservative position size."
+          }
+        ],
+        "kill": [
+          {
+            "strategy_id": "v34-bot-excl-climbing-minlift",
+            "reason": "n=154, drop_top3=-1.232 SOL. Apparent edge is 1-3 lottery trades only. INVALID."
+          },
+          {
+            "strategy_id": "v33-bot-excl-climbing-ttp5",
+            "reason": "n=152, drop_top3=-1.005 SOL. Same cluster as v34. INVALID."
+          },
+          {
+            "strategy_id": "v32-bot-excl-climbing-1s",
+            "reason": "n=150, drop_top3=-1.014 SOL. Same cluster. INVALID."
+          },
+          {
+            "strategy_id": "v10-best-double",
+            "reason": "n=140, drop_top3=-0.605 SOL, monthly=+2.19 SOL/mo. Fails drop3 and monthly gates."
+          },
+          {
+            "strategy_id": "v14-sumabs-shadow",
+            "reason": "n=105, total=-1.849 SOL, drop_top3=-3.331 SOL. Accumulating losses. INVALID."
+          },
+          {
+            "strategy_id": "v25-bot-excl-climbing-live-micro",
+            "reason": "n=126, total=-0.027 SOL, drop_top3=-0.361 SOL, monthly=-0.11 SOL. Live capital at risk with 3 sell failures today. INVALID."
+          },
+          {
+            "strategy_id": "v35-vel2050-holders10",
+            "reason": "n=74, total=-3.352 SOL, monthly=-14.36 SOL/mo. Pre-emptive kill — deeply negative trajectory at n<100."
+          },
+          {
+            "strategy_id": "v35-vel2050-top10-40",
+            "reason": "n=75, total=-2.313 SOL, monthly=-9.91 SOL/mo. Pre-emptive kill — same v35 cohort."
+          }
+        ],
+        "watch": [
+          {
+            "strategy_id": "v9shadow-velmono-dev",
+            "reason": "n=62, drop_top3=+2.106 SOL, monthly=+4.49 SOL/mo. Strongest pacing strategy. Target n=100 in ~16 days."
+          },
+          {
+            "strategy_id": "v9shadow-velmid-liq-mono",
+            "reason": "n=63, drop_top3=+0.845 SOL, monthly=+4.05 SOL/mo. Pacing toward bar. Score=78, STABLE."
+          },
+          {
+            "strategy_id": "v9shadow-vel20-top5",
+            "reason": "n=75, drop_top3=+0.374 SOL, monthly=+3.88 SOL/mo. Closest to n=100. Score=77, STABLE."
+          }
+        ],
+        "create_new": [
+          {
+            "strategy_id": "v39-buyratio-recovery",
+            "hypothesis": "buy_ratio>0.6 + confirmed_recovery has n=100 in best-combos with opt_avg_ret=+8.36% at TP75/SL30. Two independent signals: sustained buy pressure + price recovery. Should accumulate >=0.5 SOL with drop_top3>0 on n=125.",
+            "prediction": {
+              "target_net_sol": 0.5,
+              "target_sol_per_mo": 3.75,
+              "target_drop_top3": 0,
+              "target_n": 125,
+              "target_days": 21,
+              "kill_criterion": "n>=60 and total_net_sol_drop_top3<-0.5"
+            },
+            "cohort_label": "v39"
+          }
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-05-27-001",
+          "kind": "operational",
+          "target_id": "pipeline",
+          "summary": "Investigate PIPELINE_STALLED — check /api/skips?limit=50 to find which filter is blanket-rejecting T+30 candidates. Also review 3 live sell failures for exit-retry blockage.",
+          "status": "PROPOSED",
+          "proposed_at": 1779880489
+        },
+        {
+          "id": "ai-2026-05-27-002",
+          "kind": "promote",
+          "target_id": "v25-bot-excl-climbing",
+          "summary": "Promote v25-bot-excl-climbing to live — score=100, n=333, drop_top3=+2.320 SOL, monthly=+10.80 SOL/mo. All 4 gates clear with wide margin.",
+          "status": "PROPOSED",
+          "proposed_at": 1779880489
+        },
+        {
+          "id": "ai-2026-05-27-003",
+          "kind": "promote",
+          "target_id": "v28-bot-excl-climbing-1s-ttp",
+          "summary": "Promote v28-bot-excl-climbing-1s-ttp — score=87, n=195, drop_top3=+0.343 SOL (thin). All 4 gates clear. Recommend conservative position size.",
+          "status": "PROPOSED",
+          "proposed_at": 1779880489
+        },
+        {
+          "id": "ai-2026-05-27-004",
+          "kind": "kill",
+          "target_id": "v34-bot-excl-climbing-minlift,v33-bot-excl-climbing-ttp5,v32-bot-excl-climbing-1s",
+          "summary": "Kill v32/v33/v34 climbing variants — n=150-154, all fail drop_top3 gate. Lottery-trade P&L only.",
+          "status": "PROPOSED",
+          "proposed_at": 1779880489
+        },
+        {
+          "id": "ai-2026-05-27-005",
+          "kind": "kill",
+          "target_id": "v10-best-double",
+          "summary": "Kill v10-best-double — n=140, drop_top3=-0.605 SOL, monthly=+2.19 SOL/mo. Fails drop3 and monthly gates.",
+          "status": "PROPOSED",
+          "proposed_at": 1779880489
+        },
+        {
+          "id": "ai-2026-05-27-006",
+          "kind": "kill",
+          "target_id": "v14-sumabs-shadow",
+          "summary": "Kill v14-sumabs-shadow — n=105, total=-1.849 SOL. INVALID on all gates.",
+          "status": "PROPOSED",
+          "proposed_at": 1779880489
+        },
+        {
+          "id": "ai-2026-05-27-007",
+          "kind": "kill",
+          "target_id": "v25-bot-excl-climbing-live-micro",
+          "summary": "Disable v25-bot-excl-climbing-live-micro (live capital) — total=-0.027 SOL, 3 sell failures today. INVALID. Pause live exposure.",
+          "status": "PROPOSED",
+          "proposed_at": 1779880489
+        },
+        {
+          "id": "ai-2026-05-27-008",
+          "kind": "kill",
+          "target_id": "v35-vel2050-holders10,v35-vel2050-top10-40",
+          "summary": "Pre-emptive kill v35 holders10 (monthly=-14.36 SOL) and v35 top10-40 (monthly=-9.91 SOL) — deeply negative, no recovery signal.",
+          "status": "PROPOSED",
+          "proposed_at": 1779880489
+        }
+      ],
+      "auto_journal": true
+    }
+  ]
+}
