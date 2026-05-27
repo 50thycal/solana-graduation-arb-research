@@ -7,6 +7,7 @@ import {
   StrategyParams,
   strategyParamsFromConfig,
   mergeStrategyParams,
+  SWAP_SLIPPAGE_BPS,
 } from './config';
 import { TradeLogger } from './trade-logger';
 import { Executor, fetchVaultPrice } from './executor';
@@ -30,30 +31,72 @@ const logger = makeLogger('strategy-manager');
 
 const BACKFILL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
-/** Backoff schedule for live-sell retries. Indexed by retry count starting at 1.
- *  Caps at 60s — beyond ~5 retries each subsequent attempt waits 60s. Total
- *  wait through retry 10 is ~10 minutes which keeps things responsive while
- *  avoiding hot-loop spam on chain congestion. 2026-05-26. */
-const SELL_RETRY_BACKOFF_MS = [2_000, 5_000, 10_000, 30_000, 60_000];
-function sellRetryBackoffMs(retries: number): number {
-  if (retries < 1) return 0;
-  const idx = Math.min(retries - 1, SELL_RETRY_BACKOFF_MS.length - 1);
-  return SELL_RETRY_BACKOFF_MS[idx];
+/** Live-sell retry schedule (2026-05-27 redesign).
+ *
+ *  Pre-fix: retried up to 20 times with [2s/5s/10s/30s/60s × N] backoff and
+ *  flat 10% slippage on every attempt. Took up to 17 min to terminal-close
+ *  stuck positions, and most retries fought the same Custom 6004 because
+ *  the AMM math hadn't changed.
+ *
+ *  New approach — 9 attempts total, no explicit backoff (poll cadence is
+ *  the floor). Each attempt escalates slippage AND/OR Jito tip to break
+ *  out of the failure mode:
+ *
+ *    Attempt 1: 10% slippage, 1× tip — normal exit (most trades succeed here)
+ *    Attempt 2: 20% slippage, 5× tip — bump tip aggressively for faster land
+ *    Attempt 3: 20% slippage, 5× tip — one more shot with high tip
+ *    Attempt 4: 40% slippage, 1× tip — high tip didn't help, crank slippage
+ *    Attempt 5: 50% slippage, 1× tip — slippage ramp
+ *    Attempt 6: 60% slippage, 1× tip
+ *    Attempt 7: 70% slippage, 1× tip
+ *    Attempt 8: 80% slippage, 1× tip
+ *    Attempt 9: 90% slippage, 1× tip — last attempt (terminal close after)
+ *
+ *  After attempt 9 fails, the position is closed with sell_failed_terminal
+ *  and net_profit_sol reflects the realized loss. */
+const MAX_SELL_ATTEMPTS_BEFORE_TERMINAL = 9;
+
+/** Per-attempt slippage tolerance in basis points. Index 0 = attempt 1.
+ *  Attempt 1 uses the default SWAP_SLIPPAGE_BPS (env-configurable, typically
+ *  1000 = 10%); attempts 2+ use absolute values from this table. */
+const SELL_RETRY_SLIPPAGE_BPS: ReadonlyArray<number | null> = [
+  null,   // 1: SWAP_SLIPPAGE_BPS default
+  2000,   // 2: 20%
+  2000,   // 3: 20%
+  4000,   // 4: 40%
+  5000,   // 5: 50%
+  6000,   // 6: 60%
+  7000,   // 7: 70%
+  8000,   // 8: 80%
+  9000,   // 9: 90%
+];
+function sellSlippageBpsForAttempt(attemptNumber: number): number {
+  if (attemptNumber < 1) return SWAP_SLIPPAGE_BPS;
+  const idx = Math.min(attemptNumber - 1, SELL_RETRY_SLIPPAGE_BPS.length - 1);
+  return SELL_RETRY_SLIPPAGE_BPS[idx] ?? SWAP_SLIPPAGE_BPS;
 }
 
-/** Hard cap on live-sell retry attempts before declaring the position
- *  terminally lost. Backoff caps at 60s, so MAX_SELL_RETRIES_BEFORE_TERMINAL=20
- *  gives ~20 minutes of attempts for transient errors (RPC outages, network
- *  congestion) to resolve. Beyond that, the failure is almost certainly
- *  structural — pool dead, tokens unsellable, wallet drift, etc. — and
- *  retrying further is hopeless. Closes the trade as a realized loss so
- *  net_profit_sol reflects reality and the position-manager isn't held
- *  hostage indefinitely. 2026-05-26: added after observing two 7zKmeEDS
- *  positions stuck >9 hours despite the "no tokens in wallet" terminal
- *  detection in commit fc9e76f — the actual error pattern was something
- *  else (pool dead, residual wallet dust, or similar) that the narrow
- *  terminal pattern didn't catch. */
-const MAX_SELL_RETRIES_BEFORE_TERMINAL = 20;
+/** Per-attempt Jito tip multiplier vs DEFAULT_JITO_TIP_SOL. Attempts 2-3
+ *  use 5× to push the bundle up Jito's priority queue and reduce tx_land_ms.
+ *  If that doesn't land the sell, attempt 4+ drops back to 1× since paying
+ *  more tip on a tx that's failing for slippage/AMM-state reasons just burns
+ *  SOL — switch to widening slippage instead. */
+const SELL_RETRY_TIP_MULTIPLIER: ReadonlyArray<number> = [
+  1,  // 1: default
+  5,  // 2: aggressive land
+  5,  // 3: aggressive land
+  1,  // 4: back to normal, slippage takes over
+  1,  // 5
+  1,  // 6
+  1,  // 7
+  1,  // 8
+  1,  // 9
+];
+function sellTipMultiplierForAttempt(attemptNumber: number): number {
+  if (attemptNumber < 1) return 1;
+  const idx = Math.min(attemptNumber - 1, SELL_RETRY_TIP_MULTIPLIER.length - 1);
+  return SELL_RETRY_TIP_MULTIPLIER[idx];
+}
 
 /** Error patterns that indicate a sell will never succeed — close terminally
  *  immediately instead of waiting for MAX_SELL_RETRIES_BEFORE_TERMINAL. Pattern
@@ -868,10 +911,22 @@ export class StrategyManager {
       ? { poolAddress: pos.poolAddress, baseVault: pos.baseVault, quoteVault: pos.quoteVault }
       : undefined;
 
+    // Compute this attempt's slippage + tip from the retry schedule. Live only —
+    // shadow/paper modes don't use these. attemptNumber = pos.sellRetryCount+1
+    // (sellRetryCount is the # of prior failures; +1 = the attempt about to fire).
+    const attemptNumber = (pos.sellRetryCount ?? 0) + 1;
+    const slippageBpsForThisAttempt = isLive
+      ? sellSlippageBpsForAttempt(attemptNumber)
+      : undefined;
+    const tipMultiplierForThisAttempt = isLive
+      ? sellTipMultiplierForAttempt(attemptNumber)
+      : undefined;
+
     let sellResult;
     try {
       sellResult = await this.executor.sell(
         pos.mint, pos.tokensHeld, exitPriceSol, pos.slippageEstPct, poolCtx, executionMode,
+        { slippageBpsOverride: slippageBpsForThisAttempt, jitoTipMultiplier: tipMultiplierForThisAttempt },
       );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -938,39 +993,35 @@ export class StrategyManager {
         );
         return;
       }
-      // Decide whether this retry is terminal. Two paths:
+      // Decide whether this attempt's failure is terminal. Two paths:
       //   1. Error message matches a known-terminal pattern → close on first hit.
-      //   2. Retry count has exceeded MAX_SELL_RETRIES_BEFORE_TERMINAL →
-      //      structural failure regardless of error string. Safety net.
-      //
-      // Both close via standard closeTrade so net_profit_sol reflects the
-      // realized loss. Without this, the indefinite-retry loop from commit
-      // 6158b1a strands positions forever (audited 2026-05-26: 7zKmeEDS
-      // stuck >9 hours; the original narrow "no tokens in wallet" detection
-      // didn't catch the actual error class hitting these trades).
-      const retries = (pos.sellRetryCount ?? 0) + 1;
+      //   2. This was attempt #MAX_SELL_ATTEMPTS_BEFORE_TERMINAL — schedule is
+      //      exhausted, close as realized loss.
+      // Both paths route through closeTrade so net_profit_sol reflects the
+      // loss. attemptNumber was computed above before the sell call.
       const lowerErr = errMsg.toLowerCase();
       const matchedPattern = TERMINAL_SELL_ERROR_PATTERNS.find(p => lowerErr.includes(p));
-      const exceededRetryCap = retries > MAX_SELL_RETRIES_BEFORE_TERMINAL;
-      const isTerminalSellFailure = !!matchedPattern || exceededRetryCap;
+      const scheduleExhausted = attemptNumber >= MAX_SELL_ATTEMPTS_BEFORE_TERMINAL;
+      const isTerminalSellFailure = !!matchedPattern || scheduleExhausted;
       if (isTerminalSellFailure) {
         logger.error(
           {
             tradeId: pos.tradeId, mint: pos.mint, mode: executionMode,
             exitReason, exitPriceSol, errorMessage: errMsg,
-            retries,
+            attemptNumber,
+            slippageBpsUsed: slippageBpsForThisAttempt,
+            tipMultiplierUsed: tipMultiplierForThisAttempt,
             matchedPattern: matchedPattern ?? null,
-            exceededRetryCap,
+            scheduleExhausted,
           },
           matchedPattern
             ? `Live sell terminal failure (matched "${matchedPattern}") — closing trade as realized loss`
-            : `Live sell terminal failure (exceeded ${MAX_SELL_RETRIES_BEFORE_TERMINAL} retries) — closing trade as realized loss`,
+            : `Live sell terminal failure (exhausted ${MAX_SELL_ATTEMPTS_BEFORE_TERMINAL}-attempt schedule) — closing trade as realized loss`,
         );
         // Pass measuredExitSlippagePct=0 so closeTrade routes through the
-        // live-overhead branch (deducts entry tip + tx fees + ATA rent
-        // from net_profit_sol). exit_price_sol=0 yields a -100% raw return
-        // before overhead — the realized loss when the position can't be
-        // sold.
+        // live-overhead branch (deducts entry tip + tx fees + ATA rent from
+        // net_profit_sol). exit_price_sol=0 yields a -100% raw return before
+        // overhead — the realized loss when the position can't be sold.
         this.tradeLogger.closeTrade({
           tradeId: pos.tradeId,
           entryPriceSol: pos.entryPriceSol,
@@ -988,25 +1039,29 @@ export class StrategyManager {
         return;
       }
 
-      // Retry indefinitely with exponential-ish backoff (2026-05-26). Pre-fix
-      // we gave up after MAX_SELL_RETRIES=5 attempts and marked the trade
-      // failed, which stranded the buy cost (~0.05 SOL) outside of any
-      // strategy's net P&L while the tokens sat in the wallet. Operator
-      // policy: keep retrying up to MAX_SELL_RETRIES_BEFORE_TERMINAL. Tokens
-      // stay on-chain anyway, so eventually the sell lands or the operator
-      // intervenes — either way, the position remains tracked rather than
-      // silently dropped. The `retries` variable was computed above for the
-      // terminal-failure check; reuse it here.
-      const backoffMs = sellRetryBackoffMs(retries);
-      const nextSellAttemptAt = Date.now() + backoffMs;
+      // Non-terminal — schedule the next attempt with NO explicit backoff.
+      // The position-manager's poll cadence (pollIntervalSec) is the effective
+      // floor on retry rate; an explicit backoff on top would only further
+      // slow things down. Slippage + tip escalation per the schedule does the
+      // work of letting retries succeed (vs. waiting for chain conditions to
+      // change). nextSellAttemptAt is intentionally omitted — the next poll
+      // tick will fire the retry as soon as it lands.
+      const nextSlippageBps = sellSlippageBpsForAttempt(attemptNumber + 1);
+      const nextTipMultiplier = sellTipMultiplierForAttempt(attemptNumber + 1);
       logger.error(
         {
           tradeId: pos.tradeId, mint: pos.mint, mode: executionMode,
-          exitReason, exitPriceSol, retries, backoffMs, errorMessage: errMsg,
+          exitReason, exitPriceSol,
+          attemptJustFailed: attemptNumber,
+          slippageBpsUsed: slippageBpsForThisAttempt,
+          tipMultiplierUsed: tipMultiplierForThisAttempt,
+          nextSlippageBps,
+          nextTipMultiplier,
+          errorMessage: errMsg,
         },
-        'Live sell failed — re-arming position for retry with backoff',
+        `Live sell attempt ${attemptNumber}/${MAX_SELL_ATTEMPTS_BEFORE_TERMINAL} failed — next: slip ${nextSlippageBps} bps, tip ${nextTipMultiplier}×`,
       );
-      positionManager.addPosition({ ...pos, sellRetryCount: retries, nextSellAttemptAt });
+      positionManager.addPosition({ ...pos, sellRetryCount: attemptNumber });
       return;
     }
 
