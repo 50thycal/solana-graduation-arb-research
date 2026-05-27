@@ -229,6 +229,10 @@ export class Executor {
     slippageEstPct?: number,
     poolCtx?: PoolContext,
     mode?: ExecutionMode,
+    /** Per-retry overrides for the live sell path. Drives the
+     *  escalating-slippage + tip-bump retry schedule in
+     *  strategy-manager.handleExit (2026-05-27). Ignored in paper/shadow. */
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
     if (effectiveMode === 'paper') {
@@ -241,7 +245,7 @@ export class Executor {
     if (effectiveMode === 'shadow') {
       return this.shadowSell(mint, tokensHeld, exitPriceSol, poolCtx);
     }
-    return this.liveSell(mint, tokensHeld, exitPriceSol, poolCtx, effectiveMode);
+    return this.liveSell(mint, tokensHeld, exitPriceSol, poolCtx, effectiveMode, retryOverrides);
   }
 
   private async shadowBuy(
@@ -534,7 +538,13 @@ export class Executor {
       };
     }
 
-    const fillDelaysMs = [750, 1000, 1500, 2000, 2500];
+    // Tightened from [750, 1000, 1500, 2000, 2500] (7.75s worst case) →
+    // [300, 500, 800, 1200] (2.8s) on 2026-05-27. The Jito bundle response
+    // already tells us the tx landed (submission.landed=true); this poll
+    // is just to MEASURE tokensReceived for the trade row. Most fills show
+    // up on the first 300ms read; the extra retries cover RPC propagation
+    // lag on rare slow reads. Worst-case saves ~5s per buy attempt.
+    const fillDelaysMs = [300, 500, 800, 1200];
     let baseBalAfter = baseBalBefore;
     for (const dly of fillDelaysMs) {
       await this.sleep(dly);
@@ -662,6 +672,7 @@ export class Executor {
     exitPriceSol: number,
     poolCtx: PoolContext | undefined,
     mode: ExecutionMode,
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
   ): Promise<ExecutionResult> {
     if (!this.connection || !this.wallet) {
       return {
@@ -716,7 +727,12 @@ export class Executor {
     const solRes = BigInt(Math.floor(pool.solReserves * 1e9));
     const tokRes = BigInt(Math.floor(pool.tokenReserves * 1e6));
     const expectedSolOut = computeExpectedQuoteOut(solRes, tokRes, effectiveBaseIn);
-    const sellSlipBpsBn = BigInt(SWAP_SLIPPAGE_BPS);
+    // Apply per-attempt overrides from the retry schedule (strategy-manager).
+    // Slippage override widens the bps cap on later retries so the AMM math
+    // actually accepts the fill; tip multiplier bumps the Jito tip to push
+    // the bundle up the priority queue on attempts 2-3.
+    const effectiveSlippageBps = retryOverrides?.slippageBpsOverride ?? SWAP_SLIPPAGE_BPS;
+    const sellSlipBpsBn = BigInt(effectiveSlippageBps);
     const minQuoteOut = (expectedSolOut * (10000n - sellSlipBpsBn)) / 10000n;
 
     if (sellMintProfile.hasTransferHook) {
@@ -733,7 +749,8 @@ export class Executor {
       minQuoteAmountOut: minQuoteOut,
     });
 
-    const jitoTipSol = DEFAULT_JITO_TIP_SOL;
+    const tipMult = retryOverrides?.jitoTipMultiplier ?? 1;
+    const jitoTipSol = DEFAULT_JITO_TIP_SOL * tipMult;
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
 
     const ixs = [
@@ -814,7 +831,8 @@ export class Executor {
       };
     }
 
-    const fillDelaysMs = [750, 1000, 1500, 2000, 2500];
+    // See matching tightening on the buy side. 7.75s → 2.8s worst case.
+    const fillDelaysMs = [300, 500, 800, 1200];
     let walletSolAfter = walletSolBefore;
     for (const dly of fillDelaysMs) {
       await this.sleep(dly);
