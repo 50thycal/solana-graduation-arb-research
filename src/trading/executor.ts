@@ -205,6 +205,11 @@ export class Executor {
     slippageEstPct?: number,
     poolCtx?: PoolContext,
     mode?: ExecutionMode,
+    /** Per-retry overrides for the live buy path. Drives the 3-attempt retry
+     *  schedule in trade-evaluator (2026-05-27): attempts 2-3 bump tip and/or
+     *  widen slippage to break out of Custom 6004 / InsufficientFundsForRent
+     *  failures. Ignored in paper/shadow. */
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
     if (effectiveMode === 'paper') {
@@ -219,7 +224,7 @@ export class Executor {
       return this.shadowBuy(mint, amountSol, expectedPriceSol, poolCtx);
     }
     const actualAmount = effectiveMode === 'live_micro' ? MICRO_TRADE_SIZE_SOL : amountSol;
-    return this.liveBuy(mint, actualAmount, expectedPriceSol, poolCtx, effectiveMode);
+    return this.liveBuy(mint, actualAmount, expectedPriceSol, poolCtx, effectiveMode, retryOverrides);
   }
 
   async sell(
@@ -332,6 +337,7 @@ export class Executor {
     expectedPriceSol: number,
     poolCtx: PoolContext | undefined,
     mode: ExecutionMode,
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
   ): Promise<ExecutionResult> {
     if (!this.connection || !this.wallet) {
       return {
@@ -377,17 +383,22 @@ export class Executor {
     const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
     const walletSolBefore = await this.wallet.getSolBalance(this.connection);
 
-    const jitoTipSol = DEFAULT_JITO_TIP_SOL;
+    // Per-attempt overrides from the buy retry schedule (trade-evaluator).
+    // Attempt 1: default tip + slippage. Attempt 2: 5× tip, same slippage.
+    // Attempt 3: 5× tip, 2× slippage. See BUY_RETRY_* constants there.
+    const tipMult = retryOverrides?.jitoTipMultiplier ?? 1;
+    const effectiveSlippageBps = retryOverrides?.slippageBpsOverride ?? SWAP_SLIPPAGE_BPS;
+    const jitoTipSol = DEFAULT_JITO_TIP_SOL * tipMult;
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
     const solInLamports = BigInt(Math.floor(amountSol * 1e9));
 
     // ── 2. Wallet pre-flight (using upper-bound estimate of outflow) ─────────
-    // maxQuoteInLamports = solInLamports * (1 + SWAP_SLIPPAGE_BPS/10000). We
-    // can compute it without pool state (matches the bound applied to the
-    // actual swap below). Floor is 0.1 SOL post-trade per operator policy
+    // maxQuoteInLamports = solInLamports * (1 + effectiveSlippageBps/10000).
+    // Uses the per-attempt slippage so the wallet check matches what we'll
+    // actually submit. Floor is 0.1 SOL post-trade per operator policy
     // (2026-05-24).
     const WALLET_MIN_FLOOR_LAMPORTS = 100_000_000;
-    const slipBpsForPreflight = BigInt(SWAP_SLIPPAGE_BPS);
+    const slipBpsForPreflight = BigInt(effectiveSlippageBps);
     const estimatedMaxQuoteInLamports =
       (solInLamports * (10000n + slipBpsForPreflight)) / 10000n;
     // ATA rent budget: 1 for our base ATA if new, plus 2 for SDK-managed
@@ -451,7 +462,9 @@ export class Executor {
       ? await getTransferFeeForRawAmount(this.connection, mintPk, baseTokenProgram, expectedBaseOutRaw)
       : 0n;
     const feeAdjustedExpectedBaseOut = expectedBaseOutRaw - transferFeeOnExpected;
-    const slipBpsBn = BigInt(SWAP_SLIPPAGE_BPS);
+    // Use effectiveSlippageBps (computed above from retry overrides) instead of
+    // raw SWAP_SLIPPAGE_BPS — lets per-attempt schedule widen tolerance.
+    const slipBpsBn = BigInt(effectiveSlippageBps);
     const minBaseOutRaw = (feeAdjustedExpectedBaseOut * (10000n - slipBpsBn)) / 10000n;
     const maxQuoteInLamports = (solInLamports * (10000n + slipBpsBn)) / 10000n;
 

@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { makeLogger } from '../utils/logger';
-import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourInUtcWindow } from './config';
+import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourInUtcWindow, SWAP_SLIPPAGE_BPS } from './config';
 import { runFilterPipeline } from './filter-pipeline';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
@@ -13,6 +13,37 @@ import { resolvePoolFromVault } from './pool-resolver';
 import type { Wallet } from './wallet';
 
 const logger = makeLogger('trade-evaluator');
+
+/** Live-buy retry schedule (2026-05-27).
+ *
+ *  Pre-fix: single attempt — any failure (Custom 6004 / InsufficientFundsForRent)
+ *  immediately marked the trade failed. Observed ~20 buy failures in last week
+ *  on live_micro: ~60% rent issues, ~40% slippage (Custom 6004 from price drift
+ *  during tx_land). Most could be salvaged with a retry at higher tip and/or
+ *  wider slippage.
+ *
+ *  New schedule — 3 attempts max (entry timing is critical, can't burn too
+ *  long retrying or we enter late on a moving token):
+ *
+ *    Attempt 1: SWAP_SLIPPAGE_BPS, 1× tip — normal entry (most trades succeed)
+ *    Attempt 2: SWAP_SLIPPAGE_BPS, 5× tip — bump Jito priority for faster land
+ *    Attempt 3: 2× SWAP_SLIPPAGE_BPS (capped at 2000 bps), 5× tip — widen
+ *               slippage room; last shot before terminal fail
+ *
+ *  After attempt 3 fails, mark trade as failed with buy_failed_after_3_attempts.
+ *  The buy retry is shorter than the sell retry (3 vs 9) because late entries
+ *  on fast-moving graduations are worse than no entry — we can't widen slippage
+ *  too far without making bad entries. */
+const MAX_BUY_ATTEMPTS = 3;
+const BUY_MAX_SLIPPAGE_BPS = 2000;  // 20% absolute cap on attempt-3 slippage
+
+function buySlippageBpsForAttempt(attemptNumber: number): number {
+  if (attemptNumber <= 2) return SWAP_SLIPPAGE_BPS;
+  return Math.min(SWAP_SLIPPAGE_BPS * 2, BUY_MAX_SLIPPAGE_BPS);
+}
+function buyTipMultiplierForAttempt(attemptNumber: number): number {
+  return attemptNumber === 1 ? 1 : 5;
+}
 
 export class TradeEvaluator {
   private strategyId: string;
@@ -406,34 +437,70 @@ export class TradeEvaluator {
       ? { poolAddress: ctx.poolAddress, baseVault: ctx.baseVault, quoteVault: ctx.quoteVault }
       : undefined;
 
-    let entryResult;
-    try {
-      entryResult = await this.executor.buy(
-        ctx.mint, cfg.tradeSizeSol, priceT30, slippageEstPct, poolCtx, executionMode,
-      );
-    } catch (err) {
-      // Log the full stack — buy_exception was swallowing the line that threw
-      // (e.g., "Non-base58 character" from the PumpSwap SDK on a malformed
-      // pool account) which made root-cause diagnosis impossible from
-      // bot-status alone. Stack lands in diagnose.json → recent_errors.
-      const message = err instanceof Error ? err.message : String(err);
-      const stack = err instanceof Error ? err.stack : undefined;
-      logger.error(
-        { tradeId, mint: ctx.mint, mode: executionMode, stack },
-        'Buy execution threw: %s', message,
-      );
-      this.tradeLogger.failTrade(tradeId, `buy_exception: ${message}`);
-      return;
+    // Live-buy retry loop (2026-05-27). Paper/shadow don't iterate — they
+    // execute once. For live, run up to MAX_BUY_ATTEMPTS with the per-attempt
+    // slippage/tip schedule above. On each failure, log + try the next
+    // attempt; only fail the trade row if all attempts exhausted.
+    const isLive = executionMode === 'live_micro' || executionMode === 'live_full';
+    const attemptCap = isLive ? MAX_BUY_ATTEMPTS : 1;
+    let entryResult: Awaited<ReturnType<typeof this.executor.buy>> | undefined;
+    let lastErrMsg = 'unknown';
+    let attemptException: { message: string; stack?: string } | null = null;
+    for (let attempt = 1; attempt <= attemptCap; attempt++) {
+      const slippageBpsOverride = isLive ? buySlippageBpsForAttempt(attempt) : undefined;
+      const tipMult = isLive ? buyTipMultiplierForAttempt(attempt) : undefined;
+      try {
+        entryResult = await this.executor.buy(
+          ctx.mint, cfg.tradeSizeSol, priceT30, slippageEstPct, poolCtx, executionMode,
+          isLive ? { slippageBpsOverride, jitoTipMultiplier: tipMult } : undefined,
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        const stack = err instanceof Error ? err.stack : undefined;
+        attemptException = { message, stack };
+        lastErrMsg = message;
+        logger.error(
+          { tradeId, mint: ctx.mint, mode: executionMode, attempt, stack },
+          'Buy execution threw: %s', message,
+        );
+        // Throw is treated as a single-attempt terminal — don't retry an
+        // exception (could be a code bug, malformed pool, etc).
+        break;
+      }
+      if (entryResult.success) break;
+      lastErrMsg = entryResult.errorMessage ?? 'unknown';
+      if (isLive && attempt < attemptCap) {
+        const nextSlip = buySlippageBpsForAttempt(attempt + 1);
+        const nextTip = buyTipMultiplierForAttempt(attempt + 1);
+        logger.warn(
+          {
+            tradeId, mint: ctx.mint, attempt, attemptCap,
+            slippageBpsUsed: slippageBpsOverride,
+            tipMultiplierUsed: tipMult,
+            nextSlippageBps: nextSlip,
+            nextTipMultiplier: nextTip,
+            errorMessage: lastErrMsg,
+          },
+          `Live buy attempt ${attempt}/${attemptCap} failed — retrying with slip ${nextSlip} bps, tip ${nextTip}×`,
+        );
+      }
     }
 
-    if (!entryResult.success) {
-      this.tradeLogger.failTrade(tradeId, `buy_failed: ${entryResult.errorMessage ?? 'unknown'}`, {
-        txSignature: entryResult.txSignature,
-        txLandMs: entryResult.txLandMs,
-        jitoTipSol: entryResult.jitoTipSol,
-        failurePath: entryResult.failurePath,
-        mintExtensionFlags: entryResult.mintExtensionFlags ?? null,
-        failureContext: entryResult.failureContext,
+    if (attemptException) {
+      this.tradeLogger.failTrade(tradeId, `buy_exception: ${attemptException.message}`);
+      return;
+    }
+    if (!entryResult || !entryResult.success) {
+      const failReason = isLive
+        ? `buy_failed_after_${attemptCap}_attempts: ${lastErrMsg}`
+        : `buy_failed: ${lastErrMsg}`;
+      this.tradeLogger.failTrade(tradeId, failReason, {
+        txSignature: entryResult?.txSignature,
+        txLandMs: entryResult?.txLandMs,
+        jitoTipSol: entryResult?.jitoTipSol,
+        failurePath: entryResult?.failurePath,
+        mintExtensionFlags: entryResult?.mintExtensionFlags ?? null,
+        failureContext: entryResult?.failureContext,
       });
       return;
     }
