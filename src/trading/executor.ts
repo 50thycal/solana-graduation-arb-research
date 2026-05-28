@@ -212,7 +212,7 @@ export class Executor {
      *  schedule in trade-evaluator (2026-05-27): attempts 2-3 bump tip and/or
      *  widen slippage to break out of Custom 6004 / InsufficientFundsForRent
      *  failures. Ignored in paper/shadow. */
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
     if (effectiveMode === 'paper') {
@@ -240,7 +240,7 @@ export class Executor {
     /** Per-retry overrides for the live sell path. Drives the
      *  escalating-slippage + tip-bump retry schedule in
      *  strategy-manager.handleExit (2026-05-27). Ignored in paper/shadow. */
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
     if (effectiveMode === 'paper') {
@@ -340,7 +340,7 @@ export class Executor {
     expectedPriceSol: number,
     poolCtx: PoolContext | undefined,
     mode: ExecutionMode,
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
   ): Promise<ExecutionResult> {
     if (!this.connection || !this.wallet) {
       return {
@@ -725,7 +725,7 @@ export class Executor {
     exitPriceSol: number,
     poolCtx: PoolContext | undefined,
     mode: ExecutionMode,
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
   ): Promise<ExecutionResult> {
     if (!this.connection || !this.wallet) {
       return {
@@ -811,16 +811,23 @@ export class Executor {
     // the base ATA — so we leave ~0.00204 SOL of rent locked in every closed
     // mint's ATA. Across many trades this adds up (~0.4 SOL across 200 trades
     // historically). Append a CloseAccount ix to our sell tx when:
-    //   1. We're selling 100% of the wallet's tokens for this mint
+    //   1. This is the FIRST attempt (attemptNumber === 1 or unset). Skipping
+    //      on retries protects against the edge case where the close ix itself
+    //      causes a tx revert — without this gate, every retry would re-add
+    //      the close ix and the sell would loop forever in the same failure.
+    //      Sacrifices the rent refund on retried sells but preserves the
+    //      escalating-tip/slippage retry's ability to land cleanly.
+    //   2. We're selling 100% of the wallet's tokens for this mint
     //      (baseInRaw === actualBaseRaw — guaranteed by our sell-cap logic
     //      from commit 6158b1a which caps at the lesser of pos.tokensHeld and
     //      actualBaseRaw; if cap fired due to tokensHeld < actualBaseRaw,
     //      there's leftover from another strategy — don't close)
-    //   2. NOT a Token-2022 mint — TransferFee on Token-2022 can leave dust
+    //   3. NOT a Token-2022 mint — TransferFee on Token-2022 can leave dust
     //      that would make CloseAccount revert (entire tx reverts atomically)
     // CloseAccount is ~3,500 CU and refunds the rent to the user wallet.
+    const sellAttempt = retryOverrides?.attemptNumber ?? 1;
     const sellingAll = baseInRaw === BigInt(actualBaseRaw);
-    const canCloseBaseAta = sellingAll && !sellMintProfile.isToken2022;
+    const canCloseBaseAta = sellAttempt === 1 && sellingAll && !sellMintProfile.isToken2022;
     const closeBaseAtaIxs: TransactionInstruction[] = [];
     if (canCloseBaseAta) {
       const baseAta = getAssociatedTokenAddress(mintPk, walletPk, sellMintProfile.tokenProgram);

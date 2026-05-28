@@ -452,7 +452,7 @@ export class TradeEvaluator {
       try {
         entryResult = await this.executor.buy(
           ctx.mint, cfg.tradeSizeSol, priceT30, slippageEstPct, poolCtx, executionMode,
-          isLive ? { slippageBpsOverride, jitoTipMultiplier: tipMult } : undefined,
+          isLive ? { slippageBpsOverride, jitoTipMultiplier: tipMult, attemptNumber: attempt } : undefined,
         );
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

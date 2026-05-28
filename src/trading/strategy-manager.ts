@@ -926,7 +926,11 @@ export class StrategyManager {
     try {
       sellResult = await this.executor.sell(
         pos.mint, pos.tokensHeld, exitPriceSol, pos.slippageEstPct, poolCtx, executionMode,
-        { slippageBpsOverride: slippageBpsForThisAttempt, jitoTipMultiplier: tipMultiplierForThisAttempt },
+        {
+          slippageBpsOverride: slippageBpsForThisAttempt,
+          jitoTipMultiplier: tipMultiplierForThisAttempt,
+          attemptNumber,
+        },
       );
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
