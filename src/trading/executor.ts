@@ -10,12 +10,13 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 import type { ExecutionMode } from './config';
 import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL, SWAP_SLIPPAGE_BPS } from './config';
-import { Wallet, WSOL_MINT, getAssociatedTokenAddress } from './wallet';
+import { Wallet, WSOL_MINT, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from './wallet';
 import {
   buildBuyInstructions,
   buildSellInstructions,
   computeExpectedBaseOut,
   computeExpectedQuoteOut,
+  getSwapState,
 } from './pumpswap-swap';
 import { buildJitoTipIx, submitBundle } from './jito';
 import {
@@ -23,6 +24,8 @@ import {
   buildIdempotentAtaCreateIx,
   getTransferFeeForRawAmount,
 } from './token-2022';
+import { coinCreatorVaultAuthorityPda } from '@pump-fun/pump-swap-sdk';
+import { createCloseAccountInstruction } from '@solana/spl-token';
 
 const logger = makeLogger('trading-executor');
 
@@ -205,6 +208,11 @@ export class Executor {
     slippageEstPct?: number,
     poolCtx?: PoolContext,
     mode?: ExecutionMode,
+    /** Per-retry overrides for the live buy path. Drives the 3-attempt retry
+     *  schedule in trade-evaluator (2026-05-27): attempts 2-3 bump tip and/or
+     *  widen slippage to break out of Custom 6004 / InsufficientFundsForRent
+     *  failures. Ignored in paper/shadow. */
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
     if (effectiveMode === 'paper') {
@@ -219,7 +227,7 @@ export class Executor {
       return this.shadowBuy(mint, amountSol, expectedPriceSol, poolCtx);
     }
     const actualAmount = effectiveMode === 'live_micro' ? MICRO_TRADE_SIZE_SOL : amountSol;
-    return this.liveBuy(mint, actualAmount, expectedPriceSol, poolCtx, effectiveMode);
+    return this.liveBuy(mint, actualAmount, expectedPriceSol, poolCtx, effectiveMode, retryOverrides);
   }
 
   async sell(
@@ -232,7 +240,7 @@ export class Executor {
     /** Per-retry overrides for the live sell path. Drives the
      *  escalating-slippage + tip-bump retry schedule in
      *  strategy-manager.handleExit (2026-05-27). Ignored in paper/shadow. */
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
     if (effectiveMode === 'paper') {
@@ -332,6 +340,7 @@ export class Executor {
     expectedPriceSol: number,
     poolCtx: PoolContext | undefined,
     mode: ExecutionMode,
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
   ): Promise<ExecutionResult> {
     if (!this.connection || !this.wallet) {
       return {
@@ -377,17 +386,22 @@ export class Executor {
     const baseBalBefore = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
     const walletSolBefore = await this.wallet.getSolBalance(this.connection);
 
-    const jitoTipSol = DEFAULT_JITO_TIP_SOL;
+    // Per-attempt overrides from the buy retry schedule (trade-evaluator).
+    // Attempt 1: default tip + slippage. Attempt 2: 5× tip, same slippage.
+    // Attempt 3: 5× tip, 2× slippage. See BUY_RETRY_* constants there.
+    const tipMult = retryOverrides?.jitoTipMultiplier ?? 1;
+    const effectiveSlippageBps = retryOverrides?.slippageBpsOverride ?? SWAP_SLIPPAGE_BPS;
+    const jitoTipSol = DEFAULT_JITO_TIP_SOL * tipMult;
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
     const solInLamports = BigInt(Math.floor(amountSol * 1e9));
 
     // ── 2. Wallet pre-flight (using upper-bound estimate of outflow) ─────────
-    // maxQuoteInLamports = solInLamports * (1 + SWAP_SLIPPAGE_BPS/10000). We
-    // can compute it without pool state (matches the bound applied to the
-    // actual swap below). Floor is 0.1 SOL post-trade per operator policy
+    // maxQuoteInLamports = solInLamports * (1 + effectiveSlippageBps/10000).
+    // Uses the per-attempt slippage so the wallet check matches what we'll
+    // actually submit. Floor is 0.1 SOL post-trade per operator policy
     // (2026-05-24).
     const WALLET_MIN_FLOOR_LAMPORTS = 100_000_000;
-    const slipBpsForPreflight = BigInt(SWAP_SLIPPAGE_BPS);
+    const slipBpsForPreflight = BigInt(effectiveSlippageBps);
     const estimatedMaxQuoteInLamports =
       (solInLamports * (10000n + slipBpsForPreflight)) / 10000n;
     // ATA rent budget: 1 for our base ATA if new, plus 2 for SDK-managed
@@ -451,20 +465,59 @@ export class Executor {
       ? await getTransferFeeForRawAmount(this.connection, mintPk, baseTokenProgram, expectedBaseOutRaw)
       : 0n;
     const feeAdjustedExpectedBaseOut = expectedBaseOutRaw - transferFeeOnExpected;
-    const slipBpsBn = BigInt(SWAP_SLIPPAGE_BPS);
+    // Use effectiveSlippageBps (computed above from retry overrides) instead of
+    // raw SWAP_SLIPPAGE_BPS — lets per-attempt schedule widen tolerance.
+    const slipBpsBn = BigInt(effectiveSlippageBps);
     const minBaseOutRaw = (feeAdjustedExpectedBaseOut * (10000n - slipBpsBn)) / 10000n;
     const maxQuoteInLamports = (solInLamports * (10000n + slipBpsBn)) / 10000n;
+
+    // ── 4. Fetch SDK swap state ───────────────────────────────────────────────
+    // We need pool.coinCreator to derive the coinCreatorVaultAta (the WSOL ATA
+    // owned by the per-creator vault authority PDA). The SDK's buy instruction
+    // references this ATA as a writable account but does NOT pre-create it —
+    // it relies on the on-chain PumpSwap program to create it inline using
+    // payer (us) lamports. For brand-new coin creators, this inline-create can
+    // fail with InsufficientFundsForRent (the dominant buy failure class in
+    // recent data, 12 of 20 failures). Pre-creating it ourselves with an
+    // explicit idempotent ix funds the rent properly and bypasses the failure.
+    // Caches the swap state for buildBuyInstructions below to avoid a second
+    // getMultipleAccountsInfo. 2026-05-28.
+    const swapState = await getSwapState(this.connection, poolPk, walletPk);
+    const coinCreator: PublicKey = swapState.pool.coinCreator;
+    const coinCreatorVaultAuthority = coinCreatorVaultAuthorityPda(coinCreator);
+    const coinCreatorVaultAta = getAssociatedTokenAddress(
+      WSOL_MINT, coinCreatorVaultAuthority, TOKEN_PROGRAM_ID,
+    );
+    let coinCreatorVaultAtaExists = false;
+    if (!coinCreator.equals(PublicKey.default)) {
+      const info = await this.connection.getAccountInfo(coinCreatorVaultAta, 'confirmed').catch(() => null);
+      coinCreatorVaultAtaExists = !!info;
+    }
 
     const swapIxs = await buildBuyInstructions(this.connection, {
       pool: poolPk,
       wallet: walletPk,
       baseAmountOut: minBaseOutRaw,
       maxQuoteAmountIn: maxQuoteInLamports,
+      swapState,  // reuse the state we just fetched
     });
 
-    const ataPreCreateIxs: TransactionInstruction[] = baseAtaExistsBefore
-      ? []
-      : [buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram)];
+    const ataPreCreateIxs: TransactionInstruction[] = [];
+    if (!baseAtaExistsBefore) {
+      ataPreCreateIxs.push(
+        buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram),
+      );
+    }
+    // Pre-create the coinCreatorVaultAta if missing AND the pool has a non-
+    // default coinCreator. Skip when coinCreator is PublicKey.default (some
+    // pools have no creator — the SDK skips the creator fee path in that case).
+    if (!coinCreator.equals(PublicKey.default) && !coinCreatorVaultAtaExists) {
+      ataPreCreateIxs.push(
+        buildIdempotentAtaCreateIx(
+          walletPk, coinCreatorVaultAta, coinCreatorVaultAuthority, WSOL_MINT, TOKEN_PROGRAM_ID,
+        ),
+      );
+    }
 
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
@@ -672,7 +725,7 @@ export class Executor {
     exitPriceSol: number,
     poolCtx: PoolContext | undefined,
     mode: ExecutionMode,
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
   ): Promise<ExecutionResult> {
     if (!this.connection || !this.wallet) {
       return {
@@ -753,11 +806,46 @@ export class Executor {
     const jitoTipSol = DEFAULT_JITO_TIP_SOL * tipMult;
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
 
+    // Optional close-base-ATA at end of sell (2026-05-28). The SDK closes the
+    // user's WSOL session ATA at tx end (refunding rent) but does NOT close
+    // the base ATA — so we leave ~0.00204 SOL of rent locked in every closed
+    // mint's ATA. Across many trades this adds up (~0.4 SOL across 200 trades
+    // historically). Append a CloseAccount ix to our sell tx when:
+    //   1. This is the FIRST attempt (attemptNumber === 1 or unset). Skipping
+    //      on retries protects against the edge case where the close ix itself
+    //      causes a tx revert — without this gate, every retry would re-add
+    //      the close ix and the sell would loop forever in the same failure.
+    //      Sacrifices the rent refund on retried sells but preserves the
+    //      escalating-tip/slippage retry's ability to land cleanly.
+    //   2. We're selling 100% of the wallet's tokens for this mint
+    //      (baseInRaw === actualBaseRaw — guaranteed by our sell-cap logic
+    //      from commit 6158b1a which caps at the lesser of pos.tokensHeld and
+    //      actualBaseRaw; if cap fired due to tokensHeld < actualBaseRaw,
+    //      there's leftover from another strategy — don't close)
+    //   3. NOT a Token-2022 mint — TransferFee on Token-2022 can leave dust
+    //      that would make CloseAccount revert (entire tx reverts atomically)
+    // CloseAccount is ~3,500 CU and refunds the rent to the user wallet.
+    const sellAttempt = retryOverrides?.attemptNumber ?? 1;
+    const sellingAll = baseInRaw === BigInt(actualBaseRaw);
+    const canCloseBaseAta = sellAttempt === 1 && sellingAll && !sellMintProfile.isToken2022;
+    const closeBaseAtaIxs: TransactionInstruction[] = [];
+    if (canCloseBaseAta) {
+      const baseAta = getAssociatedTokenAddress(mintPk, walletPk, sellMintProfile.tokenProgram);
+      closeBaseAtaIxs.push(createCloseAccountInstruction(
+        baseAta,    // account to close
+        walletPk,   // destination — rent refunded to user wallet
+        walletPk,   // owner
+        [],         // multisig signers (none)
+        sellMintProfile.tokenProgram,
+      ));
+    }
+
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
       ...swapIxs,
       buildJitoTipIx(walletPk, jitoTipLamports),
+      ...closeBaseAtaIxs,
     ];
 
     const walletSolBefore = await this.wallet.getSolBalance(this.connection);

@@ -49,6 +49,28 @@ function getOnlineSdk(connection: Connection): OnlinePumpAmmSdk {
   return onlineSdkCache.sdk;
 }
 
+/** Minimal SwapState shape we need outside the SDK. The full SDK type
+ *  (SwapSolanaState) carries account info, mint data, pool reserves, etc.
+ *  — we only need pool.coinCreator + the token program for the WSOL ATA
+ *  derivation done by callers (executor.ts pre-creates the coinCreatorVaultAta
+ *  to prevent InsufficientFundsForRent failures when the SDK's on-chain
+ *  program tries to create it inline during the swap). 2026-05-28. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type SwapStateOpaque = any;
+
+/** Fetch the SDK's swap state (pool data, user ATAs, reserves) in a single
+ *  getMultipleAccountsInfo RPC call. Exposed so callers can read
+ *  state.pool.coinCreator BEFORE building swap instructions, then pass the
+ *  same state into buildBuyInstructions / buildSellInstructions to avoid
+ *  re-fetching. */
+export async function getSwapState(
+  connection: Connection,
+  pool: PublicKey,
+  wallet: PublicKey,
+): Promise<SwapStateOpaque> {
+  return getOnlineSdk(connection).swapSolanaState(pool, wallet);
+}
+
 export interface BuildBuyParams {
   pool: PublicKey;
   wallet: PublicKey;
@@ -56,6 +78,10 @@ export interface BuildBuyParams {
   baseAmountOut: bigint;
   /** Max quote (lamports) we'll spend — slippage guardrail. */
   maxQuoteAmountIn: bigint;
+  /** Optional pre-fetched swap state (from getSwapState). When provided, skips
+   *  the internal RPC fetch — saves one getMultipleAccountsInfo round-trip
+   *  when the caller already needs the state for other purposes. */
+  swapState?: SwapStateOpaque;
 }
 
 export interface BuildSellParams {
@@ -65,6 +91,7 @@ export interface BuildSellParams {
   baseAmountIn: bigint;
   /** Min quote (lamports) we'll accept — slippage guardrail. */
   minQuoteAmountOut: bigint;
+  swapState?: SwapStateOpaque;
 }
 
 /**
@@ -76,8 +103,7 @@ export async function buildBuyInstructions(
   connection: Connection,
   p: BuildBuyParams,
 ): Promise<TransactionInstruction[]> {
-  const online = getOnlineSdk(connection);
-  const swapState = await online.swapSolanaState(p.pool, p.wallet);
+  const swapState = p.swapState ?? await getSwapState(connection, p.pool, p.wallet);
   return offlineSdk.buyInstructions(
     swapState,
     new BN(p.baseAmountOut.toString()),
@@ -90,8 +116,7 @@ export async function buildSellInstructions(
   connection: Connection,
   p: BuildSellParams,
 ): Promise<TransactionInstruction[]> {
-  const online = getOnlineSdk(connection);
-  const swapState = await online.swapSolanaState(p.pool, p.wallet);
+  const swapState = p.swapState ?? await getSwapState(connection, p.pool, p.wallet);
   return offlineSdk.sellInstructions(
     swapState,
     new BN(p.baseAmountIn.toString()),
