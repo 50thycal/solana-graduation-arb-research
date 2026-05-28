@@ -10,12 +10,13 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 import type { ExecutionMode } from './config';
 import { DEFAULT_JITO_TIP_SOL, MICRO_TRADE_SIZE_SOL, SWAP_SLIPPAGE_BPS } from './config';
-import { Wallet, WSOL_MINT, getAssociatedTokenAddress } from './wallet';
+import { Wallet, WSOL_MINT, getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from './wallet';
 import {
   buildBuyInstructions,
   buildSellInstructions,
   computeExpectedBaseOut,
   computeExpectedQuoteOut,
+  getSwapState,
 } from './pumpswap-swap';
 import { buildJitoTipIx, submitBundle } from './jito';
 import {
@@ -23,6 +24,8 @@ import {
   buildIdempotentAtaCreateIx,
   getTransferFeeForRawAmount,
 } from './token-2022';
+import { coinCreatorVaultAuthorityPda } from '@pump-fun/pump-swap-sdk';
+import { createCloseAccountInstruction } from '@solana/spl-token';
 
 const logger = makeLogger('trading-executor');
 
@@ -468,16 +471,53 @@ export class Executor {
     const minBaseOutRaw = (feeAdjustedExpectedBaseOut * (10000n - slipBpsBn)) / 10000n;
     const maxQuoteInLamports = (solInLamports * (10000n + slipBpsBn)) / 10000n;
 
+    // ── 4. Fetch SDK swap state ───────────────────────────────────────────────
+    // We need pool.coinCreator to derive the coinCreatorVaultAta (the WSOL ATA
+    // owned by the per-creator vault authority PDA). The SDK's buy instruction
+    // references this ATA as a writable account but does NOT pre-create it —
+    // it relies on the on-chain PumpSwap program to create it inline using
+    // payer (us) lamports. For brand-new coin creators, this inline-create can
+    // fail with InsufficientFundsForRent (the dominant buy failure class in
+    // recent data, 12 of 20 failures). Pre-creating it ourselves with an
+    // explicit idempotent ix funds the rent properly and bypasses the failure.
+    // Caches the swap state for buildBuyInstructions below to avoid a second
+    // getMultipleAccountsInfo. 2026-05-28.
+    const swapState = await getSwapState(this.connection, poolPk, walletPk);
+    const coinCreator: PublicKey = swapState.pool.coinCreator;
+    const coinCreatorVaultAuthority = coinCreatorVaultAuthorityPda(coinCreator);
+    const coinCreatorVaultAta = getAssociatedTokenAddress(
+      WSOL_MINT, coinCreatorVaultAuthority, TOKEN_PROGRAM_ID,
+    );
+    let coinCreatorVaultAtaExists = false;
+    if (!coinCreator.equals(PublicKey.default)) {
+      const info = await this.connection.getAccountInfo(coinCreatorVaultAta, 'confirmed').catch(() => null);
+      coinCreatorVaultAtaExists = !!info;
+    }
+
     const swapIxs = await buildBuyInstructions(this.connection, {
       pool: poolPk,
       wallet: walletPk,
       baseAmountOut: minBaseOutRaw,
       maxQuoteAmountIn: maxQuoteInLamports,
+      swapState,  // reuse the state we just fetched
     });
 
-    const ataPreCreateIxs: TransactionInstruction[] = baseAtaExistsBefore
-      ? []
-      : [buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram)];
+    const ataPreCreateIxs: TransactionInstruction[] = [];
+    if (!baseAtaExistsBefore) {
+      ataPreCreateIxs.push(
+        buildIdempotentAtaCreateIx(walletPk, baseAta, walletPk, mintPk, baseTokenProgram),
+      );
+    }
+    // Pre-create the coinCreatorVaultAta if missing AND the pool has a non-
+    // default coinCreator. Skip when coinCreator is PublicKey.default (some
+    // pools have no creator — the SDK skips the creator fee path in that case).
+    if (!coinCreator.equals(PublicKey.default) && !coinCreatorVaultAtaExists) {
+      ataPreCreateIxs.push(
+        buildIdempotentAtaCreateIx(
+          walletPk, coinCreatorVaultAta, coinCreatorVaultAuthority, WSOL_MINT, TOKEN_PROGRAM_ID,
+        ),
+      );
+    }
 
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
@@ -766,11 +806,39 @@ export class Executor {
     const jitoTipSol = DEFAULT_JITO_TIP_SOL * tipMult;
     const jitoTipLamports = Math.floor(jitoTipSol * 1e9);
 
+    // Optional close-base-ATA at end of sell (2026-05-28). The SDK closes the
+    // user's WSOL session ATA at tx end (refunding rent) but does NOT close
+    // the base ATA — so we leave ~0.00204 SOL of rent locked in every closed
+    // mint's ATA. Across many trades this adds up (~0.4 SOL across 200 trades
+    // historically). Append a CloseAccount ix to our sell tx when:
+    //   1. We're selling 100% of the wallet's tokens for this mint
+    //      (baseInRaw === actualBaseRaw — guaranteed by our sell-cap logic
+    //      from commit 6158b1a which caps at the lesser of pos.tokensHeld and
+    //      actualBaseRaw; if cap fired due to tokensHeld < actualBaseRaw,
+    //      there's leftover from another strategy — don't close)
+    //   2. NOT a Token-2022 mint — TransferFee on Token-2022 can leave dust
+    //      that would make CloseAccount revert (entire tx reverts atomically)
+    // CloseAccount is ~3,500 CU and refunds the rent to the user wallet.
+    const sellingAll = baseInRaw === BigInt(actualBaseRaw);
+    const canCloseBaseAta = sellingAll && !sellMintProfile.isToken2022;
+    const closeBaseAtaIxs: TransactionInstruction[] = [];
+    if (canCloseBaseAta) {
+      const baseAta = getAssociatedTokenAddress(mintPk, walletPk, sellMintProfile.tokenProgram);
+      closeBaseAtaIxs.push(createCloseAccountInstruction(
+        baseAta,    // account to close
+        walletPk,   // destination — rent refunded to user wallet
+        walletPk,   // owner
+        [],         // multisig signers (none)
+        sellMintProfile.tokenProgram,
+      ));
+    }
+
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
       ...swapIxs,
       buildJitoTipIx(walletPk, jitoTipLamports),
+      ...closeBaseAtaIxs,
     ];
 
     const walletSolBefore = await this.wallet.getSolBalance(this.connection);

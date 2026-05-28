@@ -440,8 +440,8 @@ export class TradeEvaluator {
     // Live-buy retry loop (2026-05-27). Paper/shadow don't iterate — they
     // execute once. For live, run up to MAX_BUY_ATTEMPTS with the per-attempt
     // slippage/tip schedule above. On each failure, log + try the next
-    // attempt; only fail the trade row if all attempts exhausted.
-    const isLive = executionMode === 'live_micro' || executionMode === 'live_full';
+    // attempt; only fail the trade row if all attempts exhausted. Reuses the
+    // `isLive` flag computed earlier in the entry-preflight block.
     const attemptCap = isLive ? MAX_BUY_ATTEMPTS : 1;
     let entryResult: Awaited<ReturnType<typeof this.executor.buy>> | undefined;
     let lastErrMsg = 'unknown';
