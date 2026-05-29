@@ -645,7 +645,7 @@ export class Executor {
     // which were created without parsing inner instructions, so they're
     // captured in the pre-flight buffer (SDK_MAX_INLINE_ATAS) rather than
     // here in the post-trade overhead.
-    const solSpentLamports = txDeltas ? txDeltas.solSpentLamports : walletSolDeltaLamports;
+    const solSpentLamports = txDeltas ? -txDeltas.feePayerDeltaLamports : walletSolDeltaLamports;
     const swapCostLamports = solSpentLamports - overheadLamports;
     const swapCostSol = swapCostLamports / 1e9;
     if (tokensReceived <= 0 || swapCostLamports <= 0) {
@@ -955,8 +955,36 @@ export class Executor {
       walletSolAfter = await this.wallet.getSolBalance(this.connection);
       if (walletSolAfter > walletSolBefore) break;
     }
+
+    // ── Per-strategy proceeds attribution ──────────────────────────────────
+    // Same race as the buy side. The full-wallet delta (walletSolAfter -
+    // walletSolBefore) is CORRUPTED when another live strategy buys or sells
+    // ANYTHING between our two reads: a concurrent sell credits SOL → our
+    // proceeds inflate (live books a phantom gain, e.g. 3SxG +131% vs shadow
+    // +18%); a concurrent buy debits SOL → our proceeds shrink (phantom loss).
+    // That is exactly what blows up the live-vs-shadow gap on graduations where
+    // the v44 cohort runs two live twins on the same mint at the same instant.
+    //
+    // The confirmed sell tx's own fee-payer delta (postBalances[0] -
+    // preBalances[0]) is scoped to THIS tx alone. It is the net SOL credited to
+    // our account (gross quote out − tip − fee + any rent refunded); adding back
+    // tip + fee reconstructs the gross swap output exactly as the wallet-delta
+    // path did, but immune to the race. Fall back to the wallet delta only when
+    // RPC can't return the tx meta.
+    const txDeltas = submission.txSignature
+      ? await this.fetchTxBalanceDeltas(submission.txSignature, walletPk.toBase58(), mint)
+      : null;
+    if (!txDeltas) {
+      logger.warn(
+        { mint, mode, txSignature: submission.txSignature },
+        'Live sell: tx-meta deltas unavailable — using wallet-balance delta (proceeds may be off if a concurrent trade raced)',
+      );
+    }
+    const netAccountCreditLamports = txDeltas
+      ? txDeltas.feePayerDeltaLamports
+      : walletSolAfter - walletSolBefore;
     const solReceivedLamports =
-      walletSolAfter - walletSolBefore + jitoTipLamports + TX_FEE_LAMPORTS;
+      netAccountCreditLamports + jitoTipLamports + TX_FEE_LAMPORTS;
     const solReceived = solReceivedLamports / 1e9;
     // baseInRaw was capped at min(tokensHeld*1e6, actualBaseRaw). Use the cap
     // value (in human units) for effective-price calc, not tokensHeld blindly —
@@ -1041,18 +1069,20 @@ export class Executor {
 
   /** Read THIS transaction's own balance deltas from confirmed tx meta —
    *  scoped to a single tx, so it is immune to the full-wallet race that
-   *  corrupts snapshot deltas when a second strategy buys the same mint
-   *  concurrently (the v44 mis-attribution bug, 2026-05-29).
+   *  corrupts snapshot deltas when another strategy buys or sells the same
+   *  (or any) mint concurrently (the v44 mis-attribution bug, 2026-05-29).
    *
    *  Returns the raw token amount credited to our base ATA by this swap and
-   *  the lamports debited from our fee-payer account (swap cost + jito tip +
-   *  tx fee + any rent for ATAs that persisted). Null when the tx meta can't
-   *  be fetched — caller falls back to the wallet-balance delta. */
+   *  the SIGNED lamport change to our fee-payer account (postBalances[0] -
+   *  preBalances[0]): negative on a buy (we paid swap cost + tip + fee +
+   *  persisted ATA rent), positive on a sell (we received the quote SOL minus
+   *  tip + fee). Null when the tx meta can't be fetched — caller falls back to
+   *  the wallet-balance delta. */
   private async fetchTxBalanceDeltas(
     txSignature: string,
     ownerB58: string,
     mintB58: string,
-  ): Promise<{ tokensReceivedRaw: number; solSpentLamports: number } | null> {
+  ): Promise<{ tokensReceivedRaw: number; feePayerDeltaLamports: number } | null> {
     if (!this.connection) return null;
     const retryDelaysMs = [800, 1500, 2500];
     let tx = null;
@@ -1069,12 +1099,13 @@ export class Executor {
       await this.sleep(delay);
     }
     if (!tx?.meta) return null;
-    // Fee payer is always account index 0. pre - post = total lamports that
-    // left our account in this tx (swap cost + tip + fee + persisted ATA rent).
+    // Fee payer is always account index 0. post - pre = signed lamport change
+    // to our account in this tx (negative on a buy = spent, positive on a sell
+    // = net proceeds after tip + fee).
     const preSol = tx.meta.preBalances?.[0];
     const postSol = tx.meta.postBalances?.[0];
     if (preSol == null || postSol == null) return null;
-    const solSpentLamports = preSol - postSol;
+    const feePayerDeltaLamports = postSol - preSol;
     // Tokens: post-minus-pre on the token account(s) we own holding the base
     // mint (our base ATA). A pre entry is absent when the ATA was created in
     // this same tx → treat the prior balance as 0.
@@ -1091,7 +1122,7 @@ export class Executor {
         tokensReceivedRaw += BigInt(b.uiTokenAmount.amount) - before;
       }
     }
-    return { tokensReceivedRaw: Number(tokensReceivedRaw), solSpentLamports };
+    return { tokensReceivedRaw: Number(tokensReceivedRaw), feePayerDeltaLamports };
   }
 
   private sleep(ms: number): Promise<void> {
