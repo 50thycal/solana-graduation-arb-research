@@ -4,7 +4,7 @@ import { initDatabase } from './db/schema';
 import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation, updateActionItemStatus, updateActionItemFields, dismissAnomaly } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderLiveTrainingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml } from './utils/html-renderer';
 import { computePipelineData } from './api/pipeline-data';
 import { backfillSnapshots } from './api/backfill-snapshot';
 import { computePeakAnalysis } from './api/peak-analysis';
@@ -13,6 +13,7 @@ import { computeExitSimMatrix } from './api/exit-sim-matrix';
 import { computeWalletRepAnalysis } from './api/wallet-rep-analysis';
 import { computeFilterV2Data } from './api/filter-v2-data';
 import { computeTradingData } from './api/trading-data';
+import { computeLiveTrainingData } from './api/live-training-data';
 import { computeStrategyPercentiles } from './api/strategy-percentiles';
 import { computeJournal } from './api/journal';
 import { computeEdgeDecay } from './api/edge-decay';
@@ -48,6 +49,7 @@ const NAV_LINKS = [
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
+  { path: '/live-training', label: 'Live Training' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
@@ -2579,6 +2581,38 @@ async function main() {
           loss_postmortem: lossPostmortem,
           journal,
         });
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── /live-training ──
+  // Live-money monitoring + analytics page. Same HTML/JSON content-negotiation
+  // pattern as /trading: browsers get the interactive dashboard, API/Claude
+  // consumers (Accept: !text/html or ?format=json) get the full data object —
+  // identical shape to live-training.json on bot-status.
+  app.get('/live-training', (req, res) => {
+    try {
+      const wantHtml = (req.headers.accept || '').includes('text/html')
+        && (req.query.format as string) !== 'json';
+      const memoKey = 'live-training:html';
+      if (wantHtml) {
+        const cached = memoGet(memoKey);
+        if (cached) {
+          res.setHeader('Content-Type', cached.contentType);
+          res.send(cached.value);
+          return;
+        }
+      }
+      const data = computeLiveTrainingData(db);
+      if (wantHtml) {
+        const html = renderLiveTrainingHtml(data);
+        memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+      } else {
+        res.json(data);
       }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
