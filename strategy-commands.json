@@ -1,0 +1,198 @@
+{
+  "commands": [
+    {
+      "action": "delete",
+      "id": "v25-bot-excl-climbing-live-micro"
+    },
+    {
+      "action": "delete",
+      "id": "v9-vel20-top5-live-micro"
+    },
+    {
+      "action": "delete",
+      "id": "v9-velmono-dev-live-micro"
+    },
+    {
+      "action": "upsert",
+      "id": "v25climb-live-micro",
+      "label": "v25 bot-excl climbing mirror (TP100/SL30, entry@T+60) [LIVE-MICRO 0.05]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.05,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "live_micro",
+        "filters": [
+          { "field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200" },
+          { "field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s" },
+          { "field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v25climb-shadow",
+      "label": "v25 bot-excl climbing mirror (TP100/SL30) [SHADOW 0.05] - twin of v25climb-live-micro",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.05,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          { "field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200" },
+          { "field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s" },
+          { "field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v25climb-1s-ttp10-live-micro",
+      "label": "v25 climb + 1s poll + trailingTP10% [LIVE-MICRO 0.05]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.05,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "live_micro",
+        "filters": [
+          { "field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200" },
+          { "field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s" },
+          { "field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": true,
+        "trailingTpDropPct": 10,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "pollIntervalSec": 1
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v25climb-1s-ttp10-shadow",
+      "label": "v25 climb + 1s poll + trailingTP10% [SHADOW 0.05] - twin of v25climb-1s-ttp10-live-micro",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.05,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          { "field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200" },
+          { "field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s" },
+          { "field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": true,
+        "trailingTpDropPct": 10,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "pollIntervalSec": 1
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v25climb-live-micro",
+      "strategy_id": "v25climb-live-micro",
+      "cohort_label": "live-micro",
+      "hypothesis": "v25 bot-excl climbing run live at 0.05 SOL should track its 1:1 shadow twin (v25climb-shadow) closely; gap = pure live execution cost (slippage/latency/fees).",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v25climb-1s-ttp10-live-micro",
+      "strategy_id": "v25climb-1s-ttp10-live-micro",
+      "cohort_label": "live-micro",
+      "hypothesis": "v25 climb + 1s poll + trailingTP10% live at 0.05 SOL: faster polling + trailing TP should capture more upside than Pair A; compare 1:1 vs its shadow twin (v25climb-1s-ttp10-shadow).",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
