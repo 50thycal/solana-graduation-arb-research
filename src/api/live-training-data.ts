@@ -35,9 +35,13 @@ export const LIVE_MODES = ['live_micro', 'live_full'] as const;
  * simply empty until a mapping is added.
  */
 export const LIVE_SHADOW_MAP: Record<string, string> = {
-  'v25-bot-excl-climbing-live-micro': 'v25-bot-excl-climbing',
-  'v9-vel20-top5-live-micro': 'v9shadow-vel20-top5',
-  'v9-velmono-dev-live-micro': 'v9shadow-velmono-dev',
+  // Each live strategy is paired 1:1 with a DEDICATED shadow twin running an
+  // identical config at the same 0.05 SOL trade size, so the Live-vs-Shadow
+  // comparison is apples-to-apples (same fill-cost model, same trade size).
+  // v44 cohort — climbing-filter mirrors of v25-bot-excl-climbing, named v44
+  // to avoid confusion with the v25 shadow research strategy they're based on.
+  'v44-climb-live-micro': 'v44-climb-shadow',
+  'v44-climb-1s-ttp10-live-micro': 'v44-climb-1s-ttp10-shadow',
 };
 
 /** Normalized per-trade row shared by live + shadow series. */
