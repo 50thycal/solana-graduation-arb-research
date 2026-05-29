@@ -38,8 +38,10 @@ export const LIVE_SHADOW_MAP: Record<string, string> = {
   // Each live strategy is paired 1:1 with a DEDICATED shadow twin running an
   // identical config at the same 0.05 SOL trade size, so the Live-vs-Shadow
   // comparison is apples-to-apples (same fill-cost model, same trade size).
-  'v25climb-live-micro': 'v25climb-shadow',
-  'v25climb-1s-ttp10-live-micro': 'v25climb-1s-ttp10-shadow',
+  // v44 cohort — climbing-filter mirrors of v25-bot-excl-climbing, named v44
+  // to avoid confusion with the v25 shadow research strategy they're based on.
+  'v44-climb-live-micro': 'v44-climb-shadow',
+  'v44-climb-1s-ttp10-live-micro': 'v44-climb-1s-ttp10-shadow',
 };
 
 /** Normalized per-trade row shared by live + shadow series. */
