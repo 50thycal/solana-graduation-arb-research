@@ -605,7 +605,35 @@ export class Executor {
       if (baseBalAfter > baseBalBefore) break;
     }
     const walletSolAfter = await this.wallet.getSolBalance(this.connection);
-    const tokensReceivedRaw = baseBalAfter - baseBalBefore;
+
+    // ── Per-strategy fill attribution ──────────────────────────────────────
+    // The full-wallet snapshot deltas (baseBalAfter - baseBalBefore for tokens,
+    // walletSolBefore - walletSolAfter for SOL) are CORRUPTED when a second
+    // live strategy buys the same mint between our two balance reads: both
+    // strategies then book the COMBINED token amount and each over-states the
+    // SOL it spent. That mis-attribution is exactly the v44 bug (trades
+    // 16341/16342, 2026-05-29) — one strategy's sell drained the shared wallet
+    // position and the other booked a phantom -104% total loss.
+    //
+    // The confirmed transaction's own meta is scoped to THIS tx alone:
+    // postTokenBalances - preTokenBalances on our base ATA gives precisely the
+    // tokens this swap credited us (immune to a concurrent same-mint buy that
+    // also moved the wallet balance), and preBalances[0] - postBalances[0]
+    // gives the lamports debited from our fee-payer account by this tx only.
+    // Prefer it; fall back to the (racy) wallet delta only if RPC can't return
+    // the tx meta, logging a warning so the audit trail flags possible drift.
+    const txDeltas = submission.txSignature
+      ? await this.fetchTxBalanceDeltas(submission.txSignature, walletPk.toBase58(), mint)
+      : null;
+    const walletTokenDeltaRaw = baseBalAfter - baseBalBefore;
+    const walletSolDeltaLamports = walletSolBefore - walletSolAfter;
+    if (!txDeltas) {
+      logger.warn(
+        { mint, mode, txSignature: submission.txSignature },
+        'Live buy: tx-meta deltas unavailable — using wallet-balance delta (attribution may be off if a concurrent same-mint buy raced)',
+      );
+    }
+    const tokensReceivedRaw = txDeltas ? txDeltas.tokensReceivedRaw : walletTokenDeltaRaw;
     const tokensReceived = tokensReceivedRaw / 1e6;
     const overheadLamports =
       jitoTipLamports +
@@ -617,7 +645,7 @@ export class Executor {
     // which were created without parsing inner instructions, so they're
     // captured in the pre-flight buffer (SDK_MAX_INLINE_ATAS) rather than
     // here in the post-trade overhead.
-    const solSpentLamports = walletSolBefore - walletSolAfter;
+    const solSpentLamports = txDeltas ? txDeltas.solSpentLamports : walletSolDeltaLamports;
     const swapCostLamports = solSpentLamports - overheadLamports;
     const swapCostSol = swapCostLamports / 1e9;
     if (tokensReceived <= 0 || swapCostLamports <= 0) {
@@ -1009,6 +1037,61 @@ export class Executor {
     // by sig directly from RPC.
     const programLogs = logs.slice(-25);
     return { programLogs, failingProgram, failingInstructionIndex };
+  }
+
+  /** Read THIS transaction's own balance deltas from confirmed tx meta —
+   *  scoped to a single tx, so it is immune to the full-wallet race that
+   *  corrupts snapshot deltas when a second strategy buys the same mint
+   *  concurrently (the v44 mis-attribution bug, 2026-05-29).
+   *
+   *  Returns the raw token amount credited to our base ATA by this swap and
+   *  the lamports debited from our fee-payer account (swap cost + jito tip +
+   *  tx fee + any rent for ATAs that persisted). Null when the tx meta can't
+   *  be fetched — caller falls back to the wallet-balance delta. */
+  private async fetchTxBalanceDeltas(
+    txSignature: string,
+    ownerB58: string,
+    mintB58: string,
+  ): Promise<{ tokensReceivedRaw: number; solSpentLamports: number } | null> {
+    if (!this.connection) return null;
+    const retryDelaysMs = [800, 1500, 2500];
+    let tx = null;
+    for (const delay of retryDelaysMs) {
+      try {
+        tx = await this.connection.getTransaction(txSignature, {
+          maxSupportedTransactionVersion: 0,
+          commitment: 'confirmed',
+        });
+        if (tx) break;
+      } catch {
+        // Swallow — we retry, then return null
+      }
+      await this.sleep(delay);
+    }
+    if (!tx?.meta) return null;
+    // Fee payer is always account index 0. pre - post = total lamports that
+    // left our account in this tx (swap cost + tip + fee + persisted ATA rent).
+    const preSol = tx.meta.preBalances?.[0];
+    const postSol = tx.meta.postBalances?.[0];
+    if (preSol == null || postSol == null) return null;
+    const solSpentLamports = preSol - postSol;
+    // Tokens: post-minus-pre on the token account(s) we own holding the base
+    // mint (our base ATA). A pre entry is absent when the ATA was created in
+    // this same tx → treat the prior balance as 0.
+    const preByIdx = new Map<number, bigint>();
+    for (const b of tx.meta.preTokenBalances ?? []) {
+      if (b.owner === ownerB58 && b.mint === mintB58) {
+        preByIdx.set(b.accountIndex, BigInt(b.uiTokenAmount.amount));
+      }
+    }
+    let tokensReceivedRaw = 0n;
+    for (const b of tx.meta.postTokenBalances ?? []) {
+      if (b.owner === ownerB58 && b.mint === mintB58) {
+        const before = preByIdx.get(b.accountIndex) ?? 0n;
+        tokensReceivedRaw += BigInt(b.uiTokenAmount.amount) - before;
+      }
+    }
+    return { tokensReceivedRaw: Number(tokensReceivedRaw), solSpentLamports };
   }
 
   private sleep(ms: number): Promise<void> {
