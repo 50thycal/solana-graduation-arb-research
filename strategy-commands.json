@@ -1,0 +1,97 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-05-29",
+      "date": "2026-05-29",
+      "generated_by": "claude",
+      "narrative": "## Roster\n\nNo roster changes since yesterday — identical 116-strategy roster (113 enabled, 3 disabled).\n\n## Headline\n\nThe bot-excl-climbing family continues its multi-day accumulation run: **v28, v33, v32, and v25** all hold score=100 with every SOL-bar gate passing — the four strategies are promotable today. v33-bot-excl-climbing-ttp5 cleared the final gate threshold since yesterday's session and is newly eligible.\n\n## What Accumulated vs What Bled (Today)\n\nToday is a low-volume day — the graduation_rate_drop anomaly is flagged high-severity, and only ~1 trade per shadow strategy has been recorded so far (n_today=1, net_today=+0.027). The one confirmed trade on mint 5cuABuhQvDPsWFT... returned +5.3–9.1% across all bot-excl-climbing variants. On lifetime totals from leave-one-out: v25 (+6.67 SOL, drop3=+4.36), v28 (+5.69 SOL, drop3=+2.32), v33 (+3.85 SOL, drop3=+1.19), v32 (+3.69 SOL, drop3=+1.38) — all edge is genuine beyond their top-3 winners.\n\nOn the losing side: v42-breakeven-10/15/20 continue tripping breakeven stops at -3 to -5% (these strategies exit before the position gets to express its win tail), and v43-trailsl-be-1s shows the same pattern. The v39/v40/v41 cohorts (STRENGTHENING, n=38–81) are accumulating positively but n < 100 — watchlist only.\n\n## Cross-Day Patterns (7-Day Scan)\n\nv25/v28 bot-excl-climbing have topped the daily scoreboard for 7 straight days — this is not a one-day event. 2026-05-27 was the standout session (+1.43, +1.87, +1.49 SOL per strategy in a single day), and 2026-05-28 added +0.52–0.64 SOL/strategy. Both STRENGTHENING trend and regime stability (Panel 11) confirm this is not a decaying edge.\n\nv10-best-double appeared in the top-3 on 2026-05-25 (+0.59 SOL) and 2026-05-24 (+0.59 SOL) — but this came from outlier wins. Its leave-one-out drop3=-0.78 SOL confirms the edge does not survive stripping the top 3. Do not be fooled by single-day wins; the lifetime picture shows no edge.\n\nv14-sumabs-shadow is DECAYING (n=115, total=-1.06 SOL, drop3=-2.55 SOL, monthly=-1.47 SOL/mo) — three decay signals simultaneously. The kill proposal from 2026-05-27 remains the right call.\n\n## Live Capital Concern (Escalated)\n\nv25-bot-excl-climbing-live-micro recorded 3 more \"Live buy failed to land\" errors today (06:40, 07:17, 08:28 UTC), the same failure pattern flagged in ai-2026-05-27-007. Lifetime: n=179 live trades, total=+0.089 SOL, drop3=-0.246 (no real edge after outlier strip), monthly=+0.35 SOL/mo. This strategy is burning live capital on a lottery-ticket distribution. The kill recommendation is now more urgent than yesterday.\n\n## Honest Self-Check: Edge Attribution\n\nAll four promotable strategies have top3_contribution_pct between 59–78% (their top 3 wins explain 59–78% of total gains). This is a fat-tail distribution — memecoins are definitionally fat-tailed. The right check is drop_top3, not top3_contribution_pct alone: **all four clear drop_top3 > 0** (ranging from +1.19 to +4.36 SOL), meaning the edge exists even after removing the lottery tickets. v28 at drop3=+2.32 SOL is the most robust; v33 at +1.19 is the thinnest but still positive.\n\nv34-bot-excl-climbing-minlift (score=100 composite but NOT promotable) misses the monthly_drop_top3 gate: 3.609 SOL/mo vs threshold 3.75. It is one trade-day away from clearing. Recommend watching — do not promote yet.\n\n## Operator Next Step\n\n**Recommended priority:** (1) Execute the pending kill commands for v35-vel2050-holders10 and v35-vel2050-top10-40 — these are hemorrhaging at -14.76 and -10.31 SOL/mo respectively. (2) Decide on the v25/v28/v32/v33 promotions — all four are independently promotable to live. (3) Disable v25-bot-excl-climbing-live-micro immediately — live capital is at risk with no real edge after outlier strip.",
+      "winners": [
+        {"strategy_id": "v25-bot-excl-climbing-live-micro", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": 9.14, "net_profit_sol": 0.0046, "exit_reason": "timeout", "execution_mode": "live_micro"},
+        {"strategy_id": "v25-bot-excl-climbing", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": 5.82, "net_profit_sol": 0.0291, "exit_reason": "timeout", "execution_mode": "shadow"},
+        {"strategy_id": "v28-bot-excl-climbing-1s-ttp", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": 5.31, "net_profit_sol": 0.0266, "exit_reason": "timeout", "execution_mode": "shadow"},
+        {"strategy_id": "v32-bot-excl-climbing-1s", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": 5.31, "net_profit_sol": 0.0266, "exit_reason": "timeout", "execution_mode": "shadow"},
+        {"strategy_id": "v33-bot-excl-climbing-ttp5", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": 5.31, "net_profit_sol": 0.0266, "exit_reason": "timeout", "execution_mode": "shadow"}
+      ],
+      "losers": [
+        {"strategy_id": "v42-breakeven-20", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": -5.14, "net_profit_sol": -0.0257, "exit_reason": "breakeven_stop", "execution_mode": "shadow"},
+        {"strategy_id": "v43-trailsl-be-1s", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": -3.36, "net_profit_sol": -0.0168, "exit_reason": "breakeven_stop", "execution_mode": "shadow"},
+        {"strategy_id": "v42-breakeven-15", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": -3.36, "net_profit_sol": -0.0168, "exit_reason": "breakeven_stop", "execution_mode": "shadow"},
+        {"strategy_id": "v42-breakeven-10", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": -3.36, "net_profit_sol": -0.0168, "exit_reason": "breakeven_stop", "execution_mode": "shadow"},
+        {"strategy_id": "v43-mono-trailsl-1s", "mint": "5cuABuhQvDPsWFTqut3qC9UdiNiYdhYLDt6Wi2rApump", "net_return_pct": -0.88, "net_profit_sol": -0.0044, "exit_reason": "trailing_stop", "execution_mode": "shadow"}
+      ],
+      "anomalies": [
+        {"severity": "high", "kind": "graduation_rate_drop", "message": "Low trade count today — graduation_rate_drop flagged. Only 1 trade per shadow strategy so far. May reflect market activity lull."},
+        {"severity": "med", "kind": "edge_decay", "message": "v12-vel2050-liq-dd15 DECAYING (n=58). Approaching kill threshold if trend continues."},
+        {"severity": "med", "kind": "edge_decay", "message": "v14-sumabs-shadow DECAYING (n=115, total=-1.06 SOL). INVALID — kill pending."},
+        {"severity": "med", "kind": "edge_decay", "message": "v20-vel2050-dd-tight DECAYING (n=57). No SOL accumulation."},
+        {"severity": "low", "kind": "live_execution_failure", "message": "3 live buy failures today for v25-bot-excl-climbing-live-micro. Recurring pattern — 44 of 280 live trades failed (15.7%)."}
+      ],
+      "patterns": [
+        "v25/v28/v32/v33 bot-excl-climbing family topped daily scoreboard for 7 consecutive days (2026-05-22 through 2026-05-29). Not a single-day event.",
+        "2026-05-27 was the strongest session: +1.43 SOL (v28), +1.87 SOL (v32), +1.49 SOL (v25) in one day.",
+        "v10-best-double appeared strong on 2026-05-24/25 (+0.59 SOL each day) but lifetime drop_top3=-0.78 SOL — confirmed lottery-driven, kill appropriate.",
+        "Breakeven stop strategies (v42-breakeven-10/15/20/30/40) consistently exiting early and recording losses. The stop-level calibration is cutting off winners before they express. Down-weight this cohort.",
+        "Live buy failure rate has been persistent: 44/280 (15.7%) over lifetime. v25-live-micro is the active live strategy — recurring failures suggest on-chain execution issue, not strategy signal."
+      ],
+      "recommendations": {
+        "promote": [
+          {"strategy_id": "v25-bot-excl-climbing", "reason": "All 4 gates clear: n=387, drop_top3=+4.359 SOL, total=+6.671 SOL, monthly=+13.46 SOL/mo. STRENGTHENING. Robust edge — drop3 is the highest of any strategy. Proposed since 2026-05-27, still pending."},
+          {"strategy_id": "v28-bot-excl-climbing-1s-ttp", "reason": "All 4 gates clear: n=249, drop_top3=+2.323 SOL, total=+5.689 SOL, monthly=+17.65 SOL/mo. STRENGTHENING. Score improved from 87 to 100 since proposal. Originally flagged thin at drop3=+0.34; now +2.32 — concern resolved."},
+          {"strategy_id": "v32-bot-excl-climbing-1s", "reason": "All 4 gates clear: n=206, drop_top3=+1.381 SOL, total=+3.694 SOL, monthly=+14.37 SOL/mo. STRENGTHENING. Proposed 2026-05-28."},
+          {"strategy_id": "v33-bot-excl-climbing-ttp5", "reason": "All 4 gates clear: n=207, drop_top3=+1.187 SOL, total=+3.847 SOL, monthly=+14.97 SOL/mo. STRENGTHENING. Newly promotable today — propose live promotion."}
+        ],
+        "kill": [
+          {"strategy_id": "v35-vel2050-holders10", "reason": "n=116, total=-3.444 SOL, drop_top3=-5.964 SOL, monthly=-14.76 SOL/mo. INVALID on all gates. Actively hemorrhaging SOL."},
+          {"strategy_id": "v35-vel2050-top10-40", "reason": "n=117, total=-2.405 SOL, drop_top3=-4.926 SOL, monthly=-10.31 SOL/mo. INVALID on all gates. Hemorrhaging SOL."},
+          {"strategy_id": "v14-sumabs-shadow", "reason": "n=115, total=-1.063 SOL, drop_top3=-2.548 SOL, monthly=-1.47 SOL/mo. INVALID + DECAYING. No recovery path."},
+          {"strategy_id": "v10-best-double", "reason": "n=152, total=+1.757 SOL but drop_top3=-0.781 SOL. Edge is entirely from lottery trades — does not survive outlier strip. INVALID."},
+          {"strategy_id": "v25-bot-excl-climbing-live-micro", "reason": "Live capital: n=179, total=+0.089 SOL, drop_top3=-0.246 SOL, monthly=+0.35 SOL/mo. 3 more buy-execution failures today. No real edge after outlier strip — disable immediately."}
+        ],
+        "watch": [
+          {"strategy_id": "v34-bot-excl-climbing-minlift", "reason": "Score=100 composite but monthly_run_rate_sol_drop_top3=3.609 < 3.75 threshold. n=209, total=+4.29, drop3=+0.93. One trade-day from clearing monthly gate."},
+          {"strategy_id": "v9shadow-velmono-dev", "reason": "Score=87, n=70, drop3=+2.240 SOL, monthly=+4.31 SOL/mo. Needs ~30 more trades to reach n=100. STABLE."},
+          {"strategy_id": "v39-entry-n50-50", "reason": "Score=96, n=75, drop3=+0.699 SOL, monthly=+9.80 SOL/mo. STRENGTHENING. Needs 25 more trades."},
+          {"strategy_id": "v40-acc-gate", "reason": "Score=85.6, n=40, drop3=+0.553 SOL, monthly=+8.73 SOL/mo. STRENGTHENING."},
+          {"strategy_id": "v41-holders-15", "reason": "Score=76.4, n=41, drop3=+0.139 SOL, monthly=+6.96 SOL/mo. STRENGTHENING. Drop3 thin but positive."}
+        ],
+        "create_new": []
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-05-29-001",
+          "kind": "promote",
+          "target_id": "v33-bot-excl-climbing-ttp5",
+          "summary": "Promote v33-bot-excl-climbing-ttp5 to live — newly all-gates-clear today. score=100, n=207, drop_top3=+1.187 SOL, total=+3.847 SOL, monthly=+14.97 SOL/mo. STRENGTHENING.",
+          "status": "PROPOSED",
+          "proposed_at": 1780053300
+        },
+        {
+          "id": "ai-2026-05-29-002",
+          "kind": "kill",
+          "target_id": "v25-bot-excl-climbing-live-micro",
+          "summary": "URGENT: Disable v25-bot-excl-climbing-live-micro — 3 more live buy failures today (06:40, 07:17, 08:28 UTC). Lifetime drop3=-0.246 SOL, monthly=+0.35 SOL/mo. Live capital at risk with no real edge. Escalated from ai-2026-05-27-007.",
+          "status": "PROPOSED",
+          "proposed_at": 1780053300
+        }
+      ],
+      "auto_journal": true
+    },
+    {
+      "action": "action-item-update",
+      "id": "upd-2026-05-29-001",
+      "date": "2026-05-27",
+      "action_item_id": "ai-2026-05-27-003",
+      "action_item_status": "PROPOSED",
+      "action_item_note": "2026-05-29: drop3 now +2.323 SOL (was +0.343 thin). score=100 (was 87). All gates strong — original thin-edge concern resolved. Promote recommended."
+    },
+    {
+      "action": "action-item-update",
+      "id": "upd-2026-05-29-002",
+      "date": "2026-05-27",
+      "action_item_id": "ai-2026-05-27-007",
+      "action_item_status": "PROPOSED",
+      "action_item_note": "2026-05-29: 3 more live buy failures today (06:40, 07:17, 08:28 UTC). Lifetime total now +0.089 SOL, drop3=-0.246. Escalated as ai-2026-05-29-002. URGENT."
+    }
+  ]
+}
