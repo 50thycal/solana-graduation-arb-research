@@ -21,6 +21,7 @@ import { computeLossPostmortem } from './api/loss-postmortem';
 import { computeDailyReport } from './api/daily-report';
 import { getHeavyData } from './api/heavy-cache';
 import { StrategyManager } from './trading';
+import { backfillLivePnlFromChain } from './trading/live-pnl-backfill';
 import { StrategyParams } from './trading/config';
 import { makeLogger, logBuffer } from './utils/logger';
 import { installStderrThrottle } from './utils/stderr-throttle';
@@ -3184,6 +3185,17 @@ ${rows.map(r => {
     } catch (err) {
       logger.error('StrategyManager failed to initialize: %s', err instanceof Error ? err.message : String(err));
     }
+  }
+
+  // One-shot: re-derive live trade P&L from on-chain tx meta for rows whose
+  // wallet-snapshot deltas were corrupted by concurrent same-mint trading (the
+  // v44 race, fixed going forward in executor.fetchTxBalanceDeltas). Does
+  // network I/O — fire in the background so it never blocks startup. Guarded by
+  // a bot_settings marker, so it runs at most once.
+  if (listener) {
+    backfillLivePnlFromChain(db, listener.getConnection()).catch((err) =>
+      logger.error('Live P&L chain backfill failed: %s', err instanceof Error ? err.message : String(err)),
+    );
   }
 
   // Graceful shutdown
