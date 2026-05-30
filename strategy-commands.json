@@ -1,0 +1,98 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-05-30",
+      "date": "2026-05-30",
+      "generated_by": "claude",
+      "narrative": "## Roster Changes Since Yesterday\n\nNo roster changes between yesterday's snapshot (2026-05-29) and today. Note: `v25-bot-excl-climbing-live-micro` was already absent from yesterday's snapshot — it was removed prior to the 05-29 run, making action items ai-2026-05-29-002 and ai-2026-05-27-007 (both targeting that strategy) now EXECUTED.\n\n## Headline\n\nBot is HEALTHY with 9 strategies at composite score 100 — the bot-excl-climbing family dominates. The single most urgent operator action is executing the pending kill slate (v10, v14, v35 cluster) which has sat PROPOSED for 3+ days.\n\n## What's Accumulating SOL\n\nThe bot-excl-climbing family is the clear edge engine this cycle. All four exit-configuration variants of v25-bot-excl-climbing hit score=100 with edge_flag=STRENGTHENING:\n\n| Strategy | n | drop_top3 | total | monthly |\n|---|---|---|---|---|\n| v34-bot-excl-climbing-minlift | 242 | +2.738 | +6.105 | +21.02 SOL/mo |\n| v28-bot-excl-climbing-1s-ttp | 280 | +3.809 | +7.175 | +20.17 SOL/mo |\n| v32-bot-excl-climbing-1s | 238 | +3.505 | +5.818 | +20.03 SOL/mo |\n| v33-bot-excl-climbing-ttp5 | 240 | +3.083 | +5.743 | +19.77 SOL/mo |\n| v25-bot-excl-climbing (parent) | 418 | +6.453 | +8.766 | +16.57 SOL/mo |\n\nThe drop_top3 figures are all comfortably positive — this is not a lottery-ticket outcome. v25 parent has the largest n (418) and the most conservative monthly rate, while v34 (trailingTP 10% + minLift 20pp) produces the highest run rate. Five v39 entry-gate variants also clear all four gates (monthly 16–17.6 SOL/mo, n=115–128, drop_top3=+2.0 to +2.3 SOL). The whole family is backed by v44 live-micro already earning +0.15 SOL on the same underlying signal.\n\nThe v40-acc-gate strategy (n=69, drop3=+3.163 SOL, monthly=+20.48 SOL/mo, score=95.2) is the most promising watch — if it can reach n=100 it may outperform all current promotables on monthly run rate. The v41-holders-15..19 cluster and v42-breakeven-20 are also pacing well at n=74-76.\n\n## What's Bleeding\n\nThe kill slate continues to drag portfolio net SOL with zero action over 3 days:\n\n| Strategy | n | drop_top3 | total | verdict |\n|---|---|---|---|---|\n| v35-vel2050-holders10 | 138 | -5.904 | -3.383 | HIT-KILL in journal |\n| v35-vel2050-top10-40 | 135 | -4.717 | -2.196 | INVALID, proposed 05-27 |\n| v35-vel2050-top10-25-gini | 103 | -4.043 | -1.701 | INVALID, not yet proposed |\n| v14-sumabs-shadow | 121 | -2.156 | -0.485 | INVALID, proposed 05-27 |\n| v10-best-double | 163 | -1.954 | +0.585 | drop_top3 fails, DECAYING, proposed 05-27 |\n\nAll five clear n≥100. v35-holders10 and v35-top10-40 are both INVALID on all gates. v35-top10-25-gini is new to the kill list today (n crossed 100 with drop3=-4.043). The v28-best-double-1s-ttp mirror of v10 is also flagged DECAYING (n=64, not yet killable by hard gate but watch carefully).\n\n## Live Trading Observation\n\nThe two live-micro strategies (v44-climb-live-micro, v44-climb-1s-ttp10-live-micro) are running at 0.05 SOL position size and earning +0.147 and +0.144 SOL respectively (OPEN journal). Today shows 3 live sell failures with retry escalation — the circuit breaker is not tripped and this pattern has appeared in recent days. Worth monitoring whether sell failures are increasing, but no immediate intervention needed.\n\n## Cross-Day Patterns\n\nThe promote recommendations for v25, v28, v32, v33 have been PROPOSED since 05-27 with no operator action for 3 consecutive days. The bot-excl-climbing signal is STRENGTHENING, not decaying — there is no data reason to wait. The 39 strict_filter anomalies (V29-V31 macro-regime gating series) are expected behavior and not actionable.\n\n## Outlier Check\n\nAll nine promotable strategies pass the drop_top3 > 0 test. The top-3 contribution ranges from ~26% (v25-parent: 6.453/8.766) to ~45% (v39 variants). These are fat-tail memecoin distributions as expected — the edge is real after outlier strip.\n\n## Single Most Important Operator Action\n\nExecute the kill slate for v10-best-double, v14-sumabs-shadow, v35-vel2050-holders10, v35-vel2050-top10-40, and v35-vel2050-top10-25-gini via strategy-commands.json (5 deletes). This removes approximately -7.5 SOL of lifetime losses from the active roster and stops ongoing bleeding. Then recommend promoting v28-bot-excl-climbing-1s-ttp or v34-bot-excl-climbing-minlift to live as the first non-micro full position.",
+      "winners": [],
+      "losers": [],
+      "anomalies": [
+        {"severity": "med", "kind": "edge_decay", "detail": "v10-best-double DECAYING (recent-30 median -28.06% vs all -18.24%) + drop_top3=-1.954 SOL at n=163. Kill pending 3 days."},
+        {"severity": "med", "kind": "edge_decay", "detail": "v28-best-double-1s-ttp DECAYING (mirror of v10). n=64, not yet killable by hard gate but trajectory negative."},
+        {"severity": "med", "kind": "edge_decay", "detail": "v38-thin-conviction DECAYING (recent-30 median -9.7% vs all -4.41%). n=54, watching."},
+        {"severity": "med", "kind": "kill_backlog", "detail": "Kill proposals for v10, v14, v35-holders10, v35-top10-40 have been PROPOSED since 05-27 — 3 days without operator action."},
+        {"severity": "med", "kind": "new_kill", "detail": "v35-vel2050-top10-25-gini newly INVALID: n=103, drop3=-4.043 SOL, total=-1.701 SOL. No prior kill proposal."},
+        {"severity": "low", "kind": "live_sell_error", "detail": "3 live sell attempt failures today (v44 strategies). Circuit breaker not tripped. Monitor frequency."}
+      ],
+      "patterns": [
+        "bot-excl-climbing family (v25/v28/v32/v33/v34) all STRENGTHENING for 3+ days, scores locked at 100",
+        "Kill slate (v10/v14/v35 cluster) has been PROPOSED since 05-27 with no execution — escalate",
+        "v40-acc-gate pacing at monthly=+20.48 SOL/mo at n=69 — could be top performer if it holds to n=100",
+        "v44 live-micro earning +0.147 SOL confirms climbing signal is real on live capital",
+        "39 strict_filter anomalies on V29-V31 macro-regime gating series — expected, not actionable"
+      ],
+      "recommendations": {
+        "kill": [
+          {"strategy_id": "v10-best-double", "reason": "n=163, drop_top3=-1.954 SOL — apparent edge is 1-3 lottery trades. DECAYING. Pending kill since 05-27."},
+          {"strategy_id": "v14-sumabs-shadow", "reason": "n=121, total=-0.485 SOL, drop_top3=-2.156 SOL. INVALID on all 4 gates. Pending since 05-27."},
+          {"strategy_id": "v35-vel2050-holders10", "reason": "n=138, total=-3.383 SOL, drop_top3=-5.904 SOL. HIT-KILL in journal. Pending since 05-27."},
+          {"strategy_id": "v35-vel2050-top10-40", "reason": "n=135, total=-2.196 SOL, drop_top3=-4.717 SOL. INVALID all gates. Pending since 05-27."},
+          {"strategy_id": "v35-vel2050-top10-25-gini", "reason": "n=103, total=-1.701 SOL, drop_top3=-4.043 SOL. INVALID all gates. New to kill list today (n crossed 100)."}
+        ],
+        "promote": [
+          {"strategy_id": "v34-bot-excl-climbing-minlift", "reason": "score=100, n=242, drop_top3=+2.738 SOL, total=+6.105 SOL, monthly=+21.02 SOL/mo. Highest run rate of all promotables. STRENGTHENING."},
+          {"strategy_id": "v28-bot-excl-climbing-1s-ttp", "reason": "score=100, n=280 (deepest data), drop_top3=+3.809 SOL, total=+7.175 SOL, monthly=+20.17 SOL/mo. STRENGTHENING."},
+          {"strategy_id": "v32-bot-excl-climbing-1s", "reason": "score=100, n=238, drop_top3=+3.505 SOL, total=+5.818 SOL, monthly=+20.03 SOL/mo. 1s polling, no trailing TP."},
+          {"strategy_id": "v33-bot-excl-climbing-ttp5", "reason": "score=100, n=240, drop_top3=+3.083 SOL, total=+5.743 SOL, monthly=+19.77 SOL/mo. STRENGTHENING."},
+          {"strategy_id": "v25-bot-excl-climbing", "reason": "score=100, n=418 (most mature), drop_top3=+6.453 SOL, total=+8.766 SOL, monthly=+16.57 SOL/mo. Parent strategy."},
+          {"strategy_id": "v39-entry-n50-100", "reason": "score=100, n=128, drop_top3=+2.337 SOL, total=+4.107 SOL, monthly=+17.60 SOL/mo."},
+          {"strategy_id": "v39-entry-n50-50", "reason": "score=100, n=120, drop_top3=+2.266 SOL, total=+4.036 SOL, monthly=+17.30 SOL/mo."},
+          {"strategy_id": "v39-entry-n25-50", "reason": "score=100, n=115, drop_top3=+2.204 SOL, total=+3.974 SOL, monthly=+17.03 SOL/mo."},
+          {"strategy_id": "v39-entry-n25-100", "reason": "score=100, n=122, drop_top3=+2.013 SOL, total=+3.783 SOL, monthly=+16.21 SOL/mo."}
+        ],
+        "create_new": [],
+        "watch": [
+          {"strategy_id": "v40-acc-gate", "reason": "n=69, drop_top3=+3.163 SOL, monthly=+20.48 SOL/mo, score=95.2. Top watch — may outperform all current promotables when it hits n=100."},
+          {"strategy_id": "v40-top5-tight", "reason": "n=76, drop_top3=+1.728 SOL, monthly=+14.33 SOL/mo, score=95.2. Pacing toward bar."},
+          {"strategy_id": "v41-holders-15", "reason": "n=74, drop_top3=+2.422 SOL, monthly=+17.31 SOL/mo, score=94.8. All four v41 holder variants tracking same signal."},
+          {"strategy_id": "v42-breakeven-20", "reason": "n=69, drop_top3=+2.295 SOL, monthly=+16.76 SOL/mo. Best breakeven-stop variant, pacing toward bar."}
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-05-30-001",
+          "kind": "promote",
+          "target_id": "v34-bot-excl-climbing-minlift",
+          "summary": "Promote v34-bot-excl-climbing-minlift to live — score=100, n=242, drop_top3=+2.738 SOL, monthly=+21.02 SOL/mo (highest run rate of all promotables). All 4 gates clear, edge STRENGTHENING.",
+          "status": "PROPOSED",
+          "proposed_at": 1748599200
+        },
+        {
+          "id": "ai-2026-05-30-002",
+          "kind": "kill",
+          "target_id": "v35-vel2050-top10-25-gini",
+          "summary": "Kill v35-vel2050-top10-25-gini — n=103, drop_top3=-4.043 SOL, total=-1.701 SOL, monthly=-7.14 SOL/mo. INVALID on all 4 gates. Not in prior kill proposals.",
+          "status": "PROPOSED",
+          "proposed_at": 1748599200
+        },
+        {
+          "id": "ai-2026-05-30-003",
+          "kind": "promote",
+          "target_id": "v39-entry-n50-100",
+          "summary": "Promote v39-entry-n50-100 to live — score=100, n=128, drop_top3=+2.337 SOL, monthly=+17.60 SOL/mo. Entry gate [-50,+100] variant. All 4 gates clear.",
+          "status": "PROPOSED",
+          "proposed_at": 1748599200
+        }
+      ],
+      "auto_journal": true
+    },
+    {
+      "action": "action-item-update",
+      "id": "update-ai-2026-05-29-002",
+      "date": "2026-05-29",
+      "action_item_id": "ai-2026-05-29-002",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "v25-bot-excl-climbing-live-micro is absent from today's strategies.json and was already absent from yesterday's (05-29) snapshot — removed before the 05-29 daily run."
+    },
+    {
+      "action": "action-item-update",
+      "id": "update-ai-2026-05-27-007",
+      "date": "2026-05-27",
+      "action_item_id": "ai-2026-05-27-007",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "Duplicate of ai-2026-05-29-002. v25-bot-excl-climbing-live-micro confirmed absent from strategies.json — action completed."
+    }
+  ]
+}
