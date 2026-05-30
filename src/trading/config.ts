@@ -18,8 +18,12 @@ export type ExecutionMode = 'paper' | 'shadow' | 'live_micro' | 'live_full';
 export const DAILY_MAX_LOSS_SOL = parseFloat(process.env.DAILY_MAX_LOSS_SOL || '1.0');
 /** Position size used in the live_micro rollout phase — overrides strategy's tradeSizeSol. */
 export const MICRO_TRADE_SIZE_SOL = parseFloat(process.env.MICRO_TRADE_SIZE_SOL || '0.05');
-/** Default Jito tip when a strategy doesn't specify one. 100k lamports ≈ 0.0001 SOL. */
-export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL || '0.0001');
+/** Default Jito tip when a strategy doesn't specify one. Raised 2026-05-30
+ *  from 0.0001 to 0.0005 SOL (500k lamports) so live txs win Jito bundle
+ *  inclusion (~1s) instead of falling back to the slow ~5s RPC path that was
+ *  driving the live-vs-shadow drift. Overridable via DEFAULT_JITO_TIP_SOL env;
+ *  retry escalation still multiplies this (tipMult). */
+export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL || '0.0005');
 /** Max acceptable expected slippage at entry. 500 = 5%. */
 export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAGE_BPS || '500', 10);
 /**

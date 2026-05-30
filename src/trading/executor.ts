@@ -521,7 +521,7 @@ export class Executor {
 
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
-      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000_000 }),
       ...ataPreCreateIxs,
       ...swapIxs,
       buildJitoTipIx(walletPk, jitoTipLamports),
@@ -870,7 +870,7 @@ export class Executor {
 
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
-      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
+      ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000_000 }),
       ...swapIxs,
       buildJitoTipIx(walletPk, jitoTipLamports),
       ...closeBaseAtaIxs,
