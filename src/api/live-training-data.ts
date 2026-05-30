@@ -93,6 +93,9 @@ export interface LtMetrics {
   total_fees_sol: number;
   total_jito_tip_sol: number;
   avg_tx_land_ms: number | null;
+  tx_land_p50_ms: number | null;
+  tx_land_p90_ms: number | null;
+  tx_land_max_ms: number | null;
   execution_success_rate_pct: number | null;
   sharpe_like: number | null;
   exit_reason_counts: Record<string, number>;
@@ -111,6 +114,18 @@ export interface LtComparison {
   shadow_win_rate_pct: number | null;
   live_avg_roundtrip_slip_pct: number | null;
   shadow_avg_roundtrip_slip_pct: number | null;
+  // Gap attribution: how much of the live-vs-shadow return gap is the price
+  // move itself (gross — i.e. exit timing/fill drift) vs execution cost.
+  live_avg_gross_return_pct: number | null;
+  shadow_avg_gross_return_pct: number | null;
+  gross_gap_pp: number | null;     // live gross − shadow gross (timing/fill)
+  cost_gap_pp: number | null;      // net gap − gross gap (slippage + fees)
+  // Outlier-robustness of the aggregate SOL gap (n is usually small + fat-tailed).
+  median_delta_sol: number | null; // median per-pair (live − shadow) net SOL
+  delta_drop_top3_sol: number | null; // total delta minus the 3 largest |delta|
+  // Live execution latency over the matched set (shadow is modeled, 0-latency).
+  live_avg_tx_land_ms: number | null;
+  live_p90_tx_land_ms: number | null;
   // Per-graduation pairs (chronological by live entry).
   pairs: Array<{
     graduation_id: number | null;
@@ -151,6 +166,13 @@ function stddev(xs: number[]): number | null {
   const m = mean(xs)!;
   const v = xs.reduce((a, b) => a + (b - m) * (b - m), 0) / xs.length;
   return Math.sqrt(v);
+}
+
+/** Nearest-rank percentile (floor index), matching the client JS port. */
+function pctl(xs: number[], p: number): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  return s[Math.min(s.length - 1, Math.max(0, Math.floor(p * (s.length - 1))))];
 }
 
 /** Round-trip slippage = entry + exit, when both present. */
@@ -221,6 +243,9 @@ export function computeMetrics(trades: LtTrade[]): LtMetrics {
     total_fees_sol: round(totalFees, 6)!,
     total_jito_tip_sol: round(totalJito, 6)!,
     avg_tx_land_ms: round(mean(landMs), 0),
+    tx_land_p50_ms: round(pctl(landMs, 0.5), 0),
+    tx_land_p90_ms: round(pctl(landMs, 0.9), 0),
+    tx_land_max_ms: round(landMs.length ? Math.max(...landMs) : null, 0),
     execution_success_rate_pct: (closed.length + failed.length) > 0
       ? round((closed.length / (closed.length + failed.length)) * 100, 1)
       : null,
@@ -244,6 +269,11 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
   }
 
   const pairs: LtComparison['pairs'] = [];
+  // Parallel capture for gap-attribution + latency (not exposed per-pair).
+  const liveGross: number[] = [];
+  const shadowGross: number[] = [];
+  const liveLand: number[] = [];
+  const deltas: number[] = []; // per-pair (live − shadow) net SOL
   for (const live of liveTrades) {
     if (live.status !== 'closed' || live.graduation_id === null) continue;
     const shadowId = LIVE_SHADOW_MAP[live.strategy_id];
@@ -252,6 +282,12 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     if (!twin) continue;
     const liveRt = roundtripSlip(live);
     const shadowRt = roundtripSlip(twin);
+    if (live.gross_return_pct !== null && twin.gross_return_pct !== null) {
+      liveGross.push(live.gross_return_pct);
+      shadowGross.push(twin.gross_return_pct);
+    }
+    if (live.tx_land_ms !== null && live.tx_land_ms !== undefined) liveLand.push(live.tx_land_ms);
+    deltas.push((live.net_profit_sol ?? 0) - (twin.net_profit_sol ?? 0));
     pairs.push({
       graduation_id: live.graduation_id,
       mint: live.mint,
@@ -283,6 +319,16 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
   const liveAvg = mean(liveRets);
   const shadowAvg = mean(shadowRets);
 
+  const liveGrossAvg = mean(liveGross);
+  const shadowGrossAvg = mean(shadowGross);
+  const grossGap = (liveGrossAvg !== null && shadowGrossAvg !== null) ? liveGrossAvg - shadowGrossAvg : null;
+  const netGap = (liveAvg !== null && shadowAvg !== null) ? liveAvg - shadowAvg : null;
+
+  // Drop-top-3-by-magnitude: total delta minus the 3 largest |delta| outliers.
+  const byAbs = [...deltas].sort((a, b) => Math.abs(b) - Math.abs(a));
+  const totalDelta = deltas.reduce((a, b) => a + b, 0);
+  const top3 = byAbs.slice(0, 3).reduce((a, b) => a + b, 0);
+
   return {
     matched_n: pairs.length,
     live_total_net_sol: round(liveTotal)!,
@@ -290,11 +336,19 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     total_net_sol_delta: round(liveTotal - shadowTotal)!,
     live_avg_return_pct: round(liveAvg, 2),
     shadow_avg_return_pct: round(shadowAvg, 2),
-    avg_return_delta_pct: (liveAvg !== null && shadowAvg !== null) ? round(liveAvg - shadowAvg, 2) : null,
+    avg_return_delta_pct: netGap !== null ? round(netGap, 2) : null,
     live_win_rate_pct: pairs.length ? round((liveWins / pairs.length) * 100, 1) : null,
     shadow_win_rate_pct: pairs.length ? round((shadowWins / pairs.length) * 100, 1) : null,
     live_avg_roundtrip_slip_pct: round(mean(liveRt), 3),
     shadow_avg_roundtrip_slip_pct: round(mean(shadowRt), 3),
+    live_avg_gross_return_pct: round(liveGrossAvg, 2),
+    shadow_avg_gross_return_pct: round(shadowGrossAvg, 2),
+    gross_gap_pp: round(grossGap, 2),
+    cost_gap_pp: (netGap !== null && grossGap !== null) ? round(netGap - grossGap, 2) : null,
+    median_delta_sol: round(median(deltas)),
+    delta_drop_top3_sol: deltas.length ? round(totalDelta - top3) : null,
+    live_avg_tx_land_ms: round(mean(liveLand), 0),
+    live_p90_tx_land_ms: round(pctl(liveLand, 0.9), 0),
     pairs,
   };
 }

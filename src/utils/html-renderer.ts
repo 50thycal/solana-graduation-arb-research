@@ -6317,6 +6317,8 @@ export function renderLiveTrainingHtml(data: any): string {
     .lt-cmp-tbl td.rl{color:#64748b}
     .lt-cmp-tbl tr.lt-cmp-delta td{background:#0f172a;font-weight:600;border-top:1px solid #334155}
     .lt-strat-chip.lt-active .lt-chk{display:inline}.lt-chk{display:none;font-size:10px}
+    .lt-attrib{margin-top:12px;padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;font-size:11px;color:#94a3b8;line-height:1.7}
+    .lt-attrib b{color:#cbd5e1}
     @media (max-width:640px){.container{padding:8px}}
   `;
 
@@ -6348,6 +6350,16 @@ export function renderLiveTrainingHtml(data: any): string {
     </div>
 
     <div class="card">
+      <div class="card-title">Execution Diagnostics <span style="color:#94a3b8;font-weight:400;font-size:11px;text-transform:none;letter-spacing:0">— why live drifts from shadow</span></div>
+      <p class="desc" style="color:#94a3b8;font-size:11px;margin:0 0 10px">
+        Shadow books the price at the <b>instant</b> a TP/SL triggers (a zero-latency model). Live submits a real
+        transaction that takes time to land — on tokens moving 100%+/sec, the price drifts during that window.
+        That fill-timing drift, not slippage or fees, is what makes live swing from shadow per-trade.
+      </p>
+      <div class="lt-metric-grid" id="lt-diag"></div>
+    </div>
+
+    <div class="card">
       <div class="card-title">Live vs Shadow <span style="color:#64748b;font-weight:400;font-size:11px;text-transform:none;letter-spacing:0">— matched on graduations both traded</span></div>
       <p class="desc" style="color:#94a3b8;font-size:11px;margin:0 0 10px">
         Each point is one graduation that <b>both</b> the live strategy and its shadow twin entered.
@@ -6366,6 +6378,7 @@ export function renderLiveTrainingHtml(data: any): string {
           <span><i style="background:#a78bfa"></i>Shadow (cumulative net SOL)</span>
         </div>
         <div style="margin-top:14px;overflow-x:auto" id="lt-cmp-table"></div>
+        <div class="lt-attrib" id="lt-cmp-attrib"></div>
         <details style="margin-top:12px">
           <summary style="cursor:pointer;color:#94a3b8;font-size:12px">Per-graduation pairs (<span id="lt-cmp-n">0</span>)</summary>
           <div style="overflow-x:auto;margin-top:8px">
@@ -6639,6 +6652,7 @@ export function renderLiveTrainingHtml(data: any): string {
   function jmean(xs){ if(!xs.length) return null; var s=0; for(var i=0;i<xs.length;i++) s+=xs[i]; return s/xs.length; }
   function jmedian(xs){ if(!xs.length) return null; var s=xs.slice().sort(function(a,b){return a-b;}); var m=Math.floor(s.length/2); return s.length%2? s[m] : (s[m-1]+s[m])/2; }
   function jstd(xs){ if(xs.length<2) return null; var m=jmean(xs); var v=0; for(var i=0;i<xs.length;i++){var d=xs[i]-m; v+=d*d;} return Math.sqrt(v/xs.length); }
+  function jpctl(xs,p){ if(!xs.length) return null; var s=xs.slice().sort(function(a,b){return a-b;}); return s[Math.min(s.length-1,Math.max(0,Math.floor(p*(s.length-1))))]; }
   function notNull(xs){ var o=[]; for(var i=0;i<xs.length;i++) if(xs[i]!==null&&xs[i]!==undefined&&isFinite(xs[i])) o.push(xs[i]); return o; }
 
   function jsComputeMetrics(trades){
@@ -6678,6 +6692,8 @@ export function renderLiveTrainingHtml(data: any): string {
       avg_roundtrip_slip_pct: jround(jmean(rtSlips),3),
       total_fees_sol: jround(totalFees,6), total_jito_tip_sol: jround(totalJito,6),
       avg_tx_land_ms: jround(jmean(landMs),0),
+      tx_land_p50_ms: jround(jpctl(landMs,0.5),0), tx_land_p90_ms: jround(jpctl(landMs,0.9),0),
+      tx_land_max_ms: jround(landMs.length? Math.max.apply(null,landMs): null,0),
       execution_success_rate_pct: (closed.length+failed.length)>0? jround(closed.length/(closed.length+failed.length)*100,1): null,
       exit_reason_counts: rc
     };
@@ -6687,12 +6703,15 @@ export function renderLiveTrainingHtml(data: any): string {
     var map=LT.mapping||{};
     var shIdx={};
     for(var i=0;i<shadowTr.length;i++){ var s=shadowTr[i]; if(s.status==='closed'&&s.graduation_id!==null&&s.graduation_id!==undefined) shIdx[s.strategy_id+':'+s.graduation_id]=s; }
-    var pairs=[];
+    var pairs=[], liveGross=[], shadowGross=[], liveLand=[], deltas=[];
     for(var i=0;i<liveTr.length;i++){ var lv=liveTr[i];
       if(lv.status!=='closed'||lv.graduation_id===null||lv.graduation_id===undefined) continue;
       var sid=map[lv.strategy_id]; if(!sid) continue;
       var tw=shIdx[sid+':'+lv.graduation_id]; if(!tw) continue;
       var lr=rt(lv), sr=rt(tw);
+      if(num(lv.gross_return_pct)!==null&&num(tw.gross_return_pct)!==null){ liveGross.push(num(lv.gross_return_pct)); shadowGross.push(num(tw.gross_return_pct)); }
+      if(num(lv.tx_land_ms)!==null) liveLand.push(num(lv.tx_land_ms));
+      deltas.push((num(lv.net_profit_sol)||0)-(num(tw.net_profit_sol)||0));
       pairs.push({ graduation_id:lv.graduation_id, mint:lv.mint, entry_ts:lv.entry_ts,
         live_return_pct:num(lv.net_return_pct), shadow_return_pct:num(tw.net_return_pct),
         return_delta_pct:(num(lv.net_return_pct)!==null&&num(tw.net_return_pct)!==null)? jround(num(lv.net_return_pct)-num(tw.net_return_pct),2): null,
@@ -6707,13 +6726,23 @@ export function renderLiveTrainingHtml(data: any): string {
     var liveRt=notNull(pairs.map(function(p){return p.live_roundtrip_slip_pct;}));
     var shadowRt=notNull(pairs.map(function(p){return p.shadow_roundtrip_slip_pct;}));
     var la=jmean(liveRets), sa=jmean(shadowRets);
+    var lga=jmean(liveGross), sga=jmean(shadowGross);
+    var grossGap=(lga!==null&&sga!==null)? lga-sga: null;
+    var netGap=(la!==null&&sa!==null)? la-sa: null;
+    var byAbs=deltas.slice().sort(function(a,b){return Math.abs(b)-Math.abs(a);});
+    var totalDelta=0; for(var i=0;i<deltas.length;i++) totalDelta+=deltas[i];
+    var top3=0; for(var i=0;i<Math.min(3,byAbs.length);i++) top3+=byAbs[i];
     return { matched_n:pairs.length,
       live_total_net_sol:jround(liveTotal), shadow_total_net_sol:jround(shadowTotal), total_net_sol_delta:jround(liveTotal-shadowTotal),
       live_avg_return_pct:jround(la,2), shadow_avg_return_pct:jround(sa,2),
-      avg_return_delta_pct:(la!==null&&sa!==null)? jround(la-sa,2): null,
+      avg_return_delta_pct:netGap!==null? jround(netGap,2): null,
       live_win_rate_pct: pairs.length? jround(liveWins/pairs.length*100,1): null,
       shadow_win_rate_pct: pairs.length? jround(shadowWins/pairs.length*100,1): null,
       live_avg_roundtrip_slip_pct:jround(jmean(liveRt),3), shadow_avg_roundtrip_slip_pct:jround(jmean(shadowRt),3),
+      live_avg_gross_return_pct:jround(lga,2), shadow_avg_gross_return_pct:jround(sga,2),
+      gross_gap_pp:jround(grossGap,2), cost_gap_pp:(netGap!==null&&grossGap!==null)? jround(netGap-grossGap,2): null,
+      median_delta_sol:jround(jmedian(deltas)), delta_drop_top3_sol: deltas.length? jround(totalDelta-top3): null,
+      live_avg_tx_land_ms:jround(jmean(liveLand),0), live_p90_tx_land_ms:jround(jpctl(liveLand,0.9),0),
       pairs:pairs };
   }
 
@@ -6751,6 +6780,22 @@ export function renderLiveTrainingHtml(data: any): string {
     document.getElementById('lt-metrics-scope').textContent=scopeLabel();
   }
 
+  function diagCard(lab,val,sub,cls){ return '<div class="lt-metric"><div class="lab">'+lab+'</div><div class="val '+(cls||'')+'">'+val+'</div>'+(sub?'<div style="color:#64748b;font-size:10px;margin-top:2px">'+sub+'</div>':'')+'</div>'; }
+  function renderDiagnostics(){
+    var m=metricsFor();
+    function ms(v){ return (v===null||v===undefined)?'—':fint(v)+' ms'; }
+    // ~5s land time = mostly RPC fallback (slow). <1.5s = fast Jito landing.
+    var landCls=(m.avg_tx_land_ms!==null&&m.avg_tx_land_ms>3000)?'red':(m.avg_tx_land_ms!==null&&m.avg_tx_land_ms>1500?'yellow':'green');
+    var html='';
+    html+=diagCard('Avg tx land time', ms(m.avg_tx_land_ms), 'p50 '+ms(m.tx_land_p50_ms)+' · p90 '+ms(m.tx_land_p90_ms), landCls);
+    html+=diagCard('Worst tx land time', ms(m.tx_land_max_ms), 'slowest single fill');
+    html+=diagCard('Avg entry slippage', fpctp(m.avg_entry_slip_pct), 'buy fill vs expected');
+    html+=diagCard('Avg exit slippage', fpctp(m.avg_exit_slip_pct), 'sell fill vs expected');
+    html+=diagCard('Execution success rate', m.execution_success_rate_pct===null?'—':m.execution_success_rate_pct+'%', 'closed / (closed+failed)', (m.execution_success_rate_pct!==null&&m.execution_success_rate_pct>=95)?'green':'yellow');
+    html+=diagCard('Total fees + tips', f4u((m.total_fees_sol||0)+(m.total_jito_tip_sol||0))+' SOL', 'fees '+f4u(m.total_fees_sol)+' · tips '+f4u(m.total_jito_tip_sol));
+    document.getElementById('lt-diag').innerHTML=html;
+  }
+
   // Real <table> (3 fixed columns) — robust alignment vs the old flow grid.
   function cmpTr(lab, live, shadow){ return '<tr><td class="rl">'+lab+'</td><td>'+live+'</td><td>'+shadow+'</td></tr>'; }
   function cspan(v,fmt){ return '<span class="'+colorClass(v)+'">'+fmt+'</span>'; }
@@ -6771,6 +6816,15 @@ export function renderLiveTrainingHtml(data: any): string {
       +cspan(c.avg_return_delta_pct,fpct(c.avg_return_delta_pct)+' avg/trade')+'</td></tr>';
     g+='</tbody></table>';
     document.getElementById('lt-cmp-table').innerHTML=g;
+    // Gap attribution + outlier + latency footer — the "why".
+    function ms(v){ return (v===null||v===undefined)?'—':fint(v)+' ms'; }
+    var att='<b>Gap attribution:</b> of the '+cspan(c.avg_return_delta_pct,fpct(c.avg_return_delta_pct))
+      +' net return gap, '+cspan(c.gross_gap_pp,fpct(c.gross_gap_pp)+'pp')+' is exit timing/price (gross) and '
+      +cspan(c.cost_gap_pp,fpct(c.cost_gap_pp)+'pp')+' is execution cost.'
+      +'<br><b>Outlier check (n='+c.matched_n+'):</b> median Δ/trade '+cspan(c.median_delta_sol,f4(c.median_delta_sol)+' SOL')
+      +' · Δ excl. top-3 |outliers| '+cspan(c.delta_drop_top3_sol,f4(c.delta_drop_top3_sol)+' SOL')+'.'
+      +'<br><b>Live latency:</b> avg '+ms(c.live_avg_tx_land_ms)+' (p90 '+ms(c.live_p90_tx_land_ms)+') vs shadow 0 (modeled fill).';
+    document.getElementById('lt-cmp-attrib').innerHTML=att;
     document.getElementById('lt-cmp-n').textContent=c.matched_n;
     // pairs table
     var tb=document.querySelector('#lt-cmp-pairs tbody'); var rows='';
@@ -6812,7 +6866,7 @@ export function renderLiveTrainingHtml(data: any): string {
     }
   }
 
-  function renderAll(){ renderPrimary(); renderMetrics(); renderComparison(); }
+  function renderAll(){ renderPrimary(); renderMetrics(); renderDiagnostics(); renderComparison(); }
 
   // ── init ──
   var primaryChart, cmpChart;
