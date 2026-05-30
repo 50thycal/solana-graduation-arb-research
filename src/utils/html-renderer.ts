@@ -6269,17 +6269,27 @@ export function renderLiveTrainingHtml(data: any): string {
       </p>
     </div>` : '';
 
-  // Strategy selector chips — multi-select. "All Live" first, then one per live
-  // strategy. The active chip(s) show a ✓; tapping several combines them.
-  const selectorChips = `
-    <button class="lt-strat-chip lt-active" data-strat="" type="button">
-      <span class="lt-chk">✓ </span>All Live <span class="lt-chip-n">${strategies.reduce((a: number, s: any) => a + (s.n_live || 0), 0)}</span>
-    </button>
-    ${strategies.map((s: any) => `
+  // Strategy selector chips — multi-select. Default shows only currently-active
+  // live strategies; retired/disabled ones (historical trades only) are tucked
+  // behind a collapsed dropdown so the live set is visible off the bat.
+  const activeStrats = strategies.filter((s: any) => s.active);
+  const offStrats = strategies.filter((s: any) => !s.active);
+  const activeTradeN = activeStrats.reduce((a: number, s: any) => a + (s.n_live || 0), 0);
+  const chip = (s: any) => `
       <button class="lt-strat-chip" data-strat="${escHtml(s.id)}" type="button" title="${escHtml(s.label)}">
         <span class="lt-chk">✓ </span>${escHtml(s.label)} <span class="lt-chip-n">${s.n_live}</span>
         ${s.shadow_id ? '' : '<span class="lt-nopair" title="no shadow twin mapped">⚠</span>'}
-      </button>`).join('')}`;
+      </button>`;
+  const selectorChips = `
+    <button class="lt-strat-chip lt-active" data-strat="" type="button">
+      <span class="lt-chk">✓ </span>All Active <span class="lt-chip-n">${activeTradeN}</span>
+    </button>
+    ${activeStrats.map(chip).join('')}
+    ${offStrats.length ? `
+    <details class="lt-off-wrap">
+      <summary>+ ${offStrats.length} retired / off</summary>
+      <div class="lt-off-chips">${offStrats.map(chip).join('')}</div>
+    </details>` : ''}`;
 
   // Inject the data object for client-side computation. Escape `<` so the JSON
   // can never break out of the <script> context.
@@ -6294,6 +6304,12 @@ export function renderLiveTrainingHtml(data: any): string {
     .lt-chip-n{background:#0f172a44;border-radius:8px;padding:0 6px;font-size:10px}
     .lt-active .lt-chip-n{background:#0f172a66}
     .lt-nopair{color:#f59e0b;font-size:11px}
+    .lt-off-wrap{display:inline-block}
+    .lt-off-wrap>summary{list-style:none;cursor:pointer;background:#1e293b;color:#64748b;border:1px dashed #475569;border-radius:14px;padding:5px 12px;font-size:12px}
+    .lt-off-wrap>summary::-webkit-details-marker{display:none}
+    .lt-off-wrap>summary:hover{color:#94a3b8;border-color:#64748b}
+    .lt-off-wrap[open]>summary{color:#94a3b8}
+    .lt-off-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;width:100%}
     .lt-seg{display:inline-flex;border:1px solid #334155;border-radius:6px;overflow:hidden}
     .lt-seg button{background:#1e293b;color:#94a3b8;border:none;padding:5px 12px;font-size:12px;cursor:pointer;font-family:inherit}
     .lt-seg button.lt-on{background:#2563eb;color:#fff;font-weight:600}
@@ -6324,7 +6340,7 @@ export function renderLiveTrainingHtml(data: any): string {
 
   const liveSection = hasLive ? `
     <div class="lt-strat-bar" id="lt-strat-bar">${selectorChips}</div>
-    <p class="lt-hint" style="margin:-8px 2px 14px">Tap multiple strategies to combine them · tap "All Live" to reset.</p>
+    <p class="lt-hint" style="margin:-8px 2px 14px">Showing active live strategies by default · tap chips to combine · "All Active" resets · retired ones are under the dropdown.</p>
 
     <div class="card">
       <div class="card-title">Performance Chart</div>
@@ -6430,11 +6446,19 @@ export function renderLiveTrainingHtml(data: any): string {
     {key:'net_pct', label:'Net Return per Trade (%)', val:function(t){return num(t.net_return_pct);}, unit:'%'}
   ];
 
+  // Set of currently-active (enabled, live-mode) strategy ids. Empty selection
+  // defaults to these so retired strategies don't pollute the at-a-glance view.
+  var ACTIVE_SET={}, ACTIVE_LIST=[];
+  (LT.strategies||[]).forEach(function(s){ if(s.active){ ACTIVE_SET[s.id]=true; ACTIVE_LIST.push(s.id); } });
   function liveTrades(){
     var all = LT.trades.live || [];
-    if(!state.selected.length) return all;
-    var sel={}; for(var i=0;i<state.selected.length;i++) sel[state.selected[i]]=true;
-    return all.filter(function(t){return sel[t.strategy_id];});
+    if(state.selected.length){
+      var sel={}; for(var i=0;i<state.selected.length;i++) sel[state.selected[i]]=true;
+      return all.filter(function(t){return sel[t.strategy_id];});
+    }
+    // Default: active strategies only (fall back to all if none are active).
+    if(!ACTIVE_LIST.length) return all;
+    return all.filter(function(t){return ACTIVE_SET[t.strategy_id];});
   }
 
   // Build {points:[{x,y,t}], zero} for the current line metric.
@@ -6749,7 +6773,7 @@ export function renderLiveTrainingHtml(data: any): string {
   function metricsFor(){ return jsComputeMetrics(liveTrades()); }
   function comparisonFor(){ return jsComputeComparison(liveTrades(), LT.trades.shadow||[]); }
   function scopeLabel(){
-    if(!state.selected.length) return '— all live strategies';
+    if(!state.selected.length) return '— active live strategies';
     if(state.selected.length===1) return '— '+state.selected[0];
     return '— '+state.selected.length+' strategies';
   }

@@ -414,11 +414,18 @@ export function computeLiveTrainingData(db: Database.Database) {
     ).all(...neededShadowIds) as LtTrade[];
   }
 
-  // Labels from strategy_configs (id → label); fall back to id when absent
-  // (e.g. a deleted strategy that still has historical trades).
+  // Labels + active-state from strategy_configs (id → label / enabled+mode).
+  // "active" = currently enabled AND configured for a live execution mode.
+  // Retired strategies keep historical live trades but are no longer active —
+  // the page defaults to active-only and tucks the rest behind a dropdown.
   const labelMap = new Map<string, string>();
+  const activeLiveIds = new Set<string>();
   for (const row of getStrategyConfigs(db)) {
     labelMap.set(row.id, row.label || row.id);
+    if (row.enabled !== 1) continue;
+    let mode: string | undefined;
+    try { mode = JSON.parse(row.config_json)?.executionMode; } catch { /* ignore */ }
+    if (mode === 'live_micro' || mode === 'live_full') activeLiveIds.add(row.id);
   }
   const labelFor = (id: string) => labelMap.get(id) || id;
 
@@ -430,6 +437,7 @@ export function computeLiveTrainingData(db: Database.Database) {
     return {
       id,
       label: labelFor(id),
+      active: activeLiveIds.has(id),
       shadow_id: shadowId,
       shadow_label: shadowId ? labelFor(shadowId) : null,
       n_live: nLive,
