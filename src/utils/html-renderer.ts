@@ -6269,14 +6269,15 @@ export function renderLiveTrainingHtml(data: any): string {
       </p>
     </div>` : '';
 
-  // Strategy selector chips. "All Live" first, then one per live strategy.
+  // Strategy selector chips — multi-select. "All Live" first, then one per live
+  // strategy. The active chip(s) show a ✓; tapping several combines them.
   const selectorChips = `
     <button class="lt-strat-chip lt-active" data-strat="" type="button">
-      All Live <span class="lt-chip-n">${strategies.reduce((a: number, s: any) => a + (s.n_live || 0), 0)}</span>
+      <span class="lt-chk">✓ </span>All Live <span class="lt-chip-n">${strategies.reduce((a: number, s: any) => a + (s.n_live || 0), 0)}</span>
     </button>
     ${strategies.map((s: any) => `
       <button class="lt-strat-chip" data-strat="${escHtml(s.id)}" type="button" title="${escHtml(s.label)}">
-        ${escHtml(s.label)} <span class="lt-chip-n">${s.n_live}</span>
+        <span class="lt-chk">✓ </span>${escHtml(s.label)} <span class="lt-chip-n">${s.n_live}</span>
         ${s.shadow_id ? '' : '<span class="lt-nopair" title="no shadow twin mapped">⚠</span>'}
       </button>`).join('')}`;
 
@@ -6310,15 +6311,18 @@ export function renderLiveTrainingHtml(data: any): string {
     .lt-metric{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:8px 10px}
     .lt-metric .lab{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
     .lt-metric .val{font-size:16px;font-weight:600;margin-top:2px}
-    .lt-cmp-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border:1px solid #1e293b;border-radius:6px;overflow:hidden}
-    .lt-cmp-grid>div{padding:6px 10px;border-bottom:1px solid #1e293b;font-size:12px}
-    .lt-cmp-grid .h{background:#262640;color:#94a3b8;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
-    .lt-cmp-grid .rl{color:#64748b}
-    @media (max-width:640px){.container{padding:8px}.lt-cmp-grid{grid-template-columns:1fr}}
+    .lt-cmp-tbl{width:100%;border-collapse:collapse;border:1px solid #1e293b;border-radius:6px;overflow:hidden;table-layout:fixed}
+    .lt-cmp-tbl th,.lt-cmp-tbl td{padding:6px 10px;border-bottom:1px solid #1e293b;font-size:12px;text-align:left;word-break:break-word}
+    .lt-cmp-tbl thead th{background:#262640;color:#94a3b8;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+    .lt-cmp-tbl td.rl{color:#64748b}
+    .lt-cmp-tbl tr.lt-cmp-delta td{background:#0f172a;font-weight:600;border-top:1px solid #334155}
+    .lt-strat-chip.lt-active .lt-chk{display:inline}.lt-chk{display:none;font-size:10px}
+    @media (max-width:640px){.container{padding:8px}}
   `;
 
   const liveSection = hasLive ? `
     <div class="lt-strat-bar" id="lt-strat-bar">${selectorChips}</div>
+    <p class="lt-hint" style="margin:-8px 2px 14px">Tap multiple strategies to combine them · tap "All Live" to reset.</p>
 
     <div class="card">
       <div class="card-title">Performance Chart</div>
@@ -6361,7 +6365,7 @@ export function renderLiveTrainingHtml(data: any): string {
           <span><i style="background:#22d3ee"></i>Live (cumulative net SOL)</span>
           <span><i style="background:#a78bfa"></i>Shadow (cumulative net SOL)</span>
         </div>
-        <div style="margin-top:14px" class="lt-cmp-grid" id="lt-cmp-table"></div>
+        <div style="margin-top:14px;overflow-x:auto" id="lt-cmp-table"></div>
         <details style="margin-top:12px">
           <summary style="cursor:pointer;color:#94a3b8;font-size:12px">Per-graduation pairs (<span id="lt-cmp-n">0</span>)</summary>
           <div style="overflow-x:auto;margin-top:8px">
@@ -6391,7 +6395,8 @@ export function renderLiveTrainingHtml(data: any): string {
   function colorClass(v){ v=num(v); return v===null?'':(v>0?'green':(v<0?'red':'')); }
   function rt(t){ var e=num(t.entry_slip_pct), x=num(t.exit_slip_pct); if(e===null&&x===null) return null; return (e||0)+(x||0); }
 
-  var state = { strategy:'', type:'line', metric:'cum_sol', xView:null };
+  // state.selected: array of live strategy_ids. Empty = "All Live" (aggregate).
+  var state = { selected:[], type:'line', metric:'cum_sol', xView:null };
 
   // ── line-chart metric descriptors (computed from live trades) ──
   var LINE_METRICS = [
@@ -6414,7 +6419,9 @@ export function renderLiveTrainingHtml(data: any): string {
 
   function liveTrades(){
     var all = LT.trades.live || [];
-    return state.strategy ? all.filter(function(t){return t.strategy_id===state.strategy;}) : all;
+    if(!state.selected.length) return all;
+    var sel={}; for(var i=0;i<state.selected.length;i++) sel[state.selected[i]]=true;
+    return all.filter(function(t){return sel[t.strategy_id];});
   }
 
   // Build {points:[{x,y,t}], zero} for the current line metric.
@@ -6624,8 +6631,99 @@ export function renderLiveTrainingHtml(data: any): string {
   }
 
   // ── metric & comparison rendering (uses server-computed numbers) ──
-  function metricsFor(){ return state.strategy ? (LT.metrics.by_strategy[state.strategy]||LT.metrics.all) : LT.metrics.all; }
-  function comparisonFor(){ return state.strategy ? (LT.comparison.by_strategy[state.strategy]||LT.comparison.all) : LT.comparison.all; }
+  // ── client-side metrics + comparison (mirror of the server TS helpers) ──
+  // Computed fresh from the selected subset of live trades so ANY multi-select
+  // combination works, not just single-strategy / all. Mirrors computeMetrics /
+  // computeComparison in src/api/live-training-data.ts.
+  function jround(v,d){ if(v===null||v===undefined||!isFinite(v)) return null; var f=Math.pow(10,d===undefined?4:d); return Math.round(v*f)/f; }
+  function jmean(xs){ if(!xs.length) return null; var s=0; for(var i=0;i<xs.length;i++) s+=xs[i]; return s/xs.length; }
+  function jmedian(xs){ if(!xs.length) return null; var s=xs.slice().sort(function(a,b){return a-b;}); var m=Math.floor(s.length/2); return s.length%2? s[m] : (s[m-1]+s[m])/2; }
+  function jstd(xs){ if(xs.length<2) return null; var m=jmean(xs); var v=0; for(var i=0;i<xs.length;i++){var d=xs[i]-m; v+=d*d;} return Math.sqrt(v/xs.length); }
+  function notNull(xs){ var o=[]; for(var i=0;i<xs.length;i++) if(xs[i]!==null&&xs[i]!==undefined&&isFinite(xs[i])) o.push(xs[i]); return o; }
+
+  function jsComputeMetrics(trades){
+    var closed=[],failed=[],open=[];
+    for(var i=0;i<trades.length;i++){ var s=trades[i].status; if(s==='closed') closed.push(trades[i]); else if(s==='failed') failed.push(trades[i]); else if(s==='open') open.push(trades[i]); }
+    var wins=[],losses=[];
+    for(var i=0;i<closed.length;i++){ ((num(closed[i].net_profit_sol)||0)>0?wins:losses).push(closed[i]); }
+    var netSols=closed.map(function(t){return num(t.net_profit_sol)||0;});
+    var returns=notNull(closed.map(function(t){return num(t.net_return_pct);}));
+    var holds=notNull(closed.map(function(t){return num(t.held_seconds);}));
+    var grossWins=0; for(var i=0;i<wins.length;i++) grossWins+=num(wins[i].net_profit_sol)||0;
+    var grossLosses=0; for(var i=0;i<losses.length;i++){ var v=num(losses[i].net_profit_sol)||0; if(v<0) grossLosses+=-v; }
+    var entrySlips=notNull(closed.map(function(t){return num(t.entry_slip_pct);}));
+    var exitSlips=notNull(closed.map(function(t){return num(t.exit_slip_pct);}));
+    var rtSlips=notNull(closed.map(rt));
+    var landMs=notNull(closed.map(function(t){return num(t.tx_land_ms);}));
+    var sd=jstd(returns), mr=jmean(returns);
+    var rc={}; for(var i=0;i<closed.length;i++){ var r=closed[i].exit_reason||'unknown'; rc[r]=(rc[r]||0)+1; }
+    var totalFees=0,totalJito=0,totalNet=0;
+    for(var i=0;i<closed.length;i++){ totalFees+=num(closed[i].fees_sol)||0; totalJito+=num(closed[i].jito_tip_sol)||0; }
+    for(var i=0;i<netSols.length;i++) totalNet+=netSols[i];
+    return {
+      n_trades:trades.length, n_closed:closed.length, n_failed:failed.length, n_open:open.length,
+      total_net_sol:jround(totalNet),
+      win_rate_pct: closed.length? jround(wins.length/closed.length*100,1): null,
+      profit_factor: grossLosses>0? jround(grossWins/grossLosses,2): (grossWins>0? null: 0),
+      avg_winner_sol: jround(jmean(wins.map(function(t){return num(t.net_profit_sol)||0;}))),
+      avg_loser_sol: jround(jmean(losses.map(function(t){return num(t.net_profit_sol)||0;}))),
+      avg_winner_pct: jround(jmean(notNull(wins.map(function(t){return num(t.net_return_pct);}))),2),
+      avg_loser_pct: jround(jmean(notNull(losses.map(function(t){return num(t.net_return_pct);}))),2),
+      largest_winner_sol: jround(netSols.length? Math.max.apply(null,netSols): null),
+      largest_loser_sol: jround(netSols.length? Math.min.apply(null,netSols): null),
+      avg_net_return_pct: jround(mr,2), median_net_return_pct: jround(jmedian(returns),2),
+      sharpe_like: (sd&&sd>0&&mr!==null)? jround(mr/sd,3): null,
+      avg_holding_sec: jround(jmean(holds),0),
+      avg_entry_slip_pct: jround(jmean(entrySlips),3), avg_exit_slip_pct: jround(jmean(exitSlips),3),
+      avg_roundtrip_slip_pct: jround(jmean(rtSlips),3),
+      total_fees_sol: jround(totalFees,6), total_jito_tip_sol: jround(totalJito,6),
+      avg_tx_land_ms: jround(jmean(landMs),0),
+      execution_success_rate_pct: (closed.length+failed.length)>0? jround(closed.length/(closed.length+failed.length)*100,1): null,
+      exit_reason_counts: rc
+    };
+  }
+
+  function jsComputeComparison(liveTr, shadowTr){
+    var map=LT.mapping||{};
+    var shIdx={};
+    for(var i=0;i<shadowTr.length;i++){ var s=shadowTr[i]; if(s.status==='closed'&&s.graduation_id!==null&&s.graduation_id!==undefined) shIdx[s.strategy_id+':'+s.graduation_id]=s; }
+    var pairs=[];
+    for(var i=0;i<liveTr.length;i++){ var lv=liveTr[i];
+      if(lv.status!=='closed'||lv.graduation_id===null||lv.graduation_id===undefined) continue;
+      var sid=map[lv.strategy_id]; if(!sid) continue;
+      var tw=shIdx[sid+':'+lv.graduation_id]; if(!tw) continue;
+      var lr=rt(lv), sr=rt(tw);
+      pairs.push({ graduation_id:lv.graduation_id, mint:lv.mint, entry_ts:lv.entry_ts,
+        live_return_pct:num(lv.net_return_pct), shadow_return_pct:num(tw.net_return_pct),
+        return_delta_pct:(num(lv.net_return_pct)!==null&&num(tw.net_return_pct)!==null)? jround(num(lv.net_return_pct)-num(tw.net_return_pct),2): null,
+        live_net_sol:num(lv.net_profit_sol), shadow_net_sol:num(tw.net_profit_sol),
+        live_roundtrip_slip_pct:jround(lr,3), shadow_roundtrip_slip_pct:jround(sr,3) });
+    }
+    pairs.sort(function(a,b){return (a.entry_ts||0)-(b.entry_ts||0);});
+    var liveRets=notNull(pairs.map(function(p){return p.live_return_pct;}));
+    var shadowRets=notNull(pairs.map(function(p){return p.shadow_return_pct;}));
+    var liveWins=0,shadowWins=0,liveTotal=0,shadowTotal=0;
+    for(var i=0;i<pairs.length;i++){ if((num(pairs[i].live_net_sol)||0)>0) liveWins++; if((num(pairs[i].shadow_net_sol)||0)>0) shadowWins++; liveTotal+=num(pairs[i].live_net_sol)||0; shadowTotal+=num(pairs[i].shadow_net_sol)||0; }
+    var liveRt=notNull(pairs.map(function(p){return p.live_roundtrip_slip_pct;}));
+    var shadowRt=notNull(pairs.map(function(p){return p.shadow_roundtrip_slip_pct;}));
+    var la=jmean(liveRets), sa=jmean(shadowRets);
+    return { matched_n:pairs.length,
+      live_total_net_sol:jround(liveTotal), shadow_total_net_sol:jround(shadowTotal), total_net_sol_delta:jround(liveTotal-shadowTotal),
+      live_avg_return_pct:jround(la,2), shadow_avg_return_pct:jround(sa,2),
+      avg_return_delta_pct:(la!==null&&sa!==null)? jround(la-sa,2): null,
+      live_win_rate_pct: pairs.length? jround(liveWins/pairs.length*100,1): null,
+      shadow_win_rate_pct: pairs.length? jround(shadowWins/pairs.length*100,1): null,
+      live_avg_roundtrip_slip_pct:jround(jmean(liveRt),3), shadow_avg_roundtrip_slip_pct:jround(jmean(shadowRt),3),
+      pairs:pairs };
+  }
+
+  function metricsFor(){ return jsComputeMetrics(liveTrades()); }
+  function comparisonFor(){ return jsComputeComparison(liveTrades(), LT.trades.shadow||[]); }
+  function scopeLabel(){
+    if(!state.selected.length) return '— all live strategies';
+    if(state.selected.length===1) return '— '+state.selected[0];
+    return '— '+state.selected.length+' strategies';
+  }
 
   function metricCard(lab,val,cls){ return '<div class="lt-metric"><div class="lab">'+lab+'</div><div class="val '+(cls||'')+'">'+val+'</div></div>'; }
   function renderMetrics(){
@@ -6650,26 +6748,28 @@ export function renderLiveTrainingHtml(data: any): string {
     html+=metricCard('Execution Success Rate', m.execution_success_rate_pct===null?'—':m.execution_success_rate_pct+'%', (m.execution_success_rate_pct!==null&&m.execution_success_rate_pct>=95)?'green':'yellow');
     html+=metricCard('Top Exit Reason', topReason);
     document.getElementById('lt-metrics').innerHTML=html;
-    var scope = state.strategy ? ('— '+state.strategy) : '— all live strategies';
-    document.getElementById('lt-metrics-scope').textContent=scope;
+    document.getElementById('lt-metrics-scope').textContent=scopeLabel();
   }
 
-  function cmpRow(lab,live,shadow,delta){ return '<div class="rl">'+lab+'</div><div>'+live+'</div><div>'+shadow+'</div>'; }
+  // Real <table> (3 fixed columns) — robust alignment vs the old flow grid.
+  function cmpTr(lab, live, shadow){ return '<tr><td class="rl">'+lab+'</td><td>'+live+'</td><td>'+shadow+'</td></tr>'; }
+  function cspan(v,fmt){ return '<span class="'+colorClass(v)+'">'+fmt+'</span>'; }
   function renderComparison(){
     var c=comparisonFor();
     var body=document.getElementById('lt-cmp-body'), empty=document.getElementById('lt-cmp-empty');
     if(!c || c.matched_n===0){ body.style.display='none'; empty.style.display='block'; return; }
     empty.style.display='none'; body.style.display='block';
-    // table
-    var g='';
-    g+='<div class="h">Metric</div><div class="h" style="color:#22d3ee">Live</div><div class="h" style="color:#a78bfa">Shadow</div>';
-    g+=cmpRow('Matched graduations', c.matched_n, c.matched_n);
-    g+=cmpRow('Total net SOL', '<span class="'+colorClass(c.live_total_net_sol)+'">'+f4(c.live_total_net_sol)+'</span>', '<span class="'+colorClass(c.shadow_total_net_sol)+'">'+f4(c.shadow_total_net_sol)+'</span>');
-    g+=cmpRow('Avg return %', '<span class="'+colorClass(c.live_avg_return_pct)+'">'+fpct(c.live_avg_return_pct)+'</span>', '<span class="'+colorClass(c.shadow_avg_return_pct)+'">'+fpct(c.shadow_avg_return_pct)+'</span>');
-    g+=cmpRow('Win rate', (c.live_win_rate_pct===null?'—':c.live_win_rate_pct+'%'), (c.shadow_win_rate_pct===null?'—':c.shadow_win_rate_pct+'%'));
-    g+=cmpRow('Avg round-trip slip', fpctp(c.live_avg_roundtrip_slip_pct), fpctp(c.shadow_avg_roundtrip_slip_pct));
-    // delta highlight row
-    g+='<div class="rl">Live − Shadow</div><div style="grid-column:span 2"><span class="'+colorClass(c.total_net_sol_delta)+'">'+f4(c.total_net_sol_delta)+' SOL</span> · <span class="'+colorClass(c.avg_return_delta_pct)+'">'+fpct(c.avg_return_delta_pct)+' avg/trade</span></div>';
+    var g='<table class="lt-cmp-tbl"><thead><tr>'
+      +'<th>Metric</th><th style="color:#22d3ee">Live</th><th style="color:#a78bfa">Shadow</th></tr></thead><tbody>';
+    g+=cmpTr('Matched graduations', c.matched_n, c.matched_n);
+    g+=cmpTr('Total net SOL', cspan(c.live_total_net_sol,f4(c.live_total_net_sol)), cspan(c.shadow_total_net_sol,f4(c.shadow_total_net_sol)));
+    g+=cmpTr('Avg return %', cspan(c.live_avg_return_pct,fpct(c.live_avg_return_pct)), cspan(c.shadow_avg_return_pct,fpct(c.shadow_avg_return_pct)));
+    g+=cmpTr('Win rate', (c.live_win_rate_pct===null?'—':c.live_win_rate_pct+'%'), (c.shadow_win_rate_pct===null?'—':c.shadow_win_rate_pct+'%'));
+    g+=cmpTr('Avg round-trip slip', fpctp(c.live_avg_roundtrip_slip_pct), fpctp(c.shadow_avg_roundtrip_slip_pct));
+    g+='<tr class="lt-cmp-delta"><td class="rl">Live − Shadow</td><td colspan="2">'
+      +cspan(c.total_net_sol_delta,f4(c.total_net_sol_delta)+' SOL')+' · '
+      +cspan(c.avg_return_delta_pct,fpct(c.avg_return_delta_pct)+' avg/trade')+'</td></tr>';
+    g+='</tbody></table>';
     document.getElementById('lt-cmp-table').innerHTML=g;
     document.getElementById('lt-cmp-n').textContent=c.matched_n;
     // pairs table
@@ -6720,12 +6820,27 @@ export function renderLiveTrainingHtml(data: any): string {
     if(!LT.has_live_data) return;
     primaryChart=makeChart(document.getElementById('lt-primary-wrap'), document.getElementById('lt-primary-tip'));
     cmpChart=makeChart(document.getElementById('lt-cmp-wrap'), document.getElementById('lt-cmp-tip'));
-    // strategy chips
+    // strategy chips — MULTI-SELECT. "All Live" (data-strat="") clears the
+    // selection; clicking individual chips toggles them in/out of the set.
+    // Selecting every individual chip, or toggling the last one off, reverts to
+    // the All-Live aggregate.
+    function syncChips(){
+      var chips=document.querySelectorAll('.lt-strat-chip');
+      var selMap={}; for(var i=0;i<state.selected.length;i++) selMap[state.selected[i]]=true;
+      for(var i=0;i<chips.length;i++){ var id=chips[i].getAttribute('data-strat');
+        var on = id==='' ? state.selected.length===0 : !!selMap[id];
+        chips[i].classList.toggle('lt-active', on);
+      }
+    }
     document.getElementById('lt-strat-bar').addEventListener('click', function(ev){
       var btn=ev.target.closest('.lt-strat-chip'); if(!btn) return;
-      state.strategy=btn.getAttribute('data-strat')||'';
-      var chips=document.querySelectorAll('.lt-strat-chip'); for(var i=0;i<chips.length;i++) chips[i].classList.remove('lt-active');
-      btn.classList.add('lt-active');
+      var id=btn.getAttribute('data-strat')||'';
+      if(id===''){ state.selected=[]; }
+      else {
+        var idx=state.selected.indexOf(id);
+        if(idx>=0) state.selected.splice(idx,1); else state.selected.push(id);
+      }
+      syncChips();
       document.getElementById('lt-reset-zoom').style.display='none';
       renderAll();
     });
