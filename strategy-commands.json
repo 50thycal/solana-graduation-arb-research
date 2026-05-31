@@ -1,0 +1,290 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v46-v25-skip-red",
+      "label": "v46 v25-base + regime skip_red [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "regimeGate": "skip_red"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v46-acc-gate-skip-red",
+      "label": "v46 acc-gate + regime skip_red [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"},
+          {"field": "acceleration_t30", "operator": ">", "value": -8, "label": "acc_t30>-8"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "regimeGate": "skip_red"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v46-v44climb-skip-red",
+      "label": "v46 v44-climb + regime skip_red [shadow 0.5 SOL]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "regimeGate": "skip_red"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v46-v44-1s-ttp10-skip-red",
+      "label": "v46 v44 1s+ttp10 + regime skip_red [shadow 0.5 SOL]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "pollIntervalSec": 1,
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": true,
+        "trailingTpDropPct": 10,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "regimeGate": "skip_red"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v46-v25-green-only",
+      "label": "v46 v25-base + regime green_only [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "regimeGate": "green_only"
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v46-cohort",
+      "strategy_id": "v46-cohort",
+      "cohort_label": "v46",
+      "hypothesis": "v46 cohort - first live test of the regime entry gate. Adds regimeGate to 5 shadow mirrors of proven base strategies (v25, acc-gate, v44-climb, v44-1s-ttp10). The regime classifier (universe-level pump_rate / fast_rug_rate over the last 50 grads) is computed independently by /regime-analysis and exposed to the trade-evaluator as a cheap cached snapshot. Prior 14-day overlay data showed RED hours net -0.0014 SOL/trade across 230 live trades, vs YELLOW +0.0014/trade across 90 trades, vs GREEN +0.0005/trade on 71 trades after threshold recalibration - a monotone-correct ordering. Goal: validate that gating live entries against this signal improves outlier-robust net SOL accumulation vs the un-gated control. Four variants use skip_red (block RED only, allow YELLOW + GREEN); one variant (v46-v25-green-only) uses green_only as the more restrictive A/B. Sample-size caveat: at ~60% RED time-in-regime, the gated strategies will see ~40% of the trade volume of the un-gated control. Need n>=80 to evaluate drop3 vs base.",
+      "prediction": {
+        "target_net_sol": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "cohort-level - see individual variants"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v46-v25-skip-red",
+      "strategy_id": "v46-v25-skip-red",
+      "cohort_label": "v46",
+      "hypothesis": "Mainline regime-gate test. Mirror of v25-bot-excl-climbing (ON-TRACK, n=450, drop3 +5.94) with regimeGate=skip_red - skips entries when current regime is RED, allows GREEN + YELLOW. Hypothesis: cuts RED-hour entries (which run -0.0014 SOL/trade on the un-gated control) without sacrificing the YELLOW+GREEN winners. Expected volume: ~40% of v25 (since RED is ~60% of recent time). If per-trade mean rises meaningfully AND drop3 stays positive at n>=100, the gate is value-additive. Compare directly to v46-v25-green-only (the more restrictive A/B) to see whether YELLOW hours are worth keeping.",
+      "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 7,
+        "target_drop_top3": 0.5,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=60 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v46-acc-gate-skip-red",
+      "strategy_id": "v46-acc-gate-skip-red",
+      "cohort_label": "v46",
+      "hypothesis": "Strongest expected lift in the v46 cohort. Mirror of v40-acc-gate (the standout new candidate, trim mean +6.92% at n=99, drop3 +2.79) with regimeGate=skip_red. acc-gate already showed the strongest pump_rate lag-correlation (+0.418 at 5h lead) - it is the strategy most sensitive to the universe's right-tail strength, so it should also be the one most helped by skipping the RED windows where the right tail is absent. Volume cost: probably 40-50% of acc-gate's un-gated volume.",
+      "prediction": {
+        "target_net_sol": 2.5,
+        "target_sol_per_mo": 12,
+        "target_drop_top3": 0.8,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v46-v44climb-skip-red",
+      "strategy_id": "v46-v44climb-skip-red",
+      "cohort_label": "v46",
+      "hypothesis": "Cross-base sanity check. v44-climb is the same filter set as v25-base but its live variant has been struggling with execution drag (live net -0.14 SOL at n=64). Shadow control of v44-climb at 0.5 SOL should track v25-base closely. Adding skip_red here tests whether the regime gate behaves consistently when the underlying base is the same as v46-v25-skip-red - they should produce near-identical numbers. If v46-v44climb-skip-red diverges meaningfully from v46-v25-skip-red, something else is going on (filter-evaluation race, signal staleness across instances, etc.).",
+      "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 7,
+        "target_drop_top3": 0.5,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=60 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v46-v44-1s-ttp10-skip-red",
+      "strategy_id": "v46-v44-1s-ttp10-skip-red",
+      "cohort_label": "v46",
+      "hypothesis": "Stack two improvements: 1s poll + trailing TP 10% drop (matches v44-climb-1s-ttp10 - the only v44 live variant still net-positive at n=63) PLUS regimeGate=skip_red. Hypothesis: the 1s poll catches fast SL/TP transitions better while skip_red prunes the worst windows for those transitions to fire in. If both compound, this should beat both v46-v25-skip-red (no 1s poll) and v44-climb-1s-ttp10 (no regime gate) on drop3.",
+      "prediction": {
+        "target_net_sol": 2,
+        "target_sol_per_mo": 10,
+        "target_drop_top3": 0.7,
+        "target_n": 80,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v46-v25-green-only",
+      "strategy_id": "v46-v25-green-only",
+      "cohort_label": "v46",
+      "hypothesis": "Most restrictive variant in v46. v25 base + regimeGate=green_only - only trades when current regime is GREEN (pump_rate >= 20% AND fast_rug_rate <= 25%). At ~18-19% time-in-regime for GREEN, this variant will see ~20% of v25's volume. Hypothesis: trades highest-quality windows only, expect highest mean% but lowest n. A vs B with v46-v25-skip-red (which also keeps YELLOW): if green_only beats skip_red, YELLOW hours aren't worth the trade. If skip_red beats green_only, YELLOW is still profitable enough to participate in. Low n caveat - may need 21+ days to hit n=60.",
+      "prediction": {
+        "target_net_sol": 1,
+        "target_sol_per_mo": 4,
+        "target_drop_top3": 0.3,
+        "target_n": 60,
+        "target_days": 21,
+        "kill_criterion": "n>=40 and net_sol<-0.5"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
