@@ -12,6 +12,7 @@ import { PoolTracker } from './pool-tracker';
 import { HolderEnrichment } from '../collector/holder-enrichment';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { PriceCollector } from '../collector/price-collector';
+import { LaunchCounter } from '../collector/launch-counter';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('graduation-listener');
@@ -162,12 +163,18 @@ const PUMP_WITHDRAW_AUTHORITY = new PublicKey(
 // auto-reconnect already covers gaps that long).
 const MIGRATION_POLL_INTERVAL_MS = parseInt(process.env.MIGRATION_POLL_INTERVAL_MS || '10000', 10);
 
+// Matches pump.fun's token-create anchor log ("...Instruction: Create") for the
+// universe launch-rate signal, while excluding PumpSwap's "Instruction: CreatePool"
+// (the \b denies a match when "Create" is followed by a word char like the P in Pool).
+const CREATE_INSTR_RE = /Instruction: Create\b/;
+
 export class GraduationListener {
   private connection: Connection;
   private db: Database.Database;
   private poolTracker: PoolTracker;
   private priceCollector: PriceCollector;
   private holderEnrichment: HolderEnrichment;
+  private launchCounter: LaunchCounter;
   // Single pump.fun WS subscription at commitment='processed'. The confirmed-
   // commitment sibling was removed 2026-05-03 after 11h of zero wins (Helius
   // batch-replays confirmed-level events at slot-confirmation time — 25-75s
@@ -317,6 +324,7 @@ export class GraduationListener {
     this.poolTracker = new PoolTracker(db, this.connection);
     this.priceCollector = new PriceCollector(db, this.connection);
     this.holderEnrichment = new HolderEnrichment(this.connection);
+    this.launchCounter = new LaunchCounter(db);
 
     // PumpSwap WS used to be wired as a parallel migration-detection channel
     // here, but with pump.fun-processed winning ~97% and PumpSwap winning 0%
@@ -480,6 +488,7 @@ export class GraduationListener {
     await this.subscribe();
     await this.poolTracker.start();
     this.priceCollector.startAutoVelocityRecovery();
+    this.launchCounter.start();
     await this.startMigrationPoller();
 
     this.healthCheckInterval = setInterval(() => {
@@ -575,6 +584,7 @@ export class GraduationListener {
     await this.unsubscribe();
     this.poolTracker.stop();
     this.priceCollector.stop();
+    this.launchCounter.stop();
     logger.info('Graduation listener stopped');
   }
 
@@ -831,15 +841,26 @@ export class GraduationListener {
     if (logs.err) return;
 
     // Anchor programs emit "Program log: Instruction: <Name>" for every instruction.
-    // Only the pump.fun migrate instruction signals a real graduation — it atomically
-    // drains the bonding curve and creates the PumpSwap pool in one tx.
+    // Single pass over the log lines: a "Migrate" instruction is the authoritative
+    // graduation event; a "Create" instruction is a new token mint, counted for the
+    // universe launch-rate regime signal (LaunchCounter dedupes by signature and
+    // costs no RPC — it taps the firehose we already iterate here).
     // The final buy that sets complete=true has no special log and fires separately;
-    // we detect it via the migration tx instead, which is the authoritative event.
-    const graduationLog = logs.logs.find(
-      (log) => log.includes('Instruction: Migrate')
-    );
+    // we detect graduations via the migration tx instead.
+    // CREATE_INSTR_RE matches pump.fun's token-create log ("Instruction: Create")
+    // but NOT PumpSwap's "Instruction: CreatePool" — which rides along in every
+    // migration tx and would otherwise count every graduation as a launch. The
+    // \b after "Create" denies the match when followed by a word char (Pool).
+    let hasMigrate = false;
+    let hasCreate = false;
+    for (const log of logs.logs) {
+      if (log.includes('Instruction: Migrate')) hasMigrate = true;
+      else if (CREATE_INSTR_RE.test(log)) hasCreate = true;
+    }
 
-    if (!graduationLog) return;
+    if (hasCreate) this.launchCounter.record(logs.signature);
+
+    if (!hasMigrate) return;
 
     await this.handleMigrationCandidate(logs.signature, ctx.slot, source, Date.now());
   }

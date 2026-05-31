@@ -839,6 +839,22 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_market_daily_fetched ON market_daily(fetched_at);
   `);
 
+  // Universe-level token-launch rate — one row per UTC hour bucket, counting
+  // pump.fun `Instruction: Create` events seen on the Helius firehose. This is
+  // a genuinely LEADING regime signal (froth / risk appetite): unlike the
+  // pump_rate / fast_rug_rate signals it does NOT wait on T+300 outcomes, so it
+  // updates the moment tokens are minted rather than ~5 min + window-lag later.
+  // Counts are deduped by signature in LaunchCounter before landing here, so the
+  // additive upsert is safe to call repeatedly. No backfill possible — the
+  // create firehose is not retained, so the series starts at deploy time.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS token_launches (
+      bucket_start INTEGER PRIMARY KEY,   -- unix seconds, floored to the hour (UTC)
+      launch_count INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER
+    );
+  `);
+
   // Bot error log — one row per uncaught exception / unhandled rejection so
   // /api/snapshot can surface the last crash without depending on Railway logs.
   db.exec(`

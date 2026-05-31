@@ -9,11 +9,18 @@ import type Database from 'better-sqlite3';
  * timeline so we can visually validate whether the signals lead or lag actual
  * live P&L.
  *
- * Signals (all derived from graduation_momentum, no new collection needed):
+ * Signals:
+ *   Lagging/coincident (need T+300 outcomes — derived from graduation_momentum):
  *   - pump_rate     — % of grads in the window with pct_t300 >= +50%
  *   - fast_rug_rate — % of grads with pct_t300 <= -50%  (proxy for hard rugs)
  *   - median_vol    — median sum_abs_returns_0_30 (universe whippiness proxy)
  *   - median_t300   — median pct_t300 (raw tape return)
+ *   Leading candidates (Tier 1, 2026-05-31 — known at/before T+0, no T+300 wait):
+ *   - grad_rate     — graduation arrivals per hour (already collected)
+ *   - median_ttg    — median time-to-graduate (token_age_seconds; already collected)
+ *   - launch_rate   — pump.fun token-creation events/hr (token_launches, new collector)
+ *   All five run through the same lag-correlation harness (signal_vs_pnl) so we
+ *   can keep only the signals that provably lead live PnL.
  *
  * Regime classification (per hourly bucket):
  *   GREEN  — pump_rate >= 25% AND fast_rug_rate <= 35%
@@ -70,6 +77,9 @@ export interface RegimeAnalysisData {
     fast_rug_rate: number;
     median_vol: number | null;
     median_t300: number | null;
+    median_ttg: number | null;   // median time-to-graduate (sec) over recent grads (leading)
+    grads_1h: number;            // graduation arrivals in the last complete hour (leading)
+    launch_rate_1h: number | null; // token-creation events in the last complete hour (leading; null pre-deploy)
     n_window: number;
     last_grad_ts: number | null;
   };
@@ -94,11 +104,13 @@ export interface RegimeAnalysisData {
 export interface TimelineBucket {
   bucket_start: number;    // unix ts (UTC)
   iso: string;
-  n_grads: number;
+  n_grads: number;            // graduation arrival count this hour (leading)
   pump_rate: number | null;
   fast_rug_rate: number | null;
   median_vol: number | null;
   median_t300: number | null;
+  median_ttg: number | null;  // median time-to-graduate (sec) over the window (leading)
+  launch_count: number | null; // pump.fun token-creation events this hour (leading); null pre-deploy
   regime: Regime;
   // Total live net SOL across all live_micro/live strategies in this bucket
   live_net_sol: number;
@@ -141,6 +153,19 @@ export interface SignalCorrelationRow {
   best_pump_corr: number | null;
   best_rug_lag: number | null;
   best_rug_corr: number | null;
+  // Tier-1 leading-signal candidates (added 2026-05-31): graduation arrival
+  // rate, median time-to-graduate, and universe launch rate. Run through the
+  // same harness so we can compare best_lag/best_corr against pump/rug and keep
+  // only the signals that provably lead live PnL.
+  grad_rate_corr: Array<{ lag_hours: number; corr: number | null; n: number }>;
+  best_grad_lag: number | null;
+  best_grad_corr: number | null;
+  ttg_corr: Array<{ lag_hours: number; corr: number | null; n: number }>;
+  best_ttg_lag: number | null;
+  best_ttg_corr: number | null;
+  launch_rate_corr: Array<{ lag_hours: number; corr: number | null; n: number }>;
+  best_launch_lag: number | null;
+  best_launch_corr: number | null;
 }
 
 export interface RegimeTransition {
@@ -167,6 +192,7 @@ interface GradRow {
   created_at: number;
   pct_t300: number | null;
   sum_abs: number | null;
+  ttg: number | null;   // token_age_seconds — time-to-graduate (known at T+0, leading)
 }
 
 interface LiveTradeRow {
@@ -212,6 +238,43 @@ function pearson(xs: number[], ys: number[]): number | null {
   return +(num / den).toFixed(3);
 }
 
+/**
+ * Lag-correlation harness shared by every regime signal. For lags 0..6h,
+ * pairs signal[t-lag] with hourlyPnl[t] (positive lag = signal leads), skipping
+ * buckets with a null signal or zero PnL (the latter biases corr toward 0).
+ * Returns the per-lag Pearson series plus the lag with the largest |corr|.
+ */
+function lagCorrelate(
+  signal: Array<number | null>,
+  hourlyPnl: number[],
+): {
+  lags: Array<{ lag_hours: number; corr: number | null; n: number }>;
+  best_lag: number | null;
+  best_corr: number | null;
+} {
+  const lags: Array<{ lag_hours: number; corr: number | null; n: number }> = [];
+  let bestLag: number | null = null;
+  let bestCorr: number | null = null;
+  for (let lag = 0; lag <= 6; lag++) {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (let i = lag; i < signal.length; i++) {
+      const v = signal[i - lag];
+      if (v == null) continue;
+      if (hourlyPnl[i] === 0) continue;
+      xs.push(v);
+      ys.push(hourlyPnl[i]);
+    }
+    const c = pearson(xs, ys);
+    lags.push({ lag_hours: lag, corr: c, n: xs.length });
+    if (c != null && (bestCorr == null || Math.abs(c) > Math.abs(bestCorr))) {
+      bestCorr = c;
+      bestLag = lag;
+    }
+  }
+  return { lags, best_lag: bestLag, best_corr: bestCorr };
+}
+
 function floorHour(ts: number): number {
   return Math.floor(ts / HOUR_SEC) * HOUR_SEC;
 }
@@ -229,11 +292,24 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
     SELECT
       created_at,
       pct_t300,
-      sum_abs_returns_0_30 AS sum_abs
+      sum_abs_returns_0_30 AS sum_abs,
+      token_age_seconds AS ttg
     FROM graduation_momentum
     WHERE created_at >= ?
     ORDER BY created_at ASC
   `).all(lookbackStart) as GradRow[];
+
+  // ─── 1b. Universe launch-rate signal (leading) ────────────────────────────
+  // token_launches is an hourly count of pump.fun `Instruction: Create` events
+  // captured off the Helius firehose by LaunchCounter. It's a genuinely leading
+  // froth signal (no T+300 dependency). Series starts at deploy time — buckets
+  // with no row stay null so they're excluded from the lag correlation.
+  const launchRows = db.prepare(`
+    SELECT bucket_start, launch_count
+    FROM token_launches
+    WHERE bucket_start >= ?
+  `).all(timelineStart) as Array<{ bucket_start: number; launch_count: number }>;
+  const launchByBucket = new Map(launchRows.map(r => [r.bucket_start, r.launch_count]));
 
   // ─── 2. Current rolling signals (last WINDOW_GRADS complete grads) ────────
   // "Complete" = has a non-null pct_t300 (i.e. T+300 has been reached).
@@ -246,6 +322,10 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
   const currentMedVol = median(recentWindow.map(g => g.sum_abs).filter((v): v is number => v != null));
   const currentMedT300 = median(recentWindow.map(g => g.pct_t300).filter((v): v is number => v != null));
   const currentRegime = recentWindow.length >= 10 ? classify(currentPumpRate, currentRugRate) : 'YELLOW';
+  // Time-to-graduate is known at T+0, so its window spans ALL recent grads
+  // (not just T+300-complete ones) — preserving its leading-signal advantage.
+  const recentAllWindow = grads.slice(-WINDOW_GRADS);
+  const currentMedTtg = median(recentAllWindow.map(g => g.ttg).filter((v): v is number => v != null));
 
   // ─── 3. Pull live trades for the timeline window ──────────────────────────
   // Live = execution_mode IN ('live', 'live_micro'). Cumulative SOL is built
@@ -278,8 +358,10 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
     tradesByBucket.get(b)!.push(t);
   }
 
-  // Walk grads with a running window pointer for efficiency.
-  let windowEnd = 0; // index into completeGrads
+  // Walk grads with running window pointers for efficiency.
+  let windowEnd = 0;     // index into completeGrads (pump/rug/vol/t300 — needs T+300)
+  let allWindowEnd = 0;  // index into grads (median_ttg — known at T+0, leading)
+  let gradCursor = 0;    // index into grads for counting per-bucket arrivals
   for (let i = 0; i < TIMELINE_BUCKETS; i++) {
     const bucketStart = timelineStart + i * HOUR_SEC;
     const bucketEnd = bucketStart + HOUR_SEC;
@@ -291,9 +373,19 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
     const windowStart = Math.max(0, windowEnd - WINDOW_GRADS);
     const win = completeGrads.slice(windowStart, windowEnd);
 
-    const nGradsInBucket = grads.filter(g =>
-      g.created_at >= bucketStart && g.created_at < bucketEnd
-    ).length;
+    // Advance the all-grads window (ttg doesn't wait on T+300, so it spans all rows).
+    while (allWindowEnd < grads.length && grads[allWindowEnd].created_at < bucketEnd) {
+      allWindowEnd++;
+    }
+    const allWin = grads.slice(Math.max(0, allWindowEnd - WINDOW_GRADS), allWindowEnd);
+
+    // Count grads that arrived in [bucketStart, bucketEnd) — graduation arrival
+    // rate, a leading signal. Single linear cursor over the sorted `grads`.
+    let nGradsInBucket = 0;
+    while (gradCursor < grads.length && grads[gradCursor].created_at < bucketEnd) {
+      if (grads[gradCursor].created_at >= bucketStart) nGradsInBucket++;
+      gradCursor++;
+    }
 
     let pumpRate: number | null = null;
     let rugRate: number | null = null;
@@ -306,6 +398,10 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       rugRate = +(100 * rugs / win.length).toFixed(1);
       medVol = median(win.map(g => g.sum_abs).filter((v): v is number => v != null));
       medT300 = median(win.map(g => g.pct_t300).filter((v): v is number => v != null));
+    }
+    let medTtg: number | null = null;
+    if (allWin.length >= 10) {
+      medTtg = median(allWin.map(g => g.ttg).filter((v): v is number => v != null));
     }
     const regime = classify(pumpRate, rugRate);
 
@@ -320,6 +416,8 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       fast_rug_rate: rugRate,
       median_vol: medVol != null ? +medVol.toFixed(2) : null,
       median_t300: medT300 != null ? +medT300.toFixed(2) : null,
+      median_ttg: medTtg != null ? +medTtg.toFixed(1) : null,
+      launch_count: launchByBucket.get(bucketStart) ?? null,
       regime,
       live_net_sol: liveNetSol,
       live_trade_count: bucketTrades.length,
@@ -436,6 +534,13 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
   // For each strategy, build hourly net SOL series, then for lags 0..6 hours
   // compute Pearson(signal_at_t-lag, pnl_at_t). Skip strategies with too few
   // trade hours to be meaningful.
+  // Signal series are identical across strategies — build once.
+  const pumpSeries = timeline.map(b => b.pump_rate);
+  const rugSeries = timeline.map(b => b.fast_rug_rate);
+  const gradSeries = timeline.map(b => b.n_grads);          // arrival rate (always numeric)
+  const ttgSeries = timeline.map(b => b.median_ttg);
+  const launchSeries = timeline.map(b => b.launch_count);
+
   const signal_vs_pnl: SignalCorrelationRow[] = [];
   for (const s of liveStrategies) {
     // Hourly net SOL series (one value per timeline bucket).
@@ -445,49 +550,30 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       const idx = Math.floor((floorHour(t.exit_timestamp) - timelineStart) / HOUR_SEC);
       if (idx >= 0 && idx < TIMELINE_BUCKETS) hourlyPnl[idx] += t.net_profit_sol;
     }
-    const pumpSeries = timeline.map(b => b.pump_rate);
-    const rugSeries = timeline.map(b => b.fast_rug_rate);
 
-    const pumpLags: Array<{ lag_hours: number; corr: number | null; n: number }> = [];
-    const rugLags: Array<{ lag_hours: number; corr: number | null; n: number }> = [];
-    let bestPumpLag: number | null = null, bestPumpCorr: number | null = null;
-    let bestRugLag: number | null = null, bestRugCorr: number | null = null;
+    const pump = lagCorrelate(pumpSeries, hourlyPnl);
+    const rug = lagCorrelate(rugSeries, hourlyPnl);
+    const grad = lagCorrelate(gradSeries, hourlyPnl);
+    const ttg = lagCorrelate(ttgSeries, hourlyPnl);
+    const launch = lagCorrelate(launchSeries, hourlyPnl);
 
-    for (let lag = 0; lag <= 6; lag++) {
-      // Pair: signal at (t-lag) with PnL at t. Skip leading `lag` buckets.
-      const xs: number[] = [];
-      const xsRug: number[] = [];
-      const ys: number[] = [];
-      for (let i = lag; i < TIMELINE_BUCKETS; i++) {
-        const pumpVal = pumpSeries[i - lag];
-        const rugVal = rugSeries[i - lag];
-        if (pumpVal == null || rugVal == null) continue;
-        // Only include hours where the strategy actually had a trade — otherwise
-        // we're correlating signal with zero (which biases toward 0).
-        if (hourlyPnl[i] === 0) continue;
-        xs.push(pumpVal);
-        xsRug.push(rugVal);
-        ys.push(hourlyPnl[i]);
-      }
-      const pCorr = pearson(xs, ys);
-      const rCorr = pearson(xsRug, ys);
-      pumpLags.push({ lag_hours: lag, corr: pCorr, n: xs.length });
-      rugLags.push({ lag_hours: lag, corr: rCorr, n: xsRug.length });
-      if (pCorr != null && (bestPumpCorr == null || Math.abs(pCorr) > Math.abs(bestPumpCorr))) {
-        bestPumpCorr = pCorr; bestPumpLag = lag;
-      }
-      if (rCorr != null && (bestRugCorr == null || Math.abs(rCorr) > Math.abs(bestRugCorr))) {
-        bestRugCorr = rCorr; bestRugLag = lag;
-      }
-    }
     signal_vs_pnl.push({
       strategy_id: s.strategy_id,
-      pump_rate_corr: pumpLags,
-      rug_rate_corr: rugLags,
-      best_pump_lag: bestPumpLag,
-      best_pump_corr: bestPumpCorr,
-      best_rug_lag: bestRugLag,
-      best_rug_corr: bestRugCorr,
+      pump_rate_corr: pump.lags,
+      best_pump_lag: pump.best_lag,
+      best_pump_corr: pump.best_corr,
+      rug_rate_corr: rug.lags,
+      best_rug_lag: rug.best_lag,
+      best_rug_corr: rug.best_corr,
+      grad_rate_corr: grad.lags,
+      best_grad_lag: grad.best_lag,
+      best_grad_corr: grad.best_corr,
+      ttg_corr: ttg.lags,
+      best_ttg_lag: ttg.best_lag,
+      best_ttg_corr: ttg.best_corr,
+      launch_rate_corr: launch.lags,
+      best_launch_lag: launch.best_lag,
+      best_launch_corr: launch.best_corr,
     });
   }
 
@@ -576,6 +662,9 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
     red_avg_live_sol_per_hr: rLiveHrs > 0 ? +(rLiveSol / rLiveHrs).toFixed(4) : null,
   };
 
+  // Last *complete* hour (the final timeline bucket is the current partial hour).
+  const lastCompleteBucket = timeline[TIMELINE_BUCKETS - 2];
+
   return {
     generated_at,
     config: {
@@ -594,6 +683,9 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       fast_rug_rate: currentRugRate,
       median_vol: currentMedVol != null ? +currentMedVol.toFixed(2) : null,
       median_t300: currentMedT300 != null ? +currentMedT300.toFixed(2) : null,
+      median_ttg: currentMedTtg != null ? +currentMedTtg.toFixed(1) : null,
+      grads_1h: lastCompleteBucket?.n_grads ?? 0,
+      launch_rate_1h: lastCompleteBucket?.launch_count ?? null,
       n_window: recentWindow.length,
       last_grad_ts: completeGrads[completeGrads.length - 1]?.created_at ?? null,
     },
@@ -613,6 +705,8 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       `Timeline window: last ${TIMELINE_DAYS} days (${TIMELINE_BUCKETS} hourly buckets).`,
       `Lag correlation: positive lag = signal leads strategy P&L. Best_lag is the value of |corr| max across lags 0..6h.`,
       `Hours with zero live trades are excluded from lag correlation (otherwise the signal would correlate with zero PnL and dilute toward 0).`,
+      `Tier-1 leading-signal candidates (2026-05-31): grad_rate (graduation arrivals/hr), median_ttg (median time-to-graduate, sec), launch_rate (token-creation events/hr). Unlike pump_rate/fast_rug_rate these don't wait on T+300 outcomes, so they should lead. Compare best_grad/ttg/launch_lag + corr vs best_pump/rug in signal_vs_pnl — keep the ones that lead live PnL, then consider them for the Phase-2 gate.`,
+      `launch_rate starts collecting at deploy time (no backfill — the create firehose isn't retained); its timeline + correlation will be sparse until ~2 weeks of data accrue.`,
       `Phase 1 = research overlay only — no enforcement. Phase 2 = wire as soft size-reduction gate once lag-correlation confirms predictive signal.`,
     ],
   };
