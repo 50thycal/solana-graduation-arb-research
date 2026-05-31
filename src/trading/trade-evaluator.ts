@@ -11,6 +11,7 @@ import { ObservationContext } from '../collector/price-collector';
 import { runEntryPreflight, maybeLogKillswitchTripped, isKillswitchTripped } from './safety';
 import { resolvePoolFromVault } from './pool-resolver';
 import type { Wallet } from './wallet';
+import { getCurrentRegime } from '../api/regime-analysis';
 
 const logger = makeLogger('trade-evaluator');
 
@@ -178,6 +179,26 @@ export class TradeEvaluator {
           logger.debug({ graduationId, fng, strategy: this.strategyId }, 'F&G gate blocked entry');
           return;
         }
+      }
+    }
+
+    // ── 1d. Regime gate (optional, uses regime-analysis current snapshot) ───
+    // GREEN / YELLOW / RED is computed from the last 50 graduations' pct_t300
+    // distribution (pump_rate >= +50% and fast_rug_rate <= -50% rates).
+    // Permissive on insufficient sample (n_window < 10) — see getCurrentRegime.
+    if (cfg.regimeGate && cfg.regimeGate !== 'any') {
+      const curRegime = getCurrentRegime(this.db);
+      const blocked =
+        (cfg.regimeGate === 'skip_red'   && curRegime.regime === 'RED') ||
+        (cfg.regimeGate === 'green_only' && curRegime.regime !== 'GREEN');
+      if (blocked && curRegime.n_window >= 10) {
+        const skipReason = `regime_gate_${cfg.regimeGate}`;
+        this.tradeLogger.logSkipped(graduationId, skipReason, curRegime.pump_rate, pctT30, this.strategyId);
+        logger.debug(
+          { graduationId, regime: curRegime.regime, pump_rate: curRegime.pump_rate, rug_rate: curRegime.fast_rug_rate, gate: cfg.regimeGate, strategy: this.strategyId },
+          'Regime gate blocked entry'
+        );
+        return;
       }
     }
 

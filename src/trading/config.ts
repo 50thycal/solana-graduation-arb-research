@@ -184,6 +184,18 @@ export interface StrategyParams {
   entryFngValueMin?: number;
   /** Max Fear & Greed value 0-100 (inclusive). */
   entryFngValueMax?: number;
+
+  // ── Regime gate (optional, uses regime-analysis current.regime) ──────────
+  // Skips entries based on the universe-level regime classifier computed from
+  // pump_rate + fast_rug_rate over the last 50 graduations (see
+  // src/api/regime-analysis.ts). Independent of the calendar-based market
+  // gates above. Permissive on fresh-bot state (zero grads cached) to avoid
+  // blackholing entries during startup.
+  //
+  //   'any'        — default; no regime check
+  //   'skip_red'   — block entries when current regime is RED
+  //   'green_only' — allow entries only when current regime is GREEN
+  regimeGate?: 'any' | 'skip_red' | 'green_only';
 }
 
 export interface TradingConfig {
@@ -266,6 +278,7 @@ export interface TradingConfig {
   entryBtcReturnPctMax?: number;
   entryFngValueMin?: number;
   entryFngValueMax?: number;
+  regimeGate?: 'any' | 'skip_red' | 'green_only';
 }
 
 /** Default filter preset: vel 5-20 sol/min — the primary confirmed signal */
@@ -382,6 +395,7 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     entryBtcReturnPctMax: cfg.entryBtcReturnPctMax,
     entryFngValueMin: cfg.entryFngValueMin,
     entryFngValueMax: cfg.entryFngValueMax,
+    regimeGate: cfg.regimeGate ?? 'any',
   };
 }
 
@@ -427,6 +441,7 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     entryBtcReturnPctMax: params.entryBtcReturnPctMax ?? globalCfg.entryBtcReturnPctMax,
     entryFngValueMin: params.entryFngValueMin ?? globalCfg.entryFngValueMin,
     entryFngValueMax: params.entryFngValueMax ?? globalCfg.entryFngValueMax,
+    regimeGate: params.regimeGate ?? globalCfg.regimeGate ?? 'any',
   };
 }
 
