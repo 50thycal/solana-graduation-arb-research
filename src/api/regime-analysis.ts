@@ -16,11 +16,10 @@ import type Database from 'better-sqlite3';
  *   - median_vol    — median sum_abs_returns_0_30 (universe whippiness proxy)
  *   - median_t300   — median pct_t300 (raw tape return)
  *   Leading candidates (Tier 1, 2026-05-31 — known at/before T+0, no T+300 wait):
- *   - grad_rate        — graduation arrivals per hour (already collected)
- *   - median_ttg       — median time-to-graduate (token_age_seconds; already collected)
- *   - median_sol_raised — median total_sol_raised — capital into the curve (already collected)
- *   - launch_rate      — pump.fun token-creation events/hr (token_launches, new collector)
- *   All run through the same lag-correlation harness (signal_vs_pnl) so we
+ *   - grad_rate     — graduation arrivals per hour (already collected)
+ *   - median_ttg    — median time-to-graduate (token_age_seconds; already collected)
+ *   - launch_rate   — pump.fun token-creation events/hr (token_launches, new collector)
+ *   All five run through the same lag-correlation harness (signal_vs_pnl) so we
  *   can keep only the signals that provably lead live PnL.
  *
  * Regime classification (per hourly bucket):
@@ -79,7 +78,6 @@ export interface RegimeAnalysisData {
     median_vol: number | null;
     median_t300: number | null;
     median_ttg: number | null;   // median time-to-graduate (sec) over recent grads (leading)
-    median_sol_raised: number | null; // median total_sol_raised over recent grads (leading)
     grads_1h: number;            // graduation arrivals in the last complete hour (leading)
     launch_rate_1h: number | null; // token-creation events in the last complete hour (leading; null pre-deploy)
     n_window: number;
@@ -112,7 +110,6 @@ export interface TimelineBucket {
   median_vol: number | null;
   median_t300: number | null;
   median_ttg: number | null;  // median time-to-graduate (sec) over the window (leading)
-  median_sol_raised: number | null; // median total_sol_raised over the window (leading)
   launch_count: number | null; // pump.fun token-creation events this hour (leading); null pre-deploy
   regime: Regime;
   // Total live net SOL across all live_micro/live strategies in this bucket
@@ -166,9 +163,6 @@ export interface SignalCorrelationRow {
   ttg_corr: Array<{ lag_hours: number; corr: number | null; n: number }>;
   best_ttg_lag: number | null;
   best_ttg_corr: number | null;
-  sol_raised_corr: Array<{ lag_hours: number; corr: number | null; n: number }>;
-  best_sol_raised_lag: number | null;
-  best_sol_raised_corr: number | null;
   launch_rate_corr: Array<{ lag_hours: number; corr: number | null; n: number }>;
   best_launch_lag: number | null;
   best_launch_corr: number | null;
@@ -198,8 +192,7 @@ interface GradRow {
   created_at: number;
   pct_t300: number | null;
   sum_abs: number | null;
-  ttg: number | null;          // token_age_seconds — time-to-graduate (known at T+0, leading)
-  sol_raised: number | null;   // total_sol_raised — capital into the curve (known at T+0, leading)
+  ttg: number | null;   // token_age_seconds — time-to-graduate (known at T+0, leading)
 }
 
 interface LiveTradeRow {
@@ -300,8 +293,7 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       created_at,
       pct_t300,
       sum_abs_returns_0_30 AS sum_abs,
-      token_age_seconds AS ttg,
-      total_sol_raised AS sol_raised
+      token_age_seconds AS ttg
     FROM graduation_momentum
     WHERE created_at >= ?
     ORDER BY created_at ASC
@@ -334,7 +326,6 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
   // (not just T+300-complete ones) — preserving its leading-signal advantage.
   const recentAllWindow = grads.slice(-WINDOW_GRADS);
   const currentMedTtg = median(recentAllWindow.map(g => g.ttg).filter((v): v is number => v != null));
-  const currentMedSolRaised = median(recentAllWindow.map(g => g.sol_raised).filter((v): v is number => v != null));
 
   // ─── 3. Pull live trades for the timeline window ──────────────────────────
   // Live = execution_mode IN ('live', 'live_micro'). Cumulative SOL is built
@@ -409,10 +400,8 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       medT300 = median(win.map(g => g.pct_t300).filter((v): v is number => v != null));
     }
     let medTtg: number | null = null;
-    let medSolRaised: number | null = null;
     if (allWin.length >= 10) {
       medTtg = median(allWin.map(g => g.ttg).filter((v): v is number => v != null));
-      medSolRaised = median(allWin.map(g => g.sol_raised).filter((v): v is number => v != null));
     }
     const regime = classify(pumpRate, rugRate);
 
@@ -428,7 +417,6 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       median_vol: medVol != null ? +medVol.toFixed(2) : null,
       median_t300: medT300 != null ? +medT300.toFixed(2) : null,
       median_ttg: medTtg != null ? +medTtg.toFixed(1) : null,
-      median_sol_raised: medSolRaised != null ? +medSolRaised.toFixed(3) : null,
       launch_count: launchByBucket.get(bucketStart) ?? null,
       regime,
       live_net_sol: liveNetSol,
@@ -551,7 +539,6 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
   const rugSeries = timeline.map(b => b.fast_rug_rate);
   const gradSeries = timeline.map(b => b.n_grads);          // arrival rate (always numeric)
   const ttgSeries = timeline.map(b => b.median_ttg);
-  const solRaisedSeries = timeline.map(b => b.median_sol_raised);
   const launchSeries = timeline.map(b => b.launch_count);
 
   const signal_vs_pnl: SignalCorrelationRow[] = [];
@@ -568,7 +555,6 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
     const rug = lagCorrelate(rugSeries, hourlyPnl);
     const grad = lagCorrelate(gradSeries, hourlyPnl);
     const ttg = lagCorrelate(ttgSeries, hourlyPnl);
-    const solRaised = lagCorrelate(solRaisedSeries, hourlyPnl);
     const launch = lagCorrelate(launchSeries, hourlyPnl);
 
     signal_vs_pnl.push({
@@ -585,9 +571,6 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       ttg_corr: ttg.lags,
       best_ttg_lag: ttg.best_lag,
       best_ttg_corr: ttg.best_corr,
-      sol_raised_corr: solRaised.lags,
-      best_sol_raised_lag: solRaised.best_lag,
-      best_sol_raised_corr: solRaised.best_corr,
       launch_rate_corr: launch.lags,
       best_launch_lag: launch.best_lag,
       best_launch_corr: launch.best_corr,
@@ -701,7 +684,6 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       median_vol: currentMedVol != null ? +currentMedVol.toFixed(2) : null,
       median_t300: currentMedT300 != null ? +currentMedT300.toFixed(2) : null,
       median_ttg: currentMedTtg != null ? +currentMedTtg.toFixed(1) : null,
-      median_sol_raised: currentMedSolRaised != null ? +currentMedSolRaised.toFixed(3) : null,
       grads_1h: lastCompleteBucket?.n_grads ?? 0,
       launch_rate_1h: lastCompleteBucket?.launch_count ?? null,
       n_window: recentWindow.length,
@@ -723,8 +705,7 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       `Timeline window: last ${TIMELINE_DAYS} days (${TIMELINE_BUCKETS} hourly buckets).`,
       `Lag correlation: positive lag = signal leads strategy P&L. Best_lag is the value of |corr| max across lags 0..6h.`,
       `Hours with zero live trades are excluded from lag correlation (otherwise the signal would correlate with zero PnL and dilute toward 0).`,
-      `Tier-1 leading-signal candidates (2026-05-31): grad_rate (graduation arrivals/hr), median_ttg (median time-to-graduate, sec), median_sol_raised (median total_sol_raised — capital into the curve), launch_rate (token-creation events/hr). Unlike pump_rate/fast_rug_rate these don't wait on T+300 outcomes, so they should lead. Compare best_grad/ttg/sol_raised/launch_lag + corr vs best_pump/rug in signal_vs_pnl — keep the ones that lead live PnL, then consider them for the Phase-2 gate.`,
-      `median_sol_raised, grad_rate and median_ttg are backfilled from existing columns, so they carry full 14-day history immediately; only launch_rate starts at deploy.`,
+      `Tier-1 leading-signal candidates (2026-05-31): grad_rate (graduation arrivals/hr), median_ttg (median time-to-graduate, sec), launch_rate (token-creation events/hr). Unlike pump_rate/fast_rug_rate these don't wait on T+300 outcomes, so they should lead. Compare best_grad/ttg/launch_lag + corr vs best_pump/rug in signal_vs_pnl — keep the ones that lead live PnL, then consider them for the Phase-2 gate.`,
       `launch_rate starts collecting at deploy time (no backfill — the create firehose isn't retained); its timeline + correlation will be sparse until ~2 weeks of data accrue.`,
       `Phase 1 = research overlay only — no enforcement. Phase 2 = wire as soft size-reduction gate once lag-correlation confirms predictive signal.`,
     ],
