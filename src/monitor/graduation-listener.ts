@@ -233,6 +233,14 @@ export class GraduationListener {
   private lastCandidateTime = Date.now();
   private healthCheckInterval: NodeJS.Timeout | null = null;
   private totalLogsReceived = 0;
+  // ── Launch-counter diagnostics (temporary) ──────────────────────────────
+  // Why launch_rate under-counts: we tally every "Instruction: <name>" line on
+  // the firehose so we can see, from snapshot.json alone, whether pump.fun's
+  // create instruction even reaches this subscription and at what frequency.
+  private instructionHistogram = new Map<string, number>();
+  private totalCreateMatches = 0;     // times CREATE_INSTR_RE matched a tx
+  private static readonly INSTR_HIST_MAX = 300;
+  private readonly listenerStartedMs = Date.now();
   private totalCandidatesDetected = 0;
   private totalCandidatesFromPumpFun = 0;
   private totalCandidatesFromPumpFunProcessed = 0;
@@ -476,6 +484,24 @@ export class GraduationListener {
       rpcFetchMs: GraduationListener.distributionStats(this.rpcFetchMsSamples),
       poolTracker: this.poolTracker.getStats(),
       directPriceCollector: this.priceCollector.getStats(),
+      // ── Launch-counter diagnostics (temporary) ────────────────────────────
+      // Read these to diagnose why launch_rate under-counts:
+      //   - firehoseEventsTotal / uptimeSec → is the create firehose even
+      //     reaching us, or is Helius throttling the high-volume stream?
+      //   - topInstructions → does "Create" appear at the real launch rate
+      //     (hundreds/hr → matcher/flush bug), only ~once per graduation
+      //     (embedded false positive), or barely at all (wrong source)?
+      //   - createMatches vs counter.totalRecorded → matcher vs dedup/flush.
+      launch_debug: {
+        uptimeSec: Math.floor((Date.now() - this.listenerStartedMs) / 1000),
+        firehoseEventsTotal: this.totalLogsReceived,
+        createMatches: this.totalCreateMatches,
+        counter: this.launchCounter.getDebug(),
+        topInstructions: [...this.instructionHistogram.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 25)
+          .map(([name, count]) => ({ name, count })),
+      },
     };
   }
 
@@ -856,9 +882,23 @@ export class GraduationListener {
     for (const log of logs.logs) {
       if (log.includes('Instruction: Migrate')) hasMigrate = true;
       else if (CREATE_INSTR_RE.test(log)) hasCreate = true;
+      // Diagnostic: tally instruction names seen on the firehose so we can tell
+      // (from snapshot.json) whether real creates arrive on this subscription.
+      const ix = log.indexOf('Instruction: ');
+      if (ix !== -1) {
+        const name = log.slice(ix + 13).trim().slice(0, 40);
+        if (this.instructionHistogram.has(name)) {
+          this.instructionHistogram.set(name, this.instructionHistogram.get(name)! + 1);
+        } else if (this.instructionHistogram.size < GraduationListener.INSTR_HIST_MAX) {
+          this.instructionHistogram.set(name, 1);
+        }
+      }
     }
 
-    if (hasCreate) this.launchCounter.record(logs.signature);
+    if (hasCreate) {
+      this.totalCreateMatches++;
+      this.launchCounter.record(logs.signature);
+    }
 
     if (!hasMigrate) return;
 

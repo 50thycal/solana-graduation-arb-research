@@ -32,6 +32,7 @@ export class LaunchCounter {
   private counts = new Map<number, number>();   // hourBucketSec -> unflushed delta
   private seen = new Map<string, number>();      // signature -> first-seen ms
   private flushTimer: NodeJS.Timeout | null = null;
+  private totalRecorded = 0;                      // lifetime distinct creates recorded (diagnostic)
   private readonly upsert: Database.Statement;
 
   constructor(private db: Database.Database) {
@@ -67,8 +68,22 @@ export class LaunchCounter {
   record(signature: string, eventTimeMs: number = Date.now()): void {
     if (this.seen.has(signature)) return;
     this.seen.set(signature, eventTimeMs);
+    this.totalRecorded++;
     const bucket = Math.floor(eventTimeMs / 1000 / HOUR_SEC) * HOUR_SEC;
     this.counts.set(bucket, (this.counts.get(bucket) ?? 0) + 1);
+  }
+
+  /** Diagnostic snapshot — surfaced via the listener's getStats() to confirm
+   *  the in-memory side (dedup + buffering) is healthy and the flush is landing. */
+  getDebug(): { totalRecorded: number; seenSize: number; bufferedBuckets: number; bufferedCount: number } {
+    let bufferedCount = 0;
+    for (const v of this.counts.values()) bufferedCount += v;
+    return {
+      totalRecorded: this.totalRecorded,
+      seenSize: this.seen.size,
+      bufferedBuckets: this.counts.size,
+      bufferedCount,
+    };
   }
 
   private prune(nowMs: number): void {
