@@ -55,6 +55,7 @@ import { computeTrendsMarket } from './trends-market';
 import { computeCounterfactual } from './counterfactual';
 import { computeLossPostmortem } from './loss-postmortem';
 import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
+import { computeRegimeAnalysis } from './regime-analysis';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { computeLiveTrainingData } from './live-training-data';
@@ -867,6 +868,7 @@ export class GistSync {
     // counterfactual now runs in the gist-sync worker — see top of buildPayloads.
     const lossPostmortem = await timed('lossPostmortem', () => computeLossPostmortem(this.db));
     const leaveOneOutPnl = await timed('leaveOneOutPnl', () => computeLeaveOneOutPnl(this.db));
+    const regimeAnalysis = await timed('regimeAnalysis', () => computeRegimeAnalysis(this.db));
     // dailyReport reads leaveOneOutPnl internally to populate
     // promotion_readiness_top5 — keep this ordering.
     const dailyReport = await timed('dailyReport', () => computeDailyReport(this.db));
@@ -1049,6 +1051,7 @@ export class GistSync {
       'counterfactual.json': JSON.stringify(counterfactual, null, 2),
       'loss-postmortem.json': JSON.stringify(lossPostmortem, null, 2),
       'leave-one-out-pnl.json': JSON.stringify(leaveOneOutPnl, null, 2),
+      'regime-analysis.json': JSON.stringify(regimeAnalysis, null, 2),
       'report.json': JSON.stringify(dailyReport, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,

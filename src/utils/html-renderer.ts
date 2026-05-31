@@ -23,6 +23,7 @@ const NAV_LINKS = [
   { path: '/trading', label: 'Trading' },
   { path: '/live-training', label: 'Live Training' },
   { path: '/report', label: 'Report' },
+  { path: '/regime-analysis', label: 'Regime' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
@@ -9412,4 +9413,436 @@ export function renderPricePathV2Html(data: unknown): string {
   `;
 
   return shell('Price Path V2', '/price-path-v2', body, data as object);
+}
+
+// ── REGIME ANALYSIS PAGE ────────────────────────────────────────────────────
+// Phase 1 implementation: universe-level rolling signals (pump rate / fast-rug
+// rate) classified into GREEN / YELLOW / RED regime, overlaid against live
+// strategy cumulative net SOL on a shared time axis.
+
+const REGIME_COLORS = {
+  GREEN:  { fill: '#22c55e22', stroke: '#22c55e', text: '#4ade80' },
+  YELLOW: { fill: '#eab30822', stroke: '#eab308', text: '#facc15' },
+  RED:    { fill: '#ef444422', stroke: '#ef4444', text: '#f87171' },
+};
+
+const STRATEGY_PALETTE = ['#22d3ee', '#a78bfa', '#fb923c', '#34d399', '#f472b6', '#facc15', '#60a5fa', '#fb7185'];
+
+function fmtSolColor(v: number, digits = 3): string {
+  const color = v > 0 ? '#4ade80' : v < 0 ? '#f87171' : '#94a3b8';
+  return `<span style="color:${color}">${v > 0 ? '+' : ''}${v.toFixed(digits)}</span>`;
+}
+
+function fmtPctColor(v: number | null, digits = 1): string {
+  if (v == null) return '<span style="color:#64748b">—</span>';
+  const color = v > 0 ? '#22d3ee' : v < 0 ? '#f87171' : '#94a3b8';
+  return `<span style="color:${color}">${v > 0 ? '+' : ''}${v.toFixed(digits)}%</span>`;
+}
+
+function regimeBadge(regime: string, sizePx = 11): string {
+  const c = (REGIME_COLORS as any)[regime] ?? REGIME_COLORS.YELLOW;
+  return `<span style="display:inline-block;background:${c.fill};color:${c.text};border:1px solid ${c.stroke};padding:1px 8px;border-radius:3px;font-size:${sizePx}px;font-weight:600;letter-spacing:.04em">${regime}</span>`;
+}
+
+/** Build the main multi-panel chart: regime bands (top), signal lines (middle),
+ *  cumulative strategy P&L (bottom) — all sharing the same X axis (hours). */
+function renderRegimeChart(data: any): string {
+  const tl: any[] = data.timeline || [];
+  const lives: any[] = data.live_strategies || [];
+  if (tl.length === 0) {
+    return '<div style="color:#94a3b8;padding:24px;text-align:center">No timeline data yet — bot is still warming up.</div>';
+  }
+
+  const W = 1200, leftPad = 60, rightPad = 20;
+  const innerW = W - leftPad - rightPad;
+  const bandH = 36, signalH = 160, pnlH = 220, gap = 8;
+  const totalH = bandH + signalH + pnlH + gap * 2 + 40; // +40 for x-axis labels
+
+  const n = tl.length;
+  const stepX = innerW / n;
+  const xAt = (i: number) => leftPad + i * stepX;
+
+  // ── Panel 1: regime bands ────────────────────────────────────────────────
+  const bandY = 10;
+  const bands: string[] = [];
+  let curRegime: string | null = null;
+  let curStart = 0;
+  for (let i = 0; i <= n; i++) {
+    const reg = i < n ? tl[i].regime : null;
+    if (reg !== curRegime) {
+      if (curRegime != null) {
+        const c = (REGIME_COLORS as any)[curRegime] ?? REGIME_COLORS.YELLOW;
+        const x = xAt(curStart);
+        const w = xAt(i) - x;
+        bands.push(`<rect x="${x.toFixed(1)}" y="${bandY}" width="${w.toFixed(1)}" height="${bandH}" fill="${c.fill}" stroke="${c.stroke}" stroke-width="0.5" opacity="0.95"/>`);
+      }
+      curRegime = reg;
+      curStart = i;
+    }
+  }
+
+  // ── Panel 2: signal lines (pump rate + fast rug rate) ────────────────────
+  const signalY0 = bandY + bandH + gap;
+  const signalY1 = signalY0 + signalH;
+  // Y-axis: 0% (bottom) to 100% (top)
+  const sigY = (pct: number) => signalY1 - (Math.max(0, Math.min(100, pct)) / 100) * signalH;
+  const pumpThresholdY = sigY(data.config.green_pump_min);
+  const rugThresholdY = sigY(data.config.red_rug_min);
+  // Gridlines
+  const sigGrid: string[] = [];
+  for (const pct of [0, 25, 50, 75, 100]) {
+    const y = sigY(pct);
+    sigGrid.push(`<line x1="${leftPad}" y1="${y.toFixed(1)}" x2="${leftPad + innerW}" y2="${y.toFixed(1)}" stroke="#1e293b" stroke-width="0.5"/>`);
+    sigGrid.push(`<text x="${leftPad - 4}" y="${(y + 3).toFixed(1)}" fill="#64748b" font-size="9" text-anchor="end">${pct}%</text>`);
+  }
+  // Threshold dashed lines
+  sigGrid.push(`<line x1="${leftPad}" y1="${pumpThresholdY.toFixed(1)}" x2="${leftPad + innerW}" y2="${pumpThresholdY.toFixed(1)}" stroke="#22d3ee" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.6"/>`);
+  sigGrid.push(`<line x1="${leftPad}" y1="${rugThresholdY.toFixed(1)}" x2="${leftPad + innerW}" y2="${rugThresholdY.toFixed(1)}" stroke="#f87171" stroke-width="0.5" stroke-dasharray="3,3" opacity="0.6"/>`);
+
+  // Pump rate line (cyan)
+  const pumpPts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const v = tl[i].pump_rate;
+    if (v == null) continue;
+    pumpPts.push(`${xAt(i).toFixed(1)},${sigY(v).toFixed(1)}`);
+  }
+  const pumpLine = pumpPts.length > 1
+    ? `<polyline points="${pumpPts.join(' ')}" fill="none" stroke="#22d3ee" stroke-width="1.5" stroke-linejoin="round"/>`
+    : '';
+
+  // Fast rug rate line (red)
+  const rugPts: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const v = tl[i].fast_rug_rate;
+    if (v == null) continue;
+    rugPts.push(`${xAt(i).toFixed(1)},${sigY(v).toFixed(1)}`);
+  }
+  const rugLine = rugPts.length > 1
+    ? `<polyline points="${rugPts.join(' ')}" fill="none" stroke="#f87171" stroke-width="1.5" stroke-linejoin="round"/>`
+    : '';
+
+  // Signal panel border
+  const sigBorder = `<rect x="${leftPad}" y="${signalY0}" width="${innerW}" height="${signalH}" fill="none" stroke="#334155" stroke-width="0.5"/>`;
+
+  // ── Panel 3: cumulative net SOL per live strategy ────────────────────────
+  const pnlY0 = signalY1 + gap;
+  const pnlY1 = pnlY0 + pnlH;
+  // Find data range across all strategies' cum series
+  let minSol = 0, maxSol = 0;
+  for (const s of lives) {
+    for (const p of s.cum_net_sol || []) {
+      if (p.cum < minSol) minSol = p.cum;
+      if (p.cum > maxSol) maxSol = p.cum;
+    }
+  }
+  // Always include zero
+  if (minSol > 0) minSol = 0;
+  if (maxSol < 0) maxSol = 0;
+  // Small padding so points aren't at the edge
+  const solPad = Math.max(0.05, (maxSol - minSol) * 0.08);
+  const sMin = minSol - solPad;
+  const sMax = maxSol + solPad;
+  const sRange = sMax - sMin || 1;
+  const pnlY = (sol: number) => pnlY1 - ((sol - sMin) / sRange) * pnlH;
+
+  // Gridlines + zero line
+  const pnlGrid: string[] = [];
+  const zeroY = pnlY(0);
+  pnlGrid.push(`<line x1="${leftPad}" y1="${zeroY.toFixed(1)}" x2="${leftPad + innerW}" y2="${zeroY.toFixed(1)}" stroke="#475569" stroke-width="0.5" stroke-dasharray="2,2"/>`);
+  // 3 horizontal ticks
+  for (let i = 0; i <= 4; i++) {
+    const sol = sMin + (sRange * i / 4);
+    const y = pnlY(sol);
+    pnlGrid.push(`<line x1="${leftPad}" y1="${y.toFixed(1)}" x2="${leftPad + innerW}" y2="${y.toFixed(1)}" stroke="#1e293b" stroke-width="0.4"/>`);
+    pnlGrid.push(`<text x="${leftPad - 4}" y="${(y + 3).toFixed(1)}" fill="#64748b" font-size="9" text-anchor="end">${sol > 0 ? '+' : ''}${sol.toFixed(2)}</text>`);
+  }
+
+  // Strategy lines
+  const strategyLines: string[] = [];
+  const legend: string[] = [];
+  lives.forEach((s, idx) => {
+    const color = STRATEGY_PALETTE[idx % STRATEGY_PALETTE.length];
+    const pts: string[] = [];
+    for (let i = 0; i < (s.cum_net_sol || []).length; i++) {
+      const p = s.cum_net_sol[i];
+      pts.push(`${xAt(i).toFixed(1)},${pnlY(p.cum).toFixed(1)}`);
+    }
+    if (pts.length > 1) {
+      strategyLines.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" opacity="0.95"/>`);
+    }
+    legend.push(`<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:11px;color:#cbd5e1"><span style="display:inline-block;width:14px;height:2px;background:${color}"></span>${escHtml(s.strategy_id)} <span style="color:#64748b">(${s.execution_mode}, n=${s.n_trades}, ${s.total_net_sol > 0 ? '+' : ''}${s.total_net_sol.toFixed(3)} SOL)</span></span>`);
+  });
+  const pnlBorder = `<rect x="${leftPad}" y="${pnlY0}" width="${innerW}" height="${pnlH}" fill="none" stroke="#334155" stroke-width="0.5"/>`;
+
+  // ── X-axis labels: one tick per day ──────────────────────────────────────
+  const axisY = pnlY1 + 18;
+  const xLabels: string[] = [];
+  // Determine bucket indices that land on midnight
+  for (let i = 0; i < n; i++) {
+    const d = new Date(tl[i].bucket_start * 1000);
+    if (d.getUTCHours() === 0) {
+      const x = xAt(i);
+      const label = `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
+      xLabels.push(`<line x1="${x.toFixed(1)}" y1="${pnlY1}" x2="${x.toFixed(1)}" y2="${(pnlY1 + 4).toFixed(1)}" stroke="#475569" stroke-width="0.5"/>`);
+      xLabels.push(`<text x="${x.toFixed(1)}" y="${axisY}" fill="#94a3b8" font-size="10" text-anchor="middle">${label}</text>`);
+    }
+  }
+
+  // ── Panel labels ────────────────────────────────────────────────────────
+  const panelLabels = `
+    <text x="${leftPad - 4}" y="${(bandY + bandH / 2 + 3).toFixed(1)}" fill="#94a3b8" font-size="10" text-anchor="end" font-weight="600">REGIME</text>
+    <text x="${leftPad - 4}" y="${(signalY0 - 4).toFixed(1)}" fill="#94a3b8" font-size="10" text-anchor="end" font-weight="600">SIGNALS</text>
+    <text x="${leftPad - 4}" y="${(pnlY0 - 4).toFixed(1)}" fill="#94a3b8" font-size="10" text-anchor="end" font-weight="600">LIVE SOL</text>
+  `;
+
+  // Threshold legend overlays
+  const thresholdLegend = `
+    <text x="${(leftPad + innerW - 4).toFixed(1)}" y="${(pumpThresholdY - 3).toFixed(1)}" fill="#22d3ee" font-size="9" text-anchor="end">pump green ≥ ${data.config.green_pump_min}%</text>
+    <text x="${(leftPad + innerW - 4).toFixed(1)}" y="${(rugThresholdY + 10).toFixed(1)}" fill="#f87171" font-size="9" text-anchor="end">rug red > ${data.config.red_rug_min}%</text>
+  `;
+
+  return `
+    <div style="overflow-x:auto;background:#0f172a;border-radius:8px;padding:12px 8px">
+      <div style="font-size:11px;color:#64748b;margin-bottom:8px;display:flex;gap:24px;align-items:center;flex-wrap:wrap">
+        <span><span style="display:inline-block;width:10px;height:10px;background:${REGIME_COLORS.GREEN.fill};border:1px solid ${REGIME_COLORS.GREEN.stroke};vertical-align:middle"></span> GREEN — trade</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:${REGIME_COLORS.YELLOW.fill};border:1px solid ${REGIME_COLORS.YELLOW.stroke};vertical-align:middle"></span> YELLOW — caution</span>
+        <span><span style="display:inline-block;width:10px;height:10px;background:${REGIME_COLORS.RED.fill};border:1px solid ${REGIME_COLORS.RED.stroke};vertical-align:middle"></span> RED — pause</span>
+        <span style="color:#22d3ee">— pump_rate</span>
+        <span style="color:#f87171">— fast_rug_rate</span>
+      </div>
+      <svg width="${W}" height="${totalH}" viewBox="0 0 ${W} ${totalH}" style="display:block">
+        ${bands.join('')}
+        ${panelLabels}
+        ${sigGrid.join('')}
+        ${sigBorder}
+        ${pumpLine}
+        ${rugLine}
+        ${thresholdLegend}
+        ${pnlGrid.join('')}
+        ${pnlBorder}
+        ${strategyLines.join('')}
+        ${xLabels.join('')}
+      </svg>
+      <div style="margin-top:10px;padding:8px 12px;background:#1e293b;border-radius:6px">${legend.join('')}</div>
+    </div>`;
+}
+
+export function renderRegimeAnalysisHtml(data: any): string {
+  const d = data;
+  const cur = d.current || {};
+  const cfg = d.config || {};
+  const rs = d.regime_summary || {};
+
+  const curColor = (REGIME_COLORS as any)[cur.regime] ?? REGIME_COLORS.YELLOW;
+
+  // ── Current regime banner ────────────────────────────────────────────────
+  const banner = `
+    <div class="card" style="border:2px solid ${curColor.stroke};background:${curColor.fill}">
+      <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap">
+        <div style="font-size:28px;font-weight:700;color:${curColor.text};letter-spacing:.05em">${cur.regime}</div>
+        <div style="display:flex;gap:24px;flex-wrap:wrap;font-size:13px;color:#cbd5e1">
+          <div><span style="color:#64748b">pump_rate</span> <span style="color:#22d3ee;font-weight:600">${cur.pump_rate?.toFixed(1) ?? '—'}%</span></div>
+          <div><span style="color:#64748b">fast_rug_rate</span> <span style="color:#f87171;font-weight:600">${cur.fast_rug_rate?.toFixed(1) ?? '—'}%</span></div>
+          <div><span style="color:#64748b">median pct_t300</span> <span style="font-weight:600">${cur.median_t300 != null ? (cur.median_t300 > 0 ? '+' : '') + cur.median_t300.toFixed(2) + '%' : '—'}</span></div>
+          <div><span style="color:#64748b">median vol</span> <span style="font-weight:600">${cur.median_vol ?? '—'}</span></div>
+          <div><span style="color:#64748b">window</span> <span style="color:#94a3b8">n=${cur.n_window}</span></div>
+        </div>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:#94a3b8">
+        Thresholds: GREEN at pump ≥ ${cfg.green_pump_min}% AND rug ≤ ${cfg.green_rug_max}%; RED at pump &lt; ${cfg.red_pump_max}% OR rug &gt; ${cfg.red_rug_min}%.
+      </div>
+    </div>`;
+
+  // ── Regime summary card ──────────────────────────────────────────────────
+  const regimeSummary = `
+    <div class="card">
+      <div class="card-title">Last ${cfg.timeline_days} Days — Time-in-Regime + Live Edge</div>
+      <table class="table">
+        <thead><tr>
+          <th>Regime</th><th>% of hours</th><th>Avg live SOL / hr (when trading)</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>${regimeBadge('GREEN')}</td><td>${rs.green_pct?.toFixed(1) ?? 0}%</td><td>${rs.green_avg_live_sol_per_hr != null ? fmtSolColor(rs.green_avg_live_sol_per_hr, 4) : '—'}</td></tr>
+          <tr><td>${regimeBadge('YELLOW')}</td><td>${rs.yellow_pct?.toFixed(1) ?? 0}%</td><td>${rs.yellow_avg_live_sol_per_hr != null ? fmtSolColor(rs.yellow_avg_live_sol_per_hr, 4) : '—'}</td></tr>
+          <tr><td>${regimeBadge('RED')}</td><td>${rs.red_pct?.toFixed(1) ?? 0}%</td><td>${rs.red_avg_live_sol_per_hr != null ? fmtSolColor(rs.red_avg_live_sol_per_hr, 4) : '—'}</td></tr>
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:#64748b;margin-top:8px">
+        If green hours net positive and red hours net negative, the regime signal is doing its job.
+        Big spread = signal works. Small spread = signal is noise — tune thresholds or pick different metrics.
+      </div>
+    </div>`;
+
+  // ── Per-strategy live + regime breakdown ─────────────────────────────────
+  const liveRows = (d.live_strategies || []).map((s: any, idx: number) => {
+    const color = STRATEGY_PALETTE[idx % STRATEGY_PALETTE.length];
+    const totalN = s.green_n + s.yellow_n + s.red_n;
+    return `<tr>
+      <td><span style="display:inline-block;width:10px;height:2px;background:${color};margin-right:6px;vertical-align:middle"></span><span style="color:${color};font-weight:600">${escHtml(s.strategy_id)}</span><div style="color:#64748b;font-size:10px">${s.execution_mode} · n=${s.n_trades}</div></td>
+      <td>${fmtSolColor(s.total_net_sol)}</td>
+      <td>${fmtSolColor(s.green_net_sol)} <span style="color:#64748b;font-size:10px">(n=${s.green_n})</span></td>
+      <td>${fmtSolColor(s.yellow_net_sol)} <span style="color:#64748b;font-size:10px">(n=${s.yellow_n})</span></td>
+      <td>${fmtSolColor(s.red_net_sol)} <span style="color:#64748b;font-size:10px">(n=${s.red_n})</span></td>
+      <td>${totalN > 0 ? fmtSolColor((s.green_net_sol - s.red_net_sol), 3) : '—'}</td>
+    </tr>`;
+  }).join('');
+  const liveTable = `
+    <div class="card">
+      <div class="card-title">Live Strategies — Net SOL by Regime</div>
+      <p class="desc">If GREEN net SOL ≫ RED net SOL, the regime signal correctly identifies favorable windows for this strategy.</p>
+      <div style="overflow-x:auto"><table class="table">
+        <thead><tr>
+          <th>Strategy</th><th>Total net SOL</th><th>GREEN</th><th>YELLOW</th><th>RED</th><th>GREEN − RED</th>
+        </tr></thead>
+        <tbody>${liveRows || '<tr><td colspan="6" style="color:#94a3b8">No live trades yet in window.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+
+  // ── Lag correlation table ────────────────────────────────────────────────
+  const lagRows = (d.signal_vs_pnl || []).map((s: any) => {
+    const pumpCells = s.pump_rate_corr.map((c: any) => {
+      const isBest = c.lag_hours === s.best_pump_lag;
+      const color = c.corr == null ? '#64748b' : c.corr > 0 ? '#4ade80' : '#f87171';
+      const bold = isBest ? 'font-weight:700;text-decoration:underline;' : '';
+      return `<td style="color:${color};${bold}">${c.corr != null ? c.corr.toFixed(2) : '—'}<span style="color:#64748b;font-size:9px"> (n=${c.n})</span></td>`;
+    }).join('');
+    const rugCells = s.rug_rate_corr.map((c: any) => {
+      const isBest = c.lag_hours === s.best_rug_lag;
+      const color = c.corr == null ? '#64748b' : c.corr < 0 ? '#4ade80' : '#f87171'; // inverse: negative corr is GOOD (rug down = pnl up)
+      const bold = isBest ? 'font-weight:700;text-decoration:underline;' : '';
+      return `<td style="color:${color};${bold}">${c.corr != null ? c.corr.toFixed(2) : '—'}<span style="color:#64748b;font-size:9px"> (n=${c.n})</span></td>`;
+    }).join('');
+    return `
+      <tr><td rowspan="2" style="vertical-align:top"><span style="color:#a78bfa;font-weight:600">${escHtml(s.strategy_id)}</span></td>
+        <td style="color:#22d3ee">pump_rate</td>
+        ${pumpCells}
+      </tr>
+      <tr>
+        <td style="color:#f87171">fast_rug_rate</td>
+        ${rugCells}
+      </tr>`;
+  }).join('');
+  const lagTable = `
+    <div class="card">
+      <div class="card-title">Signal vs Live P&L — Lag Correlation (Pearson)</div>
+      <p class="desc">
+        Cell = correlation between the regime signal at time t−lag and the strategy's per-hour net SOL at time t.
+        Positive correlation = signal moves with P&L. For pump_rate, positive (green) means the signal predicts upside.
+        For fast_rug_rate, <em>negative</em> (green) means rising rugs predict losses (the desired relationship).
+        Underlined cell = best lag for that signal. If the best lag is &gt; 0 hours, the signal <em>leads</em> P&L — actionable for gating.
+        Lag = 0 means the signal coincides with the trade; lag &gt; 0 means the signal already moved <em>before</em> the trade fired.
+      </p>
+      <div style="overflow-x:auto"><table class="table">
+        <thead><tr><th>Strategy</th><th>Signal</th><th>lag 0h</th><th>1h</th><th>2h</th><th>3h</th><th>4h</th><th>5h</th><th>6h</th></tr></thead>
+        <tbody>${lagRows || '<tr><td colspan="9" style="color:#94a3b8">No live strategies yet.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+
+  // ── Worst hours table ────────────────────────────────────────────────────
+  const worstRows = (d.worst_hours || []).map((w: any) => `
+    <tr>
+      <td style="font-family:monospace;color:#94a3b8;font-size:11px">${w.iso?.slice(5, 16).replace('T', ' ') ?? ''}</td>
+      <td>${regimeBadge(w.regime)}</td>
+      <td>${fmtSolColor(w.live_net_sol, 4)}</td>
+      <td>${w.live_trade_count}</td>
+      <td style="color:#22d3ee">${w.pump_rate?.toFixed(1) ?? '—'}%</td>
+      <td style="color:#f87171">${w.fast_rug_rate?.toFixed(1) ?? '—'}%</td>
+      <td>${fmtPctColor(w.median_t300, 2)}</td>
+    </tr>`).join('');
+  const worstTable = `
+    <div class="card">
+      <div class="card-title">Worst 10 Hours (live SOL) — were they in a marked regime?</div>
+      <div style="overflow-x:auto"><table class="table">
+        <thead><tr><th>Hour (UTC)</th><th>Regime</th><th>Live SOL</th><th>Trades</th><th>Pump rate</th><th>Rug rate</th><th>Median t300</th></tr></thead>
+        <tbody>${worstRows || '<tr><td colspan="7" style="color:#94a3b8">No live trades yet.</td></tr>'}</tbody>
+      </table></div>
+      <p style="font-size:11px;color:#64748b;margin-top:8px">
+        If most worst hours show RED or YELLOW regime, the signal is catching them. If they show GREEN, the signal is missing the failure mode — adjust thresholds or add a new signal.
+      </p>
+    </div>`;
+
+  // ── Recent transitions ───────────────────────────────────────────────────
+  const transRows = (d.recent_transitions || []).map((t: any) => `
+    <tr>
+      <td style="font-family:monospace;color:#94a3b8;font-size:11px">${t.iso?.slice(5, 16).replace('T', ' ')}</td>
+      <td>${regimeBadge(t.from)} → ${regimeBadge(t.to)}</td>
+      <td style="color:#22d3ee">${t.pump_rate?.toFixed(1) ?? '—'}%</td>
+      <td style="color:#f87171">${t.fast_rug_rate?.toFixed(1) ?? '—'}%</td>
+    </tr>`).join('');
+  const transTable = `
+    <div class="card">
+      <div class="card-title">Recent Regime Transitions (last 20)</div>
+      <div style="overflow-x:auto"><table class="table">
+        <thead><tr><th>Time (UTC)</th><th>Transition</th><th>Pump rate</th><th>Rug rate</th></tr></thead>
+        <tbody>${transRows || '<tr><td colspan="4" style="color:#94a3b8">No transitions yet.</td></tr>'}</tbody>
+      </table></div>
+    </div>`;
+
+  // ── Day-of-week + hour-of-day patterns ───────────────────────────────────
+  const dowRows = (d.by_dow || []).map((r: any) => `
+    <tr><td>${r.label}</td><td style="color:#22d3ee">${r.avg_pump_rate.toFixed(1)}%</td><td style="color:#f87171">${r.avg_rug_rate.toFixed(1)}%</td><td>${r.n_grads}</td></tr>`).join('');
+  const hourRows = (d.by_hour || []).filter((r: any) => r.n_grads > 0).map((r: any) => `
+    <tr><td>${r.hour.toString().padStart(2, '0')}:00</td><td style="color:#22d3ee">${r.avg_pump_rate.toFixed(1)}%</td><td style="color:#f87171">${r.avg_rug_rate.toFixed(1)}%</td><td>${r.n_grads}</td></tr>`).join('');
+  const patterns = `
+    <div class="grid">
+      <div class="card">
+        <div class="card-title">Pattern: Day of Week (UTC)</div>
+        <div style="overflow-x:auto"><table class="table">
+          <thead><tr><th>Day</th><th>Avg pump rate</th><th>Avg rug rate</th><th>Grads</th></tr></thead>
+          <tbody>${dowRows}</tbody>
+        </table></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Pattern: Hour of Day (UTC)</div>
+        <div style="overflow-x:auto;max-height:400px"><table class="table">
+          <thead><tr><th>Hour</th><th>Avg pump rate</th><th>Avg rug rate</th><th>Grads</th></tr></thead>
+          <tbody>${hourRows}</tbody>
+        </table></div>
+      </div>
+    </div>`;
+
+  // ── How to read this page ────────────────────────────────────────────────
+  const howToRead = `
+    <div class="card" style="background:#0f1e3a;border:1px solid #1e3a8a">
+      <div class="card-title" style="color:#60a5fa">How to read this page</div>
+      <ol style="color:#cbd5e1;font-size:13px;line-height:1.7">
+        <li><strong>Current regime banner</strong> — what the bot would do <em>right now</em> if Phase 2 (gating) were enabled. RED = pause trading; YELLOW = caution; GREEN = trade normally.</li>
+        <li><strong>Timeline chart</strong> — the regime bands in the top strip should visually align with dips in the live SOL lines below. If they do, the signal is real.</li>
+        <li><strong>Live strategies × regime table</strong> — the GREEN−RED column is the headline number. Big positive value = the signal would have protected this strategy.</li>
+        <li><strong>Lag correlation</strong> — best_lag &gt; 0 means the signal turned bearish <em>hours before</em> the strategy lost money. That's the predictive signal we want; lag = 0 means we'd be reacting after the fact.</li>
+        <li><strong>Worst hours</strong> — should be mostly RED/YELLOW. Any GREEN-regime worst hour is a failure mode the signal doesn't catch.</li>
+        <li><strong>Day-of-week / hour-of-day patterns</strong> — if pump rate is systematically lower on certain hours (e.g. weekend overnights), build a static calendar filter on top of the regime signal.</li>
+      </ol>
+      <div style="margin-top:12px;padding:10px;background:#1e293b;border-radius:6px;font-size:12px;color:#94a3b8">
+        <strong style="color:#facc15">Phase 1 = research overlay only — nothing is gated yet.</strong>
+        After 5–7 days of saved data, if GREEN−RED &gt; 0 across most live strategies AND best_lag &gt; 0, we wire the soft size-reduction gate (Phase 2).
+      </div>
+    </div>`;
+
+  const notes = `
+    <div class="card">
+      <div class="card-title">Notes</div>
+      <ul style="color:#94a3b8;font-size:12px;line-height:1.6">
+        ${(d.notes || []).map((n: string) => `<li>${escHtml(n)}</li>`).join('')}
+      </ul>
+    </div>`;
+
+  const body = `
+    <h1>Regime Analysis</h1>
+    ${banner}
+    <div class="card">
+      <div class="card-title">${cfg.timeline_days}-Day Timeline — Regime Bands + Live Strategy P&L</div>
+      ${renderRegimeChart(d)}
+    </div>
+    ${regimeSummary}
+    ${liveTable}
+    ${lagTable}
+    ${worstTable}
+    ${transTable}
+    ${patterns}
+    ${howToRead}
+    ${notes}
+  `;
+
+  return shell('Regime Analysis', '/regime-analysis', body, data as object);
 }
