@@ -32,10 +32,23 @@ const TIMELINE_DAYS = 14;      // how far back to compute the hourly timeline
 const TIMELINE_BUCKETS = TIMELINE_DAYS * 24;
 const PUMP_PCT = 50;           // pct_t300 >= this counts as a pump
 const RUG_PCT = -50;           // pct_t300 <= this counts as a rug
-const GREEN_PUMP_MIN = 25;
+// Thresholds (recalibrated 2026-05-31 after 14-day data review):
+//   - GREEN_PUMP_MIN lowered 25 → 20: the 25% bar only fired on 3% of hours,
+//     leaving the GREEN bucket too rare to validate. n=20 widens it to a
+//     usable ~15-25% of hours while still requiring above-baseline pump activity
+//     (baseline median pump rate ran ~14-15% over the window).
+//   - GREEN_RUG_MAX tightened 35 → 25: pairs with the lower pump bar so GREEN
+//     means "above-baseline pumps AND below-baseline rugs" simultaneously.
+//   - RED_RUG_MIN lowered 50 → 35: the 50% bar never fired in 14 days (max
+//     observed rug rate in the worst hours was 42%). 35 puts it within the
+//     observed range so the rug signal can actually contribute to RED calls.
+//   - RED_PUMP_MAX unchanged at 15: confirmed working — every worst-10 hour
+//     had pump_rate <= 22% and the pump component carried the entire RED
+//     classification in the prior analysis window.
+const GREEN_PUMP_MIN = 20;
 const RED_PUMP_MAX = 15;
-const GREEN_RUG_MAX = 35;
-const RED_RUG_MIN = 50;
+const GREEN_RUG_MAX = 25;
+const RED_RUG_MIN = 35;
 
 export type Regime = 'GREEN' | 'YELLOW' | 'RED';
 
