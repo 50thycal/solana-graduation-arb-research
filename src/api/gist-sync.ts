@@ -58,6 +58,7 @@ import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
 import { computeRegimeAnalysis } from './regime-analysis';
 import { computeTradingData } from './trading-data';
 import { computeLiveExecutionStats } from './live-execution-stats';
+import { computeLiveTrainingData } from './live-training-data';
 import { computeDailyReport } from './daily-report';
 import { getHeavyData } from './heavy-cache';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -220,6 +221,7 @@ export interface StatusUrls {
   price_path_detail: string;
   price_path_v2: string;
   trading: string;
+  live_training: string;
   wallet_rep_analysis: string;
   sniper_panel: string;
   strategy_percentiles: string;
@@ -417,6 +419,7 @@ export class GistSync {
       price_path_detail: `${base}/price-path-detail.json`,
       price_path_v2: `${base}/price-path-v2.json`,
       trading: `${base}/trading.json`,
+      live_training: `${base}/live-training.json`,
       wallet_rep_analysis: `${base}/wallet-rep-analysis.json`,
       sniper_panel: `${base}/sniper-panel.json`,
       strategy_percentiles: `${base}/strategy-percentiles.json`,
@@ -992,6 +995,7 @@ export class GistSync {
       topPairs: v2.panel6.top_pairs,
     });
     const liveExecutionStats = computeLiveExecutionStats(this.db);
+    const liveTrainingData = computeLiveTrainingData(this.db);
 
     // Strategy configs — includes all DPM params per strategy
     const strategyRows = getStrategyConfigs(this.db);
@@ -1120,6 +1124,7 @@ export class GistSync {
       'price-path-v2.json': JSON.stringify(pricePathV2Detail, null, 2),
       'trading.json': JSON.stringify(tradingData, null, 2),
       'live-execution.json': JSON.stringify(liveExecutionStats, null, 2),
+      'live-training.json': JSON.stringify(liveTrainingData, null, 2),
     };
   }
 

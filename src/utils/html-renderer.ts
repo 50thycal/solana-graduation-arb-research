@@ -21,6 +21,7 @@ const NAV_LINKS = [
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
+  { path: '/live-training', label: 'Live Training' },
   { path: '/report', label: 'Report' },
   { path: '/regime-analysis', label: 'Regime' },
   { path: '/health', label: 'Health' },
@@ -6224,6 +6225,755 @@ export function renderTradingHtml(data: any): string {
   ${lazyPanel('journal', '/api/journal?format=html', 'Strategy Journal')}
   ${tradesHtml}
   ${skipsHtml}
+</div>
+${js}
+</body></html>`;
+}
+
+// ── LIVE TRAINING PAGE ────────────────────────────────────────────────
+// Dedicated live-money monitoring surface. Server computes aggregate metrics
+// + matched-graduation Live-vs-Shadow comparison (so live-training.json on
+// bot-status is self-describing); the page also embeds the raw per-trade
+// arrays so the browser can recompute chart series on the fly when the user
+// switches the strategy selector / chart metric / line↔histogram toggle.
+// Interactive charting is hand-written vanilla JS + inline SVG (no deps),
+// matching the codebase's no-build-step ethos.
+
+export function renderLiveTrainingHtml(data: any): string {
+  const navHtml = nav('/live-training');
+  const strategies: any[] = data.strategies || [];
+  const hasLive = !!data.has_live_data;
+  const generated = (data.generated_at || '').replace('T', ' ').replace(/\..*$/, ' UTC');
+
+  // Live↔shadow mapping table (always shown — documents the maintained pairing).
+  const mapping: Record<string, string> = data.mapping || {};
+  const mappingRows = Object.keys(mapping).length
+    ? Object.entries(mapping).map(([live, shadow]) =>
+        `<tr><td style="font-family:monospace">${escHtml(live)}</td><td style="font-family:monospace;color:#a78bfa">${escHtml(shadow)}</td></tr>`,
+      ).join('')
+    : `<tr><td colspan="2" style="color:#64748b">No live→shadow pairs mapped yet.</td></tr>`;
+
+  // Empty state — live trading hasn't produced any trades yet.
+  const emptyState = !hasLive ? `
+    <div class="card" style="border:1px solid #7f1d1d">
+      <div class="card-title">No live trades yet</div>
+      <p style="color:#94a3b8;font-size:12px;line-height:1.5;margin:0 0 8px">
+        This page tracks strategies running in a live-money execution mode
+        (<code>live_micro</code> / <code>live_full</code>). No such trades exist in the
+        database yet, so the charts and metrics below are empty. They'll populate
+        automatically once a live strategy starts trading.
+      </p>
+      <p style="color:#64748b;font-size:11px;margin:0">
+        Live→shadow pairing is maintained in <code>LIVE_SHADOW_MAP</code>
+        (<code>src/api/live-training-data.ts</code>). Add a row there when you launch a
+        live strategy so its shadow twin shows up in the comparison section.
+      </p>
+    </div>` : '';
+
+  // Strategy selector chips — multi-select. Default shows only currently-active
+  // live strategies; retired/disabled ones (historical trades only) are tucked
+  // behind a collapsed dropdown so the live set is visible off the bat.
+  const activeStrats = strategies.filter((s: any) => s.active);
+  const offStrats = strategies.filter((s: any) => !s.active);
+  const activeTradeN = activeStrats.reduce((a: number, s: any) => a + (s.n_live || 0), 0);
+  const chip = (s: any) => `
+      <button class="lt-strat-chip" data-strat="${escHtml(s.id)}" type="button" title="${escHtml(s.label)}">
+        <span class="lt-chk">✓ </span>${escHtml(s.label)} <span class="lt-chip-n">${s.n_live}</span>
+        ${s.shadow_id ? '' : '<span class="lt-nopair" title="no shadow twin mapped">⚠</span>'}
+      </button>`;
+  const selectorChips = `
+    <button class="lt-strat-chip lt-active" data-strat="" type="button">
+      <span class="lt-chk">✓ </span>All Active <span class="lt-chip-n">${activeTradeN}</span>
+    </button>
+    ${activeStrats.map(chip).join('')}
+    ${offStrats.length ? `
+    <details class="lt-off-wrap">
+      <summary>+ ${offStrats.length} retired / off</summary>
+      <div class="lt-off-chips">${offStrats.map(chip).join('')}</div>
+    </details>` : ''}`;
+
+  // Inject the data object for client-side computation. Escape `<` so the JSON
+  // can never break out of the <script> context.
+  const ltJson = JSON.stringify(data).replace(/</g, '\\u003c');
+
+  const pageStyles = `
+    .lt-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+    .lt-strat-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+    .lt-strat-chip{background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:14px;padding:5px 12px;font-size:12px;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:6px}
+    .lt-strat-chip:hover{background:#3f4d61;color:#e2e8f0}
+    .lt-strat-chip.lt-active{background:#2563eb;color:#fff;border-color:#2563eb;font-weight:600}
+    .lt-chip-n{background:#0f172a44;border-radius:8px;padding:0 6px;font-size:10px}
+    .lt-active .lt-chip-n{background:#0f172a66}
+    .lt-nopair{color:#f59e0b;font-size:11px}
+    .lt-off-wrap{display:inline-block}
+    .lt-off-wrap>summary{list-style:none;cursor:pointer;background:#1e293b;color:#64748b;border:1px dashed #475569;border-radius:14px;padding:5px 12px;font-size:12px}
+    .lt-off-wrap>summary::-webkit-details-marker{display:none}
+    .lt-off-wrap>summary:hover{color:#94a3b8;border-color:#64748b}
+    .lt-off-wrap[open]>summary{color:#94a3b8}
+    .lt-off-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;width:100%}
+    .lt-seg{display:inline-flex;border:1px solid #334155;border-radius:6px;overflow:hidden}
+    .lt-seg button{background:#1e293b;color:#94a3b8;border:none;padding:5px 12px;font-size:12px;cursor:pointer;font-family:inherit}
+    .lt-seg button.lt-on{background:#2563eb;color:#fff;font-weight:600}
+    .lt-controls label{color:#94a3b8;font-size:11px;display:inline-flex;align-items:center;gap:4px}
+    .lt-controls select{background:#0f172a;color:#e2e8f0;border:1px solid #334155;padding:4px 8px;border-radius:4px;font-size:12px;cursor:pointer}
+    .lt-chart-wrap{position:relative;background:#13131f;border-radius:8px;padding:6px}
+    .lt-chart-wrap svg{display:block;width:100%;height:auto}
+    .lt-tooltip{position:absolute;pointer-events:none;background:#0f172af2;border:1px solid #334155;border-radius:6px;padding:6px 9px;font-size:11px;color:#e2e8f0;z-index:5;display:none;white-space:nowrap;box-shadow:0 4px 12px #000a}
+    .lt-tooltip b{color:#60a5fa}
+    .lt-legend{display:flex;gap:16px;flex-wrap:wrap;margin:8px 2px 0;font-size:11px;color:#94a3b8}
+    .lt-legend span{display:inline-flex;align-items:center;gap:5px}
+    .lt-legend i{width:14px;height:3px;border-radius:2px;display:inline-block}
+    .lt-hint{color:#64748b;font-size:10px;margin:6px 2px 0}
+    .lt-metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px}
+    .lt-metric{background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:8px 10px}
+    .lt-metric .lab{color:#64748b;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+    .lt-metric .val{font-size:16px;font-weight:600;margin-top:2px}
+    .lt-cmp-tbl{width:100%;border-collapse:collapse;border:1px solid #1e293b;border-radius:6px;overflow:hidden;table-layout:fixed}
+    .lt-cmp-tbl th,.lt-cmp-tbl td{padding:6px 10px;border-bottom:1px solid #1e293b;font-size:12px;text-align:left;word-break:break-word}
+    .lt-cmp-tbl thead th{background:#262640;color:#94a3b8;font-weight:600;font-size:10px;text-transform:uppercase;letter-spacing:.04em}
+    .lt-cmp-tbl td.rl{color:#64748b}
+    .lt-cmp-tbl tr.lt-cmp-delta td{background:#0f172a;font-weight:600;border-top:1px solid #334155}
+    .lt-strat-chip.lt-active .lt-chk{display:inline}.lt-chk{display:none;font-size:10px}
+    .lt-attrib{margin-top:12px;padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;font-size:11px;color:#94a3b8;line-height:1.7}
+    .lt-attrib b{color:#cbd5e1}
+    @media (max-width:640px){.container{padding:8px}}
+  `;
+
+  const liveSection = hasLive ? `
+    <div class="lt-strat-bar" id="lt-strat-bar">${selectorChips}</div>
+    <p class="lt-hint" style="margin:-8px 2px 14px">Showing active live strategies by default · tap chips to combine · "All Active" resets · retired ones are under the dropdown.</p>
+
+    <div class="card">
+      <div class="card-title">Performance Chart</div>
+      <div class="lt-controls">
+        <div class="lt-seg" id="lt-type-seg">
+          <button data-type="line" class="lt-on" type="button">Line</button>
+          <button data-type="hist" type="button">Trade Histogram</button>
+        </div>
+        <label id="lt-metric-wrap">Metric
+          <select id="lt-metric"></select>
+        </label>
+        <button id="lt-reset-zoom" type="button" style="background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;display:none">Reset zoom</button>
+      </div>
+      <div class="lt-chart-wrap" id="lt-primary-wrap">
+        <div class="lt-tooltip" id="lt-primary-tip"></div>
+      </div>
+      <div class="lt-hint">Drag across the chart to zoom · hover to inspect a trade · double-click to reset.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Metrics Summary <span id="lt-metrics-scope" style="color:#64748b;font-weight:400;font-size:11px;text-transform:none;letter-spacing:0"></span></div>
+      <div class="lt-metric-grid" id="lt-metrics"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Execution Diagnostics <span style="color:#94a3b8;font-weight:400;font-size:11px;text-transform:none;letter-spacing:0">— why live drifts from shadow</span></div>
+      <p class="desc" style="color:#94a3b8;font-size:11px;margin:0 0 10px">
+        Shadow books the price at the <b>instant</b> a TP/SL triggers (a zero-latency model). Live submits a real
+        transaction that takes time to land — on tokens moving 100%+/sec, the price drifts during that window.
+        That fill-timing drift, not slippage or fees, is what makes live swing from shadow per-trade.
+      </p>
+      <div class="lt-metric-grid" id="lt-diag"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Live vs Shadow <span style="color:#64748b;font-weight:400;font-size:11px;text-transform:none;letter-spacing:0">— matched on graduations both traded</span></div>
+      <p class="desc" style="color:#94a3b8;font-size:11px;margin:0 0 10px">
+        Each point is one graduation that <b>both</b> the live strategy and its shadow twin entered.
+        Same token, same entry decision, different fill path — so the gap is pure execution (slippage, timing, fees).
+      </p>
+      <div id="lt-cmp-empty" style="display:none;color:#64748b;font-size:12px;padding:8px 0">
+        No matched graduations for this selection. Either no shadow twin is mapped, or the live and shadow
+        strategies haven't traded any of the same graduations yet.
+      </div>
+      <div id="lt-cmp-body" style="display:none">
+        <div class="lt-chart-wrap" id="lt-cmp-wrap" style="margin-bottom:10px">
+          <div class="lt-tooltip" id="lt-cmp-tip"></div>
+        </div>
+        <div class="lt-legend">
+          <span><i style="background:#22d3ee"></i>Live (cumulative net SOL)</span>
+          <span><i style="background:#a78bfa"></i>Shadow (cumulative net SOL)</span>
+        </div>
+        <div style="margin-top:14px;overflow-x:auto" id="lt-cmp-table"></div>
+        <div class="lt-attrib" id="lt-cmp-attrib"></div>
+        <details style="margin-top:12px">
+          <summary style="cursor:pointer;color:#94a3b8;font-size:12px">Per-graduation pairs (<span id="lt-cmp-n">0</span>)</summary>
+          <div style="overflow-x:auto;margin-top:8px">
+            <table class="table" id="lt-cmp-pairs"><thead><tr>
+              <th>Entry</th><th>Mint</th><th>Live %</th><th>Shadow %</th><th>Δ %</th>
+              <th>Live slip%</th><th>Shadow slip%</th>
+            </tr></thead><tbody></tbody></table>
+          </div>
+        </details>
+      </div>
+    </div>
+  ` : '';
+
+  const js = `<script>
+(function(){
+  var LT = ${ltJson};
+  // ── helpers ──
+  function num(v){ return (v===null||v===undefined||isNaN(v))?null:v; }
+  function f4(v){ v=num(v); return v===null?'—':(v>=0?'+':'')+v.toFixed(4); }
+  function f4u(v){ v=num(v); return v===null?'—':v.toFixed(4); }
+  function fpct(v,d){ v=num(v); if(v===null) return '—'; d=(d===undefined)?2:d; return (v>=0?'+':'')+v.toFixed(d)+'%'; }
+  function fpctp(v,d){ v=num(v); if(v===null) return '—'; d=(d===undefined)?3:d; return v.toFixed(d)+'%'; }
+  function fint(v){ v=num(v); return v===null?'—':String(Math.round(v)); }
+  function fsec(v){ v=num(v); if(v===null) return '—'; if(v<60) return Math.round(v)+'s'; if(v<3600) return (v/60).toFixed(1)+'m'; return (v/3600).toFixed(1)+'h'; }
+  function fts(s){ if(!s) return '—'; var d=new Date(s*1000); return d.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}); }
+  function shortMint(m){ return m? (m.slice(0,4)+'…'+m.slice(-4)) : '—'; }
+  function colorClass(v){ v=num(v); return v===null?'':(v>0?'green':(v<0?'red':'')); }
+  function rt(t){ var e=num(t.entry_slip_pct), x=num(t.exit_slip_pct); if(e===null&&x===null) return null; return (e||0)+(x||0); }
+
+  // state.selected: array of live strategy_ids. Empty = "All Live" (aggregate).
+  var state = { selected:[], type:'line', metric:'cum_sol', xView:null };
+
+  // ── line-chart metric descriptors (computed from live trades) ──
+  var LINE_METRICS = [
+    {key:'cum_sol',   label:'Cumulative SOL P&L',          mode:'cum',    val:function(t){return num(t.net_profit_sol)||0;}, unit:'SOL', zero:true},
+    {key:'cum_trades',label:'Cumulative Trades',           mode:'cum',    val:function(){return 1;}, unit:'', all:true},
+    {key:'cum_closed',label:'Cumulative Closed Trades',    mode:'cum',    val:function(t){return t.status==='closed'?1:0;}, unit:'', all:true},
+    {key:'cum_failed',label:'Cumulative Failed Trades',    mode:'cum',    val:function(t){return t.status==='failed'?1:0;}, unit:'', all:true},
+    {key:'cum_fees',  label:'Cumulative Fees (SOL)',       mode:'cum',    val:function(t){return num(t.fees_sol)||0;}, unit:'SOL'},
+    {key:'cum_jito',  label:'Cumulative Jito Tips (SOL)',  mode:'cum',    val:function(t){return num(t.jito_tip_sol)||0;}, unit:'SOL'},
+    {key:'win_rate',  label:'Rolling Win Rate (%)',        mode:'winrate',unit:'%'},
+    {key:'avg_pnl',   label:'Avg Profit / Trade (SOL)',    mode:'avgpnl', unit:'SOL', zero:true},
+    {key:'ret_pct',   label:'Net Return / Trade (%)',      mode:'point',  val:function(t){return num(t.net_return_pct);}, unit:'%', zero:true},
+    {key:'rt_slip',   label:'Round-trip Slippage / Trade (%)', mode:'point', val:function(t){return rt(t);}, unit:'%'},
+    {key:'latency',   label:'Execution Latency (ms)',      mode:'point',  val:function(t){return num(t.tx_land_ms);}, unit:'ms'}
+  ];
+  var HIST_METRICS = [
+    {key:'net_sol', label:'Net P&L per Trade (SOL)', val:function(t){return num(t.net_profit_sol);}, unit:'SOL'},
+    {key:'net_pct', label:'Net Return per Trade (%)', val:function(t){return num(t.net_return_pct);}, unit:'%'}
+  ];
+
+  // Set of currently-active (enabled, live-mode) strategy ids. Empty selection
+  // defaults to these so retired strategies don't pollute the at-a-glance view.
+  var ACTIVE_SET={}, ACTIVE_LIST=[];
+  (LT.strategies||[]).forEach(function(s){ if(s.active){ ACTIVE_SET[s.id]=true; ACTIVE_LIST.push(s.id); } });
+  function liveTrades(){
+    var all = LT.trades.live || [];
+    if(state.selected.length){
+      var sel={}; for(var i=0;i<state.selected.length;i++) sel[state.selected[i]]=true;
+      return all.filter(function(t){return sel[t.strategy_id];});
+    }
+    // Default: active strategies only (fall back to all if none are active).
+    if(!ACTIVE_LIST.length) return all;
+    return all.filter(function(t){return ACTIVE_SET[t.strategy_id];});
+  }
+
+  // Build {points:[{x,y,t}], zero} for the current line metric.
+  function buildLineSeries(metricKey){
+    var m=null; for(var i=0;i<LINE_METRICS.length;i++){ if(LINE_METRICS[i].key===metricKey){m=LINE_METRICS[i];break;} }
+    if(!m) m=LINE_METRICS[0];
+    var ts = liveTrades().filter(function(t){return t.entry_ts!==null && t.entry_ts!==undefined;});
+    ts = ts.slice().sort(function(a,b){return (a.entry_ts-b.entry_ts)||(a.id-b.id);});
+    var pts=[];
+    if(m.mode==='cum'){
+      var acc=0;
+      for(var i=0;i<ts.length;i++){ acc+=m.val(ts[i]); pts.push({x:ts[i].entry_ts,y:acc,t:ts[i]}); }
+    } else if(m.mode==='winrate'){
+      var w=0,c=0;
+      for(var i=0;i<ts.length;i++){ if(ts[i].status==='closed'){ c++; if(num(ts[i].net_profit_sol)>0) w++; pts.push({x:ts[i].entry_ts,y:c?w/c*100:0,t:ts[i]}); } }
+    } else if(m.mode==='avgpnl'){
+      var sum=0,n=0;
+      for(var i=0;i<ts.length;i++){ if(ts[i].status==='closed'){ sum+=num(ts[i].net_profit_sol)||0; n++; pts.push({x:ts[i].entry_ts,y:n?sum/n:0,t:ts[i]}); } }
+    } else { // point
+      for(var i=0;i<ts.length;i++){ var v=m.val(ts[i]); if(v!==null) pts.push({x:ts[i].entry_ts,y:v,t:ts[i]}); }
+    }
+    return {points:pts, zero:!!m.zero, unit:m.unit, label:m.label, kind:(m.mode==='point'?'point':'line')};
+  }
+
+  // Build histogram bars for current hist metric.
+  function buildHist(metricKey){
+    var m=null; for(var i=0;i<HIST_METRICS.length;i++){ if(HIST_METRICS[i].key===metricKey){m=HIST_METRICS[i];break;} }
+    if(!m) m=HIST_METRICS[0];
+    var ts = liveTrades().filter(function(t){return t.status==='closed' && m.val(t)!==null;});
+    ts = ts.slice().sort(function(a,b){return ((a.entry_ts||0)-(b.entry_ts||0))||(a.id-b.id);});
+    var bars=[];
+    for(var i=0;i<ts.length;i++){ bars.push({i:i,y:m.val(ts[i]),t:ts[i]}); }
+    return {bars:bars, unit:m.unit, label:m.label};
+  }
+
+  // ── generic SVG chart engine ──────────────────────────────────────────
+  var W=900,H=340,PADL=60,PADR=16,PADT=14,PADB=34;
+  var PW=W-PADL-PADR, PH=H-PADT-PADB;
+  function svgEl(name,attrs){ var e=document.createElementNS('http://www.w3.org/2000/svg',name); for(var k in attrs){ e.setAttribute(k,attrs[k]); } return e; }
+  function niceTicks(min,max,n){
+    if(min===max){ min-=1; max+=1; }
+    var span=max-min, step=Math.pow(10,Math.floor(Math.log(span/n)/Math.LN10));
+    var err=n*step/span;
+    if(err<=0.15) step*=10; else if(err<=0.35) step*=5; else if(err<=0.75) step*=2;
+    var ticks=[], t=Math.ceil(min/step)*step;
+    for(; t<=max+step*0.001; t+=step){ ticks.push(+t.toFixed(10)); }
+    return ticks;
+  }
+
+  // makeChart(container, tooltip): returns { update(cfg) } where cfg describes
+  // series. Handles line / point / hist, plus hover + drag-zoom.
+  function makeChart(container, tip){
+    var svg=svgEl('svg',{viewBox:'0 0 '+W+' '+H, preserveAspectRatio:'none'});
+    container.insertBefore(svg, tip);
+    var ctx={ cfg:null, xv:null, fullX:null, xToPx:null, yToPx:null, pxToX:null,
+              isHist:false, brush:null, clientToSvgX:null, dragging:false, dragStartX:0 };
+
+    // Drag-to-zoom: window-level listeners are bound ONCE per chart (not per
+    // redraw) so they don't accumulate. They read live geometry off ctx, which
+    // draw() refreshes on every render.
+    window.addEventListener('mousemove', function(ev){
+      if(!ctx.dragging || !ctx.brush || !ctx.clientToSvgX) return;
+      var sx=ctx.clientToSvgX(ev.clientX);
+      var a=Math.max(PADL,Math.min(ctx.dragStartX,sx)), b=Math.min(W-PADR,Math.max(ctx.dragStartX,sx));
+      ctx.brush.setAttribute('x',a); ctx.brush.setAttribute('width',Math.max(0,b-a));
+    });
+    window.addEventListener('mouseup', function(ev){
+      if(!ctx.dragging) return; ctx.dragging=false;
+      if(ctx.brush) ctx.brush.setAttribute('opacity',0);
+      var sx=ctx.clientToSvgX(ev.clientX); var a=Math.min(ctx.dragStartX,sx), b=Math.max(ctx.dragStartX,sx);
+      if(b-a>8 && !ctx.isHist){ var xa=ctx.pxToX(a), xb=ctx.pxToX(b); ctx.xv=[xa,xb];
+        document.getElementById('lt-reset-zoom').style.display='inline-block'; draw(); }
+    });
+
+    function draw(){
+      while(svg.firstChild) svg.removeChild(svg.firstChild);
+      var cfg=ctx.cfg; if(!cfg){ return; }
+      var isHist = cfg.type==='hist';
+      // x domain
+      var xmin, xmax;
+      if(isHist){ xmin=-0.5; xmax=Math.max(0.5,(cfg.bars.length-0.5)); }
+      else {
+        var xs=[]; cfg.series.forEach(function(s){ s.points.forEach(function(p){ xs.push(p.x); }); });
+        if(!xs.length){ xmin=0;xmax=1; } else { xmin=Math.min.apply(null,xs); xmax=Math.max.apply(null,xs); }
+        if(xmin===xmax){ xmin-=1; xmax+=1; }
+      }
+      var fullX=[xmin,xmax];
+      var xv = ctx.xv || fullX;
+      // y domain (over visible x for line; all bars for hist)
+      var ys=[];
+      if(isHist){ cfg.bars.forEach(function(b){ ys.push(b.y); }); ys.push(0); }
+      else {
+        cfg.series.forEach(function(s){ s.points.forEach(function(p){ if(p.x>=xv[0]-1e-9 && p.x<=xv[1]+1e-9) ys.push(p.y); }); });
+        if(cfg.zero) ys.push(0);
+      }
+      if(!ys.length){ ys=[0,1]; }
+      var ymin=Math.min.apply(null,ys), ymax=Math.max.apply(null,ys);
+      if(ymin===ymax){ ymin-=1; ymax+=1; }
+      var pad=(ymax-ymin)*0.08; ymin-=pad; ymax+=pad;
+
+      var x0=isHist?fullX[0]:xv[0], x1=isHist?fullX[1]:xv[1];
+      function xToPx(x){ return PADL + (x-x0)/(x1-x0)*PW; }
+      function yToPx(y){ return PADT + (1-(y-ymin)/(ymax-ymin))*PH; }
+      function pxToX(px){ return x0 + (px-PADL)/PW*(x1-x0); }
+      ctx.xToPx=xToPx; ctx.yToPx=yToPx; ctx.pxToX=pxToX; ctx.xv=xv; ctx.fullX=fullX;
+
+      // background
+      svg.appendChild(svgEl('rect',{x:0,y:0,width:W,height:H,fill:'#13131f',rx:8}));
+      // y grid + labels
+      var yticks=niceTicks(ymin,ymax,5);
+      yticks.forEach(function(ty){ var py=yToPx(ty);
+        svg.appendChild(svgEl('line',{x1:PADL,y1:py,x2:W-PADR,y2:py,stroke:(Math.abs(ty)<1e-9?'#475569':'#262640'),'stroke-width':(Math.abs(ty)<1e-9?1.2:1)}));
+        var lab=svgEl('text',{x:PADL-6,y:py+3,fill:'#64748b','font-size':10,'text-anchor':'end'}); lab.textContent=(Math.abs(ty)>=1000?(ty/1000).toFixed(1)+'k':(+ty.toFixed(4)).toString()); svg.appendChild(lab);
+      });
+      // x labels (time for line, index for hist)
+      var xticks = isHist ? niceTicks(0,Math.max(1,cfg.bars.length-1),6).filter(function(v){return v>=0;}) : niceTicks(xv[0],xv[1],6);
+      xticks.forEach(function(tx){ var px=xToPx(tx); if(px<PADL-1||px>W-PADR+1) return;
+        svg.appendChild(svgEl('line',{x1:px,y1:PADT,x2:px,y2:PADT+PH,stroke:'#1e2030','stroke-width':1}));
+        var lab=svgEl('text',{x:px,y:PADT+PH+14,fill:'#64748b','font-size':9,'text-anchor':'middle'});
+        lab.textContent = isHist ? ('#'+Math.round(tx)) : fts(tx);
+        svg.appendChild(lab);
+      });
+
+      // clip for line series
+      var clipId='ltclip'+Math.random().toString(36).slice(2);
+      var defs=svgEl('defs',{}); var cp=svgEl('clipPath',{id:clipId});
+      cp.appendChild(svgEl('rect',{x:PADL,y:PADT,width:PW,height:PH})); defs.appendChild(cp); svg.appendChild(defs);
+
+      if(isHist){
+        var n=cfg.bars.length; var bw=Math.max(1,Math.min(18, PW/Math.max(1,n)*0.8));
+        cfg.bars.forEach(function(b){ var px=xToPx(b.i); var py=yToPx(b.y); var pz=yToPx(0);
+          var top=Math.min(py,pz), hh=Math.abs(pz-py);
+          svg.appendChild(svgEl('rect',{x:px-bw/2,y:top,width:bw,height:Math.max(0.5,hh),fill:(b.y>=0?'#22c55e':'#ef4444'),opacity:0.85}));
+        });
+      } else {
+        cfg.series.forEach(function(s){
+          if(!s.points.length) return;
+          if(cfg.kind==='point'){
+            var g=svgEl('g',{'clip-path':'url(#'+clipId+')'});
+            s.points.forEach(function(p){ g.appendChild(svgEl('circle',{cx:xToPx(p.x),cy:yToPx(p.y),r:2.4,fill:s.color,opacity:0.8})); });
+            svg.appendChild(g);
+          } else {
+            var d=''; for(var i=0;i<s.points.length;i++){ d+=(i?'L':'M')+xToPx(s.points[i].x).toFixed(1)+' '+yToPx(s.points[i].y).toFixed(1)+' '; }
+            var path=svgEl('path',{d:d,fill:'none',stroke:s.color,'stroke-width':1.8,'clip-path':'url(#'+clipId+')'});
+            if(s.dashed) path.setAttribute('stroke-dasharray','5 4');
+            svg.appendChild(path);
+          }
+        });
+      }
+
+      // interaction overlay
+      var ov=svgEl('rect',{x:PADL,y:PADT,width:PW,height:PH,fill:'transparent',cursor:'crosshair'});
+      svg.appendChild(ov);
+      var guide=svgEl('line',{x1:0,y1:PADT,x2:0,y2:PADT+PH,stroke:'#60a5fa','stroke-width':1,opacity:0,'pointer-events':'none'});
+      svg.appendChild(guide);
+      var hoverDots=svgEl('g',{'pointer-events':'none'}); svg.appendChild(hoverDots);
+      var brush=svgEl('rect',{x:0,y:PADT,width:0,height:PH,fill:'#60a5fa22',stroke:'#60a5fa','stroke-width':0.5,'pointer-events':'none',opacity:0}); svg.appendChild(brush);
+
+      // viewport px ratio for tooltip placement
+      function clientToSvgX(clientX){ var r=svg.getBoundingClientRect(); return (clientX-r.left)/r.width*W; }
+      // expose live geometry to the once-bound window drag handlers
+      ctx.isHist=isHist; ctx.brush=brush; ctx.clientToSvgX=clientToSvgX;
+      function showTip(html, svgx){ var r=svg.getBoundingClientRect(); var leftPx=(svgx/W)*r.width; tip.innerHTML=html; tip.style.display='block';
+        var tw=tip.offsetWidth; var lp=leftPx+12; if(lp+tw>r.width) lp=leftPx-tw-12; if(lp<0) lp=4; tip.style.left=lp+'px'; tip.style.top='10px'; }
+      function hideTip(){ tip.style.display='none'; guide.setAttribute('opacity',0); while(hoverDots.firstChild) hoverDots.removeChild(hoverDots.firstChild); }
+
+      ov.onmousemove=function(ev){ if(ctx.dragging){ return; }
+        var sx=clientToSvgX(ev.clientX); var dataX=pxToX(sx);
+        while(hoverDots.firstChild) hoverDots.removeChild(hoverDots.firstChild);
+        if(isHist){
+          var idx=Math.round(dataX); if(idx<0||idx>=cfg.bars.length){ hideTip(); return; }
+          var b=cfg.bars[idx]; var px=xToPx(b.i);
+          guide.setAttribute('x1',px); guide.setAttribute('x2',px); guide.setAttribute('opacity',0.6);
+          hoverDots.appendChild(svgEl('circle',{cx:px,cy:yToPx(b.y),r:3.5,fill:(b.y>=0?'#22c55e':'#ef4444'),stroke:'#fff','stroke-width':1}));
+          showTip('<b>#'+(idx+1)+'</b> '+shortMint(b.t.mint)+'<br>'+fts(b.t.entry_ts)+'<br>'+(cfg.unit==='SOL'?f4(b.y)+' SOL':fpct(b.y))+' · '+(b.t.exit_reason||'')+'<br>'+b.t.strategy_id, px);
+        } else {
+          // nearest point on first series by x
+          var best=null,bestD=1e18,bestS=null;
+          cfg.series.forEach(function(s){ for(var i=0;i<s.points.length;i++){ var d=Math.abs(s.points[i].x-dataX); if(d<bestD){bestD=d;best=s.points[i];bestS=s;} } });
+          if(!best){ hideTip(); return; }
+          var px=xToPx(best.x);
+          guide.setAttribute('x1',px); guide.setAttribute('x2',px); guide.setAttribute('opacity',0.6);
+          var html='<b>'+fts(best.x)+'</b>';
+          cfg.series.forEach(function(s){ // find that series' point at same x (nearest)
+            var sp=null,sd=1e18; for(var i=0;i<s.points.length;i++){ var d=Math.abs(s.points[i].x-best.x); if(d<sd){sd=d;sp=s.points[i];} }
+            if(sp){ hoverDots.appendChild(svgEl('circle',{cx:xToPx(sp.x),cy:yToPx(sp.y),r:3.5,fill:s.color,stroke:'#fff','stroke-width':1}));
+              var vstr=(cfg.unit==='SOL')?f4(sp.y)+' SOL':(cfg.unit==='%'?fpct(sp.y):(cfg.unit==='ms'?fint(sp.y)+' ms':fint(sp.y)));
+              html+='<br><span style="color:'+s.color+'">■</span> '+(cfg.series.length>1?s.name+': ':'')+vstr;
+              if(sp.t && sp.t.mint && cfg.series.length===1) html+='<br>'+shortMint(sp.t.mint)+' · '+(sp.t.exit_reason||sp.t.status);
+            }
+          });
+          showTip(html, px);
+        }
+      };
+      ov.onmouseleave=function(){ if(!ctx.dragging) hideTip(); };
+
+      // drag-to-zoom: start here; window-level move/up handlers (bound once in
+      // makeChart) read ctx for live geometry.
+      ov.onmousedown=function(ev){ ctx.dragging=true; ctx.dragStartX=clientToSvgX(ev.clientX); brush.setAttribute('opacity',1); hideTip(); ev.preventDefault(); };
+      svg.ondblclick=function(){ ctx.xv=null; document.getElementById('lt-reset-zoom').style.display='none'; draw(); };
+    }
+
+    return {
+      update:function(cfg){ ctx.cfg=cfg; if(cfg.resetView){ ctx.xv=null; } draw(); },
+      resetZoom:function(){ ctx.xv=null; draw(); }
+    };
+  }
+
+  // ── metric & comparison rendering (uses server-computed numbers) ──
+  // ── client-side metrics + comparison (mirror of the server TS helpers) ──
+  // Computed fresh from the selected subset of live trades so ANY multi-select
+  // combination works, not just single-strategy / all. Mirrors computeMetrics /
+  // computeComparison in src/api/live-training-data.ts.
+  function jround(v,d){ if(v===null||v===undefined||!isFinite(v)) return null; var f=Math.pow(10,d===undefined?4:d); return Math.round(v*f)/f; }
+  function jmean(xs){ if(!xs.length) return null; var s=0; for(var i=0;i<xs.length;i++) s+=xs[i]; return s/xs.length; }
+  function jmedian(xs){ if(!xs.length) return null; var s=xs.slice().sort(function(a,b){return a-b;}); var m=Math.floor(s.length/2); return s.length%2? s[m] : (s[m-1]+s[m])/2; }
+  function jstd(xs){ if(xs.length<2) return null; var m=jmean(xs); var v=0; for(var i=0;i<xs.length;i++){var d=xs[i]-m; v+=d*d;} return Math.sqrt(v/xs.length); }
+  function jpctl(xs,p){ if(!xs.length) return null; var s=xs.slice().sort(function(a,b){return a-b;}); return s[Math.min(s.length-1,Math.max(0,Math.floor(p*(s.length-1))))]; }
+  function notNull(xs){ var o=[]; for(var i=0;i<xs.length;i++) if(xs[i]!==null&&xs[i]!==undefined&&isFinite(xs[i])) o.push(xs[i]); return o; }
+
+  function jsComputeMetrics(trades){
+    var closed=[],failed=[],open=[];
+    for(var i=0;i<trades.length;i++){ var s=trades[i].status; if(s==='closed') closed.push(trades[i]); else if(s==='failed') failed.push(trades[i]); else if(s==='open') open.push(trades[i]); }
+    var wins=[],losses=[];
+    for(var i=0;i<closed.length;i++){ ((num(closed[i].net_profit_sol)||0)>0?wins:losses).push(closed[i]); }
+    var netSols=closed.map(function(t){return num(t.net_profit_sol)||0;});
+    var returns=notNull(closed.map(function(t){return num(t.net_return_pct);}));
+    var holds=notNull(closed.map(function(t){return num(t.held_seconds);}));
+    var grossWins=0; for(var i=0;i<wins.length;i++) grossWins+=num(wins[i].net_profit_sol)||0;
+    var grossLosses=0; for(var i=0;i<losses.length;i++){ var v=num(losses[i].net_profit_sol)||0; if(v<0) grossLosses+=-v; }
+    var entrySlips=notNull(closed.map(function(t){return num(t.entry_slip_pct);}));
+    var exitSlips=notNull(closed.map(function(t){return num(t.exit_slip_pct);}));
+    var rtSlips=notNull(closed.map(rt));
+    var landMs=notNull(closed.map(function(t){return num(t.tx_land_ms);}));
+    var sd=jstd(returns), mr=jmean(returns);
+    var rc={}; for(var i=0;i<closed.length;i++){ var r=closed[i].exit_reason||'unknown'; rc[r]=(rc[r]||0)+1; }
+    var totalFees=0,totalJito=0,totalNet=0;
+    for(var i=0;i<closed.length;i++){ totalFees+=num(closed[i].fees_sol)||0; totalJito+=num(closed[i].jito_tip_sol)||0; }
+    for(var i=0;i<netSols.length;i++) totalNet+=netSols[i];
+    return {
+      n_trades:trades.length, n_closed:closed.length, n_failed:failed.length, n_open:open.length,
+      total_net_sol:jround(totalNet),
+      win_rate_pct: closed.length? jround(wins.length/closed.length*100,1): null,
+      profit_factor: grossLosses>0? jround(grossWins/grossLosses,2): (grossWins>0? null: 0),
+      avg_winner_sol: jround(jmean(wins.map(function(t){return num(t.net_profit_sol)||0;}))),
+      avg_loser_sol: jround(jmean(losses.map(function(t){return num(t.net_profit_sol)||0;}))),
+      avg_winner_pct: jround(jmean(notNull(wins.map(function(t){return num(t.net_return_pct);}))),2),
+      avg_loser_pct: jround(jmean(notNull(losses.map(function(t){return num(t.net_return_pct);}))),2),
+      largest_winner_sol: jround(netSols.length? Math.max.apply(null,netSols): null),
+      largest_loser_sol: jround(netSols.length? Math.min.apply(null,netSols): null),
+      avg_net_return_pct: jround(mr,2), median_net_return_pct: jround(jmedian(returns),2),
+      sharpe_like: (sd&&sd>0&&mr!==null)? jround(mr/sd,3): null,
+      avg_holding_sec: jround(jmean(holds),0),
+      avg_entry_slip_pct: jround(jmean(entrySlips),3), avg_exit_slip_pct: jround(jmean(exitSlips),3),
+      avg_roundtrip_slip_pct: jround(jmean(rtSlips),3),
+      total_fees_sol: jround(totalFees,6), total_jito_tip_sol: jround(totalJito,6),
+      avg_tx_land_ms: jround(jmean(landMs),0),
+      tx_land_p50_ms: jround(jpctl(landMs,0.5),0), tx_land_p90_ms: jround(jpctl(landMs,0.9),0),
+      tx_land_max_ms: jround(landMs.length? Math.max.apply(null,landMs): null,0),
+      execution_success_rate_pct: (closed.length+failed.length)>0? jround(closed.length/(closed.length+failed.length)*100,1): null,
+      exit_reason_counts: rc
+    };
+  }
+
+  function jsComputeComparison(liveTr, shadowTr){
+    var map=LT.mapping||{};
+    var shIdx={};
+    for(var i=0;i<shadowTr.length;i++){ var s=shadowTr[i]; if(s.status==='closed'&&s.graduation_id!==null&&s.graduation_id!==undefined) shIdx[s.strategy_id+':'+s.graduation_id]=s; }
+    var pairs=[], liveGross=[], shadowGross=[], liveLand=[], deltas=[];
+    for(var i=0;i<liveTr.length;i++){ var lv=liveTr[i];
+      if(lv.status!=='closed'||lv.graduation_id===null||lv.graduation_id===undefined) continue;
+      var sid=map[lv.strategy_id]; if(!sid) continue;
+      var tw=shIdx[sid+':'+lv.graduation_id]; if(!tw) continue;
+      var lr=rt(lv), sr=rt(tw);
+      if(num(lv.gross_return_pct)!==null&&num(tw.gross_return_pct)!==null){ liveGross.push(num(lv.gross_return_pct)); shadowGross.push(num(tw.gross_return_pct)); }
+      if(num(lv.tx_land_ms)!==null) liveLand.push(num(lv.tx_land_ms));
+      deltas.push((num(lv.net_profit_sol)||0)-(num(tw.net_profit_sol)||0));
+      pairs.push({ graduation_id:lv.graduation_id, mint:lv.mint, entry_ts:lv.entry_ts,
+        live_return_pct:num(lv.net_return_pct), shadow_return_pct:num(tw.net_return_pct),
+        return_delta_pct:(num(lv.net_return_pct)!==null&&num(tw.net_return_pct)!==null)? jround(num(lv.net_return_pct)-num(tw.net_return_pct),2): null,
+        live_net_sol:num(lv.net_profit_sol), shadow_net_sol:num(tw.net_profit_sol),
+        live_roundtrip_slip_pct:jround(lr,3), shadow_roundtrip_slip_pct:jround(sr,3) });
+    }
+    pairs.sort(function(a,b){return (a.entry_ts||0)-(b.entry_ts||0);});
+    var liveRets=notNull(pairs.map(function(p){return p.live_return_pct;}));
+    var shadowRets=notNull(pairs.map(function(p){return p.shadow_return_pct;}));
+    var liveWins=0,shadowWins=0,liveTotal=0,shadowTotal=0;
+    for(var i=0;i<pairs.length;i++){ if((num(pairs[i].live_net_sol)||0)>0) liveWins++; if((num(pairs[i].shadow_net_sol)||0)>0) shadowWins++; liveTotal+=num(pairs[i].live_net_sol)||0; shadowTotal+=num(pairs[i].shadow_net_sol)||0; }
+    var liveRt=notNull(pairs.map(function(p){return p.live_roundtrip_slip_pct;}));
+    var shadowRt=notNull(pairs.map(function(p){return p.shadow_roundtrip_slip_pct;}));
+    var la=jmean(liveRets), sa=jmean(shadowRets);
+    var lga=jmean(liveGross), sga=jmean(shadowGross);
+    var grossGap=(lga!==null&&sga!==null)? lga-sga: null;
+    var netGap=(la!==null&&sa!==null)? la-sa: null;
+    var byAbs=deltas.slice().sort(function(a,b){return Math.abs(b)-Math.abs(a);});
+    var totalDelta=0; for(var i=0;i<deltas.length;i++) totalDelta+=deltas[i];
+    var top3=0; for(var i=0;i<Math.min(3,byAbs.length);i++) top3+=byAbs[i];
+    return { matched_n:pairs.length,
+      live_total_net_sol:jround(liveTotal), shadow_total_net_sol:jround(shadowTotal), total_net_sol_delta:jround(liveTotal-shadowTotal),
+      live_avg_return_pct:jround(la,2), shadow_avg_return_pct:jround(sa,2),
+      avg_return_delta_pct:netGap!==null? jround(netGap,2): null,
+      live_win_rate_pct: pairs.length? jround(liveWins/pairs.length*100,1): null,
+      shadow_win_rate_pct: pairs.length? jround(shadowWins/pairs.length*100,1): null,
+      live_avg_roundtrip_slip_pct:jround(jmean(liveRt),3), shadow_avg_roundtrip_slip_pct:jround(jmean(shadowRt),3),
+      live_avg_gross_return_pct:jround(lga,2), shadow_avg_gross_return_pct:jround(sga,2),
+      gross_gap_pp:jround(grossGap,2), cost_gap_pp:(netGap!==null&&grossGap!==null)? jround(netGap-grossGap,2): null,
+      median_delta_sol:jround(jmedian(deltas)), delta_drop_top3_sol: deltas.length? jround(totalDelta-top3): null,
+      live_avg_tx_land_ms:jround(jmean(liveLand),0), live_p90_tx_land_ms:jround(jpctl(liveLand,0.9),0),
+      pairs:pairs };
+  }
+
+  function metricsFor(){ return jsComputeMetrics(liveTrades()); }
+  function comparisonFor(){ return jsComputeComparison(liveTrades(), LT.trades.shadow||[]); }
+  function scopeLabel(){
+    if(!state.selected.length) return '— active live strategies';
+    if(state.selected.length===1) return '— '+state.selected[0];
+    return '— '+state.selected.length+' strategies';
+  }
+
+  function metricCard(lab,val,cls){ return '<div class="lt-metric"><div class="lab">'+lab+'</div><div class="val '+(cls||'')+'">'+val+'</div></div>'; }
+  function renderMetrics(){
+    var m=metricsFor();
+    var topReason='—'; var rc=m.exit_reason_counts||{}; var best=-1; for(var k in rc){ if(rc[k]>best){best=rc[k];topReason=k+' ('+rc[k]+')';} }
+    var html='';
+    html+=metricCard('Total SOL Profit', f4(m.total_net_sol)+' SOL', colorClass(m.total_net_sol));
+    html+=metricCard('Trades (closed/failed/open)', m.n_closed+' / '+m.n_failed+' / '+m.n_open);
+    html+=metricCard('Win Rate', m.win_rate_pct===null?'—':m.win_rate_pct+'%', (m.win_rate_pct!==null&&m.win_rate_pct>=50)?'green':(m.win_rate_pct!==null&&m.win_rate_pct<40?'red':'yellow'));
+    html+=metricCard('Profit Factor', m.profit_factor===null?'∞':String(m.profit_factor), (m.profit_factor!==null&&m.profit_factor>=1?'green':'red'));
+    html+=metricCard('Avg Winner', f4(m.avg_winner_sol)+' SOL ('+fpct(m.avg_winner_pct)+')','green');
+    html+=metricCard('Avg Loser', f4(m.avg_loser_sol)+' SOL ('+fpct(m.avg_loser_pct)+')','red');
+    html+=metricCard('Largest Winner / Loser', f4(m.largest_winner_sol)+' / '+f4(m.largest_loser_sol)+' SOL');
+    html+=metricCard('Avg Net Return', fpct(m.avg_net_return_pct)+' (med '+fpct(m.median_net_return_pct)+')', colorClass(m.avg_net_return_pct));
+    html+=metricCard('Sharpe-like (per-trade)', m.sharpe_like===null?'—':m.sharpe_like.toFixed(3), colorClass(m.sharpe_like));
+    html+=metricCard('Avg Holding Time', fsec(m.avg_holding_sec));
+    html+=metricCard('Avg Slippage (entry / exit)', fpctp(m.avg_entry_slip_pct)+' / '+fpctp(m.avg_exit_slip_pct));
+    html+=metricCard('Avg Round-trip Slippage', fpctp(m.avg_roundtrip_slip_pct));
+    html+=metricCard('Total Fees Paid', f4u(m.total_fees_sol)+' SOL');
+    html+=metricCard('Total Jito Tips', f4u(m.total_jito_tip_sol)+' SOL');
+    html+=metricCard('Avg Tx Land Time', m.avg_tx_land_ms===null?'—':fint(m.avg_tx_land_ms)+' ms');
+    html+=metricCard('Execution Success Rate', m.execution_success_rate_pct===null?'—':m.execution_success_rate_pct+'%', (m.execution_success_rate_pct!==null&&m.execution_success_rate_pct>=95)?'green':'yellow');
+    html+=metricCard('Top Exit Reason', topReason);
+    document.getElementById('lt-metrics').innerHTML=html;
+    document.getElementById('lt-metrics-scope').textContent=scopeLabel();
+  }
+
+  function diagCard(lab,val,sub,cls){ return '<div class="lt-metric"><div class="lab">'+lab+'</div><div class="val '+(cls||'')+'">'+val+'</div>'+(sub?'<div style="color:#64748b;font-size:10px;margin-top:2px">'+sub+'</div>':'')+'</div>'; }
+  function renderDiagnostics(){
+    var m=metricsFor();
+    function ms(v){ return (v===null||v===undefined)?'—':fint(v)+' ms'; }
+    // ~5s land time = mostly RPC fallback (slow). <1.5s = fast Jito landing.
+    var landCls=(m.avg_tx_land_ms!==null&&m.avg_tx_land_ms>3000)?'red':(m.avg_tx_land_ms!==null&&m.avg_tx_land_ms>1500?'yellow':'green');
+    var html='';
+    html+=diagCard('Avg tx land time', ms(m.avg_tx_land_ms), 'p50 '+ms(m.tx_land_p50_ms)+' · p90 '+ms(m.tx_land_p90_ms), landCls);
+    html+=diagCard('Worst tx land time', ms(m.tx_land_max_ms), 'slowest single fill');
+    html+=diagCard('Avg entry slippage', fpctp(m.avg_entry_slip_pct), 'buy fill vs expected');
+    html+=diagCard('Avg exit slippage', fpctp(m.avg_exit_slip_pct), 'sell fill vs expected');
+    html+=diagCard('Execution success rate', m.execution_success_rate_pct===null?'—':m.execution_success_rate_pct+'%', 'closed / (closed+failed)', (m.execution_success_rate_pct!==null&&m.execution_success_rate_pct>=95)?'green':'yellow');
+    html+=diagCard('Total fees + tips', f4u((m.total_fees_sol||0)+(m.total_jito_tip_sol||0))+' SOL', 'fees '+f4u(m.total_fees_sol)+' · tips '+f4u(m.total_jito_tip_sol));
+    document.getElementById('lt-diag').innerHTML=html;
+  }
+
+  // Real <table> (3 fixed columns) — robust alignment vs the old flow grid.
+  function cmpTr(lab, live, shadow){ return '<tr><td class="rl">'+lab+'</td><td>'+live+'</td><td>'+shadow+'</td></tr>'; }
+  function cspan(v,fmt){ return '<span class="'+colorClass(v)+'">'+fmt+'</span>'; }
+  function renderComparison(){
+    var c=comparisonFor();
+    var body=document.getElementById('lt-cmp-body'), empty=document.getElementById('lt-cmp-empty');
+    if(!c || c.matched_n===0){ body.style.display='none'; empty.style.display='block'; return; }
+    empty.style.display='none'; body.style.display='block';
+    var g='<table class="lt-cmp-tbl"><thead><tr>'
+      +'<th>Metric</th><th style="color:#22d3ee">Live</th><th style="color:#a78bfa">Shadow</th></tr></thead><tbody>';
+    g+=cmpTr('Matched graduations', c.matched_n, c.matched_n);
+    g+=cmpTr('Total net SOL', cspan(c.live_total_net_sol,f4(c.live_total_net_sol)), cspan(c.shadow_total_net_sol,f4(c.shadow_total_net_sol)));
+    g+=cmpTr('Avg return %', cspan(c.live_avg_return_pct,fpct(c.live_avg_return_pct)), cspan(c.shadow_avg_return_pct,fpct(c.shadow_avg_return_pct)));
+    g+=cmpTr('Win rate', (c.live_win_rate_pct===null?'—':c.live_win_rate_pct+'%'), (c.shadow_win_rate_pct===null?'—':c.shadow_win_rate_pct+'%'));
+    g+=cmpTr('Avg round-trip slip', fpctp(c.live_avg_roundtrip_slip_pct), fpctp(c.shadow_avg_roundtrip_slip_pct));
+    g+='<tr class="lt-cmp-delta"><td class="rl">Live − Shadow</td><td colspan="2">'
+      +cspan(c.total_net_sol_delta,f4(c.total_net_sol_delta)+' SOL')+' · '
+      +cspan(c.avg_return_delta_pct,fpct(c.avg_return_delta_pct)+' avg/trade')+'</td></tr>';
+    g+='</tbody></table>';
+    document.getElementById('lt-cmp-table').innerHTML=g;
+    // Gap attribution + outlier + latency footer — the "why".
+    function ms(v){ return (v===null||v===undefined)?'—':fint(v)+' ms'; }
+    var att='<b>Gap attribution:</b> of the '+cspan(c.avg_return_delta_pct,fpct(c.avg_return_delta_pct))
+      +' net return gap, '+cspan(c.gross_gap_pp,fpct(c.gross_gap_pp)+'pp')+' is exit timing/price (gross) and '
+      +cspan(c.cost_gap_pp,fpct(c.cost_gap_pp)+'pp')+' is execution cost.'
+      +'<br><b>Outlier check (n='+c.matched_n+'):</b> median Δ/trade '+cspan(c.median_delta_sol,f4(c.median_delta_sol)+' SOL')
+      +' · Δ excl. top-3 |outliers| '+cspan(c.delta_drop_top3_sol,f4(c.delta_drop_top3_sol)+' SOL')+'.'
+      +'<br><b>Live latency:</b> avg '+ms(c.live_avg_tx_land_ms)+' (p90 '+ms(c.live_p90_tx_land_ms)+') vs shadow 0 (modeled fill).';
+    document.getElementById('lt-cmp-attrib').innerHTML=att;
+    document.getElementById('lt-cmp-n').textContent=c.matched_n;
+    // pairs table
+    var tb=document.querySelector('#lt-cmp-pairs tbody'); var rows='';
+    for(var i=0;i<c.pairs.length;i++){ var p=c.pairs[i];
+      rows+='<tr><td>'+fts(p.entry_ts)+'</td><td style="font-family:monospace">'+shortMint(p.mint)+'</td>'
+        +'<td class="'+colorClass(p.live_return_pct)+'">'+fpct(p.live_return_pct)+'</td>'
+        +'<td class="'+colorClass(p.shadow_return_pct)+'">'+fpct(p.shadow_return_pct)+'</td>'
+        +'<td class="'+colorClass(p.return_delta_pct)+'">'+fpct(p.return_delta_pct)+'</td>'
+        +'<td>'+fpctp(p.live_roundtrip_slip_pct)+'</td><td>'+fpctp(p.shadow_roundtrip_slip_pct)+'</td></tr>';
+    }
+    tb.innerHTML=rows;
+    // overlay chart: cumulative net SOL, live vs shadow, over matched pairs
+    var ls=[], ss=[], la=0, sa=0;
+    var sorted=c.pairs.slice().sort(function(a,b){return (a.entry_ts||0)-(b.entry_ts||0);});
+    for(var i=0;i<sorted.length;i++){ la+=num(sorted[i].live_net_sol)||0; sa+=num(sorted[i].shadow_net_sol)||0;
+      var x=sorted[i].entry_ts||i; ls.push({x:x,y:la,t:sorted[i]}); ss.push({x:x,y:sa,t:sorted[i]}); }
+    cmpChart.update({type:'line',kind:'line',zero:true,unit:'SOL',series:[
+      {name:'Live',color:'#22d3ee',points:ls},
+      {name:'Shadow',color:'#a78bfa',points:ss,dashed:true}
+    ],resetView:true});
+  }
+
+  // ── primary chart wiring ──
+  function populateMetricSelect(){
+    var sel=document.getElementById('lt-metric'); sel.innerHTML='';
+    var list = state.type==='hist' ? HIST_METRICS : LINE_METRICS;
+    var found=false;
+    for(var i=0;i<list.length;i++){ var o=document.createElement('option'); o.value=list[i].key; o.textContent=list[i].label; sel.appendChild(o); if(list[i].key===state.metric) found=true; }
+    if(!found){ state.metric=list[0].key; }
+    sel.value=state.metric;
+  }
+  function renderPrimary(){
+    if(state.type==='hist'){
+      var h=buildHist(state.metric);
+      primaryChart.update({type:'hist',bars:h.bars,unit:h.unit,resetView:true});
+    } else {
+      var s=buildLineSeries(state.metric);
+      primaryChart.update({type:'line',kind:s.kind,zero:s.zero,unit:s.unit,series:[{name:'Live',color:'#22d3ee',points:s.points}],resetView:true});
+    }
+  }
+
+  function renderAll(){ renderPrimary(); renderMetrics(); renderDiagnostics(); renderComparison(); }
+
+  // ── init ──
+  var primaryChart, cmpChart;
+  function init(){
+    if(!LT.has_live_data) return;
+    primaryChart=makeChart(document.getElementById('lt-primary-wrap'), document.getElementById('lt-primary-tip'));
+    cmpChart=makeChart(document.getElementById('lt-cmp-wrap'), document.getElementById('lt-cmp-tip'));
+    // strategy chips — MULTI-SELECT. "All Live" (data-strat="") clears the
+    // selection; clicking individual chips toggles them in/out of the set.
+    // Selecting every individual chip, or toggling the last one off, reverts to
+    // the All-Live aggregate.
+    function syncChips(){
+      var chips=document.querySelectorAll('.lt-strat-chip');
+      var selMap={}; for(var i=0;i<state.selected.length;i++) selMap[state.selected[i]]=true;
+      for(var i=0;i<chips.length;i++){ var id=chips[i].getAttribute('data-strat');
+        var on = id==='' ? state.selected.length===0 : !!selMap[id];
+        chips[i].classList.toggle('lt-active', on);
+      }
+    }
+    document.getElementById('lt-strat-bar').addEventListener('click', function(ev){
+      var btn=ev.target.closest('.lt-strat-chip'); if(!btn) return;
+      var id=btn.getAttribute('data-strat')||'';
+      if(id===''){ state.selected=[]; }
+      else {
+        var idx=state.selected.indexOf(id);
+        if(idx>=0) state.selected.splice(idx,1); else state.selected.push(id);
+      }
+      syncChips();
+      document.getElementById('lt-reset-zoom').style.display='none';
+      renderAll();
+    });
+    // type segment
+    document.getElementById('lt-type-seg').addEventListener('click', function(ev){
+      var btn=ev.target.closest('button'); if(!btn) return;
+      state.type=btn.getAttribute('data-type');
+      var bs=this.querySelectorAll('button'); for(var i=0;i<bs.length;i++) bs[i].classList.remove('lt-on');
+      btn.classList.add('lt-on');
+      document.getElementById('lt-metric-wrap').style.opacity = '1';
+      document.getElementById('lt-reset-zoom').style.display='none';
+      populateMetricSelect(); renderPrimary();
+    });
+    document.getElementById('lt-metric').addEventListener('change', function(){ state.metric=this.value; document.getElementById('lt-reset-zoom').style.display='none'; renderPrimary(); });
+    document.getElementById('lt-reset-zoom').addEventListener('click', function(){ primaryChart.resetZoom(); this.style.display='none'; });
+    populateMetricSelect();
+    renderAll();
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>`;
+
+  return `<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live Training</title>
+<style>${STYLES}
+  .card{background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px}
+  .card-title{font-size:14px;font-weight:600;color:#94a3b8;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em}
+  .table{width:100%;border-collapse:collapse;font-size:12px}
+  .table th{text-align:left;padding:6px 8px;color:#64748b;border-bottom:1px solid #334155;font-weight:500}
+  .table td{padding:5px 8px;border-bottom:1px solid #1e293b;vertical-align:top}
+  .table tr:hover td{background:#1e3a5f22}
+${pageStyles}
+</style></head><body>
+<nav><span class="title">Graduation Arb Research</span>${navHtml}</nav>
+<div class="container">
+  <h1 style="font-size:18px;color:#60a5fa;margin:0 0 4px">Live Training
+    <span style="font-size:12px;color:#f59e0b;margin-left:8px;border:1px solid #f59e0b55;border-radius:4px;padding:1px 6px">LIVE MONEY</span>
+    <button onclick="location.reload()" style="margin-left:12px;background:#334155;color:#94a3b8;border:none;border-radius:4px;padding:4px 12px;cursor:pointer;font-size:11px">Refresh</button>
+  </h1>
+  <p style="color:#64748b;font-size:11px;margin:0 0 16px">Live-money execution only (live_micro / live_full) · Generated ${escHtml(generated)}</p>
+  ${emptyState}
+  ${liveSection}
+  <details class="card" style="padding:0">
+    <summary style="cursor:pointer;padding:12px 16px;color:#94a3b8;font-size:12px;font-weight:600">Live → Shadow mapping</summary>
+    <div style="padding:0 16px 14px">
+      <p style="color:#64748b;font-size:11px;margin:0 0 8px">Maintained in <code>LIVE_SHADOW_MAP</code> (src/api/live-training-data.ts). Add a row when launching a live strategy.</p>
+      <table class="table"><thead><tr><th>Live strategy</th><th>Shadow twin</th></tr></thead><tbody>${mappingRows}</tbody></table>
+    </div>
+  </details>
+  <details class="json-toggle">
+    <summary>Raw JSON (for AI / API)</summary>
+    <pre>${escHtml(JSON.stringify({ generated_at: data.generated_at, strategies: data.strategies, metrics: data.metrics, comparison: { all: data.comparison?.all } }, null, 2))}</pre>
+  </details>
 </div>
 ${js}
 </body></html>`;

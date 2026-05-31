@@ -4,7 +4,7 @@ import { initDatabase } from './db/schema';
 import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation, updateActionItemStatus, updateActionItemFields, dismissAnomaly } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml, renderRegimeAnalysisHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderLiveTrainingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml, renderRegimeAnalysisHtml } from './utils/html-renderer';
 import { computeRegimeAnalysis } from './api/regime-analysis';
 import { computePipelineData } from './api/pipeline-data';
 import { backfillSnapshots } from './api/backfill-snapshot';
@@ -14,6 +14,7 @@ import { computeExitSimMatrix } from './api/exit-sim-matrix';
 import { computeWalletRepAnalysis } from './api/wallet-rep-analysis';
 import { computeFilterV2Data } from './api/filter-v2-data';
 import { computeTradingData } from './api/trading-data';
+import { computeLiveTrainingData } from './api/live-training-data';
 import { computeStrategyPercentiles } from './api/strategy-percentiles';
 import { computeJournal } from './api/journal';
 import { computeEdgeDecay } from './api/edge-decay';
@@ -22,6 +23,7 @@ import { computeLossPostmortem } from './api/loss-postmortem';
 import { computeDailyReport } from './api/daily-report';
 import { getHeavyData } from './api/heavy-cache';
 import { StrategyManager } from './trading';
+import { backfillLivePnlFromChain } from './trading/live-pnl-backfill';
 import { StrategyParams } from './trading/config';
 import { makeLogger, logBuffer } from './utils/logger';
 import { installStderrThrottle } from './utils/stderr-throttle';
@@ -49,6 +51,7 @@ const NAV_LINKS = [
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
+  { path: '/live-training', label: 'Live Training' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
@@ -2586,6 +2589,38 @@ async function main() {
     }
   });
 
+  // ── /live-training ──
+  // Live-money monitoring + analytics page. Same HTML/JSON content-negotiation
+  // pattern as /trading: browsers get the interactive dashboard, API/Claude
+  // consumers (Accept: !text/html or ?format=json) get the full data object —
+  // identical shape to live-training.json on bot-status.
+  app.get('/live-training', (req, res) => {
+    try {
+      const wantHtml = (req.headers.accept || '').includes('text/html')
+        && (req.query.format as string) !== 'json';
+      const memoKey = 'live-training:html';
+      if (wantHtml) {
+        const cached = memoGet(memoKey);
+        if (cached) {
+          res.setHeader('Content-Type', cached.contentType);
+          res.send(cached.value);
+          return;
+        }
+      }
+      const data = computeLiveTrainingData(db);
+      if (wantHtml) {
+        const html = renderLiveTrainingHtml(data);
+        memoSet(memoKey, html, 'text/html; charset=utf-8', 30_000);
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(html);
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // ── /report ──
   // Daily trading report — cross-session memory. Auto-stats are computed
   // every render; the narrative + structured recommendations come from the
@@ -3204,6 +3239,17 @@ ${rows.map(r => {
     } catch (err) {
       logger.error('StrategyManager failed to initialize: %s', err instanceof Error ? err.message : String(err));
     }
+  }
+
+  // One-shot: re-derive live trade P&L from on-chain tx meta for rows whose
+  // wallet-snapshot deltas were corrupted by concurrent same-mint trading (the
+  // v44 race, fixed going forward in executor.fetchTxBalanceDeltas). Does
+  // network I/O — fire in the background so it never blocks startup. Guarded by
+  // a bot_settings marker, so it runs at most once.
+  if (listener) {
+    backfillLivePnlFromChain(db, listener.getConnection()).catch((err) =>
+      logger.error('Live P&L chain backfill failed: %s', err instanceof Error ? err.message : String(err)),
+    );
   }
 
   // Graceful shutdown

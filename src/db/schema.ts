@@ -1121,6 +1121,64 @@ function runMigrations(db: Database.Database): void {
         'Converted historical stuck-sell failures to closed losses',
       );
     }
+
+    // 2026-05-29 fix: correct mis-paired live sells. When two live strategies
+    // bought the SAME mint concurrently, liveBuy's full-wallet balance delta
+    // booked the COMBINED token amount on BOTH rows (identical
+    // entry_tokens_received). Whichever sold first drained the shared wallet
+    // position; the other found 0 tokens and terminal-closed as a ~-104% total
+    // loss (exit_reason='sell_failed_terminal') even though its tokens had in
+    // fact been liquidated by the sibling's sell at the sibling's exit price.
+    // Trade 16341 (v44-climb-1s-ttp10-live-micro) is the known victim; its
+    // tokens were sold inside 16342's (v44-climb-live-micro) timeout exit.
+    //
+    // The going-forward fix (executor.fetchTxBalanceDeltas, same release)
+    // attributes each buy's tokens/SOL from its OWN confirmed tx meta, so this
+    // can't recur. This backfill repairs the historical rows: each victim
+    // inherits the realized exit economics of the sibling that actually sold
+    // the shared position. Because both strategies deployed the same per-trade
+    // SOL and the per-token return is identical, mirroring the sibling makes
+    // the two halves sum to the true wallet outcome (no double-count).
+    //
+    // Matched on the bug SIGNATURE, not a hardcoded row id: a terminal-failed
+    // live sell that has a sibling live trade on the same graduation which (a)
+    // closed via a real (non-terminal) exit at a >0 price and (b) recorded the
+    // identical inflated entry_tokens_received. That EXISTS guard means a
+    // genuine stuck-sell (tokens truly lost, no sibling drained them) is NEVER
+    // converted to a profit. Idempotent via marker.
+    const mispairedSellFixDone = db.prepare(`SELECT 1 FROM bot_settings WHERE key = ?`)
+      .get('live_mispaired_sell_correction_v1') != null;
+    if (!mispairedSellFixDone) {
+      const result = db.prepare(`
+        UPDATE trades_v2 AS v
+        SET exit_price_sol = s.exit_price_sol,
+            exit_effective_price = s.exit_effective_price,
+            exit_reason = s.exit_reason,
+            exit_timestamp = s.exit_timestamp,
+            gross_return_pct = s.gross_return_pct,
+            gap_adjusted_return_pct = s.gap_adjusted_return_pct,
+            estimated_fees_sol = s.estimated_fees_sol,
+            net_profit_sol = s.net_profit_sol,
+            net_return_pct = s.net_return_pct
+        FROM trades_v2 AS s
+        WHERE v.exit_reason = 'sell_failed_terminal'
+          AND v.execution_mode IN ('live_micro', 'live_full')
+          AND v.entry_tokens_received IS NOT NULL
+          AND s.id <> v.id
+          AND s.graduation_id = v.graduation_id
+          AND s.execution_mode IN ('live_micro', 'live_full')
+          AND s.status = 'closed'
+          AND s.exit_reason <> 'sell_failed_terminal'
+          AND s.exit_price_sol > 0
+          AND s.entry_tokens_received = v.entry_tokens_received
+      `).run();
+      db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())`)
+        .run('live_mispaired_sell_correction_v1', String(result.changes));
+      logger.info(
+        { rowsUpdated: result.changes },
+        'Corrected mis-paired live sells (victim inherits sibling realized exit)',
+      );
+    }
   }
 
   // Add archived column to trades_v2 — backfill legacy strategy trades so they
