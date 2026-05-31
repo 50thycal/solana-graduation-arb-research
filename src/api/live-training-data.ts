@@ -42,6 +42,7 @@ export const LIVE_SHADOW_MAP: Record<string, string> = {
   // to avoid confusion with the v25 shadow research strategy they're based on.
   'v44-climb-live-micro': 'v44-climb-shadow',
   'v44-climb-1s-ttp10-live-micro': 'v44-climb-1s-ttp10-shadow',
+  'v45-acc-gate-live-micro': 'v45-acc-gate-shadow',
 };
 
 /** Normalized per-trade row shared by live + shadow series. */
