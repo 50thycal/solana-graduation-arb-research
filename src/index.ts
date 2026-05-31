@@ -4,7 +4,8 @@ import { initDatabase } from './db/schema';
 import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation, updateActionItemStatus, updateActionItemFields, dismissAnomaly } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml, renderRegimeAnalysisHtml } from './utils/html-renderer';
+import { computeRegimeAnalysis } from './api/regime-analysis';
 import { computePipelineData } from './api/pipeline-data';
 import { backfillSnapshots } from './api/backfill-snapshot';
 import { computePeakAnalysis } from './api/peak-analysis';
@@ -2597,6 +2598,25 @@ async function main() {
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(renderReportHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── /regime-analysis ──
+  // Phase 1: universe-level regime signals (rolling pump rate / fast-rug rate)
+  // classified GREEN/YELLOW/RED, overlaid against live strategy cumulative net
+  // SOL on a 14-day hourly timeline. Research overlay only — no enforcement.
+  app.get('/regime-analysis', (req, res) => {
+    try {
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      const data = computeRegimeAnalysis(db);
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderRegimeAnalysisHtml(data));
       } else {
         res.json(data);
       }

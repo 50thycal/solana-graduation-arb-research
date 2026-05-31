@@ -45,6 +45,7 @@ import { computeSniperPanel } from './sniper-panel';
 import { computeStrategyPercentiles } from './strategy-percentiles';
 import { computeJournal } from './journal';
 import { computeEdgeDecay } from './edge-decay';
+import { computeRegimeAnalysis } from './regime-analysis';
 import { computeTrendsTime } from './trends-time';
 import { computeSlPrecursor } from './sl-precursor';
 import { computePortfolioCorr } from './portfolio-corr';
@@ -547,6 +548,14 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
       return;
     }
     res.json(computeEdgeDecay(db));
+  }));
+
+  // ── /api/regime-analysis ──
+  // JSON snapshot of the regime signals + timeline + live-strategy overlay.
+  // The HTML page is served from /regime-analysis in src/index.ts; this
+  // endpoint exists so Claude can self-serve via bot-status sync.
+  app.get('/api/regime-analysis', wrap(async (_req, res) => {
+    res.json(computeRegimeAnalysis(db));
   }));
 
   // ── /api/counterfactual ──
