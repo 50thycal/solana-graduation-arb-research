@@ -29,6 +29,7 @@ The human operator is the code-review and deploy loop — they don't write code,
 | What does each strategy's outlier-stripped P&L look like? | `leave-one-out-pnl.json` |
 | Cross-session memory — what did yesterday's session decide? | `report.json` |
 | Is the bot healthy? | `diagnose.json` |
+| Is the current tape favorable to trade? Are live strategies losing during marked-red regimes? | `regime-analysis.json` |
 
 The pattern: every cycle, read those files first. Form a hypothesis from the data they contain. CLAUDE.md only tells you the rules of the game — the data tells you what to do.
 
@@ -212,6 +213,7 @@ Use `WebFetch` against `https://raw.githubusercontent.com/50thycal/solana-gradua
 - **`entry-time-matrix.json`** — single filters + combos × 6 entry checkpoints (T+30 → T+240). `best_entry_sec` + `delta_vs_t30_pp`.
 - **`journal.json`** — strategy hypothesis + prediction + auto_status (OPEN / ON-TRACK / DEGRADING / HIT-KILL / NO-DATA / PROMOTED / KILLED / PAUSED).
 - **`edge-decay.json`** — per-strategy rolling mean+median windows + 12-bin sparkline + DECAYING / STRENGTHENING / STABLE flag.
+- **`regime-analysis.json`** — universe-level rolling pump_rate (% pct_t300 ≥ +50% over last 50 grads) + fast_rug_rate (% ≤ −50%) classified GREEN/YELLOW/RED per hourly bucket, with `live_strategies[]` overlay (each strategy's `cum_net_sol[]`, `hourly_net_sol[]` with regime tags, and `green_net_sol` / `yellow_net_sol` / `red_net_sol` per-regime breakdown). Use `current.regime` for the live snapshot; `regime_summary.green_avg_live_sol_per_hr` vs `red_avg_live_sol_per_hr` for the headline "does the signal separate good from bad windows" test; `signal_vs_pnl[].best_pump_lag` / `best_rug_lag` to check if signals lead live PnL (lag > 0 = predictive). Phase 1 research overlay — no gating yet.
 - **`counterfactual.json`** — per-strategy filter contribution + TP/SL grid sweep.
 - **`loss-postmortem.json`** — worst-20 closed trades clustered by entry-time feature deviation.
 

@@ -9557,20 +9557,22 @@ function renderRegimeChart(data: any): string {
     pnlGrid.push(`<text x="${leftPad - 4}" y="${(y + 3).toFixed(1)}" fill="#64748b" font-size="9" text-anchor="end">${sol > 0 ? '+' : ''}${sol.toFixed(2)}</text>`);
   }
 
-  // Strategy lines
+  // Strategy lines — tagged with data-strategy so the page filter can toggle
+  // visibility without re-rendering the SVG.
   const strategyLines: string[] = [];
   const legend: string[] = [];
   lives.forEach((s, idx) => {
     const color = STRATEGY_PALETTE[idx % STRATEGY_PALETTE.length];
+    const sidEsc = escHtml(s.strategy_id);
     const pts: string[] = [];
     for (let i = 0; i < (s.cum_net_sol || []).length; i++) {
       const p = s.cum_net_sol[i];
       pts.push(`${xAt(i).toFixed(1)},${pnlY(p.cum).toFixed(1)}`);
     }
     if (pts.length > 1) {
-      strategyLines.push(`<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" opacity="0.95"/>`);
+      strategyLines.push(`<polyline data-strategy="${sidEsc}" points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" opacity="0.95"/>`);
     }
-    legend.push(`<span style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:11px;color:#cbd5e1"><span style="display:inline-block;width:14px;height:2px;background:${color}"></span>${escHtml(s.strategy_id)} <span style="color:#64748b">(${s.execution_mode}, n=${s.n_trades}, ${s.total_net_sol > 0 ? '+' : ''}${s.total_net_sol.toFixed(3)} SOL)</span></span>`);
+    legend.push(`<span data-strategy="${sidEsc}" style="display:inline-flex;align-items:center;gap:6px;margin-right:14px;font-size:11px;color:#cbd5e1"><span style="display:inline-block;width:14px;height:2px;background:${color}"></span>${sidEsc} <span style="color:#64748b">(${s.execution_mode}, n=${s.n_trades}, ${s.total_net_sol > 0 ? '+' : ''}${s.total_net_sol.toFixed(3)} SOL)</span></span>`);
   });
   const pnlBorder = `<rect x="${leftPad}" y="${pnlY0}" width="${innerW}" height="${pnlH}" fill="none" stroke="#334155" stroke-width="0.5"/>`;
 
@@ -9653,15 +9655,15 @@ export function renderRegimeAnalysisHtml(data: any): string {
       </div>
     </div>`;
 
-  // ── Regime summary card ──────────────────────────────────────────────────
+  // ── Regime summary card (tbody re-rendered client-side on filter) ────────
   const regimeSummary = `
-    <div class="card">
-      <div class="card-title">Last ${cfg.timeline_days} Days — Time-in-Regime + Live Edge</div>
+    <div class="card" id="regime-summary-card">
+      <div class="card-title">Last ${cfg.timeline_days} Days — Time-in-Regime + Live Edge <span id="regime-summary-scope" style="color:#a78bfa;font-size:11px;font-weight:400">(all live strategies)</span></div>
       <table class="table">
         <thead><tr>
-          <th>Regime</th><th>% of hours</th><th>Avg live SOL / hr (when trading)</th>
+          <th>Regime</th><th>% of hours</th><th>Avg live SOL / hr (when trading)</th><th id="regime-summary-net-col" style="display:none">Net SOL</th><th id="regime-summary-n-col" style="display:none">Trades</th>
         </tr></thead>
-        <tbody>
+        <tbody id="regime-summary-body">
           <tr><td>${regimeBadge('GREEN')}</td><td>${rs.green_pct?.toFixed(1) ?? 0}%</td><td>${rs.green_avg_live_sol_per_hr != null ? fmtSolColor(rs.green_avg_live_sol_per_hr, 4) : '—'}</td></tr>
           <tr><td>${regimeBadge('YELLOW')}</td><td>${rs.yellow_pct?.toFixed(1) ?? 0}%</td><td>${rs.yellow_avg_live_sol_per_hr != null ? fmtSolColor(rs.yellow_avg_live_sol_per_hr, 4) : '—'}</td></tr>
           <tr><td>${regimeBadge('RED')}</td><td>${rs.red_pct?.toFixed(1) ?? 0}%</td><td>${rs.red_avg_live_sol_per_hr != null ? fmtSolColor(rs.red_avg_live_sol_per_hr, 4) : '—'}</td></tr>
@@ -9674,11 +9676,13 @@ export function renderRegimeAnalysisHtml(data: any): string {
     </div>`;
 
   // ── Per-strategy live + regime breakdown ─────────────────────────────────
+  // Rows tagged with data-strategy so the dropdown filter can hide non-matches.
   const liveRows = (d.live_strategies || []).map((s: any, idx: number) => {
     const color = STRATEGY_PALETTE[idx % STRATEGY_PALETTE.length];
     const totalN = s.green_n + s.yellow_n + s.red_n;
-    return `<tr>
-      <td><span style="display:inline-block;width:10px;height:2px;background:${color};margin-right:6px;vertical-align:middle"></span><span style="color:${color};font-weight:600">${escHtml(s.strategy_id)}</span><div style="color:#64748b;font-size:10px">${s.execution_mode} · n=${s.n_trades}</div></td>
+    const sidEsc = escHtml(s.strategy_id);
+    return `<tr data-strategy="${sidEsc}">
+      <td><span style="display:inline-block;width:10px;height:2px;background:${color};margin-right:6px;vertical-align:middle"></span><span style="color:${color};font-weight:600">${sidEsc}</span><div style="color:#64748b;font-size:10px">${s.execution_mode} · n=${s.n_trades}</div></td>
       <td>${fmtSolColor(s.total_net_sol)}</td>
       <td>${fmtSolColor(s.green_net_sol)} <span style="color:#64748b;font-size:10px">(n=${s.green_n})</span></td>
       <td>${fmtSolColor(s.yellow_net_sol)} <span style="color:#64748b;font-size:10px">(n=${s.yellow_n})</span></td>
@@ -9699,7 +9703,10 @@ export function renderRegimeAnalysisHtml(data: any): string {
     </div>`;
 
   // ── Lag correlation table ────────────────────────────────────────────────
+  // Each strategy emits TWO rows (pump_rate + fast_rug_rate). Both get tagged
+  // with the same data-strategy so the filter hides them as a pair.
   const lagRows = (d.signal_vs_pnl || []).map((s: any) => {
+    const sidEsc = escHtml(s.strategy_id);
     const pumpCells = s.pump_rate_corr.map((c: any) => {
       const isBest = c.lag_hours === s.best_pump_lag;
       const color = c.corr == null ? '#64748b' : c.corr > 0 ? '#4ade80' : '#f87171';
@@ -9713,11 +9720,11 @@ export function renderRegimeAnalysisHtml(data: any): string {
       return `<td style="color:${color};${bold}">${c.corr != null ? c.corr.toFixed(2) : '—'}<span style="color:#64748b;font-size:9px"> (n=${c.n})</span></td>`;
     }).join('');
     return `
-      <tr><td rowspan="2" style="vertical-align:top"><span style="color:#a78bfa;font-weight:600">${escHtml(s.strategy_id)}</span></td>
+      <tr data-strategy="${sidEsc}"><td rowspan="2" style="vertical-align:top"><span style="color:#a78bfa;font-weight:600">${sidEsc}</span></td>
         <td style="color:#22d3ee">pump_rate</td>
         ${pumpCells}
       </tr>
-      <tr>
+      <tr data-strategy="${sidEsc}">
         <td style="color:#f87171">fast_rug_rate</td>
         ${rugCells}
       </tr>`;
@@ -9750,11 +9757,11 @@ export function renderRegimeAnalysisHtml(data: any): string {
       <td>${fmtPctColor(w.median_t300, 2)}</td>
     </tr>`).join('');
   const worstTable = `
-    <div class="card">
-      <div class="card-title">Worst 10 Hours (live SOL) — were they in a marked regime?</div>
+    <div class="card" id="worst-hours-card">
+      <div class="card-title">Worst 10 Hours (live SOL) — were they in a marked regime? <span id="worst-hours-scope" style="color:#a78bfa;font-size:11px;font-weight:400">(all live strategies)</span></div>
       <div style="overflow-x:auto"><table class="table">
         <thead><tr><th>Hour (UTC)</th><th>Regime</th><th>Live SOL</th><th>Trades</th><th>Pump rate</th><th>Rug rate</th><th>Median t300</th></tr></thead>
-        <tbody>${worstRows || '<tr><td colspan="7" style="color:#94a3b8">No live trades yet.</td></tr>'}</tbody>
+        <tbody id="worst-hours-body">${worstRows || '<tr><td colspan="7" style="color:#94a3b8">No live trades yet.</td></tr>'}</tbody>
       </table></div>
       <p style="font-size:11px;color:#64748b;margin-top:8px">
         If most worst hours show RED or YELLOW regime, the signal is catching them. If they show GREEN, the signal is missing the failure mode — adjust thresholds or add a new signal.
@@ -9827,9 +9834,144 @@ export function renderRegimeAnalysisHtml(data: any): string {
       </ul>
     </div>`;
 
+  // ── Strategy filter dropdown ─────────────────────────────────────────────
+  const filterOptions = (d.live_strategies || []).map((s: any) =>
+    `<option value="${escHtml(s.strategy_id)}">${escHtml(s.strategy_id)} (${s.execution_mode}, n=${s.n_trades})</option>`
+  ).join('');
+  const filterUI = `
+    <div class="card" id="strategy-filter-card" style="background:#1e3a8a22;border:1px solid #1e3a8a">
+      <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+        <label for="strategy-filter" style="font-weight:600;color:#cbd5e1;font-size:13px">Focus on strategy:</label>
+        <select id="strategy-filter" style="background:#0f0f1a;color:#e2e8f0;border:1px solid #334155;padding:6px 10px;border-radius:4px;font-size:13px;cursor:pointer;min-width:280px">
+          <option value="">All strategies (default)</option>
+          ${filterOptions}
+        </select>
+        <span id="filter-info" style="font-size:11px;color:#94a3b8"></span>
+        <button id="strategy-filter-clear" style="background:#334155;color:#e2e8f0;border:none;padding:5px 12px;border-radius:4px;font-size:11px;cursor:pointer;display:none" onclick="document.getElementById('strategy-filter').value='';document.getElementById('strategy-filter').dispatchEvent(new Event('change'))">Clear filter</button>
+      </div>
+      <p style="margin:8px 0 0 0;font-size:11px;color:#64748b">
+        Filters the chart lines, Live Strategies table, Lag Correlation rows, Regime Summary (per-strategy view), and Worst Hours
+        (recomputed for the selected strategy only). Regime bands, transitions, and day/hour patterns are universe-level and stay unchanged.
+      </p>
+    </div>`;
+
+  // ── Client-side filter script ────────────────────────────────────────────
+  // The data is already in the page (shell() emits a <pre id="json"> dump).
+  // We parse it once and use it to recompute per-strategy worst-hours and
+  // regime-summary rows when a strategy is selected.
+  const filterScript = `
+    <script>
+    (function() {
+      const sel = document.getElementById('strategy-filter');
+      const clearBtn = document.getElementById('strategy-filter-clear');
+      const info = document.getElementById('filter-info');
+      if (!sel) return;
+      let dataCache = null;
+      function getData() {
+        if (dataCache) return dataCache;
+        try {
+          dataCache = JSON.parse(document.getElementById('json').textContent);
+        } catch (e) { dataCache = null; }
+        return dataCache;
+      }
+      const REGIME_COLORS = {
+        GREEN:  { fill: '#22c55e22', stroke: '#22c55e', text: '#4ade80' },
+        YELLOW: { fill: '#eab30822', stroke: '#eab308', text: '#facc15' },
+        RED:    { fill: '#ef444422', stroke: '#ef4444', text: '#f87171' },
+      };
+      function regimeBadge(r) {
+        const c = REGIME_COLORS[r] || REGIME_COLORS.YELLOW;
+        return '<span style="display:inline-block;background:' + c.fill + ';color:' + c.text + ';border:1px solid ' + c.stroke + ';padding:1px 8px;border-radius:3px;font-size:11px;font-weight:600;letter-spacing:.04em">' + r + '</span>';
+      }
+      function fmtSol(v, digits) {
+        if (v == null) return '<span style="color:#64748b">—</span>';
+        const color = v > 0 ? '#4ade80' : v < 0 ? '#f87171' : '#94a3b8';
+        return '<span style="color:' + color + '">' + (v > 0 ? '+' : '') + v.toFixed(digits || 3) + '</span>';
+      }
+      function fmtPct(v, digits) {
+        if (v == null) return '<span style="color:#64748b">—</span>';
+        const color = v > 0 ? '#22d3ee' : v < 0 ? '#f87171' : '#94a3b8';
+        return '<span style="color:' + color + '">' + (v > 0 ? '+' : '') + v.toFixed(digits || 1) + '%</span>';
+      }
+      // Original tbody HTMLs to restore when filter is cleared.
+      const worstBodyOrig = document.getElementById('worst-hours-body')?.innerHTML;
+      const regimeBodyOrig = document.getElementById('regime-summary-body')?.innerHTML;
+      const worstScopeEl = document.getElementById('worst-hours-scope');
+      const regimeScopeEl = document.getElementById('regime-summary-scope');
+      const netCol = document.getElementById('regime-summary-net-col');
+      const nCol = document.getElementById('regime-summary-n-col');
+
+      function applyFilter() {
+        const sid = sel.value;
+        document.body.dataset.activeStrategy = sid || '';
+
+        // Toggle every tagged element (rows + chart polylines + legend pills)
+        document.querySelectorAll('[data-strategy]').forEach(el => {
+          if (!sid) { el.style.display = ''; return; }
+          el.style.display = el.dataset.strategy === sid ? '' : 'none';
+        });
+
+        clearBtn.style.display = sid ? 'inline-block' : 'none';
+
+        const data = getData();
+        if (!data) { info.textContent = '(could not load data)'; return; }
+
+        if (!sid) {
+          // Restore aggregate views
+          if (worstBodyOrig != null) document.getElementById('worst-hours-body').innerHTML = worstBodyOrig;
+          if (regimeBodyOrig != null) document.getElementById('regime-summary-body').innerHTML = regimeBodyOrig;
+          if (worstScopeEl) worstScopeEl.textContent = '(all live strategies)';
+          if (regimeScopeEl) regimeScopeEl.textContent = '(all live strategies)';
+          if (netCol) netCol.style.display = 'none';
+          if (nCol) nCol.style.display = 'none';
+          info.textContent = '';
+          return;
+        }
+
+        const strat = (data.live_strategies || []).find(s => s.strategy_id === sid);
+        if (!strat) { info.textContent = '(strategy not found in data)'; return; }
+
+        info.textContent = 'Filtering all per-strategy views to: ' + sid + ' (n=' + strat.n_trades + ', total ' + (strat.total_net_sol > 0 ? '+' : '') + strat.total_net_sol.toFixed(3) + ' SOL)';
+
+        // ── Recompute Regime Summary tbody for this strategy ───────────────
+        const greenAvg = strat.green_hours_active > 0 ? strat.green_net_sol / strat.green_hours_active : null;
+        const yellowAvg = strat.yellow_hours_active > 0 ? strat.yellow_net_sol / strat.yellow_hours_active : null;
+        const redAvg = strat.red_hours_active > 0 ? strat.red_net_sol / strat.red_hours_active : null;
+        document.getElementById('regime-summary-body').innerHTML =
+          '<tr><td>' + regimeBadge('GREEN')  + '</td><td>' + (data.regime_summary?.green_pct?.toFixed(1)  ?? 0) + '%</td><td>' + (greenAvg  != null ? fmtSol(greenAvg, 4)  : '—') + '</td><td>' + fmtSol(strat.green_net_sol, 4)  + '</td><td>' + strat.green_n  + '</td></tr>' +
+          '<tr><td>' + regimeBadge('YELLOW') + '</td><td>' + (data.regime_summary?.yellow_pct?.toFixed(1) ?? 0) + '%</td><td>' + (yellowAvg != null ? fmtSol(yellowAvg, 4) : '—') + '</td><td>' + fmtSol(strat.yellow_net_sol, 4) + '</td><td>' + strat.yellow_n + '</td></tr>' +
+          '<tr><td>' + regimeBadge('RED')    + '</td><td>' + (data.regime_summary?.red_pct?.toFixed(1)    ?? 0) + '%</td><td>' + (redAvg    != null ? fmtSol(redAvg, 4)    : '—') + '</td><td>' + fmtSol(strat.red_net_sol, 4)    + '</td><td>' + strat.red_n    + '</td></tr>';
+        if (regimeScopeEl) regimeScopeEl.textContent = '(' + sid + ')';
+        if (netCol) netCol.style.display = '';
+        if (nCol) nCol.style.display = '';
+
+        // ── Recompute Worst Hours for this strategy from hourly_net_sol ────
+        const worst = [...(strat.hourly_net_sol || [])].sort((a, b) => a.sol - b.sol).slice(0, 10);
+        if (worst.length === 0) {
+          document.getElementById('worst-hours-body').innerHTML = '<tr><td colspan="7" style="color:#94a3b8">No trades for ' + sid + ' in window.</td></tr>';
+        } else {
+          document.getElementById('worst-hours-body').innerHTML = worst.map(w => {
+            const iso = new Date(w.ts * 1000).toISOString();
+            return '<tr><td style="font-family:monospace;color:#94a3b8;font-size:11px">' + iso.slice(5, 16).replace('T', ' ') + '</td>' +
+              '<td>' + regimeBadge(w.regime) + '</td>' +
+              '<td>' + fmtSol(w.sol, 4) + '</td>' +
+              '<td>' + w.n + '</td>' +
+              '<td style="color:#22d3ee">' + (w.pump_rate != null ? w.pump_rate.toFixed(1) + '%' : '—') + '</td>' +
+              '<td style="color:#f87171">' + (w.fast_rug_rate != null ? w.fast_rug_rate.toFixed(1) + '%' : '—') + '</td>' +
+              '<td>' + fmtPct(w.median_t300, 2) + '</td></tr>';
+          }).join('');
+        }
+        if (worstScopeEl) worstScopeEl.textContent = '(' + sid + ' only)';
+      }
+
+      sel.addEventListener('change', applyFilter);
+    })();
+    </script>`;
+
   const body = `
     <h1>Regime Analysis</h1>
     ${banner}
+    ${filterUI}
     <div class="card">
       <div class="card-title">${cfg.timeline_days}-Day Timeline — Regime Bands + Live Strategy P&L</div>
       ${renderRegimeChart(d)}
@@ -9842,6 +9984,7 @@ export function renderRegimeAnalysisHtml(data: any): string {
     ${patterns}
     ${howToRead}
     ${notes}
+    ${filterScript}
   `;
 
   return shell('Regime Analysis', '/regime-analysis', body, data as object);
