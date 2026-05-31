@@ -1,0 +1,16 @@
+{
+  "commands": [
+    { "action": "toggle", "id": "v44-climb-live-micro", "enabled": false },
+    { "action": "toggle", "id": "v45-acc-gate-live-micro", "enabled": false },
+    {
+      "action": "journal-update",
+      "id": "v44-climb-live-micro",
+      "note": "2026-05-31: prior delete was rejected by the open-position guard (strategy was mid-trade at processing time). Disabling via toggle instead — stops new entries, lets any open position close out."
+    },
+    {
+      "action": "journal-update",
+      "id": "v45-acc-gate-live-micro",
+      "note": "2026-05-31: prior delete rejected by open-position guard; disabling via toggle instead."
+    }
+  ]
+}
