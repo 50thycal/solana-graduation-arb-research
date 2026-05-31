@@ -102,13 +102,19 @@ export interface LiveStrategyRow {
   last_trade_ts: number | null;
   // Hourly cumulative net SOL — same x-axis as timeline
   cum_net_sol: Array<{ ts: number; cum: number }>;
+  // Per-hour delta net SOL (only buckets with trades) — for per-strategy
+  // worst-hour recomputation in the UI filter.
+  hourly_net_sol: Array<{ ts: number; sol: number; n: number; regime: Regime; pump_rate: number | null; fast_rug_rate: number | null; median_t300: number | null }>;
   // Per-regime breakdown
   green_net_sol: number;
   green_n: number;
+  green_hours_active: number;  // # of distinct hours w/ at least 1 trade
   yellow_net_sol: number;
   yellow_n: number;
+  yellow_hours_active: number;
   red_net_sol: number;
   red_n: number;
+  red_hours_active: number;
 }
 
 export interface SignalCorrelationRow {
@@ -321,19 +327,23 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
   const labels = db.prepare(`SELECT id, label FROM strategy_configs`).all() as Array<{ id: string; label: string }>;
   const labelMap = new Map(labels.map(s => [s.id, s.label]));
 
-  // Bucket-by-regime lookup for per-strategy breakdown
-  const regimeByBucket = new Map<number, Regime>();
-  for (const b of timeline) regimeByBucket.set(b.bucket_start, b.regime);
+  // Per-bucket lookup so we can attach the regime + signals to each
+  // strategy's hourly trade aggregate (used by the UI filter to recompute
+  // worst-hours when a single strategy is selected).
+  const bucketLookup = new Map<number, { regime: Regime; pump_rate: number | null; fast_rug_rate: number | null; median_t300: number | null }>();
+  for (const b of timeline) bucketLookup.set(b.bucket_start, {
+    regime: b.regime, pump_rate: b.pump_rate, fast_rug_rate: b.fast_rug_rate, median_t300: b.median_t300,
+  });
 
   const liveStrategies: LiveStrategyRow[] = [];
   for (const [key, trades] of liveStrategiesMap) {
     const [strategyId, executionMode] = key.split('|');
     trades.sort((a, b) => a.exit_timestamp - b.exit_timestamp);
 
-    // Cumulative series: one point per bucket where a trade exited. To make
-    // the chart scale align with the timeline, we emit a point at each bucket
-    // start in the timeline (cumulative net SOL up to that bucket).
+    // Cumulative + delta series per timeline bucket.
     const cumByBucket: number[] = new Array(TIMELINE_BUCKETS).fill(0);
+    const deltaByBucket: number[] = new Array(TIMELINE_BUCKETS).fill(0);
+    const nByBucket: number[] = new Array(TIMELINE_BUCKETS).fill(0);
     let running = 0;
     let tradeIdx = 0;
     for (let i = 0; i < TIMELINE_BUCKETS; i++) {
@@ -341,6 +351,8 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       const bucketEnd = bucketStart + HOUR_SEC;
       while (tradeIdx < trades.length && trades[tradeIdx].exit_timestamp < bucketEnd) {
         running += trades[tradeIdx].net_profit_sol;
+        deltaByBucket[i] += trades[tradeIdx].net_profit_sol;
+        nByBucket[i] += 1;
         tradeIdx++;
       }
       cumByBucket[i] = +running.toFixed(4);
@@ -350,14 +362,37 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       cum,
     }));
 
-    // Per-regime breakdown
-    let gSol = 0, gN = 0, ySol = 0, yN = 0, rSol = 0, rN = 0;
+    // Hourly P&L deltas — only buckets where the strategy traded. Each row
+    // carries the regime + signals so the UI can render a filtered worst-hours
+    // table without recomputing on the server.
+    const hourly_net_sol: LiveStrategyRow['hourly_net_sol'] = [];
+    for (let i = 0; i < TIMELINE_BUCKETS; i++) {
+      if (nByBucket[i] === 0) continue;
+      const ts = timelineStart + i * HOUR_SEC;
+      const ctx = bucketLookup.get(ts);
+      hourly_net_sol.push({
+        ts,
+        sol: +deltaByBucket[i].toFixed(4),
+        n: nByBucket[i],
+        regime: ctx?.regime ?? 'YELLOW',
+        pump_rate: ctx?.pump_rate ?? null,
+        fast_rug_rate: ctx?.fast_rug_rate ?? null,
+        median_t300: ctx?.median_t300 ?? null,
+      });
+    }
+
+    // Per-regime aggregate (trade-count + active-hours so the UI can recompute
+    // avg_sol_per_hr for any single strategy without re-walking trades).
+    let gSol = 0, gN = 0, gHrs = new Set<number>();
+    let ySol = 0, yN = 0, yHrs = new Set<number>();
+    let rSol = 0, rN = 0, rHrs = new Set<number>();
     for (const t of trades) {
       const bucket = floorHour(t.exit_timestamp);
-      const reg = regimeByBucket.get(bucket);
-      if (reg === 'GREEN')  { gSol += t.net_profit_sol; gN++; }
-      else if (reg === 'YELLOW') { ySol += t.net_profit_sol; yN++; }
-      else if (reg === 'RED')    { rSol += t.net_profit_sol; rN++; }
+      const ctx = bucketLookup.get(bucket);
+      if (!ctx) continue;
+      if (ctx.regime === 'GREEN')  { gSol += t.net_profit_sol; gN++; gHrs.add(bucket); }
+      else if (ctx.regime === 'YELLOW') { ySol += t.net_profit_sol; yN++; yHrs.add(bucket); }
+      else if (ctx.regime === 'RED')    { rSol += t.net_profit_sol; rN++; rHrs.add(bucket); }
     }
 
     liveStrategies.push({
@@ -369,12 +404,16 @@ export function computeRegimeAnalysis(db: Database.Database): RegimeAnalysisData
       first_trade_ts: trades[0]?.exit_timestamp ?? null,
       last_trade_ts: trades[trades.length - 1]?.exit_timestamp ?? null,
       cum_net_sol,
+      hourly_net_sol,
       green_net_sol: +gSol.toFixed(4),
       green_n: gN,
+      green_hours_active: gHrs.size,
       yellow_net_sol: +ySol.toFixed(4),
       yellow_n: yN,
+      yellow_hours_active: yHrs.size,
       red_net_sol: +rSol.toFixed(4),
       red_n: rN,
+      red_hours_active: rHrs.size,
     });
   }
   // Sort by recent activity (most recent first)
