@@ -816,6 +816,18 @@ export class StrategyManager {
     if (p.regimeGate != null && !['any', 'skip_red', 'green_only'].includes(p.regimeGate)) {
       errors.push(`regimeGate must be 'any', 'skip_red', or 'green_only' — got '${p.regimeGate}'`);
     }
+    // Edge-decay signal gate (paired signal/executor model).
+    if (p.edgeDecayGate != null && !['any', 'skip_decaying', 'strength_only'].includes(p.edgeDecayGate)) {
+      errors.push(`edgeDecayGate must be 'any', 'skip_decaying', or 'strength_only' — got '${p.edgeDecayGate}'`);
+    }
+    if (p.edgeDecaySignalStrategyId != null
+        && (typeof p.edgeDecaySignalStrategyId !== 'string' || p.edgeDecaySignalStrategyId.length === 0)) {
+      errors.push('edgeDecaySignalStrategyId must be a non-empty string when set');
+    }
+    if (p.edgeDecaySignalExecutionMode != null
+        && !['paper', 'shadow', 'live_micro', 'live_full'].includes(p.edgeDecaySignalExecutionMode)) {
+      errors.push('edgeDecaySignalExecutionMode must be one of paper, shadow, live_micro, live_full');
+    }
     if (errors.length > 0) {
       throw new Error(`Invalid strategy params: ${errors.join('; ')}`);
     }
