@@ -139,6 +139,58 @@ function classifyFlag(allMedian: number | null, recentMedian: number | null, n: 
   return 'STABLE';
 }
 
+// ── Hot-path cache + single-flag lookup ────────────────────────────────────
+// The trade-evaluator's edge-decay gate (src/trading/trade-evaluator.ts) reads
+// a strategy's flag on every gated T+30 evaluation. A full computeEdgeDecay()
+// scans up to 200 closed trades per enabled strategy, so recomputing it once
+// per gated strategy per graduation would be wasteful. The flag only moves when
+// a trade CLOSES, so a short TTL is safe — staleness of a few seconds never
+// changes a gate decision in practice.
+let _edgeDecayCache: { at: number; data: EdgeDecayData } | null = null;
+const EDGE_DECAY_CACHE_TTL_MS = 30_000;
+
+/** computeEdgeDecay() with a short TTL cache for hot-path gate reads. */
+export function getEdgeDecayCached(db: Database.Database, ttlMs = EDGE_DECAY_CACHE_TTL_MS): EdgeDecayData {
+  const now = Date.now();
+  if (_edgeDecayCache && now - _edgeDecayCache.at < ttlMs) return _edgeDecayCache.data;
+  const data = computeEdgeDecay(db);
+  _edgeDecayCache = { at: now, data };
+  return data;
+}
+
+export interface EdgeDecaySignal {
+  flag: DecayFlag;
+  n_total: number;
+  recent_30_median_pct: number | null;
+  execution_mode: string;
+}
+
+/**
+ * Look up one strategy's current edge-decay flag from the cached snapshot.
+ * Prefers the row matching `execMode`; falls back to the strategy's row with
+ * the most trades when there's no exact mode match. Returns null when the
+ * strategy has no closed-trade rows yet (no flag can be computed) — callers
+ * gating on this should treat null as "no signal / block" under a strict
+ * warmup policy. Only ENABLED strategies are included (computeEdgeDecay's
+ * WHERE enabled = 1), so a disabled signal source returns null.
+ */
+export function getEdgeDecayFlag(
+  db: Database.Database,
+  strategyId: string,
+  execMode?: string,
+): EdgeDecaySignal | null {
+  const rows = getEdgeDecayCached(db).rows.filter(r => r.strategy_id === strategyId);
+  if (rows.length === 0) return null;
+  const exact = execMode ? rows.find(r => r.execution_mode === execMode) : undefined;
+  const row = exact ?? [...rows].sort((a, b) => b.n_total - a.n_total)[0];
+  return {
+    flag: row.flag,
+    n_total: row.n_total,
+    recent_30_median_pct: row.recent_30_median_pct,
+    execution_mode: row.execution_mode,
+  };
+}
+
 export function computeEdgeDecay(db: Database.Database): EdgeDecayData {
   const generated_at = new Date().toISOString();
 

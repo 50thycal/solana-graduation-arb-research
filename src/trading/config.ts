@@ -196,6 +196,37 @@ export interface StrategyParams {
   //   'skip_red'   — block entries when current regime is RED
   //   'green_only' — allow entries only when current regime is GREEN
   regimeGate?: 'any' | 'skip_red' | 'green_only';
+
+  // ── Edge-decay signal gate (optional, paired signal/executor model) ──────
+  // Reads the rolling per-strategy edge-decay flag (STRENGTHENING / STABLE /
+  // DECAYING / LOW-N) computed from CLOSED trades in src/api/edge-decay.ts and
+  // gates entry on it. Unlike regimeGate (a universe-level tape signal), this is
+  // a *per-strategy performance* signal — "is this exact filter set hot or cold
+  // right now".
+  //
+  // DEADLOCK NOTE: a strategy that stops trading freezes its OWN flag (no new
+  // closed trades → the recent-30 window never rolls). So the signal is normally
+  // sourced from a SEPARATE always-on "baseline" strategy via
+  // edgeDecaySignalStrategyId, while the gated executor turns on/off. Leave the
+  // baseline itself at edgeDecayGate:'any' so it never stops. Only self-gate
+  // (edgeDecaySignalStrategyId unset) on a strategy you're willing to re-enable
+  // by hand.
+  //
+  //   'any'           — default; no edge-decay check
+  //   'skip_decaying' — enter while the signal is STRENGTHENING or STABLE; block DECAYING
+  //   'strength_only' — enter only while the signal is STRENGTHENING
+  //
+  // Warmup is STRICT: a LOW-N signal (source has < 25 closed trades) or a
+  // missing signal row blocks entry for BOTH modes — wait for a real
+  // STRENGTHENING signal before committing.
+  edgeDecayGate?: 'any' | 'skip_decaying' | 'strength_only';
+  /** strategy_id whose edge-decay flag drives edgeDecayGate. Unset = self
+   *  (deadlock-prone; only for the always-on baseline left at 'any'). */
+  edgeDecaySignalStrategyId?: string;
+  /** execution_mode bucket of the signal source — edge-decay rows are keyed by
+   *  (strategy_id, execution_mode). Default 'shadow' (the baseline runs shadow).
+   *  Falls back to the source's highest-n row if no exact mode match. */
+  edgeDecaySignalExecutionMode?: string;
 }
 
 export interface TradingConfig {
@@ -279,6 +310,9 @@ export interface TradingConfig {
   entryFngValueMin?: number;
   entryFngValueMax?: number;
   regimeGate?: 'any' | 'skip_red' | 'green_only';
+  edgeDecayGate?: 'any' | 'skip_decaying' | 'strength_only';
+  edgeDecaySignalStrategyId?: string;
+  edgeDecaySignalExecutionMode?: string;
 }
 
 /** Default filter preset: vel 5-20 sol/min — the primary confirmed signal */
@@ -397,6 +431,9 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     entryFngValueMin: cfg.entryFngValueMin,
     entryFngValueMax: cfg.entryFngValueMax,
     regimeGate: cfg.regimeGate ?? 'any',
+    edgeDecayGate: cfg.edgeDecayGate ?? 'any',
+    edgeDecaySignalStrategyId: cfg.edgeDecaySignalStrategyId,
+    edgeDecaySignalExecutionMode: cfg.edgeDecaySignalExecutionMode,
   };
 }
 
@@ -443,6 +480,9 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     entryFngValueMin: params.entryFngValueMin ?? globalCfg.entryFngValueMin,
     entryFngValueMax: params.entryFngValueMax ?? globalCfg.entryFngValueMax,
     regimeGate: params.regimeGate ?? globalCfg.regimeGate ?? 'any',
+    edgeDecayGate: params.edgeDecayGate ?? globalCfg.edgeDecayGate ?? 'any',
+    edgeDecaySignalStrategyId: params.edgeDecaySignalStrategyId ?? globalCfg.edgeDecaySignalStrategyId,
+    edgeDecaySignalExecutionMode: params.edgeDecaySignalExecutionMode ?? globalCfg.edgeDecaySignalExecutionMode,
   };
 }
 

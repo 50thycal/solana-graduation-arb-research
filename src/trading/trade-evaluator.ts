@@ -12,6 +12,7 @@ import { runEntryPreflight, maybeLogKillswitchTripped, isKillswitchTripped } fro
 import { resolvePoolFromVault } from './pool-resolver';
 import type { Wallet } from './wallet';
 import { getCurrentRegime } from '../api/regime-analysis';
+import { getEdgeDecayFlag } from '../api/edge-decay';
 
 const logger = makeLogger('trade-evaluator');
 
@@ -197,6 +198,38 @@ export class TradeEvaluator {
         logger.debug(
           { graduationId, regime: curRegime.regime, pump_rate: curRegime.pump_rate, rug_rate: curRegime.fast_rug_rate, gate: cfg.regimeGate, strategy: this.strategyId },
           'Regime gate blocked entry'
+        );
+        return;
+      }
+    }
+
+    // ── 1e. Edge-decay signal gate (optional, paired signal/executor) ───────
+    // Reads the rolling edge-decay flag of a *signal* strategy and gates entry:
+    //   strength_only — enter only while the signal is STRENGTHENING
+    //   skip_decaying — enter while STRENGTHENING or STABLE (block DECAYING)
+    // The signal is normally a separate always-on baseline strategy
+    // (edgeDecaySignalStrategyId); unset = self. STRICT warmup: a LOW-N flag
+    // (signal source has < 25 closed trades) or a missing signal row blocks both
+    // modes — we wait for a real STRENGTHENING signal before trading. This is
+    // the only "turn the executor on/off based on its own recent edge" gate; it
+    // deliberately sits after the universe-level regime gate and before the
+    // capacity/momentum/filter checks.
+    if (cfg.edgeDecayGate && cfg.edgeDecayGate !== 'any') {
+      const signalId = cfg.edgeDecaySignalStrategyId ?? this.strategyId;
+      const sig = getEdgeDecayFlag(this.db, signalId, cfg.edgeDecaySignalExecutionMode ?? 'shadow');
+      const flag = sig?.flag ?? null;
+      const allow =
+        cfg.edgeDecayGate === 'strength_only'
+          ? flag === 'STRENGTHENING'
+          : (flag === 'STRENGTHENING' || flag === 'STABLE');  // skip_decaying
+      if (!allow) {
+        this.tradeLogger.logSkipped(
+          graduationId, `edge_decay_gate_${cfg.edgeDecayGate}`,
+          sig?.recent_30_median_pct ?? null, pctT30, this.strategyId,
+        );
+        logger.debug(
+          { graduationId, signalId, flag: flag ?? 'NO_DATA', n: sig?.n_total ?? 0, gate: cfg.edgeDecayGate, strategy: this.strategyId },
+          'Edge-decay gate blocked entry'
         );
         return;
       }
