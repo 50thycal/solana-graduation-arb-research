@@ -9468,8 +9468,8 @@ function renderRegimeChart(data: any): string {
 
   const W = 1200, leftPad = 60, rightPad = 20;
   const innerW = W - leftPad - rightPad;
-  const bandH = 36, signalH = 160, pnlH = 220, gap = 8;
-  const totalH = bandH + signalH + pnlH + gap * 2 + 40; // +40 for x-axis labels
+  const bandH = 36, signalH = 160, leadingH = 120, pnlH = 220, gap = 8;
+  const totalH = bandH + signalH + leadingH + pnlH + gap * 3 + 40; // +40 for x-axis labels
 
   const n = tl.length;
   const stepX = innerW / n;
@@ -9537,8 +9537,60 @@ function renderRegimeChart(data: any): string {
   // Signal panel border
   const sigBorder = `<rect x="${leftPad}" y="${signalY0}" width="${innerW}" height="${signalH}" fill="none" stroke="#334155" stroke-width="0.5"/>`;
 
+  // ── Panel 2b: leading signals (grad_rate + median_ttg) ───────────────────
+  // These two are knowable at T+0 (no T+300 wait), so they can LEAD live PnL —
+  // the whole reason they were added. They have different units (count/hr vs
+  // seconds) and pump/rug's fixed 0-100% axis doesn't fit them, so each gets its
+  // own min-max normalized track within a dedicated panel sharing the x-axis.
+  // The real (un-normalized) ranges are surfaced in the chart legend.
+  const leadingY0 = signalY1 + gap;
+  const leadingY1 = leadingY0 + leadingH;
+  // Build a normalized polyline for an arbitrary numeric field over the timeline.
+  // Returns { line, min, max } so the legend can show the true value range.
+  const normLine = (field: string, color: string): { line: string; min: number; max: number } => {
+    const vals: Array<{ i: number; v: number }> = [];
+    for (let i = 0; i < n; i++) {
+      const v = tl[i][field];
+      if (v == null || Number.isNaN(v)) continue;
+      vals.push({ i, v });
+    }
+    if (vals.length < 2) return { line: '', min: NaN, max: NaN };
+    let lo = Infinity, hi = -Infinity;
+    for (const { v } of vals) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    const range = hi - lo || 1;
+    // Map into the panel with a small top/bottom margin so peaks aren't clipped.
+    const pad = leadingH * 0.08;
+    const y = (v: number) => leadingY1 - pad - ((v - lo) / range) * (leadingH - 2 * pad);
+    const pts = vals.map(({ i, v }) => `${xAt(i).toFixed(1)},${y(v).toFixed(1)}`);
+    return {
+      line: `<polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linejoin="round" opacity="0.95"/>`,
+      min: lo,
+      max: hi,
+    };
+  };
+  const gradLineColor = '#a78bfa';   // violet — grad_rate (arrivals/hr)
+  const ttgLineColor = '#fbbf24';    // amber  — median_ttg (sec)
+  // Timeline stores graduation arrivals as `n_grads` (one bucket = one hour, so
+  // the count IS the per-hour rate); median_ttg is stored under its own name.
+  const grad = normLine('n_grads', gradLineColor);
+  const ttg = normLine('median_ttg', ttgLineColor);
+  const leadingGrid: string[] = [];
+  // Light top/mid/bottom gridlines (normalized panel — no absolute scale shared
+  // between the two series, so we annotate ranges in the legend instead of ticks).
+  for (const frac of [0, 0.5, 1]) {
+    const y = leadingY0 + frac * leadingH;
+    leadingGrid.push(`<line x1="${leftPad}" y1="${y.toFixed(1)}" x2="${leftPad + innerW}" y2="${y.toFixed(1)}" stroke="#1e293b" stroke-width="0.4"/>`);
+  }
+  const leadingBorder = `<rect x="${leftPad}" y="${leadingY0}" width="${innerW}" height="${leadingH}" fill="none" stroke="#334155" stroke-width="0.5"/>`;
+  const fmtRange = (lo: number, hi: number, unit: string) =>
+    Number.isNaN(lo) ? 'no data' : `${lo.toFixed(unit === 's' ? 0 : 1)}–${hi.toFixed(unit === 's' ? 0 : 1)}${unit}`;
+  const leadingInPanelLegend = `
+    <text x="${(leftPad + 6).toFixed(1)}" y="${(leadingY0 + 13).toFixed(1)}" fill="${gradLineColor}" font-size="9">grad_rate (${fmtRange(grad.min, grad.max, '/hr')})</text>
+    <text x="${(leftPad + 6).toFixed(1)}" y="${(leadingY0 + 25).toFixed(1)}" fill="${ttgLineColor}" font-size="9">median_ttg (${fmtRange(ttg.min, ttg.max, 's')})</text>
+  `;
+
   // ── Panel 3: cumulative net SOL per live strategy ────────────────────────
-  const pnlY0 = signalY1 + gap;
+  const pnlY0 = leadingY1 + gap;
   const pnlY1 = pnlY0 + pnlH;
   // Find data range across all strategies' cum series
   let minSol = 0, maxSol = 0;
@@ -9607,6 +9659,7 @@ function renderRegimeChart(data: any): string {
   const panelLabels = `
     <text x="${leftPad - 4}" y="${(bandY + bandH / 2 + 3).toFixed(1)}" fill="#94a3b8" font-size="10" text-anchor="end" font-weight="600">REGIME</text>
     <text x="${leftPad - 4}" y="${(signalY0 - 4).toFixed(1)}" fill="#94a3b8" font-size="10" text-anchor="end" font-weight="600">SIGNALS</text>
+    <text x="${leftPad - 4}" y="${(leadingY0 - 4).toFixed(1)}" fill="#94a3b8" font-size="10" text-anchor="end" font-weight="600">LEADING</text>
     <text x="${leftPad - 4}" y="${(pnlY0 - 4).toFixed(1)}" fill="#94a3b8" font-size="10" text-anchor="end" font-weight="600">LIVE SOL</text>
   `;
 
@@ -9624,6 +9677,8 @@ function renderRegimeChart(data: any): string {
         <span><span style="display:inline-block;width:10px;height:10px;background:${REGIME_COLORS.RED.fill};border:1px solid ${REGIME_COLORS.RED.stroke};vertical-align:middle"></span> RED — pause</span>
         <span style="color:#22d3ee">— pump_rate</span>
         <span style="color:#f87171">— fast_rug_rate</span>
+        <span style="color:#a78bfa">— grad_rate (leading)</span>
+        <span style="color:#fbbf24">— median_ttg (leading)</span>
       </div>
       <svg width="${W}" height="${totalH}" viewBox="0 0 ${W} ${totalH}" style="display:block">
         ${bands.join('')}
@@ -9633,6 +9688,11 @@ function renderRegimeChart(data: any): string {
         ${pumpLine}
         ${rugLine}
         ${thresholdLegend}
+        ${leadingGrid.join('')}
+        ${leadingBorder}
+        ${grad.line}
+        ${ttg.line}
+        ${leadingInPanelLegend}
         ${pnlGrid.join('')}
         ${pnlBorder}
         ${strategyLines.join('')}
