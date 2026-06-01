@@ -239,15 +239,10 @@ export class GraduationListener {
   // create instruction even reaches this subscription and at what frequency.
   private instructionHistogram = new Map<string, number>();
   private totalCreateMatches = 0;     // times CREATE_INSTR_RE matched a tx
-  // InitializeMint2 = one SPL mint creation per tx; on this pump-ecosystem
-  // firehose it's the leading candidate for the true launch rate. Counted at
-  // the tx level (not per-line) so the rate is directly comparable to grads.
+  // InitializeMint2 = one SPL mint creation per pump.fun launch tx. Kept as a
+  // lightweight cross-check: it should track createMatches (CreateV2) ~1:1, so
+  // a divergence flags a regressed matcher or a firehose change.
   private totalInitMintTxs = 0;
-  // Rolling sample of full log-arrays for InitializeMint2 txs, so we can read
-  // pump.fun's actual create-instruction name + program-invoke structure from
-  // snapshot.json and write a precise matcher without guessing.
-  private sampleMintTxLogs: Array<{ sig: string; logs: string[] }> = [];
-  private static readonly MINT_SAMPLE_MAX = 4;
   private static readonly INSTR_HIST_MAX = 300;
   private readonly listenerStartedMs = Date.now();
   private totalCandidatesDetected = 0;
@@ -505,12 +500,8 @@ export class GraduationListener {
         uptimeSec: Math.floor((Date.now() - this.listenerStartedMs) / 1000),
         firehoseEventsTotal: this.totalLogsReceived,
         createMatches: this.totalCreateMatches,
-        // InitializeMint2 txs = candidate launch rate. Compare initMintTxCount /
-        // (uptimeSec/3600) against the known ~1-2k/hr pump.fun launch cadence.
+        // Cross-check of createMatches — should track it ~1:1 (see field decl).
         initMintTxCount: this.totalInitMintTxs,
-        // Full log-arrays of sample InitializeMint2 txs — read these to find the
-        // pump.fun program-invoke + the real create instruction name.
-        sampleMintTxLogs: this.sampleMintTxLogs,
         counter: this.launchCounter.getDebug(),
         topInstructions: [...this.instructionHistogram.entries()]
           .sort((a, b) => b[1] - a[1])
@@ -917,21 +908,8 @@ export class GraduationListener {
       this.launchCounter.record(logs.signature);
     }
 
-    // Diagnostic: count InitializeMint2 txs (candidate launch proxy) and keep a
-    // rolling sample of their full log-arrays so we can identify pump.fun's real
-    // create instruction before committing to a matcher.
-    if (hasInitMint) {
-      this.totalInitMintTxs++;
-      if (!this.sampleMintTxLogs.some(s => s.sig === logs.signature)) {
-        this.sampleMintTxLogs.push({
-          sig: logs.signature,
-          logs: logs.logs.slice(0, 60).map(l => l.slice(0, 200)),
-        });
-        if (this.sampleMintTxLogs.length > GraduationListener.MINT_SAMPLE_MAX) {
-          this.sampleMintTxLogs.shift();
-        }
-      }
-    }
+    // Cross-check: count InitializeMint2 txs; should track createMatches ~1:1.
+    if (hasInitMint) this.totalInitMintTxs++;
 
     if (!hasMigrate) return;
 
