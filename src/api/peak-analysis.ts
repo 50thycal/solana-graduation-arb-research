@@ -92,6 +92,9 @@ const EARLY_FILTERS: Array<{ name: string; group: string; predicate: (r: PeakRow
   { name: 'holders >= 10', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 10 },
   { name: 'holders >= 15', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 15 },
   { name: 'holders >= 18', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 18 },
+  { name: 'holders >= 50', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 50 },
+  { name: 'holders >= 100', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 100 },
+  { name: 'holders >= 250', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 250 },
   // Top 5
   { name: 'top5 < 10%', group: 'Top 5',  predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 10 },
   { name: 'top5 < 15%', group: 'Top 5',  predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 15 },

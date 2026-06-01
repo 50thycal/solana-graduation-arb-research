@@ -355,6 +355,9 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'holders >= 10',      group: 'Holders',  where: 'holder_count >= 10' },
   { name: 'holders >= 15',      group: 'Holders',  where: 'holder_count >= 15' },
   { name: 'holders >= 18',      group: 'Holders',  where: 'holder_count >= 18' },
+  { name: 'holders >= 50',      group: 'Holders',  where: 'holder_count >= 50' },
+  { name: 'holders >= 100',     group: 'Holders',  where: 'holder_count >= 100' },
+  { name: 'holders >= 250',     group: 'Holders',  where: 'holder_count >= 250' },
   // Top 5 Concentration
   { name: 'top5 < 10%',         group: 'Top 5',    where: 'top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10' },
   { name: 'top5 < 15%',         group: 'Top 5',    where: 'top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 15' },

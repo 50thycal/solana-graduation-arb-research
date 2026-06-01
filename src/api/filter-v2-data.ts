@@ -104,6 +104,12 @@ export async function computeFilterV2Data(
           predicate: (r) => r.holder_count != null && r.holder_count >= 15 },
         { name: 'holders >= 18',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 18',
           predicate: (r) => r.holder_count != null && r.holder_count >= 18 },
+        { name: 'holders >= 50',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 50',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 50 },
+        { name: 'holders >= 100',         group: 'Holders', column: 'holder_count', where: 'holder_count >= 100',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 100 },
+        { name: 'holders >= 250',         group: 'Holders', column: 'holder_count', where: 'holder_count >= 250',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 250 },
 
         // ── Top 5 Concentration ──
         { name: 'top5 < 10%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 10',
