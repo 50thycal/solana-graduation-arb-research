@@ -239,6 +239,15 @@ export class GraduationListener {
   // create instruction even reaches this subscription and at what frequency.
   private instructionHistogram = new Map<string, number>();
   private totalCreateMatches = 0;     // times CREATE_INSTR_RE matched a tx
+  // InitializeMint2 = one SPL mint creation per tx; on this pump-ecosystem
+  // firehose it's the leading candidate for the true launch rate. Counted at
+  // the tx level (not per-line) so the rate is directly comparable to grads.
+  private totalInitMintTxs = 0;
+  // Rolling sample of full log-arrays for InitializeMint2 txs, so we can read
+  // pump.fun's actual create-instruction name + program-invoke structure from
+  // snapshot.json and write a precise matcher without guessing.
+  private sampleMintTxLogs: Array<{ sig: string; logs: string[] }> = [];
+  private static readonly MINT_SAMPLE_MAX = 4;
   private static readonly INSTR_HIST_MAX = 300;
   private readonly listenerStartedMs = Date.now();
   private totalCandidatesDetected = 0;
@@ -496,6 +505,12 @@ export class GraduationListener {
         uptimeSec: Math.floor((Date.now() - this.listenerStartedMs) / 1000),
         firehoseEventsTotal: this.totalLogsReceived,
         createMatches: this.totalCreateMatches,
+        // InitializeMint2 txs = candidate launch rate. Compare initMintTxCount /
+        // (uptimeSec/3600) against the known ~1-2k/hr pump.fun launch cadence.
+        initMintTxCount: this.totalInitMintTxs,
+        // Full log-arrays of sample InitializeMint2 txs — read these to find the
+        // pump.fun program-invoke + the real create instruction name.
+        sampleMintTxLogs: this.sampleMintTxLogs,
         counter: this.launchCounter.getDebug(),
         topInstructions: [...this.instructionHistogram.entries()]
           .sort((a, b) => b[1] - a[1])
@@ -879,9 +894,11 @@ export class GraduationListener {
     // \b after "Create" denies the match when followed by a word char (Pool).
     let hasMigrate = false;
     let hasCreate = false;
+    let hasInitMint = false;
     for (const log of logs.logs) {
       if (log.includes('Instruction: Migrate')) hasMigrate = true;
       else if (CREATE_INSTR_RE.test(log)) hasCreate = true;
+      if (log.includes('Instruction: InitializeMint2')) hasInitMint = true;
       // Diagnostic: tally instruction names seen on the firehose so we can tell
       // (from snapshot.json) whether real creates arrive on this subscription.
       const ix = log.indexOf('Instruction: ');
@@ -898,6 +915,22 @@ export class GraduationListener {
     if (hasCreate) {
       this.totalCreateMatches++;
       this.launchCounter.record(logs.signature);
+    }
+
+    // Diagnostic: count InitializeMint2 txs (candidate launch proxy) and keep a
+    // rolling sample of their full log-arrays so we can identify pump.fun's real
+    // create instruction before committing to a matcher.
+    if (hasInitMint) {
+      this.totalInitMintTxs++;
+      if (!this.sampleMintTxLogs.some(s => s.sig === logs.signature)) {
+        this.sampleMintTxLogs.push({
+          sig: logs.signature,
+          logs: logs.logs.slice(0, 60).map(l => l.slice(0, 200)),
+        });
+        if (this.sampleMintTxLogs.length > GraduationListener.MINT_SAMPLE_MAX) {
+          this.sampleMintTxLogs.shift();
+        }
+      }
     }
 
     if (!hasMigrate) return;
