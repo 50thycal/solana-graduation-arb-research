@@ -56,6 +56,7 @@ interface PeakRow {
   bc_velocity_sol_per_min: number | null;
   token_age_seconds: number | null;
   holder_count: number | null;
+  holder_count_backfilled: number | null;
   top5_wallet_pct: number | null;
   dev_wallet_pct: number | null;
   liquidity_sol_t30: number | null;
@@ -88,13 +89,22 @@ const EARLY_FILTERS: Array<{ name: string; group: string; predicate: (r: PeakRow
   { name: 'age > 30min', group: 'BC Age', predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 1800 },
   { name: 'age > 1hr',   group: 'BC Age', predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 3600 },
   // Holders
-  { name: 'holders >= 5',  group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 5 },
-  { name: 'holders >= 10', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 10 },
-  { name: 'holders >= 15', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 15 },
-  { name: 'holders >= 18', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 18 },
-  { name: 'holders >= 50', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 50 },
-  { name: 'holders >= 100', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 100 },
-  { name: 'holders >= 250', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 250 },
+  // Measured (at-graduation) vs backfill (as-of-now). Never mixed — a mixed
+  // bucket leaks survivorship. See the FILTER_CATALOG Holders note.
+  { name: 'holders >= 5 (measured)',  group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 5 && r.holder_count_backfilled === 0 },
+  { name: 'holders >= 10 (measured)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 10 && r.holder_count_backfilled === 0 },
+  { name: 'holders >= 15 (measured)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 15 && r.holder_count_backfilled === 0 },
+  { name: 'holders >= 18 (measured)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 18 && r.holder_count_backfilled === 0 },
+  { name: 'holders >= 50 (measured)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 50 && r.holder_count_backfilled === 0 },
+  { name: 'holders >= 100 (measured)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 100 && r.holder_count_backfilled === 0 },
+  { name: 'holders >= 250 (measured)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 250 && r.holder_count_backfilled === 0 },
+  { name: 'holders >= 5 (backfill)',  group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 5 && r.holder_count_backfilled === 1 },
+  { name: 'holders >= 10 (backfill)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 10 && r.holder_count_backfilled === 1 },
+  { name: 'holders >= 15 (backfill)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 15 && r.holder_count_backfilled === 1 },
+  { name: 'holders >= 18 (backfill)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 18 && r.holder_count_backfilled === 1 },
+  { name: 'holders >= 50 (backfill)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 50 && r.holder_count_backfilled === 1 },
+  { name: 'holders >= 100 (backfill)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 100 && r.holder_count_backfilled === 1 },
+  { name: 'holders >= 250 (backfill)', group: 'Holders', predicate: (r) => r.holder_count != null && r.holder_count >= 250 && r.holder_count_backfilled === 1 },
   // Top 5
   { name: 'top5 < 10%', group: 'Top 5',  predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 10 },
   { name: 'top5 < 15%', group: 'Top 5',  predicate: (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 15 },
@@ -183,7 +193,7 @@ export function computePeakAnalysis(db: Database.Database): PeakAnalysisData {
     SELECT pct_t30, pct_t300,
            COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT}) as cost_pct,
            max_relret_0_300, max_relret_0_300_sec,
-           bc_velocity_sol_per_min, token_age_seconds, holder_count, top5_wallet_pct,
+           bc_velocity_sol_per_min, token_age_seconds, holder_count, holder_count_backfilled, top5_wallet_pct,
            dev_wallet_pct, liquidity_sol_t30, monotonicity_0_30, max_drawdown_0_30,
            acceleration_t30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
            buy_pressure_whale_pct, creator_prior_token_count, creator_prior_rug_rate,

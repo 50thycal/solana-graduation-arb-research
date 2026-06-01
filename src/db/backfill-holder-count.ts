@@ -10,6 +10,16 @@
  * STEP 2 was blocked by the RPC provider. A handful also have 0 concentration
  * from instant-graduation timing. This re-runs full enrichment to replace them.
  *
+ * MARKER TRI-STATE (holder_count_backfilled):
+ *   0    = measured at graduation by the live enricher (trustworthy, the only
+ *          bucket safe to build strategy on).
+ *   1    = re-resolved post-hoc by this backfill (as-of-now, survivorship-biased).
+ *   NULL = legacy row enriched before the marker existed. Untrustworthy (old
+ *          ~19-cap logic, unknown timing) so this backfill claims it and stamps
+ *          it 1 — legacy is treated as backfill, never as measured.
+ * The live enricher stamps 0 the instant it writes, so a measured row is never
+ * NULL and this backfill (NULL-only) can never reclaim and overwrite it.
+ *
  * TEMPORAL CAVEAT (important): DAS getTokenAccounts returns holders AS OF NOW,
  * not as of the token's graduation. For old rows "holders now" has drifted from
  * "holders at T+30". So every row this backfill touches is stamped

@@ -28,6 +28,7 @@ export type RegimeRow = {
   bc_velocity_sol_per_min: number | null;
   token_age_seconds: number | null;
   holder_count: number | null;
+  holder_count_backfilled: number | null;
   top5_wallet_pct: number | null;
   dev_wallet_pct: number | null;
   total_sol_raised: number | null;
@@ -69,13 +70,21 @@ export const CATALOG_PREDICATES = new Map<string, (r: RegimeRow) => boolean>([
   ['age > 30min', (r) => r.token_age_seconds != null && r.token_age_seconds > 1800],
   ['age > 1hr',   (r) => r.token_age_seconds != null && r.token_age_seconds > 3600],
   // Holders
-  ['holders >= 5',  (r) => r.holder_count != null && r.holder_count >= 5],
-  ['holders >= 10', (r) => r.holder_count != null && r.holder_count >= 10],
-  ['holders >= 15', (r) => r.holder_count != null && r.holder_count >= 15],
-  ['holders >= 18', (r) => r.holder_count != null && r.holder_count >= 18],
-  ['holders >= 50', (r) => r.holder_count != null && r.holder_count >= 50],
-  ['holders >= 100', (r) => r.holder_count != null && r.holder_count >= 100],
-  ['holders >= 250', (r) => r.holder_count != null && r.holder_count >= 250],
+  // Measured vs backfill — never mixed (mixed leaks survivorship; see FILTER_CATALOG).
+  ['holders >= 5 (measured)',  (r) => r.holder_count != null && r.holder_count >= 5 && r.holder_count_backfilled === 0],
+  ['holders >= 10 (measured)', (r) => r.holder_count != null && r.holder_count >= 10 && r.holder_count_backfilled === 0],
+  ['holders >= 15 (measured)', (r) => r.holder_count != null && r.holder_count >= 15 && r.holder_count_backfilled === 0],
+  ['holders >= 18 (measured)', (r) => r.holder_count != null && r.holder_count >= 18 && r.holder_count_backfilled === 0],
+  ['holders >= 50 (measured)', (r) => r.holder_count != null && r.holder_count >= 50 && r.holder_count_backfilled === 0],
+  ['holders >= 100 (measured)', (r) => r.holder_count != null && r.holder_count >= 100 && r.holder_count_backfilled === 0],
+  ['holders >= 250 (measured)', (r) => r.holder_count != null && r.holder_count >= 250 && r.holder_count_backfilled === 0],
+  ['holders >= 5 (backfill)',  (r) => r.holder_count != null && r.holder_count >= 5 && r.holder_count_backfilled === 1],
+  ['holders >= 10 (backfill)', (r) => r.holder_count != null && r.holder_count >= 10 && r.holder_count_backfilled === 1],
+  ['holders >= 15 (backfill)', (r) => r.holder_count != null && r.holder_count >= 15 && r.holder_count_backfilled === 1],
+  ['holders >= 18 (backfill)', (r) => r.holder_count != null && r.holder_count >= 18 && r.holder_count_backfilled === 1],
+  ['holders >= 50 (backfill)', (r) => r.holder_count != null && r.holder_count >= 50 && r.holder_count_backfilled === 1],
+  ['holders >= 100 (backfill)', (r) => r.holder_count != null && r.holder_count >= 100 && r.holder_count_backfilled === 1],
+  ['holders >= 250 (backfill)', (r) => r.holder_count != null && r.holder_count >= 250 && r.holder_count_backfilled === 1],
   // Top 5 Concentration
   ['top5 < 10%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 10],
   ['top5 < 15%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 15],
@@ -112,7 +121,7 @@ export function loadRegimeRows(db: Database.Database): RegimeRow[] {
   return db.prepare(`
     SELECT created_at, label, pct_t30, pct_t300,
            COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT}) as cost_pct,
-           bc_velocity_sol_per_min, token_age_seconds, holder_count, top5_wallet_pct,
+           bc_velocity_sol_per_min, token_age_seconds, holder_count, holder_count_backfilled, top5_wallet_pct,
            dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
            monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
            early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
