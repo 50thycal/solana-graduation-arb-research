@@ -73,6 +73,9 @@ export const CATALOG_PREDICATES = new Map<string, (r: RegimeRow) => boolean>([
   ['holders >= 10', (r) => r.holder_count != null && r.holder_count >= 10],
   ['holders >= 15', (r) => r.holder_count != null && r.holder_count >= 15],
   ['holders >= 18', (r) => r.holder_count != null && r.holder_count >= 18],
+  ['holders >= 50', (r) => r.holder_count != null && r.holder_count >= 50],
+  ['holders >= 100', (r) => r.holder_count != null && r.holder_count >= 100],
+  ['holders >= 250', (r) => r.holder_count != null && r.holder_count >= 250],
   // Top 5 Concentration
   ['top5 < 10%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 10],
   ['top5 < 15%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 15],

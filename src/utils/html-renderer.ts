@@ -3892,6 +3892,9 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'holders >= 10', configs: [{ field: 'holder_count', operator: '>=', value: 10, label: 'holders>=10' }] },
     { name: 'holders >= 15', configs: [{ field: 'holder_count', operator: '>=', value: 15, label: 'holders>=15' }] },
     { name: 'holders >= 18', configs: [{ field: 'holder_count', operator: '>=', value: 18, label: 'holders>=18' }] },
+    { name: 'holders >= 50', configs: [{ field: 'holder_count', operator: '>=', value: 50, label: 'holders>=50' }] },
+    { name: 'holders >= 100', configs: [{ field: 'holder_count', operator: '>=', value: 100, label: 'holders>=100' }] },
+    { name: 'holders >= 250', configs: [{ field: 'holder_count', operator: '>=', value: 250, label: 'holders>=250' }] },
   ]},
   { group: 'Top 5 Concentration', filters: [
     { name: 'top5 < 10%', configs: [{ field: 'top5_wallet_pct', operator: '<', value: 10, label: 'top5<10%' }] },
