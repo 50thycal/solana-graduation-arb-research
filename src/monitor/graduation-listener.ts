@@ -163,10 +163,15 @@ const PUMP_WITHDRAW_AUTHORITY = new PublicKey(
 // auto-reconnect already covers gaps that long).
 const MIGRATION_POLL_INTERVAL_MS = parseInt(process.env.MIGRATION_POLL_INTERVAL_MS || '10000', 10);
 
-// Matches pump.fun's token-create anchor log ("...Instruction: Create") for the
-// universe launch-rate signal, while excluding PumpSwap's "Instruction: CreatePool"
-// (the \b denies a match when "Create" is followed by a word char like the P in Pool).
-const CREATE_INSTR_RE = /Instruction: Create\b/;
+// Matches pump.fun's token-create anchor log for the universe launch-rate signal.
+// The pump.fun program (6EF8rrec…) logs creation as "Instruction: CreateV2"
+// (legacy launches used bare "Create"). Confirmed against the live firehose: the
+// CreateV2 histogram count tracked the InitializeMint2 tx count 1:1 (26 == 26).
+// The old /Create\b/ never matched because \b between the "e" and "V" of
+// "CreateV2" is not a word boundary. The optional (?:V2) matches both forms while
+// \b still excludes PumpSwap's "Instruction: CreatePool" (rides every migration
+// tx) so graduations aren't double-counted as launches.
+const CREATE_INSTR_RE = /Instruction: Create(?:V2)?\b/;
 
 export class GraduationListener {
   private connection: Connection;
@@ -879,10 +884,10 @@ export class GraduationListener {
     // costs no RPC — it taps the firehose we already iterate here).
     // The final buy that sets complete=true has no special log and fires separately;
     // we detect graduations via the migration tx instead.
-    // CREATE_INSTR_RE matches pump.fun's token-create log ("Instruction: Create")
-    // but NOT PumpSwap's "Instruction: CreatePool" — which rides along in every
-    // migration tx and would otherwise count every graduation as a launch. The
-    // \b after "Create" denies the match when followed by a word char (Pool).
+    // CREATE_INSTR_RE matches pump.fun's token-create log ("Instruction: CreateV2",
+    // legacy "Create") but NOT PumpSwap's "Instruction: CreatePool" — which rides
+    // along in every migration tx and would otherwise count every graduation as a
+    // launch. See the regex definition above for the \b / (?:V2) reasoning.
     let hasMigrate = false;
     let hasCreate = false;
     let hasInitMint = false;
