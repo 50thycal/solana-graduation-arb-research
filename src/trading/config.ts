@@ -350,8 +350,9 @@ export function describeTradingConfig(cfg: TradingConfig): string {
     `SL=${cfg.stopLossPct}%`,
     `maxHold=${cfg.maxHoldSeconds}s`,
     `gate=[+${cfg.entryGateMinPctT30}%..+${cfg.entryGateMaxPctT30}%]`,
+    cfg.regimeGate && cfg.regimeGate !== 'any' ? `regimeGate=${cfg.regimeGate}` : null,
     `filters=[${filterLabels || 'none'}]`,
-  ].join(' ');
+  ].filter(Boolean).join(' ');
 }
 
 /** Extract the per-strategy subset from a full TradingConfig */
