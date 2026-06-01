@@ -399,18 +399,20 @@ export function updateMomentumEnrichment(
     token_age_seconds?: number;
     dev_wallet_address?: string;
     creator_wallet_address?: string;
+    holder_count_backfilled?: number;
   }
 ): void {
   db.prepare(`
     UPDATE graduation_momentum SET
-      holder_count           = COALESCE(@holder_count,           holder_count),
-      top5_wallet_pct        = COALESCE(@top5_wallet_pct,        top5_wallet_pct),
-      top10_wallet_pct       = COALESCE(@top10_wallet_pct,       top10_wallet_pct),
-      wallet_gini_top20      = COALESCE(@wallet_gini_top20,      wallet_gini_top20),
-      dev_wallet_pct         = COALESCE(@dev_wallet_pct,         dev_wallet_pct),
-      token_age_seconds      = COALESCE(@token_age_seconds,      token_age_seconds),
-      dev_wallet_address     = COALESCE(@dev_wallet_address,     dev_wallet_address),
-      creator_wallet_address = COALESCE(@creator_wallet_address, creator_wallet_address)
+      holder_count             = COALESCE(@holder_count,             holder_count),
+      top5_wallet_pct          = COALESCE(@top5_wallet_pct,          top5_wallet_pct),
+      top10_wallet_pct         = COALESCE(@top10_wallet_pct,         top10_wallet_pct),
+      wallet_gini_top20        = COALESCE(@wallet_gini_top20,        wallet_gini_top20),
+      dev_wallet_pct           = COALESCE(@dev_wallet_pct,           dev_wallet_pct),
+      token_age_seconds        = COALESCE(@token_age_seconds,        token_age_seconds),
+      dev_wallet_address       = COALESCE(@dev_wallet_address,       dev_wallet_address),
+      creator_wallet_address   = COALESCE(@creator_wallet_address,   creator_wallet_address),
+      holder_count_backfilled  = COALESCE(@holder_count_backfilled,  holder_count_backfilled)
     WHERE graduation_id = @graduation_id
   `).run({
     graduation_id: graduationId,
@@ -422,6 +424,7 @@ export function updateMomentumEnrichment(
     token_age_seconds: data.token_age_seconds ?? null,
     dev_wallet_address: data.dev_wallet_address ?? null,
     creator_wallet_address: data.creator_wallet_address ?? null,
+    holder_count_backfilled: data.holder_count_backfilled ?? null,
   });
 }
 

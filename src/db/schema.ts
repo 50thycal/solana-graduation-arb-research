@@ -291,6 +291,12 @@ function runMigrations(db: Database.Database): void {
       ['recovery_t30_above_t15', 'INTEGER'],        // 1 if pct_t30 > pct_t15
       ['recovery_t45_above_t30', 'INTEGER'],        // 1 if pct_t45 > pct_t30
       ['confirmed_dip_recovery', 'INTEGER'],        // 1 if dip_and_recover_flag=1 AND both above
+      // Holder-count backfill marker. 1 = holder_count/top5/dev were re-resolved
+      // AFTER graduation via the DAS getTokenAccounts backfill (current-state, not
+      // graduation-time). Lets analysis exclude temporally-contaminated rows the
+      // same way the look-ahead guardrail does for _t300 columns. NULL/0 = the
+      // value is the original graduation-time enrichment.
+      ['holder_count_backfilled', 'INTEGER'],
     ];
     // Every-5s price snapshots across the full 300s monitoring window — dedupes against
     // explicit entries above (t5, t10, ..., t60, t90, t120, t150, t180, t240, t300).

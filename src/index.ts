@@ -2,6 +2,7 @@ import express from 'express';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { initDatabase } from './db/schema';
 import { backfillV3Metrics } from './db/backfill-v3-metrics';
+import { startHolderCountBackfill, holderBackfillRunning, holderBackfillPending } from './db/backfill-holder-count';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation, updateActionItemStatus, updateActionItemFields, dismissAnomaly } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
 import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderLiveTrainingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml, renderRegimeAnalysisHtml } from './utils/html-renderer';
@@ -3251,6 +3252,45 @@ ${rows.map(r => {
       logger.error('Live P&L chain backfill failed: %s', err instanceof Error ? err.message : String(err)),
     );
   }
+
+  // One-shot on every deploy: re-resolve holder_count + concentration for any
+  // historical rows still pinned at the old getTokenLargestAccounts ~19 cap (or
+  // left at 0 by instant-graduation timing), via the new DAS getTokenAccounts
+  // path. Idempotent — only touches rows with holder_count_backfilled IS NULL and
+  // older than the 2h grace window, stamping each as it goes, so re-runs converge
+  // to a no-op. Delayed 90s so it trickles in behind the busy boot/sync window
+  // rather than competing with live enrichment for RPC tokens.
+  const holderRpcUrl = process.env.HELIUS_RPC_URL;
+  if (holderRpcUrl) {
+    setTimeout(() => {
+      const { started, queued } = startHolderCountBackfill(db, holderRpcUrl);
+      if (started) {
+        logger.info({ queued }, 'Auto holder-count backfill kicked off on deploy');
+      }
+    }, 90_000).unref();
+  }
+
+  // Manual trigger + progress for the holder-count backfill (auto-runs on deploy,
+  // but this lets the operator re-kick or watch it without a redeploy).
+  app.get('/backfill-holder-count', (req, res) => {
+    const rpcUrl = process.env.HELIUS_RPC_URL;
+    if (!rpcUrl) {
+      res.status(500).json({ error: 'HELIUS_RPC_URL not configured' });
+      return;
+    }
+    const { started, queued } = startHolderCountBackfill(db, rpcUrl);
+    sendJsonOrHtml(req, res, started
+      ? { status: 'started', queued, message: `Backfilling holder count for ${queued} rows in background (~3 RPC calls/row, throttled).` }
+      : { status: holderBackfillRunning() ? 'already_running' : 'done',
+          message: holderBackfillRunning() ? 'Holder-count backfill already in progress.' : 'Nothing to backfill — all historical rows already stamped.' });
+  });
+
+  app.get('/backfill-holder-count/status', (req, res) => {
+    sendJsonOrHtml(req, res, {
+      running: holderBackfillRunning(),
+      pending_rows: holderBackfillPending(db),
+    });
+  });
 
   // Graceful shutdown
   const shutdown = async () => {
