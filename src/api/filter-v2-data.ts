@@ -27,6 +27,7 @@ export async function computeFilterV2Data(
         bc_velocity_sol_per_min: number | null;
         token_age_seconds: number | null;
         holder_count: number | null;
+        holder_count_backfilled: number | null;
         top5_wallet_pct: number | null;
         dev_wallet_pct: number | null;
         total_sol_raised: number | null;
@@ -96,14 +97,36 @@ export async function computeFilterV2Data(
           predicate: (r) => r.token_age_seconds != null && r.token_age_seconds > 86400 },
 
         // ── Holders ──
-        { name: 'holders >= 5',           group: 'Holders', column: 'holder_count', where: 'holder_count >= 5',
-          predicate: (r) => r.holder_count != null && r.holder_count >= 5 },
-        { name: 'holders >= 10',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 10',
-          predicate: (r) => r.holder_count != null && r.holder_count >= 10 },
-        { name: 'holders >= 15',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 15',
-          predicate: (r) => r.holder_count != null && r.holder_count >= 15 },
-        { name: 'holders >= 18',          group: 'Holders', column: 'holder_count', where: 'holder_count >= 18',
-          predicate: (r) => r.holder_count != null && r.holder_count >= 18 },
+        // Measured (at-graduation) vs backfill (as-of-now) — never mixed. See the
+        // FILTER_CATALOG Holders note: a mixed bucket leaks survivorship.
+        { name: 'holders >= 5 (measured)',    group: 'Holders', column: 'holder_count', where: 'holder_count >= 5 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 5 && r.holder_count_backfilled === 0 },
+        { name: 'holders >= 10 (measured)',   group: 'Holders', column: 'holder_count', where: 'holder_count >= 10 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 10 && r.holder_count_backfilled === 0 },
+        { name: 'holders >= 15 (measured)',   group: 'Holders', column: 'holder_count', where: 'holder_count >= 15 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 15 && r.holder_count_backfilled === 0 },
+        { name: 'holders >= 18 (measured)',   group: 'Holders', column: 'holder_count', where: 'holder_count >= 18 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 18 && r.holder_count_backfilled === 0 },
+        { name: 'holders >= 50 (measured)',   group: 'Holders', column: 'holder_count', where: 'holder_count >= 50 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 50 && r.holder_count_backfilled === 0 },
+        { name: 'holders >= 100 (measured)',  group: 'Holders', column: 'holder_count', where: 'holder_count >= 100 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 100 && r.holder_count_backfilled === 0 },
+        { name: 'holders >= 250 (measured)',  group: 'Holders', column: 'holder_count', where: 'holder_count >= 250 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 250 && r.holder_count_backfilled === 0 },
+        { name: 'holders >= 5 (backfill)',    group: 'Holders', column: 'holder_count', where: 'holder_count >= 5 AND holder_count_backfilled = 1',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 5 && r.holder_count_backfilled === 1 },
+        { name: 'holders >= 10 (backfill)',   group: 'Holders', column: 'holder_count', where: 'holder_count >= 10 AND holder_count_backfilled = 1',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 10 && r.holder_count_backfilled === 1 },
+        { name: 'holders >= 15 (backfill)',   group: 'Holders', column: 'holder_count', where: 'holder_count >= 15 AND holder_count_backfilled = 1',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 15 && r.holder_count_backfilled === 1 },
+        { name: 'holders >= 18 (backfill)',   group: 'Holders', column: 'holder_count', where: 'holder_count >= 18 AND holder_count_backfilled = 1',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 18 && r.holder_count_backfilled === 1 },
+        { name: 'holders >= 50 (backfill)',   group: 'Holders', column: 'holder_count', where: 'holder_count >= 50 AND holder_count_backfilled = 1',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 50 && r.holder_count_backfilled === 1 },
+        { name: 'holders >= 100 (backfill)',  group: 'Holders', column: 'holder_count', where: 'holder_count >= 100 AND holder_count_backfilled = 1',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 100 && r.holder_count_backfilled === 1 },
+        { name: 'holders >= 250 (backfill)',  group: 'Holders', column: 'holder_count', where: 'holder_count >= 250 AND holder_count_backfilled = 1',
+          predicate: (r) => r.holder_count != null && r.holder_count >= 250 && r.holder_count_backfilled === 1 },
 
         // ── Top 5 Concentration ──
         { name: 'top5 < 10%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 10',
@@ -356,7 +379,7 @@ export async function computeFilterV2Data(
       const regimeRows = db.prepare(`
         SELECT created_at, label, pct_t30, pct_t300,
                COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT_V2}) as cost_pct,
-               bc_velocity_sol_per_min, token_age_seconds, holder_count, top5_wallet_pct,
+               bc_velocity_sol_per_min, token_age_seconds, holder_count, holder_count_backfilled, top5_wallet_pct,
                dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
                monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
                early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
@@ -525,7 +548,7 @@ export async function computeFilterV2Data(
           created_at, label,
           pct_t30, ${panel4WalkCols}, pct_t300,
           COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT_V2}) as cost_pct,
-          bc_velocity_sol_per_min, token_age_seconds, holder_count, top5_wallet_pct,
+          bc_velocity_sol_per_min, token_age_seconds, holder_count, holder_count_backfilled, top5_wallet_pct,
           dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
           monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
           early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,

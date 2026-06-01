@@ -3888,10 +3888,23 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'bc_age > 1 day', configs: [{ field: 'token_age_seconds', operator: '>', value: 86400, label: 'age>1d' }] },
   ]},
   { group: 'Holders', filters: [
-    { name: 'holders >= 5', configs: [{ field: 'holder_count', operator: '>=', value: 5, label: 'holders>=5' }] },
-    { name: 'holders >= 10', configs: [{ field: 'holder_count', operator: '>=', value: 10, label: 'holders>=10' }] },
-    { name: 'holders >= 15', configs: [{ field: 'holder_count', operator: '>=', value: 15, label: 'holders>=15' }] },
-    { name: 'holders >= 18', configs: [{ field: 'holder_count', operator: '>=', value: 18, label: 'holders>=18' }] },
+    // Measured = at-graduation (holder_count_backfilled=0, trustworthy); backfill =
+    // as-of-now re-resolve (=1, survivorship-contaminated). Never mix — see the
+    // FILTER_CATALOG Holders note in src/api/aggregates.ts.
+    { name: 'holders >= 5 (measured)', configs: [{ field: 'holder_count', operator: '>=', value: 5, label: 'holders>=5' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holders >= 10 (measured)', configs: [{ field: 'holder_count', operator: '>=', value: 10, label: 'holders>=10' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holders >= 15 (measured)', configs: [{ field: 'holder_count', operator: '>=', value: 15, label: 'holders>=15' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holders >= 18 (measured)', configs: [{ field: 'holder_count', operator: '>=', value: 18, label: 'holders>=18' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holders >= 50 (measured)', configs: [{ field: 'holder_count', operator: '>=', value: 50, label: 'holders>=50' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holders >= 100 (measured)', configs: [{ field: 'holder_count', operator: '>=', value: 100, label: 'holders>=100' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holders >= 250 (measured)', configs: [{ field: 'holder_count', operator: '>=', value: 250, label: 'holders>=250' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holders >= 5 (backfill)', configs: [{ field: 'holder_count', operator: '>=', value: 5, label: 'holders>=5' }, { field: 'holder_count_backfilled', operator: '=', value: 1, label: 'backfill' }] },
+    { name: 'holders >= 10 (backfill)', configs: [{ field: 'holder_count', operator: '>=', value: 10, label: 'holders>=10' }, { field: 'holder_count_backfilled', operator: '=', value: 1, label: 'backfill' }] },
+    { name: 'holders >= 15 (backfill)', configs: [{ field: 'holder_count', operator: '>=', value: 15, label: 'holders>=15' }, { field: 'holder_count_backfilled', operator: '=', value: 1, label: 'backfill' }] },
+    { name: 'holders >= 18 (backfill)', configs: [{ field: 'holder_count', operator: '>=', value: 18, label: 'holders>=18' }, { field: 'holder_count_backfilled', operator: '=', value: 1, label: 'backfill' }] },
+    { name: 'holders >= 50 (backfill)', configs: [{ field: 'holder_count', operator: '>=', value: 50, label: 'holders>=50' }, { field: 'holder_count_backfilled', operator: '=', value: 1, label: 'backfill' }] },
+    { name: 'holders >= 100 (backfill)', configs: [{ field: 'holder_count', operator: '>=', value: 100, label: 'holders>=100' }, { field: 'holder_count_backfilled', operator: '=', value: 1, label: 'backfill' }] },
+    { name: 'holders >= 250 (backfill)', configs: [{ field: 'holder_count', operator: '>=', value: 250, label: 'holders>=250' }, { field: 'holder_count_backfilled', operator: '=', value: 1, label: 'backfill' }] },
   ]},
   { group: 'Top 5 Concentration', filters: [
     { name: 'top5 < 10%', configs: [{ field: 'top5_wallet_pct', operator: '<', value: 10, label: 'top5<10%' }] },

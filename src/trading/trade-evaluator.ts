@@ -3,7 +3,6 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { makeLogger } from '../utils/logger';
 import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourInUtcWindow, SWAP_SLIPPAGE_BPS } from './config';
 import { runFilterPipeline } from './filter-pipeline';
-import { getCurrentRegime } from '../api/regime-analysis';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
 import { getMintProfile } from './token-2022';
@@ -12,6 +11,7 @@ import { ObservationContext } from '../collector/price-collector';
 import { runEntryPreflight, maybeLogKillswitchTripped, isKillswitchTripped } from './safety';
 import { resolvePoolFromVault } from './pool-resolver';
 import type { Wallet } from './wallet';
+import { getCurrentRegime } from '../api/regime-analysis';
 
 const logger = makeLogger('trade-evaluator');
 
@@ -182,30 +182,23 @@ export class TradeEvaluator {
       }
     }
 
-    // ── 1d. PumpFun-tape regime gate (optional, uses getCurrentRegime) ──────
-    // skip_red   → block when current regime is RED.
-    // green_only → block unless current regime is GREEN.
-    // Permissive (allow) when the regime can't be classified yet (warmup), same
-    // as the market_daily gate above — we'd rather trade than blackhole.
-    if (cfg.regimeGate) {
-      const rg = getCurrentRegime(this.db);
-      if (rg == null) {
+    // ── 1d. Regime gate (optional, uses regime-analysis current snapshot) ───
+    // GREEN / YELLOW / RED is computed from the last 50 graduations' pct_t300
+    // distribution (pump_rate >= +50% and fast_rug_rate <= -50% rates).
+    // Permissive on insufficient sample (n_window < 10) — see getCurrentRegime.
+    if (cfg.regimeGate && cfg.regimeGate !== 'any') {
+      const curRegime = getCurrentRegime(this.db);
+      const blocked =
+        (cfg.regimeGate === 'skip_red'   && curRegime.regime === 'RED') ||
+        (cfg.regimeGate === 'green_only' && curRegime.regime !== 'GREEN');
+      if (blocked && curRegime.n_window >= 10) {
+        const skipReason = `regime_gate_${cfg.regimeGate}`;
+        this.tradeLogger.logSkipped(graduationId, skipReason, curRegime.pump_rate, pctT30, this.strategyId);
         logger.debug(
-          { graduationId, strategy: this.strategyId, gate: cfg.regimeGate },
-          'regime gate permissive — not enough complete grads to classify',
+          { graduationId, regime: curRegime.regime, pump_rate: curRegime.pump_rate, rug_rate: curRegime.fast_rug_rate, gate: cfg.regimeGate, strategy: this.strategyId },
+          'Regime gate blocked entry'
         );
-      } else {
-        const blocked =
-          (cfg.regimeGate === 'skip_red' && rg.regime === 'RED') ||
-          (cfg.regimeGate === 'green_only' && rg.regime !== 'GREEN');
-        if (blocked) {
-          this.tradeLogger.logSkipped(graduationId, `regime_gate_${cfg.regimeGate}`, null, pctT30, this.strategyId);
-          logger.debug(
-            { graduationId, strategy: this.strategyId, gate: cfg.regimeGate, regime: rg.regime, nWindow: rg.nWindow },
-            'Regime gate blocked entry',
-          );
-          return;
-        }
+        return;
       }
     }
 

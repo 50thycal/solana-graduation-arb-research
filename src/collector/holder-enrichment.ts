@@ -6,8 +6,12 @@ import { makeLogger } from '../utils/logger';
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 // SPL token account byte size (used as dataSize filter)
 const SPL_ACCOUNT_SIZE = 165;
-// Holder count cap — above this we report the cap and set holderCountCapped=true
-const HOLDER_COUNT_CAP = 500;
+// Holder count cap — above this we report the cap and set holderCountCapped=true.
+// DAS getTokenAccounts returns 1000 accounts/page; MAX_DAS_PAGES caps total work.
+const HOLDER_COUNT_CAP = 5000;
+// Max pages to paginate through DAS getTokenAccounts (1000 accounts each).
+// 5 pages = 5000 token accounts — well above any post-graduation pumpfun token.
+const MAX_DAS_PAGES = 5;
 
 const logger = makeLogger('holder-enrichment');
 
@@ -16,7 +20,7 @@ const PUMP_TOTAL_SUPPLY_RAW = 1_000_000_000_000_000; // 10^15
 
 export interface EnrichmentResult {
   holderCount: number;
-  holderCountCapped: boolean; // true when true count >= HOLDER_COUNT_CAP (500)
+  holderCountCapped: boolean; // true when enumeration hit MAX_DAS_PAGES / HOLDER_COUNT_CAP
   top5WalletPct: number;
   /** C3 — supply % held by top 10 wallets (subset of getTokenLargestAccounts result). */
   top10WalletPct?: number;
@@ -126,6 +130,95 @@ export class HolderEnrichment {
     }
   }
 
+  /**
+   * TRUE holder count via Helius DAS `getTokenAccounts` (the canonical, indexed way).
+   *
+   * Why this and not getProgramAccounts:
+   *   - getProgramAccounts on TOKEN_PROGRAM_ID is a full-program scan. Helius (and
+   *     most providers) rate-limit, time out, or outright block it — which is why
+   *     STEP 2 historically failed and we fell back to the 19-cap from STEP 1.
+   *   - getTokenAccounts is served straight from Helius's DAS index: fast, reliable,
+   *     paginated (1000 token accounts/page), available on standard plans.
+   *
+   * Holder definition matches STEP 1: a "real holder" is a unique OWNER wallet whose
+   * aggregate balance is > 0 and < INFRA_THRESHOLD (15% of supply) — the threshold
+   * excludes the bonding curve / PumpSwap pool vault without needing their addresses.
+   * One owner can hold several token accounts, so we aggregate by owner before counting.
+   *
+   * Returns { count, capped } or null if the endpoint is unavailable / not Helius.
+   */
+  private async getTrueHolderCountViaDAS(
+    mint: string
+  ): Promise<{ count: number; capped: boolean } | null> {
+    const endpoint = (this.connection as any).rpcEndpoint as string | undefined;
+    // DAS getTokenAccounts is a Helius extension — only attempt against a Helius RPC.
+    if (!endpoint || !/helius/i.test(endpoint)) {
+      return null;
+    }
+
+    const INFRA_THRESHOLD = PUMP_TOTAL_SUPPLY_RAW * 0.15;
+    const ownerBalances = new Map<string, number>();
+    let page = 1;
+    let hitPageLimit = false;
+
+    for (; page <= MAX_DAS_PAGES; page++) {
+      if (!await globalRpcLimiter.throttleOrDrop(15)) {
+        logger.debug({ mint: mint.slice(0, 8), page }, 'DAS getTokenAccounts dropped — RPC queue full');
+        return null;
+      }
+
+      let json: any;
+      try {
+        const resp = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: 'holder-count',
+            method: 'getTokenAccounts',
+            params: { mint, page, limit: 1000, options: { showZeroBalance: false } },
+          }),
+        });
+        if (!resp.ok) {
+          logger.debug({ mint: mint.slice(0, 8), status: resp.status }, 'DAS getTokenAccounts HTTP error');
+          return null;
+        }
+        json = await resp.json();
+      } catch (err) {
+        logger.debug(
+          { mint: mint.slice(0, 8), err: err instanceof Error ? err.message : String(err) },
+          'DAS getTokenAccounts fetch failed'
+        );
+        return null;
+      }
+
+      if (json?.error) {
+        logger.debug({ mint: mint.slice(0, 8), err: json.error?.message }, 'DAS getTokenAccounts rpc error');
+        return null;
+      }
+
+      const accounts: any[] = json?.result?.token_accounts ?? [];
+      if (accounts.length === 0) break;
+
+      for (const acc of accounts) {
+        const amt = typeof acc.amount === 'number' ? acc.amount : parseInt(acc.amount, 10) || 0;
+        if (amt <= 0 || !acc.owner) continue;
+        ownerBalances.set(acc.owner, (ownerBalances.get(acc.owner) || 0) + amt);
+      }
+
+      if (accounts.length < 1000) break; // last page
+      if (page === MAX_DAS_PAGES) hitPageLimit = true;
+    }
+
+    // Count unique owners holding a non-infra balance.
+    let count = 0;
+    for (const bal of ownerBalances.values()) {
+      if (bal > 0 && bal < INFRA_THRESHOLD) count++;
+    }
+
+    return { count, capped: hitPageLimit || count >= HOLDER_COUNT_CAP };
+  }
+
   async enrich(
     mint: string,
     bondingCurveAddress: string,
@@ -219,58 +312,81 @@ export class HolderEnrichment {
       );
     }
 
-    // ── STEP 2: getProgramAccounts — TRUE holder count (best-effort upgrade) ──
-    // getTokenLargestAccounts is capped at 20 results (19 real after infra),
-    // making the count useless as a filter. This call enumerates ALL SPL token
-    // accounts for the mint to get the real number.
+    // ── STEP 2: TRUE holder count ────────────────────────────────────────────
+    // getTokenLargestAccounts (STEP 1) is capped at 20 results (19 real after infra),
+    // making the count useless as a filter. STEP 2 enumerates ALL token accounts for
+    // the mint and counts unique owner wallets to get the real number.
     //
-    // NOTE: Some RPC providers block getProgramAccounts for TOKEN_PROGRAM_ID.
-    // NOTE: dataSlice is intentionally omitted — combining it with dataSize can
-    //       cause some RPC nodes to evaluate dataSize against the sliced (0) length
-    //       and return 0 results. We accept the 165-byte-per-account payload since
-    //       graduation tokens typically have <500 holders (~80KB max).
-    // Only overwrites step 1's count if rawCount > 0 (protects against empty result bug).
+    // Primary path: Helius DAS `getTokenAccounts` — indexed, paginated, reliable.
+    // Fallback path: getProgramAccounts(TOKEN_PROGRAM_ID) — only if DAS is unavailable
+    //   (non-Helius RPC). This is a full-program scan that providers frequently block
+    //   or rate-limit, which is exactly why the count used to stay pinned at 19.
+    // Only overwrites STEP 1's count if we got a real result (> 0).
+    let upgraded = false;
     try {
-      if (!await globalRpcLimiter.throttleOrDrop(15)) {
-        logger.debug({ mint: mint.slice(0, 8) }, 'getProgramAccounts holder count dropped — RPC queue full');
-      } else {
-        const mintPubkey = new PublicKey(mint);
-        const allTokenAccounts = await this.connection.getProgramAccounts(
-          TOKEN_PROGRAM_ID,
-          {
-            commitment: 'confirmed',
-            // dataSize filter omitted — some RPC providers silently return 0 for
-            // dataSize queries on TOKEN_PROGRAM_ID even when memcmp-only works.
-            // All SPL token accounts are 165 bytes so non-165 matches are impossible.
-            filters: [
-              { memcmp: { offset: 0, bytes: mintPubkey.toBase58() } },
-            ],
-          }
+      const das = await this.getTrueHolderCountViaDAS(mint);
+      if (das && das.count > 0) {
+        result.holderCount = das.count;
+        result.holderCountCapped = das.capped;
+        upgraded = true;
+        logger.info(
+          { mint: mint.slice(0, 8), count: das.count, capped: das.capped },
+          'True holder count from DAS getTokenAccounts'
         );
-
-        const rawCount = allTokenAccounts.length;
-        if (rawCount > 0) {
-          // Only upgrade if we got a real result — never overwrite step 1 with 0
-          result.holderCount = Math.min(rawCount, HOLDER_COUNT_CAP);
-          result.holderCountCapped = rawCount >= HOLDER_COUNT_CAP;
-          logger.info(
-            { mint: mint.slice(0, 8), rawCount, capped: result.holderCountCapped },
-            'True holder count from getProgramAccounts'
-          );
-        } else {
-          logger.warn(
-            { mint: mint.slice(0, 8) },
-            'getProgramAccounts returned 0 accounts — keeping getTokenLargestAccounts count'
-          );
-        }
       }
     } catch (err) {
-      // getProgramAccounts is often blocked by RPC providers for TOKEN_PROGRAM_ID.
-      // Step 1's count remains in result — log at debug to avoid log spam.
       logger.debug(
         { mint: mint.slice(0, 8), err: err instanceof Error ? err.message : String(err) },
-        'getProgramAccounts unavailable — using getTokenLargestAccounts count'
+        'DAS getTokenAccounts upgrade failed — trying getProgramAccounts fallback'
       );
+    }
+
+    // Fallback: getProgramAccounts (only when DAS didn't produce a count).
+    // dataSlice is intentionally omitted — combining it with dataSize can cause some
+    // RPC nodes to evaluate dataSize against the sliced (0) length and return 0 results.
+    if (!upgraded) {
+      try {
+        if (!await globalRpcLimiter.throttleOrDrop(15)) {
+          logger.debug({ mint: mint.slice(0, 8) }, 'getProgramAccounts holder count dropped — RPC queue full');
+        } else {
+          const mintPubkey = new PublicKey(mint);
+          const allTokenAccounts = await this.connection.getProgramAccounts(
+            TOKEN_PROGRAM_ID,
+            {
+              commitment: 'confirmed',
+              // dataSize filter omitted — some RPC providers silently return 0 for
+              // dataSize queries on TOKEN_PROGRAM_ID even when memcmp-only works.
+              // All SPL token accounts are 165 bytes so non-165 matches are impossible.
+              filters: [
+                { memcmp: { offset: 0, bytes: mintPubkey.toBase58() } },
+              ],
+            }
+          );
+
+          const rawCount = allTokenAccounts.length;
+          if (rawCount > 0) {
+            // Only upgrade if we got a real result — never overwrite step 1 with 0
+            result.holderCount = Math.min(rawCount, HOLDER_COUNT_CAP);
+            result.holderCountCapped = rawCount >= HOLDER_COUNT_CAP;
+            logger.info(
+              { mint: mint.slice(0, 8), rawCount, capped: result.holderCountCapped },
+              'True holder count from getProgramAccounts (fallback)'
+            );
+          } else {
+            logger.warn(
+              { mint: mint.slice(0, 8) },
+              'getProgramAccounts returned 0 accounts — keeping getTokenLargestAccounts count'
+            );
+          }
+        }
+      } catch (err) {
+        // getProgramAccounts is often blocked by RPC providers for TOKEN_PROGRAM_ID.
+        // Step 1's count remains in result — log at debug to avoid log spam.
+        logger.debug(
+          { mint: mint.slice(0, 8), err: err instanceof Error ? err.message : String(err) },
+          'getProgramAccounts unavailable — using getTokenLargestAccounts count'
+        );
+      }
     }
 
     // Token age + creator wallet: always attempt independently of holder enrichment.

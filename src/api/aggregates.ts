@@ -350,11 +350,25 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'age > 10min',        group: 'BC Age',   where: 'token_age_seconds > 600' },
   { name: 'age > 30min',        group: 'BC Age',   where: 'token_age_seconds > 1800' },
   { name: 'age > 1hr',          group: 'BC Age',   where: 'token_age_seconds > 3600' },
-  // Holders
-  { name: 'holders >= 5',       group: 'Holders',  where: 'holder_count >= 5' },
-  { name: 'holders >= 10',      group: 'Holders',  where: 'holder_count >= 10' },
-  { name: 'holders >= 15',      group: 'Holders',  where: 'holder_count >= 15' },
-  { name: 'holders >= 18',      group: 'Holders',  where: 'holder_count >= 18' },
+  // Holders — split measured (holder_count_backfilled=0, at-graduation, trustworthy)
+  // vs backfill (=1, as-of-now re-resolve, survivorship-contaminated — see the
+  // holder-count backfill note). NEVER mix them: a mixed "holders>=N" bucket leaks
+  // the outcome backward (a token that still has N holders today is one that didn't
+  // rug), which is what inflated the holders>=250 combos on the leaderboard.
+  { name: 'holders >= 5 (measured)',    group: 'Holders',  where: 'holder_count >= 5 AND holder_count_backfilled = 0' },
+  { name: 'holders >= 10 (measured)',   group: 'Holders',  where: 'holder_count >= 10 AND holder_count_backfilled = 0' },
+  { name: 'holders >= 15 (measured)',   group: 'Holders',  where: 'holder_count >= 15 AND holder_count_backfilled = 0' },
+  { name: 'holders >= 18 (measured)',   group: 'Holders',  where: 'holder_count >= 18 AND holder_count_backfilled = 0' },
+  { name: 'holders >= 50 (measured)',   group: 'Holders',  where: 'holder_count >= 50 AND holder_count_backfilled = 0' },
+  { name: 'holders >= 100 (measured)',  group: 'Holders',  where: 'holder_count >= 100 AND holder_count_backfilled = 0' },
+  { name: 'holders >= 250 (measured)',  group: 'Holders',  where: 'holder_count >= 250 AND holder_count_backfilled = 0' },
+  { name: 'holders >= 5 (backfill)',    group: 'Holders',  where: 'holder_count >= 5 AND holder_count_backfilled = 1' },
+  { name: 'holders >= 10 (backfill)',   group: 'Holders',  where: 'holder_count >= 10 AND holder_count_backfilled = 1' },
+  { name: 'holders >= 15 (backfill)',   group: 'Holders',  where: 'holder_count >= 15 AND holder_count_backfilled = 1' },
+  { name: 'holders >= 18 (backfill)',   group: 'Holders',  where: 'holder_count >= 18 AND holder_count_backfilled = 1' },
+  { name: 'holders >= 50 (backfill)',   group: 'Holders',  where: 'holder_count >= 50 AND holder_count_backfilled = 1' },
+  { name: 'holders >= 100 (backfill)',  group: 'Holders',  where: 'holder_count >= 100 AND holder_count_backfilled = 1' },
+  { name: 'holders >= 250 (backfill)',  group: 'Holders',  where: 'holder_count >= 250 AND holder_count_backfilled = 1' },
   // Top 5 Concentration
   { name: 'top5 < 10%',         group: 'Top 5',    where: 'top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10' },
   { name: 'top5 < 15%',         group: 'Top 5',    where: 'top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 15' },

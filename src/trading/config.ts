@@ -185,15 +185,17 @@ export interface StrategyParams {
   /** Max Fear & Greed value 0-100 (inclusive). */
   entryFngValueMax?: number;
 
-  // ── PumpFun-tape regime gate (optional, uses getCurrentRegime) ──────────
-  /** Block entry based on the live PumpFun-tape regime (GREEN/YELLOW/RED from
-   *  the rolling pump_rate / fast_rug_rate window — see src/api/regime-analysis).
-   *  'skip_red'  → block entry only when the current regime is RED.
-   *  'green_only'→ block entry unless the current regime is GREEN.
-   *  Permissive (allows entry) when the regime can't be classified yet
-   *  (< 10 complete grads in window), matching the market_daily gate's stance.
-   *  Undefined = gate disabled. */
-  regimeGate?: 'skip_red' | 'green_only';
+  // ── Regime gate (optional, uses regime-analysis current.regime) ──────────
+  // Skips entries based on the universe-level regime classifier computed from
+  // pump_rate + fast_rug_rate over the last 50 graduations (see
+  // src/api/regime-analysis.ts). Independent of the calendar-based market
+  // gates above. Permissive on fresh-bot state (zero grads cached) to avoid
+  // blackholing entries during startup.
+  //
+  //   'any'        — default; no regime check
+  //   'skip_red'   — block entries when current regime is RED
+  //   'green_only' — allow entries only when current regime is GREEN
+  regimeGate?: 'any' | 'skip_red' | 'green_only';
 }
 
 export interface TradingConfig {
@@ -276,9 +278,7 @@ export interface TradingConfig {
   entryBtcReturnPctMax?: number;
   entryFngValueMin?: number;
   entryFngValueMax?: number;
-
-  // ── PumpFun-tape regime gate (optional) ─────────────────────────────────
-  regimeGate?: 'skip_red' | 'green_only';
+  regimeGate?: 'any' | 'skip_red' | 'green_only';
 }
 
 /** Default filter preset: vel 5-20 sol/min — the primary confirmed signal */
@@ -350,7 +350,7 @@ export function describeTradingConfig(cfg: TradingConfig): string {
     `SL=${cfg.stopLossPct}%`,
     `maxHold=${cfg.maxHoldSeconds}s`,
     `gate=[+${cfg.entryGateMinPctT30}%..+${cfg.entryGateMaxPctT30}%]`,
-    cfg.regimeGate ? `regimeGate=${cfg.regimeGate}` : null,
+    cfg.regimeGate && cfg.regimeGate !== 'any' ? `regimeGate=${cfg.regimeGate}` : null,
     `filters=[${filterLabels || 'none'}]`,
   ].filter(Boolean).join(' ');
 }
@@ -396,7 +396,7 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     entryBtcReturnPctMax: cfg.entryBtcReturnPctMax,
     entryFngValueMin: cfg.entryFngValueMin,
     entryFngValueMax: cfg.entryFngValueMax,
-    regimeGate: cfg.regimeGate,
+    regimeGate: cfg.regimeGate ?? 'any',
   };
 }
 
@@ -442,7 +442,7 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     entryBtcReturnPctMax: params.entryBtcReturnPctMax ?? globalCfg.entryBtcReturnPctMax,
     entryFngValueMin: params.entryFngValueMin ?? globalCfg.entryFngValueMin,
     entryFngValueMax: params.entryFngValueMax ?? globalCfg.entryFngValueMax,
-    regimeGate: params.regimeGate ?? globalCfg.regimeGate,
+    regimeGate: params.regimeGate ?? globalCfg.regimeGate ?? 'any',
   };
 }
 

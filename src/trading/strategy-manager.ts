@@ -813,8 +813,8 @@ export class StrategyManager {
     checkRange('entrySolReturnPct', p.entrySolReturnPctMin, p.entrySolReturnPctMax, -100, 1000);
     checkRange('entryBtcReturnPct', p.entryBtcReturnPctMin, p.entryBtcReturnPctMax, -100, 1000);
     checkRange('entryFngValue', p.entryFngValueMin, p.entryFngValueMax, 0, 100);
-    if (p.regimeGate != null && p.regimeGate !== 'skip_red' && p.regimeGate !== 'green_only') {
-      errors.push(`regimeGate must be 'skip_red' or 'green_only' (got '${p.regimeGate}')`);
+    if (p.regimeGate != null && !['any', 'skip_red', 'green_only'].includes(p.regimeGate)) {
+      errors.push(`regimeGate must be 'any', 'skip_red', or 'green_only' — got '${p.regimeGate}'`);
     }
     if (errors.length > 0) {
       throw new Error(`Invalid strategy params: ${errors.join('; ')}`);

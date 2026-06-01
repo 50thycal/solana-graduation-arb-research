@@ -1024,6 +1024,11 @@ export class GraduationListener {
         token_age_seconds: enrichment.tokenAgeSeconds,
         dev_wallet_address: enrichment.devWalletAddress,
         creator_wallet_address: enrichment.creatorWalletAddress,
+        // Stamp 0 = "measured at graduation". This permanently marks the row as
+        // trustworthy graduation-time state so the post-hoc backfill (which only
+        // re-resolves holder_count_backfilled IS NULL rows) can never reclaim and
+        // overwrite it with an as-of-now count. 1 = backfilled, NULL = legacy.
+        holder_count_backfilled: 0,
       });
 
       // Compute creator reputation if we have the creator wallet address

@@ -209,51 +209,69 @@ function classify(pumpRate: number | null, fastRugRate: number | null): Regime {
   return 'YELLOW';
 }
 
-// ── Live regime snapshot for entry-time gating ──────────────────────────────
-// The full computeRegimeAnalysis() is heavy (336 buckets + correlations); the
-// trade evaluator only needs the current regime label. getCurrentRegime() runs
-// the SAME rolling-window logic as the `current` block above — last WINDOW_GRADS
-// complete grads → pump/rug rate → classify() — so it shares the one set of
-// thresholds (no re-hardcoding). Cached with a short TTL because many strategy
-// evaluators can fire within the same graduation burst and the regime only
-// changes on the ~hourly bucket scale.
-//
-// Returns null when there aren't enough complete grads to classify (< 10), so
-// callers can stay permissive (mirrors the market_daily gate's "don't blackhole
-// on missing data" stance) rather than treat warmup as RED.
-const REGIME_CACHE_TTL_MS = 60_000;
-let regimeCache: { regime: Regime; nWindow: number; at: number } | null = null;
+// ── Lightweight current-regime accessor (for entry-time gating) ────────────
+// Strategies that opt in to regime gating call this from trade-evaluator.
+// Cached with a 60s TTL so a busy graduation hour doesn't slam the DB.
+// Pulls only the last WINDOW_GRADS complete grads (one indexed SQL query)
+// vs the full computeRegimeAnalysis which walks 30+ days for the timeline.
 
-export function getCurrentRegime(
-  db: Database.Database,
-): { regime: Regime; nWindow: number } | null {
-  const now = Date.now();
-  if (regimeCache && now - regimeCache.at < REGIME_CACHE_TTL_MS) {
-    return regimeCache.nWindow >= 10
-      ? { regime: regimeCache.regime, nWindow: regimeCache.nWindow }
-      : null;
-  }
-  // Pull just enough recent complete grads to fill the rolling window. Bounded
-  // by created_at so the query stays cheap (indexed) regardless of table size.
-  const lookbackStart = Math.floor(now / 1000) - WINDOW_GRADS * 600 * 4;
-  const recent = db.prepare(`
-    SELECT pct_t300 FROM graduation_momentum
-    WHERE created_at >= ? AND pct_t300 IS NOT NULL
-    ORDER BY created_at DESC
-    LIMIT ?
-  `).all(lookbackStart, WINDOW_GRADS) as Array<{ pct_t300: number }>;
-
-  const nWindow = recent.length;
-  const pumps = recent.filter(g => g.pct_t300 >= PUMP_PCT).length;
-  const rugs = recent.filter(g => g.pct_t300 <= RUG_PCT).length;
-  const pumpRate = nWindow > 0 ? (100 * pumps) / nWindow : 0;
-  const rugRate = nWindow > 0 ? (100 * rugs) / nWindow : 0;
-  const regime = nWindow >= 10 ? classify(pumpRate, rugRate) : 'YELLOW';
-
-  regimeCache = { regime, nWindow, at: now };
-  return nWindow >= 10 ? { regime, nWindow } : null;
+export interface CurrentRegimeSnapshot {
+  regime: Regime;
+  pump_rate: number;
+  fast_rug_rate: number;
+  median_t300: number | null;
+  n_window: number;
+  computed_at_ms: number;
 }
 
+let cachedCurrent: CurrentRegimeSnapshot | null = null;
+const CURRENT_REGIME_CACHE_TTL_MS = 60_000;
+
+export function getCurrentRegime(db: import('better-sqlite3').Database): CurrentRegimeSnapshot {
+  if (cachedCurrent && Date.now() - cachedCurrent.computed_at_ms < CURRENT_REGIME_CACHE_TTL_MS) {
+    return cachedCurrent;
+  }
+  const rows = db.prepare(`
+    SELECT pct_t300, sum_abs_returns_0_30 AS sum_abs
+    FROM graduation_momentum
+    WHERE pct_t300 IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(WINDOW_GRADS) as Array<{ pct_t300: number; sum_abs: number | null }>;
+
+  if (rows.length < 10) {
+    // Insufficient sample — permissive default. Logged at caller.
+    cachedCurrent = {
+      regime: 'YELLOW',
+      pump_rate: 0,
+      fast_rug_rate: 0,
+      median_t300: null,
+      n_window: rows.length,
+      computed_at_ms: Date.now(),
+    };
+    return cachedCurrent;
+  }
+
+  const pumps = rows.filter(r => r.pct_t300 >= PUMP_PCT).length;
+  const rugs = rows.filter(r => r.pct_t300 <= RUG_PCT).length;
+  const pumpRate = +(100 * pumps / rows.length).toFixed(1);
+  const rugRate = +(100 * rugs / rows.length).toFixed(1);
+  const medT300 = median(rows.map(r => r.pct_t300));
+  cachedCurrent = {
+    regime: classify(pumpRate, rugRate),
+    pump_rate: pumpRate,
+    fast_rug_rate: rugRate,
+    median_t300: medT300 != null ? +medT300.toFixed(2) : null,
+    n_window: rows.length,
+    computed_at_ms: Date.now(),
+  };
+  return cachedCurrent;
+}
+
+/** Test/utility: drop the cache. Production never needs this. */
+export function _resetCurrentRegimeCache(): void {
+  cachedCurrent = null;
+}
 
 function median(arr: number[]): number | null {
   if (arr.length === 0) return null;
