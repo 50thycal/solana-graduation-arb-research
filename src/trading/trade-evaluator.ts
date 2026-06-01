@@ -3,6 +3,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { makeLogger } from '../utils/logger';
 import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourInUtcWindow, SWAP_SLIPPAGE_BPS } from './config';
 import { runFilterPipeline } from './filter-pipeline';
+import { getCurrentRegime } from '../api/regime-analysis';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
 import { getMintProfile } from './token-2022';
@@ -176,6 +177,33 @@ export class TradeEvaluator {
         if (outOfRange(fng, cfg.entryFngValueMin, cfg.entryFngValueMax)) {
           this.tradeLogger.logSkipped(graduationId, 'market_gate_fng', fng, pctT30, this.strategyId);
           logger.debug({ graduationId, fng, strategy: this.strategyId }, 'F&G gate blocked entry');
+          return;
+        }
+      }
+    }
+
+    // ── 1d. PumpFun-tape regime gate (optional, uses getCurrentRegime) ──────
+    // skip_red   → block when current regime is RED.
+    // green_only → block unless current regime is GREEN.
+    // Permissive (allow) when the regime can't be classified yet (warmup), same
+    // as the market_daily gate above — we'd rather trade than blackhole.
+    if (cfg.regimeGate) {
+      const rg = getCurrentRegime(this.db);
+      if (rg == null) {
+        logger.debug(
+          { graduationId, strategy: this.strategyId, gate: cfg.regimeGate },
+          'regime gate permissive — not enough complete grads to classify',
+        );
+      } else {
+        const blocked =
+          (cfg.regimeGate === 'skip_red' && rg.regime === 'RED') ||
+          (cfg.regimeGate === 'green_only' && rg.regime !== 'GREEN');
+        if (blocked) {
+          this.tradeLogger.logSkipped(graduationId, `regime_gate_${cfg.regimeGate}`, null, pctT30, this.strategyId);
+          logger.debug(
+            { graduationId, strategy: this.strategyId, gate: cfg.regimeGate, regime: rg.regime, nWindow: rg.nWindow },
+            'Regime gate blocked entry',
+          );
           return;
         }
       }

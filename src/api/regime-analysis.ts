@@ -209,6 +209,52 @@ function classify(pumpRate: number | null, fastRugRate: number | null): Regime {
   return 'YELLOW';
 }
 
+// ── Live regime snapshot for entry-time gating ──────────────────────────────
+// The full computeRegimeAnalysis() is heavy (336 buckets + correlations); the
+// trade evaluator only needs the current regime label. getCurrentRegime() runs
+// the SAME rolling-window logic as the `current` block above — last WINDOW_GRADS
+// complete grads → pump/rug rate → classify() — so it shares the one set of
+// thresholds (no re-hardcoding). Cached with a short TTL because many strategy
+// evaluators can fire within the same graduation burst and the regime only
+// changes on the ~hourly bucket scale.
+//
+// Returns null when there aren't enough complete grads to classify (< 10), so
+// callers can stay permissive (mirrors the market_daily gate's "don't blackhole
+// on missing data" stance) rather than treat warmup as RED.
+const REGIME_CACHE_TTL_MS = 60_000;
+let regimeCache: { regime: Regime; nWindow: number; at: number } | null = null;
+
+export function getCurrentRegime(
+  db: Database.Database,
+): { regime: Regime; nWindow: number } | null {
+  const now = Date.now();
+  if (regimeCache && now - regimeCache.at < REGIME_CACHE_TTL_MS) {
+    return regimeCache.nWindow >= 10
+      ? { regime: regimeCache.regime, nWindow: regimeCache.nWindow }
+      : null;
+  }
+  // Pull just enough recent complete grads to fill the rolling window. Bounded
+  // by created_at so the query stays cheap (indexed) regardless of table size.
+  const lookbackStart = Math.floor(now / 1000) - WINDOW_GRADS * 600 * 4;
+  const recent = db.prepare(`
+    SELECT pct_t300 FROM graduation_momentum
+    WHERE created_at >= ? AND pct_t300 IS NOT NULL
+    ORDER BY created_at DESC
+    LIMIT ?
+  `).all(lookbackStart, WINDOW_GRADS) as Array<{ pct_t300: number }>;
+
+  const nWindow = recent.length;
+  const pumps = recent.filter(g => g.pct_t300 >= PUMP_PCT).length;
+  const rugs = recent.filter(g => g.pct_t300 <= RUG_PCT).length;
+  const pumpRate = nWindow > 0 ? (100 * pumps) / nWindow : 0;
+  const rugRate = nWindow > 0 ? (100 * rugs) / nWindow : 0;
+  const regime = nWindow >= 10 ? classify(pumpRate, rugRate) : 'YELLOW';
+
+  regimeCache = { regime, nWindow, at: now };
+  return nWindow >= 10 ? { regime, nWindow } : null;
+}
+
+
 function median(arr: number[]): number | null {
   if (arr.length === 0) return null;
   const sorted = [...arr].sort((a, b) => a - b);
