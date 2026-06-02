@@ -297,6 +297,21 @@ function runMigrations(db: Database.Database): void {
       // same way the look-ahead guardrail does for _t300 columns. NULL/0 = the
       // value is the original graduation-time enrichment.
       ['holder_count_backfilled', 'INTEGER'],
+      // ── Full-distribution holder metrics (T+0, from the complete DAS list) ──
+      // Only the DAS path can compute these; getTokenLargestAccounts (top 20) can't.
+      ['nakamoto_coef', 'INTEGER'],       // min wallets controlling > 50% of supply
+      ['holder_gini', 'REAL'],            // Gini across ALL holders (vs wallet_gini_top20)
+      ['whale_count_1pct', 'INTEGER'],    // # wallets each holding > 1% of total supply
+      ['whale_supply_pct', 'REAL'],       // true % of supply held by those whales
+      ['dust_holder_pct', 'REAL'],        // fraction of holders with < 0.01% supply
+      // ── Holder flow (second DAS sample at T+35) ──
+      // holder_count_t35 + delta give the change in unique holders over the first
+      // ~30s — a flow signal independent of the T+0 level. Look-ahead-safe (T+35 is
+      // the same window buy_pressure_* uses; strategies must set entryTimingSec≥35).
+      ['holder_count_t35', 'INTEGER'],    // unique holders re-counted at T+35
+      ['holder_delta_t35', 'INTEGER'],    // holder_count_t35 - holder_count (signed)
+      ['holder_velocity_t35', 'REAL'],    // holders gained per minute over the window
+      ['holder_sniper_ratio', 'REAL'],    // holder_count / sniper_count_t0_t2
     ];
     // Every-5s price snapshots across the full 300s monitoring window — dedupes against
     // explicit entries above (t5, t10, ..., t60, t90, t120, t150, t180, t240, t300).

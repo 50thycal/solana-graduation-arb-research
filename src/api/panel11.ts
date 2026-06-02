@@ -29,6 +29,14 @@ export type RegimeRow = {
   token_age_seconds: number | null;
   holder_count: number | null;
   holder_count_backfilled: number | null;
+  holder_delta_t35: number | null;
+  holder_velocity_t35: number | null;
+  holder_sniper_ratio: number | null;
+  nakamoto_coef: number | null;
+  holder_gini: number | null;
+  whale_count_1pct: number | null;
+  whale_supply_pct: number | null;
+  dust_holder_pct: number | null;
   top5_wallet_pct: number | null;
   dev_wallet_pct: number | null;
   total_sol_raised: number | null;
@@ -85,6 +93,21 @@ export const CATALOG_PREDICATES = new Map<string, (r: RegimeRow) => boolean>([
   ['holders >= 50 (backfill)', (r) => r.holder_count != null && r.holder_count >= 50 && r.holder_count_backfilled === 1],
   ['holders >= 100 (backfill)', (r) => r.holder_count != null && r.holder_count >= 100 && r.holder_count_backfilled === 1],
   ['holders >= 250 (backfill)', (r) => r.holder_count != null && r.holder_count >= 250 && r.holder_count_backfilled === 1],
+  // Holder Flow (T+35, measured-only)
+  ['holder_delta > 0 (measured)',   (r) => r.holder_delta_t35 != null && r.holder_delta_t35 > 0 && r.holder_count_backfilled === 0],
+  ['holder_delta >= 20 (measured)', (r) => r.holder_delta_t35 != null && r.holder_delta_t35 >= 20 && r.holder_count_backfilled === 0],
+  ['holder_delta >= 50 (measured)', (r) => r.holder_delta_t35 != null && r.holder_delta_t35 >= 50 && r.holder_count_backfilled === 0],
+  ['holder_vel >= 30 (measured)',   (r) => r.holder_velocity_t35 != null && r.holder_velocity_t35 >= 30 && r.holder_count_backfilled === 0],
+  ['holder_vel >= 60 (measured)',   (r) => r.holder_velocity_t35 != null && r.holder_velocity_t35 >= 60 && r.holder_count_backfilled === 0],
+  // Holder Dist (T+0, measured-only)
+  ['nakamoto >= 5 (measured)',    (r) => r.nakamoto_coef != null && r.nakamoto_coef >= 5 && r.holder_count_backfilled === 0],
+  ['nakamoto >= 10 (measured)',   (r) => r.nakamoto_coef != null && r.nakamoto_coef >= 10 && r.holder_count_backfilled === 0],
+  ['whales <= 1 (measured)',      (r) => r.whale_count_1pct != null && r.whale_count_1pct <= 1 && r.holder_count_backfilled === 0],
+  ['whales <= 3 (measured)',      (r) => r.whale_count_1pct != null && r.whale_count_1pct <= 3 && r.holder_count_backfilled === 0],
+  ['whale_supply < 20% (measured)', (r) => r.whale_supply_pct != null && r.whale_supply_pct < 20 && r.holder_count_backfilled === 0],
+  ['dust < 30% (measured)',       (r) => r.dust_holder_pct != null && r.dust_holder_pct < 0.3 && r.holder_count_backfilled === 0],
+  ['holder_gini < 0.8 (measured)', (r) => r.holder_gini != null && r.holder_gini < 0.8 && r.holder_count_backfilled === 0],
+  ['holder_sniper_ratio >= 20 (measured)', (r) => r.holder_sniper_ratio != null && r.holder_sniper_ratio >= 20 && r.holder_count_backfilled === 0],
   // Top 5 Concentration
   ['top5 < 10%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 10],
   ['top5 < 15%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 15],
@@ -128,7 +151,9 @@ export function loadRegimeRows(db: Database.Database): RegimeRow[] {
            buy_pressure_whale_pct,
            creator_prior_token_count, creator_prior_rug_rate, creator_prior_avg_return,
            creator_last_token_age_hours,
-           max_relret_0_300
+           max_relret_0_300,
+           holder_delta_t35, holder_velocity_t35, holder_sniper_ratio,
+           nakamoto_coef, holder_gini, whale_count_1pct, whale_supply_pct, dust_holder_pct
     FROM graduation_momentum
     WHERE label IS NOT NULL
       AND pct_t30 IS NOT NULL

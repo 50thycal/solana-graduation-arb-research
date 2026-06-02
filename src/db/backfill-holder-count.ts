@@ -139,6 +139,14 @@ export function startHolderCountBackfill(
             dev_wallet_address: enrichment.devWalletAddress,
             creator_wallet_address: enrichment.creatorWalletAddress,
             holder_count_backfilled: 1,
+            // Distribution metrics are computed for free in the same DAS call.
+            // They're as-of-now (contaminated) like the count, but the =1 marker
+            // keeps them out of the (measured) distribution filters regardless.
+            nakamoto_coef: enrichment.nakamotoCoef,
+            holder_gini: enrichment.holderGini,
+            whale_count_1pct: enrichment.whaleCount1pct,
+            whale_supply_pct: enrichment.whaleSupplyPct,
+            dust_holder_pct: enrichment.dustHolderPct,
           });
           updateGraduationEnrichment(db, row.graduation_id, {
             holder_count: enrichment.holderCount,

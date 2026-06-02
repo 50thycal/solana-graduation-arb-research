@@ -30,6 +30,30 @@ export interface EnrichmentResult {
   devWalletAddress?: string;       // wallet address of largest non-infrastructure holder
   creatorWalletAddress?: string;   // wallet that deployed the token on pump.fun
   tokenAgeSeconds?: number;
+  // ── Full-distribution metrics (computed from the complete DAS holder list) ──
+  // Only populated when the DAS path succeeds — getTokenLargestAccounts (top 20)
+  // can't compute these. All are graduation-time (T+0), look-ahead-safe.
+  /** Min # of wallets controlling > 50% of non-infra supply (Nakamoto coefficient). */
+  nakamotoCoef?: number;
+  /** True Gini across ALL holders, not just top 20. */
+  holderGini?: number;
+  /** # of wallets each holding > 1% of total supply ("whales"). */
+  whaleCount1pct?: number;
+  /** True % of non-infra supply held by the > 1% whales. */
+  whaleSupplyPct?: number;
+  /** Fraction (0-1) of holders with a "dust" balance (< 0.01% of supply). */
+  dustHolderPct?: number;
+}
+
+/** Full holder distribution computed from the complete DAS owner-balance list. */
+export interface HolderDistribution {
+  count: number;
+  capped: boolean;
+  nakamotoCoef?: number;
+  holderGini?: number;
+  whaleCount1pct?: number;
+  whaleSupplyPct?: number;
+  dustHolderPct?: number;
 }
 
 /**
@@ -145,11 +169,13 @@ export class HolderEnrichment {
    * excludes the bonding curve / PumpSwap pool vault without needing their addresses.
    * One owner can hold several token accounts, so we aggregate by owner before counting.
    *
-   * Returns { count, capped } or null if the endpoint is unavailable / not Helius.
+   * Returns the full distribution (count + concentration metrics) or null if the
+   * endpoint is unavailable / not Helius. All metrics are derived from the single
+   * paginated response — no extra RPC beyond the count itself.
    */
-  private async getTrueHolderCountViaDAS(
+  async getHolderDistributionViaDAS(
     mint: string
-  ): Promise<{ count: number; capped: boolean } | null> {
+  ): Promise<HolderDistribution | null> {
     const endpoint = (this.connection as any).rpcEndpoint as string | undefined;
     // DAS getTokenAccounts is a Helius extension — only attempt against a Helius RPC.
     if (!endpoint || !/helius/i.test(endpoint)) {
@@ -210,13 +236,59 @@ export class HolderEnrichment {
       if (page === MAX_DAS_PAGES) hitPageLimit = true;
     }
 
-    // Count unique owners holding a non-infra balance.
-    let count = 0;
+    // Real holders = unique owners holding a non-infra balance. The infra cap
+    // drops the bonding curve / pool vault without needing their addresses.
+    const realBalances: number[] = [];
     for (const bal of ownerBalances.values()) {
-      if (bal > 0 && bal < INFRA_THRESHOLD) count++;
+      if (bal > 0 && bal < INFRA_THRESHOLD) realBalances.push(bal);
+    }
+    const count = realBalances.length;
+
+    const dist: HolderDistribution = {
+      count,
+      capped: hitPageLimit || count >= HOLDER_COUNT_CAP,
+    };
+
+    // Concentration metrics over the real-holder set. Need a few holders for
+    // these to mean anything; below that leave them undefined (NULL in DB).
+    if (count >= 3) {
+      const realSupply = realBalances.reduce((s, b) => s + b, 0);
+      if (realSupply > 0) {
+        // Nakamoto coefficient: min # of largest wallets summing to > 50% of supply.
+        const desc = [...realBalances].sort((a, b) => b - a);
+        let cum = 0;
+        let nak = 0;
+        for (const b of desc) {
+          cum += b;
+          nak++;
+          if (cum > realSupply * 0.5) break;
+        }
+        dist.nakamotoCoef = nak;
+
+        // Whales = wallets each holding > 1% of TOTAL supply (fixed denominator
+        // so the threshold is comparable across tokens regardless of holder count).
+        const whaleThreshold = PUMP_TOTAL_SUPPLY_RAW * 0.01;
+        let whaleCount = 0;
+        let whaleSupply = 0;
+        for (const b of realBalances) {
+          if (b > whaleThreshold) { whaleCount++; whaleSupply += b; }
+        }
+        dist.whaleCount1pct = whaleCount;
+        dist.whaleSupplyPct = +((whaleSupply / PUMP_TOTAL_SUPPLY_RAW) * 100).toFixed(4);
+
+        // Dust holders = balance < 0.01% of total supply. High ratio suggests an
+        // airdrop / wash campaign inflating the raw holder count with empty wallets.
+        const dustThreshold = PUMP_TOTAL_SUPPLY_RAW * 0.0001;
+        let dust = 0;
+        for (const b of realBalances) if (b < dustThreshold) dust++;
+        dist.dustHolderPct = +(dust / count).toFixed(4);
+
+        const g = gini(realBalances);
+        if (g != null) dist.holderGini = +g.toFixed(4);
+      }
     }
 
-    return { count, capped: hitPageLimit || count >= HOLDER_COUNT_CAP };
+    return dist;
   }
 
   async enrich(
@@ -324,14 +396,21 @@ export class HolderEnrichment {
     // Only overwrites STEP 1's count if we got a real result (> 0).
     let upgraded = false;
     try {
-      const das = await this.getTrueHolderCountViaDAS(mint);
+      const das = await this.getHolderDistributionViaDAS(mint);
       if (das && das.count > 0) {
         result.holderCount = das.count;
         result.holderCountCapped = das.capped;
+        // Full-distribution metrics (only the DAS path can compute these).
+        result.nakamotoCoef = das.nakamotoCoef;
+        result.holderGini = das.holderGini;
+        result.whaleCount1pct = das.whaleCount1pct;
+        result.whaleSupplyPct = das.whaleSupplyPct;
+        result.dustHolderPct = das.dustHolderPct;
         upgraded = true;
         logger.info(
-          { mint: mint.slice(0, 8), count: das.count, capped: das.capped },
-          'True holder count from DAS getTokenAccounts'
+          { mint: mint.slice(0, 8), count: das.count, capped: das.capped,
+            nakamoto: das.nakamotoCoef, whales: das.whaleCount1pct },
+          'True holder count + distribution from DAS getTokenAccounts'
         );
       }
     } catch (err) {

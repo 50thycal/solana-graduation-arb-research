@@ -333,6 +333,14 @@ export interface FilterDef {
   name: string;
   group: string;
   where: string; // SQL condition, null-safe (never pass this from user input)
+  /**
+   * When true, this filter is evaluated as a single but excluded from auto-generated
+   * cross-group pairs. Used for the holders>=N (backfill) buckets: they're kept for
+   * diagnostic comparison vs (measured) but must not pollute the combo leaderboard,
+   * since their apparent edge is pure survivorship (holders re-counted AFTER the
+   * outcome). See the Holders note below.
+   */
+  comboExclude?: boolean;
 }
 
 export const FILTER_CATALOG: FilterDef[] = [
@@ -362,13 +370,31 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'holders >= 50 (measured)',   group: 'Holders',  where: 'holder_count >= 50 AND holder_count_backfilled = 0' },
   { name: 'holders >= 100 (measured)',  group: 'Holders',  where: 'holder_count >= 100 AND holder_count_backfilled = 0' },
   { name: 'holders >= 250 (measured)',  group: 'Holders',  where: 'holder_count >= 250 AND holder_count_backfilled = 0' },
-  { name: 'holders >= 5 (backfill)',    group: 'Holders',  where: 'holder_count >= 5 AND holder_count_backfilled = 1' },
-  { name: 'holders >= 10 (backfill)',   group: 'Holders',  where: 'holder_count >= 10 AND holder_count_backfilled = 1' },
-  { name: 'holders >= 15 (backfill)',   group: 'Holders',  where: 'holder_count >= 15 AND holder_count_backfilled = 1' },
-  { name: 'holders >= 18 (backfill)',   group: 'Holders',  where: 'holder_count >= 18 AND holder_count_backfilled = 1' },
-  { name: 'holders >= 50 (backfill)',   group: 'Holders',  where: 'holder_count >= 50 AND holder_count_backfilled = 1' },
-  { name: 'holders >= 100 (backfill)',  group: 'Holders',  where: 'holder_count >= 100 AND holder_count_backfilled = 1' },
-  { name: 'holders >= 250 (backfill)',  group: 'Holders',  where: 'holder_count >= 250 AND holder_count_backfilled = 1' },
+  // (backfill) buckets — comboExclude so they never enter the pair leaderboard
+  // (their edge is survivorship). Kept as singles for measured-vs-backfill diff.
+  { name: 'holders >= 5 (backfill)',    group: 'Holders',  where: 'holder_count >= 5 AND holder_count_backfilled = 1',   comboExclude: true },
+  { name: 'holders >= 10 (backfill)',   group: 'Holders',  where: 'holder_count >= 10 AND holder_count_backfilled = 1',  comboExclude: true },
+  { name: 'holders >= 15 (backfill)',   group: 'Holders',  where: 'holder_count >= 15 AND holder_count_backfilled = 1',  comboExclude: true },
+  { name: 'holders >= 18 (backfill)',   group: 'Holders',  where: 'holder_count >= 18 AND holder_count_backfilled = 1',  comboExclude: true },
+  { name: 'holders >= 50 (backfill)',   group: 'Holders',  where: 'holder_count >= 50 AND holder_count_backfilled = 1',  comboExclude: true },
+  { name: 'holders >= 100 (backfill)',  group: 'Holders',  where: 'holder_count >= 100 AND holder_count_backfilled = 1', comboExclude: true },
+  { name: 'holders >= 250 (backfill)',  group: 'Holders',  where: 'holder_count >= 250 AND holder_count_backfilled = 1', comboExclude: true },
+  // Holder flow (T+35 second sample; measured-only — flow has no backfill analog).
+  // entryTimingSec >= 35 required for any strategy using these.
+  { name: 'holder_delta > 0 (measured)',   group: 'Holder Flow', where: 'holder_delta_t35 > 0 AND holder_count_backfilled = 0' },
+  { name: 'holder_delta >= 20 (measured)', group: 'Holder Flow', where: 'holder_delta_t35 >= 20 AND holder_count_backfilled = 0' },
+  { name: 'holder_delta >= 50 (measured)', group: 'Holder Flow', where: 'holder_delta_t35 >= 50 AND holder_count_backfilled = 0' },
+  { name: 'holder_vel >= 30 (measured)',   group: 'Holder Flow', where: 'holder_velocity_t35 >= 30 AND holder_count_backfilled = 0' },
+  { name: 'holder_vel >= 60 (measured)',   group: 'Holder Flow', where: 'holder_velocity_t35 >= 60 AND holder_count_backfilled = 0' },
+  // Distribution metrics (T+0, measured-only — full DAS list)
+  { name: 'nakamoto >= 5 (measured)',    group: 'Holder Dist', where: 'nakamoto_coef >= 5 AND holder_count_backfilled = 0' },
+  { name: 'nakamoto >= 10 (measured)',   group: 'Holder Dist', where: 'nakamoto_coef >= 10 AND holder_count_backfilled = 0' },
+  { name: 'whales <= 1 (measured)',      group: 'Holder Dist', where: 'whale_count_1pct <= 1 AND holder_count_backfilled = 0' },
+  { name: 'whales <= 3 (measured)',      group: 'Holder Dist', where: 'whale_count_1pct <= 3 AND holder_count_backfilled = 0' },
+  { name: 'whale_supply < 20% (measured)', group: 'Holder Dist', where: 'whale_supply_pct IS NOT NULL AND whale_supply_pct < 20 AND holder_count_backfilled = 0' },
+  { name: 'dust < 30% (measured)',       group: 'Holder Dist', where: 'dust_holder_pct IS NOT NULL AND dust_holder_pct < 0.3 AND holder_count_backfilled = 0' },
+  { name: 'holder_gini < 0.8 (measured)', group: 'Holder Dist', where: 'holder_gini IS NOT NULL AND holder_gini < 0.8 AND holder_count_backfilled = 0' },
+  { name: 'holder_sniper_ratio >= 20 (measured)', group: 'Holder Dist', where: 'holder_sniper_ratio >= 20 AND holder_count_backfilled = 0' },
   // Top 5 Concentration
   { name: 'top5 < 10%',         group: 'Top 5',    where: 'top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10' },
   { name: 'top5 < 15%',         group: 'Top 5',    where: 'top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 15' },
@@ -797,6 +823,8 @@ export async function computeBestCombos(
         const a = FILTER_CATALOG[i];
         const b = FILTER_CATALOG[j];
         if (a.group === b.group) continue;
+        // Skip survivorship-contaminated (backfill) holder buckets in pairs.
+        if (a.comboExclude || b.comboExclude) continue;
         candidates.push({
           name: `${a.name} + ${b.name}`,
           filters: [a.name, b.name],

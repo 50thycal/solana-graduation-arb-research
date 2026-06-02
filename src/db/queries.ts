@@ -400,6 +400,11 @@ export function updateMomentumEnrichment(
     dev_wallet_address?: string;
     creator_wallet_address?: string;
     holder_count_backfilled?: number;
+    nakamoto_coef?: number;
+    holder_gini?: number;
+    whale_count_1pct?: number;
+    whale_supply_pct?: number;
+    dust_holder_pct?: number;
   }
 ): void {
   db.prepare(`
@@ -412,7 +417,12 @@ export function updateMomentumEnrichment(
       token_age_seconds        = COALESCE(@token_age_seconds,        token_age_seconds),
       dev_wallet_address       = COALESCE(@dev_wallet_address,       dev_wallet_address),
       creator_wallet_address   = COALESCE(@creator_wallet_address,   creator_wallet_address),
-      holder_count_backfilled  = COALESCE(@holder_count_backfilled,  holder_count_backfilled)
+      holder_count_backfilled  = COALESCE(@holder_count_backfilled,  holder_count_backfilled),
+      nakamoto_coef            = COALESCE(@nakamoto_coef,            nakamoto_coef),
+      holder_gini              = COALESCE(@holder_gini,              holder_gini),
+      whale_count_1pct         = COALESCE(@whale_count_1pct,         whale_count_1pct),
+      whale_supply_pct         = COALESCE(@whale_supply_pct,         whale_supply_pct),
+      dust_holder_pct          = COALESCE(@dust_holder_pct,          dust_holder_pct)
     WHERE graduation_id = @graduation_id
   `).run({
     graduation_id: graduationId,
@@ -425,6 +435,51 @@ export function updateMomentumEnrichment(
     dev_wallet_address: data.dev_wallet_address ?? null,
     creator_wallet_address: data.creator_wallet_address ?? null,
     holder_count_backfilled: data.holder_count_backfilled ?? null,
+    nakamoto_coef: data.nakamoto_coef ?? null,
+    holder_gini: data.holder_gini ?? null,
+    whale_count_1pct: data.whale_count_1pct ?? null,
+    whale_supply_pct: data.whale_supply_pct ?? null,
+    dust_holder_pct: data.dust_holder_pct ?? null,
+  });
+}
+
+/**
+ * Write the T+35 holder-flow sample. Computes holder_delta / velocity against the
+ * T+0 holder_count already on the row, and holder_sniper_ratio against the
+ * (also T+35) sniper count. Only updates when a second count was obtained.
+ */
+export function updateHolderFlowT35(
+  db: Database.Database,
+  graduationId: number,
+  holderCountT35: number
+): void {
+  const row = db.prepare(
+    `SELECT holder_count, sniper_count_t0_t2 FROM graduation_momentum WHERE graduation_id = ?`
+  ).get(graduationId) as { holder_count: number | null; sniper_count_t0_t2: number | null } | undefined;
+  if (!row) return;
+
+  const t0 = row.holder_count;
+  // Delta + velocity need a valid T+0 baseline. The window is graduation→T+35
+  // (~35s ≈ 0.583 min); we express velocity as holders/min for readability.
+  const delta = t0 != null ? holderCountT35 - t0 : null;
+  const velocity = delta != null ? +(delta / (35 / 60)).toFixed(2) : null;
+  const sniperRatio = (row.sniper_count_t0_t2 != null && row.sniper_count_t0_t2 > 0)
+    ? +(holderCountT35 / row.sniper_count_t0_t2).toFixed(2)
+    : null;
+
+  db.prepare(`
+    UPDATE graduation_momentum SET
+      holder_count_t35      = @t35,
+      holder_delta_t35      = COALESCE(@delta,    holder_delta_t35),
+      holder_velocity_t35   = COALESCE(@velocity, holder_velocity_t35),
+      holder_sniper_ratio   = COALESCE(@ratio,    holder_sniper_ratio)
+    WHERE graduation_id = @graduation_id
+  `).run({
+    graduation_id: graduationId,
+    t35: holderCountT35,
+    delta,
+    velocity,
+    ratio: sniperRatio,
   });
 }
 

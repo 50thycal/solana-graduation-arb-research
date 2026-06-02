@@ -973,6 +973,12 @@ export class GraduationListener {
         // re-resolves holder_count_backfilled IS NULL rows) can never reclaim and
         // overwrite it with an as-of-now count. 1 = backfilled, NULL = legacy.
         holder_count_backfilled: 0,
+        // Full-distribution metrics (T+0, from the complete DAS holder list).
+        nakamoto_coef: enrichment.nakamotoCoef,
+        holder_gini: enrichment.holderGini,
+        whale_count_1pct: enrichment.whaleCount1pct,
+        whale_supply_pct: enrichment.whaleSupplyPct,
+        dust_holder_pct: enrichment.dustHolderPct,
       });
 
       // Compute creator reputation if we have the creator wallet address
