@@ -1,0 +1,275 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v47-no-top5",
+      "label": "v47 v25-base minus top5 filter [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v47-no-vel",
+      "label": "v47 v25-base minus vel filter [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v47-no-age",
+      "label": "v47 v25-base minus age filter [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v47-lean",
+      "label": "v47 v25-base ONLY dd + climbing (drop all dead weight) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v47-lean-plus-acc",
+      "label": "v47 lean + acc_t30>-8 (only pulls-weight filters) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "entryTimingSec": 60,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "executionMode": "shadow",
+        "filters": [
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "dd>-25%"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climbing_t30_t45"},
+          {"field": "acceleration_t30", "operator": ">", "value": -8, "label": "acc_t30>-8"}
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v47-cohort",
+      "strategy_id": "v47-cohort",
+      "cohort_label": "v47",
+      "hypothesis": "v47 cohort - test dropping the dead-weight filters from v25-bot-excl-climbing. /counterfactual reports that 3 of v25's 5 filters are 'dead weight' (Δret pp at or near zero when removed): top5<=30% (+0.04pp), vel<200 (0pp), age>=60s (+0.16pp). Only dd>-25% (-1.26pp = pulls weight) and climbing_t30_t45 (-1.12pp) actually contribute to per-trade return. These dead-weight filters are flagged not because they're conceptually useless, but because they're too LOOSE to reject much: top5 rejects ~1% of rows, vel<200 rejects ~0%, age>=60s rejects ~3%. The cohort tests whether removing them improves trade coverage without hurting per-trade quality. Five variants: drop top5 only, drop vel only, drop age only, drop all three (lean = only dd + climbing), and lean + acc_t30>-8 (stacks the v40-acc-gate winning filter, which has been the only NEW filter to improve things in months). Success = drop3 >= v25-base AND n_trades > v25-base (more coverage, same edge). If the lean variant matches v25-base on drop3, the three dead-weight filters are confirmed redundant and can be dropped from the canonical bot-excl-climbing template.",
+      "prediction": {
+        "target_net_sol": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "cohort-level - see individual variants"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v47-no-top5",
+      "strategy_id": "v47-no-top5",
+      "cohort_label": "v47",
+      "hypothesis": "Drop top5_wallet_pct<=30 from v25-base. Counterfactual: Δret +0.04pp when removed (dead weight), n with=1561, n w/o=1578 (+17 rows = ~1% more coverage). Expected: indistinguishable from v25-base on drop3 and per-trade quality, with marginal volume lift. If this variant deviates meaningfully from v25-base, the top5 filter is doing more than the counterfactual suggests.",
+      "prediction": {
+        "target_net_sol": 5,
+        "target_sol_per_mo": 13,
+        "target_drop_top3": 3,
+        "target_n": 200,
+        "target_days": 21,
+        "kill_criterion": "n>=100 and net_sol<v25-base-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v47-no-vel",
+      "strategy_id": "v47-no-vel",
+      "cohort_label": "v47",
+      "hypothesis": "Drop bc_velocity_sol_per_min<200 from v25-base. Counterfactual: Δret 0pp, n w/o = n with (0 rows added). The vel<200 filter rejects basically nothing in the current universe. Expected: this variant should be functionally IDENTICAL to v25-base on every metric. If it diverges, the filter was rejecting more than counterfactual measured.",
+      "prediction": {
+        "target_net_sol": 5,
+        "target_sol_per_mo": 13,
+        "target_drop_top3": 3,
+        "target_n": 200,
+        "target_days": 21,
+        "kill_criterion": "n>=100 and net_sol<v25-base-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v47-no-age",
+      "strategy_id": "v47-no-age",
+      "cohort_label": "v47",
+      "hypothesis": "Drop token_age_seconds>=60 from v25-base. Counterfactual: Δret +0.16pp (mildly improves on removal = dead weight), n w/o=1615 (+54 rows = +3% coverage). This filter was meant to skip very-young bonding-curve tokens that may have unstable T+30 metrics. If counterfactual is right, the climbing filter already implicitly excludes the same population.",
+      "prediction": {
+        "target_net_sol": 5,
+        "target_sol_per_mo": 13,
+        "target_drop_top3": 3,
+        "target_n": 200,
+        "target_days": 21,
+        "kill_criterion": "n>=100 and net_sol<v25-base-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v47-lean",
+      "strategy_id": "v47-lean",
+      "cohort_label": "v47",
+      "hypothesis": "The headline test: drop all three dead-weight filters at once. Only dd>-25% and climbing_t30_t45 remain. These are the two filters the counterfactual flagged as 'pulls weight' on v25-base. If the lean variant matches v25-base on drop3 (+5.17 SOL on n=477) with comparable or better coverage, the three dropped filters are confirmed redundant and can be removed from the canonical bot-excl-climbing template across all downstream cohorts. Expected volume lift: ~5-10% based on counterfactual coverage deltas (top5+1%, vel+0%, age+3%, with overlap).",
+      "prediction": {
+        "target_net_sol": 6,
+        "target_sol_per_mo": 15,
+        "target_drop_top3": 4,
+        "target_n": 220,
+        "target_days": 21,
+        "kill_criterion": "n>=100 and net_sol<3"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v47-lean-plus-acc",
+      "strategy_id": "v47-lean-plus-acc",
+      "cohort_label": "v47",
+      "hypothesis": "Lean (dd + climbing) + acceleration_t30>-8. Combines two empirical findings: (1) the counterfactual dead-weight result motivating the lean base; (2) v40-acc-gate's positive result (drop3 +2.49, trim mean +5.14% at n=123) showing the acc_t30 filter pulls weight. Expected: should match or beat v40-acc-gate on per-trade quality AND match v47-lean on coverage. If this is the family's new winner, it becomes the canonical template - dd + climbing + acc.",
+      "prediction": {
+        "target_net_sol": 5,
+        "target_sol_per_mo": 14,
+        "target_drop_top3": 3,
+        "target_n": 180,
+        "target_days": 21,
+        "kill_criterion": "n>=100 and net_sol<2"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
