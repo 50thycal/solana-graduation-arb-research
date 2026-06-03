@@ -1,0 +1,170 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v49a-climb-double",
+      "label": "v49a climbing double-confirm (climb_t15_t30 + climb_t30_t45)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "entryTimingSec": 60,
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "max_dd_0_30>-25"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t30_above_t15", "operator": "==", "value": 1, "label": "climb_t15_t30"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climb_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "regimeGate": "any",
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v49b-climb-tightgate",
+      "label": "v49b climbing + tight entry gate [+5..+40%]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 40,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "entryTimingSec": 60,
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "max_dd_0_30>-25"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climb_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "regimeGate": "any",
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v49d-climb-skipred",
+      "label": "v49d climbing + regime skip_red",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "entryTimingSec": 60,
+        "filters": [
+          {"field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30%"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "max_dd_0_30>-25"},
+          {"field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200"},
+          {"field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s"},
+          {"field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "climb_t30_t45"}
+        ],
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "regimeGate": "skip_red",
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v49a-climb-double",
+      "strategy_id": "v49a-climb-double",
+      "cohort_label": "v49",
+      "hypothesis": "Requiring continuation across BOTH T+15->30 and T+30->45 selects higher-conviction climbers. Fewer, better entries should lift net per-trade edge above the ~2.3pp live-execution cost wall that pins single-confirm v25 to ~0 SOL live.",
+      "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 4.0,
+        "target_drop_top3": 0,
+        "target_n": 120,
+        "target_days": 21,
+        "kill_criterion": "n>=60 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v49b-climb-tightgate",
+      "strategy_id": "v49b-climb-tightgate",
+      "cohort_label": "v49",
+      "hypothesis": "Capping entry at +40% (vs +100%) drops already-extended climbers that carry the worst live slippage and mean-reversion. Removing those entries should raise realized net per-trade above the live cost wall while keeping the climbing edge.",
+      "prediction": {
+        "target_net_sol": 1.0,
+        "target_sol_per_mo": 4.0,
+        "target_drop_top3": 0,
+        "target_n": 120,
+        "target_days": 21,
+        "kill_criterion": "n>=60 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v49d-climb-skipred",
+      "strategy_id": "v49d-climb-skipred",
+      "cohort_label": "v49",
+      "hypothesis": "Climbers fail in RED tape (live green-hour PnL ~flat, red clearly negative). Gating entries to non-RED regime should raise realized edge vs always-on v25 by skipping the worst windows.",
+      "prediction": {
+        "target_net_sol": 1.0,
+        "target_sol_per_mo": 4.0,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=60 and net_sol<-1"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
