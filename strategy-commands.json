@@ -1,0 +1,132 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-06-03",
+      "date": "2026-06-03",
+      "generated_by": "claude",
+      "narrative": "**Roster:** No changes since yesterday. 138 strategies (132 enabled, 6 disabled). All 6 action items from 2026-06-02 remain PROPOSED — no operator action taken in 24h. The URGENT live kill of v44-climb-1s-ttp10-live-micro is now 2 days pending and bleeding SOL daily.\n\n**Headline:** 5 bot-excl+climbing variants now pass all 4 promotion gates — the backlog of unpromoted shadow strategies is the highest-priority decision this cycle. v25-bot-excl-climbing (n=530, +6.72 SOL total, +4.40 SOL drop_top3, +10.14 SOL/mo) leads a cluster of promotable strategies. v32-bot-excl-climbing-1s (n=354, drop_top3=+1.14, monthly=+8.15), v28-bot-excl-climbing-1s-ttp (n=393, drop_top3=+0.54, monthly=+8.00), v33-bot-excl-climbing-ttp5 (n=357, drop_top3=+0.52, monthly=+7.49), and v34-bot-excl-climbing-minlift (n=361, drop_top3=+0.26, monthly=+8.55) all clear the bar. This is a genuine cluster of promotable strategies, not a single outlier.\n\n**Today's trading:** No trades today (n_graduations=0 at report time, pipeline briefly quiet — diagnose HEALTHY, all Levels 1–4 pass). Yesterday produced 1182 trades across 166 graduations. A `graduation_rate_drop` anomaly (high severity) is flagged: projected today=0 vs 7-day median of 185. This appears to be a brief quiet period rather than a structural failure — the bot processed shadow trades 640s ago.\n\n**Edge-decay data gap:** edge-decay.json returned 0 entries today — the edge-decay computation has a data gap. The DECAYING flag that held back v25 promotion yesterday (ai-2026-06-02-006) cannot be confirmed or denied from this session. With n=530 and drop_top3=+4.40 SOL (65% of total P&L survives stripping the top 3 wins), the edge for v25 is very robust by the primary outlier check. Recommend operator investigate the edge-decay.json gap; if DECAYING is unconfirmed, recommend clearing the hold and promoting v25.\n\n**20 phantom edge_decay anomalies** (medium severity) were generated with empty strategy_id and empty notes — this is a bug in the anomaly generator, not real signals. Recommend fixing the anomaly generation code.\n\n**Kill backlog growing:** 35+ INVALID strategies remain enabled (all action items from 2026-06-02 still PROPOSED). This cycle adds 2 newly INVALID strategies: v37-creator-clean (n=101, total=-2.10, drop_top3=-3.05) and v40-vel-band (n=103, total=-1.12, drop_top3=-2.75) have now crossed n=100 with negative drop_top3. Recommend killing alongside the existing backlog.\n\n**New signal — gini concentration:** `gini < 0.4 + climbing_t30_t45` is the #4 combo in best-combos (n=356, opt_avg_ret=+19.08% at TP150/SL30, STABLE in panel11 for gini-related combos). The gini < 0.4 filter selects very low token concentration — a dimension not yet in shadow test. Recommend creating a new shadow strategy to test this combo.\n\n**v9shadow-velmono-dev watch:** n=83 shadow, total=+4.84, drop_top3=+3.10, monthly=+4.45. Excellent trajectory — drop_top3 is 64% of total (very robust). Expected to reach n=100 within ~5 days. Recommend continue watching.\n\n**Operator priority (single most important action):** Kill v44-climb-1s-ttp10-live-micro NOW — it is a live strategy with n=114, total=-0.262 SOL, drop_top3=-0.507 SOL (INVALID by all metrics). Every additional day costs SOL. After that, execute the 5 kill-list action items from yesterday to clean up 35+ INVALID strategies, then promote v25 and v32.",
+      "winners": [],
+      "losers": [],
+      "anomalies": [
+        {
+          "kind": "graduation_rate_drop",
+          "severity": "high",
+          "detail": "No graduations in 700s at report time. Projected today=0 vs 7-day median=185. Bot is otherwise healthy (shadow trade 640s ago). Likely a brief quiet period."
+        },
+        {
+          "kind": "edge_decay_phantom",
+          "severity": "med",
+          "detail": "20 edge_decay anomalies generated with empty strategy_id and notes — anomaly generator bug. edge-decay.json has 0 entries. Investigate the edge-decay computation pipeline."
+        },
+        {
+          "kind": "live_strategy_bleeding",
+          "severity": "high",
+          "detail": "v44-climb-1s-ttp10-live-micro running live with n=114, drop_top3=-0.507 SOL (INVALID). Kill action item PROPOSED for 2 days without execution."
+        },
+        {
+          "kind": "kill_backlog_growing",
+          "severity": "med",
+          "detail": "35+ INVALID shadow strategies still enabled after 2 days of PROPOSED kill action items. 2 more crossed n=100 this cycle (v37-creator-clean, v40-vel-band)."
+        }
+      ],
+      "patterns": [
+        "bot-excl+climbing family dominates all rankings: v25/v32/v28/v33/v34 all pass the 4-gate bar, with v25 at +6.7 SOL total. This convergence on a single strategy family suggests the core signal (bot_excluded + momentum climbing at T+30→45) is the primary alpha source.",
+        "v9shadow-velmono-dev trending toward bar: n=83, expected 100 within ~5 days. drop_top3=+3.10 (64% of total) is remarkably robust — this strategy earns across the trade distribution, not from 1-3 outliers.",
+        "gini < 0.4 concentration signal emerging: #4 in best-combos at opt_avg_ret=+19.08% (n=356). Combined with climbing_t30_t45, this is the highest-opt_avg_ret untested combo. Worth shadowing.",
+        "Kill backlog unchanged for 2nd day: all 6 action items from 2026-06-02 still PROPOSED. INVALID strategies accumulate losses and consume monitoring bandwidth.",
+        "edge-decay.json data gap (0 entries today) may be a computation bug — 20 phantom edge_decay anomalies with empty notes support this hypothesis."
+      ],
+      "recommendations": {
+        "promote": [
+          {
+            "strategy_id": "v25-bot-excl-climbing",
+            "reason": "n=530, total=+6.715 SOL, drop_top3=+4.402 SOL, monthly=+10.14 SOL/mo — all 4 gates clear with substantial margin. edge-decay.json empty today (data gap); recommend clearing the hold from ai-2026-06-02-006 if DECAYING unconfirmed, then promote to live at reduced size."
+          },
+          {
+            "strategy_id": "v32-bot-excl-climbing-1s",
+            "reason": "n=354, total=+3.454 SOL, drop_top3=+1.141 SOL, monthly=+8.15 SOL/mo — all 4 gates clear. 1s-poll variant of v25 with cleanly positive drop_top3. Recommend promoting to shadow-live or live-micro."
+          }
+        ],
+        "kill": [
+          {
+            "strategy_id": "v44-climb-1s-ttp10-live-micro",
+            "reason": "URGENT LIVE — n=114, total=-0.262 SOL, drop_top3=-0.507 SOL, monthly=-1.12 SOL/mo. INVALID by all gates. Active daily SOL drain. 2nd day this item is PROPOSED without execution."
+          },
+          {
+            "strategy_id": "v37-creator-clean",
+            "reason": "NEW INVALID — n=101, total=-2.104 SOL, drop_top3=-3.047 SOL, monthly=-7.71 SOL/mo. Crossed n=100 threshold and fails all gates."
+          },
+          {
+            "strategy_id": "v40-vel-band",
+            "reason": "NEW INVALID — n=103, total=-1.123 SOL, drop_top3=-2.750 SOL, monthly=-4.81 SOL/mo. Crossed n=100 threshold and fails all gates."
+          }
+        ],
+        "create_new": [
+          {
+            "strategy_id": "v50-gini04-climbing",
+            "hypothesis": "gini < 0.4 + climbing_t30_t45 is the #4 combo in best-combos (n=356, opt_avg_ret=+19.08% at TP150/SL30). The gini < 0.4 filter selects very low token concentration — a new dimension not yet shadow-tested. Target accumulating >= 0.5 SOL with drop_top3 > 0 on n=100+.",
+            "prediction": {
+              "target_net_sol": 1.5,
+              "target_sol_per_mo": 5.0,
+              "target_drop_top3": 0,
+              "target_n": 100,
+              "target_days": 21,
+              "kill_criterion": "n>=50 and total_net_sol_drop_top3<0"
+            },
+            "cohort_label": "v50"
+          }
+        ],
+        "watch": [
+          {
+            "strategy_id": "v9shadow-velmono-dev",
+            "reason": "n=83 shadow (WATCH from ai-2026-06-02-005 continuing). total=+4.84 SOL, drop_top3=+3.10 SOL, monthly=+4.45 SOL/mo — excellent trajectory. Expected to cross n=100 within ~5 days."
+          },
+          {
+            "strategy_id": "v40-acc-gate",
+            "reason": "n=167, total=+2.125 SOL, drop_top3=+0.359 SOL, monthly=+9.11 SOL/mo — passes all 4 gates. Marginal drop_top3. Watch for further accumulation before promoting alongside v25/v32."
+          },
+          {
+            "strategy_id": "v28-bot-excl-climbing-1s-ttp",
+            "reason": "n=393, total=+3.910 SOL, drop_top3=+0.543 SOL, monthly=+8.00 SOL/mo — passes all 4 gates. Trailing TP variant. Monitor alongside v32 for promotion decision."
+          }
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-06-03-001",
+          "kind": "kill",
+          "target_id": "v37-creator-clean,v40-vel-band",
+          "summary": "Kill 2 newly INVALID strategies: v37-creator-clean (n=101, drop_top3=-3.05 SOL) and v40-vel-band (n=103, drop_top3=-2.75 SOL). Both crossed n=100 this cycle with negative outlier-stripped P&L.",
+          "status": "PROPOSED",
+          "proposed_at": 1748959200
+        },
+        {
+          "id": "ai-2026-06-03-002",
+          "kind": "investigate",
+          "target_id": "edge-decay.json",
+          "summary": "edge-decay.json returned 0 entries — computation gap. Investigate why the edge-decay file is empty. Once resolved: if v25-bot-excl-climbing is NOT confirmed DECAYING, clear hold from ai-2026-06-02-006 and promote v25 to live.",
+          "status": "PROPOSED",
+          "proposed_at": 1748959200
+        },
+        {
+          "id": "ai-2026-06-03-003",
+          "kind": "promote",
+          "target_id": "v32-bot-excl-climbing-1s",
+          "summary": "Promote v32-bot-excl-climbing-1s to live — n=354, total=+3.454 SOL, drop_top3=+1.141 SOL, monthly=+8.15 SOL/mo. All 4 gates clear with strong drop_top3 margin.",
+          "status": "PROPOSED",
+          "proposed_at": 1748959200
+        },
+        {
+          "id": "ai-2026-06-03-004",
+          "kind": "create_new",
+          "target_id": "v50-gini04-climbing",
+          "summary": "Create shadow strategy v50-gini04-climbing: gini < 0.4 + climbing_t30_t45 at TP150/SL30. #4 combo in best-combos (n=356, opt_avg_ret=+19.08%). New concentration dimension not yet in shadow test.",
+          "status": "PROPOSED",
+          "proposed_at": 1748959200
+        }
+      ],
+      "auto_journal": true
+    }
+  ]
+}
