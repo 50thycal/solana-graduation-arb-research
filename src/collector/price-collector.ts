@@ -10,9 +10,11 @@ import {
   updateMomentumInitialLp,
   updateMomentumLpGrowth,
   updateMomentumRecoveryFlags,
+  updateHolderFlowT35,
 } from '../db/queries';
 import { MomentumLabeler } from '../analysis/momentum-labeler';
 import { CompetitionDetector } from './competition-detector';
+import { HolderEnrichment } from './holder-enrichment';
 import { SwapLogger } from './swap-logger';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
@@ -188,6 +190,7 @@ export class PriceCollector {
   private active: Map<number, ActiveObservation> = new Map();
   private momentumLabeler: MomentumLabeler;
   private competitionDetector: CompetitionDetector;
+  private holderEnrichment: HolderEnrichment;
   private swapLogger: SwapLogger;
   private totalObservationsStarted = 0;
   private totalObservationsCompleted = 0;
@@ -260,6 +263,23 @@ export class PriceCollector {
     solReservesSol: number,
   ) => void;
 
+  /**
+   * Second holder count at T+35, via the same DAS path as the T+0 enrichment.
+   * Writes holder_count_t35 + derived delta/velocity/sniper-ratio. Silently no-ops
+   * if DAS is unavailable (non-Helius RPC) or returns nothing — the T+0 count and
+   * its flow fields just stay NULL, which the (measured) filters already tolerate.
+   */
+  private async sampleHolderFlowT35(ctx: ObservationContext): Promise<void> {
+    const dist = await this.holderEnrichment.getHolderDistributionViaDAS(ctx.mint);
+    if (dist && dist.count > 0) {
+      updateHolderFlowT35(this.db, ctx.graduationId, dist.count);
+      logger.debug(
+        { graduationId: ctx.graduationId, holderCountT35: dist.count },
+        'Holder flow T+35 sample written'
+      );
+    }
+  }
+
   /** Register a callback invoked at T+30 after graduation_momentum metrics are written. */
   setT30Callback(cb: (
     graduationId: number,
@@ -276,12 +296,14 @@ export class PriceCollector {
     this.connection = connection;
     this.momentumLabeler = new MomentumLabeler(db);
     this.competitionDetector = new CompetitionDetector(db, connection);
+    this.holderEnrichment = new HolderEnrichment(connection);
     this.swapLogger = new SwapLogger(db, connection);
   }
 
   updateConnection(connection: Connection): void {
     this.connection = connection;
     this.competitionDetector.updateConnection(connection);
+    this.holderEnrichment.updateConnection(connection);
     this.swapLogger.updateConnection(connection);
   }
 
@@ -516,6 +538,25 @@ export class PriceCollector {
     } else {
       // Already past 35s, run immediately
       this.competitionDetector.detectBuyPressure(ctx).catch(() => {});
+    }
+
+    // Schedule the T+36 holder re-sample (1s after buy-pressure so sniper_count_t0_t2
+    // is populated for the holder_sniper_ratio). A second DAS holder count vs the T+0
+    // count gives holder flow (delta / velocity) over the first ~30s — a demand signal
+    // independent of the raw level, and look-ahead-safe (same window as buy_pressure_*).
+    const holderFlowDelay = (36 - elapsedSec) * 1000;
+    const runHolderFlow = () => this.sampleHolderFlowT35(ctx).catch((err) => {
+      logger.debug(
+        'Holder flow T+35 sample failed for grad %d: %s',
+        ctx.graduationId,
+        err instanceof Error ? err.message : String(err)
+      );
+    });
+    if (holderFlowDelay > 0) {
+      const hfTimer = setTimeout(runHolderFlow, holderFlowDelay);
+      observation.timers.push(hfTimer);
+    } else {
+      runHolderFlow();
     }
 
     // Schedule observation completion

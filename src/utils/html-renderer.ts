@@ -3906,6 +3906,23 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
     { name: 'holders >= 100 (backfill)', configs: [{ field: 'holder_count', operator: '>=', value: 100, label: 'holders>=100' }, { field: 'holder_count_backfilled', operator: '=', value: 1, label: 'backfill' }] },
     { name: 'holders >= 250 (backfill)', configs: [{ field: 'holder_count', operator: '>=', value: 250, label: 'holders>=250' }, { field: 'holder_count_backfilled', operator: '=', value: 1, label: 'backfill' }] },
   ]},
+  { group: 'Holder Flow', filters: [
+    { name: 'holder_delta > 0 (measured)',   configs: [{ field: 'holder_delta_t35', operator: '>', value: 0, label: 'Δholders>0' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holder_delta >= 20 (measured)', configs: [{ field: 'holder_delta_t35', operator: '>=', value: 20, label: 'Δholders>=20' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holder_delta >= 50 (measured)', configs: [{ field: 'holder_delta_t35', operator: '>=', value: 50, label: 'Δholders>=50' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holder_vel >= 30 (measured)',   configs: [{ field: 'holder_velocity_t35', operator: '>=', value: 30, label: 'hvel>=30' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holder_vel >= 60 (measured)',   configs: [{ field: 'holder_velocity_t35', operator: '>=', value: 60, label: 'hvel>=60' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+  ]},
+  { group: 'Holder Dist', filters: [
+    { name: 'nakamoto >= 5 (measured)',    configs: [{ field: 'nakamoto_coef', operator: '>=', value: 5, label: 'nak>=5' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'nakamoto >= 10 (measured)',   configs: [{ field: 'nakamoto_coef', operator: '>=', value: 10, label: 'nak>=10' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'whales <= 1 (measured)',      configs: [{ field: 'whale_count_1pct', operator: '<=', value: 1, label: 'whales<=1' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'whales <= 3 (measured)',      configs: [{ field: 'whale_count_1pct', operator: '<=', value: 3, label: 'whales<=3' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'whale_supply < 20% (measured)', configs: [{ field: 'whale_supply_pct', operator: '<', value: 20, label: 'whale_supply<20%' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'dust < 30% (measured)',       configs: [{ field: 'dust_holder_pct', operator: '<', value: 0.3, label: 'dust<30%' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holder_gini < 0.8 (measured)', configs: [{ field: 'holder_gini', operator: '<', value: 0.8, label: 'hgini<0.8' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holder_sniper_ratio >= 20 (measured)', configs: [{ field: 'holder_sniper_ratio', operator: '>=', value: 20, label: 'h/sniper>=20' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+  ]},
   { group: 'Top 5 Concentration', filters: [
     { name: 'top5 < 10%', configs: [{ field: 'top5_wallet_pct', operator: '<', value: 10, label: 'top5<10%' }] },
     { name: 'top5 < 15%', configs: [{ field: 'top5_wallet_pct', operator: '<', value: 15, label: 'top5<15%' }] },

@@ -28,6 +28,14 @@ export async function computeFilterV2Data(
         token_age_seconds: number | null;
         holder_count: number | null;
         holder_count_backfilled: number | null;
+        holder_delta_t35: number | null;
+        holder_velocity_t35: number | null;
+        holder_sniper_ratio: number | null;
+        nakamoto_coef: number | null;
+        holder_gini: number | null;
+        whale_count_1pct: number | null;
+        whale_supply_pct: number | null;
+        dust_holder_pct: number | null;
         top5_wallet_pct: number | null;
         dev_wallet_pct: number | null;
         total_sol_raised: number | null;
@@ -127,6 +135,36 @@ export async function computeFilterV2Data(
           predicate: (r) => r.holder_count != null && r.holder_count >= 100 && r.holder_count_backfilled === 1 },
         { name: 'holders >= 250 (backfill)',  group: 'Holders', column: 'holder_count', where: 'holder_count >= 250 AND holder_count_backfilled = 1',
           predicate: (r) => r.holder_count != null && r.holder_count >= 250 && r.holder_count_backfilled === 1 },
+
+        // ── Holder Flow (T+35 second sample, measured-only) ──
+        { name: 'holder_delta > 0 (measured)',   group: 'Holder Flow', column: 'holder_delta_t35', where: 'holder_delta_t35 > 0 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_delta_t35 != null && r.holder_delta_t35 > 0 && r.holder_count_backfilled === 0 },
+        { name: 'holder_delta >= 20 (measured)', group: 'Holder Flow', column: 'holder_delta_t35', where: 'holder_delta_t35 >= 20 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_delta_t35 != null && r.holder_delta_t35 >= 20 && r.holder_count_backfilled === 0 },
+        { name: 'holder_delta >= 50 (measured)', group: 'Holder Flow', column: 'holder_delta_t35', where: 'holder_delta_t35 >= 50 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_delta_t35 != null && r.holder_delta_t35 >= 50 && r.holder_count_backfilled === 0 },
+        { name: 'holder_vel >= 30 (measured)',   group: 'Holder Flow', column: 'holder_velocity_t35', where: 'holder_velocity_t35 >= 30 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_velocity_t35 != null && r.holder_velocity_t35 >= 30 && r.holder_count_backfilled === 0 },
+        { name: 'holder_vel >= 60 (measured)',   group: 'Holder Flow', column: 'holder_velocity_t35', where: 'holder_velocity_t35 >= 60 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_velocity_t35 != null && r.holder_velocity_t35 >= 60 && r.holder_count_backfilled === 0 },
+
+        // ── Holder Distribution (T+0 full DAS list, measured-only) ──
+        { name: 'nakamoto >= 5 (measured)',    group: 'Holder Dist', column: 'nakamoto_coef', where: 'nakamoto_coef >= 5 AND holder_count_backfilled = 0',
+          predicate: (r) => r.nakamoto_coef != null && r.nakamoto_coef >= 5 && r.holder_count_backfilled === 0 },
+        { name: 'nakamoto >= 10 (measured)',   group: 'Holder Dist', column: 'nakamoto_coef', where: 'nakamoto_coef >= 10 AND holder_count_backfilled = 0',
+          predicate: (r) => r.nakamoto_coef != null && r.nakamoto_coef >= 10 && r.holder_count_backfilled === 0 },
+        { name: 'whales <= 1 (measured)',      group: 'Holder Dist', column: 'whale_count_1pct', where: 'whale_count_1pct <= 1 AND holder_count_backfilled = 0',
+          predicate: (r) => r.whale_count_1pct != null && r.whale_count_1pct <= 1 && r.holder_count_backfilled === 0 },
+        { name: 'whales <= 3 (measured)',      group: 'Holder Dist', column: 'whale_count_1pct', where: 'whale_count_1pct <= 3 AND holder_count_backfilled = 0',
+          predicate: (r) => r.whale_count_1pct != null && r.whale_count_1pct <= 3 && r.holder_count_backfilled === 0 },
+        { name: 'whale_supply < 20% (measured)', group: 'Holder Dist', column: 'whale_supply_pct', where: 'whale_supply_pct IS NOT NULL AND whale_supply_pct < 20 AND holder_count_backfilled = 0',
+          predicate: (r) => r.whale_supply_pct != null && r.whale_supply_pct < 20 && r.holder_count_backfilled === 0 },
+        { name: 'dust < 30% (measured)',       group: 'Holder Dist', column: 'dust_holder_pct', where: 'dust_holder_pct IS NOT NULL AND dust_holder_pct < 0.3 AND holder_count_backfilled = 0',
+          predicate: (r) => r.dust_holder_pct != null && r.dust_holder_pct < 0.3 && r.holder_count_backfilled === 0 },
+        { name: 'holder_gini < 0.8 (measured)', group: 'Holder Dist', column: 'holder_gini', where: 'holder_gini IS NOT NULL AND holder_gini < 0.8 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_gini != null && r.holder_gini < 0.8 && r.holder_count_backfilled === 0 },
+        { name: 'holder_sniper_ratio >= 20 (measured)', group: 'Holder Dist', column: 'holder_sniper_ratio', where: 'holder_sniper_ratio >= 20 AND holder_count_backfilled = 0',
+          predicate: (r) => r.holder_sniper_ratio != null && r.holder_sniper_ratio >= 20 && r.holder_count_backfilled === 0 },
 
         // ── Top 5 Concentration ──
         { name: 'top5 < 10%',             group: 'Top 5 Concentration', column: 'top5_wallet_pct', where: 'top5_wallet_pct < 10',
@@ -379,7 +417,10 @@ export async function computeFilterV2Data(
       const regimeRows = db.prepare(`
         SELECT created_at, label, pct_t30, pct_t300,
                COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT_V2}) as cost_pct,
-               bc_velocity_sol_per_min, token_age_seconds, holder_count, holder_count_backfilled, top5_wallet_pct,
+               bc_velocity_sol_per_min, token_age_seconds, holder_count, holder_count_backfilled,
+               holder_delta_t35, holder_velocity_t35, holder_sniper_ratio,
+               nakamoto_coef, holder_gini, whale_count_1pct, whale_supply_pct, dust_holder_pct,
+               top5_wallet_pct,
                dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
                monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
                early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
@@ -548,7 +589,10 @@ export async function computeFilterV2Data(
           created_at, label,
           pct_t30, ${panel4WalkCols}, pct_t300,
           COALESCE(round_trip_slippage_pct, ${ROUND_TRIP_COST_PCT_V2}) as cost_pct,
-          bc_velocity_sol_per_min, token_age_seconds, holder_count, holder_count_backfilled, top5_wallet_pct,
+          bc_velocity_sol_per_min, token_age_seconds, holder_count, holder_count_backfilled,
+               holder_delta_t35, holder_velocity_t35, holder_sniper_ratio,
+               nakamoto_coef, holder_gini, whale_count_1pct, whale_supply_pct, dust_holder_pct,
+               top5_wallet_pct,
           dev_wallet_pct, total_sol_raised, liquidity_sol_t30, volatility_0_30,
           monotonicity_0_30, max_drawdown_0_30, dip_and_recover_flag, acceleration_t30,
           early_vs_late_0_30, buy_pressure_buy_ratio, buy_pressure_unique_buyers,
