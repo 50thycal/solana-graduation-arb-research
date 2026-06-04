@@ -1,0 +1,221 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v51-confirm-gate",
+      "label": "v51 confirm-gate: 2-checkpoint climb (t15<t30<t45) + shallow DD",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200" },
+          { "field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s" },
+          { "field": "recovery_t30_above_t15", "operator": "==", "value": 1, "label": "t30>t15" },
+          { "field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "t45>t30" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -10, "label": "maxDD>-10%" }
+        ],
+        "entryTimingSec": 60,
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v51-tail-guard",
+      "label": "v51 tail-guard: v25 entry + tight SL10 + 1s poll + breakeven@30",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 10,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "top5_wallet_pct", "operator": "<=", "value": 30, "label": "top5<=30" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -25, "label": "maxDD>-25%" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200" },
+          { "field": "token_age_seconds", "operator": ">=", "value": 60, "label": "age>=60s" },
+          { "field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "t45>t30" }
+        ],
+        "entryTimingSec": 60,
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 1,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 50,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 30,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v51-capitulation-bounce",
+      "label": "v51 capitulation-bounce: down 10-60% @t30 + bounce t45>t30, fast scalp",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -60,
+        "entryGateMaxPctT30": -10,
+        "takeProfitPct": 15,
+        "stopLossPct": 12,
+        "maxHoldSeconds": 120,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "recovery_t30_above_t15", "operator": "==", "value": 1, "label": "t30>t15" },
+          { "field": "recovery_t45_above_t30", "operator": "==", "value": 1, "label": "t45>t30" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 200, "label": "vel<200" },
+          { "field": "liquidity_sol_t30", "operator": ">", "value": 50, "label": "liq>50" }
+        ],
+        "entryTimingSec": 60,
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 1,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v51-quality-momentum",
+      "label": "v51 quality-momentum: vel20-50 + liq>100 + age>10m + shallow DD + mono",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel>=20" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel<50" },
+          { "field": "liquidity_sol_t30", "operator": ">", "value": 100, "label": "liq>100" },
+          { "field": "token_age_seconds", "operator": ">", "value": 600, "label": "age>10min" },
+          { "field": "max_drawdown_0_30", "operator": ">", "value": -10, "label": "maxDD>-10%" },
+          { "field": "monotonicity_0_30", "operator": ">", "value": 0.5, "label": "mono>0.5" }
+        ],
+        "entryTimingSec": 30,
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v51-confirm-gate",
+      "strategy_id": "v51-confirm-gate",
+      "cohort_label": "v51",
+      "hypothesis": "Two-checkpoint monotonic-up confirmation (pct_t15<t30<t45) + shallow early drawdown (maxDD_0_30>-10%) is a stricter, less-noisy version of v25's single climb check. Entering only on confirmed multi-point recovery should lift drop_top3 robustness vs v25 in a RED tape by rejecting fade-then-die candidates.",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v51-tail-guard",
+      "strategy_id": "v51-tail-guard",
+      "cohort_label": "v51",
+      "hypothesis": "v25's exact entry but with the left tail truncated: SL10 (vs 30) + 1s poll + breakeven@+30% + tighten-to-7% at half-hold. Thesis from peak-analysis: universe EV is negative at every TP because non-hit trades bleed ~-31%; capping downside should make net SOL regime-stable even if win rate drops.",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v51-capitulation-bounce",
+      "strategy_id": "v51-capitulation-bounce",
+      "cohort_label": "v51",
+      "hypothesis": "Mean-reversion scalp, orthogonal to the all-momentum book: buy tokens down 10-60% at T+30 that confirm a bounce (t30>t15 AND t45>t30), exit fast (TP15/SL12/120s). Low correlation to climbing strategies should stabilize aggregate P&L. Honest prior: dip_and_recover flag is negligible for T+300, so this ONLY works as a fast scalp, never hold — shadow forward-test will confirm or kill.",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v51-quality-momentum",
+      "strategy_id": "v51-quality-momentum",
+      "cohort_label": "v51",
+      "hypothesis": "Stack the strongest single signals from peak-analysis on the proven mid-velocity band: vel20-50 + liq>100 + age>10min (+4.1 avg final) + maxDD_0_30>-10% (+4.4, best path filter) + mono>0.5. Stricter cousin of v9shadow-velmid-liq-mono with the drawdown + age gates added.",
+      "prediction": {
+        "target_net_sol": 0.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
