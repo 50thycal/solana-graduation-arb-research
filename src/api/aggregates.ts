@@ -389,12 +389,13 @@ export const FILTER_CATALOG: FilterDef[] = [
   // Distribution metrics (T+0, measured-only — full DAS list)
   { name: 'nakamoto >= 5 (measured)',    group: 'Holder Dist', where: 'nakamoto_coef >= 5 AND holder_count_backfilled = 0' },
   { name: 'nakamoto >= 10 (measured)',   group: 'Holder Dist', where: 'nakamoto_coef >= 10 AND holder_count_backfilled = 0' },
-  { name: 'whales <= 1 (measured)',      group: 'Holder Dist', where: 'whale_count_1pct <= 1 AND holder_count_backfilled = 0' },
-  { name: 'whales <= 3 (measured)',      group: 'Holder Dist', where: 'whale_count_1pct <= 3 AND holder_count_backfilled = 0' },
+  { name: 'whales <= 5 (measured)',      group: 'Holder Dist', where: 'whale_count_1pct <= 5 AND holder_count_backfilled = 0' },
+  { name: 'whales <= 10 (measured)',     group: 'Holder Dist', where: 'whale_count_1pct <= 10 AND holder_count_backfilled = 0' },
   { name: 'whale_supply < 20% (measured)', group: 'Holder Dist', where: 'whale_supply_pct IS NOT NULL AND whale_supply_pct < 20 AND holder_count_backfilled = 0' },
   { name: 'dust < 30% (measured)',       group: 'Holder Dist', where: 'dust_holder_pct IS NOT NULL AND dust_holder_pct < 0.3 AND holder_count_backfilled = 0' },
   { name: 'holder_gini < 0.8 (measured)', group: 'Holder Dist', where: 'holder_gini IS NOT NULL AND holder_gini < 0.8 AND holder_count_backfilled = 0' },
-  { name: 'holder_sniper_ratio >= 20 (measured)', group: 'Holder Dist', where: 'holder_sniper_ratio >= 20 AND holder_count_backfilled = 0' },
+  { name: 'holder_sniper_ratio >= 5 (measured)',  group: 'Holder Dist', where: 'holder_sniper_ratio >= 5 AND holder_count_backfilled = 0' },
+  { name: 'holder_sniper_ratio >= 10 (measured)', group: 'Holder Dist', where: 'holder_sniper_ratio >= 10 AND holder_count_backfilled = 0' },
   // Top 5 Concentration
   { name: 'top5 < 10%',         group: 'Top 5',    where: 'top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 10' },
   { name: 'top5 < 15%',         group: 'Top 5',    where: 'top5_wallet_pct IS NOT NULL AND top5_wallet_pct < 15' },

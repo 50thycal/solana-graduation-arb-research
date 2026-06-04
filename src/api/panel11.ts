@@ -102,12 +102,13 @@ export const CATALOG_PREDICATES = new Map<string, (r: RegimeRow) => boolean>([
   // Holder Dist (T+0, measured-only)
   ['nakamoto >= 5 (measured)',    (r) => r.nakamoto_coef != null && r.nakamoto_coef >= 5 && r.holder_count_backfilled === 0],
   ['nakamoto >= 10 (measured)',   (r) => r.nakamoto_coef != null && r.nakamoto_coef >= 10 && r.holder_count_backfilled === 0],
-  ['whales <= 1 (measured)',      (r) => r.whale_count_1pct != null && r.whale_count_1pct <= 1 && r.holder_count_backfilled === 0],
-  ['whales <= 3 (measured)',      (r) => r.whale_count_1pct != null && r.whale_count_1pct <= 3 && r.holder_count_backfilled === 0],
+  ['whales <= 5 (measured)',      (r) => r.whale_count_1pct != null && r.whale_count_1pct <= 5 && r.holder_count_backfilled === 0],
+  ['whales <= 10 (measured)',     (r) => r.whale_count_1pct != null && r.whale_count_1pct <= 10 && r.holder_count_backfilled === 0],
   ['whale_supply < 20% (measured)', (r) => r.whale_supply_pct != null && r.whale_supply_pct < 20 && r.holder_count_backfilled === 0],
   ['dust < 30% (measured)',       (r) => r.dust_holder_pct != null && r.dust_holder_pct < 0.3 && r.holder_count_backfilled === 0],
   ['holder_gini < 0.8 (measured)', (r) => r.holder_gini != null && r.holder_gini < 0.8 && r.holder_count_backfilled === 0],
-  ['holder_sniper_ratio >= 20 (measured)', (r) => r.holder_sniper_ratio != null && r.holder_sniper_ratio >= 20 && r.holder_count_backfilled === 0],
+  ['holder_sniper_ratio >= 5 (measured)',  (r) => r.holder_sniper_ratio != null && r.holder_sniper_ratio >= 5 && r.holder_count_backfilled === 0],
+  ['holder_sniper_ratio >= 10 (measured)', (r) => r.holder_sniper_ratio != null && r.holder_sniper_ratio >= 10 && r.holder_count_backfilled === 0],
   // Top 5 Concentration
   ['top5 < 10%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 10],
   ['top5 < 15%', (r) => r.top5_wallet_pct != null && r.top5_wallet_pct < 15],
