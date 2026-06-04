@@ -3916,12 +3916,13 @@ const FILTER_PRESET_GROUPS: Array<{ group: string; filters: Array<{ name: string
   { group: 'Holder Dist', filters: [
     { name: 'nakamoto >= 5 (measured)',    configs: [{ field: 'nakamoto_coef', operator: '>=', value: 5, label: 'nak>=5' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
     { name: 'nakamoto >= 10 (measured)',   configs: [{ field: 'nakamoto_coef', operator: '>=', value: 10, label: 'nak>=10' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
-    { name: 'whales <= 1 (measured)',      configs: [{ field: 'whale_count_1pct', operator: '<=', value: 1, label: 'whales<=1' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
-    { name: 'whales <= 3 (measured)',      configs: [{ field: 'whale_count_1pct', operator: '<=', value: 3, label: 'whales<=3' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'whales <= 5 (measured)',      configs: [{ field: 'whale_count_1pct', operator: '<=', value: 5, label: 'whales<=5' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'whales <= 10 (measured)',     configs: [{ field: 'whale_count_1pct', operator: '<=', value: 10, label: 'whales<=10' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
     { name: 'whale_supply < 20% (measured)', configs: [{ field: 'whale_supply_pct', operator: '<', value: 20, label: 'whale_supply<20%' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
     { name: 'dust < 30% (measured)',       configs: [{ field: 'dust_holder_pct', operator: '<', value: 0.3, label: 'dust<30%' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
     { name: 'holder_gini < 0.8 (measured)', configs: [{ field: 'holder_gini', operator: '<', value: 0.8, label: 'hgini<0.8' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
-    { name: 'holder_sniper_ratio >= 20 (measured)', configs: [{ field: 'holder_sniper_ratio', operator: '>=', value: 20, label: 'h/sniper>=20' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holder_sniper_ratio >= 5 (measured)',  configs: [{ field: 'holder_sniper_ratio', operator: '>=', value: 5, label: 'h/sniper>=5' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
+    { name: 'holder_sniper_ratio >= 10 (measured)', configs: [{ field: 'holder_sniper_ratio', operator: '>=', value: 10, label: 'h/sniper>=10' }, { field: 'holder_count_backfilled', operator: '=', value: 0, label: 'measured' }] },
   ]},
   { group: 'Top 5 Concentration', filters: [
     { name: 'top5 < 10%', configs: [{ field: 'top5_wallet_pct', operator: '<', value: 10, label: 'top5<10%' }] },
