@@ -9,26 +9,50 @@
 
 | Phase | State | Notes |
 |---|---|---|
-| 0 — latency spike (Geyser→land) | **blocked** | needs Geyser budget decision (operator) |
-| 1 — wallet-PnL engine (offline) | **built** | code below; runs on existing Helius RPC |
-| 2 — shadow follower (PumpSwap) | not started | needs Geyser |
-| 3 — bonding-curve + multi-venue buy | not started | net-new execution |
+| 0 — latency spike (transport→land) | **pending** | uses Enhanced WS `transactionSubscribe` (see transport note) |
+| 1 — wallet-PnL engine (offline) | **built + wired, default-on** | runs on existing Helius RPC; publishes `wallet-leaderboard.json` |
+| 2 — shadow follower | not started | Enhanced WS, not LaserStream (plan constraint) |
+| 3 — bonding-curve + multi-venue buy | not started | net-new execution; no Helius `sendBundle` on Developer |
 | 4 — live_micro | not started | gated on shadow promotion |
 
-**Phase 1 code (in repo, typechecks clean, FIFO self-test green):**
+### Transport decision (revised 2026-06-05 — Helius Developer plan)
+
+The operator is on Helius **Developer ($49)**: 10M credits/mo, 50 req/s, ✅ Enhanced WebSockets,
+✅ Staked Connections, ❌ `sendBundle`, and **LaserStream gRPC is devnet-only** (mainnet gRPC needs
+Business $499+). So the realtime follower (Phase 2) will use **Helius Enhanced WebSockets
+`transactionSubscribe`** keyed on the follow-list wallets — it pushes the full parsed transaction
+filtered server-side to our watchlist, which is exactly what we need and works on the current plan.
+Higher latency than gRPC but viable, especially for bonding-curve follows (curve fills take seconds–
+minutes, not one block). The graduation listener already measures ~1.2s p50 processed-WS delivery,
+which is the right ballpark. **Execution caveat:** no Helius `sendBundle` means Jito bundles must go
+through Jito's own block engine (`src/trading/jito.ts` — needs verifying it's independent of Helius) or
+fall back to plain `sendTransaction` (5/s) with priority fees. The shared 10M-credit cap is the real
+binding constraint — hence the worker's conservative, credit-budgeted defaults.
+
+**Phase 1 code (in repo, typechecks clean, FIFO self-test + leaderboard integration test green):**
 - `src/db/schema.ts` — additive tables: `wallet_candidates`, `wallet_tx_cache`, `wallet_round_trips`, `wallet_scores`, `follow_list`.
 - `src/copytrade/parse-swap.ts` — shared `parseSwapForOwner()` (consolidates the buy/sell classification previously duplicated in `competition-detector.ts` + `swap-logger.ts`; generalized to any owner + venue attribution).
 - `src/copytrade/wallet-pnl.ts` — FIFO `reconstructRoundTrips()`, `scoreWallet()` (drop_top3 + monthly run rate + win rate), `fetchWalletSwaps()` (RPC-limited on-chain fetch).
 - `src/copytrade/discovery.ts` — `seedCandidatesFromDb()` (zero-RPC seed from existing wallet columns).
 - `src/copytrade/ranker.ts` — `evaluateWallet()` / `rankWallets()` against the wallet-level promotion bar.
 - `src/copytrade/queries.ts` — DB helpers for the new tables.
-- `src/copytrade/run-wallet-pnl.ts` — CLI: `npm run wallet-pnl -- [--selftest|--seed-only|--limit N|--write-follow]`.
+- `src/copytrade/worker.ts` — **`CopytradeWorker`: default-ON background loop** (seed → score small credit-budgeted batch → rank), wired in `src/index.ts` after the listener starts. Yields to the graduation pipeline via the shared RPC limiter. Opt out with `COPYTRADE_DISABLED=true`.
+- `src/copytrade/leaderboard.ts` — `computeWalletLeaderboard()`: pure-SQL read of `wallet_scores`, published as **`wallet-leaderboard.json`** on bot-status every gist-sync cycle (no RPC in the hot path).
+- `src/copytrade/run-wallet-pnl.ts` — CLI for manual runs: `npm run wallet-pnl -- [--selftest|--seed-only|--limit N|--write-follow]`.
 
-**Run it (operator):** `npm run wallet-pnl -- --selftest` (no RPC) verifies FIFO; then with `HELIUS_RPC_URL`
-set, `npm run wallet-pnl -- --limit 50` seeds from the live DB, scores 50 wallets, and prints the
-leaderboard. `--write-follow` records promotable wallets to `follow_list` **disabled** (shadow gates enable).
-Caveat: the fetch path hasn't yet been run against live Helius from this session (no creds here) — first
-live run is operator-side; watch RPC budget (`getSignaturesForAddress` + per-tx parse per candidate).
+**Zero-config operation:** the worker runs automatically on deploy — no env var to set. It seeds
+candidates immediately (free SQL), then scores a small batch (default 10 wallets / 400 sigs each) on a
+slow interval (default 6h), and the leaderboard appears at
+`https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/refs/heads/bot-status/wallet-leaderboard.json`.
+
+**Optional tuning env (all have safe defaults — none required):** `COPYTRADE_DISABLED` (off switch),
+`COPYTRADE_INTERVAL_MS`, `COPYTRADE_SCORE_BATCH`, `COPYTRADE_MAX_SIGS`, `COPYTRADE_RESTALE_SEC`.
+
+**Credit budget:** scoring is the only RPC cost — `getSignaturesForAddress` + per-tx
+`getParsedTransaction` per candidate. Defaults cap this at ~10 wallets × ≤400 parses every 6h, and the
+shared `globalRpcLimiter` DROPS wallet reads whenever the graduation pipeline's queue is busy, so the
+follower can never starve graduations. Watch the credit meter on the first day and lower
+`COPYTRADE_SCORE_BATCH` / raise `COPYTRADE_INTERVAL_MS` if needed.
 
 ## 0. Why "beyond pump.fun" is forced, not optional
 
