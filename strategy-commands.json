@@ -1,0 +1,93 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-06-05",
+      "date": "2026-06-05",
+      "generated_by": "claude",
+      "narrative": "## Roster: No changes since yesterday\n\n144 strategies in roster; 138 enabled, 6 disabled. Roster is identical to yesterday's snapshot — no adds, removes, or toggles.\n\n## Headline: Kill backlog is 3-5 days old; v25 nominally clears all 4 gates but the climbing regime is broken\n\nZero graduations detected so far today (2026-06-05). The diagnose verdict is HEALTHY on all four levels, but `pipeline_health` shows a `NO_GRADS` state and a high-severity `graduation_rate_drop` anomaly: projected today = 0 vs 7-day median = 174. This is likely an early-day data gap rather than a WS failure (last graduation was only 682s ago per the timestamp), but warrants monitoring. **No trades are attributed to today** — all P&L figures below are lifetime/yesterday.\n\nThe most urgent issue is the operator kill backlog. Ten action items remain PROPOSED across June 2–4 (3 days with zero executions). Among these: 5 kill batches covering 34+ strategies. The climbing cluster in particular (v28/v32/v33/v34) has been INVALID and DECAYING for multiple consecutive days — they are burning through compute cycles and inflating the enabled-strategy count with confirmed losers.\n\n## v25 — all 4 gates pass nominally, but do NOT promote\n\n`v25-bot-excl-climbing` clears every SOL-bar gate: n=571, total_net_sol=+3.609, drop_top3=+1.296, monthly_run_rate=+4.95 SOL/mo. This is the only enabled strategy in promotable territory.\n\nHowever, `edge-decay.json` flags it **DECAYING**: recent-30 median = −18.71% vs all-time median = −6.02%. Yesterday alone it lost −0.895 SOL across 22 trades. The same climbing-momentum regime that made v28/v32/v33/v34 go INVALID appears to be catching up to the v25 base strategy. The drop_top3 of +1.296 is still positive — so it’s not lottery-ticket edge — but it is deteriorating.\n\nRecommendation: **watch, not promote.** Kill criterion: if total_net_sol drops below +2.0 SOL or drop_top3 goes negative, recommend kill. Do not open a live position on a DECAYING strategy.\n\n## v9 family — approaching n=100, still accumulating\n\nThree v9 shadow strategies are the best near-bar candidates:\n- **v9shadow-velmid-liq-mono** (n=92, total=+3.737, drop3=+1.373, monthly=+3.42, STABLE): 8 trades to n=100; monthly is just below the 3.75 bar.\n- **v9shadow-vel20-top5** (n=96, total=+3.194, drop3=+0.144, monthly=+2.70, STABLE): 4 trades to bar; drop3 is dangerously thin — one bad trade flips it negative.\n- **v9shadow-velmono-dev** (n=88, total=+3.685, drop3=+1.946, monthly=+3.19, DECAYING −6.24%): 12 trades to bar; DECAYING flag is a caution — watch whether decay accelerates.\n\nNone of these are promotable yet (n<100 + monthly<3.75), but velmid-liq-mono and vel20-top5 should hit n=100 within 4-10 days assuming current trade rate.\n\n## Anomalies: 31 strategies DECAYING (n≥50) — systemic\n\nEdge-decay shows 31 enabled strategies with n≥50 flagged DECAYING. This is not random noise: the climbing cluster (v28/v32/v33/v34/v25), the breakeven variants (v42), the entry-gate variants (v39), and multiple v40/v41/v43/v44 experiments all share the same -18% to -34% recent-30 median. This is a regime shift away from the climbing-momentum entry signal. The kill backlog addresses most of these; what remains is that the operator needs to act.\n\nThe only STRENGTHENING flags at n≥30: v36-light-conc-flow (n=82, recent-30 +7.31%) and v35-vel2050-dev3 (n=57, +14.63%). Neither clears the drop3 gate yet (drop3=-1.832 and -3.568 respectively), so neither is a near-term promotion candidate.\n\n## Historical pattern: 3 consecutive no-action days\n\nJune 2, June 3, June 4 — all three daily reports flagged urgent kills, all three were ignored. The report narrative has escalated each day. At this point the primary blocker is **operator execution**, not research. Recommend addressing at minimum the climbing cluster kill batch (ai-2026-06-04-001: v32/v28/v33/v34) as the first action this cycle.\n\n## Operator next step\n\nExecute `ai-2026-06-04-001` first: kill v32-bot-excl-climbing-1s, v28-bot-excl-climbing-1s-ttp, v33-bot-excl-climbing-ttp5, v34-bot-excl-climbing-minlift. Then work through the remaining kill batches from June 2-3. No promotions warranted until the climbing regime stabilizes.",
+      "winners": [],
+      "losers": [],
+      "anomalies": [
+        {
+          "severity": "high",
+          "kind": "graduation_rate_drop",
+          "detail": "Projected grad count today (0) is <70% of 7-day median (174). Likely an early-day data gap, but monitor.",
+          "metric": {"projected": 0, "median_7d": 174, "today_so_far": 0}
+        },
+        {
+          "severity": "high",
+          "kind": "kill_backlog_stale",
+          "detail": "10 action items PROPOSED across June 2-4 with zero operator executions. 34+ INVALID/DECAYING strategies still running. Climbing cluster (v28/v32/v33/v34) most urgent.",
+          "metric": {"open_items": 10, "days_stale": 3}
+        },
+        {
+          "severity": "med",
+          "kind": "edge_decay_systemic",
+          "detail": "31 strategies DECAYING at n>=50. Regime shift away from climbing-momentum entry signal. Worst: v40-vel-band (-34.18%), v37-flow-sells-light (-33.87%), v39-entry cluster (-29.27%), v37-creator-clean (-26.68%).",
+          "metric": {"decaying_count": 31, "worst_recent30m_pct": -34.18}
+        },
+        {
+          "severity": "med",
+          "kind": "edge_decay",
+          "detail": "v25-bot-excl-climbing DECAYING: recent-30 median -18.71% vs all-time -6.02%. Yesterday -0.895 SOL on 22 trades. All 4 gates pass nominally but promotion not warranted.",
+          "metric": {"strategy_id": "v25-bot-excl-climbing", "recent_30_median_pct": -18.71, "all_median_pct": -6.02}
+        },
+        {
+          "severity": "med",
+          "kind": "lottery_edge",
+          "detail": "v37-whale-conviction: monthly=+5.28 SOL/mo but drop_top3=-0.532 SOL. Edge concentrated in top 3 trades. INVALID by drop3 gate.",
+          "metric": {"strategy_id": "v37-whale-conviction", "monthly_run_rate_sol": 5.28, "drop_top3": -0.532}
+        }
+      ],
+      "patterns": [
+        "3 consecutive daily reports (June 3, 4, 5) with no operator kills executed — backlog has grown to 10 PROPOSED items covering 34+ strategies.",
+        "Climbing cluster (v25/v28/v32/v33/v34) shows uniform DECAYING edge-decay flags with recent-30 medians between -18% and -26% — consistent regime shift, not isolated noise.",
+        "v9 shadow family accumulating steadily: velmid-liq-mono at n=92 (+3.74 SOL total), vel20-top5 at n=96 (+3.19 SOL total), velmono-dev at n=88 (+3.69 SOL). Only the monthly rate (sub-3.75) blocks the bar.",
+        "v50-strength-live-micro is the sole live-trading strategy (confirmed in diagnose.json level5). Its daily net P&L shows 0 today (no graduated tokens yet).",
+        "Synthetic pool rate: 56% of last 50 graduations used synthetic pools. Worth monitoring for data quality impact on real-time filters."
+      ],
+      "recommendations": {
+        "kill": [
+          {"strategy_id": "v32-bot-excl-climbing-1s", "reason": "n=398, drop3=-2.594 SOL (INVALID), DECAYING recent30m=-24.57%. Carried from ai-2026-06-04-001 — most urgent batch."},
+          {"strategy_id": "v28-bot-excl-climbing-1s-ttp", "reason": "n=434, drop3=-2.346 SOL (INVALID), DECAYING recent30m=-18.24%. Carried from ai-2026-06-04-001."},
+          {"strategy_id": "v33-bot-excl-climbing-ttp5", "reason": "n=401, drop3=-3.076 SOL (INVALID), DECAYING recent30m=-25.67%. Carried from ai-2026-06-04-001."},
+          {"strategy_id": "v34-bot-excl-climbing-minlift", "reason": "n=405, drop3=-3.051 SOL (INVALID), DECAYING recent30m=-25.67%. Carried from ai-2026-06-04-001."},
+          {"strategy_id": "v14-sumabs-shadow", "reason": "n=155, drop3=-2.809 SOL, total=-1.026 SOL (INVALID — n>=100 + drop3<=0 + total<0). Carried from ai-2026-06-02-003."},
+          {"strategy_id": "v37-whale-conviction", "reason": "n=165, drop3=-0.532 SOL (INVALID — lottery-ticket edge). monthly=+5.28 SOL concentrates in top 3 trades. Carried from ai-2026-06-02-002."},
+          {"strategy_id": "v37-creator-clean", "reason": "n=128, drop3=-4.437 SOL (INVALID), DECAYING recent30m=-26.68%, total=-3.487 SOL. Carried from ai-2026-06-03-001."},
+          {"strategy_id": "v40-vel-band", "reason": "n=129, drop3=-4.744 SOL (INVALID), DECAYING recent30m=-34.18%, total=-2.677 SOL. Carried from ai-2026-06-03-001."},
+          {"strategy_id": "v43-trailsl-15-7-1s", "reason": "n=179, drop3=-5.021 SOL (INVALID), total=-2.991 SOL. Carried from ai-2026-06-02-002."},
+          {"strategy_id": "v43-trailsl-20-10-1s", "reason": "n=178, drop3=-3.287 SOL (INVALID), total=-1.224 SOL. Carried from ai-2026-06-02-002."},
+          {"strategy_id": "v48-climb-signal", "reason": "n=45 but total=-3.383, drop3=-4.828 SOL. Edge-decay STRENGTHENING flag is misleading — absolute PnL deeply negative. Kill before n=100."}
+        ],
+        "watch": [
+          {"strategy_id": "v9shadow-velmid-liq-mono", "reason": "n=92 (8 trades to bar), total=+3.737, drop3=+1.373 SOL, monthly=+3.42 SOL (below 3.75 bar but close), STABLE. Best near-bar candidate."},
+          {"strategy_id": "v9shadow-vel20-top5", "reason": "n=96 (4 trades to bar), total=+3.194, drop3=+0.144 SOL (very thin), monthly=+2.70 SOL, STABLE. High risk: one bad trade flips drop3 negative."},
+          {"strategy_id": "v9shadow-velmono-dev", "reason": "n=88, total=+3.685, drop3=+1.946, monthly=+3.19 SOL, DECAYING (-6.24%). Watch decay progression — if recent-30 worsens, kill before n=100."},
+          {"strategy_id": "v25-bot-excl-climbing", "reason": "n=571, all 4 gates pass nominally (drop3=+1.296, monthly=+4.95), but DECAYING recent30m=-18.71%. Watch total_net_sol; recommend kill if drops below +2.0 SOL or drop3 goes negative."}
+        ],
+        "create_new": []
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-06-05-001",
+          "kind": "kill",
+          "target_id": "v32-bot-excl-climbing-1s,v28-bot-excl-climbing-1s-ttp,v33-bot-excl-climbing-ttp5,v34-bot-excl-climbing-minlift",
+          "summary": "ESCALATED (3rd request): Kill climbing cluster v32/v28/v33/v34 — all INVALID (drop3 -2.35 to -3.08 SOL) and DECAYING. Same as ai-2026-06-04-001 reissued as highest priority. Execute this batch first.",
+          "status": "PROPOSED",
+          "proposed_at": 1749110400
+        },
+        {
+          "id": "ai-2026-06-05-002",
+          "kind": "watch",
+          "target_id": "v9shadow-velmid-liq-mono,v9shadow-vel20-top5",
+          "summary": "Both v9 strategies are 4-8 trades from n=100. Monitor: velmid-liq-mono needs n>=100 + monthly>=3.75 to promote; vel20-top5 needs same but drop3=+0.144 is fragile — one bad trade invalidates it.",
+          "status": "PROPOSED",
+          "proposed_at": 1749110400
+        }
+      ],
+      "auto_journal": true
+    }
+  ]
+}
