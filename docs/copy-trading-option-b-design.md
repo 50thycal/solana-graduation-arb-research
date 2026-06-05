@@ -1,9 +1,34 @@
 # Option B — Wallet-Following Copy Trading: Design Doc (2026-06-04)
 
-> **Status: design / research artifact, not yet built.** Operator review gate before any code lands.
+> **Status: Phase 1 scaffolding landed (2026-06-04); Phases 0/2+ pending operator decisions.**
 > This is a partial pivot of the bot's thesis (graduation-momentum → wallet-following), so it ships
 > as a *parallel* subsystem that reuses the existing executor, Helius account, Jito path, and the
 > n≥100 / drop-top-3 evaluation discipline — it does **not** rip out the graduation pipeline.
+
+### Implementation status
+
+| Phase | State | Notes |
+|---|---|---|
+| 0 — latency spike (Geyser→land) | **blocked** | needs Geyser budget decision (operator) |
+| 1 — wallet-PnL engine (offline) | **built** | code below; runs on existing Helius RPC |
+| 2 — shadow follower (PumpSwap) | not started | needs Geyser |
+| 3 — bonding-curve + multi-venue buy | not started | net-new execution |
+| 4 — live_micro | not started | gated on shadow promotion |
+
+**Phase 1 code (in repo, typechecks clean, FIFO self-test green):**
+- `src/db/schema.ts` — additive tables: `wallet_candidates`, `wallet_tx_cache`, `wallet_round_trips`, `wallet_scores`, `follow_list`.
+- `src/copytrade/parse-swap.ts` — shared `parseSwapForOwner()` (consolidates the buy/sell classification previously duplicated in `competition-detector.ts` + `swap-logger.ts`; generalized to any owner + venue attribution).
+- `src/copytrade/wallet-pnl.ts` — FIFO `reconstructRoundTrips()`, `scoreWallet()` (drop_top3 + monthly run rate + win rate), `fetchWalletSwaps()` (RPC-limited on-chain fetch).
+- `src/copytrade/discovery.ts` — `seedCandidatesFromDb()` (zero-RPC seed from existing wallet columns).
+- `src/copytrade/ranker.ts` — `evaluateWallet()` / `rankWallets()` against the wallet-level promotion bar.
+- `src/copytrade/queries.ts` — DB helpers for the new tables.
+- `src/copytrade/run-wallet-pnl.ts` — CLI: `npm run wallet-pnl -- [--selftest|--seed-only|--limit N|--write-follow]`.
+
+**Run it (operator):** `npm run wallet-pnl -- --selftest` (no RPC) verifies FIFO; then with `HELIUS_RPC_URL`
+set, `npm run wallet-pnl -- --limit 50` seeds from the live DB, scores 50 wallets, and prints the
+leaderboard. `--write-follow` records promotable wallets to `follow_list` **disabled** (shadow gates enable).
+Caveat: the fetch path hasn't yet been run against live Helius from this session (no creds here) — first
+live run is operator-side; watch RPC budget (`getSignaturesForAddress` + per-tx parse per candidate).
 
 ## 0. Why "beyond pump.fun" is forced, not optional
 
