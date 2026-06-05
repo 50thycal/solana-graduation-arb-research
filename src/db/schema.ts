@@ -904,6 +904,90 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_dismissed_anomalies_at ON dismissed_anomalies(dismissed_at);
   `);
 
+  // ── Copy-trading (Option B) wallet-intelligence tables ──────────────────
+  // Phase 1 subsystem: discover candidate wallets, reconstruct their realized
+  // SOL P&L from on-chain swap history (FIFO), and rank them under the SAME
+  // bar the strategy book uses (n>=100 · drop_top3>0 · monthly>=3.75). This is
+  // a parallel subsystem — it does NOT feed the graduation pipeline. See
+  // docs/copy-trading-option-b-design.md. All tables are additive and isolated;
+  // dropping the copytrade module leaves the rest of the schema untouched.
+  db.exec(`
+    -- Candidate wallets worth scoring. Seeded from existing DB wallets
+    -- (competition_signals + graduation_momentum.firstbuyer/dev/creator) at
+    -- zero new RPC cost; 'source' records where each came from.
+    CREATE TABLE IF NOT EXISTS wallet_candidates (
+      address TEXT PRIMARY KEY,
+      first_seen INTEGER NOT NULL,
+      source TEXT NOT NULL,
+      last_refreshed INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_wallet_candidates_refreshed ON wallet_candidates(last_refreshed);
+
+    -- Raw parsed swaps per wallet — the PnL engine's input. One row per
+    -- (wallet, signature). 'venue' is best-effort program attribution.
+    -- sol_delta is the SIGNER's net SOL change (negative = bought, positive =
+    -- sold); token_delta is the signed change in the traded mint balance.
+    CREATE TABLE IF NOT EXISTS wallet_tx_cache (
+      address TEXT NOT NULL,
+      signature TEXT NOT NULL,
+      block_time INTEGER NOT NULL,
+      mint TEXT,
+      action TEXT,
+      sol_delta REAL,
+      token_delta REAL,
+      venue TEXT,
+      PRIMARY KEY (address, signature)
+    );
+    CREATE INDEX IF NOT EXISTS idx_wallet_tx_cache_addr_time ON wallet_tx_cache(address, block_time);
+
+    -- FIFO-matched round trips. open_ts/close_ts are block times; realized_sol
+    -- is sol_out - sol_in for the matched lot AFTER our copy-cost model.
+    CREATE TABLE IF NOT EXISTS wallet_round_trips (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      address TEXT NOT NULL,
+      mint TEXT NOT NULL,
+      open_ts INTEGER NOT NULL,
+      close_ts INTEGER NOT NULL,
+      sol_in REAL NOT NULL,
+      sol_out REAL NOT NULL,
+      realized_sol REAL NOT NULL,
+      hold_sec INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_wallet_round_trips_addr ON wallet_round_trips(address);
+
+    -- Per-wallet aggregate score. Mirrors the strategy promotion metrics so the
+    -- ranker can apply the identical bar. drop_top3 is the outlier-robustness
+    -- check (CLAUDE.md item 2). scored_at = when this snapshot was computed.
+    CREATE TABLE IF NOT EXISTS wallet_scores (
+      address TEXT PRIMARY KEY,
+      n_round_trips INTEGER NOT NULL,
+      total_realized_sol REAL NOT NULL,
+      total_realized_sol_drop_top3 REAL NOT NULL,
+      median_rt_pct REAL,
+      monthly_run_rate_sol REAL,
+      win_rate REAL,
+      avg_hold_sec REAL,
+      last_active INTEGER,
+      venues_json TEXT,
+      scored_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_wallet_scores_runrate ON wallet_scores(monthly_run_rate_sol);
+
+    -- Wallets promoted onto the live follow list. Same shape role as a strategy
+    -- config: copy_size_sol + max_concurrent + kill_criterion + enabled. The
+    -- realtime follower (Phase 2) reads enabled=1 rows. kill_criterion uses the
+    -- SOL-denominated forms from CLAUDE.md.
+    CREATE TABLE IF NOT EXISTS follow_list (
+      address TEXT PRIMARY KEY,
+      rank INTEGER,
+      copy_size_sol REAL NOT NULL DEFAULT 0.05,
+      max_concurrent INTEGER NOT NULL DEFAULT 1,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      kill_criterion TEXT,
+      added_at INTEGER NOT NULL
+    );
+  `);
+
   // Add strategy_id to trades_v2 and trade_skips (safe migration)
   {
     const tradeCols = db.prepare("PRAGMA table_info(trades_v2)").all() as Array<{ name: string }>;
