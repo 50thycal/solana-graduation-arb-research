@@ -59,6 +59,7 @@ import { computeRegimeAnalysis } from './regime-analysis';
 import { computeTradingData } from './trading-data';
 import { computeWalletLeaderboard } from '../copytrade/leaderboard';
 import { getSmartMoneyAnalysis } from '../copytrade/smart-money';
+import { computeCopyProbe } from '../copytrade/follower-probe';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { computeLiveTrainingData } from './live-training-data';
 import { computeDailyReport } from './daily-report';
@@ -241,6 +242,8 @@ export interface StatusUrls {
   wallet_leaderboard: string;
   /** Copy-trade (Option B) smart-money token-selection analysis. */
   smart_money: string;
+  /** Copy-follower latency probe (Phase 2 pre-work). */
+  copy_probe: string;
   // Daily report — cross-session memory written by the routine /daily-report
   // Claude run via report-upsert commands. Bot publishes auto-stats every
   // sync cycle so the page is populated even before the first Claude run.
@@ -436,6 +439,7 @@ export class GistSync {
       leave_one_out_pnl: `${base}/leave-one-out-pnl.json`,
       wallet_leaderboard: `${base}/wallet-leaderboard.json`,
       smart_money: `${base}/smart-money.json`,
+      copy_probe: `${base}/copy-probe.json`,
       report: `${base}/report.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
@@ -883,6 +887,8 @@ export class GistSync {
     // Smart-money token-selection analysis — cheap read of the bot_settings cache
     // (computed out-of-band by CopytradeWorker every ~3h). No compute here.
     const smartMoney = getSmartMoneyAnalysis(this.db);
+    // Copy-follower latency probe — cheap SQL read of copy_probe_events.
+    const copyProbe = computeCopyProbe(this.db);
     // dailyReport reads leaveOneOutPnl internally to populate
     // promotion_readiness_top5 — keep this ordering.
     const dailyReport = await timed('dailyReport', () => computeDailyReport(this.db));
@@ -1068,6 +1074,7 @@ export class GistSync {
       'regime-analysis.json': JSON.stringify(regimeAnalysis, null, 2),
       'wallet-leaderboard.json': JSON.stringify(walletLeaderboard, null, 2),
       'smart-money.json': JSON.stringify(smartMoney, null, 2),
+      'copy-probe.json': JSON.stringify(copyProbe, null, 2),
       'report.json': JSON.stringify(dailyReport, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,

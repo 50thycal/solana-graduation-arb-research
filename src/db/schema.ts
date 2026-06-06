@@ -1009,6 +1009,29 @@ function runMigrations(db: Database.Database): void {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_wallet_candidates_priority ON wallet_candidates(priority)`);
   }
 
+  // Copy-follower latency PROBE (Option B, Phase 2 pre-work). One row per
+  // smart-wallet swap we detect in real time via Helius transactionSubscribe.
+  // Records how late we saw it (detection_lag_sec = our WS-notification time −
+  // the tx's on-chain block time) so we can measure our latency disadvantage
+  // BEFORE building the real shadow-copy executor. No positions are taken.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS copy_probe_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      wallet_address TEXT NOT NULL,
+      signature TEXT NOT NULL,
+      mint TEXT,
+      action TEXT,
+      sol_delta REAL,
+      venue TEXT,
+      their_block_time INTEGER,
+      detected_at INTEGER,
+      detection_lag_sec REAL,
+      slot INTEGER,
+      UNIQUE(wallet_address, signature)
+    );
+    CREATE INDEX IF NOT EXISTS idx_copy_probe_detected ON copy_probe_events(detected_at);
+  `);
+
   // Add strategy_id to trades_v2 and trade_skips (safe migration)
   {
     const tradeCols = db.prepare("PRAGMA table_info(trades_v2)").all() as Array<{ name: string }>;
