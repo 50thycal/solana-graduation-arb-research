@@ -12,6 +12,7 @@ export interface WalletCandidate {
   first_seen: number;
   source: string;
   last_refreshed: number | null;
+  priority: number | null;
 }
 
 /** Insert a candidate if new; never overwrites an existing first_seen/source. */
@@ -34,15 +35,32 @@ export function getCandidates(
 ): WalletCandidate[] {
   const limit = opts.limit ?? 500;
   if (opts.staleBeforeTs != null) {
+    // Eligible = never scored OR scored long enough ago. Within that, take
+    // highest-priority first (NULL priority sorts last under DESC), unscored
+    // before stale, oldest-stale as the final tiebreak. This is what makes the
+    // scorer work through likely-alpha wallets instead of address order.
     return db.prepare(`
       SELECT * FROM wallet_candidates
       WHERE last_refreshed IS NULL OR last_refreshed < @stale
-      ORDER BY (last_refreshed IS NOT NULL), last_refreshed ASC
+      ORDER BY (last_refreshed IS NOT NULL) ASC, priority DESC, last_refreshed ASC
       LIMIT @limit
     `).all({ stale: opts.staleBeforeTs, limit }) as WalletCandidate[];
   }
-  return db.prepare(`SELECT * FROM wallet_candidates ORDER BY first_seen ASC LIMIT @limit`)
+  return db.prepare(`SELECT * FROM wallet_candidates ORDER BY priority DESC, first_seen ASC LIMIT @limit`)
     .all({ limit }) as WalletCandidate[];
+}
+
+/** Highest-priority candidates not yet scored — the scorer's upcoming queue. */
+export function getTopUnscoredByPriority(
+  db: Database.Database,
+  limit = 10,
+): Array<{ address: string; priority: number | null }> {
+  return db.prepare(`
+    SELECT address, priority FROM wallet_candidates
+    WHERE last_refreshed IS NULL AND priority IS NOT NULL
+    ORDER BY priority DESC
+    LIMIT ?
+  `).all(limit) as Array<{ address: string; priority: number | null }>;
 }
 
 export function countCandidates(db: Database.Database): number {
