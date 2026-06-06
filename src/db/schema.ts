@@ -1023,6 +1023,7 @@ function runMigrations(db: Database.Database): void {
       action TEXT,
       sol_delta REAL,
       venue TEXT,
+      tier TEXT,
       their_block_time INTEGER,
       detected_at INTEGER,
       detection_lag_sec REAL,
@@ -1031,6 +1032,13 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_copy_probe_detected ON copy_probe_events(detected_at);
   `);
+  // Additive: tier column (promotable vs smart-only) for DBs created before it.
+  {
+    const pc = db.prepare("PRAGMA table_info(copy_probe_events)").all() as Array<{ name: string }>;
+    if (!pc.some((c) => c.name === 'tier')) {
+      db.exec(`ALTER TABLE copy_probe_events ADD COLUMN tier TEXT`);
+    }
+  }
 
   // Add strategy_id to trades_v2 and trade_skips (safe migration)
   {
