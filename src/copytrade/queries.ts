@@ -271,3 +271,32 @@ export function upsertFollow(
     added: row.addedAt,
   });
 }
+
+/** Watchlist for the copy-follower probe: the promotable wallets in follow_list
+ *  ("strict" set). Ordered by rank. */
+export function getFollowListAddresses(db: Database.Database): string[] {
+  return (db.prepare(`SELECT address FROM follow_list ORDER BY rank ASC`).all() as Array<{ address: string }>)
+    .map((r) => r.address);
+}
+
+export interface ProbeEventInsert {
+  wallet_address: string;
+  signature: string;
+  mint: string | null;
+  action: string | null;
+  sol_delta: number | null;
+  venue: string | null;
+  their_block_time: number | null;
+  detected_at: number;        // unix ms
+  detection_lag_sec: number | null;
+  slot: number | null;
+}
+
+/** Record one detected smart-wallet swap (probe only — no position taken). */
+export function insertProbeEvent(db: Database.Database, ev: ProbeEventInsert): void {
+  db.prepare(`
+    INSERT OR IGNORE INTO copy_probe_events
+      (wallet_address, signature, mint, action, sol_delta, venue, their_block_time, detected_at, detection_lag_sec, slot)
+    VALUES (@wallet_address, @signature, @mint, @action, @sol_delta, @venue, @their_block_time, @detected_at, @detection_lag_sec, @slot)
+  `).run(ev);
+}
