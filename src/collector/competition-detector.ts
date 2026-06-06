@@ -13,6 +13,7 @@ import {
   updateMomentumFirstBuyer,
 } from '../db/queries';
 import { ObservationContext } from './price-collector';
+import { updateSmartMoneyEarlyCount } from '../copytrade/queries';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 
@@ -344,6 +345,16 @@ export class CompetitionDetector {
       // here (T+35) since by now the parser has seen everything in T+0..T+30s.
       const sniperAgg = computeSniperAggregates(this.db, ctx.graduationId);
       updateSniperMetrics(this.db, ctx.graduationId, sniperAgg);
+
+      // Copy-trade B: # of "smart set" wallets that bought in the 0-30s window,
+      // against the CURRENT smart set (forward-only live signal). Same window as
+      // sniper/buy-pressure, so it piggybacks on the parsing just done.
+      try {
+        updateSmartMoneyEarlyCount(this.db, ctx.graduationId);
+      } catch (err) {
+        logger.warn('Failed to write smart_money_early_count for grad %d: %s',
+          ctx.graduationId, err instanceof Error ? err.message : String(err));
+      }
 
       // B5 — flow imbalance + VWAP. Same competition_signals window, so
       // computing it here piggybacks on the parsing we just did. Safe even
