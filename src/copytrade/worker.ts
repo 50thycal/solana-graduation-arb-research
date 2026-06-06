@@ -1,0 +1,177 @@
+import Database from 'better-sqlite3';
+import { Connection } from '@solana/web3.js';
+import { seedCandidatesFromDb } from './discovery';
+import {
+  getCandidates,
+  cacheWalletSwaps,
+  replaceRoundTrips,
+  upsertWalletScore,
+  getTopWalletScores,
+  upsertFollow,
+} from './queries';
+import { fetchWalletSwaps, scoreWallet, reconstructRoundTrips } from './wallet-pnl';
+import { rankWallets } from './ranker';
+import { makeLogger } from '../utils/logger';
+
+const logger = makeLogger('copytrade-worker');
+
+/**
+ * Background wallet-intelligence worker (copy-trade Option B, Phase 1).
+ *
+ * Default-ON — no env var required to enable it; set COPYTRADE_DISABLED=true to
+ * turn it off. It is deliberately conservative so it never starves the
+ * graduation pipeline:
+ *   - seeding is free (pure SQL over existing tables);
+ *   - scoring fetches are gated by globalRpcLimiter inside fetchWalletSwaps,
+ *     which DROPS wallet reads when the RPC queue is busy — graduation work
+ *     always wins the token;
+ *   - only a small batch of STALE candidates is scored per tick, on a slow
+ *     interval, so the shared 10M-credit/month Helius cap is respected.
+ *
+ * Results land in wallet_scores; the gist-sync cycle reads them (no RPC) to
+ * publish wallet-leaderboard.json. The worker never trades — Phase 1 is
+ * research only.
+ */
+
+const DEFAULTS = {
+  intervalMs: 6 * 60 * 60 * 1000, // 6h between scoring passes
+  firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
+  scoreBatchLimit: 10,            // wallets scored per tick
+  maxSignaturesPerWallet: 400,    // history depth per wallet (caps RPC cost)
+  restaleSeconds: 24 * 3600,      // re-score a wallet at most once / 24h
+};
+
+function intEnv(name: string, fallback: number): number {
+  const v = process.env[name];
+  if (!v) return fallback;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+export class CopytradeWorker {
+  private readonly db: Database.Database;
+  private readonly getConnection: () => Connection | null;
+  private readonly intervalMs: number;
+  private readonly scoreBatchLimit: number;
+  private readonly maxSignatures: number;
+  private readonly restaleSeconds: number;
+  private firstRunTimer: ReturnType<typeof setTimeout> | null = null;
+  private interval: ReturnType<typeof setInterval> | null = null;
+  private running = false;
+
+  constructor(opts: { db: Database.Database; getConnection: () => Connection | null }) {
+    this.db = opts.db;
+    this.getConnection = opts.getConnection;
+    this.intervalMs = intEnv('COPYTRADE_INTERVAL_MS', DEFAULTS.intervalMs);
+    this.scoreBatchLimit = intEnv('COPYTRADE_SCORE_BATCH', DEFAULTS.scoreBatchLimit);
+    this.maxSignatures = intEnv('COPYTRADE_MAX_SIGS', DEFAULTS.maxSignaturesPerWallet);
+    this.restaleSeconds = intEnv('COPYTRADE_RESTALE_SEC', DEFAULTS.restaleSeconds);
+  }
+
+  start(): void {
+    if (process.env.COPYTRADE_DISABLED === 'true') {
+      logger.info('CopytradeWorker disabled via COPYTRADE_DISABLED=true');
+      return;
+    }
+
+    // Seed immediately — pure SQL, zero RPC, makes the candidate pool visible
+    // on the very first sync even before any scoring has run.
+    try {
+      const added = seedCandidatesFromDb(this.db);
+      logger.info('Initial candidate seed: +%d new', added);
+    } catch (err) {
+      logger.warn('Initial seed failed: %s', err instanceof Error ? err.message : String(err));
+    }
+
+    this.firstRunTimer = setTimeout(() => {
+      this.runOnce().catch((err) => logger.error({ err }, 'CopytradeWorker first run failed'));
+      this.interval = setInterval(() => {
+        this.runOnce().catch((err) => logger.error({ err }, 'CopytradeWorker run failed'));
+      }, this.intervalMs);
+    }, DEFAULTS.firstRunDelayMs);
+
+    logger.info(
+      'CopytradeWorker started (intervalMs=%d, batch=%d, maxSigs=%d)',
+      this.intervalMs, this.scoreBatchLimit, this.maxSignatures,
+    );
+  }
+
+  stop(): void {
+    if (this.firstRunTimer) { clearTimeout(this.firstRunTimer); this.firstRunTimer = null; }
+    if (this.interval) { clearInterval(this.interval); this.interval = null; }
+  }
+
+  /** One seed + score-batch + rank pass. Guarded against overlap. */
+  async runOnce(): Promise<void> {
+    if (this.running) {
+      logger.warn('CopytradeWorker run already in progress — skipping tick');
+      return;
+    }
+    const connection = this.getConnection();
+    if (!connection) {
+      logger.warn('No live RPC connection — skipping scoring tick');
+      return;
+    }
+    this.running = true;
+    const now = Math.floor(Date.now() / 1000);
+    try {
+      seedCandidatesFromDb(this.db, now);
+
+      const staleBefore = now - this.restaleSeconds;
+      const candidates = getCandidates(this.db, { staleBeforeTs: staleBefore, limit: this.scoreBatchLimit });
+      logger.info('Scoring %d stale candidates', candidates.length);
+
+      let scored = 0;
+      for (const c of candidates) {
+        try {
+          const swaps = await fetchWalletSwaps(connection, c.address, { maxSignatures: this.maxSignatures });
+          cacheWalletSwaps(this.db, c.address, swaps);
+          const score = scoreWallet(c.address, swaps);
+          replaceRoundTrips(this.db, c.address, reconstructRoundTrips(swaps));
+          upsertWalletScore(this.db, score, now); // also stamps last_refreshed
+          scored++;
+        } catch (err) {
+          logger.warn('Scoring %s failed: %s', c.address.slice(0, 8),
+            err instanceof Error ? err.message : String(err));
+        }
+      }
+
+      // Re-rank the full scored set and record promotable wallets to follow_list
+      // (DISABLED — Phase 2 shadow validation is what flips enabled=1).
+      try {
+        const top = getTopWalletScores(this.db, 100).map((r) => ({
+          address: r.address,
+          nRoundTrips: r.n_round_trips,
+          totalRealizedSol: r.total_realized_sol,
+          totalRealizedSolDropTop3: r.total_realized_sol_drop_top3,
+          medianRtPct: r.median_rt_pct,
+          monthlyRunRateSol: r.monthly_run_rate_sol,
+          winRate: r.win_rate,
+          avgHoldSec: r.avg_hold_sec,
+          lastActive: r.last_active,
+          venues: r.venues_json ? JSON.parse(r.venues_json) : {},
+        }));
+        const ranked = rankWallets(top, now);
+        let rank = 0;
+        for (const rw of ranked) {
+          if (!rw.passed) break;
+          rank++;
+          upsertFollow(this.db, {
+            address: rw.score.address,
+            rank,
+            copySizeSol: 0.05,
+            maxConcurrent: 1,
+            enabled: false,
+            killCriterion: 'n>=50 and net_sol<-1',
+            addedAt: now,
+          });
+        }
+        logger.info('Scoring tick complete: scored=%d, promotable=%d', scored, rank);
+      } catch (err) {
+        logger.warn('Ranking pass failed: %s', err instanceof Error ? err.message : String(err));
+      }
+    } finally {
+      this.running = false;
+    }
+  }
+}

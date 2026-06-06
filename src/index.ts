@@ -32,6 +32,7 @@ import { startEventLoopLagMonitor } from './utils/event-loop-lag-monitor';
 import { registerApiRoutes } from './api/routes';
 import { GistSync } from './api/gist-sync';
 import { MarketDataFetcher } from './collector/market-data-fetcher';
+import { CopytradeWorker } from './copytrade/worker';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
 import { computePanel11 } from './api/panel11';
 import { HolderEnrichment } from './collector/holder-enrichment';
@@ -3239,6 +3240,23 @@ ${rows.map(r => {
       if (gistSync) gistSync.setStrategyManager(strategyManager);
     } catch (err) {
       logger.error('StrategyManager failed to initialize: %s', err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  // Copy-trade (Option B) wallet-intelligence worker. Default-ON (set
+  // COPYTRADE_DISABLED=true to turn off). Seeds candidate wallets from existing
+  // DB data and scores a small, credit-budgeted batch on a slow interval,
+  // yielding to the graduation pipeline via the shared RPC limiter. Results
+  // surface as wallet-leaderboard.json on bot-status. Research only — never trades.
+  if (listener) {
+    try {
+      const copytradeWorker = new CopytradeWorker({
+        db,
+        getConnection: () => listener?.getConnection() ?? null,
+      });
+      copytradeWorker.start();
+    } catch (err) {
+      logger.warn('CopytradeWorker failed to start: %s', err instanceof Error ? err.message : String(err));
     }
   }
 
