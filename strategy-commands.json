@@ -1,0 +1,114 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-06-06",
+      "date": "2026-06-06",
+      "generated_by": "claude",
+      "narrative": "## 2026-06-06 Daily Report\n\n**No roster changes since yesterday** (144 strategies both days; 138 enabled).\n\n### Headline: Pipeline Stalled — Only 5 Trades Today\n\ndiagnose.json verdict is PIPELINE_STALLED: last T+30 callback fired 986 seconds before the snapshot. All four data-quality levels (graduation detection, price capture, timestamps, label logic) pass — the bot is receiving graduations (last: 5s ago at snapshot time) — but the PriceCollector to StrategyManager callback wiring has gone silent. Today collected 5 trades from 1 graduation (net +0.26 SOL); yesterday ran 1,379 trades. Today's readiness scores reflect yesterday's accumulated totals.\n\n**Operator action needed**: restart or inspect the T+30 callback pipeline. This appears to be the third mid-session stall this week (also observed Jun 3 and Jun 5).\n\n### Top Promotion Candidates (no change from yesterday)\n\nUsing yesterday's accumulated scores since today's data is minimal:\n\n| Strategy | Score | n | drop_top3 | monthly | edge flag |\n|---|---|---|---|---|---|\n| v9shadow-velmid-liq-mono | 88.8 | 96 | +0.979 SOL | +2.97 SOL/mo | STRENGTHENING |\n| v9shadow-velmono-dev | 87.2 | 94 | +0.768 SOL | +2.11 SOL/mo | STRENGTHENING |\n| v25-bot-excl-climbing | 81.5 | 592 | +0.217 SOL | +3.32 SOL/mo | — |\n\nNo strategy clears all four gates today. The v9 shadow pair both have positive drop_top3 (real edge, not lottery-driven) and are STRENGTHENING, but both fall short on monthly run rate (<3.75 SOL/mo) and n<100. v9shadow-velmid-liq-mono is 4 trades from the n>=100 gate; v9shadow-velmono-dev is 6 trades away.\n\nv25-bot-excl-climbing's monthly rate of 3.32 SOL/mo is 0.43 SOL/mo below the promotion bar. The watch from ai-2026-06-02-006 remains valid; re-evaluate once the pipeline recovers.\n\n### v9shadow-vel20-top5 Now INVALID\n\nv9shadow-vel20-top5 crossed n=100 and failed: n=102, total_net_sol=+2.060, **drop_top3=−0.990 SOL**. The apparent +2 SOL profit concentrates in the top-3 trades (top3_contribution_pct=148%). Edge-decay flag is DECAYING: recent-30 median collapsed to −11.67% vs all-time −1.48%. INVALID on the leave-one-out gate. Recommend killing v9shadow-vel20-top5.\n\n### Edge Decay Sweep\n\n20 strategies are flagged DECAYING. The list concentrates in the vel20-top5 lineage (v9shadow-vel20-top5, v26-vel20-top5-ttp, v28-vel20-top5-1s-ttp), the bot-excl-climbing variants (v32, v33, v34, v40-top5-tight), and v35/v39 speculative experiments. The two STRENGTHENING exceptions worth noting: v9shadow-velmid-liq-mono (recent30=+5.28%) and v9shadow-velmono-dev (recent30=+4.75%) — both on the velmono/velmid lineage.\n\n### Stale Kill Batches (4–5 Cycles Unanswered)\n\nFour kill-item batches from Jun 2–5 remain PROPOSED and unexecuted. The roster carries approximately 40+ INVALID strategies that collectively drag the daily shadow P&L to −60 to −120 SOL/day. The most urgent batch is the v32/v28/v33/v34 climbing-cluster kill (escalated 3 times, most recently ai-2026-06-05-001). Recommend the operator execute at least this batch to remove the largest noise contributors.\n\n### 7-Day Pattern\n\nRecent daily aggregate profits: −90.7 (Jun 5), −58.9 (Jun 4), −121.1 (Jun 3), +20.9 (Jun 2), −33.3 (Jun 1), −63.5 (May 31), −20.6 (May 30). The Jun 2 positive (+20.9 SOL) coincides with n=2 trades and is likely an outlier. The chronic negative drag is structural: 100+ negative-expectancy strategies each losing 10–25% per 0.5 SOL position. Clearing the kill backlog is the single highest-leverage operational action this cycle.\n\n### Operator Priority Order\n\n1. **Fix pipeline stall** — investigate PriceCollector to StrategyManager T+30 wiring.\n2. **Execute pending kill batches** — start with ai-2026-06-05-001 (v32/v28/v33/v34) and ai-2026-06-02-004 (v41/v42 families).\n3. **After pipeline recovers** — check v9shadow-velmid-liq-mono for n=100 promotion eligibility (4 trades away at last count).\n",
+      "winners": [
+        {"graduation_id": 25712, "strategy_id": "v15-vel5-10-dd-shadow", "net_return_pct": 20.6},
+        {"graduation_id": 25712, "strategy_id": "v43-trailsl-20-10-1s", "net_return_pct": 8.3},
+        {"graduation_id": 25712, "strategy_id": "v43-trailsl-be-1s", "net_return_pct": 8.3},
+        {"graduation_id": 25712, "strategy_id": "v43-mono-trailsl-1s", "net_return_pct": 8.3},
+        {"graduation_id": 25712, "strategy_id": "v43-trailsl-15-7-1s", "net_return_pct": 5.8}
+      ],
+      "losers": [
+        {"graduation_id": 25712, "strategy_id": "v43-trailsl-15-7-1s", "net_return_pct": 5.8}
+      ],
+      "anomalies": [
+        {
+          "severity": "high",
+          "kind": "pipeline_stall",
+          "detail": "T+30 callback last fired 986s ago. PriceCollector to StrategyManager wiring silent. Only 5 trades from 1 graduation today vs 1379 yesterday.",
+          "metric": {"last_t30_callback_sec_ago": 986, "n_trades_today": 5}
+        },
+        {
+          "severity": "med",
+          "kind": "edge_decay",
+          "detail": "20 strategies flagged DECAYING. Most critically: v9shadow-vel20-top5 (n=102, DECAYING, drop_top3=-0.990) — now INVALID. Also: v40-whale-cap, v26-vel20-top5-ttp, v35-vel2050-buyers-ratio.",
+          "metric": {"decaying_count": 20, "strengthening_count": 21}
+        },
+        {
+          "severity": "low",
+          "kind": "strict_filter",
+          "detail": "45 strategies have not traded in 49+ hours due to selective filter gates. Pipeline confirmed feeding (confirmed by graduation detection being live).",
+          "metric": {"count": 45}
+        }
+      ],
+      "patterns": [
+        {
+          "kind": "recurring_positive",
+          "description": "v9shadow-velmid-liq-mono and v9shadow-velmono-dev are the only two enabled strategies consistently STRENGTHENING. Both share vel 20-50 + quality-filter lineage and have positive drop_top3.",
+          "strategies": ["v9shadow-velmid-liq-mono", "v9shadow-velmono-dev"]
+        },
+        {
+          "kind": "stale_kills",
+          "description": "4 kill batches from Jun 2-5 remain unexecuted (40+ strategies). Combined drag estimated -70 to -100 SOL/day in paper accounting. No strategy removed since Jun 2 session.",
+          "strategies": []
+        },
+        {
+          "kind": "edge_decay_sweep",
+          "description": "20 enabled strategies flagged DECAYING as of 2026-06-06. Concentrated in vel20-top5 lineage and climbing-cluster variants. DECAYING flag corroborates INVALID verdict from leave-one-out.",
+          "strategies": ["v9shadow-vel20-top5","v40-whale-cap","v26-vel20-top5-ttp","v35-vel2050-buyers-ratio","v40-acc-whale","v28-vel20-top5-1s-ttp"]
+        },
+        {
+          "kind": "pipeline_stall_recurring",
+          "description": "Third mid-session pipeline stall this week (Jun 3, Jun 5, Jun 6). T+30 callbacks go silent while graduation detection continues. Suggests a fragile PriceCollector subscription or reconnect path.",
+          "strategies": []
+        }
+      ],
+      "recommendations": {
+        "kill": [
+          {
+            "strategy_id": "v9shadow-vel20-top5",
+            "reason": "n=102, drop_top3=-0.990 SOL — apparent +2.06 SOL total concentrates in top-3 trades (148%). DECAYING: recent-30 median -11.67% vs all-time -1.48%. INVALID on leave-one-out gate."
+          }
+        ],
+        "promote": [],
+        "create_new": [],
+        "watch": [
+          {
+            "strategy_id": "v9shadow-velmid-liq-mono",
+            "reason": "n=96, score=88.8, drop_top3=+0.979, STRENGTHENING. 4 trades from n=100 gate. Monthly=2.97 SOL/mo (below 3.75 bar). Evaluate for promotion at n=100."
+          },
+          {
+            "strategy_id": "v9shadow-velmono-dev",
+            "reason": "n=94, score=87.2, drop_top3=+0.768, STRENGTHENING. 6 trades from n=100. Monthly=2.11 SOL/mo (below bar). Fat-tail strategy — drop_top3 is the primary robustness check."
+          },
+          {
+            "strategy_id": "v25-bot-excl-climbing",
+            "reason": "n=592, score=81.5, drop_top3=+0.217, monthly=3.32 (gap: -0.43 to bar). Largest sample of any positive drop_top3 strategy. Monthly trend determines promotion timeline."
+          }
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-06-06-001",
+          "kind": "kill",
+          "target_id": "v9shadow-vel20-top5",
+          "summary": "Kill v9shadow-vel20-top5 — cleared n=100 and failed: drop_top3=-0.990 SOL (lottery-driven, 148% top3 concentration), DECAYING (recent-30 median -11.67%). INVALID.",
+          "status": "PROPOSED",
+          "proposed_at": 1749207600
+        },
+        {
+          "id": "ai-2026-06-06-002",
+          "kind": "investigate",
+          "target_id": "pipeline-t30-callback",
+          "summary": "Recurring pipeline stall: T+30 callback last fired 986s before Jun 6 snapshot (third occurrence this week). PriceCollector to StrategyManager wiring goes silent while graduations continue. Needs restart or connection fix.",
+          "status": "PROPOSED",
+          "proposed_at": 1749207600
+        }
+      ],
+      "auto_journal": true
+    },
+    {
+      "action": "action-item-update",
+      "id": "ai-2026-06-04-001-deferred",
+      "date": "2026-06-06",
+      "action_item_id": "ai-2026-06-04-001",
+      "action_item_status": "DEFERRED",
+      "action_item_note": "Superseded by escalated ai-2026-06-05-001 (3rd request for same v32/v28/v33/v34 kill). Deferring older duplicate; ai-2026-06-05-001 is the live escalated record."
+    }
+  ]
+}
