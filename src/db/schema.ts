@@ -312,6 +312,13 @@ function runMigrations(db: Database.Database): void {
       ['holder_delta_t35', 'INTEGER'],    // holder_count_t35 - holder_count (signed)
       ['holder_velocity_t35', 'REAL'],    // holders gained per minute over the window
       ['holder_sniper_ratio', 'REAL'],    // holder_count / sniper_count_t0_t2
+      // Copy-trade B: # distinct "money-edge" wallets (smart set, see
+      // src/copytrade/queries.ts getSmartSet) that bought in the 0-30s window.
+      // Computed live at T+35 in detectBuyPressure against the CURRENT smart set
+      // (forward-only — historical rows stay NULL on purpose; backfilling would
+      // be look-ahead since smart status is defined by realized P&L). Usable as a
+      // strategy filter field; NOT added to FILTER_CATALOG to keep backtests clean.
+      ['smart_money_early_count', 'INTEGER'],
     ];
     // Every-5s price snapshots across the full 300s monitoring window — dedupes against
     // explicit entries above (t5, t10, ..., t60, t90, t120, t150, t180, t240, t300).

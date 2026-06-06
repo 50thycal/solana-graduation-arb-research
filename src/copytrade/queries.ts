@@ -220,6 +220,34 @@ export function getSmartMoneyCacheRaw(db: Database.Database): string | null {
   return row?.value ?? null;
 }
 
+/**
+ * Copy-trade B: write graduation_momentum.smart_money_early_count = # distinct
+ * "smart set" wallets that bought this graduation in the 0-30s post-graduation
+ * window. Called live at T+35 from detectBuyPressure (after competition_signals
+ * for the window are populated). The smart-set definition is inlined here to
+ * match getSmartSet() — keep the two in sync. Forward-only by construction: it
+ * uses whatever wallets are "smart" at decision time, which is legitimately
+ * knowable then; we never backfill historical rows (that would be look-ahead).
+ */
+export function updateSmartMoneyEarlyCount(db: Database.Database, graduationId: number): void {
+  db.prepare(`
+    UPDATE graduation_momentum
+    SET smart_money_early_count = (
+      SELECT COUNT(DISTINCT cs.wallet_address)
+      FROM competition_signals cs
+      JOIN wallet_scores ws ON ws.address = cs.wallet_address
+      WHERE cs.graduation_id = @gid
+        AND cs.action = 'buy'
+        AND cs.seconds_since_graduation >= 0
+        AND cs.seconds_since_graduation <= 30
+        AND ws.total_realized_sol_drop_top3 > 0
+        AND ws.monthly_run_rate_sol >= 3.75
+        AND ws.total_realized_sol >= 0.5
+    )
+    WHERE graduation_id = @gid
+  `).run({ gid: graduationId });
+}
+
 export function upsertFollow(
   db: Database.Database,
   row: { address: string; rank: number; copySizeSol: number; maxConcurrent: number; enabled: boolean; killCriterion: string; addedAt: number },

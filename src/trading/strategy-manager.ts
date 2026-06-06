@@ -308,6 +308,7 @@ export class StrategyManager {
         'firstbuyer_',
         'recovery_',
         'confirmed_dip_',
+        'smart_money_',   // copy-trade B: written at T+35 in detectBuyPressure
       ];
       const needsLate = instance.config.filters.some(
         f => LATE_PREFIXES.some(p => f.field.startsWith(p)),
