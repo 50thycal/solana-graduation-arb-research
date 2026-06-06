@@ -11,6 +11,7 @@ import {
 } from './queries';
 import { fetchWalletSwaps, scoreWallet, reconstructRoundTrips } from './wallet-pnl';
 import { rankWallets } from './ranker';
+import { computeAndCacheSmartMoney } from './smart-money';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copytrade-worker');
@@ -82,6 +83,11 @@ export class CopytradeWorker {
     } catch (err) {
       logger.warn('Initial seed failed: %s', err instanceof Error ? err.message : String(err));
     }
+
+    // Compute the smart-money analysis now (pure DB, no RPC) so /smart-money +
+    // smart-money.json are populated within seconds of deploy from existing
+    // wallet_scores, rather than waiting for the first scoring tick.
+    computeAndCacheSmartMoney(this.db);
 
     this.firstRunTimer = setTimeout(() => {
       this.runOnce().catch((err) => logger.error({ err }, 'CopytradeWorker first run failed'));
@@ -172,6 +178,10 @@ export class CopytradeWorker {
       } catch (err) {
         logger.warn('Ranking pass failed: %s', err instanceof Error ? err.message : String(err));
       }
+
+      // Refresh the smart-money token-selection analysis now that wallet_scores
+      // changed. Pure DB; cached for gist-sync + the /smart-money page.
+      computeAndCacheSmartMoney(this.db);
     } finally {
       this.running = false;
     }

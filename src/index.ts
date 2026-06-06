@@ -5,7 +5,7 @@ import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { startHolderCountBackfill, holderBackfillRunning, holderBackfillPending } from './db/backfill-holder-count';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation, updateActionItemStatus, updateActionItemFields, dismissAnomaly } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderLiveTrainingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml, renderRegimeAnalysisHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderLiveTrainingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml, renderRegimeAnalysisHtml, renderSmartMoneyHtml } from './utils/html-renderer';
 import { computeRegimeAnalysis } from './api/regime-analysis';
 import { computePipelineData } from './api/pipeline-data';
 import { backfillSnapshots } from './api/backfill-snapshot';
@@ -33,6 +33,7 @@ import { registerApiRoutes } from './api/routes';
 import { GistSync } from './api/gist-sync';
 import { MarketDataFetcher } from './collector/market-data-fetcher';
 import { CopytradeWorker } from './copytrade/worker';
+import { getSmartMoneyAnalysis } from './copytrade/smart-money';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
 import { computePanel11 } from './api/panel11';
 import { HolderEnrichment } from './collector/holder-enrichment';
@@ -54,6 +55,7 @@ const NAV_LINKS = [
   { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
   { path: '/live-training', label: 'Live Training' },
+  { path: '/smart-money', label: 'Smart Money' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
@@ -2654,6 +2656,25 @@ async function main() {
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(renderRegimeAnalysisHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── /smart-money ──
+  // Copy-trade Option B: does smart-money token SELECTION carry a replicable
+  // edge (since we lose the execution latency race)? Reads the cached analysis
+  // computed by CopytradeWorker; no heavy compute in the request path.
+  app.get('/smart-money', (req, res) => {
+    try {
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      const data = getSmartMoneyAnalysis(db);
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderSmartMoneyHtml(data));
       } else {
         res.json(data);
       }
