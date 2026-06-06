@@ -5,42 +5,77 @@
       "id": "report-2026-06-06",
       "date": "2026-06-06",
       "generated_by": "claude",
-      "narrative": "## 2026-06-06 Daily Report\n\n**No roster changes since yesterday** (144 strategies both days; 138 enabled).\n\n### Headline: Pipeline Stalled — Only 5 Trades Today\n\ndiagnose.json verdict is PIPELINE_STALLED: last T+30 callback fired 986 seconds before the snapshot. All four data-quality levels (graduation detection, price capture, timestamps, label logic) pass — the bot is receiving graduations (last: 5s ago at snapshot time) — but the PriceCollector to StrategyManager callback wiring has gone silent. Today collected 5 trades from 1 graduation (net +0.26 SOL); yesterday ran 1,379 trades. Today's readiness scores reflect yesterday's accumulated totals.\n\n**Operator action needed**: restart or inspect the T+30 callback pipeline. This appears to be the third mid-session stall this week (also observed Jun 3 and Jun 5).\n\n### Top Promotion Candidates (no change from yesterday)\n\nUsing yesterday's accumulated scores since today's data is minimal:\n\n| Strategy | Score | n | drop_top3 | monthly | edge flag |\n|---|---|---|---|---|---|\n| v9shadow-velmid-liq-mono | 88.8 | 96 | +0.979 SOL | +2.97 SOL/mo | STRENGTHENING |\n| v9shadow-velmono-dev | 87.2 | 94 | +0.768 SOL | +2.11 SOL/mo | STRENGTHENING |\n| v25-bot-excl-climbing | 81.5 | 592 | +0.217 SOL | +3.32 SOL/mo | — |\n\nNo strategy clears all four gates today. The v9 shadow pair both have positive drop_top3 (real edge, not lottery-driven) and are STRENGTHENING, but both fall short on monthly run rate (<3.75 SOL/mo) and n<100. v9shadow-velmid-liq-mono is 4 trades from the n>=100 gate; v9shadow-velmono-dev is 6 trades away.\n\nv25-bot-excl-climbing's monthly rate of 3.32 SOL/mo is 0.43 SOL/mo below the promotion bar. The watch from ai-2026-06-02-006 remains valid; re-evaluate once the pipeline recovers.\n\n### v9shadow-vel20-top5 Now INVALID\n\nv9shadow-vel20-top5 crossed n=100 and failed: n=102, total_net_sol=+2.060, **drop_top3=−0.990 SOL**. The apparent +2 SOL profit concentrates in the top-3 trades (top3_contribution_pct=148%). Edge-decay flag is DECAYING: recent-30 median collapsed to −11.67% vs all-time −1.48%. INVALID on the leave-one-out gate. Recommend killing v9shadow-vel20-top5.\n\n### Edge Decay Sweep\n\n20 strategies are flagged DECAYING. The list concentrates in the vel20-top5 lineage (v9shadow-vel20-top5, v26-vel20-top5-ttp, v28-vel20-top5-1s-ttp), the bot-excl-climbing variants (v32, v33, v34, v40-top5-tight), and v35/v39 speculative experiments. The two STRENGTHENING exceptions worth noting: v9shadow-velmid-liq-mono (recent30=+5.28%) and v9shadow-velmono-dev (recent30=+4.75%) — both on the velmono/velmid lineage.\n\n### Stale Kill Batches (4–5 Cycles Unanswered)\n\nFour kill-item batches from Jun 2–5 remain PROPOSED and unexecuted. The roster carries approximately 40+ INVALID strategies that collectively drag the daily shadow P&L to −60 to −120 SOL/day. The most urgent batch is the v32/v28/v33/v34 climbing-cluster kill (escalated 3 times, most recently ai-2026-06-05-001). Recommend the operator execute at least this batch to remove the largest noise contributors.\n\n### 7-Day Pattern\n\nRecent daily aggregate profits: −90.7 (Jun 5), −58.9 (Jun 4), −121.1 (Jun 3), +20.9 (Jun 2), −33.3 (Jun 1), −63.5 (May 31), −20.6 (May 30). The Jun 2 positive (+20.9 SOL) coincides with n=2 trades and is likely an outlier. The chronic negative drag is structural: 100+ negative-expectancy strategies each losing 10–25% per 0.5 SOL position. Clearing the kill backlog is the single highest-leverage operational action this cycle.\n\n### Operator Priority Order\n\n1. **Fix pipeline stall** — investigate PriceCollector to StrategyManager T+30 wiring.\n2. **Execute pending kill batches** — start with ai-2026-06-05-001 (v32/v28/v33/v34) and ai-2026-06-02-004 (v41/v42 families).\n3. **After pipeline recovers** — check v9shadow-velmid-liq-mono for n=100 promotion eligibility (4 trades away at last count).\n",
+      "narrative": "## 2026-06-06 Daily Report\n\n**No roster changes since yesterday** (144 strategies both days; 138 enabled).\n\n### Headline: Pipeline Stalled \u2014 Only 5 Trades Today\n\ndiagnose.json verdict is PIPELINE_STALLED: last T+30 callback fired 986 seconds before the snapshot. All four data-quality levels (graduation detection, price capture, timestamps, label logic) pass \u2014 the bot is receiving graduations (last: 5s ago at snapshot time) \u2014 but the PriceCollector to StrategyManager callback wiring has gone silent. Today collected 5 trades from 1 graduation (net +0.26 SOL); yesterday ran 1,379 trades. Today's readiness scores reflect yesterday's accumulated totals.\n\n**Operator action needed**: restart or inspect the T+30 callback pipeline. This appears to be the third mid-session stall this week (also observed Jun 3 and Jun 5).\n\n### Top Promotion Candidates (no change from yesterday)\n\nUsing yesterday's accumulated scores since today's data is minimal:\n\n| Strategy | Score | n | drop_top3 | monthly | edge flag |\n|---|---|---|---|---|---|\n| v9shadow-velmid-liq-mono | 88.8 | 96 | +0.979 SOL | +2.97 SOL/mo | STRENGTHENING |\n| v9shadow-velmono-dev | 87.2 | 94 | +0.768 SOL | +2.11 SOL/mo | STRENGTHENING |\n| v25-bot-excl-climbing | 81.5 | 592 | +0.217 SOL | +3.32 SOL/mo | \u2014 |\n\nNo strategy clears all four gates today. The v9 shadow pair both have positive drop_top3 (real edge, not lottery-driven) and are STRENGTHENING, but both fall short on monthly run rate (<3.75 SOL/mo) and n<100. v9shadow-velmid-liq-mono is 4 trades from the n>=100 gate; v9shadow-velmono-dev is 6 trades away.\n\nv25-bot-excl-climbing's monthly rate of 3.32 SOL/mo is 0.43 SOL/mo below the promotion bar. The watch from ai-2026-06-02-006 remains valid; re-evaluate once the pipeline recovers.\n\n### v9shadow-vel20-top5 Now INVALID\n\nv9shadow-vel20-top5 crossed n=100 and failed: n=102, total_net_sol=+2.060, drop_top3=\u22120.990 SOL. The apparent +2 SOL profit concentrates in the top-3 trades (top3_contribution_pct=148%). Edge-decay flag is DECAYING: recent-30 median collapsed to \u221211.67% vs all-time \u22121.48%. INVALID on the leave-one-out gate. Recommend killing v9shadow-vel20-top5.\n\n### Edge Decay Sweep\n\n20 strategies are flagged DECAYING. The list concentrates in the vel20-top5 lineage (v9shadow-vel20-top5, v26-vel20-top5-ttp, v28-vel20-top5-1s-ttp), the bot-excl-climbing variants (v32, v33, v34, v40-top5-tight), and v35/v39 speculative experiments. The two STRENGTHENING exceptions: v9shadow-velmid-liq-mono (recent30=+5.28%) and v9shadow-velmono-dev (recent30=+4.75%) \u2014 both on the velmono/velmid lineage.\n\n### Stale Kill Batches (4\u20135 Cycles Unanswered)\n\nFour kill-item batches from Jun 2\u20135 remain PROPOSED and unexecuted. The roster carries approximately 40+ INVALID strategies that collectively drag the daily shadow P&L to \u221260 to \u2212120 SOL/day. The most urgent batch is the v32/v28/v33/v34 climbing-cluster kill (escalated 3 times, most recently ai-2026-06-05-001). Recommend the operator execute at least this batch to remove the largest noise contributors.\n\n### 7-Day Pattern\n\nRecent daily aggregate profits: \u221290.7 (Jun 5), \u221258.9 (Jun 4), \u2212121.1 (Jun 3), +20.9 (Jun 2), \u221233.3 (Jun 1), \u221263.5 (May 31), \u221220.6 (May 30). The Jun 2 positive (+20.9 SOL) coincides with n=2 trades and is likely an outlier. The chronic negative drag is structural: 100+ negative-expectancy strategies each losing 10\u201325% per 0.5 SOL position. Clearing the kill backlog is the single highest-leverage operational action this cycle.\n\n### Operator Priority Order\n\n1. **Fix pipeline stall** \u2014 investigate PriceCollector to StrategyManager T+30 wiring.\n2. **Execute pending kill batches** \u2014 start with ai-2026-06-05-001 (v32/v28/v33/v34) and ai-2026-06-02-004 (v41/v42 families).\n3. **After pipeline recovers** \u2014 check v9shadow-velmid-liq-mono for n=100 promotion eligibility (4 trades away at last count).\n",
       "winners": [
-        {"graduation_id": 25712, "strategy_id": "v15-vel5-10-dd-shadow", "net_return_pct": 20.6},
-        {"graduation_id": 25712, "strategy_id": "v43-trailsl-20-10-1s", "net_return_pct": 8.3},
-        {"graduation_id": 25712, "strategy_id": "v43-trailsl-be-1s", "net_return_pct": 8.3},
-        {"graduation_id": 25712, "strategy_id": "v43-mono-trailsl-1s", "net_return_pct": 8.3},
-        {"graduation_id": 25712, "strategy_id": "v43-trailsl-15-7-1s", "net_return_pct": 5.8}
+        {
+          "graduation_id": 25712,
+          "strategy_id": "v15-vel5-10-dd-shadow",
+          "net_return_pct": 20.6
+        },
+        {
+          "graduation_id": 25712,
+          "strategy_id": "v43-trailsl-20-10-1s",
+          "net_return_pct": 8.3
+        },
+        {
+          "graduation_id": 25712,
+          "strategy_id": "v43-trailsl-be-1s",
+          "net_return_pct": 8.3
+        },
+        {
+          "graduation_id": 25712,
+          "strategy_id": "v43-mono-trailsl-1s",
+          "net_return_pct": 8.3
+        },
+        {
+          "graduation_id": 25712,
+          "strategy_id": "v43-trailsl-15-7-1s",
+          "net_return_pct": 5.8
+        }
       ],
       "losers": [
-        {"graduation_id": 25712, "strategy_id": "v43-trailsl-15-7-1s", "net_return_pct": 5.8}
+        {
+          "graduation_id": 25712,
+          "strategy_id": "v43-trailsl-15-7-1s",
+          "net_return_pct": 5.8
+        }
       ],
       "anomalies": [
         {
           "severity": "high",
           "kind": "pipeline_stall",
           "detail": "T+30 callback last fired 986s ago. PriceCollector to StrategyManager wiring silent. Only 5 trades from 1 graduation today vs 1379 yesterday.",
-          "metric": {"last_t30_callback_sec_ago": 986, "n_trades_today": 5}
+          "metric": {
+            "last_t30_callback_sec_ago": 986,
+            "n_trades_today": 5
+          }
         },
         {
           "severity": "med",
           "kind": "edge_decay",
-          "detail": "20 strategies flagged DECAYING. Most critically: v9shadow-vel20-top5 (n=102, DECAYING, drop_top3=-0.990) — now INVALID. Also: v40-whale-cap, v26-vel20-top5-ttp, v35-vel2050-buyers-ratio.",
-          "metric": {"decaying_count": 20, "strengthening_count": 21}
+          "detail": "20 strategies flagged DECAYING. Most critically v9shadow-vel20-top5 (n=102, DECAYING, drop_top3=-0.990) \u2014 now INVALID. Also: v40-whale-cap, v26-vel20-top5-ttp, v35-vel2050-buyers-ratio.",
+          "metric": {
+            "decaying_count": 20,
+            "strengthening_count": 21
+          }
         },
         {
           "severity": "low",
           "kind": "strict_filter",
-          "detail": "45 strategies have not traded in 49+ hours due to selective filter gates. Pipeline confirmed feeding (confirmed by graduation detection being live).",
-          "metric": {"count": 45}
+          "detail": "45 strategies have not traded in 49+ hours due to selective filter gates. Pipeline confirmed feeding.",
+          "metric": {
+            "count": 45
+          }
         }
       ],
       "patterns": [
         {
           "kind": "recurring_positive",
           "description": "v9shadow-velmid-liq-mono and v9shadow-velmono-dev are the only two enabled strategies consistently STRENGTHENING. Both share vel 20-50 + quality-filter lineage and have positive drop_top3.",
-          "strategies": ["v9shadow-velmid-liq-mono", "v9shadow-velmono-dev"]
+          "strategies": [
+            "v9shadow-velmid-liq-mono",
+            "v9shadow-velmono-dev"
+          ]
         },
         {
           "kind": "stale_kills",
@@ -50,7 +85,14 @@
         {
           "kind": "edge_decay_sweep",
           "description": "20 enabled strategies flagged DECAYING as of 2026-06-06. Concentrated in vel20-top5 lineage and climbing-cluster variants. DECAYING flag corroborates INVALID verdict from leave-one-out.",
-          "strategies": ["v9shadow-vel20-top5","v40-whale-cap","v26-vel20-top5-ttp","v35-vel2050-buyers-ratio","v40-acc-whale","v28-vel20-top5-1s-ttp"]
+          "strategies": [
+            "v9shadow-vel20-top5",
+            "v40-whale-cap",
+            "v26-vel20-top5-ttp",
+            "v35-vel2050-buyers-ratio",
+            "v40-acc-whale",
+            "v28-vel20-top5-1s-ttp"
+          ]
         },
         {
           "kind": "pipeline_stall_recurring",
@@ -58,11 +100,1635 @@
           "strategies": []
         }
       ],
+      "by_strategy_daily": [
+        {
+          "strategy_id": "v9shadow-velmid-liq-mono",
+          "execution_mode": "shadow",
+          "label": "v9 shadow vel 20-50 + liq>100 + mono>0.33 @ 150/25",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 4,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.3942,
+          "readiness_score": 88.84,
+          "readiness_score_yesterday": 88.84,
+          "promotable": false,
+          "n_trades_lifetime": 96,
+          "total_net_sol_lifetime": 3.3433,
+          "total_net_sol_drop_top3": 0.9791,
+          "monthly_run_rate_sol": 2.9721,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v9shadow-velmono-dev",
+          "execution_mode": "shadow",
+          "label": "v9 shadow vel 20-50 + mono>0.5 + dev>5% @ 100/30",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 6,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.1774,
+          "readiness_score": 87.25,
+          "readiness_score_yesterday": 87.25,
+          "promotable": false,
+          "n_trades_lifetime": 94,
+          "total_net_sol_lifetime": 2.5079,
+          "total_net_sol_drop_top3": 0.768,
+          "monthly_run_rate_sol": 2.1107,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v25-bot-excl-climbing",
+          "execution_mode": "shadow",
+          "label": "v25 bot-excl + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 21,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.079,
+          "readiness_score": 81.52,
+          "readiness_score_yesterday": 81.52,
+          "promotable": false,
+          "n_trades_lifetime": 592,
+          "total_net_sol_lifetime": 2.5301,
+          "total_net_sol_drop_top3": 0.2174,
+          "monthly_run_rate_sol": 3.3191,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v19-age10-top5-tight",
+          "execution_mode": "shadow",
+          "label": "v19 age>10min + top5<8% @ 150/30 gate5-100 (tighter top5)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 2,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.0201,
+          "readiness_score": 65.6,
+          "readiness_score_yesterday": 65.6,
+          "promotable": false,
+          "n_trades_lifetime": 28,
+          "total_net_sol_lifetime": 0.8076,
+          "total_net_sol_drop_top3": 0.0785,
+          "monthly_run_rate_sol": null,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v37-whale-conviction",
+          "execution_mode": "shadow",
+          "label": "v37 Whale conviction (whale\u22650.25 + buyers\u226415)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 16,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.3672,
+          "readiness_score": 50,
+          "readiness_score_yesterday": 50,
+          "promotable": false,
+          "n_trades_lifetime": 181,
+          "total_net_sol_lifetime": 2.1506,
+          "total_net_sol_drop_top3": -0.1646,
+          "monthly_run_rate_sol": 5.7947,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v28-velmid-liq-mono-1s-ttp",
+          "execution_mode": "shadow",
+          "label": "v28 v9shadow-velmid-liq-mono mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 4,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.3736,
+          "readiness_score": 43.72,
+          "readiness_score_yesterday": 43.72,
+          "promotable": false,
+          "n_trades_lifetime": 53,
+          "total_net_sol_lifetime": 0.453,
+          "total_net_sol_drop_top3": -2.0464,
+          "monthly_run_rate_sol": 0.7722,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v14-sumabs-dd-shadow",
+          "execution_mode": "shadow",
+          "label": "v14 sumabs + dd protection (vel<20+top5<10%+sum_abs<60+dd>-10 @ 100/30)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 2,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.3801,
+          "readiness_score": 38.01,
+          "readiness_score_yesterday": 38.01,
+          "promotable": false,
+          "n_trades_lifetime": 94,
+          "total_net_sol_lifetime": 0.2303,
+          "total_net_sol_drop_top3": -1.4189,
+          "monthly_run_rate_sol": 0.234,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v28-bot-excl-climbing-1s-ttp",
+          "execution_mode": "shadow",
+          "label": "v28 v25-bot-excl-climbing mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 21,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.0247,
+          "readiness_score": 37.46,
+          "readiness_score_yesterday": 37.46,
+          "promotable": false,
+          "n_trades_lifetime": 455,
+          "total_net_sol_lifetime": 0.1865,
+          "total_net_sol_drop_top3": -3.3709,
+          "monthly_run_rate_sol": 0.3166,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v23-repeat-recovery",
+          "execution_mode": "shadow",
+          "label": "v23 repeat_dev>=3 + confirmed_recovery (TP75/SL30, entry@T+60) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 1,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.3951,
+          "readiness_score": 36.2,
+          "readiness_score_yesterday": 36.2,
+          "promotable": false,
+          "n_trades_lifetime": 31,
+          "total_net_sol_lifetime": 0.7478,
+          "total_net_sol_drop_top3": -0.7737,
+          "monthly_run_rate_sol": 0.9367,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v9shadow-vel20-top5",
+          "execution_mode": "shadow",
+          "label": "v9 shadow vel<20 + top5<10% @ 150/30",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 6,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.1337,
+          "readiness_score": 35,
+          "readiness_score_yesterday": 35,
+          "promotable": false,
+          "n_trades_lifetime": 102,
+          "total_net_sol_lifetime": 2.06,
+          "total_net_sol_drop_top3": -0.9899,
+          "monthly_run_rate_sol": 1.693,
+          "edge_flag": "DECAYING"
+        },
+        {
+          "strategy_id": "v5-velmono-opt",
+          "execution_mode": "paper",
+          "label": "v5 velmono opt (100/30)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 6,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.3253,
+          "readiness_score": 35,
+          "readiness_score_yesterday": 35,
+          "promotable": false,
+          "n_trades_lifetime": 113,
+          "total_net_sol_lifetime": -1.3469,
+          "total_net_sol_drop_top3": -3.5007,
+          "monthly_run_rate_sol": -0.8945,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v44-climb-shadow",
+          "execution_mode": "shadow",
+          "label": "v44 climbing mirror (TP100/SL30) [SHADOW 0.05] - twin of v44-climb-live-micro",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 22,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.0293,
+          "readiness_score": 35,
+          "readiness_score_yesterday": 35,
+          "promotable": false,
+          "n_trades_lifetime": 215,
+          "total_net_sol_lifetime": -0.49,
+          "total_net_sol_drop_top3": -0.6707,
+          "monthly_run_rate_sol": -1.8809,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v44-climb-1s-ttp10-shadow",
+          "execution_mode": "shadow",
+          "label": "v44 climbing + 1s poll + trailingTP10% [SHADOW 0.05] - twin of v44-climb-1s-ttp10-live-micro",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 22,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.0364,
+          "readiness_score": 35,
+          "readiness_score_yesterday": 35,
+          "promotable": false,
+          "n_trades_lifetime": 215,
+          "total_net_sol_lifetime": -0.5852,
+          "total_net_sol_drop_top3": -0.8054,
+          "monthly_run_rate_sol": -2.2465,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v45-acc-gate-shadow",
+          "execution_mode": "shadow",
+          "label": "v45 acc-gate mirror (v25 climb + acc_t30>-8, TP100/SL30) [SHADOW 0.05] - twin of v45-acc-gate-live-micro",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 18,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.0146,
+          "readiness_score": 35,
+          "readiness_score_yesterday": 35,
+          "promotable": false,
+          "n_trades_lifetime": 138,
+          "total_net_sol_lifetime": -0.6158,
+          "total_net_sol_drop_top3": -0.7822,
+          "monthly_run_rate_sol": -2.6391,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v37-creator-clean",
+          "execution_mode": "shadow",
+          "label": "v37 Creator clean (prior_rug_rate<0.30)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 12,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.6013,
+          "readiness_score": 35,
+          "readiness_score_yesterday": 35,
+          "promotable": false,
+          "n_trades_lifetime": 140,
+          "total_net_sol_lifetime": -2.886,
+          "total_net_sol_drop_top3": -3.8358,
+          "monthly_run_rate_sol": -7.7374,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v47-lean",
+          "execution_mode": "shadow",
+          "label": "v47 v25-base ONLY dd + climbing (drop all dead weight) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 27,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.4811,
+          "readiness_score": 35,
+          "readiness_score_yesterday": 35,
+          "promotable": false,
+          "n_trades_lifetime": 108,
+          "total_net_sol_lifetime": -6.3737,
+          "total_net_sol_drop_top3": -7.986,
+          "monthly_run_rate_sol": -27.3159,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v24-rugger-climbing",
+          "execution_mode": "shadow",
+          "label": "v24 serial_rugger + climbing_t30_t45 (TP150/SL25, entry@T+60) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 0,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0,
+          "readiness_score": 33.73,
+          "readiness_score_yesterday": 33.73,
+          "promotable": false,
+          "n_trades_lifetime": 28,
+          "total_net_sol_lifetime": 0.4533,
+          "total_net_sol_drop_top3": -1.3722,
+          "monthly_run_rate_sol": null,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v47-no-top5",
+          "execution_mode": "shadow",
+          "label": "v47 v25-base minus top5 filter [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 23,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.4503,
+          "readiness_score": 33.4,
+          "readiness_score_yesterday": 33.4,
+          "promotable": false,
+          "n_trades_lifetime": 92,
+          "total_net_sol_lifetime": -5.5197,
+          "total_net_sol_drop_top3": -7.132,
+          "monthly_run_rate_sol": -23.656,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "V29.3",
+          "execution_mode": "shadow",
+          "label": "V29.3 v9-vel20-top5 + UTC 02-10 [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 2,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.3514,
+          "readiness_score": 33.4,
+          "readiness_score_yesterday": 33.4,
+          "promotable": false,
+          "n_trades_lifetime": 17,
+          "total_net_sol_lifetime": 0.5542,
+          "total_net_sol_drop_top3": -0.4573,
+          "monthly_run_rate_sol": null,
+          "edge_flag": "LOW-N"
+        },
+        {
+          "strategy_id": "v36-light-conc-flow",
+          "execution_mode": "shadow",
+          "label": "v36 Light concentration + flow (top10<25 + flow>0)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 8,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.231,
+          "readiness_score": 33.33,
+          "readiness_score_yesterday": 33.33,
+          "promotable": false,
+          "n_trades_lifetime": 90,
+          "total_net_sol_lifetime": 0.1333,
+          "total_net_sol_drop_top3": -2.0627,
+          "monthly_run_rate_sol": 0.3242,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v47-no-age",
+          "execution_mode": "shadow",
+          "label": "v47 v25-base minus age filter [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 22,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.1826,
+          "readiness_score": 33,
+          "readiness_score_yesterday": 33,
+          "promotable": false,
+          "n_trades_lifetime": 90,
+          "total_net_sol_lifetime": -4.9254,
+          "total_net_sol_drop_top3": -6.5377,
+          "monthly_run_rate_sol": -21.1087,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v47-no-vel",
+          "execution_mode": "shadow",
+          "label": "v47 v25-base minus vel filter [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 22,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.1826,
+          "readiness_score": 32.8,
+          "readiness_score_yesterday": 32.8,
+          "promotable": false,
+          "n_trades_lifetime": 89,
+          "total_net_sol_lifetime": -4.8871,
+          "total_net_sol_drop_top3": -6.4994,
+          "monthly_run_rate_sol": -20.9449,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v47-lean-plus-acc",
+          "execution_mode": "shadow",
+          "label": "v47 lean + acc_t30>-8 (only pulls-weight filters) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 22,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.7874,
+          "readiness_score": 32.8,
+          "readiness_score_yesterday": 32.8,
+          "promotable": false,
+          "n_trades_lifetime": 89,
+          "total_net_sol_lifetime": -5.1961,
+          "total_net_sol_drop_top3": -6.7441,
+          "monthly_run_rate_sol": -22.2689,
+          "edge_flag": "STRENGTHENING"
+        },
+        {
+          "strategy_id": "v28-vel50200-recovery",
+          "execution_mode": "shadow",
+          "label": "v28 vel 50-200 + confirmed_recovery (TP75/SL30, 1s poll + trailingTP=10%) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 0,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0,
+          "readiness_score": 32.6,
+          "readiness_score_yesterday": 32.6,
+          "promotable": false,
+          "n_trades_lifetime": 13,
+          "total_net_sol_lifetime": 1.7052,
+          "total_net_sol_drop_top3": -0.2342,
+          "monthly_run_rate_sol": null,
+          "edge_flag": "LOW-N"
+        },
+        {
+          "strategy_id": "v35-vel2050-lpgrowth25",
+          "execution_mode": "shadow",
+          "label": "v35 vel 20-50 + lp_growth>25% (TP150/SL25) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 0,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0,
+          "readiness_score": 31.6,
+          "readiness_score_yesterday": 31.6,
+          "promotable": false,
+          "n_trades_lifetime": 8,
+          "total_net_sol_lifetime": 1.05,
+          "total_net_sol_drop_top3": -0.6202,
+          "monthly_run_rate_sol": null,
+          "edge_flag": "LOW-N"
+        },
+        {
+          "strategy_id": "v23-snipers5-recovery",
+          "execution_mode": "shadow",
+          "label": "v23 snipers<=5 + confirmed_recovery (TP100/SL30, entry@T+60) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 2,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.0735,
+          "readiness_score": 31.44,
+          "readiness_score_yesterday": 31.44,
+          "promotable": false,
+          "n_trades_lifetime": 68,
+          "total_net_sol_lifetime": 0.1961,
+          "total_net_sol_drop_top3": -1.6571,
+          "monthly_run_rate_sol": 0.2449,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v14-sumabs-shadow",
+          "execution_mode": "shadow",
+          "label": "v14 sumabs mirror (vel<20+top5<10%+sum_abs<60 @ 100/30)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 6,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.179,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 161,
+          "total_net_sol_lifetime": -1.2048,
+          "total_net_sol_drop_top3": -2.9885,
+          "monthly_run_rate_sol": -1.2148,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v10-best-double",
+          "execution_mode": "shadow",
+          "label": "v10 vel 20-50 + dd > -10% (best double)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 10,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.8837,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 216,
+          "total_net_sol_lifetime": -3.0538,
+          "total_net_sol_drop_top3": -5.5926,
+          "monthly_run_rate_sol": -2.5701,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v20-vel2050-dd-sl20",
+          "execution_mode": "shadow",
+          "label": "v20 vel 20-50 + dd>-10% @ 150/20 gate5-100 (tighter SL)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 5,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.0193,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 136,
+          "total_net_sol_lifetime": -2.4194,
+          "total_net_sol_drop_top3": -4.9535,
+          "monthly_run_rate_sol": -2.6776,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v20-vel2050-dd-base",
+          "execution_mode": "shadow",
+          "label": "v20 vel 20-50 + dd>-10% @ 150/30 gate5-100 (corrected v10)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 5,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.9362,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 136,
+          "total_net_sol_lifetime": -3.2019,
+          "total_net_sol_drop_top3": -5.7361,
+          "monthly_run_rate_sol": -3.5437,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v38-thin-conviction",
+          "execution_mode": "shadow",
+          "label": "v38 Thin conviction (holders<19 + raised\u226585)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 6,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.059,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 112,
+          "total_net_sol_lifetime": -1.3336,
+          "total_net_sol_drop_top3": -2.5986,
+          "monthly_run_rate_sol": -3.6404,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v43-trailsl-20-10-1s",
+          "execution_mode": "shadow",
+          "label": "v43 v25-excl-climbing + trailSL(arm20/trail10) + 1s [shadow]",
+          "enabled": true,
+          "n_trades_today": 1,
+          "n_trades_yesterday": 16,
+          "net_sol_today": 0.0415,
+          "net_sol_yesterday": 0.0784,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 195,
+          "total_net_sol_lifetime": -1.1039,
+          "total_net_sol_drop_top3": -3.1675,
+          "monthly_run_rate_sol": -3.9805,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v40-acc-gate",
+          "execution_mode": "shadow",
+          "label": "v40 v25 + acceleration_t30>-8 [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 18,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.7566,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 222,
+          "total_net_sol_lifetime": -1.8863,
+          "total_net_sol_drop_top3": -3.6519,
+          "monthly_run_rate_sol": -5.817,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v43-trailsl-be-1s",
+          "execution_mode": "shadow",
+          "label": "v43 v25-excl-climbing + trailSL(20/10) + breakeven@15 + 1s [shadow]",
+          "enabled": true,
+          "n_trades_today": 1,
+          "n_trades_yesterday": 16,
+          "net_sol_today": 0.0415,
+          "net_sol_yesterday": 0.0784,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 195,
+          "total_net_sol_lifetime": -2.0219,
+          "total_net_sol_drop_top3": -4.0856,
+          "monthly_run_rate_sol": -7.291,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v39-entry-5-50",
+          "execution_mode": "shadow",
+          "label": "v39 bot-excl-climbing + entryGate [5,50] @ TP100/SL30 entry@T+60 [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 20,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.1073,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 242,
+          "total_net_sol_lifetime": -2.3844,
+          "total_net_sol_drop_top3": -4.1842,
+          "monthly_run_rate_sol": -7.353,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v43-tighten-50-12-1s",
+          "execution_mode": "shadow",
+          "label": "v43 v25-excl-climbing + tightenSL(50%t->-12%) + 1s [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 16,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.4404,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 190,
+          "total_net_sol_lifetime": -2.2792,
+          "total_net_sol_drop_top3": -4.4155,
+          "monthly_run_rate_sol": -8.2186,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v42-breakeven-20",
+          "execution_mode": "shadow",
+          "label": "v42 v25 + breakevenStop@+20% [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 22,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.7318,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 257,
+          "total_net_sol_lifetime": -2.5703,
+          "total_net_sol_drop_top3": -4.3701,
+          "monthly_run_rate_sol": -8.2897,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v43-mono-trailsl-1s",
+          "execution_mode": "shadow",
+          "label": "v43 v25-excl-climbing + mono>0.5 entry + trailSL(20/10) + 1s [shadow]",
+          "enabled": true,
+          "n_trades_today": 1,
+          "n_trades_yesterday": 11,
+          "net_sol_today": 0.0415,
+          "net_sol_yesterday": -0.2877,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 138,
+          "total_net_sol_lifetime": -2.4563,
+          "total_net_sol_drop_top3": -3.8896,
+          "monthly_run_rate_sol": -9.0052,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v37-flow-sells-light",
+          "execution_mode": "shadow",
+          "label": "v37 Flow sells light (flow_sells<5 SOL)",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 13,
+          "net_sol_today": 0,
+          "net_sol_yesterday": 0.3423,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 208,
+          "total_net_sol_lifetime": -3.4363,
+          "total_net_sol_drop_top3": -5.7516,
+          "monthly_run_rate_sol": -9.0937,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v41-holders-17",
+          "execution_mode": "shadow",
+          "label": "v41 v25 + holder_count>=17 [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 21,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.2943,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 259,
+          "total_net_sol_lifetime": -2.9003,
+          "total_net_sol_drop_top3": -4.7001,
+          "monthly_run_rate_sol": -9.1233,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v42-breakeven-15",
+          "execution_mode": "shadow",
+          "label": "v42 v25 + breakevenStop@+15% [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 22,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.7318,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 259,
+          "total_net_sol_lifetime": -2.9245,
+          "total_net_sol_drop_top3": -4.7243,
+          "monthly_run_rate_sol": -9.4323,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v41-holders-18",
+          "execution_mode": "shadow",
+          "label": "v41 v25 + holder_count>=18 [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 21,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.2943,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 258,
+          "total_net_sol_lifetime": -3.0765,
+          "total_net_sol_drop_top3": -4.8764,
+          "monthly_run_rate_sol": -9.6779,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v42-breakeven-30",
+          "execution_mode": "shadow",
+          "label": "v42 v25 + breakevenStop@+30% [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 22,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.7792,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 256,
+          "total_net_sol_lifetime": -3.0299,
+          "total_net_sol_drop_top3": -4.8297,
+          "monthly_run_rate_sol": -9.7722,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v28-best-double-1s-ttp",
+          "execution_mode": "shadow",
+          "label": "v28 v10-best-double mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 10,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.885,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 117,
+          "total_net_sol_lifetime": -6.0787,
+          "total_net_sol_drop_top3": -8.8469,
+          "monthly_run_rate_sol": -10.3631,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v41-holders-15",
+          "execution_mode": "shadow",
+          "label": "v41 v25 + holder_count>=15 [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 21,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.2943,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 260,
+          "total_net_sol_lifetime": -3.3528,
+          "total_net_sol_drop_top3": -5.1526,
+          "monthly_run_rate_sol": -10.547,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v41-holders-16",
+          "execution_mode": "shadow",
+          "label": "v41 v25 + holder_count>=16 [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 21,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.2943,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 260,
+          "total_net_sol_lifetime": -3.3528,
+          "total_net_sol_drop_top3": -5.1526,
+          "monthly_run_rate_sol": -10.547,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v43-trailsl-15-7-1s",
+          "execution_mode": "shadow",
+          "label": "v43 v25-excl-climbing + trailSL(arm15/trail7) + 1s [shadow]",
+          "enabled": true,
+          "n_trades_today": 1,
+          "n_trades_yesterday": 16,
+          "net_sol_today": 0.0292,
+          "net_sol_yesterday": -0.0862,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 196,
+          "total_net_sol_lifetime": -3.0481,
+          "total_net_sol_drop_top3": -5.0776,
+          "monthly_run_rate_sol": -10.9913,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v42-breakeven-40",
+          "execution_mode": "shadow",
+          "label": "v42 v25 + breakevenStop@+40% [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 22,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -1.3671,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 256,
+          "total_net_sol_lifetime": -3.548,
+          "total_net_sol_drop_top3": -5.3478,
+          "monthly_run_rate_sol": -11.4431,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v32-best-double-1s",
+          "execution_mode": "shadow",
+          "label": "v32 v10-best-double mirror + 1s poll (no trailing TP) [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 10,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.885,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 110,
+          "total_net_sol_lifetime": -6.3558,
+          "total_net_sol_drop_top3": -8.89,
+          "monthly_run_rate_sol": -12.1897,
+          "edge_flag": "STABLE"
+        },
+        {
+          "strategy_id": "v33-best-double-ttp5",
+          "execution_mode": "shadow",
+          "label": "v33 v10-best-double mirror + trailingTP 5% drop [shadow]",
+          "enabled": true,
+          "n_trades_today": 0,
+          "n_trades_yesterday": 10,
+          "net_sol_today": 0,
+          "net_sol_yesterday": -0.8837,
+          "readiness_score": 30,
+          "readiness_score_yesterday": 30,
+          "promotable": false,
+          "n_trades_lifetime": 110,
+          "total_net_sol_lifetime": -6.7907,
+          "total_net_sol_drop_top3": -9.186,
+          "monthly_run_rate_sol": -13.0236,
+          "edge_flag": "STABLE"
+        }
+      ],
+      "active_strategies_snapshot": [
+        {
+          "strategy_id": "default",
+          "label": "Default",
+          "enabled": false
+        },
+        {
+          "strategy_id": "v5-velmono-opt",
+          "label": "v5 velmono opt (100/30)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v9shadow-vel20-top5",
+          "label": "v9 shadow vel<20 + top5<10% @ 150/30",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v9shadow-velmid-liq-mono",
+          "label": "v9 shadow vel 20-50 + liq>100 + mono>0.33 @ 150/25",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v9shadow-velmono-dev",
+          "label": "v9 shadow vel 20-50 + mono>0.5 + dev>5% @ 100/30",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v10-snipers-base",
+          "label": "v10 snipers <= 2 (baseline)",
+          "enabled": false
+        },
+        {
+          "strategy_id": "v10-best-double",
+          "label": "v10 vel 20-50 + dd > -10% (best double)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v11-vel5dev3-liq100",
+          "label": "v11 liq overlay: vel<5+dev<3%+liq>100",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v11-age10dev3-liq100",
+          "label": "v11 liq overlay: age>10min+dev<3%+liq>100",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v11-vel20top5-liq100",
+          "label": "v11 liq overlay: vel<20+top5<10%+liq>100",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v11-vel100-holders-lotto",
+          "label": "v11 lottery: vel>100+holders>=10 TP200/SL10",
+          "enabled": false
+        },
+        {
+          "strategy_id": "v12-vel2050-liq-dd15",
+          "label": "v12 vel 20-50 + liq>100 + max_dd>-15 @ 150/30 (panelv3_8 star)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v15-snipervel-shadow",
+          "label": "v15 snipers<=2+wallet_vel_avg<20 gate5-100 @ 100/25",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v15-vel5-10-dd-shadow",
+          "label": "v15 vel 5-10+dd>-10 gate5-100 @ 10/30",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v14-sumabs-shadow",
+          "label": "v14 sumabs mirror (vel<20+top5<10%+sum_abs<60 @ 100/30)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v14-sumabs-dd-shadow",
+          "label": "v14 sumabs + dd protection (vel<20+top5<10%+sum_abs<60+dd>-10 @ 100/30)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v19-age10-top5-base",
+          "label": "v19 age>10min + top5<10% @ 150/30 gate5-100 (leaderboard #1 mirror)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v19-age10-top5-tight",
+          "label": "v19 age>10min + top5<8% @ 150/30 gate5-100 (tighter top5)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v19-age10-top5-tp100",
+          "label": "v19 age>10min + top5<10% @ 100/30 gate5-100 (lower TP)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v20-vel2050-dd-base",
+          "label": "v20 vel 20-50 + dd>-10% @ 150/30 gate5-100 (corrected v10)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v20-vel2050-dd-tight",
+          "label": "v20 vel 20-50 + dd>-7% @ 150/30 gate5-100 (tighter dd)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v20-vel2050-dd-sl20",
+          "label": "v20 vel 20-50 + dd>-10% @ 150/20 gate5-100 (tighter SL)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v21-sniper-age-shadow",
+          "label": "v21 snipers<=2 + walletVel<10 + age>10min (TP150/SL25) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v22-top5-vwap-strict",
+          "label": "v22 top5<10% + vwap_pullback strict (TP75/SL30) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v22-quiet-vwap-strict",
+          "label": "v22 quiet_batch + vwap_pullback strict (TP100/SL30) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v22-mono-vwap",
+          "label": "v22 mono>0.66 + vwap_pullback (TP100/SL30) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v22-dev-firstbuyer",
+          "label": "v22 dev<5% + firstbuyer_known_sniper (TP150/SL30) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v23-vwap-climbing",
+          "label": "v23 vwap_pullback strict + climbing_t30_t45 (TP75/SL30, entry@T+60) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v23-repeat-recovery",
+          "label": "v23 repeat_dev>=3 + confirmed_recovery (TP75/SL30, entry@T+60) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v23-snipers5-recovery",
+          "label": "v23 snipers<=5 + confirmed_recovery (TP100/SL30, entry@T+60) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v23-snipers-max-vel",
+          "label": "v23 snipers<=2 + max_sniper_vel<10 (TP100/SL25) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v24-rugger-climbing",
+          "label": "v24 serial_rugger + climbing_t30_t45 (TP150/SL25, entry@T+60) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v24-flow-neg-vwap",
+          "label": "v24 flow_imb<0 + vwap_pullback strict (TP75/SL30, entry@T+60) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v24-rapid-fire-recovery",
+          "label": "v24 rapid_fire + confirmed_recovery (TP75/SL30, entry@T+60) [shadow speculative]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v24-busy-batch-climbing",
+          "label": "v24 busy_batch + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow speculative]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v24-bundle-suspect-climbing",
+          "label": "v24 bundle_suspect + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow speculative]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v25-bot-excl-climbing",
+          "label": "v25 bot-excl + climbing_t30_t45 (TP100/SL30, entry@T+60) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v26-vel20-top5-ttp",
+          "label": "v26 v9shadow-vel20-top5 mirror + trailingTP=10% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v28-velmono-dev-1s-ttp",
+          "label": "v28 v9shadow-velmono-dev mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v28-best-double-1s-ttp",
+          "label": "v28 v10-best-double mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v28-vel20-top5-1s-ttp",
+          "label": "v28 v9shadow-vel20-top5 mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v28-velmid-liq-mono-1s-ttp",
+          "label": "v28 v9shadow-velmid-liq-mono mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v28-bot-excl-climbing-1s-ttp",
+          "label": "v28 v25-bot-excl-climbing mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v28-vel2050-dd-base-1s-ttp",
+          "label": "v28 v20-vel2050-dd-base mirror + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V29.1",
+          "label": "V29.1 v10-best-double + UTC 02-10 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V29.2",
+          "label": "V29.2 v9-velmono-dev + UTC 02-10 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V29.3",
+          "label": "V29.3 v9-vel20-top5 + UTC 02-10 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V30.1",
+          "label": "V30.1 v10-best-double + BTC<=+0.08% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V30.2",
+          "label": "V30.2 v9-vel20-top5 + BTC<=+0.08% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V30.3",
+          "label": "V30.3 v10-best-double + BTC<=+0.08% + F&G>=25 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v28-vel50200-recovery",
+          "label": "v28 vel 50-200 + confirmed_recovery (TP75/SL30, 1s poll + trailingTP=10%) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V31.1",
+          "label": "V31.1 v9-vel20-top5 + SOL>=-2.22% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V31.2",
+          "label": "V31.2 v9-vel20-top5 + BTC in [-0.54%, +3.12%] [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V31.3",
+          "label": "V31.3 v9-vel20-top5 + F&G>=25 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V31.4",
+          "label": "V31.4 v10-best-double + SOL>=-2.22% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V31.5",
+          "label": "V31.5 v10-best-double + BTC in [-0.54%, +3.12%] [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "V31.6",
+          "label": "V31.6 v10-best-double + F&G>=25 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v32-velmono-dev-1s",
+          "label": "v32 v9shadow-velmono-dev mirror + 1s poll (no trailing TP) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v32-best-double-1s",
+          "label": "v32 v10-best-double mirror + 1s poll (no trailing TP) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v32-vel20-top5-1s",
+          "label": "v32 v9shadow-vel20-top5 mirror + 1s poll (no trailing TP) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v32-bot-excl-climbing-1s",
+          "label": "v32 v25-bot-excl-climbing mirror + 1s poll (no trailing TP) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v32-vel2050-dd-base-1s",
+          "label": "v32 v20-vel2050-dd-base mirror + 1s poll (no trailing TP) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v33-velmono-dev-ttp5",
+          "label": "v33 v9shadow-velmono-dev mirror + trailingTP 5% drop [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v33-best-double-ttp5",
+          "label": "v33 v10-best-double mirror + trailingTP 5% drop [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v33-vel20-top5-ttp5",
+          "label": "v33 v9shadow-vel20-top5 mirror + trailingTP 5% drop [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v33-bot-excl-climbing-ttp5",
+          "label": "v33 v25-bot-excl-climbing mirror + trailingTP 5% drop [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v33-vel2050-dd-base-ttp5",
+          "label": "v33 v20-vel2050-dd-base mirror + trailingTP 5% drop [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v34-velmono-dev-minlift",
+          "label": "v34 v9shadow-velmono-dev mirror + trailingTP 10% drop + minLift 20pp [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v34-best-double-minlift",
+          "label": "v34 v10-best-double mirror + trailingTP 10% drop + minLift 20pp [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v34-vel20-top5-minlift",
+          "label": "v34 v9shadow-vel20-top5 mirror + trailingTP 10% drop + minLift 20pp [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v34-bot-excl-climbing-minlift",
+          "label": "v34 v25-bot-excl-climbing mirror + trailingTP 10% drop + minLift 20pp [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v34-vel2050-dd-base-minlift",
+          "label": "v34 v20-vel2050-dd-base mirror + trailingTP 10% drop + minLift 20pp [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v35-vel2050-dev3",
+          "label": "v35 vel 20-50 + dev<3% (TP100/SL30) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v35-vel2050-top10-40",
+          "label": "v35 vel 20-50 + top10<40% (TP150/SL25) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v35-vel2050-top10-25-gini",
+          "label": "v35 vel 20-50 + top10<25% + gini<0.6 (TP150/SL25) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v35-vel2050-holders10",
+          "label": "v35 vel 20-50 + holders>=10 (TP150/SL25) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v35-vel2050-buyers-ratio",
+          "label": "v35 vel 20-50 + buyers>=10 + buy_ratio>0.6 (TP150/SL25) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v35-vel2050-lpgrowth25",
+          "label": "v35 vel 20-50 + lp_growth>25% (TP150/SL25) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v35-vel2050-first-in-batch",
+          "label": "v35 vel 20-50 + first_in_batch (TP150/SL25) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v35-vel2050-mono-climbing",
+          "label": "v35 vel 20-50 + mono>0.5 + climbing_t30_t45 (TP100/SL30) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v36-light-conc-flow",
+          "label": "v36 Light concentration + flow (top10<25 + flow>0)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v36-multi-stack",
+          "label": "v36 Multi-stack (snipers\u22645 + top10<30 + flow>0)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v37-whale-conviction",
+          "label": "v37 Whale conviction (whale\u22650.25 + buyers\u226415)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v37-creator-clean",
+          "label": "v37 Creator clean (prior_rug_rate<0.30)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v37-flow-sells-light",
+          "label": "v37 Flow sells light (flow_sells<5 SOL)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v38-firstbuyer-pure",
+          "label": "v38 First-buyer pure (priors\u22653)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v38-firstbuyer-flush",
+          "label": "v38 First-buyer + flush (priors\u22653 + max_tick<-7)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v38-thin-conviction",
+          "label": "v38 Thin conviction (holders<19 + raised\u226585)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v39-entry-5-50",
+          "label": "v39 bot-excl-climbing + entryGate [5,50] @ TP100/SL30 entry@T+60 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v39-entry-n25-100",
+          "label": "v39 bot-excl-climbing + entryGate [-25,100] @ TP100/SL30 entry@T+60 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v39-entry-n50-100",
+          "label": "v39 bot-excl-climbing + entryGate [-50,100] @ TP100/SL30 entry@T+60 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v39-entry-n25-50",
+          "label": "v39 bot-excl-climbing + entryGate [-25,50] @ TP100/SL30 entry@T+60 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v39-entry-n50-50",
+          "label": "v39 bot-excl-climbing + entryGate [-50,50] @ TP100/SL30 entry@T+60 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v40-acc-gate",
+          "label": "v40 v25 + acceleration_t30>-8 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v40-whale-cap",
+          "label": "v40 v25 + buy_pressure_whale_pct<0.30 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v40-top5-tight",
+          "label": "v40 v25 + top5_wallet_pct<=20 (tightened) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v40-vel-band",
+          "label": "v40 v25 + vel in [5,100] [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v40-acc-whale",
+          "label": "v40 v25 + acc_t30>-8 + whale<0.30 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v41-holders-15",
+          "label": "v41 v25 + holder_count>=15 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v41-holders-16",
+          "label": "v41 v25 + holder_count>=16 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v41-holders-17",
+          "label": "v41 v25 + holder_count>=17 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v41-holders-18",
+          "label": "v41 v25 + holder_count>=18 [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v41-holders-19",
+          "label": "v41 v25 + holder_count>=19 (capped max) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v42-breakeven-10",
+          "label": "v42 v25 + breakevenStop@+10% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v42-breakeven-15",
+          "label": "v42 v25 + breakevenStop@+15% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v42-breakeven-20",
+          "label": "v42 v25 + breakevenStop@+20% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v42-breakeven-30",
+          "label": "v42 v25 + breakevenStop@+30% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v42-breakeven-40",
+          "label": "v42 v25 + breakevenStop@+40% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v43-trailsl-15-7-1s",
+          "label": "v43 v25-excl-climbing + trailSL(arm15/trail7) + 1s [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v43-trailsl-20-10-1s",
+          "label": "v43 v25-excl-climbing + trailSL(arm20/trail10) + 1s [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v43-tighten-50-12-1s",
+          "label": "v43 v25-excl-climbing + tightenSL(50%t->-12%) + 1s [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v43-trailsl-be-1s",
+          "label": "v43 v25-excl-climbing + trailSL(20/10) + breakeven@15 + 1s [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v43-mono-trailsl-1s",
+          "label": "v43 v25-excl-climbing + mono>0.5 entry + trailSL(20/10) + 1s [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v44-climb-live-micro",
+          "label": "v44 climbing mirror (TP100/SL30, entry@T+60) [LIVE-MICRO 0.05]",
+          "enabled": false
+        },
+        {
+          "strategy_id": "v44-climb-shadow",
+          "label": "v44 climbing mirror (TP100/SL30) [SHADOW 0.05] - twin of v44-climb-live-micro",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v44-climb-1s-ttp10-live-micro",
+          "label": "v44 climbing + 1s poll + trailingTP10% [LIVE-MICRO 0.05]",
+          "enabled": false
+        },
+        {
+          "strategy_id": "v44-climb-1s-ttp10-shadow",
+          "label": "v44 climbing + 1s poll + trailingTP10% [SHADOW 0.05] - twin of v44-climb-1s-ttp10-live-micro",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v45-acc-gate-live-micro",
+          "label": "v45 acc-gate mirror (v25 climb + acc_t30>-8, TP100/SL30) [LIVE-MICRO 0.05]",
+          "enabled": false
+        },
+        {
+          "strategy_id": "v45-acc-gate-shadow",
+          "label": "v45 acc-gate mirror (v25 climb + acc_t30>-8, TP100/SL30) [SHADOW 0.05] - twin of v45-acc-gate-live-micro",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v46-v25-skip-red",
+          "label": "v46 v25-base + regime skip_red [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v46-acc-gate-skip-red",
+          "label": "v46 acc-gate + regime skip_red [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v46-v44climb-skip-red",
+          "label": "v46 v44-climb + regime skip_red [shadow 0.5 SOL]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v46-v44-1s-ttp10-skip-red",
+          "label": "v46 v44 1s+ttp10 + regime skip_red [shadow 0.5 SOL]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v46-v25-green-only",
+          "label": "v46 v25-base + regime green_only [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v47-excl-climb-ttg-base",
+          "label": "v47 bot-excl+climbing + token_age<750 (TP100/SL30, 5s, entry@T+60) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v47-excl-climb-ttg-1s",
+          "label": "v47 bot-excl+climbing + token_age<750 + 1s poll (no trailing TP) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v47-excl-climb-ttg-1s-ttp10",
+          "label": "v47 bot-excl+climbing + token_age<750 + 1s poll + trailingTP=10% [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v48-climb-signal",
+          "label": "v48 excl-climbing edge-decay SIGNAL baseline (always-on, ungated control) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v48a-climb-strength-only",
+          "label": "v48a excl-climbing GATED strength_only (signal=v25-bot-excl-climbing) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v48b-climb-strength-stable",
+          "label": "v48b excl-climbing GATED strength+stable / skip_decaying (signal=v25-bot-excl-climbing) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v47-no-top5",
+          "label": "v47 v25-base minus top5 filter [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v47-no-vel",
+          "label": "v47 v25-base minus vel filter [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v47-no-age",
+          "label": "v47 v25-base minus age filter [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v47-lean",
+          "label": "v47 v25-base ONLY dd + climbing (drop all dead weight) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v47-lean-plus-acc",
+          "label": "v47 lean + acc_t30>-8 (only pulls-weight filters) [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v49a-climb-double",
+          "label": "v49a climbing double-confirm (climb_t15_t30 + climb_t30_t45)",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v49b-climb-tightgate",
+          "label": "v49b climbing + tight entry gate [+5..+40%]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v49d-climb-skipred",
+          "label": "v49d climbing + regime skip_red",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v50-strength-shadow",
+          "label": "v50 climb + strength-only gate, 1s poll, 0.05 SOL [shadow]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v50-strength-live-micro",
+          "label": "v50 climb + strength-only gate, 1s poll, 0.05 SOL [LIVE-MICRO]",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v51-confirm-gate",
+          "label": "v51 confirm-gate: 2-checkpoint climb (t15<t30<t45) + shallow DD",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v51-tail-guard",
+          "label": "v51 tail-guard: v25 entry + tight SL10 + 1s poll + breakeven@30",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v51-capitulation-bounce",
+          "label": "v51 capitulation-bounce: down 10-60% @t30 + bounce t45>t30, fast scalp",
+          "enabled": true
+        },
+        {
+          "strategy_id": "v51-quality-momentum",
+          "label": "v51 quality-momentum: vel20-50 + liq>100 + age>10m + shallow DD + mono",
+          "enabled": true
+        }
+      ],
       "recommendations": {
         "kill": [
           {
             "strategy_id": "v9shadow-vel20-top5",
-            "reason": "n=102, drop_top3=-0.990 SOL — apparent +2.06 SOL total concentrates in top-3 trades (148%). DECAYING: recent-30 median -11.67% vs all-time -1.48%. INVALID on leave-one-out gate."
+            "reason": "n=102, drop_top3=-0.990 SOL \u2014 apparent +2.06 SOL total concentrates in top-3 trades (148%). DECAYING: recent-30 median -11.67% vs all-time -1.48%. INVALID on leave-one-out gate."
           }
         ],
         "promote": [],
@@ -74,7 +1740,7 @@
           },
           {
             "strategy_id": "v9shadow-velmono-dev",
-            "reason": "n=94, score=87.2, drop_top3=+0.768, STRENGTHENING. 6 trades from n=100. Monthly=2.11 SOL/mo (below bar). Fat-tail strategy — drop_top3 is the primary robustness check."
+            "reason": "n=94, score=87.2, drop_top3=+0.768, STRENGTHENING. 6 trades from n=100. Monthly=2.11 SOL/mo below bar. Fat-tail strategy \u2014 drop_top3 is the primary robustness check."
           },
           {
             "strategy_id": "v25-bot-excl-climbing",
@@ -87,9 +1753,9 @@
           "id": "ai-2026-06-06-001",
           "kind": "kill",
           "target_id": "v9shadow-vel20-top5",
-          "summary": "Kill v9shadow-vel20-top5 — cleared n=100 and failed: drop_top3=-0.990 SOL (lottery-driven, 148% top3 concentration), DECAYING (recent-30 median -11.67%). INVALID.",
+          "summary": "Kill v9shadow-vel20-top5 \u2014 cleared n=100 and failed: drop_top3=-0.990 SOL (lottery-driven, 148% top3 concentration), DECAYING (recent-30 median -11.67%). INVALID.",
           "status": "PROPOSED",
-          "proposed_at": 1749207600
+          "proposed_at": 1780744610
         },
         {
           "id": "ai-2026-06-06-002",
@@ -97,7 +1763,7 @@
           "target_id": "pipeline-t30-callback",
           "summary": "Recurring pipeline stall: T+30 callback last fired 986s before Jun 6 snapshot (third occurrence this week). PriceCollector to StrategyManager wiring goes silent while graduations continue. Needs restart or connection fix.",
           "status": "PROPOSED",
-          "proposed_at": 1749207600
+          "proposed_at": 1780744610
         }
       ],
       "auto_journal": true
