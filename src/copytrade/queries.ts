@@ -279,6 +279,11 @@ export function getFollowListAddresses(db: Database.Database): string[] {
     .map((r) => r.address);
 }
 
+/** Money-edge smart-set addresses (broader tier) — same filter as getSmartSet. */
+export function getSmartSetAddresses(db: Database.Database): string[] {
+  return getSmartSet(db).map((r) => r.address);
+}
+
 export interface ProbeEventInsert {
   wallet_address: string;
   signature: string;
@@ -286,6 +291,7 @@ export interface ProbeEventInsert {
   action: string | null;
   sol_delta: number | null;
   venue: string | null;
+  tier: string;              // 'promotable' | 'smart'
   their_block_time: number | null;
   detected_at: number;        // unix ms
   detection_lag_sec: number | null;
@@ -296,7 +302,7 @@ export interface ProbeEventInsert {
 export function insertProbeEvent(db: Database.Database, ev: ProbeEventInsert): void {
   db.prepare(`
     INSERT OR IGNORE INTO copy_probe_events
-      (wallet_address, signature, mint, action, sol_delta, venue, their_block_time, detected_at, detection_lag_sec, slot)
-    VALUES (@wallet_address, @signature, @mint, @action, @sol_delta, @venue, @their_block_time, @detected_at, @detection_lag_sec, @slot)
+      (wallet_address, signature, mint, action, sol_delta, venue, tier, their_block_time, detected_at, detection_lag_sec, slot)
+    VALUES (@wallet_address, @signature, @mint, @action, @sol_delta, @venue, @tier, @their_block_time, @detected_at, @detection_lag_sec, @slot)
   `).run(ev);
 }

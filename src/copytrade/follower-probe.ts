@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { Connection } from '@solana/web3.js';
-import { getFollowListAddresses, insertProbeEvent } from './queries';
+import { getFollowListAddresses, getSmartSetAddresses, insertProbeEvent } from './queries';
 import { parseSwapForOwner } from './parse-swap';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
@@ -46,7 +46,8 @@ export class CopyFollowerProbe {
   private readonly getConnection: () => Connection | null;
   private ws: MinimalWS | null = null;
   private stopped = false;
-  private watchlist: string[] = [];
+  private watchlist: string[] = [];       // union: smart set ∪ follow_list
+  private promotableSet = new Set<string>(); // strict follow_list subset (for tier tagging)
   private subRequestId = 1;
   private subId: number | null = null;
   private reconnectDelay = 1000;
@@ -92,12 +93,19 @@ export class CopyFollowerProbe {
   }
 
   private refreshWatchlist(connectIfChanged: boolean): void {
-    let wl: string[] = [];
-    try { wl = getFollowListAddresses(this.db); } catch { /* table may be empty */ }
+    // Watch BOTH tiers: the strict follow_list (promotable) and the broader
+    // money-edge smart set. Their union is the subscription; tier is tagged per
+    // event so we can compare strict vs broad copy methods from one dataset.
+    let promotable: string[] = [];
+    let smart: string[] = [];
+    try { promotable = getFollowListAddresses(this.db); } catch { /* may be empty */ }
+    try { smart = getSmartSetAddresses(this.db); } catch { /* may be empty */ }
+    this.promotableSet = new Set(promotable);
+    const wl = [...new Set([...promotable, ...smart])].sort();
     const changed = wl.length !== this.watchlist.length || wl.some((a, i) => a !== this.watchlist[i]);
     if (!changed) return;
     this.watchlist = wl;
-    logger.info('Watchlist updated: %d wallets', wl.length);
+    logger.info('Watchlist updated: %d wallets (%d promotable, %d smart-set)', wl.length, promotable.length, smart.length);
     this.writeStatus();
     if (connectIfChanged) {
       // Reconnect to re-subscribe with the new accountInclude set.
@@ -231,6 +239,7 @@ export class CopyFollowerProbe {
         action: swap?.action ?? null,
         sol_delta: swap?.solDelta ?? null,
         venue: swap?.venue ?? null,
+        tier: this.promotableSet.has(wallet) ? 'promotable' : 'smart',
         their_block_time: blockTime,
         detected_at: detectedAtMs,
         detection_lag_sec: lag,
@@ -284,25 +293,19 @@ export function computeCopyProbe(db: Database.Database): unknown {
     return { generated_at: new Date().toISOString(), phase: 'phase2-latency-probe', pending: true };
   }
 
-  const swaps = rows.filter((r) => r.action === 'buy' || r.action === 'sell');
-  const lags = rows.map((r) => r.detection_lag_sec).filter((v): v is number => typeof v === 'number').sort((a, b) => a - b);
-  const byWallet: Record<string, number> = {};
-  const byAction: Record<string, number> = {};
-  const byVenue: Record<string, number> = {};
-  for (const r of rows) {
-    byWallet[r.wallet_address as string] = (byWallet[r.wallet_address as string] ?? 0) + 1;
-    byAction[(r.action as string) ?? 'unknown'] = (byAction[(r.action as string) ?? 'unknown'] ?? 0) + 1;
-    if (r.venue) byVenue[r.venue as string] = (byVenue[r.venue as string] ?? 0) + 1;
-  }
-
-  return {
-    generated_at: new Date().toISOString(),
-    phase: 'phase2-latency-probe',
-    note: 'Latency probe only — no positions taken. detection_lag_sec = our WS-notification time − tx block time. Live execution adds a further ~1-2 block land gap on top of this.',
-    status,
-    watchlist,
-    summary: {
-      total_events: rows.length,
+  const summarize = (rs: Array<Record<string, unknown>>) => {
+    const swaps = rs.filter((r) => r.action === 'buy' || r.action === 'sell');
+    const lags = rs.map((r) => r.detection_lag_sec).filter((v): v is number => typeof v === 'number').sort((a, b) => a - b);
+    const byAction: Record<string, number> = {};
+    const byVenue: Record<string, number> = {};
+    const byWallet: Record<string, number> = {};
+    for (const r of rs) {
+      byAction[(r.action as string) ?? 'unknown'] = (byAction[(r.action as string) ?? 'unknown'] ?? 0) + 1;
+      if (r.venue) byVenue[r.venue as string] = (byVenue[r.venue as string] ?? 0) + 1;
+      byWallet[r.wallet_address as string] = (byWallet[r.wallet_address as string] ?? 0) + 1;
+    }
+    return {
+      total_events: rs.length,
       swaps: swaps.length,
       by_action: byAction,
       by_venue: byVenue,
@@ -310,9 +313,27 @@ export function computeCopyProbe(db: Database.Database): unknown {
       detection_lag_sec: lags.length
         ? { n: lags.length, p50: percentile(lags, 0.5), p95: percentile(lags, 0.95), max: lags[lags.length - 1], mean: +(lags.reduce((a, b) => a + b, 0) / lags.length).toFixed(2) }
         : null,
+    };
+  };
+
+  const promotableRows = rows.filter((r) => r.tier === 'promotable');
+  const smartOnlyRows = rows.filter((r) => r.tier !== 'promotable');
+
+  return {
+    generated_at: new Date().toISOString(),
+    phase: 'phase2-latency-probe',
+    note: 'Latency probe only — no positions taken. detection_lag_sec = our WS-notification time − tx block time; live execution adds a further ~1-2 block land gap on top. Two methods to compare: STRICT = by_tier.promotable; BROAD = summary (whole smart set = all events). smart_only = the extra wallets BROAD adds over STRICT.',
+    status,
+    watchlist,
+    // BROAD method (whole money-edge smart set) = all events.
+    summary: summarize(rows),
+    by_tier: {
+      promotable: summarize(promotableRows), // STRICT method
+      smart_only: summarize(smartOnlyRows),  // the wallets BROAD adds
     },
     recent_events: rows.slice(0, 30).map((r) => ({
       wallet: (r.wallet_address as string).slice(0, 8),
+      tier: r.tier,
       action: r.action,
       venue: r.venue,
       mint: r.mint ? (r.mint as string).slice(0, 8) : null,
