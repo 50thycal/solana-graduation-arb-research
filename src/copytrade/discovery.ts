@@ -64,3 +64,68 @@ export function seedCandidatesFromDb(db: Database.Database, now: number = Math.f
   logger.info('Discovery seed complete: +%d new candidates (%d total)', added, countCandidates(db));
   return added;
 }
+
+/**
+ * Recompute candidate `priority` from in-DB signal so the scorer evaluates the
+ * wallets most likely to be alpha FIRST (instead of address-sorted order, which
+ * is random w.r.t. skill). With ~66k candidates and a small scoring batch, the
+ * ordering is what makes Phase 1 tractable.
+ *
+ * Signal, all already collected by the graduation pipeline:
+ *   - buys on PUMP-labeled graduations (being early on winners, repeatedly)
+ *   - total distinct graduations bought (raw activity / seriousness)
+ *   - first-buyer hits, weighted heavily when the token PUMPed
+ *
+ * priority = pump_buys*3 + buys*1 + firstbuyer_pump*5 + firstbuyer*1
+ *
+ * Only wallets WITH signal are updated; the rest keep priority NULL (sorts last).
+ * Aggregates are GROUP-BY scans over competition_signals (~hundreds of ms) plus a
+ * bounded batch of UPDATEs — runs on the worker's 6h cadence, off the hot path.
+ * Returns the number of wallets whose priority was set.
+ */
+export function recomputeCandidatePriorities(db: Database.Database): number {
+  const priority = new Map<string, number>();
+
+  const addPts = (addr: string | null, pts: number) => {
+    if (!addr) return;
+    priority.set(addr, (priority.get(addr) ?? 0) + pts);
+  };
+
+  try {
+    const buyRows = db.prepare(`
+      SELECT cs.wallet_address AS w,
+             COUNT(DISTINCT cs.graduation_id) AS buys,
+             COUNT(DISTINCT CASE WHEN gm.label = 'PUMP' THEN cs.graduation_id END) AS pump_buys
+      FROM competition_signals cs
+      JOIN graduation_momentum gm ON gm.graduation_id = cs.graduation_id
+      WHERE cs.action = 'buy' AND cs.wallet_address IS NOT NULL
+      GROUP BY cs.wallet_address
+    `).all() as Array<{ w: string; buys: number; pump_buys: number }>;
+    for (const r of buyRows) addPts(r.w, r.pump_buys * 3 + r.buys);
+  } catch (err) {
+    logger.warn('Priority buy-aggregate failed: %s', err instanceof Error ? err.message : String(err));
+  }
+
+  try {
+    const fbRows = db.prepare(`
+      SELECT firstbuyer_wallet AS w,
+             COUNT(*) AS fb,
+             COUNT(CASE WHEN label = 'PUMP' THEN 1 END) AS fb_pump
+      FROM graduation_momentum
+      WHERE firstbuyer_wallet IS NOT NULL
+      GROUP BY firstbuyer_wallet
+    `).all() as Array<{ w: string; fb: number; fb_pump: number }>;
+    for (const r of fbRows) addPts(r.w, r.fb_pump * 5 + r.fb);
+  } catch (err) {
+    logger.warn('Priority firstbuyer-aggregate failed: %s', err instanceof Error ? err.message : String(err));
+  }
+
+  const stmt = db.prepare(`UPDATE wallet_candidates SET priority = @p WHERE address = @a`);
+  const tx = db.transaction(() => {
+    for (const [a, p] of priority) stmt.run({ a, p });
+  });
+  tx();
+
+  logger.info('Recomputed priority for %d candidates with signal', priority.size);
+  return priority.size;
+}

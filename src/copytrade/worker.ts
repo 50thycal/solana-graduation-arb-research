@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { Connection } from '@solana/web3.js';
-import { seedCandidatesFromDb } from './discovery';
+import { seedCandidatesFromDb, recomputeCandidatePriorities } from './discovery';
 import {
   getCandidates,
   cacheWalletSwaps,
@@ -116,6 +116,8 @@ export class CopytradeWorker {
     const now = Math.floor(Date.now() / 1000);
     try {
       seedCandidatesFromDb(this.db, now);
+      // Rank candidates by in-DB signal so we score likely-alpha wallets first.
+      recomputeCandidatePriorities(this.db);
 
       const staleBefore = now - this.restaleSeconds;
       const candidates = getCandidates(this.db, { staleBeforeTs: staleBefore, limit: this.scoreBatchLimit });

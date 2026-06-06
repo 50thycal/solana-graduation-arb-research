@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { getTopWalletScores, countCandidates, WalletScoreRow } from './queries';
+import { getTopWalletScores, countCandidates, getTopUnscoredByPriority, WalletScoreRow } from './queries';
 import { evaluateWallet, DEFAULT_WALLET_GATE } from './ranker';
 
 /**
@@ -32,10 +32,12 @@ export function computeWalletLeaderboard(db: Database.Database, limit = 50): unk
   let scored: WalletScoreRow[] = [];
   let totalCandidates = 0;
   let scoredCount = 0;
+  let queuePreview: Array<{ address: string; priority: number | null }> = [];
   try {
     scored = getTopWalletScores(db, limit);
     totalCandidates = countCandidates(db);
     scoredCount = (db.prepare(`SELECT COUNT(*) AS c FROM wallet_scores`).get() as { c: number }).c;
+    queuePreview = getTopUnscoredByPriority(db, 10);
   } catch {
     // Tables absent on an older DB — return an explicit empty view rather than throwing.
     return {
@@ -82,6 +84,13 @@ export function computeWalletLeaderboard(db: Database.Database, limit = 50): unk
       scored: scoredCount,
       promotable: rows.filter((r) => r.passed_gate).length,
     },
+    // Highest-priority wallets the scorer will evaluate next (by in-DB signal:
+    // frequency on PUMP graduations + first-buyer hits). Lets us confirm the
+    // queue is sensibly ordered rather than scoring address-sorted randoms.
+    queue_preview: queuePreview.map((q) => ({
+      address: q.address,
+      priority: q.priority,
+    })),
     rows,
   };
 }

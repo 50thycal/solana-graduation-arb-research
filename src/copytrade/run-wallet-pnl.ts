@@ -10,7 +10,7 @@
  */
 import { Connection } from '@solana/web3.js';
 import { initDatabase } from '../db/schema';
-import { seedCandidatesFromDb } from './discovery';
+import { seedCandidatesFromDb, recomputeCandidatePriorities } from './discovery';
 import { getCandidates, cacheWalletSwaps, replaceRoundTrips, upsertWalletScore, getTopWalletScores, upsertFollow } from './queries';
 import { fetchWalletSwaps, scoreWallet, reconstructRoundTrips, WalletSwap } from './wallet-pnl';
 import { rankWallets, evaluateWallet } from './ranker';
@@ -95,7 +95,8 @@ async function main(): Promise<void> {
   const db = initDatabase(dataDir);
 
   const added = seedCandidatesFromDb(db);
-  console.log(`Seeded candidates (+${added} new).`);
+  const prioritized = recomputeCandidatePriorities(db);
+  console.log(`Seeded candidates (+${added} new); priority set on ${prioritized} wallets with signal.`);
   if (flag('seed-only')) return;
 
   const rpcUrl = process.env.HELIUS_RPC_URL;

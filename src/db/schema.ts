@@ -988,6 +988,20 @@ function runMigrations(db: Database.Database): void {
     );
   `);
 
+  // Additive: priority column on wallet_candidates. The first copytrade deploy
+  // created the table without it, so existing DBs need the ALTER. Priority is a
+  // heuristic ranking (frequency on PUMP graduations + first-buyer hits) that
+  // decides WHICH candidates the scorer evaluates first — see
+  // recomputeCandidatePriorities in src/copytrade/discovery.ts. NULL = no signal
+  // yet (sorts last).
+  {
+    const cc = db.prepare("PRAGMA table_info(wallet_candidates)").all() as Array<{ name: string }>;
+    if (!cc.some((c) => c.name === 'priority')) {
+      db.exec(`ALTER TABLE wallet_candidates ADD COLUMN priority INTEGER`);
+    }
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_wallet_candidates_priority ON wallet_candidates(priority)`);
+  }
+
   // Add strategy_id to trades_v2 and trade_skips (safe migration)
   {
     const tradeCols = db.prepare("PRAGMA table_info(trades_v2)").all() as Array<{ name: string }>;
