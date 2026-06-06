@@ -34,9 +34,9 @@ const logger = makeLogger('copytrade-worker');
  */
 
 const DEFAULTS = {
-  intervalMs: 6 * 60 * 60 * 1000, // 6h between scoring passes
+  intervalMs: 3 * 60 * 60 * 1000, // 3h between scoring passes
   firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
-  scoreBatchLimit: 10,            // wallets scored per tick
+  scoreBatchLimit: 30,            // wallets scored per tick
   maxSignaturesPerWallet: 400,    // history depth per wallet (caps RPC cost)
   restaleSeconds: 24 * 3600,      // re-score a wallet at most once / 24h
 };

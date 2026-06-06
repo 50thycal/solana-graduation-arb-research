@@ -67,6 +67,20 @@ export function computeWalletLeaderboard(db: Database.Database, limit = 50): unk
     };
   });
 
+  // WATCH tier: the money-edge is genuinely there (positive total + survives
+  // drop_top3 + clears the monthly bar) but the wallet fails ONLY on sample
+  // size or recency — i.e. real-looking alpha that just needs more trades or
+  // has gone quiet. Worth tracking separately from outright rejects.
+  const moneyGatesOk = (r: typeof rows[number]) =>
+    r.total_realized_sol >= DEFAULT_WALLET_GATE.minTotalSol
+    && r.total_realized_sol_drop_top3 > DEFAULT_WALLET_GATE.minDropTop3Sol
+    && (r.monthly_run_rate_sol ?? 0) >= DEFAULT_WALLET_GATE.minMonthlyRunRate;
+  const watch = rows.filter(
+    (r) => !r.passed_gate
+      && moneyGatesOk(r)
+      && r.failed_gates.every((g) => g === 'n_round_trips' || g === 'last_active'),
+  );
+
   return {
     generated_at: new Date().toISOString(),
     phase: 'phase1-offline-pnl',
@@ -83,6 +97,7 @@ export function computeWalletLeaderboard(db: Database.Database, limit = 50): unk
       total_candidates: totalCandidates,
       scored: scoredCount,
       promotable: rows.filter((r) => r.passed_gate).length,
+      watch: watch.length,
     },
     // Highest-priority wallets the scorer will evaluate next (by in-DB signal:
     // frequency on PUMP graduations + first-buyer hits). Lets us confirm the
@@ -91,6 +106,7 @@ export function computeWalletLeaderboard(db: Database.Database, limit = 50): unk
       address: q.address,
       priority: q.priority,
     })),
+    watch,
     rows,
   };
 }
