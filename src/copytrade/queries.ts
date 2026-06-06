@@ -186,6 +186,40 @@ export function getTopWalletScores(db: Database.Database, limit = 50): WalletSco
   `).all(limit) as WalletScoreRow[];
 }
 
+/**
+ * The "smart set" used by the smart-money analysis: wallets whose money-edge is
+ * real — survives drop_top3, clears the monthly bar, positive total — but with
+ * n / recency RELAXED vs the full promotion gate (leaderboard.ts), so there are
+ * enough wallets to study which tokens they pick. The follow-list still uses the
+ * strict gate; this is purely the analysis population.
+ */
+export function getSmartSet(db: Database.Database): WalletScoreRow[] {
+  return db.prepare(`
+    SELECT * FROM wallet_scores
+    WHERE total_realized_sol_drop_top3 > 0
+      AND monthly_run_rate_sol >= 3.75
+      AND total_realized_sol >= 0.5
+    ORDER BY monthly_run_rate_sol DESC NULLS LAST
+  `).all() as WalletScoreRow[];
+}
+
+const SMART_MONEY_CACHE_KEY = 'smart_money_analysis';
+
+/** Persist the computed smart-money analysis JSON blob (bot_settings k/v). */
+export function setSmartMoneyCache(db: Database.Database, json: string): void {
+  db.prepare(`
+    INSERT INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(SMART_MONEY_CACHE_KEY, json);
+}
+
+/** Read the cached smart-money analysis JSON blob, or null if not computed yet. */
+export function getSmartMoneyCacheRaw(db: Database.Database): string | null {
+  const row = db.prepare(`SELECT value FROM bot_settings WHERE key = ?`)
+    .get(SMART_MONEY_CACHE_KEY) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
 export function upsertFollow(
   db: Database.Database,
   row: { address: string; rank: number; copySizeSol: number; maxConcurrent: number; enabled: boolean; killCriterion: string; addedAt: number },

@@ -58,6 +58,7 @@ import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
 import { computeRegimeAnalysis } from './regime-analysis';
 import { computeTradingData } from './trading-data';
 import { computeWalletLeaderboard } from '../copytrade/leaderboard';
+import { getSmartMoneyAnalysis } from '../copytrade/smart-money';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { computeLiveTrainingData } from './live-training-data';
 import { computeDailyReport } from './daily-report';
@@ -238,6 +239,8 @@ export interface StatusUrls {
   leave_one_out_pnl: string;
   /** Copy-trade (Option B) wallet P&L leaderboard. */
   wallet_leaderboard: string;
+  /** Copy-trade (Option B) smart-money token-selection analysis. */
+  smart_money: string;
   // Daily report — cross-session memory written by the routine /daily-report
   // Claude run via report-upsert commands. Bot publishes auto-stats every
   // sync cycle so the page is populated even before the first Claude run.
@@ -432,6 +435,7 @@ export class GistSync {
       loss_postmortem: `${base}/loss-postmortem.json`,
       leave_one_out_pnl: `${base}/leave-one-out-pnl.json`,
       wallet_leaderboard: `${base}/wallet-leaderboard.json`,
+      smart_money: `${base}/smart-money.json`,
       report: `${base}/report.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
@@ -876,6 +880,9 @@ export class GistSync {
     // Copy-trade wallet leaderboard — pure SQL read of wallet_scores (populated
     // out-of-band by CopytradeWorker). Cheap; no RPC, no grid sweep.
     const walletLeaderboard = await timed('walletLeaderboard', () => computeWalletLeaderboard(this.db));
+    // Smart-money token-selection analysis — cheap read of the bot_settings cache
+    // (computed out-of-band by CopytradeWorker every ~3h). No compute here.
+    const smartMoney = getSmartMoneyAnalysis(this.db);
     // dailyReport reads leaveOneOutPnl internally to populate
     // promotion_readiness_top5 — keep this ordering.
     const dailyReport = await timed('dailyReport', () => computeDailyReport(this.db));
@@ -1060,6 +1067,7 @@ export class GistSync {
       'leave-one-out-pnl.json': JSON.stringify(leaveOneOutPnl, null, 2),
       'regime-analysis.json': JSON.stringify(regimeAnalysis, null, 2),
       'wallet-leaderboard.json': JSON.stringify(walletLeaderboard, null, 2),
+      'smart-money.json': JSON.stringify(smartMoney, null, 2),
       'report.json': JSON.stringify(dailyReport, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,

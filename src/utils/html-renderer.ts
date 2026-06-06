@@ -13,6 +13,7 @@ const NAV_LINKS = [
   { path: '/filter-analysis-v2', label: 'Filters V2' },
   { path: '/filter-analysis-v3', label: 'Filters V3' },
   { path: '/wallet-rep-analysis', label: 'Wallet Rep' },
+  { path: '/smart-money', label: 'Smart Money' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/exit-sim', label: 'Exit Sim' },
   { path: '/exit-sim-matrix', label: 'Exit Matrix' },
@@ -10079,4 +10080,178 @@ export function renderRegimeAnalysisHtml(data: any): string {
   `;
 
   return shell('Regime Analysis', '/regime-analysis', body, data as object);
+}
+
+// ── SMART MONEY PAGE ──────────────────────────────────────────────────
+// Token-selection analysis: do the profitable copy-trade wallets share a
+// detectable pattern in WHICH graduations they buy? (Phase-1, research only.)
+export function renderSmartMoneyHtml(data: any): string {
+  const d = data;
+
+  if (d?.pending) {
+    const body = `<div class="card"><h2>Smart Money</h2>
+      <div class="desc">The token-selection analysis hasn't been computed yet. The CopytradeWorker
+      computes it on boot and every ~3h from the scored-wallet leaderboard. Check back shortly.</div></div>`;
+    return shell('Smart Money — Graduation Arb Research', '/smart-money', body, data as object);
+  }
+
+  const num = (v: any, dp = 2): string => (typeof v === 'number' && isFinite(v) ? v.toFixed(dp) : '—');
+  const pct = (v: any): string => (typeof v === 'number' && isFinite(v) ? (v * 100).toFixed(1) + '%' : '—');
+  const short = (a: string): string => (a ? a.slice(0, 6) + '…' + a.slice(-4) : '—');
+  const dMag = (v: any): string => {
+    if (typeof v !== 'number' || !isFinite(v)) return '';
+    const a = Math.abs(v);
+    return a >= 0.8 ? 'large' : a >= 0.5 ? 'medium' : a >= 0.2 ? 'small' : 'negligible';
+  };
+
+  const ol = d.outcome_lift ?? {};
+  const sp = ol.smart_present ?? {};
+  const ba = ol.baseline_absent ?? {};
+  const cov = d.coverage ?? {};
+
+  const lowConf = d.low_confidence
+    ? `<div class="card" style="border-color:#facc15"><div class="desc" style="color:#facc15;margin:0">
+       ⚠ LOW CONFIDENCE — small smart set (${d.smart_set?.n_wallets ?? 0} wallets) or few smart-present
+       graduations (${cov.actionable_present_grads ?? 0}). Numbers shown but treat as directional until coverage grows.</div></div>`
+    : '';
+
+  // ── header / coverage ──
+  const headerCard = `<div class="card">
+    <h2>Smart Money — token-selection analysis</h2>
+    <div class="desc">Do the profitable wallets pick a detectable kind of token? If so we can replicate the
+    SELECTION at our own T+30 entry — no copy-execution latency race. Smart set = <code>${d.smart_set?.definition ?? ''}</code></div>
+    <div class="grid">
+      <div>
+        <div class="stat"><span class="label">Smart wallets</span><span class="value">${d.smart_set?.n_wallets ?? 0}</span></div>
+        <div class="stat"><span class="label">Tracked graduations analyzed</span><span class="value">${cov.tracked_graduations ?? 0}</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">Smart-present grads (0-30s, actionable)</span><span class="value green">${cov.actionable_present_grads ?? 0}</span></div>
+        <div class="stat"><span class="label">Cache-present grads (any phase)</span><span class="value">${cov.cache_present_grads ?? 0}</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">Smart buy events (0-30s)</span><span class="value">${cov.smart_buy_events_actionable ?? 0}</span></div>
+        <div class="stat"><span class="label">Computed</span><span class="value">${(d.generated_at ?? '').slice(0, 19)}</span></div>
+      </div>
+    </div>
+    <div class="desc">${(cov.notes ?? []).map((n: string) => '• ' + n).join('<br>')}</div>
+  </div>`;
+
+  // ── M3 outcome lift (headline) ──
+  const liftCls = typeof ol.pump_rate_lift_pp === 'number'
+    ? (ol.pump_rate_lift_pp > 0 ? 'green' : 'red') : '';
+  const ci = (c: any): string => (c ? `[${num(c.low, 1)}–${num(c.high, 1)}%]` : '');
+  const gradedRows = (ol.by_smart_count ?? []).map((r: any) => `<tr>
+      <td>${r.smart_buyers}</td><td>${r.n}</td><td>${pct(r.pump_rate)}</td><td>${num(r.avg_return_pct)}%</td></tr>`).join('');
+  const outcomeCard = `<div class="card" style="border-color:#16a34a">
+    <h2>Outcome lift — does smart-money presence predict winners? (headline)</h2>
+    <div class="desc">Graduations where ≥1 smart wallet bought in the first 30s (detectable at our T+30 entry)
+    vs those where none did. PUMP = label ≥ +10% by T+300. Avg return = T+30→T+300 buy-and-hold.</div>
+    <div class="grid">
+      <div>
+        <div class="stat"><span class="label">Smart-present: PUMP rate</span><span class="value green">${pct(sp.pump_rate)} <span class="desc" style="display:inline">${ci(sp.pump_rate_ci)}</span></span></div>
+        <div class="stat"><span class="label">Smart-present: avg return</span><span class="value">${num(sp.avg_return_pct)}% (n=${sp.n ?? 0})</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">No smart money: PUMP rate</span><span class="value">${pct(ba.pump_rate)} <span class="desc" style="display:inline">${ci(ba.pump_rate_ci)}</span></span></div>
+        <div class="stat"><span class="label">No smart money: avg return</span><span class="value">${num(ba.avg_return_pct)}% (n=${ba.n ?? 0})</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">PUMP-rate lift</span><span class="value ${liftCls}">${typeof ol.pump_rate_lift_pp === 'number' ? (ol.pump_rate_lift_pp > 0 ? '+' : '') + num(ol.pump_rate_lift_pp) + ' pp' : '—'}</span></div>
+        <div class="stat"><span class="label">p-value (two-prop)</span><span class="value ${typeof ol.p_value === 'number' && ol.p_value < 0.05 ? 'green' : 'yellow'}">${num(ol.p_value, 4)}</span></div>
+      </div>
+    </div>
+    <h3>Graded by # of smart buyers (consensus)</h3>
+    <table><tr><th>Smart buyers</th><th>n grads</th><th>PUMP rate</th><th>Avg return</th></tr>${gradedRows}</table>
+  </div>`;
+
+  // ── M2 feature signature ──
+  const featRows = (d.feature_signature ?? []).slice(0, 25).map((f: any) => {
+    const dCls = typeof f.cohens_d === 'number' ? (f.cohens_d > 0 ? 'green' : 'red') : '';
+    return `<tr>
+      <td>${f.display}</td>
+      <td>${num(f.mean_smart, 3)}</td>
+      <td>${num(f.mean_rest, 3)}</td>
+      <td class="${dCls}">${typeof f.cohens_d === 'number' ? f.cohens_d.toFixed(3) : '—'} <span class="desc" style="display:inline">${dMag(f.cohens_d)}</span></td>
+      <td>${f.n_smart}/${f.n_rest}</td>
+      <td class="desc">${f.direction_hint}</td></tr>`;
+  }).join('');
+  const featureCard = `<div class="card">
+    <h2>Feature signature — what kind of tokens do they pick?</h2>
+    <div class="desc">Per-feature mean among smart-present graduations vs the rest, with Cohen's d effect size
+    (|d|≥0.8 large, ≥0.5 medium, ≥0.2 small). Sorted by |d|. T+30-safe features only (PREDICTOR_WHITELIST).</div>
+    <table><tr><th>Feature</th><th>Smart mean</th><th>Rest mean</th><th>Cohen's d</th><th>n smart/rest</th><th>Better when</th></tr>${featRows}</table>
+  </div>`;
+
+  // ── M1 timing/venue ──
+  const ph = d.timing?.by_phase ?? {};
+  const venueRows = Object.entries(d.timing?.by_venue ?? {})
+    .sort((a: any, b: any) => b[1] - a[1])
+    .map(([v, c]) => `<tr><td>${v}</td><td>${c}</td></tr>`).join('');
+  const archRows = (d.timing?.per_wallet ?? []).slice(0, 20).map((w: any) => `<tr>
+      <td style="font-family:monospace">${short(w.address)}</td><td>${w.grad_buys}</td>
+      <td>${pct(w.pre_pct)}</td><td>${w.archetype}</td></tr>`).join('');
+  const timingCard = `<div class="card">
+    <h2>Timing & venue — are these tokens bought from launch?</h2>
+    <div class="desc">From smart wallets' full history on tracked graduations (any phase). Pre-graduation =
+    bonding-curve buy; post = after migration. Answers whether the edge is curve-sniping vs post-grad selection.</div>
+    <div class="grid">
+      <div>
+        <div class="stat"><span class="label">Pre-graduation (bonding curve)</span><span class="value">${ph.pre_graduation?.events ?? 0} (${pct(ph.pre_graduation?.pct)})</span></div>
+        <div class="stat"><span class="label">Post-graduation</span><span class="value">${ph.post_graduation?.events ?? 0} (${pct(ph.post_graduation?.pct)})</span></div>
+      </div>
+      <div><table><tr><th>Venue</th><th>Buys</th></tr>${venueRows || '<tr><td colspan=2 class="desc">no cache matches yet</td></tr>'}</table></div>
+    </div>
+    <h3>Per-wallet archetype (top 20 by tracked-grad buys)</h3>
+    <table><tr><th>Wallet</th><th>Grad buys</th><th>Pre-grad %</th><th>Archetype</th></tr>${archRows || '<tr><td colspan=4 class="desc">no cache matches yet</td></tr>'}</table>
+  </div>`;
+
+  // ── M4 consensus ──
+  const distRows = Object.entries(d.consensus?.distribution ?? {})
+    .map(([k, v]) => `<tr><td>${k} smart buyer(s)</td><td>${v}</td></tr>`).join('');
+  const pairRows = (d.consensus?.top_pairs ?? []).map((p: any) => `<tr>
+      <td style="font-family:monospace">${short(p.a)}</td><td style="font-family:monospace">${short(p.b)}</td><td>${p.count}</td></tr>`).join('');
+  const consensusCard = `<div class="card">
+    <h2>Consensus & overlap</h2>
+    <div class="desc">How often multiple smart wallets pile into the same token, and which wallets co-occur
+    (potential clusters / shared signal source).</div>
+    <div class="grid">
+      <div><table><tr><th>Smart buyers</th><th># grads</th></tr>${distRows}</table></div>
+      <div><table><tr><th>Wallet A</th><th>Wallet B</th><th>Co-buys</th></tr>${pairRows || '<tr><td colspan=3 class="desc">no co-occurring pairs yet</td></tr>'}</table></div>
+    </div>
+  </div>`;
+
+  // ── M5 behavior ──
+  const bz = d.behavior?.buy_size_sol ?? {};
+  const hs = d.behavior?.hold_sec ?? {};
+  const behaviorCard = `<div class="card">
+    <h2>Behavior — do they size up on winners & cut losers fast?</h2>
+    <div class="grid">
+      <div>
+        <div class="stat"><span class="label">Avg buy size on PUMP tokens</span><span class="value green">${num(bz.on_pump, 3)} SOL (n=${bz.n_pump ?? 0})</span></div>
+        <div class="stat"><span class="label">Avg buy size on DUMP tokens</span><span class="value red">${num(bz.on_dump, 3)} SOL (n=${bz.n_dump ?? 0})</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">Avg hold on PUMP tokens</span><span class="value">${hs.on_pump ?? '—'}s (n=${hs.n_pump ?? 0})</span></div>
+        <div class="stat"><span class="label">Avg hold on DUMP tokens</span><span class="value">${hs.on_dump ?? '—'}s (n=${hs.n_dump ?? 0})</span></div>
+      </div>
+    </div>
+  </div>`;
+
+  // ── smart wallet set ──
+  const walletRows = (d.smart_set?.wallets ?? []).map((w: any) => `<tr>
+      <td style="font-family:monospace">${short(w.address)}</td>
+      <td>${w.n_round_trips}</td>
+      <td class="${w.total_realized_sol > 0 ? 'green' : 'red'}">${num(w.total_realized_sol, 2)}</td>
+      <td class="${w.total_realized_sol_drop_top3 > 0 ? 'green' : 'red'}">${num(w.total_realized_sol_drop_top3, 2)}</td>
+      <td>${num(w.monthly_run_rate_sol, 1)}</td>
+      <td>${pct(w.win_rate)}</td></tr>`).join('');
+  const walletCard = `<div class="card">
+    <h2>Smart wallet set (${d.smart_set?.n_wallets ?? 0})</h2>
+    <div class="desc">The analysis population — wallets whose money-edge survives drop_top3 + clears the monthly bar.</div>
+    <table><tr><th>Wallet</th><th>Round trips</th><th>Total SOL</th><th>Drop top-3</th><th>Monthly</th><th>Win rate</th></tr>${walletRows || '<tr><td colspan=6 class="desc">none yet</td></tr>'}</table>
+  </div>`;
+
+  const body = lowConf + headerCard + outcomeCard + featureCard + timingCard + consensusCard + behaviorCard + walletCard;
+  return shell('Smart Money — Graduation Arb Research', '/smart-money', body, data as object);
 }
