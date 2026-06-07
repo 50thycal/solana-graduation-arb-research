@@ -5,7 +5,7 @@ import { backfillV3Metrics } from './db/backfill-v3-metrics';
 import { startHolderCountBackfill, holderBackfillRunning, holderBackfillPending } from './db/backfill-holder-count';
 import { getGraduationCount, getTradeStats, getTradeStatsByStrategy, getRecentTrades, getRecentSkips, getSkipReasonCounts, insertBotError, updateMomentumEnrichment, updateGraduationEnrichment, computeCreatorReputation, updateMomentumReputation, updateActionItemStatus, updateActionItemFields, dismissAnomaly } from './db/queries';
 import { GraduationListener } from './monitor/graduation-listener';
-import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderLiveTrainingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml, renderRegimeAnalysisHtml, renderSmartMoneyHtml } from './utils/html-renderer';
+import { renderThesisHtml, renderFilterHtml, renderPricePathHtml, renderFilterV2Html, renderFilterV3Html, renderTradingHtml, renderLiveTrainingHtml, renderPeakAnalysisHtml, renderExitSimHtml, renderExitSimMatrixHtml, renderWalletRepAnalysisHtml, renderPipelineHtml, renderReportHtml, renderRegimeAnalysisHtml, renderSmartMoneyHtml, renderCopyTradesHtml } from './utils/html-renderer';
 import { computeRegimeAnalysis } from './api/regime-analysis';
 import { computePipelineData } from './api/pipeline-data';
 import { backfillSnapshots } from './api/backfill-snapshot';
@@ -34,7 +34,7 @@ import { GistSync } from './api/gist-sync';
 import { MarketDataFetcher } from './collector/market-data-fetcher';
 import { CopytradeWorker } from './copytrade/worker';
 import { CopyFollowerProbe } from './copytrade/follower-probe';
-import { CopyTrader } from './copytrade/copy-trader';
+import { CopyTrader, computeCopyTrades } from './copytrade/copy-trader';
 import { getSmartMoneyAnalysis } from './copytrade/smart-money';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
 import { computePanel11 } from './api/panel11';
@@ -58,6 +58,7 @@ const NAV_LINKS = [
   { path: '/trading', label: 'Trading' },
   { path: '/live-training', label: 'Live Training' },
   { path: '/smart-money', label: 'Smart Money' },
+  { path: '/copy-trades', label: 'Copy Trades' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },
@@ -2677,6 +2678,24 @@ async function main() {
       if (wantHtml) {
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(renderSmartMoneyHtml(data));
+      } else {
+        res.json(data);
+      }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── /copy-trades ──
+  // Shadow copy-trader (Option B, Phase 2) — separate from /trading; positions
+  // live in copy_trades, not trades_v2. Reads the table directly (cheap SQL).
+  app.get('/copy-trades', (req, res) => {
+    try {
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      const data = computeCopyTrades(db);
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderCopyTradesHtml(data));
       } else {
         res.json(data);
       }
