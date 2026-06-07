@@ -49,6 +49,9 @@ export class CopyFollowerProbe {
   private totalEvents = 0;
   private lastEventAt: number | null = null;
   private connected = false;
+  // Per-stage drop counters — surfaced in status so we can see WHERE
+  // notifications are lost between arrival and a recorded event.
+  private drops = { sig_missing: 0, dup: 0, no_connection: 0, fetch_null: 0, no_involved: 0 };
 
   constructor(opts: { db: Database.Database; getConnection: () => Connection | null }) {
     this.db = opts.db;
@@ -192,29 +195,41 @@ export class CopyFollowerProbe {
       (value as { signature?: string }).signature ??
       (value as { transaction?: { transaction?: { signatures?: string[] } } }).transaction?.transaction?.signatures?.[0] ??
       (value as { transaction?: { signatures?: string[] } }).transaction?.signatures?.[0];
-    if (!signature || this.isDup(signature)) return;
+    if (!signature) { this.drops.sig_missing++; return; }
+    if (this.isDup(signature)) { this.drops.dup++; return; }
     const slot = (value as { slot?: number }).slot ?? null;
 
     const connection = this.getConnection();
-    if (!connection) return;
-    if (!(await globalRpcLimiter.throttleOrDrop(20))) return;
+    if (!connection) { this.drops.no_connection++; return; }
 
-    let tx;
-    try {
-      tx = await connection.getParsedTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
-    } catch { return; }
-    if (!tx) return;
+    // The notification fires at 'processed'; getParsedTransaction('confirmed')
+    // right then often returns null until the slot confirms. Retry a few times
+    // with backoff (each gated by the RPC limiter so we never starve grads).
+    let tx = null as Awaited<ReturnType<typeof connection.getParsedTransaction>>;
+    for (let attempt = 0; attempt < 4 && tx == null; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
+      if (!(await globalRpcLimiter.throttleOrDrop(20))) continue;
+      try {
+        tx = await connection.getParsedTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
+      } catch { /* retry */ }
+    }
+    if (!tx) { this.drops.fetch_null++; return; }
 
     const blockTime = tx.blockTime ?? null;
     const lag = blockTime != null ? +(detectedAtMs / 1000 - blockTime).toFixed(2) : null;
 
+    // Build the account-key set from BOTH static keys and address-lookup-table
+    // loaded addresses, so versioned txs (common for router swaps) still match.
     const watch = new Set(this.watchlist);
     const keys = tx.transaction.message.accountKeys.map((k) =>
       typeof (k as { pubkey?: { toBase58(): string } }).pubkey !== 'undefined'
         ? (k as { pubkey: { toBase58(): string } }).pubkey.toBase58()
         : String(k));
+    for (const arr of [tx.meta?.loadedAddresses?.writable, tx.meta?.loadedAddresses?.readonly]) {
+      for (const k of arr ?? []) keys.push(typeof k === 'string' ? k : k.toBase58());
+    }
     const involved = keys.filter((k) => watch.has(k));
-    if (involved.length === 0) return;
+    if (involved.length === 0) { this.drops.no_involved++; return; }
 
     for (const wallet of involved) {
       const swap = parseSwapForOwner(tx, wallet);
@@ -250,6 +265,7 @@ export class CopyFollowerProbe {
         total_notifications: this.totalNotifications,
         total_events: this.totalEvents,
         last_event_at: this.lastEventAt,
+        drops: { ...this.drops },
         updated_at: Date.now(),
       };
       this.db.prepare(`
