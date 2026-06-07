@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { Connection } from '@solana/web3.js';
+import WebSocket from 'ws';
 import { getFollowListAddresses, getSmartSetAddresses, insertProbeEvent } from './queries';
 import { parseSwapForOwner } from './parse-swap';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -18,23 +19,12 @@ const logger = makeLogger('copy-follower-probe');
  * our plan and (b) quantify our latency disadvantage before building the real
  * shadow-copy executor.
  *
- * Default-ON; set COPY_FOLLOWER_DISABLED=true to turn it off. Uses Node's global
- * WebSocket (Node ≥21, no new dependency) for the Helius-specific
- * transactionSubscribe method (web3.js Connection only does logsSubscribe).
- * getParsedTransaction calls go through globalRpcLimiter so the probe never
- * starves the graduation pipeline.
+ * Default-ON; set COPY_FOLLOWER_DISABLED=true to turn it off. Uses the `ws`
+ * package (not Node's global WebSocket — production runs node:20 which lacks it)
+ * for the Helius-specific transactionSubscribe method (web3.js Connection only
+ * does logsSubscribe). getParsedTransaction calls go through globalRpcLimiter so
+ * the probe never starves the graduation pipeline.
  */
-
-interface MinimalWS {
-  send(data: string): void;
-  close(): void;
-  onopen: ((ev: unknown) => void) | null;
-  onmessage: ((ev: { data: unknown }) => void) | null;
-  onclose: ((ev: unknown) => void) | null;
-  onerror: ((ev: unknown) => void) | null;
-  readyState: number;
-}
-const WSCtor = (globalThis as unknown as { WebSocket?: new (url: string) => MinimalWS }).WebSocket;
 
 const PROBE_STATUS_KEY = 'copy_probe_status';
 const WATCHLIST_REFRESH_MS = 10 * 60 * 1000;
@@ -44,7 +34,7 @@ const SEEN_MAX = 4096;
 export class CopyFollowerProbe {
   private readonly db: Database.Database;
   private readonly getConnection: () => Connection | null;
-  private ws: MinimalWS | null = null;
+  private ws: WebSocket | null = null;
   private stopped = false;
   private watchlist: string[] = [];       // union: smart set ∪ follow_list
   private promotableSet = new Set<string>(); // strict follow_list subset (for tier tagging)
@@ -72,10 +62,6 @@ export class CopyFollowerProbe {
     }
     if (!process.env.HELIUS_WS_URL) {
       logger.warn('HELIUS_WS_URL not set — copy-follower probe cannot subscribe');
-      return;
-    }
-    if (!WSCtor) {
-      logger.warn('global WebSocket unavailable (Node <21?) — copy-follower probe disabled');
       return;
     }
     this.refreshWatchlist(/*connectIfChanged*/ true);
@@ -115,11 +101,11 @@ export class CopyFollowerProbe {
   }
 
   private connect(): void {
-    if (this.stopped || this.watchlist.length === 0 || !WSCtor) return;
+    if (this.stopped || this.watchlist.length === 0) return;
     const url = process.env.HELIUS_WS_URL!;
-    let ws: MinimalWS;
+    let ws: WebSocket;
     try {
-      ws = new WSCtor(url);
+      ws = new WebSocket(url);
     } catch (err) {
       logger.warn('WS construct failed: %s', err instanceof Error ? err.message : String(err));
       this.scheduleReconnect();
@@ -127,7 +113,7 @@ export class CopyFollowerProbe {
     }
     this.ws = ws;
 
-    ws.onopen = () => {
+    ws.on('open', () => {
       const id = ++this.subRequestId;
       const msg = {
         jsonrpc: '2.0',
@@ -138,16 +124,16 @@ export class CopyFollowerProbe {
           { commitment: 'processed', encoding: 'jsonParsed', transactionDetails: 'full', maxSupportedTransactionVersion: 0 },
         ],
       };
-      try { ws.send(JSON.stringify(msg)); } catch { /* will surface via onclose */ }
+      try { ws.send(JSON.stringify(msg)); } catch { /* will surface via close */ }
       this.connected = true;
       this.reconnectDelay = 1000;
       logger.info('transactionSubscribe sent for %d wallets', this.watchlist.length);
       this.writeStatus();
-    };
+    });
 
-    ws.onmessage = (ev) => {
+    ws.on('message', (data: WebSocket.RawData) => {
       let msg: Record<string, unknown>;
-      try { msg = JSON.parse(String(ev.data)) as Record<string, unknown>; } catch { return; }
+      try { msg = JSON.parse(data.toString()) as Record<string, unknown>; } catch { return; }
       if (typeof (msg as { result?: unknown }).result === 'number') {
         this.subId = (msg as { result: number }).result;
         return;
@@ -157,14 +143,14 @@ export class CopyFollowerProbe {
         this.handleNotification((msg as { params?: unknown }).params).catch((err) =>
           logger.debug('probe notification error: %s', err instanceof Error ? err.message : String(err)));
       }
-    };
+    });
 
-    ws.onerror = () => { /* onclose will follow and drive reconnect */ };
-    ws.onclose = () => {
+    ws.on('error', () => { /* 'close' will follow and drive reconnect */ });
+    ws.on('close', () => {
       this.connected = false;
       this.writeStatus();
       if (!this.stopped) this.scheduleReconnect();
-    };
+    });
   }
 
   private closeWs(): void {
