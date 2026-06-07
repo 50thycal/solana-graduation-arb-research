@@ -14,6 +14,7 @@ const NAV_LINKS = [
   { path: '/filter-analysis-v3', label: 'Filters V3' },
   { path: '/wallet-rep-analysis', label: 'Wallet Rep' },
   { path: '/smart-money', label: 'Smart Money' },
+  { path: '/copy-trades', label: 'Copy Trades' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/exit-sim', label: 'Exit Sim' },
   { path: '/exit-sim-matrix', label: 'Exit Matrix' },
@@ -10254,4 +10255,69 @@ export function renderSmartMoneyHtml(data: any): string {
 
   const body = lowConf + headerCard + outcomeCard + featureCard + timingCard + consensusCard + behaviorCard + walletCard;
   return shell('Smart Money — Graduation Arb Research', '/smart-money', body, data as object);
+}
+
+// ── COPY TRADES PAGE ──────────────────────────────────────────────────
+// Shadow copy-trader (Option B, Phase 2). Separate from /trading — these
+// positions live in the copy_trades table, not trades_v2.
+export function renderCopyTradesHtml(data: any): string {
+  const d = data;
+  if (d?.pending) {
+    const body = `<div class="card"><h2>Copy Trades</h2><div class="desc">No shadow copy trades computed yet —
+      the copy-trader populates this once followed wallets start trading after deploy.</div></div>`;
+    return shell('Copy Trades — Graduation Arb Research', '/copy-trades', body, data as object);
+  }
+  const n = (v: any, dp = 2) => (typeof v === 'number' && isFinite(v) ? v.toFixed(dp) : '—');
+  const pct = (v: any) => (typeof v === 'number' && isFinite(v) ? (v * 100).toFixed(1) + '%' : '—');
+  const sol = (v: any) => (typeof v === 'number' && isFinite(v) ? `<span class="${v >= 0 ? 'green' : 'red'}">${v >= 0 ? '+' : ''}${v.toFixed(3)}</span>` : '—');
+  const ov = d.overall ?? {};
+
+  const headerCard = `<div class="card">
+    <h2>Copy Trades — shadow follower</h2>
+    <div class="desc">SHADOW (no real funds). When a followed wallet buys a graduated token, each strategy
+    opens a modeled position ~1.1s behind them and holds INDEFINITELY (the wallets hold ~hours), exiting per
+    its rule. net SOL is after the round-trip cost. Size ${n(d.size_sol)} SOL/trade. Separate from /trading.</div>
+    <div class="grid">
+      <div>
+        <div class="stat"><span class="label">Closed copies</span><span class="value">${ov.n ?? 0}</span></div>
+        <div class="stat"><span class="label">Total net SOL</span><span class="value">${sol(ov.total_net_sol)}</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">Net after drop top-3</span><span class="value">${sol(ov.total_net_sol_drop_top3)}</span></div>
+        <div class="stat"><span class="label">Win rate</span><span class="value">${pct(ov.win_rate)}</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">Median hold</span><span class="value">${ov.median_hold_sec != null ? Math.round(ov.median_hold_sec) + 's' : '—'}</span></div>
+        <div class="stat"><span class="label">Avg detection lag</span><span class="value">${n(ov.avg_detection_lag_sec)}s</span></div>
+      </div>
+    </div>
+  </div>`;
+
+  const stratRows = Object.entries(d.by_strategy ?? {}).map(([id, s]: [string, any]) => {
+    const c = s.config ?? {};
+    const exitRule = c.exit_follow && c.tp_pct == null ? 'lead sell only'
+      : (c.tp_pct != null ? `TP${c.tp_pct}/SL${c.sl_pct}` + (c.exit_follow ? ' + follow' : '') : 'follow');
+    return `<tr>
+      <td>${id}</td><td class="desc">${exitRule}</td>
+      <td>${s.n ?? 0}</td><td><span class="blue">${s.open_positions ?? 0}</span></td>
+      <td>${sol(s.total_net_sol)}</td><td>${sol(s.total_net_sol_drop_top3)}</td>
+      <td>${pct(s.win_rate)}</td><td>${s.median_hold_sec != null ? Math.round(s.median_hold_sec) + 's' : '—'}</td>
+      <td class="desc">${Object.entries(s.by_exit_reason ?? {}).map(([k, v]) => `${k}:${v}`).join(' ')}</td></tr>`;
+  }).join('');
+  const stratCard = `<div class="card">
+    <h2>By strategy</h2>
+    <table><tr><th>Strategy</th><th>Exit rule</th><th>Closed</th><th>Open</th><th>Net SOL</th><th>Drop top-3</th><th>Win%</th><th>Median hold</th><th>Exits</th></tr>${stratRows}</table>
+  </div>`;
+
+  const recentRows = (d.recent_closed ?? []).map((r: any) => `<tr>
+      <td>${r.strategy_id}</td><td style="font-family:monospace">${r.mint}</td>
+      <td style="font-family:monospace">${r.lead}</td><td class="desc">${r.tier}</td>
+      <td>${r.exit_reason}</td><td>${n(r.gross_pct)}%</td><td>${sol(r.net_sol)}</td>
+      <td>${r.hold_sec != null ? Math.round(r.hold_sec) + 's' : '—'}</td></tr>`).join('');
+  const recentCard = `<div class="card">
+    <h2>Recent closed (30)</h2>
+    <table><tr><th>Strategy</th><th>Mint</th><th>Lead</th><th>Tier</th><th>Exit</th><th>Gross%</th><th>Net SOL</th><th>Hold</th></tr>${recentRows}</table>
+  </div>`;
+
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', headerCard + stratCard + recentCard, data as object);
 }
