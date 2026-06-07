@@ -1070,6 +1070,15 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_copy_trades_status ON copy_trades(status);
     CREATE INDEX IF NOT EXISTS idx_copy_trades_strategy ON copy_trades(strategy_id);
   `);
+  // Additive: dynamic-exit state columns (high-water mark, scale-out) so the
+  // CopyTrader resumes breakeven/ratchet/scale-out correctly across restarts.
+  {
+    const cc = db.prepare("PRAGMA table_info(copy_trades)").all() as Array<{ name: string }>;
+    const have = new Set(cc.map((c) => c.name));
+    if (!have.has('high_price_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN high_price_sol REAL`);
+    if (!have.has('scaled_out')) db.exec(`ALTER TABLE copy_trades ADD COLUMN scaled_out INTEGER DEFAULT 0`);
+    if (!have.has('realized_partial_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN realized_partial_sol REAL DEFAULT 0`);
+  }
   // Additive: tier column (promotable vs smart-only) for DBs created before it.
   {
     const pc = db.prepare("PRAGMA table_info(copy_probe_events)").all() as Array<{ name: string }>;
