@@ -108,6 +108,7 @@ export interface SmartMoneyData {
   timing: {
     by_phase: { pre_graduation: { events: number; pct: number | null }; post_graduation: { events: number; pct: number | null } };
     by_venue: Record<string, number>;
+    entry_delay_post_grad: Record<string, number>;
     per_wallet: Array<{ address: string; grad_buys: number; pre_pct: number; archetype: string }>;
   };
   consensus: {
@@ -167,6 +168,7 @@ export function computeSmartMoney(db: Database.Database): SmartMoneyData {
     timing: {
       by_phase: { pre_graduation: { events: 0, pct: null }, post_graduation: { events: 0, pct: null } },
       by_venue: emptyVenue,
+      entry_delay_post_grad: {},
       per_wallet: [],
     },
     consensus: { distribution: {}, top_pairs: [] },
@@ -283,12 +285,25 @@ export function computeSmartMoney(db: Database.Database): SmartMoneyData {
   let preEvents = 0, postEvents = 0;
   const byVenue: Record<string, number> = {};
   const perWallet = new Map<string, { total: number; pre: number }>();
+  // Entry-delay histogram for POST-graduation buys: how soon after the
+  // graduation timestamp does smart money actually enter?
+  const entryDelayBuckets: Record<string, number> = {
+    '0-5s': 0, '5-30s': 0, '30-120s': 0, '2-10m': 0, '10-60m': 0, '>60m': 0,
+  };
   for (const r of cacheRows) {
     cacheGids.add(r.gid);
     const venue = r.venue ?? 'unknown';
     byVenue[venue] = (byVenue[venue] ?? 0) + 1;
     const isPre = venue === 'pumpfun_bc' || (r.bt != null && r.grad_ts != null && r.bt < r.grad_ts);
-    if (isPre) preEvents++; else postEvents++;
+    if (isPre) preEvents++; else {
+      postEvents++;
+      if (r.bt != null && r.grad_ts != null) {
+        const d = r.bt - r.grad_ts;
+        const k = d <= 5 ? '0-5s' : d <= 30 ? '5-30s' : d <= 120 ? '30-120s'
+          : d <= 600 ? '2-10m' : d <= 3600 ? '10-60m' : '>60m';
+        entryDelayBuckets[k]++;
+      }
+    }
     if (!perWallet.has(r.w)) perWallet.set(r.w, { total: 0, pre: 0 });
     const pw = perWallet.get(r.w)!;
     pw.total++; if (isPre) pw.pre++;
@@ -375,6 +390,7 @@ export function computeSmartMoney(db: Database.Database): SmartMoneyData {
         post_graduation: { events: postEvents, pct: totalPhase ? +(postEvents / totalPhase).toFixed(3) : null },
       },
       by_venue: byVenue,
+      entry_delay_post_grad: entryDelayBuckets,
       per_wallet,
     },
     consensus: { distribution, top_pairs },

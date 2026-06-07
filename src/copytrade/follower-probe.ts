@@ -3,6 +3,7 @@ import { Connection } from '@solana/web3.js';
 import WebSocket from 'ws';
 import { getFollowListAddresses, getSmartSetAddresses, insertProbeEvent } from './queries';
 import { parseSwapForOwner } from './parse-swap';
+import type { CopyTrader } from './copy-trader';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 
@@ -52,10 +53,12 @@ export class CopyFollowerProbe {
   // Per-stage drop counters — surfaced in status so we can see WHERE
   // notifications are lost between arrival and a recorded event.
   private drops = { sig_missing: 0, dup: 0, no_connection: 0, fetch_null: 0, no_involved: 0 };
+  private readonly copyTrader?: CopyTrader;
 
-  constructor(opts: { db: Database.Database; getConnection: () => Connection | null }) {
+  constructor(opts: { db: Database.Database; getConnection: () => Connection | null; copyTrader?: CopyTrader }) {
     this.db = opts.db;
     this.getConnection = opts.getConnection;
+    this.copyTrader = opts.copyTrader;
   }
 
   start(): void {
@@ -233,6 +236,7 @@ export class CopyFollowerProbe {
 
     for (const wallet of involved) {
       const swap = parseSwapForOwner(tx, wallet);
+      const tier = this.promotableSet.has(wallet) ? 'promotable' : 'smart';
       insertProbeEvent(this.db, {
         wallet_address: wallet,
         signature,
@@ -240,7 +244,7 @@ export class CopyFollowerProbe {
         action: swap?.action ?? null,
         sol_delta: swap?.solDelta ?? null,
         venue: swap?.venue ?? null,
-        tier: this.promotableSet.has(wallet) ? 'promotable' : 'smart',
+        tier,
         their_block_time: blockTime,
         detected_at: detectedAtMs,
         detection_lag_sec: lag,
@@ -251,6 +255,14 @@ export class CopyFollowerProbe {
       if (swap) {
         logger.info('Probe: %s %s %s %s lag=%ss',
           wallet.slice(0, 6), swap.action, swap.venue, (swap.mint ?? '').slice(0, 6), lag ?? '?');
+        // Drive the shadow copy-trader (no real funds). Fire-and-forget.
+        if (this.copyTrader) {
+          if (swap.action === 'buy') {
+            this.copyTrader.onLeadBuy(swap.mint, wallet, tier, lag).catch(() => { /* logged inside */ });
+          } else if (swap.action === 'sell') {
+            this.copyTrader.onLeadSell(swap.mint).catch(() => { /* logged inside */ });
+          }
+        }
       }
     }
     this.writeStatus();
