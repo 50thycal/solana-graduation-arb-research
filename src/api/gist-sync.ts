@@ -60,6 +60,7 @@ import { computeTradingData } from './trading-data';
 import { computeWalletLeaderboard } from '../copytrade/leaderboard';
 import { getSmartMoneyAnalysis } from '../copytrade/smart-money';
 import { computeCopyProbe } from '../copytrade/follower-probe';
+import { computeCopyTrades } from '../copytrade/copy-trader';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { computeLiveTrainingData } from './live-training-data';
 import { computeDailyReport } from './daily-report';
@@ -244,6 +245,8 @@ export interface StatusUrls {
   smart_money: string;
   /** Copy-follower latency probe (Phase 2 pre-work). */
   copy_probe: string;
+  /** Shadow copy-trader P&L (Phase 2). */
+  copy_trades: string;
   // Daily report — cross-session memory written by the routine /daily-report
   // Claude run via report-upsert commands. Bot publishes auto-stats every
   // sync cycle so the page is populated even before the first Claude run.
@@ -440,6 +443,7 @@ export class GistSync {
       wallet_leaderboard: `${base}/wallet-leaderboard.json`,
       smart_money: `${base}/smart-money.json`,
       copy_probe: `${base}/copy-probe.json`,
+      copy_trades: `${base}/copy-trades.json`,
       report: `${base}/report.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
@@ -889,6 +893,8 @@ export class GistSync {
     const smartMoney = getSmartMoneyAnalysis(this.db);
     // Copy-follower latency probe — cheap SQL read of copy_probe_events.
     const copyProbe = computeCopyProbe(this.db);
+    // Shadow copy-trader P&L — cheap SQL read of copy_trades.
+    const copyTrades = computeCopyTrades(this.db);
     // dailyReport reads leaveOneOutPnl internally to populate
     // promotion_readiness_top5 — keep this ordering.
     const dailyReport = await timed('dailyReport', () => computeDailyReport(this.db));
@@ -1075,6 +1081,7 @@ export class GistSync {
       'wallet-leaderboard.json': JSON.stringify(walletLeaderboard, null, 2),
       'smart-money.json': JSON.stringify(smartMoney, null, 2),
       'copy-probe.json': JSON.stringify(copyProbe, null, 2),
+      'copy-trades.json': JSON.stringify(copyTrades, null, 2),
       'report.json': JSON.stringify(dailyReport, null, 2),
       'strategies.json': JSON.stringify({
         generated_at: genAt,

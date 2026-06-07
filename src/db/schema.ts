@@ -1032,6 +1032,44 @@ function runMigrations(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_copy_probe_detected ON copy_probe_events(detected_at);
   `);
+
+  // Shadow copy-trader (Option B, Phase 2). One row per SHADOW copy position:
+  // when a followed wallet buys a graduated token, each armed copy strategy
+  // opens a modeled position here (no real funds). Tracked by CopyTrader until
+  // it exits via TP / SL / max-hold / follow-the-lead-wallet's-sell. net_sol is
+  // shadow P&L after the SIM round-trip cost. base/quote vaults are stored so a
+  // restart can resume tracking open positions without re-resolving the pool.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS copy_trades (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      strategy_id TEXT NOT NULL,
+      mint TEXT NOT NULL,
+      pool_address TEXT,
+      base_vault TEXT,
+      quote_vault TEXT,
+      lead_wallet TEXT,
+      lead_tier TEXT,
+      entry_ts INTEGER NOT NULL,
+      entry_price_sol REAL NOT NULL,
+      size_sol REAL NOT NULL,
+      tp_price_sol REAL,
+      sl_price_sol REAL,
+      exit_follow INTEGER NOT NULL DEFAULT 0,
+      max_hold_sec INTEGER,
+      detection_lag_sec REAL,
+      exit_ts INTEGER,
+      exit_price_sol REAL,
+      exit_reason TEXT,
+      gross_pct REAL,
+      net_sol REAL,
+      hold_sec INTEGER,
+      status TEXT NOT NULL DEFAULT 'open',
+      created_at INTEGER DEFAULT (unixepoch()),
+      UNIQUE(strategy_id, mint, entry_ts)
+    );
+    CREATE INDEX IF NOT EXISTS idx_copy_trades_status ON copy_trades(status);
+    CREATE INDEX IF NOT EXISTS idx_copy_trades_strategy ON copy_trades(strategy_id);
+  `);
   // Additive: tier column (promotable vs smart-only) for DBs created before it.
   {
     const pc = db.prepare("PRAGMA table_info(copy_probe_events)").all() as Array<{ name: string }>;

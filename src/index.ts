@@ -34,6 +34,7 @@ import { GistSync } from './api/gist-sync';
 import { MarketDataFetcher } from './collector/market-data-fetcher';
 import { CopytradeWorker } from './copytrade/worker';
 import { CopyFollowerProbe } from './copytrade/follower-probe';
+import { CopyTrader } from './copytrade/copy-trader';
 import { getSmartMoneyAnalysis } from './copytrade/smart-money';
 import { FILTER_CATALOG, computeBestCombos } from './api/aggregates';
 import { computePanel11 } from './api/panel11';
@@ -3281,18 +3282,25 @@ ${rows.map(r => {
       logger.warn('CopytradeWorker failed to start: %s', err instanceof Error ? err.message : String(err));
     }
 
-    // Copy-follower LATENCY PROBE (Option B, Phase 2 pre-work). Subscribes to the
-    // strict follow-list wallets via Helius transactionSubscribe and logs how late
-    // we detect their swaps — no positions taken. Default-on (COPY_FOLLOWER_DISABLED
-    // to turn off). Its own WS, independent of the graduation listener.
+    // Copy-follower (Option B, Phase 2). The probe subscribes to the smart
+    // watchlist via Helius transactionSubscribe (own WS, independent of the
+    // graduation listener); the CopyTrader turns those swaps into SHADOW copy
+    // positions (no real funds) and tracks them to exit. Both default-on
+    // (COPY_FOLLOWER_DISABLED / COPY_TRADER_DISABLED to turn off).
     try {
-      const copyFollowerProbe = new CopyFollowerProbe({
+      const copyTrader = new CopyTrader({
         db,
         getConnection: () => listener?.getConnection() ?? null,
       });
+      copyTrader.start();
+      const copyFollowerProbe = new CopyFollowerProbe({
+        db,
+        getConnection: () => listener?.getConnection() ?? null,
+        copyTrader,
+      });
       copyFollowerProbe.start();
     } catch (err) {
-      logger.warn('CopyFollowerProbe failed to start: %s', err instanceof Error ? err.message : String(err));
+      logger.warn('CopyFollower/CopyTrader failed to start: %s', err instanceof Error ? err.message : String(err));
     }
   }
 
