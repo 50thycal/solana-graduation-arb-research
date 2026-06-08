@@ -1,0 +1,112 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v54-velmono-dev-strength",
+      "label": "v54 v9-velmono-dev mirror + strength-only gate (signal=v9shadow-velmono-dev) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 1,
+        "entryGateMinPctT30": -99,
+        "entryGateMaxPctT30": 1000,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel>=20" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel<50" },
+          { "field": "monotonicity_0_30", "operator": ">", "value": 0.5, "label": "mono>0.5" },
+          { "field": "dev_wallet_pct", "operator": ">", "value": 5, "label": "dev>5%" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "edgeDecayGate": "strength_only",
+        "edgeDecaySignalStrategyId": "v9shadow-velmono-dev",
+        "edgeDecaySignalExecutionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v54-velmid-liq-mono-strength",
+      "label": "v54 v9-velmid-liq-mono mirror + strength-only gate (signal=v9shadow-velmid-liq-mono) [shadow]",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 5,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 20,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          { "field": "bc_velocity_sol_per_min", "operator": ">=", "value": 20, "label": "vel>=20" },
+          { "field": "bc_velocity_sol_per_min", "operator": "<", "value": 50, "label": "vel<50" },
+          { "field": "liquidity_sol_t30", "operator": ">", "value": 100, "label": "liq>100" },
+          { "field": "monotonicity_0_30", "operator": ">", "value": 0.33, "label": "mono>0.33" }
+        ],
+        "positionMonitorMode": "five_second",
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow",
+        "edgeDecayGate": "strength_only",
+        "edgeDecaySignalStrategyId": "v9shadow-velmid-liq-mono",
+        "edgeDecaySignalExecutionMode": "shadow"
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v54-velmono-dev-strength",
+      "strategy_id": "v54-velmono-dev-strength",
+      "cohort_label": "v54",
+      "hypothesis": "v9shadow-velmono-dev (vel20-50 + mono>0.5 + dev>5% @ 100/30) accumulates SOL but its edge is time-varying. Gating entries on its paired v9 source flag == STRENGTHENING (strength_only, signal=v9shadow-velmono-dev/shadow) should concentrate trading into the source's hot windows and lift net SOL / drop_top3 vs the always-on parent, at the cost of fewer trades.",
+      "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v54-velmid-liq-mono-strength",
+      "strategy_id": "v54-velmid-liq-mono-strength",
+      "cohort_label": "v54",
+      "hypothesis": "v9shadow-velmid-liq-mono (vel20-50 + liq>100 + mono>0.33 @ 150/25) is a fat-tail strategy with negative lifetime median but positive recent edge. Gating entries on its paired v9 source flag == STRENGTHENING (strength_only, signal=v9shadow-velmid-liq-mono/shadow) should skip the cold windows that drag net SOL and improve drop_top3 robustness vs the always-on parent.",
+      "prediction": {
+        "target_net_sol": 1.5,
+        "target_sol_per_mo": 3.75,
+        "target_drop_top3": 0,
+        "target_n": 100,
+        "target_days": 21,
+        "kill_criterion": "n>=50 and net_sol<-1"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
