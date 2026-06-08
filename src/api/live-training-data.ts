@@ -43,6 +43,8 @@ export const LIVE_SHADOW_MAP: Record<string, string> = {
   'v44-climb-live-micro': 'v44-climb-shadow',
   'v44-climb-1s-ttp10-live-micro': 'v44-climb-1s-ttp10-shadow',
   'v45-acc-gate-live-micro': 'v45-acc-gate-shadow',
+  // v50 strength cohort — dedicated 0.05 SOL shadow twin, identical filters/TP/SL.
+  'v50-strength-live-micro': 'v50-strength-shadow',
 };
 
 /** Normalized per-trade row shared by live + shadow series. */
