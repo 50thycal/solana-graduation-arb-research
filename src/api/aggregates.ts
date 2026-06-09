@@ -424,6 +424,26 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'buyers >= 10',       group: 'Buy Pressure', where: 'buy_pressure_unique_buyers >= 10' },
   { name: 'whale < 30%',        group: 'Buy Pressure', where: 'buy_pressure_whale_pct < 30' },
   { name: 'whale < 50%',        group: 'Buy Pressure', where: 'buy_pressure_whale_pct < 50' },
+  // buy_pressure_whale_pct / buy_pressure_buy_ratio are stored on a 0-1 scale
+  // (whale mean ≈0.24, ratio mean ≈0.71). The `< 30/50` entries above are
+  // effectively no-ops on that scale — these 0-1 entries are the real filters,
+  // matching the smart-money signature (whale low, buy_ratio high).
+  { name: 'whale < 0.25',       group: 'Buy Pressure', where: 'buy_pressure_whale_pct IS NOT NULL AND buy_pressure_whale_pct < 0.25' },
+  { name: 'whale < 0.30',       group: 'Buy Pressure', where: 'buy_pressure_whale_pct IS NOT NULL AND buy_pressure_whale_pct < 0.30' },
+  { name: 'buy_ratio >= 0.65',  group: 'Buy Pressure', where: 'buy_pressure_buy_ratio IS NOT NULL AND buy_pressure_buy_ratio >= 0.65' },
+  { name: 'buy_ratio >= 0.70',  group: 'Buy Pressure', where: 'buy_pressure_buy_ratio IS NOT NULL AND buy_pressure_buy_ratio >= 0.70' },
+  { name: 'buyers >= 12',       group: 'Buy Pressure', where: 'buy_pressure_unique_buyers >= 12' },
+  { name: 'buyers >= 15',       group: 'Buy Pressure', where: 'buy_pressure_unique_buyers >= 15' },
+  // Low churn — smart-money signature (trade_count d=-0.79, the strongest LOW separator).
+  { name: 'trades < 150',       group: 'Buy Pressure', where: 'buy_pressure_trade_count IS NOT NULL AND buy_pressure_trade_count > 0 AND buy_pressure_trade_count < 150' },
+  { name: 'trades < 250',       group: 'Buy Pressure', where: 'buy_pressure_trade_count IS NOT NULL AND buy_pressure_trade_count > 0 AND buy_pressure_trade_count < 250' },
+  // buyers/trade ratio — the two strongest separators combined (smart ≈0.13 vs rest ≈0.04).
+  { name: 'buyer/trade >= 0.06', group: 'Buy Pressure', where: 'buy_pressure_buyer_trade_ratio IS NOT NULL AND buy_pressure_buyer_trade_ratio >= 0.06' },
+  { name: 'buyer/trade >= 0.08', group: 'Buy Pressure', where: 'buy_pressure_buyer_trade_ratio IS NOT NULL AND buy_pressure_buyer_trade_ratio >= 0.08' },
+  { name: 'buyer/trade >= 0.10', group: 'Buy Pressure', where: 'buy_pressure_buyer_trade_ratio IS NOT NULL AND buy_pressure_buyer_trade_ratio >= 0.10' },
+  // Absolute buy-flow magnitude — smart-money signature (flow_sol_buys d=+0.48).
+  { name: 'buyflow >= 8',       group: 'Buy Pressure', where: 'flow_sol_buys_0_30 IS NOT NULL AND flow_sol_buys_0_30 >= 8' },
+  { name: 'buyflow >= 12',      group: 'Buy Pressure', where: 'flow_sol_buys_0_30 IS NOT NULL AND flow_sol_buys_0_30 >= 12' },
   // Creator reputation
   { name: 'fresh_dev',          group: 'Creator Rep', where: 'creator_prior_token_count IS NOT NULL AND creator_prior_token_count = 0' },
   { name: 'repeat_dev >= 3',    group: 'Creator Rep', where: 'creator_prior_token_count >= 3' },
@@ -432,6 +452,9 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'rapid_fire',         group: 'Creator Rep', where: 'creator_last_token_age_hours IS NOT NULL AND creator_last_token_age_hours < 1' },
   // Sniper detection — distinct wallets buying in T+0..T+2s window. Populated
   // at T+35 alongside buy_pressure_*, so strategies using these auto-delay 5s.
+  // Counterintuitive: smart-money tokens have MORE snipers (count d=+0.51) — every
+  // momentum strategy excludes them, so the >= 1 direction is untested.
+  { name: 'snipers >= 1',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 >= 1' },
   { name: 'snipers <= 2',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 2' },
   { name: 'snipers <= 5',       group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 <= 5' },
   { name: 'snipers > 5',        group: 'Snipers',     where: 'sniper_count_t0_t2 IS NOT NULL AND sniper_count_t0_t2 > 5' },
@@ -442,6 +465,9 @@ export const FILTER_CATALOG: FilterDef[] = [
   { name: 'wallet_vel_avg < 10',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 10' },
   { name: 'wallet_vel_avg < 20',group: 'Sniper Vel',  where: 'sniper_wallet_velocity_avg IS NOT NULL AND sniper_wallet_velocity_avg < 20' },
   { name: 'wallet_vel_avg >= 20', group: 'Sniper Vel',where: 'sniper_wallet_velocity_avg >= 20' },
+  // velocity_max high — smart-money tokens are sniped by more experienced snipers (d=+0.43, untested high).
+  { name: 'wallet_vel_max >= 20', group: 'Sniper Vel',where: 'sniper_wallet_velocity_max IS NOT NULL AND sniper_wallet_velocity_max >= 20' },
+  { name: 'wallet_vel_max >= 30', group: 'Sniper Vel',where: 'sniper_wallet_velocity_max IS NOT NULL AND sniper_wallet_velocity_max >= 30' },
   // B2 — PumpSwap initial pool depth at migration (captured at T+0, available at entry).
   { name: 'init_lp > 15',          group: 'Initial LP', where: 'pumpswap_initial_lp_sol IS NOT NULL AND pumpswap_initial_lp_sol > 15' },
   { name: 'init_lp > 30',          group: 'Initial LP', where: 'pumpswap_initial_lp_sol IS NOT NULL AND pumpswap_initial_lp_sol > 30' },

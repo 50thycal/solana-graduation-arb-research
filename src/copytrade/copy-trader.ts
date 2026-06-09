@@ -45,6 +45,7 @@ export interface CopyStrategy {
   scaleOut?: { atPct: number; fraction: number }; // sell fraction at +atPct, rest rides
   minLeadRank?: number;        // only copy if lead wallet's follow_list rank <= this
   minConsensusRecent?: number; // only copy if >= N distinct smart wallets bought this mint in last 10min
+  walletAllowlist?: string[];  // only copy if the lead wallet is in this set (copy-best-wallet)
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
@@ -68,6 +69,24 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-hold30m',           tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: 1800 },
   { id: 'copy-hold2h',            tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: 7200 },
   { id: 'copy-hold6h',            tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: 21600 },
+  // ── D: copy-best-wallet — mirror only the 3 most outlier-robust smart wallets
+  //    (highest total_realized_sol_drop_top3, ≥40 round-trips for signal frequency).
+  //    GYAVBL is deliberately excluded — 90% of its profit is 3 lottery trades
+  //    (drop_top3 only +30, WR 20%). These hold to the wallets' own behavior
+  //    (median hold 2.6–3.4h), so long maxHoldSec + follow-sell / ratchet exits.
+  //    FORWARD-SHADOW ONLY — multi-hour holds aren't backtestable (paths stop at T+600).
+  // iGiyBN — most robust (drop3 +187, 159 RT, 100% WR): both exit styles.
+  { id: 'copy-igiybn-follow',  tpPct: null, slPct: 40, exitFollow: true,  maxHoldSec: 21600,
+    walletAllowlist: ['iGiyBNJ9eKcPfBLaoVCEMx3WCyrnUT1SfKZL2DYifcL'] },
+  { id: 'copy-igiybn-ratchet', tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 21600,
+    ratchet: [{ atPct: 30, stopPct: 10 }, { atPct: 100, stopPct: 60 }, { atPct: 300, stopPct: 200 }],
+    walletAllowlist: ['iGiyBNJ9eKcPfBLaoVCEMx3WCyrnUT1SfKZL2DYifcL'] },
+  // 2SNLnX — highest total (363 SOL, drop3 +171, 41% WR).
+  { id: 'copy-2snlnx-follow',  tpPct: null, slPct: 40, exitFollow: true,  maxHoldSec: 21600,
+    walletAllowlist: ['2SNLnXMjYSihEz3ujLaJzB92AzJTkfRih8RoWWoEQQAM'] },
+  // BuWG6b — most signals (189 RT, drop3 +149, 53% WR).
+  { id: 'copy-buwg6b-follow',  tpPct: null, slPct: 40, exitFollow: true,  maxHoldSec: 21600,
+    walletAllowlist: ['BuWG6b9AeK1KuyG88Y7FsdLagCJtNcNwxmbQTDqPeNFr'] },
 ];
 
 const STRAT_BY_ID = new Map(COPY_STRATEGIES.map((s) => [s.id, s]));
@@ -213,6 +232,7 @@ export class CopyTrader {
       if (open.some((p) => p.mint === mint)) continue;       // one position per (strategy, mint)
       if (open.length >= MAX_CONCURRENT_PER_STRATEGY) continue;
       // conviction gates
+      if (s.walletAllowlist && !s.walletAllowlist.includes(leadWallet)) continue;
       if (s.minLeadRank != null && leadRank > s.minLeadRank) continue;
       if (s.minConsensusRecent != null) {
         if (consensusRecent == null) consensusRecent = this.countRecentSmartBuyers(mint);

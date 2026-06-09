@@ -571,18 +571,24 @@ export function updateBuyPressureMetrics(
     trade_count: number;
   }
 ): void {
+  // buyers/trade ratio — scale-invariant proxy for "broad organic demand, low churn".
+  // Smart-money signature ≈0.13 vs rest ≈0.04 (the two strongest separators combined).
+  const buyerTradeRatio =
+    metrics.trade_count > 0 ? metrics.unique_buyers / metrics.trade_count : null;
   db.prepare(`
     UPDATE graduation_momentum
     SET buy_pressure_unique_buyers = ?,
         buy_pressure_buy_ratio = ?,
         buy_pressure_whale_pct = ?,
-        buy_pressure_trade_count = ?
+        buy_pressure_trade_count = ?,
+        buy_pressure_buyer_trade_ratio = ?
     WHERE graduation_id = ?
   `).run(
     metrics.unique_buyers,
     metrics.buy_ratio,
     metrics.whale_pct,
     metrics.trade_count,
+    buyerTradeRatio,
     graduationId
   );
 }

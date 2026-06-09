@@ -238,6 +238,7 @@ function runMigrations(db: Database.Database): void {
       ['buy_pressure_buy_ratio', 'REAL'],          // buys / (buys + sells) as 0-1
       ['buy_pressure_whale_pct', 'REAL'],          // largest single buy SOL / total buy SOL volume
       ['buy_pressure_trade_count', 'INTEGER'],     // total txs in 0-30s window (from signature count)
+      ['buy_pressure_buyer_trade_ratio', 'REAL'],  // unique_buyers / trade_count (0-1); smart-money signature ≈0.13 vs rest ≈0.04
       // Sniper metrics (computed at T+35 from competition_signals in T+0..T+2s window).
       // Strategies that filter on these fields are auto-delayed by 5s in StrategyManager,
       // matching the buy_pressure_* pattern.
@@ -653,6 +654,20 @@ function runMigrations(db: Database.Database): void {
         AND pct_t15 IS NOT NULL
         AND pct_t30 IS NOT NULL
         AND pct_t45 IS NOT NULL
+    `);
+
+    // ── buy_pressure_buyer_trade_ratio backfill ──
+    // unique_buyers / trade_count — scale-invariant smart-money signature
+    // (smart ≈0.13 vs rest ≈0.04). Pure derivation from columns we already store,
+    // so unlike raw buy_pressure this backfills historical rows for free.
+    // Idempotent — only touches rows where the ratio is NULL and trade_count > 0.
+    db.exec(`
+      UPDATE graduation_momentum
+      SET buy_pressure_buyer_trade_ratio =
+        CAST(buy_pressure_unique_buyers AS REAL) / buy_pressure_trade_count
+      WHERE buy_pressure_buyer_trade_ratio IS NULL
+        AND buy_pressure_unique_buyers IS NOT NULL
+        AND buy_pressure_trade_count > 0
     `);
   }
 
