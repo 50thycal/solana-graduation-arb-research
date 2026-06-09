@@ -1,0 +1,94 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v55a-buyer-ratio",
+      "label": "v55 SM buyer/trade ratio",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 3,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 25,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {"field": "buy_pressure_buyer_trade_ratio", "operator": ">=", "value": 0.07, "label": "buyer/trade>=0.07"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -15, "label": "maxDD>-15%"}
+        ],
+        "entryTimingSec": 30,
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v55e-signature",
+      "label": "v55 SM signature (let-it-run)",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 3,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 200,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 600,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {"field": "buy_pressure_buyer_trade_ratio", "operator": ">=", "value": 0.07, "label": "buyer/trade>=0.07"},
+          {"field": "buy_pressure_whale_pct", "operator": "<", "value": 0.30, "label": "whale<0.30"},
+          {"field": "buy_pressure_buy_ratio", "operator": ">=", "value": 0.65, "label": "buy_ratio>=0.65"},
+          {"field": "max_drawdown_0_30", "operator": ">", "value": -12, "label": "maxDD>-12%"}
+        ],
+        "entryTimingSec": 30,
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 40,
+        "trailingSlDistancePct": 20,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 15,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v55a-buyer-ratio",
+      "strategy_id": "v55a-buyer-ratio",
+      "cohort_label": "v55",
+      "hypothesis": "buyers/trade >= 0.07 captures the smart-money 'broad organic demand, low churn' signature (the two strongest separators d=+0.96 & -0.79 combined into one scale-invariant ratio, smart 0.13 vs rest 0.04) and accumulates >= 0.5 SOL with drop_top3 > 0 on n>=100.",
+      "prediction": {"target_net_sol": 0.8, "target_sol_per_mo": 3.75, "target_drop_top3": 0, "target_n": 100, "target_days": 21, "kill_criterion": "n>=60 and net_sol<-1"},
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v55e-signature",
+      "strategy_id": "v55e-signature",
+      "cohort_label": "v55",
+      "hypothesis": "Full multivariate smart-money signature (buyer/trade + low whale + high buy_ratio + shape guard) with a let-it-run trailing exit (TP200, breakeven@15, trail 20% after +40%, hold 600s) probes whether the SM 'holds longer' behavior is capturable inside the T+600 backtestable window. Target >= 0.5 SOL, drop_top3 > 0, n>=100.",
+      "prediction": {"target_net_sol": 1.0, "target_sol_per_mo": 3.75, "target_drop_top3": 0, "target_n": 100, "target_days": 21, "kill_criterion": "n>=60 and net_sol<-1"},
+      "status": "OPEN"
+    }
+  ]
+}
