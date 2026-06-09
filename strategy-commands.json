@@ -1,0 +1,139 @@
+{
+  "commands": [
+    {
+      "action": "upsert",
+      "id": "v55b-lowchurn",
+      "label": "v55 SM low-churn demand",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 3,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {"field": "buy_pressure_trade_count", "operator": "<", "value": 250, "label": "trades<250"},
+          {"field": "buy_pressure_unique_buyers", "operator": ">=", "value": 12, "label": "buyers>=12"},
+          {"field": "buy_pressure_buy_ratio", "operator": ">=", "value": 0.65, "label": "buy_ratio>=0.65"}
+        ],
+        "entryTimingSec": 30,
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v55c-sniper-followed",
+      "label": "v55 SM sniper-followed",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 3,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 150,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {"field": "sniper_count_t0_t2", "operator": ">=", "value": 1, "label": "snipers>=1"},
+          {"field": "sniper_wallet_velocity_max", "operator": ">=", "value": 20, "label": "vel_max>=20"},
+          {"field": "buy_pressure_whale_pct", "operator": "<", "value": 0.30, "label": "whale<0.30"}
+        ],
+        "entryTimingSec": 30,
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "upsert",
+      "id": "v55d-buyflow",
+      "label": "v55 SM buy-flow magnitude",
+      "enabled": true,
+      "params": {
+        "tradeSizeSol": 0.5,
+        "maxConcurrentPositions": 3,
+        "entryGateMinPctT30": 5,
+        "entryGateMaxPctT30": 100,
+        "takeProfitPct": 100,
+        "stopLossPct": 30,
+        "maxHoldSeconds": 300,
+        "slGapPenaltyPct": 30,
+        "tpGapPenaltyPct": 10,
+        "filters": [
+          {"field": "flow_sol_buys_0_30", "operator": ">=", "value": 8, "label": "buyflow>=8"},
+          {"field": "buy_pressure_unique_buyers", "operator": ">=", "value": 12, "label": "buyers>=12"},
+          {"field": "buy_pressure_buy_ratio", "operator": ">=", "value": 0.62, "label": "buy_ratio>=0.62"}
+        ],
+        "entryTimingSec": 30,
+        "positionMonitorMode": "five_second",
+        "pollIntervalSec": 5,
+        "trailingSlActivationPct": 0,
+        "trailingSlDistancePct": 5,
+        "slActivationDelaySec": 0,
+        "trailingTpEnabled": false,
+        "trailingTpDropPct": 5,
+        "tightenSlAtPctTime": 0,
+        "tightenSlTargetPct": 7,
+        "tightenSlAtPctTime2": 0,
+        "tightenSlTargetPct2": 5,
+        "breakevenStopPct": 0,
+        "executionMode": "shadow"
+      }
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v55b-lowchurn",
+      "strategy_id": "v55b-lowchurn",
+      "cohort_label": "v55",
+      "hypothesis": "Low trade-count (churn) + broad buyer base + high buy_ratio is the smart-money signature (trade_count d=-0.79, the strongest LOW separator; buyers d=+0.96). This high-coverage T+30 proxy for smart-money presence should accumulate >= 0.5 SOL with drop_top3 > 0 on n>=100 where the rare real-time consensus signal (v53) couldn't reach n.",
+      "prediction": {"target_net_sol": 0.8, "target_sol_per_mo": 3.75, "target_drop_top3": 0, "target_n": 100, "target_days": 21, "kill_criterion": "n>=60 and net_sol<-1"},
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v55c-sniper-followed",
+      "strategy_id": "v55c-sniper-followed",
+      "cohort_label": "v55",
+      "hypothesis": "Counterintuitive: smart-money tokens have MORE snipers (count d=+0.51) and more EXPERIENCED snipers (wallet_velocity_max d=+0.43). Every momentum strategy excludes snipers; requiring >=1 experienced sniper + low whale concentration tests whether smart money follows skilled snipers. Target >= 0.5 SOL, drop_top3 > 0, n>=100.",
+      "prediction": {"target_net_sol": 0.8, "target_sol_per_mo": 3.75, "target_drop_top3": 0, "target_n": 100, "target_days": 21, "kill_criterion": "n>=60 and net_sol<-1"},
+      "status": "OPEN"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "v55d-buyflow",
+      "strategy_id": "v55d-buyflow",
+      "cohort_label": "v55",
+      "hypothesis": "Absolute buy-flow magnitude in the 0-30s window (flow_sol_buys d=+0.48) + broad buyer base + buy_ratio captures the SOL-weighted demand side of the smart-money signature, distinct from the count-based flow_imbalance already tested. Target >= 0.5 SOL, drop_top3 > 0, n>=100.",
+      "prediction": {"target_net_sol": 0.8, "target_sol_per_mo": 3.75, "target_drop_top3": 0, "target_n": 100, "target_days": 21, "kill_criterion": "n>=60 and net_sol<-1"},
+      "status": "OPEN"
+    }
+  ]
+}
