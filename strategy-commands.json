@@ -1,7 +1,0 @@
-{
- "commands": [
-  {"action": "delete", "id": "v47-lean"},
-  {"action": "delete", "id": "v47-lean-plus-acc"},
-  {"action": "delete", "id": "v47-no-top5"}
- ]
-}
