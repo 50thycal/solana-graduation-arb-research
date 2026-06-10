@@ -46,6 +46,9 @@ export interface CopyStrategy {
   minLeadRank?: number;        // only copy if lead wallet's follow_list rank <= this
   minConsensusRecent?: number; // only copy if >= N distinct smart wallets bought this mint in last 10min
   walletAllowlist?: string[];  // only copy if the lead wallet is in this set (copy-best-wallet)
+  entryPenaltyPct?: number;    // worsen entry price by this % to model realistic copy lag (shadow enters at the
+                               // optimistic ~1.1s pool snapshot; a real tx confirms seconds later, after the
+                               // token has run further — so we fill higher). TP/SL/HWM all key off the penalized entry.
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
@@ -55,6 +58,11 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-tp100-sl30',        tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null },
   { id: 'copy-tp200-sl40',        tpPct: 200,  slPct: 40,   exitFollow: false, maxHoldSec: null },
   { id: 'copy-tp100-sl50-follow', tpPct: 100,  slPct: 50,   exitFollow: true,  maxHoldSec: null },
+  // ── E: conservative-lag shadows of the two promotable copy recs (drop3>0 at n>100).
+  //    5% entry penalty models filling higher than the optimistic ~1.1s snapshot once a
+  //    real copy tx confirms — the honest test of whether the edge survives realistic lag.
+  { id: 'copy-tp100-sl30-cons',   tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryPenaltyPct: 5 },
+  { id: 'copy-followsell-cons',   tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryPenaltyPct: 5 },
   // ── breakeven: once +10%, lock stop at entry+3% (covers our cost) ──
   { id: 'copy-be10-plus3',        tpPct: 150,  slPct: 30,   exitFollow: false, maxHoldSec: null, breakevenAtPct: 10, breakevenBufferPct: 3 },
   // ── tiered ratchet: raise the cutoff as it climbs, no fixed TP (let it run) ──
@@ -239,19 +247,22 @@ export class CopyTrader {
         if (consensusRecent < s.minConsensusRecent) continue;
       }
 
-      const tpPrice = s.tpPct != null ? price.priceSol * (1 + s.tpPct / 100) : null;
-      const slPrice = s.slPct != null ? price.priceSol * (1 - s.slPct / 100) : null;
+      // Penalized entry — models a realistic confirmation lag (fill higher than the
+      // optimistic ~1.1s snapshot). Default 0 = enter at snapshot price as before.
+      const entryP = s.entryPenaltyPct ? price.priceSol * (1 + s.entryPenaltyPct / 100) : price.priceSol;
+      const tpPrice = s.tpPct != null ? entryP * (1 + s.tpPct / 100) : null;
+      const slPrice = s.slPct != null ? entryP * (1 - s.slPct / 100) : null;
       const id = this.insertOpen({
         strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
-        leadWallet, leadTier, entryTs: nowSec, entryPrice: price.priceSol, sizeSol: COPY_SIZE_SOL,
+        leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: COPY_SIZE_SOL,
         tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
       });
       if (id == null) continue;
       this.positions.set(id, {
         id, strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
-        entryPrice: price.priceSol, sizeSol: COPY_SIZE_SOL, tpPrice, baseSlPrice: slPrice,
+        entryPrice: entryP, sizeSol: COPY_SIZE_SOL, tpPrice, baseSlPrice: slPrice,
         exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, entryTs: nowSec,
-        highPrice: price.priceSol, scaledOut: false, realizedPartial: 0,
+        highPrice: entryP, scaledOut: false, realizedPartial: 0,
       });
     }
   }
