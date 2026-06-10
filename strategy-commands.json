@@ -1,0 +1,10 @@
+{
+  "commands": [
+    { "action": "toggle", "id": "v50-strength-live-micro", "enabled": false },
+    {
+      "action": "journal-update",
+      "id": "v50-strength-live-micro",
+      "note": "Operator killed (disabled) the only live strategy 2026-06-10 — it was bleeding money in live_micro. Stops new live entries immediately; any open position closes on its own. Roster delete deferred pending operator call."
+    }
+  ]
+}
