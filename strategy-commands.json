@@ -1,0 +1,13 @@
+{
+ "commands": [
+  {"action": "toggle", "id": "v47-lean", "enabled": false},
+  {"action": "toggle", "id": "v47-lean-plus-acc", "enabled": false},
+  {"action": "toggle", "id": "v47-no-top5", "enabled": false},
+  {
+   "action": "report-append",
+   "id": "2026-06-10",
+   "date": "2026-06-10",
+   "note": "Kill-batch follow-up: v47-lean / v47-lean-plus-acc / v47-no-top5 could not be deleted (open shadow positions block delete in strategy-manager.ts). Toggled disabled instead - no new entries. NEXT SESSION: delete these 3 once their open positions close. All other 76 INVALID deletes applied (roster 159 -> 83)."
+  }
+ ]
+}
