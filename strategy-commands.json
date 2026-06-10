@@ -1,0 +1,115 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-06-10",
+      "date": "2026-06-10",
+      "generated_by": "claude",
+      "narrative": "## Daily Report - 2026-06-10\n\n**Roster:** No changes since yesterday. 159 strategies in roster, 152 enabled.\n\n### Headline\n**v9shadow-velmono-dev is the #1 candidate** (score 84.83, STABLE) -- three of four promotion gates clear, monthly run rate is the sole remaining blocker at 2.22 vs 3.75 SOL/mo. No strategy is promotable today.\n\n### What Accumulated / What Bled\n0 trades in today's UTC window. A high-severity graduation_rate_drop anomaly projects 0 graduations vs the 7-day median of 170. diagnose.json is HEALTHY (WS connected, last graduation 770s ago, last shadow trade 709s ago) -- UTC-day reset artifact, not a hard failure. Yesterday: n=1,267 trades.\n\nLifetime leave-one-out P&L (shadow mode):\n- **v9shadow-velmono-dev**: +2.937 SOL total, drop_top3=+1.197 (41% top-3 concentration -- robust), monthly=2.22. STABLE.\n- **v9shadow-velmid-liq-mono**: +2.522 SOL total, drop_top3=+0.158 (94% concentration -- marginal), monthly=2.00. DECAYING -- score slid from alltime-high 90.12 to 65.67.\n- **v24-rugger-climbing**: +2.296 SOL total, drop_top3=+0.038 (near-zero at n=35), monthly=2.62. STABLE. Too early to interpret.\n- **v9shadow-vel20-top5**: n=121, drop_top3=-1.957 -- INVALID, DECAYING. Kill proposed since ai-2026-06-06-001.\n\n### v24-rugger-climbing -- Early Signal\nserial_rugger + climbing_t30_t45 (TP150/SL25, T+60 entry) shows the highest monthly run rate of any profitable strategy at 2.62 SOL/mo on n=35. Score trajectory (alltime low 27.12 to current 67.23) is encouraging. However, drop_top3=+0.038 is near-zero at this sample size -- watch to n=60 before any conclusions.\n\n### Cross-Day Patterns\n- velmono-dev score locked at 84.83 for 2+ days. Monthly=2.22 -- gap of 1.53 SOL/mo to bar. Realistic timeline: 3-4 more weeks.\n- velmid-liq-mono DECAYING: score from 90.12 to 65.67, drop_top3=+0.158 (94% concentration). One bad cluster flips it INVALID. Active watch.\n- 22 strategies flagged DECAYING in edge-decay.json.\n- Kill backlog at 78 INVALID strategies (n>=100, at least one gate fails). 15 action items PROPOSED for 1-8 days with zero executions. Worst drains: v35-vel2050-holders10 drop3=-17.03, v39-entry variants drop3=-12 to -14, v40-vel-band drop3=-12.07.\n- Pipeline T+30 stall now Day 6 (first flagged ai-2026-06-07-002 as Day 5).\n\n### Panel 7 -- holders>=250 Standout\nholder>=250 (backfill) is ROBUST: train=+19.48%, test=+20.02%, degradation=-0.54pp. Edge strengthens on test half -- strongest filter in the catalog. holders>=100 (OVERFIT +10.47pp) and >=50 (OVERFIT +7.66pp) are false positives. v50-holders250-shadow proposed 3+ times without execution.\n\n### Honest Outlier Check\n- velmono-dev: top-3 contribution 41% -- acceptable fat-tail. Not single-trade dependent.\n- velmid-liq-mono: 94% top-3 concentration -- concentration risk. DECAYING flag makes this a kill trigger candidate.\n- rugger-climbing: drop_top3=+0.038 on n=35 is statistically zero.\n\n### Operator Next Steps\n**Priority 1 -- Execute the kill backlog.** 15 items PROPOSED for 1-8 days, zero executed. Top 5 by drop_top3 damage: v35-vel2050-holders10 (-17.03), v39-entry-n25-100 (-13.73), v39-entry-n50-100 (-13.43), v39-entry-n25-50 (-12.94), v40-vel-band (-12.07).\n\n**Priority 2 -- Create v50-holders250-shadow.** Strongest walk-forward signal in catalog. Proposed 3+ times, still unexecuted.",
+      "winners": [],
+      "losers": [],
+      "anomalies": [
+        {
+          "kind": "graduation_rate_drop",
+          "severity": "high",
+          "detail": "Projected grad count today (0) is <70% of 7-day median (170). diagnose.json HEALTHY -- UTC-day reset likely."
+        },
+        {
+          "kind": "kill_backlog_critical",
+          "severity": "high",
+          "detail": "78 INVALID strategies (n>=100, at least one SOL gate fails) still enabled. 15 action items PROPOSED 1-8 days with zero executions."
+        },
+        {
+          "kind": "edge_decay_cluster",
+          "severity": "med",
+          "detail": "22 strategies DECAYING including v9shadow-vel20-top5 (INVALID), v9shadow-velmid-liq-mono (marginal drop3=+0.158)."
+        },
+        {
+          "kind": "pipeline_t30_stall_recurrence",
+          "severity": "med",
+          "detail": "T+30 callback stall now Day 6. Self-recovering but systemic. Prior: ai-2026-06-07-002 (Day 5)."
+        }
+      ],
+      "patterns": [
+        "v9shadow-velmono-dev score=84.83 steady 2+ days -- monthly=2.22 sole blocker, expected to clear in 3-4 weeks.",
+        "v24-rugger-climbing monthly=2.62 SOL/mo (highest profitable) at n=35 -- high noise, watch to n=60.",
+        "holders>=250 (Panel 7 backfill) ROBUST: test_avg_ret=+20.02%, degradation=-0.54pp. Strongest catalog filter.",
+        "Kill backlog items from June 2 (8 days old) remain PROPOSED -- zero operator executions.",
+        "T+30 callback stall Day 6 -- self-recovering but recurring systemic issue."
+      ],
+      "recommendations": {
+        "kill": [
+          {
+            "strategy_id": "v9shadow-vel20-top5",
+            "reason": "INVALID + DECAYING: n=121, drop_top3=-1.957 SOL, monthly=+0.86. Proposed since ai-2026-06-06-001."
+          },
+          {
+            "strategy_id": "v9shadow-velmid-liq-mono",
+            "reason": "Conditional: DECAYING + drop_top3=+0.158 (94% concentration). Recommend kill if drop_top3 reaches <=0."
+          },
+          {
+            "strategy_id": "v25-bot-excl-climbing",
+            "reason": "INVALID: n=692, drop_top3=-2.872 SOL. Reaffirm ai-2026-06-09-002."
+          }
+        ],
+        "promote": [],
+        "create_new": [
+          {
+            "strategy_id": "v50-holders250-shadow",
+            "hypothesis": "holders>=250 filter ROBUST walk-forward (test=+20.02%, degradation=-0.54pp). Only holders threshold surviving Panel 7. Shadow test at TP150/SL30.",
+            "prediction": {
+              "target_net_sol": 0.5,
+              "target_sol_per_mo": 3.75,
+              "target_drop_top3": 0.01,
+              "target_n": 100,
+              "target_days": 30,
+              "kill_criterion": "n>=50 and total_net_sol_drop_top3<0"
+            },
+            "cohort_label": "v50"
+          }
+        ],
+        "watch": [
+          {
+            "strategy_id": "v9shadow-velmono-dev",
+            "reason": "Score=84.83, STABLE. Three gates clear (n=104, drop3=+1.197, total=+2.937). Monthly=2.22 vs bar 3.75. Expected to clear in 3-4 weeks."
+          },
+          {
+            "strategy_id": "v24-rugger-climbing",
+            "reason": "Score=67.23, STABLE, n=35. Monthly=2.62 (highest profitable). drop_top3=+0.038 near-zero -- watch to n=60."
+          },
+          {
+            "strategy_id": "v9shadow-velmid-liq-mono",
+            "reason": "Score=65.67, DECAYING. drop_top3=+0.158 (94% concentration) fragile. Kill trigger: drop_top3<=0."
+          }
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-06-10-001",
+          "kind": "watch",
+          "target_id": "v24-rugger-climbing",
+          "summary": "Watch v24-rugger-climbing to n=60. n=35, monthly=2.62 SOL/mo, drop_top3=+0.038 too marginal. Kill: n>=60 and drop_top3<0.",
+          "status": "PROPOSED",
+          "proposed_at": 1781116800
+        },
+        {
+          "id": "ai-2026-06-10-002",
+          "kind": "kill",
+          "target_id": "v9shadow-vel20-top5",
+          "summary": "ESCALATED (reaffirm ai-2026-06-06-001): Kill v9shadow-vel20-top5 -- INVALID (n=121, drop_top3=-1.957) + DECAYING. 4 days past first proposal.",
+          "status": "PROPOSED",
+          "proposed_at": 1781116800
+        },
+        {
+          "id": "ai-2026-06-10-003",
+          "kind": "investigate",
+          "target_id": "velmid-liq-mono-decay",
+          "summary": "Monitor v9shadow-velmid-liq-mono: score 90.12->65.67, drop_top3=+0.158 (94% concentration), DECAYING. Kill immediately if drop_top3<=0 -- skip next proposal cycle.",
+          "status": "PROPOSED",
+          "proposed_at": 1781116800
+        }
+      ],
+      "auto_journal": true
+    }
+  ]
+}
