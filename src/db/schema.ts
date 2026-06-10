@@ -1093,6 +1093,11 @@ function runMigrations(db: Database.Database): void {
     if (!have.has('high_price_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN high_price_sol REAL`);
     if (!have.has('scaled_out')) db.exec(`ALTER TABLE copy_trades ADD COLUMN scaled_out INTEGER DEFAULT 0`);
     if (!have.has('realized_partial_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN realized_partial_sol REAL DEFAULT 0`);
+    // Last polled pool price per open position — lets copy-trades.json mark
+    // open positions to market instead of reporting closed-only P&L (which has
+    // survivorship: indefinite-hold strategies park losers as open bags).
+    if (!have.has('last_price_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN last_price_sol REAL`);
+    if (!have.has('last_price_ts')) db.exec(`ALTER TABLE copy_trades ADD COLUMN last_price_ts INTEGER`);
   }
   // Additive: tier column (promotable vs smart-only) for DBs created before it.
   {
