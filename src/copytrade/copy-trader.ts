@@ -49,6 +49,9 @@ export interface CopyStrategy {
   entryPenaltyPct?: number;    // worsen entry price by this % to model realistic copy lag (shadow enters at the
                                // optimistic ~1.1s pool snapshot; a real tx confirms seconds later, after the
                                // token has run further — so we fill higher). TP/SL/HWM all key off the penalized entry.
+  exitPenaltyPct?: number;     // worsen the exit fill by this % (sell lands 1-2 blocks after the trigger price,
+                               // after the token has moved against us). Applied uniformly to every exit reason
+                               // and to scale-out partials; the penalized fill is what gets stored + netted.
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
@@ -61,8 +64,9 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   // ── E: conservative-lag shadows of the two promotable copy recs (drop3>0 at n>100).
   //    5% entry penalty models filling higher than the optimistic ~1.1s snapshot once a
   //    real copy tx confirms — the honest test of whether the edge survives realistic lag.
-  { id: 'copy-tp100-sl30-cons',   tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryPenaltyPct: 5 },
-  { id: 'copy-followsell-cons',   tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryPenaltyPct: 5 },
+  //    2% exit penalty models the sell landing after the trigger (worse fill both ways).
+  { id: 'copy-tp100-sl30-cons',   tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryPenaltyPct: 5, exitPenaltyPct: 2 },
+  { id: 'copy-followsell-cons',   tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryPenaltyPct: 5, exitPenaltyPct: 2 },
   // ── breakeven: once +10%, lock stop at entry+3% (covers our cost) ──
   { id: 'copy-be10-plus3',        tpPct: 150,  slPct: 30,   exitFollow: false, maxHoldSec: null, breakevenAtPct: 10, breakevenBufferPct: 3 },
   // ── tiered ratchet: raise the cutoff as it climbs, no fixed TP (let it run) ──
@@ -121,6 +125,7 @@ interface OpenPos {
   highPrice: number;        // HWM (persisted)
   scaledOut: boolean;       // persisted
   realizedPartial: number;  // SOL already realized via scale-out (persisted)
+  lastWrittenPrice?: number; // in-memory dedupe for last_price_sol writes
 }
 
 interface PoolVaults { pool: string; baseVault: string; quoteVault: string; }
@@ -323,10 +328,20 @@ export class CopyTrader {
             p.highPrice = price;
             try { this.db.prepare(`UPDATE copy_trades SET high_price_sol = ? WHERE id = ?`).run(price, p.id); } catch { /* noop */ }
           }
-          // scale-out (partial realize, runner continues)
+          // persist last seen price so copy-trades.json can mark open positions
+          // to market. Skip the write when unchanged beyond 0.1% to keep poll cheap.
+          if (p.lastWrittenPrice == null || Math.abs(price / p.lastWrittenPrice - 1) > 0.001) {
+            p.lastWrittenPrice = price;
+            try {
+              this.db.prepare(`UPDATE copy_trades SET last_price_sol = ?, last_price_ts = ? WHERE id = ?`).run(price, now, p.id);
+            } catch { /* noop */ }
+          }
+          // scale-out (partial realize, runner continues) — partial fill takes the
+          // same exit penalty as a full close.
           if (s.scaleOut && !p.scaledOut && price >= p.entryPrice * (1 + s.scaleOut.atPct / 100)) {
             const portion = p.sizeSol * s.scaleOut.fraction;
-            const partialNet = +tradeNetSol(p.entryPrice, price, portion, SIM_DEFAULT_COST_PCT).toFixed(5);
+            const fill = s.exitPenaltyPct ? price * (1 - s.exitPenaltyPct / 100) : price;
+            const partialNet = +tradeNetSol(p.entryPrice, fill, portion, SIM_DEFAULT_COST_PCT).toFixed(5);
             p.realizedPartial += partialNet;
             p.scaledOut = true;
             try {
@@ -350,9 +365,13 @@ export class CopyTrader {
     }
   }
 
-  private closePosition(p: OpenPos, reason: string, exitPrice: number): void {
+  private closePosition(p: OpenPos, reason: string, rawExitPrice: number): void {
     const nowSec = Math.floor(Date.now() / 1000);
     const remainingSize = this.remainderSize(p);
+    // Penalized fill — the trigger price is what we observed; a real sell lands
+    // ~1-2 blocks later. Stored + netted on the penalized fill (mirrors entry penalty).
+    const exitPen = STRAT_BY_ID.get(p.strategyId)?.exitPenaltyPct ?? 0;
+    const exitPrice = exitPen ? rawExitPrice * (1 - exitPen / 100) : rawExitPrice;
     const grossPct = p.entryPrice > 0 ? (exitPrice / p.entryPrice - 1) * 100 : 0;
     const remainderNet = tradeNetSol(p.entryPrice, exitPrice, remainingSize, SIM_DEFAULT_COST_PCT);
     const netSol = +(p.realizedPartial + remainderNet).toFixed(5);
@@ -436,17 +455,42 @@ function median(xs: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/** Uniform exit-fill stress: re-net the remainder leg with the exit price worsened
+ *  by `penPct`%. Scale-out partials are kept as recorded (their exit prices aren't
+ *  stored), so scale-out strategies are slightly under-stressed — noted in the JSON. */
+const EXIT_STRESS_PCT = 2;
+function stressedNet(r: Record<string, unknown>, s: CopyStrategy | undefined, penPct: number): number | null {
+  const entry = r.entry_price_sol as number;
+  const exit = r.exit_price_sol as number;
+  const size = r.size_sol as number;
+  if (typeof entry !== 'number' || typeof exit !== 'number' || typeof size !== 'number' || entry <= 0) return null;
+  const frac = r.scaled_out === 1 ? (s?.scaleOut?.fraction ?? 0) : 0;
+  const partial = (r.realized_partial_sol as number) ?? 0;
+  return partial + tradeNetSol(entry, exit * (1 - penPct / 100), size * (1 - frac), SIM_DEFAULT_COST_PCT);
+}
+
+/** Mark an open position to its last polled pool price (after round-trip cost). */
+function unrealizedNet(r: Record<string, unknown>, s: CopyStrategy | undefined): number | null {
+  const entry = r.entry_price_sol as number;
+  const last = r.last_price_sol as number;
+  const size = r.size_sol as number;
+  if (typeof entry !== 'number' || typeof last !== 'number' || typeof size !== 'number' || entry <= 0 || last <= 0) return null;
+  const frac = r.scaled_out === 1 ? (s?.scaleOut?.fraction ?? 0) : 0;
+  const partial = (r.realized_partial_sol as number) ?? 0;
+  return partial + tradeNetSol(entry, last, size * (1 - frac), SIM_DEFAULT_COST_PCT);
+}
+
 export function computeCopyTrades(db: Database.Database): unknown {
   let closed: Array<Record<string, unknown>> = [];
-  let openRows: Array<{ strategy_id: string; c: number }> = [];
+  let open: Array<Record<string, unknown>> = [];
   try {
     closed = db.prepare(`SELECT * FROM copy_trades WHERE status = 'closed'`).all() as Array<Record<string, unknown>>;
-    openRows = db.prepare(`SELECT strategy_id, COUNT(*) AS c FROM copy_trades WHERE status = 'open' GROUP BY strategy_id`).all() as Array<{ strategy_id: string; c: number }>;
+    open = db.prepare(`SELECT * FROM copy_trades WHERE status = 'open'`).all() as Array<Record<string, unknown>>;
   } catch {
     return { generated_at: new Date().toISOString(), phase: 'phase2-shadow-copy', pending: true };
   }
-  const openByStrat: Record<string, number> = {};
-  for (const r of openRows) openByStrat[r.strategy_id] = r.c;
+
+  const utcDay = (ts: number): string => new Date(ts * 1000).toISOString().slice(0, 10);
 
   const summarize = (rows: Array<Record<string, unknown>>) => {
     const nets = rows.map((r) => r.net_sol as number).filter((v) => typeof v === 'number');
@@ -457,38 +501,122 @@ export function computeCopyTrades(db: Database.Database): unknown {
     const lags = rows.map((r) => r.detection_lag_sec as number).filter((v) => typeof v === 'number');
     const byReason: Record<string, number> = {};
     for (const r of rows) byReason[(r.exit_reason as string) ?? 'unknown'] = (byReason[(r.exit_reason as string) ?? 'unknown'] ?? 0) + 1;
+    // exit-fill stress (uniform, on top of any per-strategy penalty already baked in)
+    let stressTotal = 0;
+    for (const r of rows) {
+      const v = stressedNet(r, STRAT_BY_ID.get(r.strategy_id as string), EXIT_STRESS_PCT);
+      if (v != null) stressTotal += v;
+    }
+    // per-UTC-day P&L so regime stability is visible on a young dataset
+    const dayMap = new Map<string, { n: number; net: number }>();
+    for (const r of rows) {
+      const ts = r.exit_ts as number;
+      const net = r.net_sol as number;
+      if (typeof ts !== 'number' || typeof net !== 'number') continue;
+      const d = utcDay(ts);
+      const cur = dayMap.get(d) ?? { n: 0, net: 0 };
+      cur.n += 1; cur.net += net;
+      dayMap.set(d, cur);
+    }
+    const daily = [...dayMap.entries()].sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, v]) => ({ date, n: v.n, net_sol: +v.net.toFixed(4) }));
     return {
       n: rows.length,
       total_net_sol: total,
       total_net_sol_drop_top3: +(total - top3).toFixed(4),
+      total_net_sol_exit_stress: +stressTotal.toFixed(4),
       win_rate: rows.length ? +(wins / rows.length).toFixed(3) : null,
       median_hold_sec: median(holds),
       avg_detection_lag_sec: lags.length ? +(lags.reduce((a, b) => a + b, 0) / lags.length).toFixed(2) : null,
       by_exit_reason: byReason,
+      daily,
     };
   };
+
+  // Open-position mark-to-market — kills the survivorship blind spot where
+  // indefinite-hold strategies park losers as open bags outside closed-only P&L.
+  const summarizeOpen = (rows: Array<Record<string, unknown>>) => {
+    let unrealized = 0;
+    let priced = 0;
+    for (const r of rows) {
+      const v = unrealizedNet(r, STRAT_BY_ID.get(r.strategy_id as string));
+      if (v != null) { unrealized += v; priced += 1; }
+    }
+    return {
+      open_positions: rows.length,
+      open_priced: priced,
+      open_unrealized_sol: +unrealized.toFixed(4),
+    };
+  };
+
+  // Paired comparison vs a fixed baseline: every strategy copies the same lead-buy
+  // events (keyed mint+entry_ts), so totals across strategies are NOT independent.
+  // delta_net_sol on common events is the honest exit-variant comparison.
+  const PAIRED_BASELINE = 'copy-tp100-sl30';
+  const baseByEvent = new Map<string, number>();
+  for (const r of closed) {
+    if (r.strategy_id !== PAIRED_BASELINE) continue;
+    if (typeof r.net_sol !== 'number') continue;
+    baseByEvent.set(`${r.mint}:${r.entry_ts}`, r.net_sol as number);
+  }
+  const pairedVsBaseline: Record<string, unknown> = {};
+  for (const s of COPY_STRATEGIES) {
+    if (s.id === PAIRED_BASELINE) continue;
+    let nCommon = 0;
+    let delta = 0;
+    for (const r of closed) {
+      if (r.strategy_id !== s.id || typeof r.net_sol !== 'number') continue;
+      const base = baseByEvent.get(`${r.mint}:${r.entry_ts}`);
+      if (base == null) continue;
+      nCommon += 1;
+      delta += (r.net_sol as number) - base;
+    }
+    if (nCommon > 0) {
+      pairedVsBaseline[s.id] = {
+        n_common_events: nCommon,
+        delta_net_sol: +delta.toFixed(4),
+        avg_delta_sol_per_event: +(delta / nCommon).toFixed(5),
+      };
+    }
+  }
 
   const byStrategy: Record<string, unknown> = {};
   for (const s of COPY_STRATEGIES) {
     const rows = closed.filter((r) => r.strategy_id === s.id);
+    const openForStrat = open.filter((r) => r.strategy_id === s.id);
+    const closedSummary = summarize(rows);
+    // keep the per-strategy day series bounded; the overall block keeps full history
+    closedSummary.daily = closedSummary.daily.slice(-14);
+    const openSummary = summarizeOpen(openForStrat);
     byStrategy[s.id] = {
       config: {
         tp_pct: s.tpPct, sl_pct: s.slPct, exit_follow: s.exitFollow, max_hold_sec: s.maxHoldSec,
         breakeven_at_pct: s.breakevenAtPct ?? null, ratchet: s.ratchet ?? null,
         scale_out: s.scaleOut ?? null, min_lead_rank: s.minLeadRank ?? null, min_consensus: s.minConsensusRecent ?? null,
+        entry_penalty_pct: s.entryPenaltyPct ?? null, exit_penalty_pct: s.exitPenaltyPct ?? null,
       },
-      open_positions: openByStrat[s.id] ?? 0,
-      ...summarize(rows),
+      ...openSummary,
+      total_incl_open_sol: +(closedSummary.total_net_sol + openSummary.open_unrealized_sol).toFixed(4),
+      ...closedSummary,
     };
   }
+
+  const overallClosed = summarize(closed);
+  const overallOpen = summarizeOpen(open);
 
   return {
     generated_at: new Date().toISOString(),
     phase: 'phase2-shadow-copy',
-    note: 'SHADOW copy trades — no real funds. Entry at pool price ~1.1s after the lead wallet; net_sol after the SIM round-trip cost (scale-out partials folded in). Most strategies hold indefinitely. Coverage limited to tokens in our graduations table.',
+    note: 'SHADOW copy trades — no real funds. Entry at pool price ~1.1s after the lead wallet; net_sol after the SIM round-trip cost (scale-out partials folded in). Coverage limited to tokens in our graduations table. CAVEATS: strategies share entry signals — totals are not independent (see paired_vs_baseline); total_net_sol_exit_stress re-nets every closed remainder leg with the exit fill worsened by ' + EXIT_STRESS_PCT + '% (scale-out partials kept as recorded); open_unrealized_sol marks open positions to the last polled pool price (open_priced = how many have one); total_incl_open_sol = closed + unrealized.',
     size_sol: COPY_SIZE_SOL,
-    overall: summarize(closed),
+    paired_baseline: PAIRED_BASELINE,
+    overall: {
+      ...overallOpen,
+      total_incl_open_sol: +(overallClosed.total_net_sol + overallOpen.open_unrealized_sol).toFixed(4),
+      ...overallClosed,
+    },
     by_strategy: byStrategy,
+    paired_vs_baseline: pairedVsBaseline,
     recent_closed: closed
       .sort((a, b) => (b.exit_ts as number ?? 0) - (a.exit_ts as number ?? 0))
       .slice(0, 30)
