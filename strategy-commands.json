@@ -1,0 +1,174 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-06-11",
+      "date": "2026-06-11",
+      "generated_by": "claude",
+      "narrative": "## Daily Report — 2026-06-11\n\n**Roster:** No changes since yesterday (74 enabled, 80 total — identical both days). No kills, adds, or toggles since the 2026-06-10 snapshot.\n\n### Headline\nMonthly run rate is the single blocking gate. Both v9shadow strategies have cleared n≥100, drop_top3>0, and total≥0.5 SOL — but neither clears the 3.75 SOL/mo bar (v9shadow-velmono-dev: +2.47, v9shadow-velmid-liq-mono: +2.45). They need ~50% more trade frequency or a regime-driven surge to promote. No strategy is currently promotable.\n\n### What Accumulated SOL (outlier-robust)\nOnly three strategies are net-positive after dropping the top 3 winners:\n- **v9shadow-velmono-dev** (score 86.31, STABLE): total=+3.34 SOL, drop3=+1.60 SOL — solid sustained edge. Top3 trades contribute 52% of PnL.\n- **v9shadow-velmid-liq-mono** (score 68.28, DECAYING): total=+3.16 SOL, drop3=+0.80 SOL — positive edge but DECAYING flag is concerning after the Jun 10 score drop (90→65→68). Monitor closely.\n- **v24-rugger-climbing** (score 69.16, STABLE): total=+2.59 SOL, drop3=+0.34 SOL — but n=36 and top3=87% concentration. The edge is largely 3 big wins at this sample size; the drop3 is barely positive (+0.34). WATCH but do not over-interpret at n=36.\n\n### What Bled (worst with n≥50)\n- V29.1 (UTC 02-10 overlay): n=57, total=-6.90, drop3=-8.51 — worst absolute bleeder\n- V31.5 (BTC range overlay): n=84, total=-6.28, drop3=-8.44\n- v35-vel2050-buyers-ratio: n=90, DECAYING, total=-6.49, drop3=-8.15\n- v40-whale-cap: n=76, DECAYING, total=-5.71, drop3=-7.06\n- v40-acc-whale: n=62, DECAYING, total=-5.03, drop3=-6.08\n\nThese represent roughly -32 SOL in combined accumulated losses across just 5 strategies.\n\n### Cross-Day Patterns\n1. **14 DECAYING strategies** — the DECAYING cohort spans v28/v26/v19/v32/v33/v34/v40 variants plus v9shadow-velmid-liq-mono. Most are vel20-50 or vel<20 permutations with TP/poll variants: the mid-velocity universe appears to be losing edge across the board, not just in one variant.\n2. **Pipeline stall history (Jun 6–7) appears resolved** — diagnose is HEALTHY today, no recent errors, last T+30 callback 256s ago, last shadow trade 226s ago. The 5-day-old pipeline action items are moot.\n3. **v9shadow-velmid-liq-mono DECAYING probe**: score dropped 90.12 → 65.67 yesterday, slight recovery to 68.28 today. DECAYING flag combined with a still-positive drop3 (+0.80) is ambiguous — the trailing windows are softening but the cumulative edge hasn't reversed. Watch another 2 weeks.\n4. **v52a-sm-shape HIT-KILL + v51-confirm-gate HIT-KILL**: both journal entries reached kill criterion. These are still running shadow trades and burning slots.\n5. **No trades today** in the report snapshot (taken at UTC midnight) — pipeline resumed actively post-reset, last shadow trade 226s ago per diagnose.\n\n### Outlier Self-Check\nv24-rugger-climbing: top3 contributes 87% of total PnL at n=36 — do NOT call this strategy winning. The drop3=+0.34 confirms the edge doesn't vanish entirely after stripping, but it's fragile at low n. Claim nothing until n≥100 with drop3 still positive.\nv9shadow-velmono-dev: top3=52% is fat-tail but not extreme for memecoins. The drop3=+1.60 is robust. This is the closest thing to a confirmed sustained edge in the book.\n\n### Operator Next Step\nRecommend operator approve the kill block for v52a-sm-shape, v51-confirm-gate, V29.1, V31.5, v35-vel2050-buyers-ratio, v40-whale-cap, and v40-acc-whale — collectively ~-42 SOL in lifetime PnL dragging the book. This frees up shadow capacity for the next research cohort. Watch v9shadow-velmono-dev monthly rate through end of June.",
+      "winners": [],
+      "losers": [],
+      "anomalies": [
+        {
+          "kind": "graduation_rate_drop",
+          "severity": "high",
+          "message": "Today graduation rate shows 0 trades in report snapshot (early UTC reset). Pipeline confirmed active per diagnose (last shadow trade 226s ago). No action needed."
+        },
+        {
+          "kind": "edge_decay",
+          "severity": "med",
+          "message": "14 strategies flagged DECAYING — concentrated in vel20-50 and vel<20 permutations (v26/v28/v32/v33/v34 variants). Broad mid-velocity decay signal."
+        },
+        {
+          "kind": "hit_kill_active",
+          "severity": "high",
+          "message": "v52a-sm-shape (n=113) and v51-confirm-gate (n=82) have journal status HIT-KILL but remain enabled, continuing to trade and accumulate losses."
+        },
+        {
+          "kind": "bleeder_cluster",
+          "severity": "high",
+          "message": "Top 5 bleeders (V29.1, V31.5, v35-vel2050-buyers-ratio, v40-whale-cap, v40-acc-whale) have collectively accumulated roughly -32 SOL in losses with all drop3 values deeply negative."
+        }
+      ],
+      "patterns": [
+        "v9shadow-velmono-dev has been #1 by readiness score for 3+ consecutive days — score stable at 84-86 range with positive drop3.",
+        "Broad DECAYING signal in the vel20-50 / vel<20 cohort (14 strategies). Not isolated to one variant — suggests the underlying filter-universe edge is eroding.",
+        "Pipeline stall (Jun 6-7) was a 5-day recurring item. Now resolved — stall-era action items closed this cycle.",
+        "v52a-sm-shape has been accumulating losses for 20+ days with HIT-KILL status for multiple cycles. Running any longer is pure noise pollution.",
+        "Monthly run rate for both v9shadow strategies has been stable at +2.47/+2.45 for 3+ days — not growing week-over-week, suggesting the trade frequency ceiling may be a persistent constraint rather than a short-term lull."
+      ],
+      "recommendations": {
+        "promote": [],
+        "kill": [
+          {
+            "strategy_id": "v52a-sm-shape",
+            "reason": "n=113, journal=HIT-KILL (kill criterion: n>=50 and net_sol<-1, triggered at net_sol=-2.15), drop3=-3.72 SOL — no surviving edge after outlier strip"
+          },
+          {
+            "strategy_id": "v51-confirm-gate",
+            "reason": "n=82, journal=HIT-KILL (net_sol=-2.91 < -1), drop3=-4.97 SOL — INVALID"
+          },
+          {
+            "strategy_id": "V29.1",
+            "reason": "n=57, total=-6.90 SOL, drop3=-8.51 SOL — worst absolute bleeder in book; UTC 02-10 overlay provides no edge"
+          },
+          {
+            "strategy_id": "V31.5",
+            "reason": "n=84, total=-6.28 SOL, drop3=-8.44 SOL — BTC range overlay is losing badly; both gates fail"
+          },
+          {
+            "strategy_id": "v35-vel2050-buyers-ratio",
+            "reason": "n=90, DECAYING, total=-6.49 SOL, drop3=-8.15 SOL — buyers>=10+buy_ratio>0.6 overlay dragging vel20-50 down"
+          },
+          {
+            "strategy_id": "v40-whale-cap",
+            "reason": "n=76, DECAYING, total=-5.71 SOL, drop3=-7.06 SOL — whale filter providing no edge"
+          },
+          {
+            "strategy_id": "v40-acc-whale",
+            "reason": "n=62, DECAYING, total=-5.03 SOL, drop3=-6.08 SOL — acc_t30 + whale combo on INVALID trajectory"
+          },
+          {
+            "strategy_id": "v19-age10-top5-base",
+            "reason": "n=60, DECAYING, total=-2.23 SOL, drop3=-3.23 SOL — age>10min+top5<10% at 150/30 losing consistently"
+          },
+          {
+            "strategy_id": "v19-age10-top5-tp100",
+            "reason": "n=60, DECAYING, total=-1.93 SOL, drop3=-3.15 SOL — lower-TP variant of same losing combo"
+          }
+        ],
+        "create_new": [
+          {
+            "strategy_id": "v50-holders250-shadow",
+            "hypothesis": "holders>=250 (backfill) is #1 on best-combos leaderboard (opt_avg_ret=24.25%, n=396, Panel7 ROBUST degradation=-0.38pp at TP150/SL30). Only combo at this return level with ROBUST walk-forward. Propose shadow strategy to collect real-time measured data (currently backfill-only). Target accumulating >=0.5 SOL with drop_top3>0 on n=100.",
+            "prediction": {
+              "target_n": 100,
+              "target_net_sol": 0.5,
+              "target_drop_top3": 0,
+              "target_days": 60,
+              "kill_criterion": "n>=50 and total_net_sol_drop_top3<0"
+            },
+            "cohort_label": "v50"
+          }
+        ],
+        "watch": [
+          {
+            "strategy_id": "v24-rugger-climbing",
+            "reason": "n=36, STABLE, total=+2.59 drop3=+0.34 — watch to n=100. Top3 concentration=87% at current n; do not call winner until n>=100 confirms drop3 holds."
+          },
+          {
+            "strategy_id": "v9shadow-velmono-dev",
+            "reason": "n=106, monthly=+2.47 vs 3.75 bar. 3 of 4 gates clear; only monthly blocks promotion. Watch through end of June for natural convergence."
+          },
+          {
+            "strategy_id": "v9shadow-velmid-liq-mono",
+            "reason": "n=115, DECAYING, monthly=+2.45. Score softened 90→65→68 over 2 days. Monitor 14 more days — if drop3 turns negative, recommend kill."
+          },
+          {
+            "strategy_id": "v12-vel2050-liq-dd15",
+            "reason": "n=97, STRENGTHENING, total=+0.29, drop3=-1.94. Close to n=100 but drop3 currently negative. Evaluate at n=100: if drop3 still negative, INVALID."
+          }
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-06-11-001",
+          "kind": "kill",
+          "target_id": "v52a-sm-shape,v51-confirm-gate,V29.1,V31.5,v35-vel2050-buyers-ratio,v40-whale-cap,v40-acc-whale,v19-age10-top5-base,v19-age10-top5-tp100",
+          "summary": "Recommend killing 9-strategy INVALID/DECAYING cohort: v52a-sm-shape (HIT-KILL n=113), v51-confirm-gate (HIT-KILL n=82), V29.1 (-6.90 SOL), V31.5 (-6.28 SOL), v35-vel2050-buyers-ratio (-6.49 SOL DECAYING), v40-whale-cap (-5.71 SOL DECAYING), v40-acc-whale (-5.03 SOL DECAYING), v19-age10-top5-base (-2.23 SOL DECAYING), v19-age10-top5-tp100 (-1.93 SOL DECAYING). Requires operator approval via strategy-commands.json delete block.",
+          "status": "PROPOSED",
+          "proposed_at": 1781222400
+        },
+        {
+          "id": "ai-2026-06-11-002",
+          "kind": "create_new",
+          "target_id": "v50-holders250-shadow",
+          "summary": "Deploy v50-holders250-shadow: holders>=250 measured filter (#1 best-combo, opt=24.25%, n=396, Panel7 ROBUST). Real-time shadow test to validate the backfill edge. Target n=100, kill if drop_top3<0 at n=50.",
+          "status": "PROPOSED",
+          "proposed_at": 1781222400
+        },
+        {
+          "id": "ai-2026-06-11-003",
+          "kind": "watch",
+          "target_id": "v9shadow-velmono-dev",
+          "summary": "Watch v9shadow-velmono-dev monthly run rate through June. Currently +2.47 SOL/mo vs 3.75 bar. 3 gates clear; only monthly blocks promotion. No action needed until monthly either converges to 3.75 or the edge softens.",
+          "status": "PROPOSED",
+          "proposed_at": 1781222400
+        }
+      ],
+      "auto_journal": true
+    },
+    {
+      "action": "action-item-update",
+      "id": "follow-up-ai-2026-06-04-002",
+      "date": "2026-06-04",
+      "action_item_id": "ai-2026-06-04-002",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "v9shadow-velmid-liq-mono reached n=115 as of 2026-06-11 report. Watch milestone resolved."
+    },
+    {
+      "action": "action-item-update",
+      "id": "follow-up-ai-2026-06-05-002",
+      "date": "2026-06-05",
+      "action_item_id": "ai-2026-06-05-002",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "Both v9shadow strategies cleared n=100: velmono-dev=106, velmid-liq-mono=115. Monthly bar remains the only blocker — separate watch items cover this."
+    },
+    {
+      "action": "action-item-update",
+      "id": "follow-up-ai-2026-06-06-002",
+      "date": "2026-06-06",
+      "action_item_id": "ai-2026-06-06-002",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "Pipeline confirmed HEALTHY as of 2026-06-11 diagnose. last_t30_callback_sec_ago=256, last_shadow_trade_sec_ago=226, no recent_errors. Jun 6 stall has not recurred."
+    },
+    {
+      "action": "action-item-update",
+      "id": "follow-up-ai-2026-06-07-002",
+      "date": "2026-06-07",
+      "action_item_id": "ai-2026-06-07-002",
+      "action_item_status": "EXECUTED",
+      "action_item_note": "Day 5+ CRITICAL pipeline stall resolved. Diagnose HEALTHY for 2026-06-11 with active T+30 callbacks and shadow trades. Stall self-resolved; no code change was needed."
+    }
+  ]
+}
