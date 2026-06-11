@@ -49,9 +49,20 @@ export interface CopyStrategy {
   entryPenaltyPct?: number;    // worsen entry price by this % to model realistic copy lag (shadow enters at the
                                // optimistic ~1.1s pool snapshot; a real tx confirms seconds later, after the
                                // token has run further — so we fill higher). TP/SL/HWM all key off the penalized entry.
+                               // ASSUMED drift — kept as a control; prefer entryDelaySec, which measures it.
   exitPenaltyPct?: number;     // worsen the exit fill by this % (sell lands 1-2 blocks after the trigger price,
                                // after the token has moved against us). Applied uniformly to every exit reason
                                // and to scale-out partials; the penalized fill is what gets stored + netted.
+                               // ASSUMED drift — kept as a control; prefer followSellDelaySec for follow exits.
+  entryDelaySec?: number;      // measured-lag entry: wait this long after lead-buy detection, re-fetch the pool
+                               // price, and enter at THAT price. Detection is ~1.1s post-fill, so delay 5 ≈ a
+                               // ~6s real copy execution. Drift is measured (stored in entry_drift_pct), not assumed.
+  followSellDelaySec?: number; // follow_sell exits only: wait this long after the lead-sell detection, re-fetch,
+                               // and close at that price. Bot-triggered exits (TP/SL/timeout/trail) are NOT
+                               // delayed — they come from our own polling, not from seeing the lead's tx.
+  maxEntryDriftPct?: number;   // drift gate (needs entryDelaySec): at delayed-entry time, skip the copy if the
+                               // price ran more than this % ABOVE the detection snapshot (don't chase). Skips
+                               // are recorded as status='skipped' rows with the measured drift.
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
@@ -99,7 +110,27 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   // BuWG6b — most signals (189 RT, drop3 +149, 53% WR).
   { id: 'copy-buwg6b-follow',  tpPct: null, slPct: 40, exitFollow: true,  maxHoldSec: 21600,
     walletAllowlist: ['BuWG6b9AeK1KuyG88Y7FsdLagCJtNcNwxmbQTDqPeNFr'] },
+  // ── F: measured-lag twins of the three robust variants (followsell / tp100-sl30 /
+  //    consensus2). The flat-% cons twins above ASSUME 5% entry drift; these WAIT
+  //    entryDelaySec after detection and re-fetch the real pool price, so drift is
+  //    measured per-trade. Detection ~1.1s post-fill + 5s wait ≈ 6s real copy latency
+  //    (middle of the observed 5-7s). followSellDelaySec applies the same wait to
+  //    follow_sell exits only; TP/SL exits are bot-triggered and stay undelayed.
+  //    Keep the -cons twins running as controls: lag-twin vs cons-twin deltas tell us
+  //    whether the 5%/2% guess was close.
+  { id: 'copy-tp100-sl30-lag',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryDelaySec: 5 },
+  { id: 'copy-followsell-lag',  tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryDelaySec: 5, followSellDelaySec: 5 },
+  { id: 'copy-consensus2-lag',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5 },
+  // ── G: drift-skip — same measured-lag twins, but skip the copy when the price has
+  //    already run >X% above the detection snapshot during the wait (don't chase the
+  //    pump we just watched happen). Skips are recorded, so the skip rate is visible.
+  { id: 'copy-tp100-sl30-lag-drift10', tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryDelaySec: 5, maxEntryDriftPct: 10 },
+  { id: 'copy-followsell-lag-drift10', tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryDelaySec: 5, followSellDelaySec: 5, maxEntryDriftPct: 10 },
+  { id: 'copy-consensus2-lag-drift5',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5 },
+  { id: 'copy-consensus2-lag-drift10', tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 10 },
 ];
+
+function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
 
 const STRAT_BY_ID = new Map(COPY_STRATEGIES.map((s) => [s.id, s]));
 
@@ -161,6 +192,13 @@ export class CopyTrader {
   private positions = new Map<number, OpenPos>();
   private poolCache = new Map<string, PoolVaults | null>();
   private leadRank = new Map<string, number>();
+  // Delayed entries in flight, keyed `${strategyId}:${mint}` — blocks duplicate
+  // opens while the entryDelaySec wait runs. In-memory only: a restart drops
+  // pending entries (acceptable; the window is ~5s).
+  private pendingEntries = new Set<string>();
+  // Last lead-sell detection per mint, so a delayed entry that lands AFTER the
+  // lead already sold knows it bought into the dump and exits honestly.
+  private lastLeadSellMs = new Map<string, number>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private polling = false;
@@ -239,10 +277,13 @@ export class CopyTrader {
     const leadRank = this.leadRank.get(leadWallet) ?? Infinity;
     let consensusRecent: number | null = null; // computed lazily, once per call
     const nowSec = Math.floor(Date.now() / 1000);
+    const detectMs = Date.now();
 
     for (const s of COPY_STRATEGIES) {
+      const pendingKey = `${s.id}:${mint}`;
       const open = [...this.positions.values()].filter((p) => p.strategyId === s.id);
       if (open.some((p) => p.mint === mint)) continue;       // one position per (strategy, mint)
+      if (this.pendingEntries.has(pendingKey)) continue;     // delayed entry already in flight
       if (open.length >= MAX_CONCURRENT_PER_STRATEGY) continue;
       // conviction gates
       if (s.walletAllowlist && !s.walletAllowlist.includes(leadWallet)) continue;
@@ -250,6 +291,15 @@ export class CopyTrader {
       if (s.minConsensusRecent != null) {
         if (consensusRecent == null) consensusRecent = this.countRecentSmartBuyers(mint);
         if (consensusRecent < s.minConsensusRecent) continue;
+      }
+
+      // Measured-lag entry — wait, re-fetch the real price, enter at that.
+      if (s.entryDelaySec) {
+        this.pendingEntries.add(pendingKey);
+        this.openDelayed(s, mint, pv, leadWallet, leadTier, detectionLagSec, price.priceSol, detectMs)
+          .catch((err) => logger.warn('delayed entry error %s %s: %s', s.id, mint.slice(0, 6), err instanceof Error ? err.message : String(err)))
+          .finally(() => this.pendingEntries.delete(pendingKey));
+        continue;
       }
 
       // Penalized entry — models a realistic confirmation lag (fill higher than the
@@ -261,6 +311,7 @@ export class CopyTrader {
         strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
         leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: COPY_SIZE_SOL,
         tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
+        detectPrice: price.priceSol, entryDelaySec: null, entryDriftPct: null,
       });
       if (id == null) continue;
       this.positions.set(id, {
@@ -272,18 +323,116 @@ export class CopyTrader {
     }
   }
 
-  /** A followed wallet sold `mint` — close every follow-exit position in it. */
+  /** Measured-lag entry: wait entryDelaySec after detection, re-fetch the pool price,
+   *  apply the drift gate, and enter at the delayed (real) price. The drift between
+   *  the detection snapshot and the delayed fill is stored per-trade. */
+  private async openDelayed(
+    s: CopyStrategy, mint: string, pv: PoolVaults, leadWallet: string, leadTier: string,
+    detectionLagSec: number | null, detectPrice: number, detectMs: number,
+  ): Promise<void> {
+    await sleep((s.entryDelaySec ?? 0) * 1000);
+    if (this.stopped) return;
+    const conn = this.getConnection();
+    if (!conn) return;
+    if (!(await globalRpcLimiter.throttleOrDrop(20))) return;
+    const price = await fetchVaultPrice(conn, pv.baseVault, pv.quoteVault);
+    if (!price || price.priceSol <= 0) return;
+    const driftPct = +((price.priceSol / detectPrice - 1) * 100).toFixed(3);
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    // Drift gate — the price already ran past what we'd chase. Record the skip.
+    if (s.maxEntryDriftPct != null && driftPct > s.maxEntryDriftPct) {
+      this.insertSkip({
+        strategyId: s.id, mint, pool: pv.pool, leadWallet, leadTier, entryTs: nowSec,
+        observedPrice: price.priceSol, detectPrice, entryDelaySec: s.entryDelaySec ?? 0,
+        entryDriftPct: driftPct, detectionLagSec,
+      });
+      logger.info('Copy drift-skip %s %s drift=%s%% (gate %s%%)', s.id, mint.slice(0, 6), driftPct, s.maxEntryDriftPct);
+      return;
+    }
+
+    // Re-check capacity/dedupe — the roster may have changed during the wait.
+    const open = [...this.positions.values()].filter((p) => p.strategyId === s.id);
+    if (open.some((p) => p.mint === mint) || open.length >= MAX_CONCURRENT_PER_STRATEGY) return;
+
+    const entryP = price.priceSol;
+    const tpPrice = s.tpPct != null ? entryP * (1 + s.tpPct / 100) : null;
+    const slPrice = s.slPct != null ? entryP * (1 - s.slPct / 100) : null;
+    const id = this.insertOpen({
+      strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
+      leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: COPY_SIZE_SOL,
+      tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
+      detectPrice, entryDelaySec: s.entryDelaySec ?? 0, entryDriftPct: driftPct,
+    });
+    if (id == null) return;
+    const pos: OpenPos = {
+      id, strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
+      entryPrice: entryP, sizeSol: COPY_SIZE_SOL, tpPrice, baseSlPrice: slPrice,
+      exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, entryTs: nowSec,
+      highPrice: entryP, scaledOut: false, realizedPartial: 0,
+    };
+    this.positions.set(id, pos);
+
+    // Lead sold while our buy was in flight — a real copy bot would have bought
+    // into the dump and then chased the exit. Model exactly that: follow-sell out
+    // after the same exit delay instead of pretending the entry never happened.
+    const soldAtMs = this.lastLeadSellMs.get(mint);
+    if (s.exitFollow && soldAtMs != null && soldAtMs >= detectMs) {
+      this.scheduleFollowSellClose([pos], s.followSellDelaySec ?? 0);
+    }
+  }
+
+  /** A followed wallet sold `mint` — close every follow-exit position in it.
+   *  Strategies with followSellDelaySec close at the price re-fetched AFTER the
+   *  delay (our sell tx lands seconds behind theirs); the rest close at the
+   *  detection-time price as before. */
   async onLeadSell(mint: string): Promise<void> {
     if (!this.enabled || this.stopped) return;
+    this.lastLeadSellMs.set(mint, Date.now());
+    if (this.lastLeadSellMs.size > 2000) {
+      const cutoff = Date.now() - 3600_000;
+      for (const [m, ts] of this.lastLeadSellMs) if (ts < cutoff) this.lastLeadSellMs.delete(m);
+    }
     const toClose = [...this.positions.values()].filter((p) => p.mint === mint && p.exitFollow);
     if (toClose.length === 0) return;
+    const immediate = toClose.filter((p) => !STRAT_BY_ID.get(p.strategyId)?.followSellDelaySec);
+    const delayed = toClose.filter((p) => STRAT_BY_ID.get(p.strategyId)?.followSellDelaySec);
+    if (delayed.length > 0) {
+      // group by delay so one re-fetch serves every position with the same lag
+      const byDelay = new Map<number, OpenPos[]>();
+      for (const p of delayed) {
+        const d = STRAT_BY_ID.get(p.strategyId)!.followSellDelaySec!;
+        if (!byDelay.has(d)) byDelay.set(d, []);
+        byDelay.get(d)!.push(p);
+      }
+      for (const [d, ps] of byDelay) this.scheduleFollowSellClose(ps, d);
+    }
+    if (immediate.length === 0) return;
     const conn = this.getConnection();
     let exitPrice: number | null = null;
     if (conn && (await globalRpcLimiter.throttleOrDrop(20))) {
-      const price = await fetchVaultPrice(conn, toClose[0].baseVault, toClose[0].quoteVault);
+      const price = await fetchVaultPrice(conn, immediate[0].baseVault, immediate[0].quoteVault);
       exitPrice = price?.priceSol ?? null;
     }
-    for (const p of toClose) this.closePosition(p, 'follow_sell', exitPrice ?? p.entryPrice);
+    for (const p of immediate) this.closePosition(p, 'follow_sell', exitPrice ?? p.entryPrice);
+  }
+
+  /** Close positions as follow_sell after `delaySec`, at the price observed THEN.
+   *  Positions already closed by TP/SL/timeout during the wait are left alone. */
+  private scheduleFollowSellClose(positions: OpenPos[], delaySec: number): void {
+    (async () => {
+      if (delaySec > 0) await sleep(delaySec * 1000);
+      if (this.stopped) return;
+      const alive = positions.filter((p) => this.positions.has(p.id));
+      if (alive.length === 0) return;
+      const conn = this.getConnection();
+      let exitPrice: number | null = null;
+      if (conn && (await globalRpcLimiter.throttleOrDrop(20))) {
+        const price = await fetchVaultPrice(conn, alive[0].baseVault, alive[0].quoteVault);
+        exitPrice = price?.priceSol ?? null;
+      }
+      for (const p of alive) this.closePosition(p, 'follow_sell', exitPrice ?? p.entryPrice);
+    })().catch((err) => logger.warn('delayed follow-sell error: %s', err instanceof Error ? err.message : String(err)));
   }
 
   private countRecentSmartBuyers(mint: string): number {
@@ -427,23 +576,55 @@ export class CopyTrader {
     leadWallet: string; leadTier: string; entryTs: number; entryPrice: number; sizeSol: number;
     tpPrice: number | null; slPrice: number | null; exitFollow: boolean; maxHoldSec: number | null;
     detectionLagSec: number | null;
+    detectPrice: number | null; entryDelaySec: number | null; entryDriftPct: number | null;
   }): number | null {
     const res = this.db.prepare(`
       INSERT OR IGNORE INTO copy_trades
         (strategy_id, mint, pool_address, base_vault, quote_vault, lead_wallet, lead_tier,
          entry_ts, entry_price_sol, size_sol, tp_price_sol, sl_price_sol, exit_follow,
-         max_hold_sec, detection_lag_sec, high_price_sol, scaled_out, realized_partial_sol, status)
+         max_hold_sec, detection_lag_sec, high_price_sol, scaled_out, realized_partial_sol, status,
+         detect_price_sol, entry_delay_sec, entry_drift_pct)
       VALUES
         (@strategy_id, @mint, @pool, @base_vault, @quote_vault, @lead_wallet, @lead_tier,
          @entry_ts, @entry_price, @size, @tp, @sl, @exit_follow,
-         @max_hold, @lag, @entry_price, 0, 0, 'open')
+         @max_hold, @lag, @entry_price, 0, 0, 'open',
+         @detect_price, @entry_delay, @entry_drift)
     `).run({
       strategy_id: d.strategyId, mint: d.mint, pool: d.pool, base_vault: d.baseVault, quote_vault: d.quoteVault,
       lead_wallet: d.leadWallet, lead_tier: d.leadTier, entry_ts: d.entryTs, entry_price: d.entryPrice,
       size: d.sizeSol, tp: d.tpPrice, sl: d.slPrice, exit_follow: d.exitFollow ? 1 : 0,
       max_hold: d.maxHoldSec, lag: d.detectionLagSec,
+      detect_price: d.detectPrice, entry_delay: d.entryDelaySec, entry_drift: d.entryDriftPct,
     });
     return res.changes > 0 ? (res.lastInsertRowid as number) : null;
+  }
+
+  /** Record a drift-gate rejection as a status='skipped' row — excluded from all
+   *  P&L (open/closed filters), but the skip rate + drift distribution stay visible. */
+  private insertSkip(d: {
+    strategyId: string; mint: string; pool: string; leadWallet: string; leadTier: string;
+    entryTs: number; observedPrice: number; detectPrice: number; entryDelaySec: number;
+    entryDriftPct: number; detectionLagSec: number | null;
+  }): void {
+    try {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO copy_trades
+          (strategy_id, mint, pool_address, lead_wallet, lead_tier, entry_ts, entry_price_sol,
+           size_sol, exit_follow, detection_lag_sec, status, exit_reason,
+           detect_price_sol, entry_delay_sec, entry_drift_pct)
+        VALUES
+          (@strategy_id, @mint, @pool, @lead_wallet, @lead_tier, @entry_ts, @observed_price,
+           0, 0, @lag, 'skipped', 'drift_skip',
+           @detect_price, @entry_delay, @entry_drift)
+      `).run({
+        strategy_id: d.strategyId, mint: d.mint, pool: d.pool, lead_wallet: d.leadWallet,
+        lead_tier: d.leadTier, entry_ts: d.entryTs, observed_price: d.observedPrice,
+        lag: d.detectionLagSec, detect_price: d.detectPrice, entry_delay: d.entryDelaySec,
+        entry_drift: d.entryDriftPct,
+      });
+    } catch (err) {
+      logger.warn('insertSkip db error: %s', err instanceof Error ? err.message : String(err));
+    }
   }
 }
 
@@ -483,12 +664,27 @@ function unrealizedNet(r: Record<string, unknown>, s: CopyStrategy | undefined):
 export function computeCopyTrades(db: Database.Database): unknown {
   let closed: Array<Record<string, unknown>> = [];
   let open: Array<Record<string, unknown>> = [];
+  let skipped: Array<Record<string, unknown>> = [];
   try {
     closed = db.prepare(`SELECT * FROM copy_trades WHERE status = 'closed'`).all() as Array<Record<string, unknown>>;
     open = db.prepare(`SELECT * FROM copy_trades WHERE status = 'open'`).all() as Array<Record<string, unknown>>;
+    skipped = db.prepare(`SELECT strategy_id, entry_drift_pct FROM copy_trades WHERE status = 'skipped'`).all() as Array<Record<string, unknown>>;
   } catch {
     return { generated_at: new Date().toISOString(), phase: 'phase2-shadow-copy', pending: true };
   }
+
+  // Measured entry drift (detection snapshot → delayed fill) for lag strategies:
+  // the empirical answer to "what does 5-7s of copy latency actually cost".
+  const driftStats = (rows: Array<Record<string, unknown>>) => {
+    const ds = rows.map((r) => r.entry_drift_pct as number).filter((v) => typeof v === 'number');
+    if (!ds.length) return null;
+    return {
+      n: ds.length,
+      avg_pct: +(ds.reduce((a, b) => a + b, 0) / ds.length).toFixed(2),
+      median_pct: +(median(ds) ?? 0).toFixed(2),
+      max_pct: +Math.max(...ds).toFixed(2),
+    };
+  };
 
   const utcDay = (ts: number): string => new Date(ts * 1000).toISOString().slice(0, 10);
 
@@ -584,20 +780,27 @@ export function computeCopyTrades(db: Database.Database): unknown {
   for (const s of COPY_STRATEGIES) {
     const rows = closed.filter((r) => r.strategy_id === s.id);
     const openForStrat = open.filter((r) => r.strategy_id === s.id);
+    const skipsForStrat = skipped.filter((r) => r.strategy_id === s.id);
     const closedSummary = summarize(rows);
     // keep the per-strategy day series bounded; the overall block keeps full history
     closedSummary.daily = closedSummary.daily.slice(-14);
     const openSummary = summarizeOpen(openForStrat);
+    const entered = [...rows, ...openForStrat];
     byStrategy[s.id] = {
       config: {
         tp_pct: s.tpPct, sl_pct: s.slPct, exit_follow: s.exitFollow, max_hold_sec: s.maxHoldSec,
         breakeven_at_pct: s.breakevenAtPct ?? null, ratchet: s.ratchet ?? null,
         scale_out: s.scaleOut ?? null, min_lead_rank: s.minLeadRank ?? null, min_consensus: s.minConsensusRecent ?? null,
         entry_penalty_pct: s.entryPenaltyPct ?? null, exit_penalty_pct: s.exitPenaltyPct ?? null,
+        entry_delay_sec: s.entryDelaySec ?? null, follow_sell_delay_sec: s.followSellDelaySec ?? null,
+        max_entry_drift_pct: s.maxEntryDriftPct ?? null,
       },
       ...openSummary,
       total_incl_open_sol: +(closedSummary.total_net_sol + openSummary.open_unrealized_sol).toFixed(4),
       ...closedSummary,
+      drift_skips: skipsForStrat.length,
+      entry_drift: driftStats(entered),
+      skipped_drift: driftStats(skipsForStrat),
     };
   }
 
@@ -607,13 +810,15 @@ export function computeCopyTrades(db: Database.Database): unknown {
   return {
     generated_at: new Date().toISOString(),
     phase: 'phase2-shadow-copy',
-    note: 'SHADOW copy trades — no real funds. Entry at pool price ~1.1s after the lead wallet; net_sol after the SIM round-trip cost (scale-out partials folded in). Coverage limited to tokens in our graduations table. CAVEATS: strategies share entry signals — totals are not independent (see paired_vs_baseline); total_net_sol_exit_stress re-nets every closed remainder leg with the exit fill worsened by ' + EXIT_STRESS_PCT + '% (scale-out partials kept as recorded); open_unrealized_sol marks open positions to the last polled pool price (open_priced = how many have one); total_incl_open_sol = closed + unrealized.',
+    note: 'SHADOW copy trades — no real funds. Entry at pool price ~1.1s after the lead wallet; net_sol after the SIM round-trip cost (scale-out partials folded in). Coverage limited to tokens in our graduations table. CAVEATS: strategies share entry signals — totals are not independent (see paired_vs_baseline); total_net_sol_exit_stress re-nets every closed remainder leg with the exit fill worsened by ' + EXIT_STRESS_PCT + '% (scale-out partials kept as recorded); open_unrealized_sol marks open positions to the last polled pool price (open_priced = how many have one); total_incl_open_sol = closed + unrealized. MEASURED-LAG (-lag) variants wait entry_delay_sec after detection and enter at the re-fetched price (entry_drift = measured detection→fill drift); follow_sell exits on those variants are re-fetched after follow_sell_delay_sec; -drift variants skip entries whose measured drift exceeds max_entry_drift_pct (drift_skips + skipped_drift report the gate).',
     size_sol: COPY_SIZE_SOL,
     paired_baseline: PAIRED_BASELINE,
     overall: {
       ...overallOpen,
       total_incl_open_sol: +(overallClosed.total_net_sol + overallOpen.open_unrealized_sol).toFixed(4),
       ...overallClosed,
+      drift_skips: skipped.length,
+      entry_drift: driftStats([...closed, ...open]),
     },
     by_strategy: byStrategy,
     paired_vs_baseline: pairedVsBaseline,
