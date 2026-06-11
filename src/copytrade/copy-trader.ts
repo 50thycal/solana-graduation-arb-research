@@ -66,58 +66,26 @@ export interface CopyStrategy {
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
-  // ── original 5 ──
+  // ── KEEP: the three robust variants (positive net + the only ones whose edge
+  //    survives drop_top3 / exit-stress) plus the paired baseline they're compared to.
   { id: 'copy-followsell',        tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null },
-  { id: 'copy-tp50-sl20',         tpPct: 50,   slPct: 20,   exitFollow: false, maxHoldSec: null },
-  { id: 'copy-tp100-sl30',        tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null },
-  { id: 'copy-tp200-sl40',        tpPct: 200,  slPct: 40,   exitFollow: false, maxHoldSec: null },
-  { id: 'copy-tp100-sl50-follow', tpPct: 100,  slPct: 50,   exitFollow: true,  maxHoldSec: null },
-  // ── E: conservative-lag shadows of the two promotable copy recs (drop3>0 at n>100).
-  //    5% entry penalty models filling higher than the optimistic ~1.1s snapshot once a
-  //    real copy tx confirms — the honest test of whether the edge survives realistic lag.
-  //    2% exit penalty models the sell landing after the trigger (worse fill both ways).
+  { id: 'copy-tp100-sl30',        tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null }, // PAIRED_BASELINE — keep
+  { id: 'copy-conviction-consensus2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, minConsensusRecent: 2 },
+  // ── CONTROLS: assumed flat-% cons twins. Kept ONLY so the measured-lag twins below
+  //    have a baseline to validate the 5%/2% guess against. Retire once the lag twins
+  //    reach n and the comparison is settled.
   { id: 'copy-tp100-sl30-cons',   tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryPenaltyPct: 5, exitPenaltyPct: 2 },
   { id: 'copy-followsell-cons',   tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryPenaltyPct: 5, exitPenaltyPct: 2 },
-  // ── breakeven: once +10%, lock stop at entry+3% (covers our cost) ──
-  { id: 'copy-be10-plus3',        tpPct: 150,  slPct: 30,   exitFollow: false, maxHoldSec: null, breakevenAtPct: 10, breakevenBufferPct: 3 },
-  // ── tiered ratchet: raise the cutoff as it climbs, no fixed TP (let it run) ──
-  { id: 'copy-ratchet',           tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: null,
-    ratchet: [{ atPct: 10, stopPct: 3 }, { atPct: 30, stopPct: 15 }, { atPct: 60, stopPct: 35 }, { atPct: 100, stopPct: 70 }] },
-  // ── A: scale-out — sell half at +50%, runner rides with SL + follow ──
-  { id: 'copy-scaleout50',        tpPct: null, slPct: 30,   exitFollow: true,  maxHoldSec: null, scaleOut: { atPct: 50, fraction: 0.5 } },
-  // ── B: conviction filters — copy quality, not quantity ──
-  { id: 'copy-conviction-toplead',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, minLeadRank: 15 },
-  { id: 'copy-conviction-consensus2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, minConsensusRecent: 2 },
-  // ── C: hold-time sweep — SL only, time-boxed, no TP/follow ──
+  // ── WATCH: fat-tail hold variants — strongly positive net but negative drop_top3
+  //    (lottery-driven). Kept on watch, not promotable as-is.
   { id: 'copy-hold30m',           tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: 1800 },
   { id: 'copy-hold2h',            tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: 7200 },
-  { id: 'copy-hold6h',            tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: 21600 },
-  // ── D: copy-best-wallet — mirror only the 3 most outlier-robust smart wallets
-  //    (highest total_realized_sol_drop_top3, ≥40 round-trips for signal frequency).
-  //    GYAVBL is deliberately excluded — 90% of its profit is 3 lottery trades
-  //    (drop_top3 only +30, WR 20%). These hold to the wallets' own behavior
-  //    (median hold 2.6–3.4h), so long maxHoldSec + follow-sell / ratchet exits.
-  //    FORWARD-SHADOW ONLY — multi-hour holds aren't backtestable (paths stop at T+600).
-  // iGiyBN — most robust (drop3 +187, 159 RT, 100% WR): both exit styles.
-  { id: 'copy-igiybn-follow',  tpPct: null, slPct: 40, exitFollow: true,  maxHoldSec: 21600,
-    walletAllowlist: ['iGiyBNJ9eKcPfBLaoVCEMx3WCyrnUT1SfKZL2DYifcL'] },
-  { id: 'copy-igiybn-ratchet', tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 21600,
-    ratchet: [{ atPct: 30, stopPct: 10 }, { atPct: 100, stopPct: 60 }, { atPct: 300, stopPct: 200 }],
-    walletAllowlist: ['iGiyBNJ9eKcPfBLaoVCEMx3WCyrnUT1SfKZL2DYifcL'] },
-  // 2SNLnX — highest total (363 SOL, drop3 +171, 41% WR).
-  { id: 'copy-2snlnx-follow',  tpPct: null, slPct: 40, exitFollow: true,  maxHoldSec: 21600,
-    walletAllowlist: ['2SNLnXMjYSihEz3ujLaJzB92AzJTkfRih8RoWWoEQQAM'] },
-  // BuWG6b — most signals (189 RT, drop3 +149, 53% WR).
-  { id: 'copy-buwg6b-follow',  tpPct: null, slPct: 40, exitFollow: true,  maxHoldSec: 21600,
-    walletAllowlist: ['BuWG6b9AeK1KuyG88Y7FsdLagCJtNcNwxmbQTDqPeNFr'] },
   // ── F: measured-lag twins of the three robust variants (followsell / tp100-sl30 /
   //    consensus2). The flat-% cons twins above ASSUME 5% entry drift; these WAIT
   //    entryDelaySec after detection and re-fetch the real pool price, so drift is
   //    measured per-trade. Detection ~1.1s post-fill + 5s wait ≈ 6s real copy latency
   //    (middle of the observed 5-7s). followSellDelaySec applies the same wait to
   //    follow_sell exits only; TP/SL exits are bot-triggered and stay undelayed.
-  //    Keep the -cons twins running as controls: lag-twin vs cons-twin deltas tell us
-  //    whether the 5%/2% guess was close.
   { id: 'copy-tp100-sl30-lag',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryDelaySec: 5 },
   { id: 'copy-followsell-lag',  tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryDelaySec: 5, followSellDelaySec: 5 },
   { id: 'copy-consensus2-lag',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5 },
@@ -128,6 +96,16 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-followsell-lag-drift10', tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryDelaySec: 5, followSellDelaySec: 5, maxEntryDriftPct: 10 },
   { id: 'copy-consensus2-lag-drift5',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5 },
   { id: 'copy-consensus2-lag-drift10', tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 10 },
+  // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
+  //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
+  //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
+  // ── KILLED 2026-06-11 (no signal): the copy-best-wallet group (copy-igiybn-follow,
+  //    copy-igiybn-ratchet, copy-2snlnx-follow, copy-buwg6b-follow). These mirror a
+  //    single allowlisted wallet each; all three wallets went dormant (~4d since last
+  //    active per wallet-leaderboard), so igiybn produced ZERO copyable buys and the
+  //    other two only 17-18 (both slightly negative). Single-wallet mirroring can't
+  //    generate evaluable signal frequency — not a config-strictness issue (igiybn-follow
+  //    AND igiybn-ratchet were both 0, so the ratchet exit was never the bottleneck).
 ];
 
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
@@ -465,7 +443,9 @@ export class CopyTrader {
         }
         for (const p of ps) {
           const s = STRAT_BY_ID.get(p.strategyId);
-          if (!s) continue;
+          // Strategy removed from the roster (killed) — wind the open bag down at the
+          // current price instead of stranding it 'open' forever. One-time cleanup.
+          if (!s) { this.closePosition(p, 'strategy_removed', price ?? p.lastWrittenPrice ?? p.highPrice ?? p.entryPrice); continue; }
           // max-hold doesn't need a price
           if (p.maxHoldSec != null && now - p.entryTs >= p.maxHoldSec) {
             this.closePosition(p, 'timeout', price ?? p.highPrice ?? p.entryPrice);
