@@ -1098,6 +1098,14 @@ function runMigrations(db: Database.Database): void {
     // survivorship: indefinite-hold strategies park losers as open bags).
     if (!have.has('last_price_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN last_price_sol REAL`);
     if (!have.has('last_price_ts')) db.exec(`ALTER TABLE copy_trades ADD COLUMN last_price_ts INTEGER`);
+    // Measured-lag copy entries: the pool price at lead-buy detection (~1.1s after
+    // their fill), the configured execution delay, and the drift actually measured
+    // between detection and the delayed fill. Rows with status='skipped' record
+    // entries the drift gate rejected (exit_reason='drift_skip') — no P&L impact,
+    // but the skip rate + drift distribution stay analyzable.
+    if (!have.has('detect_price_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN detect_price_sol REAL`);
+    if (!have.has('entry_delay_sec')) db.exec(`ALTER TABLE copy_trades ADD COLUMN entry_delay_sec REAL`);
+    if (!have.has('entry_drift_pct')) db.exec(`ALTER TABLE copy_trades ADD COLUMN entry_drift_pct REAL`);
   }
   // Additive: tier column (promotable vs smart-only) for DBs created before it.
   {
