@@ -169,7 +169,7 @@ export class PositionManager extends EventEmitter {
       prevInterval !== params.pollIntervalSec
     ) {
       clearInterval(this.pollTimer);
-      const intervalSec = Math.max(1, Math.min(5, params.pollIntervalSec || 5));
+      const intervalSec = Math.max(1, Math.min(30, params.pollIntervalSec || 10));
       this.pollTimer = setInterval(() => {
         this.poll().catch(err => {
           logger.error('Position poll error: %s', err instanceof Error ? err.message : String(err));
@@ -248,7 +248,7 @@ export class PositionManager extends EventEmitter {
       // default (matches the price collector's snapshot grid). 1s opt-in via
       // strategy param is the v28 cohort's tight-SL/trailing-TP experiment —
       // reduces fill-vs-trigger lag on fast moves at the cost of more RPC.
-      const intervalSec = Math.max(1, Math.min(5, this.dynamicParams.pollIntervalSec || 5));
+      const intervalSec = Math.max(1, Math.min(30, this.dynamicParams.pollIntervalSec || 10));
       this.pollTimer = setInterval(() => {
         this.poll().catch(err => {
           logger.error('Position poll error: %s', err instanceof Error ? err.message : String(err));
