@@ -95,12 +95,14 @@ export interface StrategyParams {
   positionMonitorMode: 'five_second' | 'match_collection';
 
   /** Position-poll cadence in seconds when positionMonitorMode='five_second'.
-   *  Default 5. Tighter polling (1s) catches fast SL/TP transitions sooner —
-   *  the typical use case is reducing the SL fill-vs-trigger gap on fast-rug
-   *  tokens. Capped at [1, 5]. Each strategy gets its own PositionManager so
-   *  the per-strategy poll interval is independent. RPC cost scales linearly
-   *  with 1/pollIntervalSec, so 1s polling adds ~5x RPC per concurrent
-   *  position vs 5s default. Added 2026-05-19 (v28 cohort). */
+   *  Default 10 (2026-06-11 RPC budget cut — the T+30 shadow book is research
+   *  only; copy-trade collection is the priority consumer. Coarser polling
+   *  worsens exit discretization vs the historical 5s default — note when
+   *  comparing pre/post-06-11 shadow stats. Restore via POLL_INTERVAL_SEC=5
+   *  once the Helius plan resets). Tighter polling (1s) catches fast SL/TP
+   *  transitions sooner. Capped at [1, 30]. Each strategy gets its own
+   *  PositionManager so the per-strategy poll interval is independent. RPC
+   *  cost scales linearly with 1/pollIntervalSec. Added 2026-05-19 (v28). */
   pollIntervalSec: number;
 
   // ── Dynamic position monitoring ──────────────────────────────────────
@@ -344,7 +346,7 @@ export function loadTradingConfig(): TradingConfig {
     slGapPenaltyPct: parseFloat(process.env.SL_GAP_PENALTY_PCT || '30'),
     tpGapPenaltyPct: parseFloat(process.env.TP_GAP_PENALTY_PCT || '10'),
     positionMonitorMode: (process.env.POSITION_MONITOR_MODE === 'match_collection' ? 'match_collection' : 'five_second'),
-    pollIntervalSec: Math.max(1, Math.min(5, parseInt(process.env.POLL_INTERVAL_SEC || '5', 10))),
+    pollIntervalSec: Math.max(1, Math.min(30, parseInt(process.env.POLL_INTERVAL_SEC || '10', 10))),
     trailingSlActivationPct: parseFloat(process.env.TRAILING_SL_ACTIVATION_PCT || '0'),
     trailingSlDistancePct: parseFloat(process.env.TRAILING_SL_DISTANCE_PCT || '5'),
     slActivationDelaySec: parseInt(process.env.SL_ACTIVATION_DELAY_SEC || '0', 10),
@@ -404,7 +406,7 @@ export function strategyParamsFromConfig(cfg: TradingConfig): StrategyParams {
     filters: cfg.filters,
     entryTimingSec: cfg.entryTimingSec ?? 30,
     positionMonitorMode: cfg.positionMonitorMode ?? 'five_second',
-    pollIntervalSec: Math.max(1, Math.min(5, cfg.pollIntervalSec ?? 5)),
+    pollIntervalSec: Math.max(1, Math.min(30, cfg.pollIntervalSec ?? 10)),
     trailingSlActivationPct: cfg.trailingSlActivationPct ?? 0,
     trailingSlDistancePct: cfg.trailingSlDistancePct ?? 5,
     slActivationDelaySec: cfg.slActivationDelaySec ?? 0,
@@ -453,7 +455,7 @@ export function mergeStrategyParams(globalCfg: TradingConfig, params: StrategyPa
     filters: params.filters,
     entryTimingSec: params.entryTimingSec ?? 30,
     positionMonitorMode: params.positionMonitorMode ?? 'five_second',
-    pollIntervalSec: Math.max(1, Math.min(5, params.pollIntervalSec ?? globalCfg.pollIntervalSec ?? 5)),
+    pollIntervalSec: Math.max(1, Math.min(30, params.pollIntervalSec ?? globalCfg.pollIntervalSec ?? 10)),
     trailingSlActivationPct: params.trailingSlActivationPct ?? 0,
     trailingSlDistancePct: params.trailingSlDistancePct ?? 5,
     slActivationDelaySec: params.slActivationDelaySec ?? 0,

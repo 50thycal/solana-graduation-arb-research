@@ -35,10 +35,14 @@ const logger = makeLogger('copytrade-worker');
  */
 
 const DEFAULTS = {
-  intervalMs: 3 * 60 * 60 * 1000, // 3h between scoring passes
+  // 2026-06-11 budget cuts (Helius plan ~90% consumed, 11d to reset): scoring
+  // was the biggest steady RPC burner (~30 wallets × up to 400 parsed txs every
+  // 3h ≈ 96k req/day). Halved cadence + batch + depth ≈ 14k/day. Discovery
+  // still ticks 4×/day; raise via COPYTRADE_* envs once the plan resets.
+  intervalMs: 6 * 60 * 60 * 1000, // 6h between scoring passes
   firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
-  scoreBatchLimit: 30,            // wallets scored per tick
-  maxSignaturesPerWallet: 400,    // history depth per wallet (caps RPC cost)
+  scoreBatchLimit: 15,            // wallets scored per tick
+  maxSignaturesPerWallet: 250,    // history depth per wallet (caps RPC cost)
   restaleSeconds: 24 * 3600,      // re-score a wallet at most once / 24h
 };
 

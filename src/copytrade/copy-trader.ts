@@ -248,7 +248,7 @@ export class CopyTrader {
     if (!pv) return; // not a tracked-grad mint / pool unresolved
     const conn = this.getConnection();
     if (!conn) return;
-    if (!(await globalRpcLimiter.throttleOrDrop(20))) return;
+    if (!(await globalRpcLimiter.throttleOrDropPriority(20))) return;
     const price = await fetchVaultPrice(conn, pv.baseVault, pv.quoteVault);
     if (!price || price.priceSol <= 0) return;
 
@@ -312,7 +312,7 @@ export class CopyTrader {
     if (this.stopped) return;
     const conn = this.getConnection();
     if (!conn) return;
-    if (!(await globalRpcLimiter.throttleOrDrop(20))) return;
+    if (!(await globalRpcLimiter.throttleOrDropPriority(20))) return;
     const price = await fetchVaultPrice(conn, pv.baseVault, pv.quoteVault);
     if (!price || price.priceSol <= 0) return;
     const driftPct = +((price.priceSol / detectPrice - 1) * 100).toFixed(3);
@@ -388,7 +388,7 @@ export class CopyTrader {
     if (immediate.length === 0) return;
     const conn = this.getConnection();
     let exitPrice: number | null = null;
-    if (conn && (await globalRpcLimiter.throttleOrDrop(20))) {
+    if (conn && (await globalRpcLimiter.throttleOrDropPriority(20))) {
       const price = await fetchVaultPrice(conn, immediate[0].baseVault, immediate[0].quoteVault);
       exitPrice = price?.priceSol ?? null;
     }
@@ -405,7 +405,7 @@ export class CopyTrader {
       if (alive.length === 0) return;
       const conn = this.getConnection();
       let exitPrice: number | null = null;
-      if (conn && (await globalRpcLimiter.throttleOrDrop(20))) {
+      if (conn && (await globalRpcLimiter.throttleOrDropPriority(20))) {
         const price = await fetchVaultPrice(conn, alive[0].baseVault, alive[0].quoteVault);
         exitPrice = price?.priceSol ?? null;
       }
@@ -437,7 +437,7 @@ export class CopyTrader {
       for (const ps of byVault.values()) {
         const conn = this.getConnection();
         let price: number | null = null;
-        if (conn && (await globalRpcLimiter.throttleOrDrop(15))) {
+        if (conn && (await globalRpcLimiter.throttleOrDropPriority(15))) {
           const r = await fetchVaultPrice(conn, ps[0].baseVault, ps[0].quoteVault);
           price = r?.priceSol ?? null;
         }
@@ -540,7 +540,7 @@ export class CopyTrader {
     try { pk = new PublicKey(row.pool); } catch { this.poolCache.set(mint, null); return null; }
     const conn = this.getConnection();
     if (!conn) return null;
-    if (!(await globalRpcLimiter.throttleOrDrop(20))) return null;
+    if (!(await globalRpcLimiter.throttleOrDropPriority(20))) return null;
     let info;
     try { info = await conn.getAccountInfo(pk); } catch { return null; }
     if (!info || info.data.length < POOL_QUOTE_VAULT_OFFSET + 32) { this.poolCache.set(mint, null); return null; }

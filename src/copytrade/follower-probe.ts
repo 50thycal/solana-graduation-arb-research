@@ -207,11 +207,12 @@ export class CopyFollowerProbe {
 
     // The notification fires at 'processed'; getParsedTransaction('confirmed')
     // right then often returns null until the slot confirms. Retry a few times
-    // with backoff (each gated by the RPC limiter so we never starve grads).
+    // with backoff. Priority lane: this parse is THE copy-trade entry signal —
+    // under RPC contention it must win over research/enrichment callers.
     let tx = null as Awaited<ReturnType<typeof connection.getParsedTransaction>>;
     for (let attempt = 0; attempt < 4 && tx == null; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
-      if (!(await globalRpcLimiter.throttleOrDrop(20))) continue;
+      if (!(await globalRpcLimiter.throttleOrDropPriority(20))) continue;
       try {
         tx = await connection.getParsedTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
       } catch { /* retry */ }

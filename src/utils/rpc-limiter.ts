@@ -108,6 +108,34 @@ export class RpcLimiter {
     });
   }
 
+  /**
+   * Priority version of throttleOrDrop — jumps to the FRONT of the queue but
+   * still refuses to pile onto a saturated backlog. Copy-trade hot path
+   * (lead-buy/sell parsing, copy entries/exits, copy position polls): when the
+   * bucket is contended, copy-trade calls win and the research/enrichment
+   * callers using plain throttleOrDrop are the ones that drop.
+   */
+  async throttleOrDropPriority(maxQueue = 20): Promise<boolean> {
+    this.refill();
+    if (this.tokens >= 1) {
+      this.tokens--;
+      return true;
+    }
+
+    if (this.queue.length >= maxQueue) {
+      this.totalDropped++;
+      return false;
+    }
+
+    this.totalThrottled++;
+    return new Promise<boolean>((resolve) => {
+      this.queue.unshift(() => resolve(true));
+      if (!this.processingQueue) {
+        this.processQueue();
+      }
+    });
+  }
+
   private processQueue(): void {
     this.processingQueue = true;
     const check = () => {
@@ -138,7 +166,10 @@ export class RpcLimiter {
   }
 }
 
-// Singleton — shared across all components hitting the same Helius endpoint
+// Singleton — shared across all components hitting the same Helius endpoint.
+// Default 5 rps ≈ 432k req/day hard ceiling — sized to the remaining Helius
+// plan budget (2026-06-11: ~6M credits / 11 days ≈ 545k/day). Raise via
+// RPC_REQUESTS_PER_SECOND once the plan resets.
 export const globalRpcLimiter = new RpcLimiter(
-  parseInt(process.env.RPC_REQUESTS_PER_SECOND || '8', 10)
+  parseInt(process.env.RPC_REQUESTS_PER_SECOND || '5', 10)
 );
