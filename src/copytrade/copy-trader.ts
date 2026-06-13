@@ -81,11 +81,6 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-followsell',        tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null },
   { id: 'copy-tp100-sl30',        tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null }, // PAIRED_BASELINE — keep
   { id: 'copy-conviction-consensus2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, minConsensusRecent: 2 },
-  // ── CONTROLS: assumed flat-% cons twins. Kept ONLY so the measured-lag twins below
-  //    have a baseline to validate the 5%/2% guess against. Retire once the lag twins
-  //    reach n and the comparison is settled.
-  { id: 'copy-tp100-sl30-cons',   tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryPenaltyPct: 5, exitPenaltyPct: 2 },
-  { id: 'copy-followsell-cons',   tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryPenaltyPct: 5, exitPenaltyPct: 2 },
   // ── WATCH: fat-tail hold variants — strongly positive net but negative drop_top3
   //    (lottery-driven). Kept on watch, not promotable as-is.
   { id: 'copy-hold30m',           tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: 1800 },
@@ -133,6 +128,11 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    other two only 17-18 (both slightly negative). Single-wallet mirroring can't
   //    generate evaluable signal frequency — not a config-strictness issue (igiybn-follow
   //    AND igiybn-ratchet were both 0, so the ratchet exit was never the bottleneck).
+  // ── KILLED 2026-06-13 (purpose served): copy-tp100-sl30-cons, copy-followsell-cons.
+  //    The assumed flat-5%-entry/2%-exit penalty controls. The measured-lag twins
+  //    (entryDelaySec) showed real detection->fill drift is ~0% median (not +5%), so
+  //    the cons twins' deep losses (-15.5 / -15.4) were a wrong-assumption artifact.
+  //    The lag twins are the honest cost model now; the cons controls are redundant.
 ];
 
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
