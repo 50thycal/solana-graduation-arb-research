@@ -1,0 +1,601 @@
+{
+  "generated_at": "2026-06-13T17:01:45.301Z",
+  "uptime_sec": 15787,
+  "counts": {
+    "graduations": 14045,
+    "momentum_labeled": 11642,
+    "pump": 4296,
+    "dump": 5504,
+    "stable": 1842,
+    "unlabeled": 2403
+  },
+  "scorecard": {
+    "total_labeled": 11642,
+    "PUMP": 4296,
+    "DUMP": 5504,
+    "STABLE": 1842,
+    "unlabeled": 2403,
+    "raw_win_rate_pct": 36.9,
+    "vel_5_20_cohort": {
+      "n": 992,
+      "win_rate_pct": 54.9,
+      "avg_return_t30_to_t300_pct": -0.96,
+      "progress_to_200": "992/200"
+    },
+    "best_known_baseline": {
+      "filter": "holders >= 250 (backfill)",
+      "opt_sl_pct": 30,
+      "opt_tp_pct": 150,
+      "avg_return_pct": 24.25,
+      "n": 396,
+      "note": "Live leader from leaderboard (n≥100, beats entry-gated baseline). Per-combo optimal TP/SL from SIM_TP_GRID × SIM_SL_GRID — replaces retired fixed 10%SL/50%TP framework (2026-04-21)."
+    }
+  },
+  "data_quality": {
+    "price_source_pumpswap_all_last_10": true,
+    "null_fields_in_last_10": [
+      "#27045: pct_t300",
+      "#27044: pct_t300",
+      "#27043: pct_t300",
+      "#27040: pct_t300"
+    ],
+    "last_graduation_seconds_ago": 123,
+    "stalled": false,
+    "timestamp_drift_detected": false,
+    "full_5s_grid_count": 7294,
+    "complete_observations_count": 11830,
+    "full_5s_grid_pct": 61.7
+  },
+  "listener": {
+    "totalLogsReceived": 3281373,
+    "totalCandidatesDetected": 625,
+    "totalCandidatesFromPumpFun": 0,
+    "totalCandidatesFromPumpFunProcessed": 625,
+    "totalCandidatesFromPumpSwap": 0,
+    "totalCandidatesFromPoll": 0,
+    "channel_wins": {
+      "pump_fun_ws_confirmed": 0,
+      "pump_fun_ws_processed": 625,
+      "pumpswap_ws_confirmed": 0,
+      "rpc_poll": 0
+    },
+    "totalPollDupes": 45,
+    "totalPollSigsFound": 250,
+    "totalPollTicks": 1595,
+    "totalPollFailures": 0,
+    "pollConsecutiveFailures": 0,
+    "lastPollFailureSecondsAgo": null,
+    "totalCandidateSilenceReconnects": 0,
+    "totalDuplicateLogs": 45,
+    "totalVerifiedGraduations": 35,
+    "totalGraduationsRecorded": 35,
+    "totalFalsePositives": 590,
+    "totalBundlerFalsePositives": 590,
+    "totalMintExtractionFails": 0,
+    "totalStrategy3Extractions": 0,
+    "totalVaultExtractions": 35,
+    "totalVaultExtractionFails": 0,
+    "totalTxFetchFails": 0,
+    "totalTxFetchExceptions": 0,
+    "lastVaultFailReasons": [],
+    "lastMintFailReasons": [],
+    "lastEventSecondsAgo": 0,
+    "lastCandidateSecondsAgo": 46,
+    "wsConnected": true,
+    "reconnecting": false,
+    "totalReconnects": 0,
+    "deliveryLatencySec": {
+      "pumpFun": null,
+      "pumpFunProcessed": {
+        "n": 35,
+        "p50": 1.1,
+        "p95": 1.6,
+        "max": 1.6,
+        "mean": 1.1,
+        "pctOver25s": 0
+      },
+      "pumpSwap": null,
+      "rpcPoll": null
+    },
+    "rpcFetchMs": {
+      "n": 35,
+      "p50": 1334,
+      "p95": 1644,
+      "max": 2211,
+      "mean": 1327.6,
+      "pctOver25s": 100
+    },
+    "poolTracker": {
+      "pending": 0,
+      "speculative": 0,
+      "preFound": 0,
+      "totalPoolsFound": 0,
+      "totalExpired": 0,
+      "totalSkipped": 0,
+      "totalPumpSwapEvents": 0,
+      "totalPoolCreationEvents": 0,
+      "totalMigrationCandidatesFired": 0,
+      "totalMatched": 0,
+      "totalSpeculativeHits": 0,
+      "pumpSwapSubscribed": false,
+      "priceCollector": {
+        "activeObservations": 0,
+        "totalStarted": 0,
+        "totalCompleted": 0,
+        "totalSnapshots": 0,
+        "totalSnapshotFailures": 0,
+        "totalT30Timeouts": 0,
+        "t30AttemptsStarted": 0,
+        "t30CallbacksFired": 0,
+        "lastT30Timeouts": [],
+        "totalSlotsRejected": 0,
+        "totalStaleGraduations": 0,
+        "lastStaleGraduations": [],
+        "lastSnapshotFailures": []
+      }
+    },
+    "directPriceCollector": {
+      "activeObservations": 1,
+      "totalStarted": 35,
+      "totalCompleted": 25,
+      "totalSnapshots": 1575,
+      "totalSnapshotFailures": 99,
+      "totalT30Timeouts": 0,
+      "t30AttemptsStarted": 26,
+      "t30CallbacksFired": 26,
+      "lastT30Timeouts": [],
+      "totalSlotsRejected": 0,
+      "totalStaleGraduations": 0,
+      "lastStaleGraduations": [],
+      "lastSnapshotFailures": [
+        {
+          "graduationId": 27043,
+          "targetSec": 15,
+          "reason": "pool_fetch_null pool=85cdqC5q",
+          "time": "2026-06-13T16:32:43.541Z"
+        },
+        {
+          "graduationId": 27043,
+          "targetSec": -1,
+          "reason": "vault_amounts_bad base=null quote=136260296329",
+          "time": "2026-06-13T16:32:48.544Z"
+        },
+        {
+          "graduationId": 27043,
+          "targetSec": 20,
+          "reason": "pool_fetch_null pool=85cdqC5q",
+          "time": "2026-06-13T16:32:48.544Z"
+        },
+        {
+          "graduationId": 27043,
+          "targetSec": 20,
+          "reason": "pool_dead consecutive=5 pool=85cdqC5q",
+          "time": "2026-06-13T16:32:48.544Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": -1,
+          "reason": "vault_amounts_bad base=null quote=140668656869",
+          "time": "2026-06-13T16:52:13.251Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": 2.199,
+          "reason": "pool_fetch_null pool=31KRi7m7",
+          "time": "2026-06-13T16:52:13.251Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": -1,
+          "reason": "vault_amounts_bad base=null quote=140678325732",
+          "time": "2026-06-13T16:52:16.026Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": 5,
+          "reason": "pool_fetch_null pool=31KRi7m7",
+          "time": "2026-06-13T16:52:16.026Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": -1,
+          "reason": "vault_amounts_bad base=null quote=140699151982",
+          "time": "2026-06-13T16:52:21.454Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": 10,
+          "reason": "pool_fetch_null pool=31KRi7m7",
+          "time": "2026-06-13T16:52:21.454Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": -1,
+          "reason": "vault_amounts_bad base=null quote=140714370986",
+          "time": "2026-06-13T16:52:28.380Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": 15,
+          "reason": "pool_fetch_null pool=31KRi7m7",
+          "time": "2026-06-13T16:52:28.381Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": -1,
+          "reason": "vault_amounts_bad base=null quote=140715284592",
+          "time": "2026-06-13T16:52:31.392Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": 20,
+          "reason": "pool_fetch_null pool=31KRi7m7",
+          "time": "2026-06-13T16:52:31.392Z"
+        },
+        {
+          "graduationId": 27044,
+          "targetSec": 20,
+          "reason": "pool_dead consecutive=5 pool=31KRi7m7",
+          "time": "2026-06-13T16:52:31.392Z"
+        }
+      ]
+    },
+    "launch_debug": {
+      "uptimeSec": 16067,
+      "firehoseEventsTotal": 3281373,
+      "createMatches": 5017,
+      "initMintTxCount": 5079,
+      "counter": {
+        "totalRecorded": 5016,
+        "seenSize": 211,
+        "bufferedBuckets": 1,
+        "bufferedCount": 7
+      },
+      "topInstructions": [
+        {
+          "name": "GetFees",
+          "count": 477637
+        },
+        {
+          "name": "TransferChecked",
+          "count": 476121
+        },
+        {
+          "name": "Sell",
+          "count": 219896
+        },
+        {
+          "name": "Buy",
+          "count": 201322
+        },
+        {
+          "name": "InitializeAccount3",
+          "count": 146944
+        },
+        {
+          "name": "GetAccountDataSize",
+          "count": 137194
+        },
+        {
+          "name": "InitializeImmutableOwner",
+          "count": 137149
+        },
+        {
+          "name": "CloseAccount",
+          "count": 47810
+        },
+        {
+          "name": "CloseUserVolumeAccumulator",
+          "count": 42659
+        },
+        {
+          "name": "SellV2",
+          "count": 42467
+        },
+        {
+          "name": "BuyExactQuoteInV2",
+          "count": 42093
+        },
+        {
+          "name": "BuyExactSolIn",
+          "count": 30017
+        },
+        {
+          "name": "BuyProfile",
+          "count": 21061
+        },
+        {
+          "name": "ValidateNonce",
+          "count": 18208
+        },
+        {
+          "name": "BuyV2",
+          "count": 14036
+        },
+        {
+          "name": "ClaimCashbackV2",
+          "count": 10331
+        },
+        {
+          "name": "V2BuyExactInPumpFun",
+          "count": 10171
+        },
+        {
+          "name": "Swap",
+          "count": 10020
+        },
+        {
+          "name": "ClaimCashback",
+          "count": 9690
+        },
+        {
+          "name": "RouteV2",
+          "count": 9509
+        },
+        {
+          "name": "V2SellExactInPumpFun",
+          "count": 7588
+        },
+        {
+          "name": "FeeTransferWithTip",
+          "count": 7424
+        },
+        {
+          "name": "MintTo",
+          "count": 6317
+        },
+        {
+          "name": "InitializeMint2",
+          "count": 5079
+        },
+        {
+          "name": "Initialize",
+          "count": 5057
+        }
+      ]
+    }
+  },
+  "listener_dedupe": {
+    "verified": 35,
+    "recorded": 35,
+    "dupe_pct": 0
+  },
+  "rpc_limiter": {
+    "tokensAvailable": 0,
+    "queued": 1,
+    "totalThrottled": 63857,
+    "totalDropped": 23
+  },
+  "pipeline_health": {
+    "ws_connected": true,
+    "last_graduation_sec_ago": 574,
+    "last_t30_callback_sec_ago": 2004,
+    "last_paper_trade_sec_ago": 320501,
+    "last_shadow_trade_sec_ago": 1974,
+    "last_candidate_sec_ago": 12,
+    "enabled_strategies": 74,
+    "channel_win_distribution": {
+      "pump_fun_ws_confirmed_pct": 0,
+      "pump_fun_ws_processed_pct": 100,
+      "pumpswap_ws_confirmed_pct": 0,
+      "rpc_poll_pct": 0,
+      "total_wins": 611
+    },
+    "verdict": "T30_STALLED",
+    "notes": "Last T+30 callback was 2004s ago. Graduations arriving but PriceCollector → StrategyManager wiring is silent."
+  },
+  "event_loop_lag": {
+    "n_samples": 600,
+    "window_minutes": 10,
+    "p50_ms": 0,
+    "p95_ms": 1,
+    "p99_ms": 477,
+    "max_ms_in_window": 699,
+    "mean_ms": 13,
+    "pct_over_100ms": 4.2,
+    "pct_over_1000ms": 0,
+    "all_time_max_lag_ms": 84332
+  },
+  "gist_sync_compute_ms": {
+    "total_main_thread_block_ms": 4224,
+    "per_step": {
+      "computeBestCombos": 260961,
+      "counterfactual": 24304,
+      "sniperPanel": 757,
+      "slPrecursor": 732,
+      "dailyReport": 612,
+      "exitSim": 463,
+      "panel11": 287,
+      "panel3": 247,
+      "trendsTime": 236,
+      "trendsMarket": 225,
+      "leaveOneOutPnl": 150,
+      "peakAnalysis": 118,
+      "lossPostmortem": 104,
+      "journal": 95,
+      "regimeAnalysis": 72,
+      "edgeDecay": 45,
+      "pricePathStats": 26,
+      "strategyPercentiles": 24,
+      "portfolioCorr": 20,
+      "walletLeaderboard": 11
+    }
+  },
+  "gist_sync_worker_ms": {
+    "mode": "worker",
+    "wall_clock_ms": 285309
+  },
+  "recent_graduations": [
+    {
+      "id": 27045,
+      "mint": "BhmYdDBhA32bT6tT6kFKHrPwkA5LVMPGgia6eHEdpump",
+      "open_price": 2.3625155439390533e-7,
+      "pct_t30": -22.41765275293708,
+      "pct_t60": -33.77644001320413,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 272,
+      "top5_wallet_pct": 11.0751532522191,
+      "dev_wallet_pct": 2.2734537143892,
+      "token_age_minutes": 4.1,
+      "bc_velocity_sol_per_min": 20.57,
+      "total_sol_raised": 85.007301803,
+      "has_pool": true,
+      "created_at": 1781370269
+    },
+    {
+      "id": 27044,
+      "mint": "8HQcs5CaFQnHuh2ykACkm9YCYQRnmKGvtNargx2xpump",
+      "open_price": 2.362515530360587e-7,
+      "pct_t30": null,
+      "pct_t60": null,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 158,
+      "top5_wallet_pct": 13.8612673660244,
+      "dev_wallet_pct": 3.2112367158755997,
+      "token_age_minutes": 4,
+      "bc_velocity_sol_per_min": null,
+      "total_sol_raised": 85.007301142,
+      "has_pool": true,
+      "created_at": 1781369533
+    },
+    {
+      "id": 27043,
+      "mint": "ECDRhgb35yvsm5wBRmg1w1vtxjjEb2Vi9gaWyNnZpump",
+      "open_price": 2.3625155591814466e-7,
+      "pct_t30": null,
+      "pct_t60": null,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 267,
+      "top5_wallet_pct": 16.2069335298512,
+      "dev_wallet_pct": 3.7237024753275,
+      "token_age_minutes": 62.4,
+      "bc_velocity_sol_per_min": null,
+      "total_sol_raised": 85.007302545,
+      "has_pool": true,
+      "created_at": 1781368349
+    },
+    {
+      "id": 27042,
+      "mint": "6tf2X4GbYdM59hAMNa5kgyja2C9CjwUVqr9YLvJ1pump",
+      "open_price": 2.3625156056070652e-7,
+      "pct_t30": -4.410658767229323,
+      "pct_t60": 5.985857836440058,
+      "pct_t300": 6.218836362372187,
+      "label": "STABLE",
+      "holder_count": 159,
+      "top5_wallet_pct": 14.778574168713602,
+      "dev_wallet_pct": 3.0832046398527,
+      "token_age_minutes": 23242.1,
+      "bc_velocity_sol_per_min": 0,
+      "total_sol_raised": 85.007304805,
+      "has_pool": true,
+      "created_at": 1781368073
+    },
+    {
+      "id": 27041,
+      "mint": "FEj4nyCN7YnD5G1CKSnEWkB5LTHcca7ZLZfKUmsZpump",
+      "open_price": 1.923182694456964e-7,
+      "pct_t30": 13.544852812307322,
+      "pct_t60": 2.3920359914985667,
+      "pct_t300": 55.34385451118434,
+      "label": "PUMP",
+      "holder_count": 18,
+      "top5_wallet_pct": 0,
+      "dev_wallet_pct": 0,
+      "token_age_minutes": 0,
+      "bc_velocity_sol_per_min": 500,
+      "total_sol_raised": 71.053543128,
+      "has_pool": true,
+      "created_at": 1781367945
+    },
+    {
+      "id": 27040,
+      "mint": "Hg4dcXKB48ZQBU4yyUbJWhmCLWNkarQ6RS31SMoywQva",
+      "open_price": 2.3625155656933586e-7,
+      "pct_t30": null,
+      "pct_t60": null,
+      "pct_t300": null,
+      "label": null,
+      "holder_count": 106,
+      "top5_wallet_pct": 17.840433989582998,
+      "dev_wallet_pct": 3.7879900739687997,
+      "token_age_minutes": 394593.8,
+      "bc_velocity_sol_per_min": null,
+      "total_sol_raised": 85.007302862,
+      "has_pool": true,
+      "created_at": 1781367478
+    },
+    {
+      "id": 27039,
+      "mint": "3bDPRdwiQZKbXBi9wuruMFY4qTBbUGKWrYajMgKspump",
+      "open_price": 2.3625155306687215e-7,
+      "pct_t30": 62.01624119250947,
+      "pct_t60": 88.57285508988252,
+      "pct_t300": 168.1415943167893,
+      "label": "PUMP",
+      "holder_count": 205,
+      "top5_wallet_pct": 8.3398995629782,
+      "dev_wallet_pct": 1.9872301478677,
+      "token_age_minutes": 2.4,
+      "bc_velocity_sol_per_min": 36.17,
+      "total_sol_raised": 85.007301157,
+      "has_pool": true,
+      "created_at": 1781367130
+    },
+    {
+      "id": 27038,
+      "mint": "F8Qoq2SZ455PbzHYBAenumJbg4x5dSSkdoU9tXTJpump",
+      "open_price": 2.3625155844690292e-7,
+      "pct_t30": 0.3606823682226564,
+      "pct_t60": 3.097030340492899,
+      "pct_t300": 5.617315734573043,
+      "label": "STABLE",
+      "holder_count": 146,
+      "top5_wallet_pct": 15.660374761705901,
+      "dev_wallet_pct": 3.806883843804,
+      "token_age_minutes": 16439.5,
+      "bc_velocity_sol_per_min": 0.01,
+      "total_sol_raised": 85.007303776,
+      "has_pool": true,
+      "created_at": 1781366378
+    },
+    {
+      "id": 27037,
+      "mint": "2dJniDEAGCG7zWKseCkyrML3W23WLjDf1CGxpNv3pump",
+      "open_price": 2.362515541083672e-7,
+      "pct_t30": 34.612179781211985,
+      "pct_t60": 48.710288691702715,
+      "pct_t300": 130.6923467277938,
+      "label": "PUMP",
+      "holder_count": 220,
+      "top5_wallet_pct": 14.343151025755398,
+      "dev_wallet_pct": 3.0386187700413,
+      "token_age_minutes": 13.8,
+      "bc_velocity_sol_per_min": 6.15,
+      "total_sol_raised": 85.007301664,
+      "has_pool": true,
+      "created_at": 1781366128
+    },
+    {
+      "id": 27036,
+      "mint": "3nTmaNvUd12oEd52rsjc8hZLqSjRm1yoEtCnZBDRpump",
+      "open_price": 2.3625155397689645e-7,
+      "pct_t30": 0.2555057490501282,
+      "pct_t60": 3.719949454768476,
+      "pct_t300": 29.91933761096721,
+      "label": "PUMP",
+      "holder_count": 87,
+      "top5_wallet_pct": 15.4171887330989,
+      "dev_wallet_pct": 3.4448721642493996,
+      "token_age_minutes": 4483.5,
+      "bc_velocity_sol_per_min": 0.02,
+      "total_sol_raised": 85.0073016,
+      "has_pool": true,
+      "created_at": 1781365702
+    }
+  ],
+  "last_error": null
+}

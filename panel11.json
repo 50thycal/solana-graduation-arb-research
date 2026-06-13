@@ -1,0 +1,3597 @@
+{
+  "generated_at": "2026-06-13T17:06:31.239Z",
+  "title": "Combo Filter Regime Stability — Cross-Group Filter Pairs",
+  "description": "Regime check for every cross-group two-filter combination in the catalog, with the T+30 entry gate (+5% to +100%) applied. Rows are the EXACT same combos as /api/best-combos, ordered by opt_avg_ret descending (each combo at its own TP/SL optimum). Use this to validate that a high-opt-return combo also holds up across time buckets.",
+  "bucket_windows": [
+    {
+      "bucket": 1,
+      "start_iso": "2026-03-30T13:31:25.000Z",
+      "end_iso": "2026-04-17T13:30:31.000Z"
+    },
+    {
+      "bucket": 2,
+      "start_iso": "2026-04-17T13:47:16.000Z",
+      "end_iso": "2026-05-11T23:31:53.000Z"
+    },
+    {
+      "bucket": 3,
+      "start_iso": "2026-05-11T23:39:22.000Z",
+      "end_iso": "2026-05-26T20:53:16.000Z"
+    },
+    {
+      "bucket": 4,
+      "start_iso": "2026-05-26T20:54:35.000Z",
+      "end_iso": "2026-06-13T16:27:53.000Z"
+    }
+  ],
+  "baseline": {
+    "filter": "ALL labeled (entry gate only)",
+    "group": "Baseline",
+    "opt_tp": null,
+    "opt_sl": null,
+    "opt_avg_ret": null,
+    "beats_baseline": false,
+    "n": 4080,
+    "buckets": [
+      {
+        "n": 1107,
+        "win_rate_pct": 56.9,
+        "avg_return_pct": -4
+      },
+      {
+        "n": 971,
+        "win_rate_pct": 54.1,
+        "avg_return_pct": -4.6
+      },
+      {
+        "n": 946,
+        "win_rate_pct": 53.8,
+        "avg_return_pct": -1.8
+      },
+      {
+        "n": 1056,
+        "win_rate_pct": 57.4,
+        "avg_return_pct": -3.7
+      }
+    ],
+    "wr_std_dev": 1.6,
+    "stability": "STABLE"
+  },
+  "filters": [
+    {
+      "filter": "whale_supply < 20% (measured) + fresh_dev",
+      "group": "Holder Dist × Creator Rep",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 15.78,
+      "beats_baseline": false,
+      "n": 67,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 67,
+          "win_rate_pct": 70.1,
+          "avg_return_pct": 22.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta >= 50 (measured) + whale_supply < 20% (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 14.24,
+      "beats_baseline": false,
+      "n": 47,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 47,
+          "win_rate_pct": 72.3,
+          "avg_return_pct": 14.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + liq > 100",
+      "group": "Holder Dist × Liquidity",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 13.01,
+      "beats_baseline": false,
+      "n": 49,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 49,
+          "win_rate_pct": 73.5,
+          "avg_return_pct": 15.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age > 10min + holder_delta >= 50 (measured)",
+      "group": "BC Age × Holder Flow",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 12.45,
+      "beats_baseline": false,
+      "n": 49,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 49,
+          "win_rate_pct": 73.5,
+          "avg_return_pct": 23.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 50 (measured) + whale_supply < 20% (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 10.52,
+      "beats_baseline": false,
+      "n": 60,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 60,
+          "win_rate_pct": 63.3,
+          "avg_return_pct": 5.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 18 (measured) + whale_supply < 20% (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 10.19,
+      "beats_baseline": false,
+      "n": 72,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 72,
+          "win_rate_pct": 62.5,
+          "avg_return_pct": 6.5
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 100 (measured) + whale_supply < 20% (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 9.02,
+      "beats_baseline": false,
+      "n": 51,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 51,
+          "win_rate_pct": 62.7,
+          "avg_return_pct": 4.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + top5 < 10%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 8.29,
+      "beats_baseline": false,
+      "n": 67,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 67,
+          "win_rate_pct": 62.7,
+          "avg_return_pct": 7
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 15 (measured) + whale_supply < 20% (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 8.22,
+      "beats_baseline": false,
+      "n": 77,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 77,
+          "win_rate_pct": 62.3,
+          "avg_return_pct": 4.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta >= 20 (measured) + whale_supply < 20% (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 8.04,
+      "beats_baseline": false,
+      "n": 84,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 84,
+          "win_rate_pct": 65.5,
+          "avg_return_pct": 10.2
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + accel > 0",
+      "group": "Holder Dist × Path",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 7.94,
+      "beats_baseline": false,
+      "n": 42,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 42,
+          "win_rate_pct": 59.5,
+          "avg_return_pct": 9.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_vel >= 30 (measured) + whale_supply < 20% (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 7.74,
+      "beats_baseline": false,
+      "n": 85,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 85,
+          "win_rate_pct": 64.7,
+          "avg_return_pct": 9.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age < 10min + whale_supply < 20% (measured)",
+      "group": "BC Age × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 7.67,
+      "beats_baseline": false,
+      "n": 83,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 83,
+          "win_rate_pct": 63.9,
+          "avg_return_pct": 8.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel < 5 + holder_delta >= 50 (measured)",
+      "group": "Velocity × Holder Flow",
+      "opt_tp": 40,
+      "opt_sl": 30,
+      "opt_avg_ret": 7.31,
+      "beats_baseline": false,
+      "n": 34,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 34,
+          "win_rate_pct": 70.6,
+          "avg_return_pct": 10.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + dev < 5%",
+      "group": "Holder Dist × Dev",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 7.22,
+      "beats_baseline": false,
+      "n": 82,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 82,
+          "win_rate_pct": 61,
+          "avg_return_pct": 8.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + buyers >= 5",
+      "group": "Holder Dist × Buy Pressure",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 7.08,
+      "beats_baseline": false,
+      "n": 41,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 41,
+          "win_rate_pct": 63.4,
+          "avg_return_pct": 13
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + dev < 3%",
+      "group": "Holder Dist × Dev",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 6.65,
+      "beats_baseline": false,
+      "n": 64,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 64,
+          "win_rate_pct": 64.1,
+          "avg_return_pct": 11.2
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 5 (measured) + whale_supply < 20% (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 6.26,
+      "beats_baseline": false,
+      "n": 94,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 94,
+          "win_rate_pct": 62.8,
+          "avg_return_pct": 8.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 100 (measured) + whales <= 10 (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 6.21,
+      "beats_baseline": false,
+      "n": 49,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 49,
+          "win_rate_pct": 65.3,
+          "avg_return_pct": 1.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta > 0 (measured) + whale_supply < 20% (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 5.94,
+      "beats_baseline": false,
+      "n": 95,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 95,
+          "win_rate_pct": 62.1,
+          "avg_return_pct": 8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + top5 < 20%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 5.94,
+      "beats_baseline": false,
+      "n": 95,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 95,
+          "win_rate_pct": 62.1,
+          "avg_return_pct": 8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + liq > 50",
+      "group": "Holder Dist × Liquidity",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 5.94,
+      "beats_baseline": false,
+      "n": 95,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 95,
+          "win_rate_pct": 62.1,
+          "avg_return_pct": 8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel 5-10 + holder_vel >= 60 (measured)",
+      "group": "Velocity × Holder Flow",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 5.75,
+      "beats_baseline": false,
+      "n": 41,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 41,
+          "win_rate_pct": 73.2,
+          "avg_return_pct": 25.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 18 (measured) + whales <= 5 (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 5.64,
+      "beats_baseline": false,
+      "n": 44,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 44,
+          "win_rate_pct": 61.4,
+          "avg_return_pct": -3.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 10 (measured) + whale_supply < 20% (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 5.51,
+      "beats_baseline": false,
+      "n": 88,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 88,
+          "win_rate_pct": 61.4,
+          "avg_return_pct": 3.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_vel >= 60 (measured) + whale_supply < 20% (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 5.51,
+      "beats_baseline": false,
+      "n": 70,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 70,
+          "win_rate_pct": 67.1,
+          "avg_return_pct": 5.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + top5 < 15%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 5.14,
+      "beats_baseline": false,
+      "n": 89,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 89,
+          "win_rate_pct": 59.6,
+          "avg_return_pct": 6.4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 50 (measured) + whales <= 10 (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.82,
+      "beats_baseline": false,
+      "n": 68,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 68,
+          "win_rate_pct": 63.2,
+          "avg_return_pct": 0.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + mono > 0.5",
+      "group": "Holder Dist × Path Mono",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.56,
+      "beats_baseline": false,
+      "n": 60,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 60,
+          "win_rate_pct": 61.7,
+          "avg_return_pct": 5.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + mono > 0.66",
+      "group": "Holder Dist × Path Mono",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.56,
+      "beats_baseline": false,
+      "n": 60,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 60,
+          "win_rate_pct": 61.7,
+          "avg_return_pct": 5.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta >= 50 (measured) + whales <= 10 (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.52,
+      "beats_baseline": false,
+      "n": 88,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 88,
+          "win_rate_pct": 69.3,
+          "avg_return_pct": 6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 5 (measured) + serial_rugger",
+      "group": "Holders × Creator Rep",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.32,
+      "beats_baseline": false,
+      "n": 34,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 34,
+          "win_rate_pct": 64.7,
+          "avg_return_pct": 13.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 10 (measured) + serial_rugger",
+      "group": "Holders × Creator Rep",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.32,
+      "beats_baseline": false,
+      "n": 34,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 34,
+          "win_rate_pct": 64.7,
+          "avg_return_pct": 13.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 15 (measured) + serial_rugger",
+      "group": "Holders × Creator Rep",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.32,
+      "beats_baseline": false,
+      "n": 34,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 34,
+          "win_rate_pct": 64.7,
+          "avg_return_pct": 13.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 18 (measured) + serial_rugger",
+      "group": "Holders × Creator Rep",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.32,
+      "beats_baseline": false,
+      "n": 34,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 34,
+          "win_rate_pct": 64.7,
+          "avg_return_pct": 13.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 50 (measured) + serial_rugger",
+      "group": "Holders × Creator Rep",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.32,
+      "beats_baseline": false,
+      "n": 34,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 34,
+          "win_rate_pct": 64.7,
+          "avg_return_pct": 13.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "nakamoto >= 10 (measured) + top5 < 10%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.31,
+      "beats_baseline": false,
+      "n": 53,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 53,
+          "win_rate_pct": 66,
+          "avg_return_pct": -1.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta >= 50 (measured) + whales <= 5 (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.22,
+      "beats_baseline": false,
+      "n": 49,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 49,
+          "win_rate_pct": 69.4,
+          "avg_return_pct": 2.2
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + dd > -20%",
+      "group": "Holder Dist × Path DD",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 4.01,
+      "beats_baseline": false,
+      "n": 88,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 88,
+          "win_rate_pct": 63.6,
+          "avg_return_pct": 9.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 5 (measured) + accel > 0",
+      "group": "Holder Dist × Path",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 3.41,
+      "beats_baseline": false,
+      "n": 46,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 46,
+          "win_rate_pct": 50,
+          "avg_return_pct": 5.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 18 (measured) + whales <= 10 (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 3.3,
+      "beats_baseline": false,
+      "n": 99,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 99,
+          "win_rate_pct": 63.6,
+          "avg_return_pct": 2.4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + fresh_dev",
+      "group": "Holder Dist × Creator Rep",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 3,
+      "beats_baseline": true,
+      "n": 135,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 135,
+          "win_rate_pct": 65.2,
+          "avg_return_pct": 6.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + whale < 30%",
+      "group": "Holder Dist × Buy Pressure",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 2.94,
+      "beats_baseline": false,
+      "n": 44,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 44,
+          "win_rate_pct": 59.1,
+          "avg_return_pct": 8.4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + whale < 50%",
+      "group": "Holder Dist × Buy Pressure",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 2.94,
+      "beats_baseline": false,
+      "n": 44,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 44,
+          "win_rate_pct": 59.1,
+          "avg_return_pct": 8.4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age > 10min + holder_vel >= 60 (measured)",
+      "group": "BC Age × Holder Flow",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 2.61,
+      "beats_baseline": false,
+      "n": 98,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 98,
+          "win_rate_pct": 69.4,
+          "avg_return_pct": 14.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + liq > 100",
+      "group": "Holder Dist × Liquidity",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 2.47,
+      "beats_baseline": true,
+      "n": 122,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 122,
+          "win_rate_pct": 67.2,
+          "avg_return_pct": 6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + accel > 0",
+      "group": "Holder Dist × Path",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 2.27,
+      "beats_baseline": false,
+      "n": 81,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 81,
+          "win_rate_pct": 59.3,
+          "avg_return_pct": 5.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 5 (measured) + fresh_dev",
+      "group": "Holder Dist × Creator Rep",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 2.09,
+      "beats_baseline": false,
+      "n": 81,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 81,
+          "win_rate_pct": 60.5,
+          "avg_return_pct": 4.7
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel 5-10 + holder_delta >= 20 (measured)",
+      "group": "Velocity × Holder Flow",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 2.09,
+      "beats_baseline": false,
+      "n": 64,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 64,
+          "win_rate_pct": 67.2,
+          "avg_return_pct": 11.5
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel 5-10 + holder_vel >= 30 (measured)",
+      "group": "Velocity × Holder Flow",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 2.09,
+      "beats_baseline": false,
+      "n": 64,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 64,
+          "win_rate_pct": 67.2,
+          "avg_return_pct": 11.5
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 50 (measured) + top5 < 10%",
+      "group": "Holders × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 2.06,
+      "beats_baseline": false,
+      "n": 69,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 69,
+          "win_rate_pct": 63.8,
+          "avg_return_pct": -4.5
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 100 (measured) + top5 < 10%",
+      "group": "Holders × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 2,
+      "beats_baseline": false,
+      "n": 56,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 56,
+          "win_rate_pct": 66.1,
+          "avg_return_pct": -3.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel < 50 + whale_supply < 20% (measured)",
+      "group": "Velocity × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 1.83,
+      "beats_baseline": false,
+      "n": 62,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 62,
+          "win_rate_pct": 54.8,
+          "avg_return_pct": -4.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel < 5 + holders >= 250 (measured)",
+      "group": "Velocity × Holders",
+      "opt_tp": 75,
+      "opt_sl": 30,
+      "opt_avg_ret": 1.65,
+      "beats_baseline": false,
+      "n": 30,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 30,
+          "win_rate_pct": 63.3,
+          "avg_return_pct": 6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whale_supply < 20% (measured) + dd > -10%",
+      "group": "Holder Dist × Path DD",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.97,
+      "beats_baseline": false,
+      "n": 61,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 61,
+          "win_rate_pct": 63.9,
+          "avg_return_pct": 0.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 15 (measured) + whales <= 10 (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.86,
+      "beats_baseline": true,
+      "n": 115,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 115,
+          "win_rate_pct": 63.5,
+          "avg_return_pct": 0.7
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_vel >= 60 (measured) + whales <= 10 (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.61,
+      "beats_baseline": true,
+      "n": 120,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 120,
+          "win_rate_pct": 65.8,
+          "avg_return_pct": 1.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 18 (measured) + liq > 150",
+      "group": "Holders × Liquidity",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.49,
+      "beats_baseline": false,
+      "n": 33,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 33,
+          "win_rate_pct": 75.8,
+          "avg_return_pct": 8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta >= 50 (measured) + liq > 150",
+      "group": "Holder Flow × Liquidity",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.43,
+      "beats_baseline": false,
+      "n": 54,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 54,
+          "win_rate_pct": 72.2,
+          "avg_return_pct": 5
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 15 (measured) + whales <= 5 (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.39,
+      "beats_baseline": false,
+      "n": 55,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 55,
+          "win_rate_pct": 61.8,
+          "avg_return_pct": -5.5
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + buy_ratio > 0.6",
+      "group": "Holder Dist × Buy Pressure",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.25,
+      "beats_baseline": false,
+      "n": 74,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 74,
+          "win_rate_pct": 58.1,
+          "avg_return_pct": 4.7
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + top5 < 20%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.23,
+      "beats_baseline": true,
+      "n": 152,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 152,
+          "win_rate_pct": 62.5,
+          "avg_return_pct": 3.2
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age < 10min + whales <= 10 (measured)",
+      "group": "BC Age × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.17,
+      "beats_baseline": true,
+      "n": 151,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 151,
+          "win_rate_pct": 62.3,
+          "avg_return_pct": 2.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta >= 20 (measured) + whales <= 10 (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.15,
+      "beats_baseline": true,
+      "n": 145,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 145,
+          "win_rate_pct": 65.5,
+          "avg_return_pct": 3.2
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 5 (measured) + top5 < 10%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.1,
+      "beats_baseline": false,
+      "n": 83,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 83,
+          "win_rate_pct": 59,
+          "avg_return_pct": 1.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_vel >= 30 (measured) + whales <= 10 (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": 0.09,
+      "beats_baseline": true,
+      "n": 146,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 146,
+          "win_rate_pct": 65.1,
+          "avg_return_pct": 3.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age > 10min + holder_delta >= 20 (measured)",
+      "group": "BC Age × Holder Flow",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.11,
+      "beats_baseline": true,
+      "n": 175,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 175,
+          "win_rate_pct": 63.4,
+          "avg_return_pct": 8.7
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel 5-10 + nakamoto >= 5 (measured)",
+      "group": "Velocity × Holder Dist",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.23,
+      "beats_baseline": false,
+      "n": 69,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 69,
+          "win_rate_pct": 66.7,
+          "avg_return_pct": 10.4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + mono > 0.5",
+      "group": "Holder Dist × Path Mono",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.39,
+      "beats_baseline": true,
+      "n": 109,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 109,
+          "win_rate_pct": 61.5,
+          "avg_return_pct": -0.7
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + mono > 0.66",
+      "group": "Holder Dist × Path Mono",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.39,
+      "beats_baseline": true,
+      "n": 109,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 109,
+          "win_rate_pct": 61.5,
+          "avg_return_pct": -0.7
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + top5 < 10%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.53,
+      "beats_baseline": true,
+      "n": 122,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 122,
+          "win_rate_pct": 62.3,
+          "avg_return_pct": 1.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel < 20 + holder_delta >= 50 (measured)",
+      "group": "Velocity × Holder Flow",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.6,
+      "beats_baseline": true,
+      "n": 103,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 103,
+          "win_rate_pct": 64.1,
+          "avg_return_pct": 3.5
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age > 10min + holder_vel >= 30 (measured)",
+      "group": "BC Age × Holder Flow",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.69,
+      "beats_baseline": true,
+      "n": 188,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 188,
+          "win_rate_pct": 62.8,
+          "avg_return_pct": 7.4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + dev < 5%",
+      "group": "Holder Dist × Dev",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -0.84,
+      "beats_baseline": true,
+      "n": 136,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 136,
+          "win_rate_pct": 61,
+          "avg_return_pct": 1.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 5 (measured) + whales <= 10 (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1,
+      "beats_baseline": true,
+      "n": 164,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 164,
+          "win_rate_pct": 62.2,
+          "avg_return_pct": 1.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel < 20 + whale_supply < 20% (measured)",
+      "group": "Velocity × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.02,
+      "beats_baseline": false,
+      "n": 37,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 37,
+          "win_rate_pct": 43.2,
+          "avg_return_pct": -19.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + buy_ratio > 0.5",
+      "group": "Holder Dist × Buy Pressure",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.06,
+      "beats_baseline": false,
+      "n": 87,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 87,
+          "win_rate_pct": 60.9,
+          "avg_return_pct": 2.7
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age > 10min + nakamoto >= 5 (measured)",
+      "group": "BC Age × Holder Dist",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.07,
+      "beats_baseline": true,
+      "n": 225,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 225,
+          "win_rate_pct": 61.3,
+          "avg_return_pct": 6.5
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta > 0 (measured) + whales <= 10 (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.14,
+      "beats_baseline": true,
+      "n": 165,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 165,
+          "win_rate_pct": 61.8,
+          "avg_return_pct": 1.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + liq > 50",
+      "group": "Holder Dist × Liquidity",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.14,
+      "beats_baseline": true,
+      "n": 165,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 165,
+          "win_rate_pct": 61.8,
+          "avg_return_pct": 1.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 10 (measured) + whales <= 10 (measured)",
+      "group": "Holders × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.18,
+      "beats_baseline": true,
+      "n": 148,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 148,
+          "win_rate_pct": 62.2,
+          "avg_return_pct": -0.9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age > 10min + nakamoto >= 10 (measured)",
+      "group": "BC Age × Holder Dist",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.31,
+      "beats_baseline": true,
+      "n": 213,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 213,
+          "win_rate_pct": 61,
+          "avg_return_pct": 6.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 15 (measured) + liq > 150",
+      "group": "Holders × Liquidity",
+      "opt_tp": 15,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.33,
+      "beats_baseline": false,
+      "n": 43,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 43,
+          "win_rate_pct": 72.1,
+          "avg_return_pct": 4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + top5 < 15%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.34,
+      "beats_baseline": true,
+      "n": 144,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 144,
+          "win_rate_pct": 60.4,
+          "avg_return_pct": 1.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + buyers >= 10",
+      "group": "Holder Dist × Buy Pressure",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.42,
+      "beats_baseline": false,
+      "n": 67,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 67,
+          "win_rate_pct": 58.2,
+          "avg_return_pct": -2.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 5 (measured) + dev < 3%",
+      "group": "Holder Dist × Dev",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.46,
+      "beats_baseline": false,
+      "n": 78,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 78,
+          "win_rate_pct": 60.3,
+          "avg_return_pct": 4.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta >= 20 (measured) + top5 < 10%",
+      "group": "Holder Flow × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.52,
+      "beats_baseline": true,
+      "n": 147,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 147,
+          "win_rate_pct": 64.6,
+          "avg_return_pct": -0.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + buyers >= 5",
+      "group": "Holder Dist × Buy Pressure",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.56,
+      "beats_baseline": true,
+      "n": 101,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 101,
+          "win_rate_pct": 61.4,
+          "avg_return_pct": 3.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "dust < 30% (measured) + top5 < 10%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.57,
+      "beats_baseline": true,
+      "n": 153,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 153,
+          "win_rate_pct": 62.7,
+          "avg_return_pct": -0.4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel 20-50 + liq > 100",
+      "group": "Velocity × Liquidity",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.58,
+      "beats_baseline": true,
+      "n": 178,
+      "buckets": [
+        {
+          "n": 38,
+          "win_rate_pct": 71.1,
+          "avg_return_pct": 13.8
+        },
+        {
+          "n": 40,
+          "win_rate_pct": 75,
+          "avg_return_pct": 19.6
+        },
+        {
+          "n": 43,
+          "win_rate_pct": 55.8,
+          "avg_return_pct": -5.3
+        },
+        {
+          "n": 57,
+          "win_rate_pct": 68.4,
+          "avg_return_pct": 1.2
+        }
+      ],
+      "wr_std_dev": 7.2,
+      "stability": "STABLE"
+    },
+    {
+      "filter": "holders >= 10 (measured) + liq > 150",
+      "group": "Holders × Liquidity",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.67,
+      "beats_baseline": false,
+      "n": 70,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 70,
+          "win_rate_pct": 70,
+          "avg_return_pct": 2.2
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_vel >= 30 (measured) + top5 < 10%",
+      "group": "Holder Flow × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.68,
+      "beats_baseline": true,
+      "n": 149,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 149,
+          "win_rate_pct": 63.8,
+          "avg_return_pct": -0.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel 5-10 + holder_delta > 0 (measured)",
+      "group": "Velocity × Holder Flow",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.69,
+      "beats_baseline": false,
+      "n": 70,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 70,
+          "win_rate_pct": 65.7,
+          "avg_return_pct": 8.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 10 (measured) + dd > -20%",
+      "group": "Holder Dist × Path DD",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.76,
+      "beats_baseline": true,
+      "n": 153,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 153,
+          "win_rate_pct": 62.7,
+          "avg_return_pct": 1.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 5 (measured) + dev < 5%",
+      "group": "Holder Dist × Dev",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.76,
+      "beats_baseline": false,
+      "n": 87,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 87,
+          "win_rate_pct": 57.5,
+          "avg_return_pct": -0.8
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holders >= 5 (measured) + liq > 150",
+      "group": "Holders × Liquidity",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.77,
+      "beats_baseline": false,
+      "n": 83,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 83,
+          "win_rate_pct": 68.7,
+          "avg_return_pct": 1.4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age < 10min + whales <= 5 (measured)",
+      "group": "BC Age × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.86,
+      "beats_baseline": false,
+      "n": 94,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 94,
+          "win_rate_pct": 58.5,
+          "avg_return_pct": -0.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_vel >= 60 (measured) + whales <= 5 (measured)",
+      "group": "Holder Flow × Holder Dist",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.86,
+      "beats_baseline": false,
+      "n": 70,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 70,
+          "win_rate_pct": 61.4,
+          "avg_return_pct": -4.2
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_vel >= 60 (measured) + liq > 150",
+      "group": "Holder Flow × Liquidity",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.92,
+      "beats_baseline": false,
+      "n": 66,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 66,
+          "win_rate_pct": 66.7,
+          "avg_return_pct": 2.7
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age > 10min + holder_delta > 0 (measured)",
+      "group": "BC Age × Holder Flow",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -1.95,
+      "beats_baseline": true,
+      "n": 229,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 229,
+          "win_rate_pct": 60.7,
+          "avg_return_pct": 5.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "holder_delta >= 50 (measured) + fresh_dev",
+      "group": "Holder Flow × Creator Rep",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.04,
+      "beats_baseline": true,
+      "n": 170,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 170,
+          "win_rate_pct": 64.1,
+          "avg_return_pct": 2.4
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel 5-10 + dust < 30% (measured)",
+      "group": "Velocity × Holder Dist",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.07,
+      "beats_baseline": false,
+      "n": 69,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 69,
+          "win_rate_pct": 65.2,
+          "avg_return_pct": 8.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel 5-10 + holder_gini < 0.8 (measured)",
+      "group": "Velocity × Holder Dist",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.07,
+      "beats_baseline": false,
+      "n": 69,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 69,
+          "win_rate_pct": 65.2,
+          "avg_return_pct": 8.6
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "vel 5-10 + nakamoto >= 10 (measured)",
+      "group": "Velocity × Holder Dist",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.09,
+      "beats_baseline": false,
+      "n": 66,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 66,
+          "win_rate_pct": 66.7,
+          "avg_return_pct": 9
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "whales <= 5 (measured) + top5 < 20%",
+      "group": "Holder Dist × Top 5",
+      "opt_tp": 100,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.14,
+      "beats_baseline": false,
+      "n": 95,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 95,
+          "win_rate_pct": 57.9,
+          "avg_return_pct": -0.1
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "age > 10min + holder_gini < 0.8 (measured)",
+      "group": "BC Age × Holder Dist",
+      "opt_tp": 150,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.17,
+      "beats_baseline": true,
+      "n": 225,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 225,
+          "win_rate_pct": 60,
+          "avg_return_pct": 5.5
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    },
+    {
+      "filter": "dust < 30% (measured) + liq > 150",
+      "group": "Holder Dist × Liquidity",
+      "opt_tp": 60,
+      "opt_sl": 30,
+      "opt_avg_ret": -2.23,
+      "beats_baseline": false,
+      "n": 67,
+      "buckets": [
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 0,
+          "win_rate_pct": null,
+          "avg_return_pct": null
+        },
+        {
+          "n": 67,
+          "win_rate_pct": 68.7,
+          "avg_return_pct": 2.3
+        }
+      ],
+      "wr_std_dev": null,
+      "stability": "INSUFFICIENT"
+    }
+  ],
+  "flags": {
+    "low_n_threshold": 20,
+    "strong_n_threshold": 100
+  }
+}

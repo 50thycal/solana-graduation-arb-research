@@ -1,0 +1,1071 @@
+{
+  "generated_at": "2026-06-13T17:01:45.301Z",
+  "panel6": {
+    "title": "Multi-Filter Intersection (2-way + 3-way AND) — Drill-Down",
+    "description": "Pick up to 3 filters from the dropdowns. The page reloads with the intersection run through Panel 4's optimum-finder. Lift vs best single component tells you whether the combo improves on its strongest constituent (positive lift = compounding edge; zero or negative = no extra information). Selection is encoded in the URL (?p6=name1,name2,name3) so links are shareable. The Top 20 Pairs table below auto-scans all C(53,2)=1378 two-filter intersections where n≥30 and lift>0, sorted by Opt Avg Ret.",
+    "filter_names": [
+      {
+        "name": "vel < 5 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 5-10 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 5-20 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 10-20 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel < 20 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel < 50 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 20-50 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel 50-200 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "vel > 200 sol/min",
+        "group": "Velocity"
+      },
+      {
+        "name": "bc_age < 10 min",
+        "group": "BC Age"
+      },
+      {
+        "name": "bc_age > 10 min",
+        "group": "BC Age"
+      },
+      {
+        "name": "bc_age > 30 min",
+        "group": "BC Age"
+      },
+      {
+        "name": "bc_age > 1 hr",
+        "group": "BC Age"
+      },
+      {
+        "name": "bc_age > 1 day",
+        "group": "BC Age"
+      },
+      {
+        "name": "holders >= 5 (measured)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 10 (measured)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 15 (measured)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 18 (measured)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 50 (measured)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 100 (measured)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 250 (measured)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 5 (backfill)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 10 (backfill)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 15 (backfill)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 18 (backfill)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 50 (backfill)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 100 (backfill)",
+        "group": "Holders"
+      },
+      {
+        "name": "holders >= 250 (backfill)",
+        "group": "Holders"
+      },
+      {
+        "name": "holder_delta > 0 (measured)",
+        "group": "Holder Flow"
+      },
+      {
+        "name": "holder_delta >= 20 (measured)",
+        "group": "Holder Flow"
+      },
+      {
+        "name": "holder_delta >= 50 (measured)",
+        "group": "Holder Flow"
+      },
+      {
+        "name": "holder_vel >= 30 (measured)",
+        "group": "Holder Flow"
+      },
+      {
+        "name": "holder_vel >= 60 (measured)",
+        "group": "Holder Flow"
+      },
+      {
+        "name": "nakamoto >= 5 (measured)",
+        "group": "Holder Dist"
+      },
+      {
+        "name": "nakamoto >= 10 (measured)",
+        "group": "Holder Dist"
+      },
+      {
+        "name": "whales <= 5 (measured)",
+        "group": "Holder Dist"
+      },
+      {
+        "name": "whales <= 10 (measured)",
+        "group": "Holder Dist"
+      },
+      {
+        "name": "whale_supply < 20% (measured)",
+        "group": "Holder Dist"
+      },
+      {
+        "name": "dust < 30% (measured)",
+        "group": "Holder Dist"
+      },
+      {
+        "name": "holder_gini < 0.8 (measured)",
+        "group": "Holder Dist"
+      },
+      {
+        "name": "holder_sniper_ratio >= 5 (measured)",
+        "group": "Holder Dist"
+      },
+      {
+        "name": "holder_sniper_ratio >= 10 (measured)",
+        "group": "Holder Dist"
+      },
+      {
+        "name": "top5 < 10%",
+        "group": "Top 5 Concentration"
+      },
+      {
+        "name": "top5 < 15%",
+        "group": "Top 5 Concentration"
+      },
+      {
+        "name": "top5 < 20%",
+        "group": "Top 5 Concentration"
+      },
+      {
+        "name": "top5 > 15%",
+        "group": "Top 5 Concentration"
+      },
+      {
+        "name": "dev < 3%",
+        "group": "Dev Wallet"
+      },
+      {
+        "name": "dev < 5%",
+        "group": "Dev Wallet"
+      },
+      {
+        "name": "dev > 5%",
+        "group": "Dev Wallet"
+      },
+      {
+        "name": "sol >= 70",
+        "group": "SOL Raised"
+      },
+      {
+        "name": "sol >= 80",
+        "group": "SOL Raised"
+      },
+      {
+        "name": "sol >= 84",
+        "group": "SOL Raised"
+      },
+      {
+        "name": "liquidity > 50 SOL",
+        "group": "Liquidity (T+30)"
+      },
+      {
+        "name": "liquidity > 100 SOL",
+        "group": "Liquidity (T+30)"
+      },
+      {
+        "name": "liquidity > 150 SOL",
+        "group": "Liquidity (T+30)"
+      },
+      {
+        "name": "volatility < 10%",
+        "group": "Volatility (0-30s)"
+      },
+      {
+        "name": "volatility 10-30%",
+        "group": "Volatility (0-30s)"
+      },
+      {
+        "name": "volatility 30-60%",
+        "group": "Volatility (0-30s)"
+      },
+      {
+        "name": "volatility > 60%",
+        "group": "Volatility (0-30s)"
+      },
+      {
+        "name": "mono > 0.33",
+        "group": "Path: Monotonicity"
+      },
+      {
+        "name": "mono > 0.5",
+        "group": "Path: Monotonicity"
+      },
+      {
+        "name": "mono > 0.66",
+        "group": "Path: Monotonicity"
+      },
+      {
+        "name": "max_dd > -10% (shallow)",
+        "group": "Path: Drawdown"
+      },
+      {
+        "name": "max_dd > -20%",
+        "group": "Path: Drawdown"
+      },
+      {
+        "name": "dip_and_recover = 1",
+        "group": "Path: Other"
+      },
+      {
+        "name": "acceleration > 0",
+        "group": "Path: Other"
+      },
+      {
+        "name": "front-loaded (early>late)",
+        "group": "Path: Other"
+      },
+      {
+        "name": "back-loaded (late>early)",
+        "group": "Path: Other"
+      },
+      {
+        "name": "buy_ratio > 0.5",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "buy_ratio > 0.6",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "unique_buyers >= 5",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "unique_buyers >= 10",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "whale_pct < 30%",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "whale_pct < 50%",
+        "group": "Buy Pressure"
+      },
+      {
+        "name": "fresh_dev",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "repeat_dev >= 3",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "clean_dev",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "serial_rugger",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "rapid_fire",
+        "group": "Creator Rep"
+      },
+      {
+        "name": "t30 > 0%",
+        "group": "T+30 Entry"
+      },
+      {
+        "name": "t30 between +5% and +50%",
+        "group": "T+30 Entry"
+      },
+      {
+        "name": "t30 between +5% and +100%",
+        "group": "T+30 Entry"
+      },
+      {
+        "name": "t30 between +10% and +50%",
+        "group": "T+30 Entry"
+      }
+    ],
+    "top_pairs": [
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 56,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 59.4,
+        "opt_win_rate": 75,
+        "single_a_opt": -18.7,
+        "single_b_opt": 19.6,
+        "lift": 39.8
+      },
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 157,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 41.4,
+        "opt_win_rate": 67,
+        "single_a_opt": -18.7,
+        "single_b_opt": 16.8,
+        "lift": 24.6
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 94,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 39.5,
+        "opt_win_rate": 69,
+        "single_a_opt": -14.3,
+        "single_b_opt": 19.6,
+        "lift": 19.9
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "rapid_fire",
+        "n": 58,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 33.5,
+        "opt_win_rate": 66,
+        "single_a_opt": 16.8,
+        "single_b_opt": -21.1,
+        "lift": 16.7
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "repeat_dev >= 3",
+        "n": 127,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 33.5,
+        "opt_win_rate": 61,
+        "single_a_opt": 19.6,
+        "single_b_opt": -19.8,
+        "lift": 13.9
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 238,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 32,
+        "opt_win_rate": 67,
+        "single_a_opt": -14.3,
+        "single_b_opt": 16.8,
+        "lift": 15.2
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "dip_and_recover = 1",
+        "n": 101,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 31.2,
+        "opt_win_rate": 62,
+        "single_a_opt": 19.6,
+        "single_b_opt": -16.7,
+        "lift": 11.6
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "volatility 30-60%",
+        "n": 168,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 30.1,
+        "opt_win_rate": 63,
+        "single_a_opt": 19.6,
+        "single_b_opt": -17.3,
+        "lift": 10.5
+      },
+      {
+        "filter_a": "bc_age < 10 min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 377,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 29.9,
+        "opt_win_rate": 64,
+        "single_a_opt": -16.4,
+        "single_b_opt": 19.6,
+        "lift": 10.3
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "t30 between +10% and +50%",
+        "n": 259,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 28.7,
+        "opt_win_rate": 63,
+        "single_a_opt": 19.6,
+        "single_b_opt": -9.8,
+        "lift": 9.1
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "top5 < 10%",
+        "n": 247,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 26.1,
+        "opt_win_rate": 63,
+        "single_a_opt": 19.6,
+        "single_b_opt": -16.1,
+        "lift": 6.5
+      },
+      {
+        "filter_a": "bc_age < 10 min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 1002,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 25.2,
+        "opt_win_rate": 62,
+        "single_a_opt": -16.4,
+        "single_b_opt": 16.8,
+        "lift": 8.4
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "t30 between +5% and +50%",
+        "n": 358,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 25.2,
+        "opt_win_rate": 62,
+        "single_a_opt": 19.6,
+        "single_b_opt": -10.6,
+        "lift": 5.6
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "t30 between +5% and +100%",
+        "n": 396,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 24.9,
+        "opt_win_rate": 62,
+        "single_a_opt": 19.6,
+        "single_b_opt": -10.9,
+        "lift": 5.3
+      },
+      {
+        "filter_a": "vel 10-20 sol/min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 90,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 24.5,
+        "opt_win_rate": 61,
+        "single_a_opt": -15.5,
+        "single_b_opt": 19.6,
+        "lift": 4.9
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "volatility 30-60%",
+        "n": 445,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 24.4,
+        "opt_win_rate": 63,
+        "single_a_opt": 16.8,
+        "single_b_opt": -17.3,
+        "lift": 7.6
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "repeat_dev >= 3",
+        "n": 364,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 23.6,
+        "opt_win_rate": 58,
+        "single_a_opt": 16.8,
+        "single_b_opt": -19.8,
+        "lift": 6.8
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "volatility > 60%",
+        "n": 206,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 23.4,
+        "opt_win_rate": 57,
+        "single_a_opt": 16.8,
+        "single_b_opt": -22.6,
+        "lift": 6.6
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "top5 < 10%",
+        "n": 1049,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 22.9,
+        "opt_win_rate": 63,
+        "single_a_opt": 16.8,
+        "single_b_opt": -16.1,
+        "lift": 6.1
+      },
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "holders >= 50 (backfill)",
+        "n": 295,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 22.8,
+        "opt_win_rate": 58,
+        "single_a_opt": -18.7,
+        "single_b_opt": 7.6,
+        "lift": 15.2
+      }
+    ],
+    "top_pairs_t60": [
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "volatility > 60%",
+        "n": 206,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 10.2,
+        "opt_win_rate": 51,
+        "single_a_opt": 0.8,
+        "single_b_opt": -13.9,
+        "lift": 9.4
+      },
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 157,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 9.6,
+        "opt_win_rate": 60,
+        "single_a_opt": -11,
+        "single_b_opt": 0.8,
+        "lift": 8.8
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "volatility 30-60%",
+        "n": 168,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 6.3,
+        "opt_win_rate": 52,
+        "single_a_opt": 1,
+        "single_b_opt": -8,
+        "lift": 5.3
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 238,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 6.1,
+        "opt_win_rate": 56,
+        "single_a_opt": -5.6,
+        "single_b_opt": 0.8,
+        "lift": 5.3
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 94,
+        "opt_tp": 75,
+        "opt_sl": 30,
+        "opt_avg_ret": 5.6,
+        "opt_win_rate": 56,
+        "single_a_opt": -5.6,
+        "single_b_opt": 1,
+        "lift": 4.6
+      },
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "holders >= 50 (backfill)",
+        "n": 295,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 4.9,
+        "opt_win_rate": 54,
+        "single_a_opt": -11,
+        "single_b_opt": -1,
+        "lift": 5.9
+      },
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 56,
+        "opt_tp": 100,
+        "opt_sl": 25,
+        "opt_avg_ret": 4.7,
+        "opt_win_rate": 59,
+        "single_a_opt": -11,
+        "single_b_opt": 1,
+        "lift": 3.7
+      },
+      {
+        "filter_a": "whale_supply < 20% (measured)",
+        "filter_b": "t30 between +10% and +50%",
+        "n": 65,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": 4.4,
+        "opt_win_rate": 60,
+        "single_a_opt": -1.7,
+        "single_b_opt": -4.9,
+        "lift": 6.1
+      },
+      {
+        "filter_a": "holders >= 50 (backfill)",
+        "filter_b": "volatility > 60%",
+        "n": 324,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 4.3,
+        "opt_win_rate": 46,
+        "single_a_opt": -1,
+        "single_b_opt": -13.9,
+        "lift": 5.3
+      },
+      {
+        "filter_a": "bc_age < 10 min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 377,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 3.7,
+        "opt_win_rate": 49,
+        "single_a_opt": -7.8,
+        "single_b_opt": 1,
+        "lift": 2.7
+      },
+      {
+        "filter_a": "bc_age < 10 min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 1002,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 3.6,
+        "opt_win_rate": 50,
+        "single_a_opt": -7.8,
+        "single_b_opt": 0.8,
+        "lift": 2.8
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "dip_and_recover = 1",
+        "n": 101,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 3.6,
+        "opt_win_rate": 49,
+        "single_a_opt": 1,
+        "single_b_opt": -6.8,
+        "lift": 2.6
+      },
+      {
+        "filter_a": "whale_supply < 20% (measured)",
+        "filter_b": "t30 between +5% and +50%",
+        "n": 86,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": 3.2,
+        "opt_win_rate": 57,
+        "single_a_opt": -1.7,
+        "single_b_opt": -4.9,
+        "lift": 4.9
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "liquidity > 100 SOL",
+        "n": 206,
+        "opt_tp": 100,
+        "opt_sl": 30,
+        "opt_avg_ret": 3.1,
+        "opt_win_rate": 45,
+        "single_a_opt": 1,
+        "single_b_opt": -4.9,
+        "lift": 2.1
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "dip_and_recover = 1",
+        "n": 274,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 2.8,
+        "opt_win_rate": 46,
+        "single_a_opt": 0.8,
+        "single_b_opt": -6.8,
+        "lift": 2
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "repeat_dev >= 3",
+        "n": 364,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 2.8,
+        "opt_win_rate": 47,
+        "single_a_opt": 0.8,
+        "single_b_opt": -10.5,
+        "lift": 2
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "top5 < 10%",
+        "n": 1049,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 2.7,
+        "opt_win_rate": 48,
+        "single_a_opt": 0.8,
+        "single_b_opt": -7.8,
+        "lift": 1.9
+      },
+      {
+        "filter_a": "whale_supply < 20% (measured)",
+        "filter_b": "t30 between +5% and +100%",
+        "n": 94,
+        "opt_tp": 60,
+        "opt_sl": 30,
+        "opt_avg_ret": 2.7,
+        "opt_win_rate": 55,
+        "single_a_opt": -1.7,
+        "single_b_opt": -5,
+        "lift": 4.4
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "liquidity > 100 SOL",
+        "n": 519,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 2.6,
+        "opt_win_rate": 43,
+        "single_a_opt": 0.8,
+        "single_b_opt": -4.9,
+        "lift": 1.8
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "buy_ratio > 0.5",
+        "n": 468,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 2.5,
+        "opt_win_rate": 44,
+        "single_a_opt": 1,
+        "single_b_opt": -5.7,
+        "lift": 1.5
+      }
+    ],
+    "top_pairs_t120": [
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 56,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 32.1,
+        "opt_win_rate": 68,
+        "single_a_opt": -17.7,
+        "single_b_opt": 7.9,
+        "lift": 24.2
+      },
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 157,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 20.4,
+        "opt_win_rate": 63,
+        "single_a_opt": -17.7,
+        "single_b_opt": 6,
+        "lift": 14.4
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 94,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 16.4,
+        "opt_win_rate": 63,
+        "single_a_opt": -11,
+        "single_b_opt": 7.9,
+        "lift": 8.5
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "repeat_dev >= 3",
+        "n": 127,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 16.4,
+        "opt_win_rate": 59,
+        "single_a_opt": 7.9,
+        "single_b_opt": -17,
+        "lift": 8.5
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "volatility > 60%",
+        "n": 206,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 16,
+        "opt_win_rate": 54,
+        "single_a_opt": 6,
+        "single_b_opt": -19.1,
+        "lift": 10
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "volatility > 60%",
+        "n": 95,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 15.7,
+        "opt_win_rate": 56,
+        "single_a_opt": 7.9,
+        "single_b_opt": -19.1,
+        "lift": 7.8
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "volatility 30-60%",
+        "n": 168,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 15.4,
+        "opt_win_rate": 57,
+        "single_a_opt": 7.9,
+        "single_b_opt": -13,
+        "lift": 7.5
+      },
+      {
+        "filter_a": "bc_age < 10 min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 377,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 15.1,
+        "opt_win_rate": 59,
+        "single_a_opt": -12.5,
+        "single_b_opt": 7.9,
+        "lift": 7.2
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "dip_and_recover = 1",
+        "n": 101,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 14.1,
+        "opt_win_rate": 55,
+        "single_a_opt": 7.9,
+        "single_b_opt": -11.8,
+        "lift": 6.2
+      },
+      {
+        "filter_a": "vel 50-200 sol/min",
+        "filter_b": "holders >= 50 (backfill)",
+        "n": 295,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 14,
+        "opt_win_rate": 61,
+        "single_a_opt": -17.7,
+        "single_b_opt": 2.6,
+        "lift": 11.4
+      },
+      {
+        "filter_a": "vel 10-20 sol/min",
+        "filter_b": "holders >= 250 (backfill)",
+        "n": 90,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 13.1,
+        "opt_win_rate": 60,
+        "single_a_opt": -9.9,
+        "single_b_opt": 7.9,
+        "lift": 5.2
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "liquidity > 100 SOL",
+        "n": 206,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 11.9,
+        "opt_win_rate": 51,
+        "single_a_opt": 7.9,
+        "single_b_opt": -7.9,
+        "lift": 4
+      },
+      {
+        "filter_a": "vel 20-50 sol/min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 238,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 11.6,
+        "opt_win_rate": 59,
+        "single_a_opt": -11,
+        "single_b_opt": 6,
+        "lift": 5.6
+      },
+      {
+        "filter_a": "bc_age < 10 min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 1002,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 11.1,
+        "opt_win_rate": 58,
+        "single_a_opt": -12.5,
+        "single_b_opt": 6,
+        "lift": 5.1
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "serial_rugger",
+        "n": 69,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 11,
+        "opt_win_rate": 46,
+        "single_a_opt": 6,
+        "single_b_opt": -15.9,
+        "lift": 5
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "top5 < 10%",
+        "n": 247,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 10.9,
+        "opt_win_rate": 55,
+        "single_a_opt": 7.9,
+        "single_b_opt": -12,
+        "lift": 3
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "volatility 30-60%",
+        "n": 445,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 10,
+        "opt_win_rate": 56,
+        "single_a_opt": 6,
+        "single_b_opt": -13,
+        "lift": 4
+      },
+      {
+        "filter_a": "holders >= 250 (backfill)",
+        "filter_b": "buy_ratio > 0.6",
+        "n": 354,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 10,
+        "opt_win_rate": 52,
+        "single_a_opt": 7.9,
+        "single_b_opt": -7.6,
+        "lift": 2.1
+      },
+      {
+        "filter_a": "vel 10-20 sol/min",
+        "filter_b": "holders >= 100 (backfill)",
+        "n": 244,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 9.7,
+        "opt_win_rate": 60,
+        "single_a_opt": -9.9,
+        "single_b_opt": 6,
+        "lift": 3.7
+      },
+      {
+        "filter_a": "holders >= 100 (backfill)",
+        "filter_b": "top5 < 10%",
+        "n": 1049,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 9.7,
+        "opt_win_rate": 58,
+        "single_a_opt": 6,
+        "single_b_opt": -12,
+        "lift": 3.7
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 30,
+      "strong_n_threshold": 100
+    }
+  }
+}

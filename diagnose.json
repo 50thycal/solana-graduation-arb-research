@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-06-13T17:01:45.302Z",
+  "verdict": "PIPELINE_STALLED",
+  "next_action": "Last T+30 callback was 2004s ago. Graduations arriving but PriceCollector → StrategyManager wiring is silent.",
+  "level1_bot_running": {
+    "pass": true,
+    "evidence": {
+      "total_graduations": 14044,
+      "last_graduation_seconds_ago": 574
+    },
+    "notes": "Bot is receiving graduations."
+  },
+  "level2_price_capture": {
+    "pass": true,
+    "evidence": {
+      "sample_size": 50,
+      "null_open_price_count": 0,
+      "null_open_price_rate": 0,
+      "null_pct_t300_count": 14,
+      "no_pumpswap_pool_count": 0,
+      "no_pumpswap_pool_rate": 0,
+      "first_bad_row_id": null
+    },
+    "notes": "Price capture looks clean — PumpSwap pool linked and prices populated on recent rows."
+  },
+  "level3_timestamps": {
+    "pass": true,
+    "evidence": {
+      "sample_size": 20,
+      "missing_price_checkpoints": 0,
+      "first_bad_row_id": null
+    },
+    "notes": "Checkpoint grid is consistent on recent rows."
+  },
+  "level4_label_logic": {
+    "pass": true,
+    "evidence": {
+      "sample_size": 20,
+      "mismatches": [],
+      "mismatch_count": 0
+    },
+    "notes": "Label logic matches expected rule on recent rows."
+  },
+  "level5_live_ready": {
+    "pass": true,
+    "evidence": {
+      "live_strategy_count": 0
+    },
+    "notes": "No strategies in live mode — live-readiness not applicable."
+  },
+  "pipeline_health": {
+    "ws_connected": true,
+    "last_graduation_sec_ago": 574,
+    "last_t30_callback_sec_ago": 2004,
+    "last_paper_trade_sec_ago": 320501,
+    "last_shadow_trade_sec_ago": 1974,
+    "last_candidate_sec_ago": 12,
+    "enabled_strategies": 74,
+    "channel_win_distribution": {
+      "pump_fun_ws_confirmed_pct": 0,
+      "pump_fun_ws_processed_pct": 100,
+      "pumpswap_ws_confirmed_pct": 0,
+      "rpc_poll_pct": 0,
+      "total_wins": 611
+    },
+    "verdict": "T30_STALLED",
+    "notes": "Last T+30 callback was 2004s ago. Graduations arriving but PriceCollector → StrategyManager wiring is silent."
+  },
+  "recent_errors": []
+}

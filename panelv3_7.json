@@ -1,0 +1,818 @@
+{
+  "generated_at": "2026-06-13T17:01:45.301Z",
+  "panelv3_7": {
+    "title": "Regime Stability & Walk-Forward Validation — v3 Leaders",
+    "description": "For each of the top 10 pairs (Panel 6) and top 10 triples (v3 Panel 1 T+300), runs TWO stability checks: (a) walk-forward — train Panel 4's TP/SL optimum on the first 70% of rows by created_at, then evaluate THAT SAME coordinate (no re-optimization) on the held-out last 30%. Degradation = train_avg − test_avg. Verdict: ROBUST (<2pp), DEGRADED (2–5pp), OVERFIT (>5pp), INSUFFICIENT (train or test n<20). (b) Regime buckets — same 4 time-quartile buckets Panel 3/11 use. Per-bucket WR and avg return (T+30-anchored, cost-adjusted, no TP/SL). WR StdDev < 8 = STABLE, < 15 = MODERATE, ≥ 15 = CLUSTERED. A v3 leader that's both ROBUST and STABLE/MODERATE is a genuine promotion candidate; one that's OVERFIT or CLUSTERED is leaderboard noise.",
+    "constants": {
+      "wf_train_frac": 0.7,
+      "wf_min_n_half": 20,
+      "regime_bucket_count": 4
+    },
+    "rows": [
+      {
+        "name": "vel 50-200 sol/min + holders >= 250 (backfill)",
+        "kind": "pair",
+        "n_total": 56,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 59.4,
+        "n_train": 48,
+        "n_test": 8,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 59.18,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 13,
+            "win_rate_pct": 76.9,
+            "avg_return_pct": 60.7
+          },
+          {
+            "n": 19,
+            "win_rate_pct": 73.7,
+            "avg_return_pct": 95.7
+          },
+          {
+            "n": 20,
+            "win_rate_pct": 90,
+            "avg_return_pct": 179.8
+          },
+          {
+            "n": 4,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 7.1,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 50-200 sol/min + holders >= 100 (backfill)",
+        "kind": "pair",
+        "n_total": 157,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 41.4,
+        "n_train": 133,
+        "n_test": 24,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 41.11,
+        "test_avg_ret": 42.99,
+        "degradation": -1.88,
+        "wf_verdict": "ROBUST",
+        "buckets": [
+          {
+            "n": 39,
+            "win_rate_pct": 82.1,
+            "avg_return_pct": 94.2
+          },
+          {
+            "n": 40,
+            "win_rate_pct": 72.5,
+            "avg_return_pct": 68.7
+          },
+          {
+            "n": 62,
+            "win_rate_pct": 82.3,
+            "avg_return_pct": 123.5
+          },
+          {
+            "n": 16,
+            "win_rate_pct": 81.3,
+            "avg_return_pct": 43
+          }
+        ],
+        "wr_std_dev": 4.1,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 20-50 sol/min + holders >= 250 (backfill)",
+        "kind": "pair",
+        "n_total": 94,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 39.5,
+        "n_train": 77,
+        "n_test": 17,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 34.93,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 30,
+            "win_rate_pct": 70,
+            "avg_return_pct": 78.9
+          },
+          {
+            "n": 23,
+            "win_rate_pct": 69.6,
+            "avg_return_pct": 30.5
+          },
+          {
+            "n": 30,
+            "win_rate_pct": 70,
+            "avg_return_pct": 74
+          },
+          {
+            "n": 11,
+            "win_rate_pct": 90.9,
+            "avg_return_pct": 71.3
+          }
+        ],
+        "wr_std_dev": 9.1,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "holders >= 100 (backfill) + rapid_fire",
+        "kind": "pair",
+        "n_total": 58,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 33.5,
+        "n_train": 37,
+        "n_test": 21,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 39.54,
+        "test_avg_ret": 22.95,
+        "degradation": 16.59,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 11,
+            "win_rate_pct": 90.9,
+            "avg_return_pct": 893.1
+          },
+          {
+            "n": 9,
+            "win_rate_pct": 77.8,
+            "avg_return_pct": 122.6
+          },
+          {
+            "n": 20,
+            "win_rate_pct": 70,
+            "avg_return_pct": 86.7
+          },
+          {
+            "n": 18,
+            "win_rate_pct": 72.2,
+            "avg_return_pct": 49.7
+          }
+        ],
+        "wr_std_dev": 8.1,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "holders >= 250 (backfill) + repeat_dev >= 3",
+        "kind": "pair",
+        "n_total": 127,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 33.5,
+        "n_train": 88,
+        "n_test": 39,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 36.12,
+        "test_avg_ret": 27.65,
+        "degradation": 8.47,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 12,
+            "win_rate_pct": 66.7,
+            "avg_return_pct": 125.3
+          },
+          {
+            "n": 36,
+            "win_rate_pct": 66.7,
+            "avg_return_pct": 68.3
+          },
+          {
+            "n": 49,
+            "win_rate_pct": 75.5,
+            "avg_return_pct": 85.2
+          },
+          {
+            "n": 30,
+            "win_rate_pct": 73.3,
+            "avg_return_pct": 36.1
+          }
+        ],
+        "wr_std_dev": 3.9,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 20-50 sol/min + holders >= 100 (backfill)",
+        "kind": "pair",
+        "n_total": 238,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 32,
+        "n_train": 196,
+        "n_test": 42,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 33.24,
+        "test_avg_ret": 26.28,
+        "degradation": 6.96,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 73,
+            "win_rate_pct": 69.9,
+            "avg_return_pct": 56
+          },
+          {
+            "n": 70,
+            "win_rate_pct": 74.3,
+            "avg_return_pct": 64.2
+          },
+          {
+            "n": 65,
+            "win_rate_pct": 66.2,
+            "avg_return_pct": 61.7
+          },
+          {
+            "n": 30,
+            "win_rate_pct": 80,
+            "avg_return_pct": 40.7
+          }
+        ],
+        "wr_std_dev": 5.1,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "holders >= 250 (backfill) + dip_and_recover = 1",
+        "kind": "pair",
+        "n_total": 101,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 31.2,
+        "n_train": 80,
+        "n_test": 21,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 32.38,
+        "test_avg_ret": 26.79,
+        "degradation": 5.59,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 16,
+            "win_rate_pct": 75,
+            "avg_return_pct": 32.1
+          },
+          {
+            "n": 23,
+            "win_rate_pct": 91.3,
+            "avg_return_pct": 111.2
+          },
+          {
+            "n": 52,
+            "win_rate_pct": 78.8,
+            "avg_return_pct": 73.5
+          },
+          {
+            "n": 10,
+            "win_rate_pct": 70,
+            "avg_return_pct": 20.5
+          }
+        ],
+        "wr_std_dev": 7.9,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "holders >= 250 (backfill) + volatility 30-60%",
+        "kind": "pair",
+        "n_total": 168,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 30.1,
+        "n_train": 142,
+        "n_test": 26,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 32.23,
+        "test_avg_ret": 18.77,
+        "degradation": 13.46,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 38,
+            "win_rate_pct": 71.1,
+            "avg_return_pct": 35.2
+          },
+          {
+            "n": 54,
+            "win_rate_pct": 74.1,
+            "avg_return_pct": 46.7
+          },
+          {
+            "n": 62,
+            "win_rate_pct": 74.2,
+            "avg_return_pct": 74
+          },
+          {
+            "n": 14,
+            "win_rate_pct": 50,
+            "avg_return_pct": 17.7
+          }
+        ],
+        "wr_std_dev": 10.1,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "bc_age < 10 min + holders >= 250 (backfill)",
+        "kind": "pair",
+        "n_total": 377,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 29.9,
+        "n_train": 300,
+        "n_test": 77,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 31.19,
+        "test_avg_ret": 24.79,
+        "degradation": 6.4,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 100,
+            "win_rate_pct": 69,
+            "avg_return_pct": 58.5
+          },
+          {
+            "n": 105,
+            "win_rate_pct": 67.6,
+            "avg_return_pct": 55.1
+          },
+          {
+            "n": 127,
+            "win_rate_pct": 67.7,
+            "avg_return_pct": 73.2
+          },
+          {
+            "n": 45,
+            "win_rate_pct": 68.9,
+            "avg_return_pct": 29.4
+          }
+        ],
+        "wr_std_dev": 0.7,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "holders >= 250 (backfill) + t30 between +10% and +50%",
+        "kind": "pair",
+        "n_total": 259,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 28.7,
+        "n_train": 208,
+        "n_test": 51,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 30,
+        "test_avg_ret": 23.25,
+        "degradation": 6.75,
+        "wf_verdict": "OVERFIT",
+        "buckets": [
+          {
+            "n": 65,
+            "win_rate_pct": 72.3,
+            "avg_return_pct": 31.5
+          },
+          {
+            "n": 69,
+            "win_rate_pct": 85.5,
+            "avg_return_pct": 56.9
+          },
+          {
+            "n": 99,
+            "win_rate_pct": 78.8,
+            "avg_return_pct": 44.4
+          },
+          {
+            "n": 26,
+            "win_rate_pct": 69.2,
+            "avg_return_pct": 27.6
+          }
+        ],
+        "wr_std_dev": 6.3,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 50-200 sol/min + holders >= 250 (backfill) + t30 > 0%",
+        "kind": "triple",
+        "n_total": 38,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 78,
+        "n_train": 30,
+        "n_test": 8,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 82.66,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 7,
+            "win_rate_pct": 85.7,
+            "avg_return_pct": 60.6
+          },
+          {
+            "n": 12,
+            "win_rate_pct": 91.7,
+            "avg_return_pct": 143.8
+          },
+          {
+            "n": 15,
+            "win_rate_pct": 100,
+            "avg_return_pct": 206.9
+          },
+          {
+            "n": 4,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 5.9,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 50-200 sol/min + holders >= 250 (backfill) + liquidity > 50 SOL",
+        "kind": "triple",
+        "n_total": 53,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 63.4,
+        "n_train": 45,
+        "n_test": 8,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 63.86,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 11,
+            "win_rate_pct": 81.8,
+            "avg_return_pct": 67.9
+          },
+          {
+            "n": 18,
+            "win_rate_pct": 77.8,
+            "avg_return_pct": 104.6
+          },
+          {
+            "n": 20,
+            "win_rate_pct": 90,
+            "avg_return_pct": 179.8
+          },
+          {
+            "n": 4,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 5.1,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 50-200 sol/min + holders >= 250 (backfill) + top5 < 20%",
+        "kind": "triple",
+        "n_total": 53,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 62.8,
+        "n_train": 45,
+        "n_test": 8,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 63.13,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 12,
+            "win_rate_pct": 75,
+            "avg_return_pct": 64
+          },
+          {
+            "n": 18,
+            "win_rate_pct": 72.2,
+            "avg_return_pct": 99.1
+          },
+          {
+            "n": 19,
+            "win_rate_pct": 94.7,
+            "avg_return_pct": 191.8
+          },
+          {
+            "n": 4,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 10,
+        "regime_stability": "MODERATE"
+      },
+      {
+        "name": "vel 50-200 sol/min + holders >= 100 (backfill) + volatility 30-60%",
+        "kind": "triple",
+        "n_total": 55,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 60.1,
+        "n_train": 46,
+        "n_test": 9,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 61.26,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 10,
+            "win_rate_pct": 100,
+            "avg_return_pct": 66.1
+          },
+          {
+            "n": 16,
+            "win_rate_pct": 81.3,
+            "avg_return_pct": 69.3
+          },
+          {
+            "n": 22,
+            "win_rate_pct": 81.8,
+            "avg_return_pct": 140.5
+          },
+          {
+            "n": 7,
+            "win_rate_pct": 85.7,
+            "avg_return_pct": 42
+          }
+        ],
+        "wr_std_dev": 7.6,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "holders >= 100 (backfill) + volatility 30-60% + vel 50-200 sol/min",
+        "kind": "triple",
+        "n_total": 55,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 60.1,
+        "n_train": 46,
+        "n_test": 9,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 61.26,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 10,
+            "win_rate_pct": 100,
+            "avg_return_pct": 66.1
+          },
+          {
+            "n": 16,
+            "win_rate_pct": 81.3,
+            "avg_return_pct": 69.3
+          },
+          {
+            "n": 22,
+            "win_rate_pct": 81.8,
+            "avg_return_pct": 140.5
+          },
+          {
+            "n": 7,
+            "win_rate_pct": 85.7,
+            "avg_return_pct": 42
+          }
+        ],
+        "wr_std_dev": 7.6,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "bc_age < 10 min + holders >= 250 (backfill) + vel 50-200 sol/min",
+        "kind": "triple",
+        "n_total": 56,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 59.4,
+        "n_train": 48,
+        "n_test": 8,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 59.18,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 13,
+            "win_rate_pct": 76.9,
+            "avg_return_pct": 60.7
+          },
+          {
+            "n": 19,
+            "win_rate_pct": 73.7,
+            "avg_return_pct": 95.7
+          },
+          {
+            "n": 20,
+            "win_rate_pct": 90,
+            "avg_return_pct": 179.8
+          },
+          {
+            "n": 4,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 7.1,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 50-200 sol/min + holders >= 100 (backfill) + t30 between +10% and +50%",
+        "kind": "triple",
+        "n_total": 59,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 57,
+        "n_train": 47,
+        "n_test": 12,
+        "train_tp": 150,
+        "train_sl": 30,
+        "train_avg_ret": 65.31,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 12,
+            "win_rate_pct": 91.7,
+            "avg_return_pct": 66.8
+          },
+          {
+            "n": 17,
+            "win_rate_pct": 88.2,
+            "avg_return_pct": 84.5
+          },
+          {
+            "n": 22,
+            "win_rate_pct": 90.9,
+            "avg_return_pct": 120
+          },
+          {
+            "n": 8,
+            "win_rate_pct": 87.5,
+            "avg_return_pct": 33.4
+          }
+        ],
+        "wr_std_dev": 1.8,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "vel 20-50 sol/min + holders >= 250 (backfill) + max_dd > -10% (shallow)",
+        "kind": "triple",
+        "n_total": 42,
+        "opt_tp": 150,
+        "opt_sl": 30,
+        "opt_avg_ret": 56.2,
+        "n_train": 34,
+        "n_test": 8,
+        "train_tp": 150,
+        "train_sl": 25,
+        "train_avg_ret": 55.1,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 10,
+            "win_rate_pct": 90,
+            "avg_return_pct": 159.3
+          },
+          {
+            "n": 15,
+            "win_rate_pct": 86.7,
+            "avg_return_pct": 55.3
+          },
+          {
+            "n": 11,
+            "win_rate_pct": 81.8,
+            "avg_return_pct": 60.8
+          },
+          {
+            "n": 6,
+            "win_rate_pct": 83.3,
+            "avg_return_pct": 52.5
+          }
+        ],
+        "wr_std_dev": 3.2,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "holders >= 250 (backfill) + repeat_dev >= 3 + top5 < 10%",
+        "kind": "triple",
+        "n_total": 30,
+        "opt_tp": 150,
+        "opt_sl": 25,
+        "opt_avg_ret": 55.9,
+        "n_train": 28,
+        "n_test": 2,
+        "train_tp": 150,
+        "train_sl": 25,
+        "train_avg_ret": 53.42,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 6,
+            "win_rate_pct": 83.3,
+            "avg_return_pct": 116.1
+          },
+          {
+            "n": 11,
+            "win_rate_pct": 72.7,
+            "avg_return_pct": 50.3
+          },
+          {
+            "n": 12,
+            "win_rate_pct": 91.7,
+            "avg_return_pct": 113.1
+          },
+          {
+            "n": 1,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 7.8,
+        "regime_stability": "STABLE"
+      },
+      {
+        "name": "holders >= 250 (backfill) + top5 < 10% + repeat_dev >= 3",
+        "kind": "triple",
+        "n_total": 30,
+        "opt_tp": 150,
+        "opt_sl": 25,
+        "opt_avg_ret": 55.9,
+        "n_train": 28,
+        "n_test": 2,
+        "train_tp": 150,
+        "train_sl": 25,
+        "train_avg_ret": 53.42,
+        "test_avg_ret": null,
+        "degradation": null,
+        "wf_verdict": "INSUFFICIENT",
+        "buckets": [
+          {
+            "n": 6,
+            "win_rate_pct": 83.3,
+            "avg_return_pct": 116.1
+          },
+          {
+            "n": 11,
+            "win_rate_pct": 72.7,
+            "avg_return_pct": 50.3
+          },
+          {
+            "n": 12,
+            "win_rate_pct": 91.7,
+            "avg_return_pct": 113.1
+          },
+          {
+            "n": 1,
+            "win_rate_pct": null,
+            "avg_return_pct": null
+          }
+        ],
+        "wr_std_dev": 7.8,
+        "regime_stability": "STABLE"
+      }
+    ],
+    "flags": {
+      "low_n_threshold": 30,
+      "strong_n_threshold": 100
+    }
+  }
+}
