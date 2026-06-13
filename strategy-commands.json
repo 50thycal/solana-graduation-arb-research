@@ -1,0 +1,77 @@
+{
+  "commands": [
+    {
+      "action": "report-upsert",
+      "id": "report-2026-06-13",
+      "date": "2026-06-13",
+      "generated_by": "claude",
+      "narrative": "## 2026-06-13 Daily Report\n\n**Roster:** No changes since yesterday. 74 strategies enabled, 6 disabled. 80 total in roster.\n\n**Headline:** Bot is HEALTHY on all four pipeline levels but recorded 0 shadow trades today — the last graduation was ~18 minutes before report time, which the diagnose pipeline flags as NO_GRADS (a transient quiet period, not a WS failure; all Levels 1–4 pass). Yesterday delivered 137 shadow trades.\n\n### What accumulated vs. what bled\n\nNo new SOL moved today given the zero-trade window. Lifetime view: the top two strategies continue to lead on real SOL accumulation:\n\n- **v9shadow-velmono-dev** (vel 20-50 + mono>0.5 + dev>5%, score **70.4**): n=109, total=**+3.181 SOL**, drop3=**+1.441 SOL**, monthly=**+2.24 SOL/mo**. Three of four promotion gates clear; monthly run rate is the only gap (needs 3.75, currently 2.24). Still a WATCH.\n- **v9shadow-velmid-liq-mono** (vel 20-50 + liq>100 + mono>0.33, score **66.9**): n=121, total=**+2.844 SOL**, drop3=**+0.480 SOL** (thin but positive), monthly=**+2.09 SOL/mo**. Same situation — three gates clear, monthly gate open. Also a WATCH.\n- **v24-rugger-climbing** (serial_rugger + climbing_t30_t45, score **70.7**): n=39, total=+2.787, drop3=+0.529. Highest composite score but far too few trades (needs 100). Rising — score up +14.3 points since 06-11 (56.4→70.7). WATCH.\n\nNo strategy is currently PROMOTABLE. The two closest (velmono-dev, velmid-liq-mono) need their monthly run rates to grow; the market has been slower this week which compresses the denominator.\n\n### Score trend alert — velmono-dev dropped 16.9 points\n\nThe 7-day score history shows v9shadow-velmono-dev at **87.3 on 06-11 → 70.4 on 06-12** (−16.9 points). v9shadow-velmid-liq-mono was stable (67.7→66.9). A drop of this magnitude on the leading strategy is worth watching; the most likely cause is the monthly run-rate denominator expanding as time passes without new wins. No data quality flag on the row; leaving as WATCH pending another week of trades.\n\n### Kill backlog: 8 action items unexecuted, losses continuing\n\nEight kill recommendations from sessions spanning 06-09 to 06-12 are all still PROPOSED. The market keeps executing trades against these strategies while the proposals sit. Most critically:\n\n- **v52a-sm-shape** (HIT-KILL auto_status): n=167, total=**−3.833 SOL**, drop3=**−5.430 SOL**. The three most recent shadow trades for this strategy were all losses (−17.6%, −4.4%, −45.2%). Recommended for kill since 06-11. Every day it runs is more SOL drain.\n- **v46-v25-green-only** (HIT-KILL): n=110, drop3=**−4.444 SOL** — also in the last 50 trades with a −14.8% timeout exit.\n- **v35-vel2050-buyers-ratio**: n=97, total=**−6.941 SOL** (worst bleeder), drop3=**−8.603 SOL** — about to cross n=100 as hard INVALID.\n- **V29.1**, **V31.5**, **v40-whale-cap**, **v40-acc-whale**: all HIT-KILL in journal, all deeply negative, all still running.\n\n### New kill proposals (not in prior action items)\n\nTwo more strategies have reached INVALID territory without a prior kill recommendation:\n- **v52d-sm-freshdev**: n=117, total=**−1.716 SOL**, drop3=**−3.360 SOL** — HIT-KILL in journal.\n- **v35-vel2050-dev3**: n=104, total=**−2.965 SOL**, drop3=**−4.627 SOL** — HIT-KILL in journal.\n\n### Bright spot: v55d-buyflow\n\nv55 SM buy-flow magnitude is ON-TRACK in the journal (net_sol=+0.599, monthly=+4.713 SOL/mo if sustained) but only n=10 — far too early to draw conclusions. Worth watching as it builds toward the kill-criterion threshold.\n\n### Operator next step\n\n**Execute the kill batch.** Thirteen or more strategies have clear INVALID evidence and pending kill recommendations. Propose packaging the kills from action items ai-2026-06-11-001, ai-2026-06-12-001 plus the two new INVALID strategies (v52d, v35-vel2050-dev3) into a single strategy-commands.json push. This is the single highest-leverage action available — every day these strategies continue trading represents measurable SOL loss rather than research value.",
+      "winners": [],
+      "losers": [],
+      "anomalies": [
+        {"kind": "graduation_rate_drop", "severity": "high", "description": "Last graduation detected ~18 minutes before report time; pipeline health flags NO_GRADS but all bot health levels 1-4 pass. Likely a transient quiet period on pump.fun."},
+        {"kind": "edge_decay", "severity": "med", "description": "Multiple shadow strategies flagged DEGRADING or HIT-KILL in journal. v52a-sm-shape (HIT-KILL, n=167) and v46-v25-green-only (HIT-KILL, n=110) still running and executing losing trades."},
+        {"kind": "kill_backlog", "severity": "high", "description": "8 open action items (kill/watch/create) from 06-03 to 06-12 remain PROPOSED with no operator action. Loss accumulation on INVALID strategies is ongoing."},
+        {"kind": "score_drop", "severity": "med", "description": "v9shadow-velmono-dev composite readiness score dropped 16.9 points (87.3→70.4) from 06-11 to 06-12. Likely monthly run-rate denominator expansion. No data quality flag; monitor."}
+      ],
+      "patterns": [
+        {"description": "velmono-dev and velmid-liq-mono recurring as top-2 accumulators for 5+ days — consistent positive drop3. Monthly run rate is the only remaining barrier, not data quality."},
+        {"description": "Kill backlog has grown to 8 items spanning 10 days (06-03 to 06-12) with zero operator executions. Pattern suggests operator is intentionally deferring; should either execute or formally DEFER each item to clear the backlog."},
+        {"description": "v24-rugger-climbing score has risen sharply over 7 days (35.8→56.4→70.7). The serial_rugger creator signal combined with climbing_t30_t45 momentum filter appears to be finding genuine edge in early trades. Watch closely as n approaches 60."},
+        {"description": "All strategies using BTC regime overlays (V30, V31 series) are accumulating losses uniformly. None have cleared drop3>0 with n>=100. Macro-regime gating on this timeframe appears to add noise rather than signal."}
+      ],
+      "recommendations": {
+        "kill": [
+          {"strategy_id": "v52a-sm-shape", "reason": "n=167, drop3=−5.430 SOL — clear INVALID. HIT-KILL auto_status in journal. Recommended 06-11 (2 days). Still trading and losing."},
+          {"strategy_id": "v52d-sm-freshdev", "reason": "n=117, drop3=−3.360 SOL — INVALID. HIT-KILL in journal. Not in prior action items."},
+          {"strategy_id": "v46-v25-green-only", "reason": "n=110, drop3=−4.444 SOL — INVALID. HIT-KILL in journal. Recommended 06-12."},
+          {"strategy_id": "v35-vel2050-dev3", "reason": "n=104, drop3=−4.627 SOL — INVALID. HIT-KILL in journal. Not in prior action items."},
+          {"strategy_id": "v12-vel2050-liq-dd15", "reason": "n=102, drop3=−1.788 SOL — INVALID. Recommended 06-12."},
+          {"strategy_id": "v35-vel2050-buyers-ratio", "reason": "n=97, drop3=−8.603 SOL — effectively INVALID, HIT-KILL in journal. Recommended 06-11."},
+          {"strategy_id": "v51-confirm-gate", "reason": "n=91, drop3=−4.661 SOL — HIT-KILL in journal. Recommended 06-11."},
+          {"strategy_id": "V31.5", "reason": "n=95, drop3=−8.735 SOL — HIT-KILL in journal. Recommended 06-11."},
+          {"strategy_id": "V29.1", "reason": "n=59, total=−6.736 SOL — HIT-KILL in journal. Deep loss trajectory. Recommended 06-11."},
+          {"strategy_id": "v40-whale-cap", "reason": "n=78, total=−6.201 SOL, drop3=−7.553 — HIT-KILL in journal. Recommended 06-11."},
+          {"strategy_id": "v40-acc-whale", "reason": "n=64, total=−5.522 SOL, drop3=−6.577 — HIT-KILL in journal. Recommended 06-11."},
+          {"strategy_id": "v19-age10-top5-base", "reason": "n=62, total=−1.954 SOL — recommended 06-11."},
+          {"strategy_id": "v19-age10-top5-tp100", "reason": "n=62, total=−2.261 SOL — recommended 06-11."}
+        ],
+        "promote": [],
+        "create_new": [],
+        "watch": [
+          {"strategy_id": "v9shadow-velmono-dev", "reason": "n=109, drop3=+1.441 SOL, total=+3.181 SOL — 3/4 gates clear. Monthly run rate 2.24 vs 3.75 bar. Score dropped 16.9 pts (87.3→70.4). Watch monthly rate through June."},
+          {"strategy_id": "v9shadow-velmid-liq-mono", "reason": "n=121, drop3=+0.480 SOL, total=+2.844 SOL — 3/4 gates clear. Monthly 2.09 vs 3.75. Thin drop3 margin (83.1% top3 concentration). Watch outlier dilution."},
+          {"strategy_id": "v24-rugger-climbing", "reason": "n=39, score=70.7 (rising). Total=+2.787, drop3=+0.529. Kill: n>=60 and drop3<=0. Needs 61 more trades to approach gate."},
+          {"strategy_id": "v55d-buyflow", "reason": "Journal ON-TRACK. n=10, net_sol=+0.599, monthly=4.713 SOL/mo (early). Kill criterion: n>=60 and net_sol<-1. Monitor."}
+        ]
+      },
+      "action_items": [
+        {
+          "id": "ai-2026-06-13-001",
+          "kind": "kill",
+          "target_id": "v52d-sm-freshdev,v35-vel2050-dev3",
+          "summary": "Recommend killing v52d-sm-freshdev (n=117, drop3=−3.360 SOL INVALID) and v35-vel2050-dev3 (n=104, drop3=−4.627 SOL INVALID). Both are HIT-KILL in journal. Not covered by prior action items.",
+          "status": "PROPOSED",
+          "proposed_at": 1781348800
+        },
+        {
+          "id": "ai-2026-06-13-002",
+          "kind": "kill",
+          "target_id": "v52a-sm-shape,v46-v25-green-only,v12-vel2050-liq-dd15,v51-confirm-gate,V29.1,V31.5,v35-vel2050-buyers-ratio,v40-whale-cap,v40-acc-whale,v19-age10-top5-base,v19-age10-top5-tp100,v52d-sm-freshdev,v35-vel2050-dev3",
+          "summary": "ESCALATION: Consolidate all pending kill recommendations into one batch. 13 strategies with clear INVALID evidence have proposals sitting unexecuted for 2–3 days. Recommend operator push a single strategy-commands.json deleting all 13 in one cycle.",
+          "status": "PROPOSED",
+          "proposed_at": 1781348800
+        }
+      ],
+      "auto_journal": true
+    },
+    {
+      "action": "action-item-update",
+      "id": "ai-2026-06-03-004-deferred",
+      "date": "2026-06-03",
+      "action_item_id": "ai-2026-06-03-004",
+      "action_item_status": "DEFERRED",
+      "action_item_note": "10 days since proposal, v50-gini04-climbing not deployed. Deferring to clear backlog — can re-propose when operator is ready to deploy new strategies."
+    }
+  ]
+}
