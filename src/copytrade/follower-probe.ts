@@ -259,7 +259,8 @@ export class CopyFollowerProbe {
         // Drive the shadow copy-trader (no real funds). Fire-and-forget.
         if (this.copyTrader) {
           if (swap.action === 'buy') {
-            this.copyTrader.onLeadBuy(swap.mint, wallet, tier, lag).catch(() => { /* logged inside */ });
+            // |solDelta| = the SOL the lead spent — conviction-size signal.
+            this.copyTrader.onLeadBuy(swap.mint, wallet, tier, lag, Math.abs(swap.solDelta)).catch(() => { /* logged inside */ });
           } else if (swap.action === 'sell') {
             this.copyTrader.onLeadSell(swap.mint).catch(() => { /* logged inside */ });
           }

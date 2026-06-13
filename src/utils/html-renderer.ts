@@ -10272,6 +10272,67 @@ export function renderCopyTradesHtml(data: any): string {
   const sol = (v: any) => (typeof v === 'number' && isFinite(v) ? `<span class="${v >= 0 ? 'green' : 'red'}">${v >= 0 ? '+' : ''}${v.toFixed(3)}</span>` : '—');
   const ov = d.overall ?? {};
 
+  // ── Regime banner: is NOW a good window to copy trade? ────────────────────
+  const rg = d.regime ?? {};
+  const rgc = rg.current ?? {};
+  const REGIME_COLOR: Record<string, string> = { GREEN: '#16a34a', YELLOW: '#ca8a04', RED: '#dc2626' };
+  const regimeColor = REGIME_COLOR[rgc.regime as string] ?? '#6b7280';
+  // 72h hourly strip — one block per hour, height = |baseline net| that hour,
+  // color = the rolling regime classification at that hour.
+  const hours: any[] = rg.hourly ?? [];
+  const maxAbsHour = Math.max(0.05, ...hours.map((h) => Math.abs(h.baseline_net_sol ?? 0)));
+  const hourStrip = hours.map((h) => {
+    const v = h.baseline_net_sol ?? 0;
+    const hPx = Math.max(2, Math.round((Math.abs(v) / maxAbsHour) * 26));
+    const col = REGIME_COLOR[h.regime as string] ?? '#6b7280';
+    const dir = v >= 0 ? `margin-top:${28 - hPx}px` : 'margin-top:28px';
+    return `<div title="${h.hour}  base ${v >= 0 ? '+' : ''}${n(v, 2)} SOL (${h.baseline_n} closed, ${h.lead_buys} lead buys)"
+      style="width:6px;height:${hPx}px;${dir};background:${col};opacity:${v === 0 ? 0.25 : 0.9};border-radius:1px"></div>`;
+  }).join('');
+  const regimeCard = !rg.current ? '' : `<div class="card" style="border-left:6px solid ${regimeColor}">
+    <h2>Copy regime — <span style="color:${regimeColor}">${rgc.regime ?? '—'}</span></h2>
+    <div class="desc">Rolling ${rg.thresholds?.window_hours ?? 6}h on the roster-stable baseline (${rg.baseline_strategy}).
+    GREEN &gt; +${rg.thresholds?.green_min_sol} SOL with ≥${rg.thresholds?.min_trades_6h} closed · RED &lt; −${rg.thresholds?.red_max_sol} SOL ·
+    else YELLOW. Strip = last 72h hourly; copy-regime-green only enters when this is favorable.</div>
+    <div class="grid">
+      <div>
+        <div class="stat"><span class="label">Baseline net (6h)</span><span class="value">${sol(rgc.baseline_net_6h)} <span class="desc">(${rgc.baseline_n_6h ?? 0} closed)</span></span></div>
+        <div class="stat"><span class="label">Baseline net (24h)</span><span class="value">${sol(rgc.baseline_net_24h)} <span class="desc">(${rgc.baseline_n_24h ?? 0} closed)</span></span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">Whole-book net (6h)</span><span class="value">${sol(rgc.book_net_6h)} <span class="desc">(${rgc.book_n_6h ?? 0} closed)</span></span></div>
+        <div class="stat"><span class="label">Lead activity (6h)</span><span class="value">${rgc.lead_buys_6h ?? 0} buys / ${rgc.active_leads_6h ?? 0} wallets</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">Daily swing (mean ± std)</span><span class="value">${n(rg.swing?.daily_mean_sol)} ± ${n(rg.swing?.daily_std_sol)} SOL</span></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:1px;align-items:flex-start;height:58px;margin-top:8px">${hourStrip}</div>
+  </div>`;
+
+  // ── Daily book P&L bars — the swings, made visible ────────────────────────
+  const daily: any[] = ov.daily ?? [];
+  const last14 = daily.slice(-14);
+  const maxAbsDay = Math.max(0.5, ...last14.map((x) => Math.abs(x.net_sol ?? 0)));
+  const dayBars = last14.map((x) => {
+    const v = x.net_sol ?? 0;
+    const hPx = Math.max(3, Math.round((Math.abs(v) / maxAbsDay) * 60));
+    const up = v >= 0;
+    return `<div style="display:flex;flex-direction:column;align-items:center;width:52px">
+      <div style="height:64px;display:flex;align-items:${up ? 'flex-end' : 'flex-start'}">
+        <div title="${x.date}: ${up ? '+' : ''}${n(v, 2)} SOL on ${x.n} trades"
+          style="width:34px;height:${hPx}px;background:${up ? '#16a34a' : '#dc2626'};border-radius:2px"></div>
+      </div>
+      <span class="desc" style="font-size:10px">${(x.date ?? '').slice(5)}</span>
+      <span style="font-size:11px" class="${up ? 'green' : 'red'}">${up ? '+' : ''}${n(v, 1)}</span>
+    </div>`;
+  }).join('');
+  const dailyCard = `<div class="card">
+    <h2>Daily book P&L (last 14 days)</h2>
+    <div class="desc">Whole-book net SOL per UTC day — lifetime totals hide these swings.</div>
+    <div style="display:flex;gap:4px;align-items:flex-start;margin-top:6px">${dayBars}</div>
+  </div>`;
+
   const headerCard = `<div class="card">
     <h2>Copy Trades — shadow follower</h2>
     <div class="desc">SHADOW (no real funds). When a followed wallet buys a graduated token, each strategy
@@ -10284,7 +10345,11 @@ export function renderCopyTradesHtml(data: any): string {
       </div>
       <div>
         <div class="stat"><span class="label">Net after drop top-3</span><span class="value">${sol(ov.total_net_sol_drop_top3)}</span></div>
+        <div class="stat"><span class="label">Net under exit stress</span><span class="value">${sol(ov.total_net_sol_exit_stress)}</span></div>
+      </div>
+      <div>
         <div class="stat"><span class="label">Win rate</span><span class="value">${pct(ov.win_rate)}</span></div>
+        <div class="stat"><span class="label">Incl. open MTM</span><span class="value">${sol(ov.total_incl_open_sol)}</span></div>
       </div>
       <div>
         <div class="stat"><span class="label">Median hold</span><span class="value">${ov.median_hold_sec != null ? Math.round(ov.median_hold_sec) + 's' : '—'}</span></div>
@@ -10293,20 +10358,60 @@ export function renderCopyTradesHtml(data: any): string {
     </div>
   </div>`;
 
+  // ── Per-strategy table: robustness gates, drift, paired delta, 14d sparkline ──
+  const paired = d.paired_vs_baseline ?? {};
+  const gateBadge = (ok: boolean | null, label: string) =>
+    ok == null ? `<span class="desc" style="font-size:10px">${label}:—</span>`
+      : `<span style="font-size:10px;padding:1px 4px;border-radius:3px;color:#fff;background:${ok ? '#16a34a' : '#dc2626'}">${label}${ok ? '✓' : '✗'}</span>`;
+  const sparkline = (days: any[]) => {
+    const ds = (days ?? []).slice(-14);
+    if (!ds.length) return '<span class="desc">—</span>';
+    const mx = Math.max(0.05, ...ds.map((x) => Math.abs(x.net_sol ?? 0)));
+    return `<div style="display:flex;gap:1px;align-items:center;height:24px">` + ds.map((x) => {
+      const v = x.net_sol ?? 0;
+      const h = Math.max(2, Math.round((Math.abs(v) / mx) * 10));
+      return `<div title="${x.date}: ${v >= 0 ? '+' : ''}${n(v, 2)}" style="width:5px;height:${h}px;background:${v >= 0 ? '#16a34a' : '#dc2626'};${v >= 0 ? `margin-bottom:${h}px` : `margin-top:${h}px`};border-radius:1px"></div>`;
+    }).join('') + `</div>`;
+  };
   const stratRows = Object.entries(d.by_strategy ?? {}).map(([id, s]: [string, any]) => {
     const c = s.config ?? {};
+    const gateBits = [
+      c.entry_delay_sec != null ? `lag${c.entry_delay_sec}s` : '',
+      c.max_entry_drift_pct != null ? `drift≤${c.max_entry_drift_pct}%` : '',
+      c.min_lead_buy_sol != null ? `buy≥${c.min_lead_buy_sol}◎` : '',
+      c.hot_lead_gate ? 'hot-lead' : '',
+      c.regime_gate_min_6h_net != null ? 'regime-gated' : '',
+      c.min_consensus != null ? `cons≥${c.min_consensus}` : '',
+      c.entry_penalty_pct != null ? `pen${c.entry_penalty_pct}%` : '',
+    ].filter(Boolean).join(' · ');
     const exitRule = c.exit_follow && c.tp_pct == null ? 'lead sell only'
       : (c.tp_pct != null ? `TP${c.tp_pct}/SL${c.sl_pct}` + (c.exit_follow ? ' + follow' : '') : 'follow');
-    return `<tr>
-      <td>${id}</td><td class="desc">${exitRule}</td>
-      <td>${s.n ?? 0}</td><td><span class="blue">${s.open_positions ?? 0}</span></td>
-      <td>${sol(s.total_net_sol)}</td><td>${sol(s.total_net_sol_drop_top3)}</td>
-      <td>${pct(s.win_rate)}</td><td>${s.median_hold_sec != null ? Math.round(s.median_hold_sec) + 's' : '—'}</td>
-      <td class="desc">${Object.entries(s.by_exit_reason ?? {}).map(([k, v]) => `${k}:${v}`).join(' ')}</td></tr>`;
+    const nClosed = s.n ?? 0;
+    const badges = [
+      gateBadge(nClosed > 0 ? nClosed >= 100 : null, 'n100'),
+      gateBadge(nClosed > 0 ? (s.total_net_sol_drop_top3 ?? 0) > 0 : null, 'drop3'),
+      gateBadge(nClosed > 0 ? (s.total_net_sol_exit_stress ?? 0) > 0 : null, 'stress'),
+    ].join(' ');
+    const allPass = nClosed >= 100 && (s.total_net_sol_drop_top3 ?? 0) > 0 && (s.total_net_sol_exit_stress ?? 0) > 0;
+    const p = paired[id];
+    const pairedCell = p ? `<span class="${p.delta_net_sol >= 0 ? 'green' : 'red'}">${p.delta_net_sol >= 0 ? '+' : ''}${n(p.delta_net_sol, 2)}</span> <span class="desc">(${p.n_common_events})</span>` : '—';
+    const drift = s.entry_drift;
+    const driftCell = drift ? `${drift.median_pct >= 0 ? '+' : ''}${n(drift.median_pct, 1)}%<span class="desc"> med</span>${(s.drift_skips ?? 0) > 0 ? ` <span class="desc">skip:${s.drift_skips}</span>` : ''}` : ((s.drift_skips ?? 0) > 0 ? `skip:${s.drift_skips}` : '—');
+    return `<tr${allPass ? ' style="background:rgba(22,163,74,0.08)"' : ''}>
+      <td>${id}<div class="desc" style="font-size:10px">${gateBits}</div></td><td class="desc">${exitRule}</td>
+      <td>${nClosed}</td><td><span class="blue">${s.open_positions ?? 0}</span></td>
+      <td>${sol(s.total_net_sol)}</td><td>${sol(s.total_net_sol_drop_top3)}</td><td>${sol(s.total_net_sol_exit_stress)}</td>
+      <td>${pairedCell}</td><td>${pct(s.win_rate)}</td><td>${driftCell}</td>
+      <td>${sparkline(s.daily)}</td>
+      <td style="white-space:nowrap">${badges}</td></tr>`;
   }).join('');
   const stratCard = `<div class="card">
     <h2>By strategy</h2>
-    <table><tr><th>Strategy</th><th>Exit rule</th><th>Closed</th><th>Open</th><th>Net SOL</th><th>Drop top-3</th><th>Win%</th><th>Median hold</th><th>Exits</th></tr>${stratRows}</table>
+    <div class="desc">Paired Δ = net SOL vs ${d.paired_baseline} on the SAME lead-buy events (the honest exit-variant
+    comparison — lifetime totals are not independent across strategies). Gates: n≥100 · drop-top3&gt;0 ·
+    exit-stress&gt;0 — a green-tinted row clears all three. Drift = measured detection→fill move on lag variants
+    (median); skip = drift-gate rejections.</div>
+    <table><tr><th>Strategy</th><th>Exit rule</th><th>Closed</th><th>Open</th><th>Net SOL</th><th>Drop top-3</th><th>Stress</th><th>Paired Δ</th><th>Win%</th><th>Drift</th><th>14d</th><th>Gates</th></tr>${stratRows}</table>
   </div>`;
 
   const recentRows = (d.recent_closed ?? []).map((r: any) => `<tr>
@@ -10319,5 +10424,5 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Strategy</th><th>Mint</th><th>Lead</th><th>Tier</th><th>Exit</th><th>Gross%</th><th>Net SOL</th><th>Hold</th></tr>${recentRows}</table>
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', headerCard + stratCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + dailyCard + headerCard + stratCard + recentCard, data as object);
 }

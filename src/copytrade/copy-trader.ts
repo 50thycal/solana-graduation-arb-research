@@ -3,6 +3,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { fetchVaultPrice } from '../trading/executor';
 import { SIM_DEFAULT_COST_PCT } from '../api/sim-constants';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { computeCopyRegime, regimeBaselineNetSince, REGIME_WINDOW_HOURS, COPY_REGIME_BASELINE } from './copy-regime';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-trader');
@@ -63,6 +64,15 @@ export interface CopyStrategy {
   maxEntryDriftPct?: number;   // drift gate (needs entryDelaySec): at delayed-entry time, skip the copy if the
                                // price ran more than this % ABOVE the detection snapshot (don't chase). Skips
                                // are recorded as status='skipped' rows with the measured drift.
+  minLeadBuySol?: number;      // conviction gate: only copy when the lead's own buy was >= this many SOL
+                               // (parsed from their tx). Small buys are spam/probing; size = conviction.
+  hotLeadGate?: { lastN: number; minTrades: number; minNetSol: number };
+                               // lead-momentum gate: look at OUR last `lastN` closed baseline copies of this
+                               // lead; require >= minTrades of history and sum(net_sol) > minNetSol. Benches
+                               // leads who are currently losing us money; new leads with no history are skipped.
+  regimeGateMin6hNet?: number; // regime gate: only enter when the baseline book's rolling 6h closed net SOL
+                               // is above this. Tests "skip the bad windows" — the copy book swings hard
+                               // (-31/+44/-35 SOL days) and this rides only the favorable tape.
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
@@ -96,6 +106,23 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-followsell-lag-drift10', tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryDelaySec: 5, followSellDelaySec: 5, maxEntryDriftPct: 10 },
   { id: 'copy-consensus2-lag-drift5',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5 },
   { id: 'copy-consensus2-lag-drift10', tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 10 },
+  // ── H (2026-06-12): smart-wallet-data gates, all on the conservative lag+drift10
+  //    base (the best early construction). Each isolates ONE new signal:
+  // H1 regime gate — only enter when the baseline book's rolling 6h net is positive.
+  //    Direct test of "the edge is real but only in good windows" (book swings
+  //    -31/+44/-35 SOL per day). Compare vs copy-tp100-sl30-lag-drift10 paired.
+  { id: 'copy-regime-green',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, regimeGateMin6hNet: 0 },
+  // H2 hot-lead gate — only copy leads whose last <=10 baseline copies made us
+  //    money (>=3 trades of history). Benches cold hands; tests whether lead-level
+  //    performance persists short-term.
+  { id: 'copy-hotlead',       tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // H3 conviction-size gate — only copy lead buys >= 2 SOL. Small buys are
+  //    spam/probing; size = conviction. lead_buy_sol is stored on every row, so
+  //    the threshold is tunable from data after a week.
+  { id: 'copy-bigbuy',        tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, minLeadBuySol: 2 },
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
@@ -241,8 +268,45 @@ export class CopyTrader {
     }
   }
 
-  /** A followed wallet bought `mint` — open shadow copies for armed strategies. */
-  async onLeadBuy(mint: string, leadWallet: string, leadTier: string, detectionLagSec: number | null): Promise<void> {
+  /** Rolling 6h baseline net for the regime gate — cached 60s so a burst of lead
+   *  buys doesn't re-run the SQL every time. */
+  private regimeCache: { ts: number; net: number; n: number } | null = null;
+  private regimeNet6h(): { net: number; n: number } {
+    const now = Date.now();
+    if (this.regimeCache && now - this.regimeCache.ts < 60_000) return this.regimeCache;
+    const r = regimeBaselineNetSince(this.db, Math.floor(now / 1000) - REGIME_WINDOW_HOURS * 3600);
+    this.regimeCache = { ts: now, ...r };
+    return this.regimeCache;
+  }
+
+  /** Lead-momentum stats: OUR realized net over the last N closed baseline copies
+   *  of this lead. Cached 60s per wallet. */
+  private hotLeadCache = new Map<string, { ts: number; n: number; net: number }>();
+  private leadRecentStats(leadWallet: string, lastN: number): { n: number; net: number } {
+    const now = Date.now();
+    const hit = this.hotLeadCache.get(leadWallet);
+    if (hit && now - hit.ts < 60_000) return hit;
+    let res = { n: 0, net: 0 };
+    try {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) AS n, COALESCE(SUM(net_sol), 0) AS net FROM (
+          SELECT net_sol FROM copy_trades
+          WHERE status = 'closed' AND strategy_id = ? AND lead_wallet = ? AND net_sol IS NOT NULL
+          ORDER BY exit_ts DESC LIMIT ?
+        )
+      `).get(COPY_REGIME_BASELINE, leadWallet, lastN) as { n: number; net: number };
+      res = { n: row.n, net: row.net };
+    } catch { /* table may be empty */ }
+    this.hotLeadCache.set(leadWallet, { ts: now, ...res });
+    if (this.hotLeadCache.size > 2000) {
+      for (const [k, v] of this.hotLeadCache) if (now - v.ts > 600_000) this.hotLeadCache.delete(k);
+    }
+    return res;
+  }
+
+  /** A followed wallet bought `mint` — open shadow copies for armed strategies.
+   *  `leadBuySol` is the size of the lead's own buy (|SOL delta| from their tx). */
+  async onLeadBuy(mint: string, leadWallet: string, leadTier: string, detectionLagSec: number | null, leadBuySol: number | null = null): Promise<void> {
     if (!this.enabled || this.stopped) return;
     const pv = await this.resolvePool(mint);
     if (!pv) return; // not a tracked-grad mint / pool unresolved
@@ -270,11 +334,18 @@ export class CopyTrader {
         if (consensusRecent == null) consensusRecent = this.countRecentSmartBuyers(mint);
         if (consensusRecent < s.minConsensusRecent) continue;
       }
+      // smart-wallet-data gates (H cohort) — all pure SQL/cached, no RPC
+      if (s.minLeadBuySol != null && (leadBuySol == null || leadBuySol < s.minLeadBuySol)) continue;
+      if (s.regimeGateMin6hNet != null && this.regimeNet6h().net <= s.regimeGateMin6hNet) continue;
+      if (s.hotLeadGate) {
+        const st = this.leadRecentStats(leadWallet, s.hotLeadGate.lastN);
+        if (st.n < s.hotLeadGate.minTrades || st.net <= s.hotLeadGate.minNetSol) continue;
+      }
 
       // Measured-lag entry — wait, re-fetch the real price, enter at that.
       if (s.entryDelaySec) {
         this.pendingEntries.add(pendingKey);
-        this.openDelayed(s, mint, pv, leadWallet, leadTier, detectionLagSec, price.priceSol, detectMs)
+        this.openDelayed(s, mint, pv, leadWallet, leadTier, detectionLagSec, price.priceSol, detectMs, leadBuySol)
           .catch((err) => logger.warn('delayed entry error %s %s: %s', s.id, mint.slice(0, 6), err instanceof Error ? err.message : String(err)))
           .finally(() => this.pendingEntries.delete(pendingKey));
         continue;
@@ -289,7 +360,7 @@ export class CopyTrader {
         strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
         leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: COPY_SIZE_SOL,
         tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
-        detectPrice: price.priceSol, entryDelaySec: null, entryDriftPct: null,
+        detectPrice: price.priceSol, entryDelaySec: null, entryDriftPct: null, leadBuySol,
       });
       if (id == null) continue;
       this.positions.set(id, {
@@ -307,6 +378,7 @@ export class CopyTrader {
   private async openDelayed(
     s: CopyStrategy, mint: string, pv: PoolVaults, leadWallet: string, leadTier: string,
     detectionLagSec: number | null, detectPrice: number, detectMs: number,
+    leadBuySol: number | null = null,
   ): Promise<void> {
     await sleep((s.entryDelaySec ?? 0) * 1000);
     if (this.stopped) return;
@@ -340,7 +412,7 @@ export class CopyTrader {
       strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
       leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: COPY_SIZE_SOL,
       tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
-      detectPrice, entryDelaySec: s.entryDelaySec ?? 0, entryDriftPct: driftPct,
+      detectPrice, entryDelaySec: s.entryDelaySec ?? 0, entryDriftPct: driftPct, leadBuySol,
     });
     if (id == null) return;
     const pos: OpenPos = {
@@ -557,24 +629,26 @@ export class CopyTrader {
     tpPrice: number | null; slPrice: number | null; exitFollow: boolean; maxHoldSec: number | null;
     detectionLagSec: number | null;
     detectPrice: number | null; entryDelaySec: number | null; entryDriftPct: number | null;
+    leadBuySol?: number | null;
   }): number | null {
     const res = this.db.prepare(`
       INSERT OR IGNORE INTO copy_trades
         (strategy_id, mint, pool_address, base_vault, quote_vault, lead_wallet, lead_tier,
          entry_ts, entry_price_sol, size_sol, tp_price_sol, sl_price_sol, exit_follow,
          max_hold_sec, detection_lag_sec, high_price_sol, scaled_out, realized_partial_sol, status,
-         detect_price_sol, entry_delay_sec, entry_drift_pct)
+         detect_price_sol, entry_delay_sec, entry_drift_pct, lead_buy_sol)
       VALUES
         (@strategy_id, @mint, @pool, @base_vault, @quote_vault, @lead_wallet, @lead_tier,
          @entry_ts, @entry_price, @size, @tp, @sl, @exit_follow,
          @max_hold, @lag, @entry_price, 0, 0, 'open',
-         @detect_price, @entry_delay, @entry_drift)
+         @detect_price, @entry_delay, @entry_drift, @lead_buy)
     `).run({
       strategy_id: d.strategyId, mint: d.mint, pool: d.pool, base_vault: d.baseVault, quote_vault: d.quoteVault,
       lead_wallet: d.leadWallet, lead_tier: d.leadTier, entry_ts: d.entryTs, entry_price: d.entryPrice,
       size: d.sizeSol, tp: d.tpPrice, sl: d.slPrice, exit_follow: d.exitFollow ? 1 : 0,
       max_hold: d.maxHoldSec, lag: d.detectionLagSec,
       detect_price: d.detectPrice, entry_delay: d.entryDelaySec, entry_drift: d.entryDriftPct,
+      lead_buy: d.leadBuySol ?? null,
     });
     return res.changes > 0 ? (res.lastInsertRowid as number) : null;
   }
@@ -774,6 +848,8 @@ export function computeCopyTrades(db: Database.Database): unknown {
         entry_penalty_pct: s.entryPenaltyPct ?? null, exit_penalty_pct: s.exitPenaltyPct ?? null,
         entry_delay_sec: s.entryDelaySec ?? null, follow_sell_delay_sec: s.followSellDelaySec ?? null,
         max_entry_drift_pct: s.maxEntryDriftPct ?? null,
+        min_lead_buy_sol: s.minLeadBuySol ?? null, hot_lead_gate: s.hotLeadGate ?? null,
+        regime_gate_min_6h_net: s.regimeGateMin6hNet ?? null,
       },
       ...openSummary,
       total_incl_open_sol: +(closedSummary.total_net_sol + openSummary.open_unrealized_sol).toFixed(4),
@@ -793,6 +869,9 @@ export function computeCopyTrades(db: Database.Database): unknown {
     note: 'SHADOW copy trades — no real funds. Entry at pool price ~1.1s after the lead wallet; net_sol after the SIM round-trip cost (scale-out partials folded in). Coverage limited to tokens in our graduations table. CAVEATS: strategies share entry signals — totals are not independent (see paired_vs_baseline); total_net_sol_exit_stress re-nets every closed remainder leg with the exit fill worsened by ' + EXIT_STRESS_PCT + '% (scale-out partials kept as recorded); open_unrealized_sol marks open positions to the last polled pool price (open_priced = how many have one); total_incl_open_sol = closed + unrealized. MEASURED-LAG (-lag) variants wait entry_delay_sec after detection and enter at the re-fetched price (entry_drift = measured detection→fill drift); follow_sell exits on those variants are re-fetched after follow_sell_delay_sec; -drift variants skip entries whose measured drift exceeds max_entry_drift_pct (drift_skips + skipped_drift report the gate).',
     size_sol: COPY_SIZE_SOL,
     paired_baseline: PAIRED_BASELINE,
+    // GREEN/YELLOW/RED window classification + hourly P&L series — "is NOW a
+    // good time to copy trade". Baseline series = copy-tp100-sl30 (roster-stable).
+    regime: computeCopyRegime(db),
     overall: {
       ...overallOpen,
       total_incl_open_sol: +(overallClosed.total_net_sol + overallOpen.open_unrealized_sol).toFixed(4),

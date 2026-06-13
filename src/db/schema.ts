@@ -1106,6 +1106,9 @@ function runMigrations(db: Database.Database): void {
     if (!have.has('detect_price_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN detect_price_sol REAL`);
     if (!have.has('entry_delay_sec')) db.exec(`ALTER TABLE copy_trades ADD COLUMN entry_delay_sec REAL`);
     if (!have.has('entry_drift_pct')) db.exec(`ALTER TABLE copy_trades ADD COLUMN entry_drift_pct REAL`);
+    // Size of the LEAD's own buy (|SOL delta| parsed from their tx) — lets the
+    // conviction-size gate threshold be tuned from stored data instead of guessed.
+    if (!have.has('lead_buy_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN lead_buy_sol REAL`);
   }
   // Additive: tier column (promotable vs smart-only) for DBs created before it.
   {
