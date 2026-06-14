@@ -10272,31 +10272,40 @@ export function renderCopyTradesHtml(data: any): string {
   const sol = (v: any) => (typeof v === 'number' && isFinite(v) ? `<span class="${v >= 0 ? 'green' : 'red'}">${v >= 0 ? '+' : ''}${v.toFixed(3)}</span>` : '—');
   const ov = d.overall ?? {};
 
-  // ── Regime banner: is NOW a good window to copy trade? ────────────────────
+  // ── Regime banner: is NOW a good window to copy trade? (1-10 score) ────────
   const rg = d.regime ?? {};
   const rgc = rg.current ?? {};
-  const REGIME_COLOR: Record<string, string> = { GREEN: '#16a34a', YELLOW: '#ca8a04', RED: '#dc2626' };
-  const regimeColor = REGIME_COLOR[rgc.regime as string] ?? '#6b7280';
+  // 1-10 score → color, matching scoreBand() in copy-regime.ts.
+  const scoreColor = (sc: number): string =>
+    sc >= 8 ? '#16a34a' : sc >= 6 ? '#65a30d' : sc >= 5 ? '#ca8a04' : sc >= 3 ? '#ea580c' : '#dc2626';
+  const curScore = rgc.score;
+  const regimeColor = typeof curScore === 'number' ? scoreColor(curScore) : '#6b7280';
   // 72h hourly strip — one block per hour, height = |baseline net| that hour,
-  // color = the rolling regime classification at that hour.
+  // color = the 1-10 window score at that hour.
   const hours: any[] = rg.hourly ?? [];
   const maxAbsHour = Math.max(0.05, ...hours.map((h) => Math.abs(h.baseline_net_sol ?? 0)));
   const hourStrip = hours.map((h) => {
     const v = h.baseline_net_sol ?? 0;
     const hPx = Math.max(2, Math.round((Math.abs(v) / maxAbsHour) * 26));
-    const col = REGIME_COLOR[h.regime as string] ?? '#6b7280';
+    const col = typeof h.score === 'number' ? scoreColor(h.score) : '#6b7280';
     const dir = v >= 0 ? `margin-top:${28 - hPx}px` : 'margin-top:28px';
-    return `<div title="${h.hour}  base ${v >= 0 ? '+' : ''}${n(v, 2)} SOL (${h.baseline_n} closed, ${h.lead_buys} lead buys)"
-      style="width:6px;height:${hPx}px;${dir};background:${col};opacity:${v === 0 ? 0.25 : 0.9};border-radius:1px"></div>`;
+    return `<div title="${h.hour}  score ${h.score ?? '—'}/10 · base ${v >= 0 ? '+' : ''}${n(v, 2)} SOL (${h.baseline_n} closed, ${h.lead_buys} lead buys)"
+      style="width:6px;height:${hPx}px;${dir};background:${col};opacity:${v === 0 ? 0.3 : 0.9};border-radius:1px"></div>`;
   }).join('');
   const regimeCard = !rg.current ? '' : `<div class="card" style="border-left:6px solid ${regimeColor}">
-    <h2>Copy regime — <span style="color:${regimeColor}">${rgc.regime ?? '—'}</span></h2>
-    <div class="desc">Rolling ${rg.thresholds?.window_hours ?? 6}h on the roster-stable baseline (${rg.baseline_strategy}).
-    GREEN &gt; +${rg.thresholds?.green_min_sol} SOL with ≥${rg.thresholds?.min_trades_6h} closed · RED &lt; −${rg.thresholds?.red_max_sol} SOL ·
-    else YELLOW. Strip = last 72h hourly; copy-regime-green only enters when this is favorable.</div>
+    <h2>Copy regime — <span style="color:${regimeColor}">${curScore ?? '—'}/10</span>
+      <span class="desc" style="font-size:13px">${rgc.band ?? ''} · 24h trend ${rgc.score_24h ?? '—'}/10</span></h2>
+    <div class="desc">Window quality 1 (worst) – 10 (best), rolling ${rg.scale?.window_hours ?? 6}h on the roster-stable
+    baseline (${rg.baseline_strategy}); 5 = neutral. Driven by net SOL (±${rg.scale?.pnl_scale_sol ?? 2.5} = strong) +
+    win-rate breadth, pulled toward neutral when &lt;${rg.scale?.min_trades_6h ?? 5} closed. copy-regime-hi enters at ≥7,
+    copy-regime-mid at ≥5. Strip = last 72h hourly, colored by score.</div>
     <div class="grid">
       <div>
+        <div class="stat"><span class="label">Score (6h)</span><span class="value" style="color:${regimeColor}">${curScore ?? '—'}/10</span></div>
         <div class="stat"><span class="label">Baseline net (6h)</span><span class="value">${sol(rgc.baseline_net_6h)} <span class="desc">(${rgc.baseline_n_6h ?? 0} closed)</span></span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">Score (24h)</span><span class="value" style="color:${scoreColor(rgc.score_24h ?? 5)}">${rgc.score_24h ?? '—'}/10</span></div>
         <div class="stat"><span class="label">Baseline net (24h)</span><span class="value">${sol(rgc.baseline_net_24h)} <span class="desc">(${rgc.baseline_n_24h ?? 0} closed)</span></span></div>
       </div>
       <div>
@@ -10337,7 +10346,8 @@ export function renderCopyTradesHtml(data: any): string {
     <h2>Copy Trades — shadow follower</h2>
     <div class="desc">SHADOW (no real funds). When a followed wallet buys a graduated token, each strategy
     opens a modeled position ~1.1s behind them and holds INDEFINITELY (the wallets hold ~hours), exiting per
-    its rule. net SOL is after the round-trip cost. Size ${n(d.size_sol)} SOL/trade. Separate from /trading.</div>
+    its rule. net SOL is after the round-trip cost. Size ${n(d.size_sol)} SOL/trade. Separate from /trading.
+    <b>Totals below count ACTIVE strategies only.</b>${d.retired_summary ? ` Retired/killed strategies (excluded): ${d.retired_summary.n} closed, ${sol(d.retired_summary.net_sol)} SOL.` : ''}</div>
     <div class="grid">
       <div>
         <div class="stat"><span class="label">Closed copies</span><span class="value">${ov.n ?? 0}</span></div>
@@ -10380,7 +10390,7 @@ export function renderCopyTradesHtml(data: any): string {
       c.max_entry_drift_pct != null ? `drift≤${c.max_entry_drift_pct}%` : '',
       c.min_lead_buy_sol != null ? `buy≥${c.min_lead_buy_sol}◎` : '',
       c.hot_lead_gate ? 'hot-lead' : '',
-      c.regime_gate_min_6h_net != null ? 'regime-gated' : '',
+      c.regime_gate_min_score != null ? `regime≥${c.regime_gate_min_score}` : '',
       c.min_consensus != null ? `cons≥${c.min_consensus}` : '',
       c.entry_penalty_pct != null ? `pen${c.entry_penalty_pct}%` : '',
     ].filter(Boolean).join(' · ');
