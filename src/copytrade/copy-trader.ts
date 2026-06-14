@@ -3,7 +3,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { fetchVaultPrice } from '../trading/executor';
 import { SIM_DEFAULT_COST_PCT } from '../api/sim-constants';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
-import { computeCopyRegime, regimeBaselineNetSince, REGIME_WINDOW_HOURS, COPY_REGIME_BASELINE } from './copy-regime';
+import { computeCopyRegime, currentRegimeScore, COPY_REGIME_BASELINE } from './copy-regime';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-trader');
@@ -70,9 +70,10 @@ export interface CopyStrategy {
                                // lead-momentum gate: look at OUR last `lastN` closed baseline copies of this
                                // lead; require >= minTrades of history and sum(net_sol) > minNetSol. Benches
                                // leads who are currently losing us money; new leads with no history are skipped.
-  regimeGateMin6hNet?: number; // regime gate: only enter when the baseline book's rolling 6h closed net SOL
-                               // is above this. Tests "skip the bad windows" — the copy book swings hard
-                               // (-31/+44/-35 SOL days) and this rides only the favorable tape.
+  regimeGateMinScore?: number; // regime gate: only enter when the current 1-10 window score (computed from
+                               // the roster-stable baseline; 10 best, 1 worst, 5 neutral) is >= this. Tests
+                               // "skip the bad windows" — the copy book swings hard (-31/+44/-35 SOL days)
+                               // and this rides only the favorable tape.
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
@@ -103,11 +104,15 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-consensus2-lag-drift10', tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 10 },
   // ── H (2026-06-12): smart-wallet-data gates, all on the conservative lag+drift10
   //    base (the best early construction). Each isolates ONE new signal:
-  // H1 regime gate — only enter when the baseline book's rolling 6h net is positive.
-  //    Direct test of "the edge is real but only in good windows" (book swings
-  //    -31/+44/-35 SOL per day). Compare vs copy-tp100-sl30-lag-drift10 paired.
-  { id: 'copy-regime-green',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, regimeGateMin6hNet: 0 },
+  // H1 regime gate — only enter when the 1-10 window score is favorable. Direct
+  //    test of "the edge is real but only in good windows" (book swings -31/+44/-35
+  //    SOL/day). Two thresholds bracket the question: -hi (>=7, only strong windows)
+  //    and -mid (>=5, just avoid the below-average tape). The old net>0 gate (now
+  //    copy-regime-green, removed) was too strict — it sat out everything (n=0).
+  { id: 'copy-regime-hi',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, regimeGateMinScore: 7 },
+  { id: 'copy-regime-mid',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, regimeGateMinScore: 5 },
   // H2 hot-lead gate — only copy leads whose last <=10 baseline copies made us
   //    money (>=3 trades of history). Benches cold hands; tests whether lead-level
   //    performance persists short-term.
@@ -268,15 +273,15 @@ export class CopyTrader {
     }
   }
 
-  /** Rolling 6h baseline net for the regime gate — cached 60s so a burst of lead
+  /** Current 1-10 regime score for the regime gate — cached 60s so a burst of lead
    *  buys doesn't re-run the SQL every time. */
-  private regimeCache: { ts: number; net: number; n: number } | null = null;
-  private regimeNet6h(): { net: number; n: number } {
+  private regimeCache: { ts: number; score: number } | null = null;
+  private regimeScore(): number {
     const now = Date.now();
-    if (this.regimeCache && now - this.regimeCache.ts < 60_000) return this.regimeCache;
-    const r = regimeBaselineNetSince(this.db, Math.floor(now / 1000) - REGIME_WINDOW_HOURS * 3600);
-    this.regimeCache = { ts: now, ...r };
-    return this.regimeCache;
+    if (this.regimeCache && now - this.regimeCache.ts < 60_000) return this.regimeCache.score;
+    const score = currentRegimeScore(this.db);
+    this.regimeCache = { ts: now, score };
+    return score;
   }
 
   /** Lead-momentum stats: OUR realized net over the last N closed baseline copies
@@ -336,7 +341,7 @@ export class CopyTrader {
       }
       // smart-wallet-data gates (H cohort) — all pure SQL/cached, no RPC
       if (s.minLeadBuySol != null && (leadBuySol == null || leadBuySol < s.minLeadBuySol)) continue;
-      if (s.regimeGateMin6hNet != null && this.regimeNet6h().net <= s.regimeGateMin6hNet) continue;
+      if (s.regimeGateMinScore != null && this.regimeScore() < s.regimeGateMinScore) continue;
       if (s.hotLeadGate) {
         const st = this.leadRecentStats(leadWallet, s.hotLeadGate.lastN);
         if (st.n < s.hotLeadGate.minTrades || st.net <= s.hotLeadGate.minNetSol) continue;
@@ -849,7 +854,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
         entry_delay_sec: s.entryDelaySec ?? null, follow_sell_delay_sec: s.followSellDelaySec ?? null,
         max_entry_drift_pct: s.maxEntryDriftPct ?? null,
         min_lead_buy_sol: s.minLeadBuySol ?? null, hot_lead_gate: s.hotLeadGate ?? null,
-        regime_gate_min_6h_net: s.regimeGateMin6hNet ?? null,
+        regime_gate_min_score: s.regimeGateMinScore ?? null,
       },
       ...openSummary,
       total_incl_open_sol: +(closedSummary.total_net_sol + openSummary.open_unrealized_sol).toFixed(4),
@@ -860,25 +865,37 @@ export function computeCopyTrades(db: Database.Database): unknown {
     };
   }
 
-  const overallClosed = summarize(closed);
-  const overallOpen = summarizeOpen(open);
+  // Overall = ACTIVE strategies only. Killed/retired strategies leave their closed
+  // rows in the DB forever; summing all of them turned `overall` into a graveyard
+  // (e.g. 2026-06-13: all-rows −81 SOL vs +8 for the 13 live strategies). The
+  // header reflects what's actually running; retired history is reported separately.
+  const activeIds = new Set(COPY_STRATEGIES.map((s) => s.id));
+  const activeClosed = closed.filter((r) => activeIds.has(r.strategy_id as string));
+  const activeOpen = open.filter((r) => activeIds.has(r.strategy_id as string));
+  const retiredClosed = closed.filter((r) => !activeIds.has(r.strategy_id as string));
+  const overallClosed = summarize(activeClosed);
+  const overallOpen = summarizeOpen(activeOpen);
+  const retiredNet = +retiredClosed.reduce((a, r) => a + ((r.net_sol as number) ?? 0), 0).toFixed(4);
 
   return {
     generated_at: new Date().toISOString(),
     phase: 'phase2-shadow-copy',
-    note: 'SHADOW copy trades — no real funds. Entry at pool price ~1.1s after the lead wallet; net_sol after the SIM round-trip cost (scale-out partials folded in). Coverage limited to tokens in our graduations table. CAVEATS: strategies share entry signals — totals are not independent (see paired_vs_baseline); total_net_sol_exit_stress re-nets every closed remainder leg with the exit fill worsened by ' + EXIT_STRESS_PCT + '% (scale-out partials kept as recorded); open_unrealized_sol marks open positions to the last polled pool price (open_priced = how many have one); total_incl_open_sol = closed + unrealized. MEASURED-LAG (-lag) variants wait entry_delay_sec after detection and enter at the re-fetched price (entry_drift = measured detection→fill drift); follow_sell exits on those variants are re-fetched after follow_sell_delay_sec; -drift variants skip entries whose measured drift exceeds max_entry_drift_pct (drift_skips + skipped_drift report the gate).',
+    note: 'SHADOW copy trades — no real funds. Entry at pool price ~1.1s after the lead wallet; net_sol after the SIM round-trip cost (scale-out partials folded in). Coverage limited to tokens in our graduations table. OVERALL counts ACTIVE strategies only (killed strategies leave closed rows in the DB; retired_summary reports those separately). CAVEATS: strategies share entry signals — totals are not independent (see paired_vs_baseline); total_net_sol_exit_stress re-nets every closed remainder leg with the exit fill worsened by ' + EXIT_STRESS_PCT + '% (scale-out partials kept as recorded); open_unrealized_sol marks open positions to the last polled pool price (open_priced = how many have one); total_incl_open_sol = closed + unrealized. MEASURED-LAG (-lag) variants wait entry_delay_sec after detection and enter at the re-fetched price (entry_drift = measured detection→fill drift); follow_sell exits on those variants are re-fetched after follow_sell_delay_sec; -drift variants skip entries whose measured drift exceeds max_entry_drift_pct (drift_skips + skipped_drift report the gate).',
     size_sol: COPY_SIZE_SOL,
     paired_baseline: PAIRED_BASELINE,
-    // GREEN/YELLOW/RED window classification + hourly P&L series — "is NOW a
-    // good time to copy trade". Baseline series = copy-tp100-sl30 (roster-stable).
+    // 1-10 window score + hourly series — "is NOW a good time to copy trade".
+    // Baseline series = copy-tp100-sl30 (roster-stable).
     regime: computeCopyRegime(db),
     overall: {
       ...overallOpen,
       total_incl_open_sol: +(overallClosed.total_net_sol + overallOpen.open_unrealized_sol).toFixed(4),
       ...overallClosed,
-      drift_skips: skipped.length,
-      entry_drift: driftStats([...closed, ...open]),
+      drift_skips: skipped.filter((r) => activeIds.has(r.strategy_id as string)).length,
+      entry_drift: driftStats([...activeClosed, ...activeOpen]),
     },
+    // Killed/retired strategies' lingering closed rows — kept out of `overall` so
+    // the header isn't dragged down by strategies we already cut.
+    retired_summary: { n: retiredClosed.length, net_sol: retiredNet },
     by_strategy: byStrategy,
     paired_vs_baseline: pairedVsBaseline,
     recent_closed: closed
