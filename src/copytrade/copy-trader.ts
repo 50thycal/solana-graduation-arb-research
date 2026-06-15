@@ -136,6 +136,27 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    the threshold is tunable from data after a week.
   { id: 'copy-bigbuy',        tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, minLeadBuySol: 2 },
+  // ── I (2026-06-15): copy-hotlead is the one signal clearing all three robustness
+  //    checks (net+drop3+stress, 48% WR). The two working levers are LEAD selection
+  //    (hotlead) and WINDOW selection (regime). Indiscriminate copying bleeds. So:
+  //    double down on hotlead × one orthogonal second factor. All on the lag+drift10
+  //    base, all heavily gated (fire rarely → negligible RPC). Each isolates whether
+  //    the second factor compounds with lead quality.
+  // I1 lead × window — stack the two independently-working filters: a hot lead in a
+  //    non-bad window. If both edges are real and independent, this should be cleanest.
+  { id: 'copy-hotlead-regime',    tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, regimeGateMinScore: 5 },
+  // I2 lead × token — hotlead picks good WHO; consensus picks good WHAT (>=2 smart
+  //    wallets buying the same token). Two orthogonal quality signals stacked.
+  { id: 'copy-hotlead-consensus', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, minConsensusRecent: 2 },
+  // I3 lead × runner-capture exit — the holds (hold30m/2h) have huge net but terrible
+  //    drop3 (lottery: profit is 3 moonshots). Hypothesis: good leads pick the runners,
+  //    so applying lead selection to a 30m hold should CONCENTRATE the winners and turn
+  //    the lottery into positive drop3. Same hold30m exit (SL30, no TP, 30m timeout) but
+  //    only on hot leads.
+  { id: 'copy-hotlead-hold30m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
