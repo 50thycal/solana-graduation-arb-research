@@ -10319,6 +10319,41 @@ export function renderCopyTradesHtml(data: any): string {
     <div style="display:flex;gap:1px;align-items:flex-start;height:58px;margin-top:8px">${hourStrip}</div>
   </div>`;
 
+  // ── Macro banner: broad crypto market tailwind/headwind (1-10) ────────────
+  const mac = d.macro ?? {};
+  const macScore = mac.score;
+  const macColor = typeof macScore === 'number' ? scoreColor(macScore) : '#6b7280';
+  const macHist: any[] = mac.history ?? [];
+  const macStrip = macHist.map((h) => {
+    const col = typeof h.score === 'number' ? scoreColor(h.score) : '#6b7280';
+    const hPx = Math.max(3, Math.round(((h.score ?? 5) / 10) * 26));
+    return `<div title="${h.date}  score ${h.score ?? '—'}/10 · BTC $${h.btc_close != null ? Math.round(h.btc_close).toLocaleString() : '—'} · SOL $${h.sol_close != null ? n(h.sol_close, 0) : '—'}"
+      style="width:11px;height:${hPx}px;margin-top:${28 - hPx}px;background:${col};opacity:0.9;border-radius:1px"></div>`;
+  }).join('');
+  const cmp = mac.components ?? {};
+  const pctSpan = (v: any) => v == null ? '—' : `<span class="${v >= 0 ? 'green' : 'red'}">${v >= 0 ? '+' : ''}${n(v, 1)}%</span>`;
+  const macroCard = (mac.pending || !mac.score) ? '' : `<div class="card" style="border-left:6px solid ${macColor}">
+    <h2>Macro market (BTC) — <span style="color:${macColor}">${macScore ?? '—'}/10</span>
+      <span class="desc" style="font-size:13px">${mac.band ?? ''} · as of ${mac.latest_date ?? '—'}</span></h2>
+    <div class="desc">Broad crypto tailwind/headwind, 1 (worst) – 10 (best). BTC trend only: 0.4·(1-day) + 0.6·(7-day)
+    through tanh; 5 = neutral. From market_daily (CoinGecko, no extra RPC). copy-macro enters at ≥6;
+    copy-macro-regime needs macro ≥6 AND copy-regime ≥5. Strip = last 14 days. SOL/F&amp;G shown for context, not scored.</div>
+    <div class="grid">
+      <div>
+        <div class="stat"><span class="label">BTC 7d / 1d <span class="green">(scored)</span></span><span class="value">${pctSpan(cmp.btc_7d_pct)} <span class="desc">/ ${pctSpan(cmp.btc_1d_pct)}</span></span></div>
+        <div class="stat"><span class="label">BTC / USD</span><span class="value">$${mac.btc_usd != null ? Math.round(mac.btc_usd).toLocaleString() : '—'}</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">SOL 7d / 1d <span class="desc">(context)</span></span><span class="value">${pctSpan(cmp.sol_7d_pct)} <span class="desc">/ ${pctSpan(cmp.sol_1d_pct)}</span></span></div>
+        <div class="stat"><span class="label">SOL / USD <span class="desc">(context)</span></span><span class="value">$${mac.sol_usd != null ? n(mac.sol_usd, 2) : '—'}</span></div>
+      </div>
+      <div>
+        <div class="stat"><span class="label">Fear &amp; Greed <span class="desc">(context)</span></span><span class="value">${cmp.fear_greed ?? '—'}</span></div>
+      </div>
+    </div>
+    <div style="display:flex;gap:2px;align-items:flex-start;height:34px;margin-top:8px">${macStrip}</div>
+  </div>`;
+
   // ── Daily book P&L bars — the swings, made visible ────────────────────────
   const daily: any[] = ov.daily ?? [];
   const last14 = daily.slice(-14);
@@ -10391,6 +10426,7 @@ export function renderCopyTradesHtml(data: any): string {
       c.min_lead_buy_sol != null ? `buy≥${c.min_lead_buy_sol}◎` : '',
       c.hot_lead_gate ? 'hot-lead' : '',
       c.regime_gate_min_score != null ? `regime≥${c.regime_gate_min_score}` : '',
+      c.macro_gate_min_score != null ? `macro≥${c.macro_gate_min_score}` : '',
       c.min_consensus != null ? `cons≥${c.min_consensus}` : '',
       c.entry_penalty_pct != null ? `pen${c.entry_penalty_pct}%` : '',
     ].filter(Boolean).join(' · ');
@@ -10434,5 +10470,5 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Strategy</th><th>Mint</th><th>Lead</th><th>Tier</th><th>Exit</th><th>Gross%</th><th>Net SOL</th><th>Hold</th></tr>${recentRows}</table>
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + dailyCard + headerCard + stratCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + macroCard + dailyCard + headerCard + stratCard + recentCard, data as object);
 }

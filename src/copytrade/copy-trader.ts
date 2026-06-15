@@ -4,6 +4,7 @@ import { fetchVaultPrice } from '../trading/executor';
 import { SIM_DEFAULT_COST_PCT } from '../api/sim-constants';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { computeCopyRegime, currentRegimeScore, COPY_REGIME_BASELINE } from './copy-regime';
+import { computeMacroRegime, currentMacroScore } from './macro-regime';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-trader');
@@ -74,6 +75,9 @@ export interface CopyStrategy {
                                // the roster-stable baseline; 10 best, 1 worst, 5 neutral) is >= this. Tests
                                // "skip the bad windows" — the copy book swings hard (-31/+44/-35 SOL days)
                                // and this rides only the favorable tape.
+  macroGateMinScore?: number;  // macro gate: only enter when the broad-crypto-market score (1-10 from BTC/SOL
+                               // 7d trend + Fear & Greed; macro-regime.ts) is >= this. Tests "only trade when
+                               // the overall market is rising". Missing macro data scores 5 (doesn't block).
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
@@ -113,6 +117,15 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
     entryDelaySec: 5, maxEntryDriftPct: 10, regimeGateMinScore: 7 },
   { id: 'copy-regime-mid',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, regimeGateMinScore: 5 },
+  // H4 (2026-06-15) macro gate — only enter when the broad crypto market is a
+  //    tailwind (BTC/SOL 7d trend + Fear & Greed, 1-10). copy-macro isolates the
+  //    macro signal; copy-macro-regime requires BOTH macro AND copy-internal regime
+  //    favorable (the "both green" the operator asked for). Macro data is free/cached
+  //    (market_daily) so these add no RPC.
+  { id: 'copy-macro',        tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, macroGateMinScore: 6 },
+  { id: 'copy-macro-regime', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, macroGateMinScore: 6, regimeGateMinScore: 5 },
   // H2 hot-lead gate — only copy leads whose last <=10 baseline copies made us
   //    money (>=3 trades of history). Benches cold hands; tests whether lead-level
   //    performance persists short-term.
@@ -123,6 +136,27 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    the threshold is tunable from data after a week.
   { id: 'copy-bigbuy',        tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, minLeadBuySol: 2 },
+  // ── I (2026-06-15): copy-hotlead is the one signal clearing all three robustness
+  //    checks (net+drop3+stress, 48% WR). The two working levers are LEAD selection
+  //    (hotlead) and WINDOW selection (regime). Indiscriminate copying bleeds. So:
+  //    double down on hotlead × one orthogonal second factor. All on the lag+drift10
+  //    base, all heavily gated (fire rarely → negligible RPC). Each isolates whether
+  //    the second factor compounds with lead quality.
+  // I1 lead × window — stack the two independently-working filters: a hot lead in a
+  //    non-bad window. If both edges are real and independent, this should be cleanest.
+  { id: 'copy-hotlead-regime',    tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, regimeGateMinScore: 5 },
+  // I2 lead × token — hotlead picks good WHO; consensus picks good WHAT (>=2 smart
+  //    wallets buying the same token). Two orthogonal quality signals stacked.
+  { id: 'copy-hotlead-consensus', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, minConsensusRecent: 2 },
+  // I3 lead × runner-capture exit — the holds (hold30m/2h) have huge net but terrible
+  //    drop3 (lottery: profit is 3 moonshots). Hypothesis: good leads pick the runners,
+  //    so applying lead selection to a 30m hold should CONCENTRATE the winners and turn
+  //    the lottery into positive drop3. Same hold30m exit (SL30, no TP, 30m timeout) but
+  //    only on hot leads.
+  { id: 'copy-hotlead-hold30m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
@@ -284,6 +318,16 @@ export class CopyTrader {
     return score;
   }
 
+  /** Current 1-10 macro-market score — cached 5min (macro data is daily, moves slowly). */
+  private macroCache: { ts: number; score: number } | null = null;
+  private macroScore(): number {
+    const now = Date.now();
+    if (this.macroCache && now - this.macroCache.ts < 300_000) return this.macroCache.score;
+    const score = currentMacroScore(this.db);
+    this.macroCache = { ts: now, score };
+    return score;
+  }
+
   /** Lead-momentum stats: OUR realized net over the last N closed baseline copies
    *  of this lead. Cached 60s per wallet. */
   private hotLeadCache = new Map<string, { ts: number; n: number; net: number }>();
@@ -342,6 +386,7 @@ export class CopyTrader {
       // smart-wallet-data gates (H cohort) — all pure SQL/cached, no RPC
       if (s.minLeadBuySol != null && (leadBuySol == null || leadBuySol < s.minLeadBuySol)) continue;
       if (s.regimeGateMinScore != null && this.regimeScore() < s.regimeGateMinScore) continue;
+      if (s.macroGateMinScore != null && this.macroScore() < s.macroGateMinScore) continue;
       if (s.hotLeadGate) {
         const st = this.leadRecentStats(leadWallet, s.hotLeadGate.lastN);
         if (st.n < s.hotLeadGate.minTrades || st.net <= s.hotLeadGate.minNetSol) continue;
@@ -855,6 +900,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
         max_entry_drift_pct: s.maxEntryDriftPct ?? null,
         min_lead_buy_sol: s.minLeadBuySol ?? null, hot_lead_gate: s.hotLeadGate ?? null,
         regime_gate_min_score: s.regimeGateMinScore ?? null,
+        macro_gate_min_score: s.macroGateMinScore ?? null,
       },
       ...openSummary,
       total_incl_open_sol: +(closedSummary.total_net_sol + openSummary.open_unrealized_sol).toFixed(4),
@@ -886,6 +932,8 @@ export function computeCopyTrades(db: Database.Database): unknown {
     // 1-10 window score + hourly series — "is NOW a good time to copy trade".
     // Baseline series = copy-tp100-sl30 (roster-stable).
     regime: computeCopyRegime(db),
+    // 1-10 macro-market score (broad crypto tailwind/headwind) from market_daily.
+    macro: computeMacroRegime(db),
     overall: {
       ...overallOpen,
       total_incl_open_sol: +(overallClosed.total_net_sol + overallOpen.open_unrealized_sol).toFixed(4),
