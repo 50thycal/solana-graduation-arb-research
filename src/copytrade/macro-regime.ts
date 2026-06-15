@@ -4,39 +4,42 @@ import type Database from 'better-sqlite3';
  * Macro market score, 1 (worst) – 10 (best).
  *
  * "Is the broad crypto market a tailwind or a headwind right now." Memecoin
- * risk appetite tracks the majors — when BTC/SOL are trending up and sentiment
- * is greedy, post-graduation tokens pump more and copy-trading works better;
- * when the market bleeds, even good entries get dragged down. This is the macro
- * analogue of the copy-internal regime score (copy-regime.ts).
+ * risk appetite tracks BTC — when BTC trends up, post-graduation tokens pump
+ * more and copy-trading works better; when BTC bleeds, even good entries get
+ * dragged down. This is the macro analogue of the copy-internal regime score
+ * (copy-regime.ts).
  *
- * Built from `market_daily` (daily SOL/USD + BTC/USD closes + Fear & Greed),
- * already populated hourly by MarketDataFetcher from CoinGecko + alternative.me.
- * Pure SQL read — no new RPC, no new external dependency.
+ * BTC-ONLY (2026-06-15): the score is purely BTC trend. Fear & Greed was
+ * dropped — it stays pinned low for a long time after a drawdown and would hold
+ * the score down even as BTC turns up (exactly the recovery we want to trade).
+ * SOL is still surfaced on the dashboard for context but is NOT in the score.
  *
- * Components (each → ±1, blended):
- *   - BTC 7-day return — the broad-crypto-direction proxy (total mcap tracks BTC)
- *   - SOL 7-day return — the actual quote asset; memecoin beta
- *   - Fear & Greed (0-100) — risk appetite; greed = risk-on
- * score = clamp(round(5 + 5 * (0.7*trend + 0.3*sentiment)), 1, 10). 5 = neutral.
+ * Built from `market_daily` (daily BTC/USD close), already populated hourly by
+ * MarketDataFetcher from CoinGecko. The "today" row is refreshed each hour, so
+ * the 1-day return reflects intraday BTC moves as the day progresses. Pure SQL
+ * read — no new RPC, no new external dependency.
+ *
+ *   score = clamp(round(5 + 5 * (0.4*tanh(btc1d/0.04) + 0.6*tanh(btc7d/0.10))), 1, 10)
+ * 5 = neutral; the 1-day term gives responsiveness, the 7-day term the trend.
  */
 
-export const BTC_TREND_SCALE = 0.10; // a 7d BTC move of ±10% is a strong macro signal
-export const SOL_TREND_SCALE = 0.15; // SOL is more volatile, so a wider scale
+export const BTC_1D_SCALE = 0.04;  // a 1-day BTC move of ±4% is a strong daily signal
+export const BTC_7D_SCALE = 0.10;  // a 7-day BTC move of ±10% is a strong weekly signal
 
 function clampScore(raw: number): number {
   return Math.max(1, Math.min(10, Math.round(raw)));
 }
 
-/** Pure scorer — exported for testability. Returns 1-10. */
-export function macroScoreFrom(btc7Ret: number | null, sol7Ret: number | null, fng: number | null): number {
-  const btc = btc7Ret == null ? 0 : Math.tanh(btc7Ret / BTC_TREND_SCALE);
-  const sol = sol7Ret == null ? 0 : Math.tanh(sol7Ret / SOL_TREND_SCALE);
-  // average whichever trends we have; if neither, trend is neutral (0)
-  const have = (btc7Ret == null ? 0 : 1) + (sol7Ret == null ? 0 : 1);
-  const trend = have === 0 ? 0 : (btc + sol) / have;
-  const sentiment = fng == null ? 0 : Math.max(-1, Math.min(1, (fng - 50) / 50));
-  const composite = 0.7 * trend + 0.3 * sentiment; // -1..1
-  return clampScore(5 + 5 * composite);
+/** Pure scorer — BTC trend only. Exported for testability. Returns 1-10. */
+export function macroScoreFrom(btc1dRet: number | null, btc7dRet: number | null): number {
+  const d1 = btc1dRet == null ? null : Math.tanh(btc1dRet / BTC_1D_SCALE);
+  const d7 = btc7dRet == null ? null : Math.tanh(btc7dRet / BTC_7D_SCALE);
+  if (d1 == null && d7 == null) return 5; // no data → neutral (don't block on missing macro)
+  // weight 7d trend 0.6, 1d responsiveness 0.4; renormalize if one is missing
+  let trend: number;
+  if (d1 != null && d7 != null) trend = 0.4 * d1 + 0.6 * d7;
+  else trend = (d1 ?? d7) as number;
+  return clampScore(5 + 5 * trend);
 }
 
 export function macroBand(score: number): { label: string; color: string } {
@@ -72,10 +75,9 @@ export function currentMacroScore(db: Database.Database): number {
   const rows = recentRows(db, 8);
   if (rows.length === 0) return 5; // no data → neutral (don't block on missing macro)
   const latest = rows[0];
+  const ago1 = rows[Math.min(1, rows.length - 1)];
   const ago7 = rows[Math.min(7, rows.length - 1)];
-  const btc7 = pctReturn(latest.btc, ago7.btc);
-  const sol7 = pctReturn(latest.sol, ago7.sol);
-  return macroScoreFrom(btc7, sol7, latest.fng);
+  return macroScoreFrom(pctReturn(latest.btc, ago1.btc), pctReturn(latest.btc, ago7.btc));
 }
 
 export function computeMacroRegime(db: Database.Database): unknown {
@@ -90,18 +92,19 @@ export function computeMacroRegime(db: Database.Database): unknown {
   const sol7 = pctReturn(latest.sol, ago7.sol);
   const btc1 = pctReturn(latest.btc, ago1.btc);
   const sol1 = pctReturn(latest.sol, ago1.sol);
-  const score = macroScoreFrom(btc7, sol7, latest.fng);
+  const score = macroScoreFrom(btc1, btc7);
 
-  // Per-day score history (oldest→newest), each from its OWN trailing 7d window,
-  // so the dashboard can sparkline the macro trend.
+  // Per-day score history (oldest→newest), each from its OWN trailing windows,
+  // so the dashboard can sparkline the macro trend. BTC-only, matching the score.
   const asc = [...rows].reverse(); // oldest first
   const history = asc.map((r, i) => {
-    const back = asc[Math.max(0, i - 7)];
+    const back1 = asc[Math.max(0, i - 1)];
+    const back7 = asc[Math.max(0, i - 7)];
     return {
       date: r.date,
       btc_close: r.btc,
       sol_close: r.sol,
-      score: macroScoreFrom(pctReturn(r.btc, back.btc), pctReturn(r.sol, back.sol), r.fng),
+      score: macroScoreFrom(pctReturn(r.btc, back1.btc), pctReturn(r.btc, back7.btc)),
     };
   }).slice(-14);
 
@@ -115,13 +118,13 @@ export function computeMacroRegime(db: Database.Database): unknown {
     btc_usd: latest.btc,
     fear_greed: latest.fng,
     components: {
-      btc_7d_pct: pct(btc7), sol_7d_pct: pct(sol7),
-      btc_1d_pct: pct(btc1), sol_1d_pct: pct(sol1),
-      fear_greed: latest.fng,
+      btc_7d_pct: pct(btc7), btc_1d_pct: pct(btc1),
+      // context only — NOT in the score (BTC-only as of 2026-06-15)
+      sol_7d_pct: pct(sol7), sol_1d_pct: pct(sol1), fear_greed: latest.fng,
     },
     scale: {
-      btc_trend_scale_pct: BTC_TREND_SCALE * 100, sol_trend_scale_pct: SOL_TREND_SCALE * 100,
-      note: '1-10 macro score (10 best). 0.7*trend(BTC+SOL 7d) + 0.3*sentiment(F&G); 5 = neutral.',
+      btc_1d_scale_pct: BTC_1D_SCALE * 100, btc_7d_scale_pct: BTC_7D_SCALE * 100,
+      note: '1-10 macro score (10 best), BTC trend only: 0.4*tanh(btc1d/4%) + 0.6*tanh(btc7d/10%); 5 = neutral. SOL/F&G shown for context, not scored.',
     },
     history,
   };

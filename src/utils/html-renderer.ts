@@ -10333,22 +10333,22 @@ export function renderCopyTradesHtml(data: any): string {
   const cmp = mac.components ?? {};
   const pctSpan = (v: any) => v == null ? '—' : `<span class="${v >= 0 ? 'green' : 'red'}">${v >= 0 ? '+' : ''}${n(v, 1)}%</span>`;
   const macroCard = (mac.pending || !mac.score) ? '' : `<div class="card" style="border-left:6px solid ${macColor}">
-    <h2>Macro market — <span style="color:${macColor}">${macScore ?? '—'}/10</span>
+    <h2>Macro market (BTC) — <span style="color:${macColor}">${macScore ?? '—'}/10</span>
       <span class="desc" style="font-size:13px">${mac.band ?? ''} · as of ${mac.latest_date ?? '—'}</span></h2>
-    <div class="desc">Broad crypto tailwind/headwind, 1 (worst) – 10 (best). 0.7·trend (BTC+SOL 7-day) + 0.3·sentiment
-    (Fear &amp; Greed); 5 = neutral. From market_daily (CoinGecko + alternative.me, no extra RPC).
-    copy-macro enters at ≥6; copy-macro-regime needs macro ≥6 AND copy-regime ≥5. Strip = last 14 days.</div>
+    <div class="desc">Broad crypto tailwind/headwind, 1 (worst) – 10 (best). BTC trend only: 0.4·(1-day) + 0.6·(7-day)
+    through tanh; 5 = neutral. From market_daily (CoinGecko, no extra RPC). copy-macro enters at ≥6;
+    copy-macro-regime needs macro ≥6 AND copy-regime ≥5. Strip = last 14 days. SOL/F&amp;G shown for context, not scored.</div>
     <div class="grid">
       <div>
-        <div class="stat"><span class="label">BTC 7d / 1d</span><span class="value">${pctSpan(cmp.btc_7d_pct)} <span class="desc">/ ${pctSpan(cmp.btc_1d_pct)}</span></span></div>
+        <div class="stat"><span class="label">BTC 7d / 1d <span class="green">(scored)</span></span><span class="value">${pctSpan(cmp.btc_7d_pct)} <span class="desc">/ ${pctSpan(cmp.btc_1d_pct)}</span></span></div>
         <div class="stat"><span class="label">BTC / USD</span><span class="value">$${mac.btc_usd != null ? Math.round(mac.btc_usd).toLocaleString() : '—'}</span></div>
       </div>
       <div>
-        <div class="stat"><span class="label">SOL 7d / 1d</span><span class="value">${pctSpan(cmp.sol_7d_pct)} <span class="desc">/ ${pctSpan(cmp.sol_1d_pct)}</span></span></div>
-        <div class="stat"><span class="label">SOL / USD</span><span class="value">$${mac.sol_usd != null ? n(mac.sol_usd, 2) : '—'}</span></div>
+        <div class="stat"><span class="label">SOL 7d / 1d <span class="desc">(context)</span></span><span class="value">${pctSpan(cmp.sol_7d_pct)} <span class="desc">/ ${pctSpan(cmp.sol_1d_pct)}</span></span></div>
+        <div class="stat"><span class="label">SOL / USD <span class="desc">(context)</span></span><span class="value">$${mac.sol_usd != null ? n(mac.sol_usd, 2) : '—'}</span></div>
       </div>
       <div>
-        <div class="stat"><span class="label">Fear &amp; Greed</span><span class="value">${cmp.fear_greed ?? '—'}</span></div>
+        <div class="stat"><span class="label">Fear &amp; Greed <span class="desc">(context)</span></span><span class="value">${cmp.fear_greed ?? '—'}</span></div>
       </div>
     </div>
     <div style="display:flex;gap:2px;align-items:flex-start;height:34px;margin-top:8px">${macStrip}</div>
