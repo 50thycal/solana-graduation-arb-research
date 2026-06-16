@@ -740,6 +740,53 @@ function median(xs: number[]): number | null {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
+/**
+ * Per-lead-wallet copy performance, measured on the roster-stable baseline
+ * (copy-tp100-sl30) — the same series the hotlead gate keys off. Lead selection
+ * is the strongest signal in the book, so this makes it legible: which wallets
+ * are making us money, which are bleeding, and which currently pass the hotlead
+ * gate (last >=3 of the trailing 10 copies net-positive). Pure SQL, no RPC.
+ */
+export function computeLeadPerformance(db: Database.Database, baseline = COPY_REGIME_BASELINE): unknown {
+  let rows: Array<{ lead: string; net: number; ts: number }> = [];
+  try {
+    rows = db.prepare(`
+      SELECT lead_wallet AS lead, net_sol AS net, exit_ts AS ts
+      FROM copy_trades
+      WHERE status = 'closed' AND strategy_id = ? AND lead_wallet IS NOT NULL AND net_sol IS NOT NULL
+      ORDER BY exit_ts ASC
+    `).all(baseline) as typeof rows;
+  } catch {
+    return { pending: true };
+  }
+  const byLead = new Map<string, { net: number; wins: number; nets: number[] }>();
+  for (const r of rows) {
+    let g = byLead.get(r.lead);
+    if (!g) { g = { net: 0, wins: 0, nets: [] }; byLead.set(r.lead, g); }
+    g.net += r.net; if (r.net > 0) g.wins += 1; g.nets.push(r.net);
+  }
+  const leads = [...byLead.entries()].map(([lead, g]) => {
+    const n = g.nets.length;
+    const last10 = g.nets.slice(-10);
+    const last10Net = last10.reduce((a, b) => a + b, 0);
+    const hot = last10.length >= 3 && last10Net > 0; // matches hotLeadGate default
+    return {
+      lead: lead.slice(0, 8), n, net_sol: +g.net.toFixed(3), win_rate: +(g.wins / n).toFixed(3),
+      last10_net_sol: +last10Net.toFixed(3), hot,
+    };
+  });
+  const byNet = [...leads].sort((a, b) => b.net_sol - a.net_sol);
+  return {
+    baseline,
+    n_leads: leads.length,
+    n_hot: leads.filter((l) => l.hot).length,
+    n_cold: leads.filter((l) => !l.hot && l.n >= 3).length,
+    top: byNet.slice(0, 12),
+    bottom: byNet.slice(-8).reverse(),
+  };
+}
+
+
 /** Uniform exit-fill stress: re-net the remainder leg with the exit price worsened
  *  by `penPct`%. Scale-out partials are kept as recorded (their exit prices aren't
  *  stored), so scale-out strategies are slightly under-stressed — noted in the JSON. */
@@ -934,6 +981,9 @@ export function computeCopyTrades(db: Database.Database): unknown {
     regime: computeCopyRegime(db),
     // 1-10 macro-market score (broad crypto tailwind/headwind) from market_daily.
     macro: computeMacroRegime(db),
+    // Per-lead-wallet copy P&L on the baseline — makes the lead-selection signal
+    // (the book's strongest) legible: who's hot, who's cold.
+    lead_performance: computeLeadPerformance(db),
     overall: {
       ...overallOpen,
       total_incl_open_sol: +(overallClosed.total_net_sol + overallOpen.open_unrealized_sol).toFixed(4),

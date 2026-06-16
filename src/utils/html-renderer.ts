@@ -10377,6 +10377,28 @@ export function renderCopyTradesHtml(data: any): string {
     <div style="display:flex;gap:4px;align-items:flex-start;margin-top:6px">${dayBars}</div>
   </div>`;
 
+  // ── Lead performance: which wallets make us money (the winning signal) ─────
+  const lp = d.lead_performance ?? {};
+  const leadRow = (l: any) => `<tr>
+    <td style="font-family:monospace">${l.lead}</td>
+    <td>${l.n}</td>
+    <td>${sol(l.net_sol)}</td>
+    <td>${pct(l.win_rate)}</td>
+    <td>${sol(l.last10_net_sol)}</td>
+    <td>${l.hot ? '<span style="color:#16a34a">●&nbsp;hot</span>' : '<span class="desc">cold</span>'}</td></tr>`;
+  const leadCard = (lp.pending || !lp.top) ? '' : `<div class="card">
+    <h2>Lead performance <span class="desc" style="font-size:13px">— ${lp.n_hot ?? 0} hot / ${lp.n_cold ?? 0} cold of ${lp.n_leads ?? 0} leads</span></h2>
+    <div class="desc">Per-lead-wallet copy P&L on the baseline (${lp.baseline}) — the lead-selection signal made
+    legible (it's the book's strongest). "hot" = passes the copy-hotlead gate (≥3 of last 10 copies net-positive).
+    Last-10 net is what the gate keys on. Top 12 + worst 8 by total net.</div>
+    <div class="grid" style="align-items:start">
+      <div><div class="desc" style="margin-bottom:4px">Top leads</div>
+        <table><tr><th>Lead</th><th>n</th><th>Net SOL</th><th>Win%</th><th>Last10</th><th>State</th></tr>${(lp.top ?? []).map(leadRow).join('')}</table></div>
+      <div><div class="desc" style="margin-bottom:4px">Worst leads</div>
+        <table><tr><th>Lead</th><th>n</th><th>Net SOL</th><th>Win%</th><th>Last10</th><th>State</th></tr>${(lp.bottom ?? []).map(leadRow).join('')}</table></div>
+    </div>
+  </div>`;
+
   const headerCard = `<div class="card">
     <h2>Copy Trades — shadow follower</h2>
     <div class="desc">SHADOW (no real funds). When a followed wallet buys a graduated token, each strategy
@@ -10470,5 +10492,5 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Strategy</th><th>Mint</th><th>Lead</th><th>Tier</th><th>Exit</th><th>Gross%</th><th>Net SOL</th><th>Hold</th></tr>${recentRows}</table>
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + macroCard + dailyCard + headerCard + stratCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + macroCard + dailyCard + leadCard + headerCard + stratCard + recentCard, data as object);
 }
