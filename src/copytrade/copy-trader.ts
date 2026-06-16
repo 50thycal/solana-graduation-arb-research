@@ -894,11 +894,19 @@ function computeCopyPromotion(summaries: Record<string, any>): unknown {
     const net = s.total_net_sol ?? 0;
     const drop3 = s.total_net_sol_drop_top3 ?? 0;
     const stress = s.total_net_sol_exit_stress ?? 0;
+    // Does this strategy model OUR real execution? Idealized mirrors (no
+    // entryDelaySec) fill at the optimistic ~1.1s detection snapshot — a price we
+    // cannot actually achieve. Only delayed-entry strategies are promotable; the
+    // idealized ones are an UPPER BOUND (best case at zero latency), never a
+    // live-micro candidate. This is the consensus2 trap: the idealized mirror
+    // scored 100 while its realistic lag-twins don't clear drop3.
+    const realisticExecution = (s.config?.entry_delay_sec ?? null) != null;
     // monthly run rate from the per-strategy daily series (distinct active days)
     const days = (s.daily ?? []).filter((d: any) => (d.n ?? 0) > 0);
     const activeDays = days.length;
     const monthly = activeDays > 0 ? +((net / activeDays) * 30).toFixed(2) : 0;
     const gates = {
+      realistic_execution: realisticExecution,
       n_ge_100: n >= 100,
       drop3_positive: drop3 > 0,
       stress_positive: stress > 0,
@@ -913,10 +921,16 @@ function computeCopyPromotion(summaries: Record<string, any>): unknown {
       Math.max(0, Math.min(1, monthly / COPY_MONTHLY_BAR)) * 20
     ).toFixed(1);
     return { id, n, net_sol: +net.toFixed(3), drop_top3: +drop3.toFixed(3),
-      exit_stress: +stress.toFixed(3), monthly_run_rate_sol: monthly, gates, promotable, score };
+      exit_stress: +stress.toFixed(3), monthly_run_rate_sol: monthly,
+      realistic_execution: realisticExecution, gates, promotable, score };
   });
   rows.sort((a, b) => b.score - a.score);
-  return { monthly_bar_sol: COPY_MONTHLY_BAR, n_promotable: rows.filter((r) => r.promotable).length, rows };
+  return {
+    monthly_bar_sol: COPY_MONTHLY_BAR,
+    n_promotable: rows.filter((r) => r.promotable).length,
+    note: 'PROMOTABLE requires realistic execution (entryDelaySec set) — idealized 1:1 mirrors fill at the optimistic ~1.1s snapshot and are an upper bound only, never a live candidate.',
+    rows,
+  };
 }
 
 

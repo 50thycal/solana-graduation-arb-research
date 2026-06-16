@@ -10358,24 +10358,29 @@ export function renderCopyTradesHtml(data: any): string {
   const promo = d.promotion ?? {};
   const gchip = (ok: boolean, label: string) =>
     `<span style="font-size:10px;padding:1px 4px;border-radius:3px;color:#fff;background:${ok ? '#16a34a' : '#6b7280'}">${label}${ok ? '✓' : '✗'}</span>`;
-  const promoRows = (promo.rows ?? []).filter((r: any) => r.n > 0).slice(0, 12).map((r: any) => {
+  const promoRows = (promo.rows ?? []).filter((r: any) => r.n > 0).slice(0, 14).map((r: any) => {
     const g = r.gates ?? {};
-    return `<tr${r.promotable ? ' style="background:rgba(22,163,74,0.12)"' : ''}>
+    const exec = r.realistic_execution
+      ? '<span style="color:#16a34a">real</span>'
+      : '<span style="color:#ca8a04" title="idealized ~1.1s fill — upper bound, not promotable">idealized</span>';
+    return `<tr${r.promotable ? ' style="background:rgba(22,163,74,0.12)"' : (r.realistic_execution ? '' : ' style="opacity:0.65"')}>
       <td>${r.id}${r.promotable ? ' <span style="color:#16a34a">★</span>' : ''}</td>
+      <td>${exec}</td>
       <td><b>${n(r.score, 0)}</b></td>
       <td>${r.n}</td>
       <td>${sol(r.net_sol)}</td>
       <td>${sol(r.drop_top3)}</td>
       <td>${sol(r.exit_stress)}</td>
       <td>${sol(r.monthly_run_rate_sol)}</td>
-      <td style="white-space:nowrap">${gchip(g.n_ge_100, 'n')} ${gchip(g.drop3_positive, 'd3')} ${gchip(g.stress_positive, 'st')} ${gchip(g.monthly_ge_bar, 'mo')}</td></tr>`;
+      <td style="white-space:nowrap">${gchip(g.realistic_execution, 'ex')} ${gchip(g.n_ge_100, 'n')} ${gchip(g.drop3_positive, 'd3')} ${gchip(g.stress_positive, 'st')} ${gchip(g.monthly_ge_bar, 'mo')}</td></tr>`;
   }).join('');
   const promoCard = !promo.rows ? '' : `<div class="card">
     <h2>Promotion readiness <span class="desc" style="font-size:13px">— ${promo.n_promotable ?? 0} promotable</span></h2>
-    <div class="desc">Copy-trade promotion bar (analogue of the T+30 book's): a strategy is PROMOTABLE (★, green row)
-    when ALL clear — n≥100 · drop-top3&gt;0 · exit-stress&gt;0 · monthly run-rate ≥${n(promo.monthly_bar_sol, 2)} SOL (~$300/mo).
-    Score (0-100) ranks closeness: sample 25 + drop3 30 + stress 25 + monthly 20. Top 12 by score.</div>
-    <table><tr><th>Strategy</th><th>Score</th><th>n</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th>Gates</th></tr>${promoRows}</table>
+    <div class="desc">Copy-trade promotion bar: PROMOTABLE (★, green row) requires ALL — <b>realistic execution
+    (5s entry delay)</b> · n≥100 · drop-top3&gt;0 · exit-stress&gt;0 · monthly ≥${n(promo.monthly_bar_sol, 2)} SOL (~$300/mo).
+    <b>Idealized</b> rows (dimmed) fill at the optimistic ~1.1s snapshot — an upper bound we can't achieve live, NOT
+    promotable. Use the <i>-lag</i> twin to judge real edge. Score ranks closeness; top 14.</div>
+    <table><tr><th>Strategy</th><th>Exec</th><th>Score</th><th>n</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th>Gates</th></tr>${promoRows}</table>
   </div>`;
 
   // ── Daily book P&L bars — the swings, made visible ────────────────────────
