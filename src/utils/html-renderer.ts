@@ -10358,9 +10358,9 @@ export function renderCopyTradesHtml(data: any): string {
   const promo = d.promotion ?? {};
   const gchip = (ok: boolean, label: string) =>
     `<span style="font-size:10px;padding:1px 4px;border-radius:3px;color:#fff;background:${ok ? '#16a34a' : '#6b7280'}">${label}${ok ? '✓' : '✗'}</span>`;
-  const promoRows = (promo.rows ?? []).filter((r: any) => r.n > 0).slice(0, 12).map((r: any) => {
+  const promoRow = (r: any) => {
     const g = r.gates ?? {};
-    return `<tr${r.promotable ? ' style="background:rgba(22,163,74,0.12)"' : ''}>
+    return `<tr${r.promotable ? ' style="background:rgba(22,163,74,0.12)"' : (r.realistic_execution ? '' : ' style="opacity:0.6"')}>
       <td>${r.id}${r.promotable ? ' <span style="color:#16a34a">★</span>' : ''}</td>
       <td><b>${n(r.score, 0)}</b></td>
       <td>${r.n}</td>
@@ -10368,14 +10368,22 @@ export function renderCopyTradesHtml(data: any): string {
       <td>${sol(r.drop_top3)}</td>
       <td>${sol(r.exit_stress)}</td>
       <td>${sol(r.monthly_run_rate_sol)}</td>
-      <td style="white-space:nowrap">${gchip(g.n_ge_100, 'n')} ${gchip(g.drop3_positive, 'd3')} ${gchip(g.stress_positive, 'st')} ${gchip(g.monthly_ge_bar, 'mo')}</td></tr>`;
-  }).join('');
+      <td style="white-space:nowrap">${gchip(g.realistic_execution, 'ex')} ${gchip(g.n_ge_100, 'n')} ${gchip(g.drop3_positive, 'd3')} ${gchip(g.stress_positive, 'st')} ${gchip(g.monthly_ge_bar, 'mo')}</td></tr>`;
+  };
+  const allRows = (promo.rows ?? []).filter((r: any) => r.n > 0);
+  const realRows = allRows.filter((r: any) => r.realistic_execution).slice(0, 14);
+  const idealRows = allRows.filter((r: any) => !r.realistic_execution).slice(0, 10);
+  const thead = `<tr><th>Strategy</th><th>Score</th><th>n</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th>Gates</th></tr>`;
   const promoCard = !promo.rows ? '' : `<div class="card">
     <h2>Promotion readiness <span class="desc" style="font-size:13px">— ${promo.n_promotable ?? 0} promotable</span></h2>
-    <div class="desc">Copy-trade promotion bar (analogue of the T+30 book's): a strategy is PROMOTABLE (★, green row)
-    when ALL clear — n≥100 · drop-top3&gt;0 · exit-stress&gt;0 · monthly run-rate ≥${n(promo.monthly_bar_sol, 2)} SOL (~$300/mo).
-    Score (0-100) ranks closeness: sample 25 + drop3 30 + stress 25 + monthly 20. Top 12 by score.</div>
-    <table><tr><th>Strategy</th><th>Score</th><th>n</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th>Gates</th></tr>${promoRows}</table>
+    <div class="desc">PROMOTABLE (★, green) requires ALL: <b>realistic execution (5s entry delay)</b> · n≥100 ·
+    drop-top3&gt;0 · exit-stress&gt;0 · monthly ≥${n(promo.monthly_bar_sol, 2)} SOL (~$300/mo). Score 0-100 =
+    realistic-exec 20 + sample 20 + drop3 25 + stress 20 + monthly 15 — so an idealized mirror caps at <b>80</b>
+    and can never reach 100; only a 5s-entry strategy can.</div>
+    <h3 style="margin:10px 0 4px">① Realistic execution — 5s buy entry <span class="desc" style="font-size:12px">(live candidates — only these can be promoted)</span></h3>
+    <table>${thead}${realRows.map(promoRow).join('') || '<tr><td colspan="8" class="desc">none with trades yet</td></tr>'}</table>
+    <h3 style="margin:14px 0 4px">② Idealized mirror — ~1.1s snapshot <span class="desc" style="font-size:12px">(upper bound / reference only — NOT promotable, capped at 80)</span></h3>
+    <table style="opacity:0.75">${thead}${idealRows.map(promoRow).join('') || '<tr><td colspan="8" class="desc">none</td></tr>'}</table>
   </div>`;
 
   // ── Daily book P&L bars — the swings, made visible ────────────────────────
@@ -10471,6 +10479,7 @@ export function renderCopyTradesHtml(data: any): string {
       c.max_entry_drift_pct != null ? `drift≤${c.max_entry_drift_pct}%` : '',
       c.min_lead_buy_sol != null ? `buy≥${c.min_lead_buy_sol}◎` : '',
       c.hot_lead_gate ? 'hot-lead' : '',
+      c.elite_lead_gate ? 'elite-lead' : '',
       c.regime_gate_min_score != null ? `regime≥${c.regime_gate_min_score}` : '',
       c.macro_gate_min_score != null ? `macro≥${c.macro_gate_min_score}` : '',
       c.min_consensus != null ? `cons≥${c.min_consensus}` : '',
@@ -10482,7 +10491,7 @@ export function renderCopyTradesHtml(data: any): string {
     const skipEntries = Object.entries(gs).filter(([, v]: any) => v > 0).sort((a: any, b: any) => b[1] - a[1]);
     const totalSkips = skipEntries.reduce((acc: number, [, v]: any) => acc + v, 0);
     const interesting = skipEntries.filter(([k]) => k !== 'already_open' && k !== 'at_capacity');
-    const funnel = (s.config && (s.config.hot_lead_gate || s.config.regime_gate_min_score != null || s.config.macro_gate_min_score != null || s.config.min_consensus != null || s.config.min_lead_buy_sol != null) && interesting.length)
+    const funnel = (s.config && (s.config.hot_lead_gate || s.config.elite_lead_gate || s.config.regime_gate_min_score != null || s.config.macro_gate_min_score != null || s.config.min_consensus != null || s.config.min_lead_buy_sol != null) && interesting.length)
       ? `<div class="desc" style="font-size:10px">entered ${s.entered ?? 0} · skipped ${totalSkips} (${interesting.slice(0, 2).map(([k, v]: any) => `${k} ${v}`).join(', ')})</div>` : '';
     const exitRule = c.exit_follow && c.tp_pct == null ? 'lead sell only'
       : (c.tp_pct != null ? `TP${c.tp_pct}/SL${c.sl_pct}` + (c.exit_follow ? ' + follow' : '') : 'follow');
