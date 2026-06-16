@@ -157,6 +157,13 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    only on hot leads.
   { id: 'copy-hotlead-hold30m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // I4 hotlead parameter sweep — copy-hotlead works at {last10, >=3, net>0}; bracket
+  //    the calibration. -strict raises the net floor (lead must be clearly profitable
+  //    recently, not marginally positive); -deep uses a longer, more stable lookback.
+  { id: 'copy-hotlead-strict', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
+  { id: 'copy-hotlead-deep',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 20, minTrades: 5, minNetSol: 0 } },
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
@@ -243,6 +250,12 @@ export class CopyTrader {
   // Last lead-sell detection per mint, so a delayed entry that lands AFTER the
   // lead already sold knows it bought into the dump and exits honestly.
   private lastLeadSellMs = new Map<string, number>();
+  // Gate-skip funnel: cumulative count of WHY each strategy passed on a lead buy,
+  // keyed `${strategyId}|${reason}`. Loaded from bot_settings on start, flushed
+  // back periodically. Answers "why is this strategy's n low" (too strict vs no
+  // qualifying events). In-memory accumulator + ~60s flush keeps it cheap.
+  private skipCounts = new Map<string, number>();
+  private lastSkipFlush = 0;
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private polling = false;
@@ -261,8 +274,10 @@ export class CopyTrader {
     this.enabled = true;
     this.refreshLeadRanks();
     this.loadOpenPositions();
+    this.loadSkipCounts();
     this.pollTimer = setInterval(() => {
       this.poll().catch((err) => logger.warn('poll error: %s', err instanceof Error ? err.message : String(err)));
+      this.flushSkipCounts();
     }, POLL_INTERVAL_MS);
     logger.info(`CopyTrader started (shadow): ${COPY_STRATEGIES.length} strategies, size=${COPY_SIZE_SOL} SOL, resumed ${this.positions.size} open positions`);
   }
@@ -279,6 +294,34 @@ export class CopyTrader {
       const rows = this.db.prepare(`SELECT address, rank FROM follow_list`).all() as Array<{ address: string; rank: number | null }>;
       this.leadRank = new Map(rows.filter((r) => r.rank != null).map((r) => [r.address, r.rank as number]));
     } catch { /* table may be empty */ }
+  }
+
+  private recordSkip(strategyId: string, reason: string): void {
+    const k = `${strategyId}|${reason}`;
+    this.skipCounts.set(k, (this.skipCounts.get(k) ?? 0) + 1);
+  }
+
+  /** Load cumulative skip counts from bot_settings so they survive restarts. */
+  private loadSkipCounts(): void {
+    try {
+      const row = this.db.prepare(`SELECT value FROM bot_settings WHERE key = 'copy_gate_skips'`).get() as { value: string } | undefined;
+      if (row?.value) {
+        const obj = JSON.parse(row.value) as Record<string, number>;
+        this.skipCounts = new Map(Object.entries(obj));
+      }
+    } catch { /* table may not exist yet / bad JSON — start fresh */ }
+  }
+
+  /** Flush the cumulative skip counts to bot_settings (throttled ~60s). */
+  private flushSkipCounts(): void {
+    const now = Date.now();
+    if (now - this.lastSkipFlush < 60_000 || this.skipCounts.size === 0) return;
+    this.lastSkipFlush = now;
+    try {
+      const obj = Object.fromEntries(this.skipCounts);
+      this.db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES ('copy_gate_skips', ?, unixepoch())`)
+        .run(JSON.stringify(obj));
+    } catch { /* noop — non-critical telemetry */ }
   }
 
   private loadOpenPositions(): void {
@@ -373,23 +416,24 @@ export class CopyTrader {
     for (const s of COPY_STRATEGIES) {
       const pendingKey = `${s.id}:${mint}`;
       const open = [...this.positions.values()].filter((p) => p.strategyId === s.id);
-      if (open.some((p) => p.mint === mint)) continue;       // one position per (strategy, mint)
-      if (this.pendingEntries.has(pendingKey)) continue;     // delayed entry already in flight
-      if (open.length >= MAX_CONCURRENT_PER_STRATEGY) continue;
-      // conviction gates
-      if (s.walletAllowlist && !s.walletAllowlist.includes(leadWallet)) continue;
-      if (s.minLeadRank != null && leadRank > s.minLeadRank) continue;
+      // already-positioned / in-flight / at-capacity: not an interesting "gate" skip
+      if (open.some((p) => p.mint === mint)) { this.recordSkip(s.id, 'already_open'); continue; }
+      if (this.pendingEntries.has(pendingKey)) { this.recordSkip(s.id, 'already_open'); continue; }
+      if (open.length >= MAX_CONCURRENT_PER_STRATEGY) { this.recordSkip(s.id, 'at_capacity'); continue; }
+      // conviction gates — record the FIRST gate that rejects (funnel semantics)
+      if (s.walletAllowlist && !s.walletAllowlist.includes(leadWallet)) { this.recordSkip(s.id, 'wallet_allowlist'); continue; }
+      if (s.minLeadRank != null && leadRank > s.minLeadRank) { this.recordSkip(s.id, 'lead_rank'); continue; }
       if (s.minConsensusRecent != null) {
         if (consensusRecent == null) consensusRecent = this.countRecentSmartBuyers(mint);
-        if (consensusRecent < s.minConsensusRecent) continue;
+        if (consensusRecent < s.minConsensusRecent) { this.recordSkip(s.id, 'consensus'); continue; }
       }
       // smart-wallet-data gates (H cohort) — all pure SQL/cached, no RPC
-      if (s.minLeadBuySol != null && (leadBuySol == null || leadBuySol < s.minLeadBuySol)) continue;
-      if (s.regimeGateMinScore != null && this.regimeScore() < s.regimeGateMinScore) continue;
-      if (s.macroGateMinScore != null && this.macroScore() < s.macroGateMinScore) continue;
+      if (s.minLeadBuySol != null && (leadBuySol == null || leadBuySol < s.minLeadBuySol)) { this.recordSkip(s.id, 'lead_buy_size'); continue; }
+      if (s.regimeGateMinScore != null && this.regimeScore() < s.regimeGateMinScore) { this.recordSkip(s.id, 'regime'); continue; }
+      if (s.macroGateMinScore != null && this.macroScore() < s.macroGateMinScore) { this.recordSkip(s.id, 'macro'); continue; }
       if (s.hotLeadGate) {
         const st = this.leadRecentStats(leadWallet, s.hotLeadGate.lastN);
-        if (st.n < s.hotLeadGate.minTrades || st.net <= s.hotLeadGate.minNetSol) continue;
+        if (st.n < s.hotLeadGate.minTrades || st.net <= s.hotLeadGate.minNetSol) { this.recordSkip(s.id, 'hotlead'); continue; }
       }
 
       // Measured-lag entry — wait, re-fetch the real price, enter at that.
@@ -786,6 +830,47 @@ export function computeLeadPerformance(db: Database.Database, baseline = COPY_RE
   };
 }
 
+/**
+ * Copy-trade promotion readiness — the copy analogue of the T+30 promotion bar.
+ * Formalizes when a copy strategy is ready for a live-micro test. A strategy is
+ * PROMOTABLE when ALL gates clear: n>=100, drop_top3>0, exit_stress>0,
+ * monthly_run_rate>=3.75 SOL (~$300/mo, the same floor as the main book).
+ * Exit-stress replaces the T+30 walk-forward gate — for copy it's the realistic-
+ * fill robustness check. Readiness score (0-100) ranks all strategies by how
+ * close they are. `summaries` is the by_strategy map already computed.
+ */
+const COPY_MONTHLY_BAR = 3.75;
+function computeCopyPromotion(summaries: Record<string, any>): unknown {
+  const rows = Object.entries(summaries).map(([id, s]) => {
+    const n = s.n ?? 0;
+    const net = s.total_net_sol ?? 0;
+    const drop3 = s.total_net_sol_drop_top3 ?? 0;
+    const stress = s.total_net_sol_exit_stress ?? 0;
+    // monthly run rate from the per-strategy daily series (distinct active days)
+    const days = (s.daily ?? []).filter((d: any) => (d.n ?? 0) > 0);
+    const activeDays = days.length;
+    const monthly = activeDays > 0 ? +((net / activeDays) * 30).toFixed(2) : 0;
+    const gates = {
+      n_ge_100: n >= 100,
+      drop3_positive: drop3 > 0,
+      stress_positive: stress > 0,
+      monthly_ge_bar: monthly >= COPY_MONTHLY_BAR,
+    };
+    const promotable = Object.values(gates).every(Boolean);
+    // 0-100 readiness: sample 25 + drop3 30 + stress 25 + monthly 20
+    const score = +(
+      Math.min(1, n / 100) * 25 +
+      (drop3 > 0 ? Math.min(1, drop3 / 2) * 30 : 0) +
+      (stress > 0 ? Math.min(1, stress / 2) * 25 : 0) +
+      Math.max(0, Math.min(1, monthly / COPY_MONTHLY_BAR)) * 20
+    ).toFixed(1);
+    return { id, n, net_sol: +net.toFixed(3), drop_top3: +drop3.toFixed(3),
+      exit_stress: +stress.toFixed(3), monthly_run_rate_sol: monthly, gates, promotable, score };
+  });
+  rows.sort((a, b) => b.score - a.score);
+  return { monthly_bar_sol: COPY_MONTHLY_BAR, n_promotable: rows.filter((r) => r.promotable).length, rows };
+}
+
 
 /** Uniform exit-fill stress: re-net the remainder leg with the exit price worsened
  *  by `penPct`%. Scale-out partials are kept as recorded (their exit prices aren't
@@ -823,6 +908,21 @@ export function computeCopyTrades(db: Database.Database): unknown {
   } catch {
     return { generated_at: new Date().toISOString(), phase: 'phase2-shadow-copy', pending: true };
   }
+
+  // Gate-skip funnel: cumulative per-strategy skip-by-reason from bot_settings
+  // (written by the live CopyTrader). Answers "why is this strategy's n low".
+  const gateSkips: Record<string, Record<string, number>> = {};
+  try {
+    const row = db.prepare(`SELECT value FROM bot_settings WHERE key = 'copy_gate_skips'`).get() as { value: string } | undefined;
+    if (row?.value) {
+      for (const [k, v] of Object.entries(JSON.parse(row.value) as Record<string, number>)) {
+        const i = k.lastIndexOf('|');
+        if (i < 0) continue;
+        const sid = k.slice(0, i); const reason = k.slice(i + 1);
+        (gateSkips[sid] ??= {})[reason] = v;
+      }
+    }
+  } catch { /* no skip data yet */ }
 
   // Measured entry drift (detection snapshot → delayed fill) for lag strategies:
   // the empirical answer to "what does 5-7s of copy latency actually cost".
@@ -955,6 +1055,10 @@ export function computeCopyTrades(db: Database.Database): unknown {
       drift_skips: skipsForStrat.length,
       entry_drift: driftStats(entered),
       skipped_drift: driftStats(skipsForStrat),
+      // gate funnel: how many lead-buys this strategy passed on, by reason (drift
+      // folded in from the 'skipped' rows). entered = closed + open.
+      entered: closedSummary.n + (openSummary.open_positions ?? 0),
+      gate_skips: { ...(gateSkips[s.id] ?? {}), ...(skipsForStrat.length ? { drift: skipsForStrat.length } : {}) },
     };
   }
 
@@ -984,6 +1088,8 @@ export function computeCopyTrades(db: Database.Database): unknown {
     // Per-lead-wallet copy P&L on the baseline — makes the lead-selection signal
     // (the book's strongest) legible: who's hot, who's cold.
     lead_performance: computeLeadPerformance(db),
+    // Copy promotion bar (n>=100 · drop3>0 · stress>0 · monthly>=3.75) + readiness.
+    promotion: computeCopyPromotion(byStrategy),
     overall: {
       ...overallOpen,
       total_incl_open_sol: +(overallClosed.total_net_sol + overallOpen.open_unrealized_sol).toFixed(4),
