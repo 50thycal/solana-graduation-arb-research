@@ -71,6 +71,11 @@ export interface CopyStrategy {
                                // lead-momentum gate: look at OUR last `lastN` closed baseline copies of this
                                // lead; require >= minTrades of history and sum(net_sol) > minNetSol. Benches
                                // leads who are currently losing us money; new leads with no history are skipped.
+  eliteLeadGate?: { minTrades: number; minNetSol: number };
+                               // CUMULATIVE lead-quality gate: lead's all-time baseline copy net must exceed
+                               // minNetSol over >= minTrades total copies. Unlike hotLeadGate (noisy last-10
+                               // recency), this keys on stable lifetime reputation — the lead data shows the
+                               // best leads by cumulative net aren't always "hot" by recency.
   regimeGateMinScore?: number; // regime gate: only enter when the current 1-10 window score (computed from
                                // the roster-stable baseline; 10 best, 1 worst, 5 neutral) is >= this. Tests
                                // "skip the bad windows" — the copy book swings hard (-31/+44/-35 SOL days)
@@ -164,6 +169,23 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
   { id: 'copy-hotlead-deep',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 20, minTrades: 5, minNetSol: 0 } },
+  // ── J (2026-06-16): consensus2 is the one PROMOTABLE strategy; token-level
+  //    consensus (>=N smart wallets on the same mint) is the durable edge — it beats
+  //    regime/macro/lead-recency timing. hotlead regressed as n grew (recency is
+  //    noisy). So: double down on consensus, and replace recency with CUMULATIVE
+  //    lead quality. All on the lag+drift10 realistic base.
+  // J1 stronger consensus — >=3 smart wallets (vs 2). Higher conviction token signal.
+  { id: 'copy-consensus3',      tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 3 },
+  // J2 cumulative lead quality — only copy leads with all-time baseline net > 0 over
+  //    >=10 copies. The data: best leads by cumulative net aren't flagged "hot" by
+  //    recency, so a stable-reputation gate should beat hotlead.
+  { id: 'copy-elitelead',       tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, eliteLeadGate: { minTrades: 10, minNetSol: 0 } },
+  // J3 stack the two proven-durable signals — good token (consensus) x proven lead
+  //    (cumulative quality). Both are token/lead-intrinsic, not timing.
+  { id: 'copy-consensus2-elite', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 } },
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
@@ -396,6 +418,28 @@ export class CopyTrader {
     return res;
   }
 
+  /** Cumulative (all-time) baseline copy stats for a lead — the eliteLeadGate's
+   *  signal. Cached 5min per wallet (lifetime stats move slowly). */
+  private eliteLeadCache = new Map<string, { ts: number; n: number; net: number }>();
+  private leadLifetimeStats(leadWallet: string): { n: number; net: number } {
+    const now = Date.now();
+    const hit = this.eliteLeadCache.get(leadWallet);
+    if (hit && now - hit.ts < 300_000) return hit;
+    let res = { n: 0, net: 0 };
+    try {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) AS n, COALESCE(SUM(net_sol), 0) AS net FROM copy_trades
+        WHERE status = 'closed' AND strategy_id = ? AND lead_wallet = ? AND net_sol IS NOT NULL
+      `).get(COPY_REGIME_BASELINE, leadWallet) as { n: number; net: number };
+      res = { n: row.n, net: row.net };
+    } catch { /* table may be empty */ }
+    this.eliteLeadCache.set(leadWallet, { ts: now, ...res });
+    if (this.eliteLeadCache.size > 2000) {
+      for (const [k, v] of this.eliteLeadCache) if (now - v.ts > 900_000) this.eliteLeadCache.delete(k);
+    }
+    return res;
+  }
+
   /** A followed wallet bought `mint` — open shadow copies for armed strategies.
    *  `leadBuySol` is the size of the lead's own buy (|SOL delta| from their tx). */
   async onLeadBuy(mint: string, leadWallet: string, leadTier: string, detectionLagSec: number | null, leadBuySol: number | null = null): Promise<void> {
@@ -434,6 +478,10 @@ export class CopyTrader {
       if (s.hotLeadGate) {
         const st = this.leadRecentStats(leadWallet, s.hotLeadGate.lastN);
         if (st.n < s.hotLeadGate.minTrades || st.net <= s.hotLeadGate.minNetSol) { this.recordSkip(s.id, 'hotlead'); continue; }
+      }
+      if (s.eliteLeadGate) {
+        const st = this.leadLifetimeStats(leadWallet);
+        if (st.n < s.eliteLeadGate.minTrades || st.net <= s.eliteLeadGate.minNetSol) { this.recordSkip(s.id, 'elitelead'); continue; }
       }
 
       // Measured-lag entry — wait, re-fetch the real price, enter at that.
@@ -1046,6 +1094,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
         entry_delay_sec: s.entryDelaySec ?? null, follow_sell_delay_sec: s.followSellDelaySec ?? null,
         max_entry_drift_pct: s.maxEntryDriftPct ?? null,
         min_lead_buy_sol: s.minLeadBuySol ?? null, hot_lead_gate: s.hotLeadGate ?? null,
+        elite_lead_gate: s.eliteLeadGate ?? null,
         regime_gate_min_score: s.regimeGateMinScore ?? null,
         macro_gate_min_score: s.macroGateMinScore ?? null,
       },

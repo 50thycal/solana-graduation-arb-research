@@ -10471,6 +10471,7 @@ export function renderCopyTradesHtml(data: any): string {
       c.max_entry_drift_pct != null ? `drift≤${c.max_entry_drift_pct}%` : '',
       c.min_lead_buy_sol != null ? `buy≥${c.min_lead_buy_sol}◎` : '',
       c.hot_lead_gate ? 'hot-lead' : '',
+      c.elite_lead_gate ? 'elite-lead' : '',
       c.regime_gate_min_score != null ? `regime≥${c.regime_gate_min_score}` : '',
       c.macro_gate_min_score != null ? `macro≥${c.macro_gate_min_score}` : '',
       c.min_consensus != null ? `cons≥${c.min_consensus}` : '',
@@ -10482,7 +10483,7 @@ export function renderCopyTradesHtml(data: any): string {
     const skipEntries = Object.entries(gs).filter(([, v]: any) => v > 0).sort((a: any, b: any) => b[1] - a[1]);
     const totalSkips = skipEntries.reduce((acc: number, [, v]: any) => acc + v, 0);
     const interesting = skipEntries.filter(([k]) => k !== 'already_open' && k !== 'at_capacity');
-    const funnel = (s.config && (s.config.hot_lead_gate || s.config.regime_gate_min_score != null || s.config.macro_gate_min_score != null || s.config.min_consensus != null || s.config.min_lead_buy_sol != null) && interesting.length)
+    const funnel = (s.config && (s.config.hot_lead_gate || s.config.elite_lead_gate || s.config.regime_gate_min_score != null || s.config.macro_gate_min_score != null || s.config.min_consensus != null || s.config.min_lead_buy_sol != null) && interesting.length)
       ? `<div class="desc" style="font-size:10px">entered ${s.entered ?? 0} · skipped ${totalSkips} (${interesting.slice(0, 2).map(([k, v]: any) => `${k} ${v}`).join(', ')})</div>` : '';
     const exitRule = c.exit_follow && c.tp_pct == null ? 'lead sell only'
       : (c.tp_pct != null ? `TP${c.tp_pct}/SL${c.sl_pct}` + (c.exit_follow ? ' + follow' : '') : 'follow');
