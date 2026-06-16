@@ -913,12 +913,16 @@ function computeCopyPromotion(summaries: Record<string, any>): unknown {
       monthly_ge_bar: monthly >= COPY_MONTHLY_BAR,
     };
     const promotable = Object.values(gates).every(Boolean);
-    // 0-100 readiness: sample 25 + drop3 30 + stress 25 + monthly 20
+    // 0-100 readiness: realistic_execution 20 + sample 20 + drop3 25 + stress 20 +
+    // monthly 15. Realistic execution is a SCORED component, so an idealized mirror
+    // (no 5s entry delay) caps at 80 and can never reach 100 — only a strategy that
+    // models our real ~6s fill can be a perfect-score live candidate.
     const score = +(
-      Math.min(1, n / 100) * 25 +
-      (drop3 > 0 ? Math.min(1, drop3 / 2) * 30 : 0) +
-      (stress > 0 ? Math.min(1, stress / 2) * 25 : 0) +
-      Math.max(0, Math.min(1, monthly / COPY_MONTHLY_BAR)) * 20
+      (realisticExecution ? 20 : 0) +
+      Math.min(1, n / 100) * 20 +
+      (drop3 > 0 ? Math.min(1, drop3 / 2) * 25 : 0) +
+      (stress > 0 ? Math.min(1, stress / 2) * 20 : 0) +
+      Math.max(0, Math.min(1, monthly / COPY_MONTHLY_BAR)) * 15
     ).toFixed(1);
     return { id, n, net_sol: +net.toFixed(3), drop_top3: +drop3.toFixed(3),
       exit_stress: +stress.toFixed(3), monthly_run_rate_sol: monthly,
