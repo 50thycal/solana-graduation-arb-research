@@ -10354,6 +10354,30 @@ export function renderCopyTradesHtml(data: any): string {
     <div style="display:flex;gap:2px;align-items:flex-start;height:34px;margin-top:8px">${macStrip}</div>
   </div>`;
 
+  // ── Promotion readiness: which copy strategies are ready for live-micro ───
+  const promo = d.promotion ?? {};
+  const gchip = (ok: boolean, label: string) =>
+    `<span style="font-size:10px;padding:1px 4px;border-radius:3px;color:#fff;background:${ok ? '#16a34a' : '#6b7280'}">${label}${ok ? '✓' : '✗'}</span>`;
+  const promoRows = (promo.rows ?? []).filter((r: any) => r.n > 0).slice(0, 12).map((r: any) => {
+    const g = r.gates ?? {};
+    return `<tr${r.promotable ? ' style="background:rgba(22,163,74,0.12)"' : ''}>
+      <td>${r.id}${r.promotable ? ' <span style="color:#16a34a">★</span>' : ''}</td>
+      <td><b>${n(r.score, 0)}</b></td>
+      <td>${r.n}</td>
+      <td>${sol(r.net_sol)}</td>
+      <td>${sol(r.drop_top3)}</td>
+      <td>${sol(r.exit_stress)}</td>
+      <td>${sol(r.monthly_run_rate_sol)}</td>
+      <td style="white-space:nowrap">${gchip(g.n_ge_100, 'n')} ${gchip(g.drop3_positive, 'd3')} ${gchip(g.stress_positive, 'st')} ${gchip(g.monthly_ge_bar, 'mo')}</td></tr>`;
+  }).join('');
+  const promoCard = !promo.rows ? '' : `<div class="card">
+    <h2>Promotion readiness <span class="desc" style="font-size:13px">— ${promo.n_promotable ?? 0} promotable</span></h2>
+    <div class="desc">Copy-trade promotion bar (analogue of the T+30 book's): a strategy is PROMOTABLE (★, green row)
+    when ALL clear — n≥100 · drop-top3&gt;0 · exit-stress&gt;0 · monthly run-rate ≥${n(promo.monthly_bar_sol, 2)} SOL (~$300/mo).
+    Score (0-100) ranks closeness: sample 25 + drop3 30 + stress 25 + monthly 20. Top 12 by score.</div>
+    <table><tr><th>Strategy</th><th>Score</th><th>n</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th>Gates</th></tr>${promoRows}</table>
+  </div>`;
+
   // ── Daily book P&L bars — the swings, made visible ────────────────────────
   const daily: any[] = ov.daily ?? [];
   const last14 = daily.slice(-14);
@@ -10452,6 +10476,14 @@ export function renderCopyTradesHtml(data: any): string {
       c.min_consensus != null ? `cons≥${c.min_consensus}` : '',
       c.entry_penalty_pct != null ? `pen${c.entry_penalty_pct}%` : '',
     ].filter(Boolean).join(' · ');
+    // gate funnel: if this strategy passed on entries, show why (top 2 reasons).
+    // Surfaces "low n because the gate is strict" vs "low n because no events".
+    const gs = s.gate_skips ?? {};
+    const skipEntries = Object.entries(gs).filter(([, v]: any) => v > 0).sort((a: any, b: any) => b[1] - a[1]);
+    const totalSkips = skipEntries.reduce((acc: number, [, v]: any) => acc + v, 0);
+    const interesting = skipEntries.filter(([k]) => k !== 'already_open' && k !== 'at_capacity');
+    const funnel = (s.config && (s.config.hot_lead_gate || s.config.regime_gate_min_score != null || s.config.macro_gate_min_score != null || s.config.min_consensus != null || s.config.min_lead_buy_sol != null) && interesting.length)
+      ? `<div class="desc" style="font-size:10px">entered ${s.entered ?? 0} · skipped ${totalSkips} (${interesting.slice(0, 2).map(([k, v]: any) => `${k} ${v}`).join(', ')})</div>` : '';
     const exitRule = c.exit_follow && c.tp_pct == null ? 'lead sell only'
       : (c.tp_pct != null ? `TP${c.tp_pct}/SL${c.sl_pct}` + (c.exit_follow ? ' + follow' : '') : 'follow');
     const nClosed = s.n ?? 0;
@@ -10466,7 +10498,7 @@ export function renderCopyTradesHtml(data: any): string {
     const drift = s.entry_drift;
     const driftCell = drift ? `${drift.median_pct >= 0 ? '+' : ''}${n(drift.median_pct, 1)}%<span class="desc"> med</span>${(s.drift_skips ?? 0) > 0 ? ` <span class="desc">skip:${s.drift_skips}</span>` : ''}` : ((s.drift_skips ?? 0) > 0 ? `skip:${s.drift_skips}` : '—');
     return `<tr${allPass ? ' style="background:rgba(22,163,74,0.08)"' : ''}>
-      <td>${id}<div class="desc" style="font-size:10px">${gateBits}</div></td><td class="desc">${exitRule}</td>
+      <td>${id}<div class="desc" style="font-size:10px">${gateBits}</div>${funnel}</td><td class="desc">${exitRule}</td>
       <td>${nClosed}</td><td><span class="blue">${s.open_positions ?? 0}</span></td>
       <td>${sol(s.total_net_sol)}</td><td>${sol(s.total_net_sol_drop_top3)}</td><td>${sol(s.total_net_sol_exit_stress)}</td>
       <td>${pairedCell}</td><td>${pct(s.win_rate)}</td><td>${driftCell}</td>
@@ -10492,5 +10524,5 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Strategy</th><th>Mint</th><th>Lead</th><th>Tier</th><th>Exit</th><th>Gross%</th><th>Net SOL</th><th>Hold</th></tr>${recentRows}</table>
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + macroCard + dailyCard + leadCard + headerCard + stratCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + macroCard + promoCard + dailyCard + leadCard + headerCard + stratCard + recentCard, data as object);
 }
