@@ -211,7 +211,11 @@ function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout
 const STRAT_BY_ID = new Map(COPY_STRATEGIES.map((s) => [s.id, s]));
 
 const COPY_SIZE_SOL = parseFloat(process.env.COPY_SIZE_SOL || '0.5');
-const MAX_CONCURRENT_PER_STRATEGY = parseInt(process.env.COPY_MAX_CONCURRENT || '40', 10);
+// Raised 40 -> 80 (2026-06-17): with graduation collection off (detect-only mode),
+// the RPC budget is copy's alone, so a busy strategy hitting the cap and dropping
+// entries ('at_capacity' skips) is lost data we no longer need to ration. Bump via
+// COPY_MAX_CONCURRENT if the funnel still shows at_capacity skips.
+const MAX_CONCURRENT_PER_STRATEGY = parseInt(process.env.COPY_MAX_CONCURRENT || '80', 10);
 const POLL_INTERVAL_MS = parseInt(process.env.COPY_POLL_MS || '15000', 10);
 const CONSENSUS_WINDOW_MS = 10 * 60 * 1000;
 
