@@ -211,12 +211,20 @@ function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout
 const STRAT_BY_ID = new Map(COPY_STRATEGIES.map((s) => [s.id, s]));
 
 const COPY_SIZE_SOL = parseFloat(process.env.COPY_SIZE_SOL || '0.5');
-// Raised 40 -> 80 (2026-06-17): with graduation collection off (detect-only mode),
-// the RPC budget is copy's alone, so a busy strategy hitting the cap and dropping
-// entries ('at_capacity' skips) is lost data we no longer need to ration. Bump via
-// COPY_MAX_CONCURRENT if the funnel still shows at_capacity skips.
-const MAX_CONCURRENT_PER_STRATEGY = parseInt(process.env.COPY_MAX_CONCURRENT || '80', 10);
-const POLL_INTERVAL_MS = parseInt(process.env.COPY_POLL_MS || '15000', 10);
+// Concurrency cap (revert to 40, 2026-06-17): with the budget now copy's alone,
+// raising this only let the idealized REFERENCE strategies (copy-followsell,
+// copy-tp100-sl30) hoard positions and add vault-poll RPC — the live -lag/
+// consensus candidates are gated + low-volume and never hit the cap. 40 keeps
+// their data complete without spending budget on over-sampled references.
+const MAX_CONCURRENT_PER_STRATEGY = parseInt(process.env.COPY_MAX_CONCURRENT || '40', 10);
+// Poll interval raised 15s -> 25s (2026-06-17): position polling (1 batched vault
+// fetch per UNIQUE open vault per cycle) is the dominant sustained RPC consumer.
+// At 15s the book ran ~4.5 calls/s ≈ 11.7M credits/mo — over the 10M plan. 25s
+// halves it to ~2.9 calls/s ≈ 7.5M/mo, under budget, while keeping copy unthrottled
+// (the rps CAP is a ceiling, not the driver). Cost: TP/SL exit detection is up to
+// 25s coarser — acceptable for shadow research. Lower COPY_POLL_MS if the budget
+// has room; raise toward 30s if Helius runs hot.
+const POLL_INTERVAL_MS = parseInt(process.env.COPY_POLL_MS || '25000', 10);
 const CONSENSUS_WINDOW_MS = 10 * 60 * 1000;
 
 interface OpenPos {
