@@ -101,16 +101,11 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    measured per-trade. Detection ~1.1s post-fill + 5s wait ≈ 6s real copy latency
   //    (middle of the observed 5-7s). followSellDelaySec applies the same wait to
   //    follow_sell exits only; TP/SL exits are bot-triggered and stay undelayed.
-  { id: 'copy-tp100-sl30-lag',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryDelaySec: 5 },
-  { id: 'copy-followsell-lag',  tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryDelaySec: 5, followSellDelaySec: 5 },
   { id: 'copy-consensus2-lag',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5 },
   // ── G: drift-skip — same measured-lag twins, but skip the copy when the price has
   //    already run >X% above the detection snapshot during the wait (don't chase the
   //    pump we just watched happen). Skips are recorded, so the skip rate is visible.
-  { id: 'copy-tp100-sl30-lag-drift10', tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, entryDelaySec: 5, maxEntryDriftPct: 10 },
-  { id: 'copy-followsell-lag-drift10', tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null, entryDelaySec: 5, followSellDelaySec: 5, maxEntryDriftPct: 10 },
   { id: 'copy-consensus2-lag-drift5',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5 },
-  { id: 'copy-consensus2-lag-drift10', tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 10 },
   // ── H (2026-06-12): smart-wallet-data gates, all on the conservative lag+drift10
   //    base (the best early construction). Each isolates ONE new signal:
   // H1 regime gate — only enter when the 1-10 window score is favorable. Direct
@@ -196,6 +191,14 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    other two only 17-18 (both slightly negative). Single-wallet mirroring can't
   //    generate evaluable signal frequency — not a config-strictness issue (igiybn-follow
   //    AND igiybn-ratchet were both 0, so the ratchet exit was never the bottleneck).
+  // ── KILLED 2026-06-17 (decisive realistic-execution failure, n>=100, RPC cleanup):
+  //    copy-tp100-sl30-lag (n=378, -10.59), copy-tp100-sl30-lag-drift10 (n=335, -7.38),
+  //    copy-followsell-lag (n=554, -3.29), copy-followsell-lag-drift10 (n=450, drop3
+  //    -4.54), copy-consensus2-lag-drift10 (n=117, drop3 -4.63 — drift10 too tight for
+  //    consensus). Plain TP/SL and follow-sell don't survive realistic execution; these
+  //    were the book's biggest open-position consumers (~100 open) on a tight RPC budget.
+  //    Kept: consensus2-lag (no-drift control, +net) and consensus2-lag-drift5 (best
+  //    realistic candidate, drop3 only -0.28).
   // ── KILLED 2026-06-13 (purpose served): copy-tp100-sl30-cons, copy-followsell-cons.
   //    The assumed flat-5%-entry/2%-exit penalty controls. The measured-lag twins
   //    (entryDelaySec) showed real detection->fill drift is ~0% median (not +5%), so
