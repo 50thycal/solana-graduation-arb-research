@@ -85,6 +85,8 @@ Assign every active strategy ONE verdict, in proposal voice. Use the realistic-e
 
 Then propose **NEW strategies to try** (0–3), grounded in what the data shows working — e.g. variants of the durable signals (consensus, cumulative lead quality), or loosened gates for starved strategies. Each new idea: id, hypothesis, the one gate/param it isolates, and why now.
 
+> **Redundancy guardrail (added 2026-06-17 after a bad proposal).** Before proposing any "new" strategy, check that an equivalent does NOT already exist in the roster. The most common trap: proposing a "realistic 5s-entry twin of idealized strategy X" — those twins **already exist** as `copy-<base>-lag` and `copy-<base>-lag-drift5`. E.g. the realistic twin of `copy-conviction-consensus2` is `copy-consensus2-lag` / `copy-consensus2-lag-drift5`, NOT a new strategy. Match on the gate/param combination (tp/sl, consensus, hotlead, regime, macro, entryDelaySec, drift), not the id string. If an equivalent exists, the right action is "watch the existing one," not "create a duplicate." Never propose recreating a strategy that's also on your KILL list.
+
 ## Step 7 — Write the journal entry
 
 Prepend (newest-first) a dated entry to `docs/copy-trade-journal.md`. Two parts: a machine-readable `SNAPSHOT` block (so tomorrow can diff) and human prose. Template:
