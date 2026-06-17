@@ -35,14 +35,17 @@ const logger = makeLogger('copytrade-worker');
  */
 
 const DEFAULTS = {
-  // 2026-06-11 budget cuts (Helius plan ~90% consumed, 11d to reset): scoring
-  // was the biggest steady RPC burner (~30 wallets × up to 400 parsed txs every
-  // 3h ≈ 96k req/day). Halved cadence + batch + depth ≈ 14k/day. Discovery
-  // still ticks 4×/day; raise via COPYTRADE_* envs once the plan resets.
-  intervalMs: 6 * 60 * 60 * 1000, // 6h between scoring passes
+  // 2026-06-17: graduation collection is OFF (detect-only), so the RPC budget is
+  // copy's alone. Wallet discovery is now THE limiter on "not missing a smart
+  // wallet" — only 2.5k of ~71k seeded candidates have been scored, and a wallet
+  // can't enter the probe watchlist until it's scored + passes the smart-set gate.
+  // Raised throughput 3x vs the 2026-06-11 budget cut (15/6h/250 → 30/4h/300):
+  // ~30 wallets × ~300 parsed txs × 6 ticks/day ≈ 54k req/day, leaving the rest
+  // of the ~250k/day copy budget for position polling. Tune via COPYTRADE_* envs.
+  intervalMs: 4 * 60 * 60 * 1000, // 4h between scoring passes (was 6h)
   firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
-  scoreBatchLimit: 15,            // wallets scored per tick
-  maxSignaturesPerWallet: 250,    // history depth per wallet (caps RPC cost)
+  scoreBatchLimit: 30,            // wallets scored per tick (was 15)
+  maxSignaturesPerWallet: 300,    // history depth per wallet (was 250)
   restaleSeconds: 24 * 3600,      // re-score a wallet at most once / 24h
 };
 
