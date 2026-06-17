@@ -17,6 +17,18 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('graduation-listener');
 
+// Detect-only mode (GRADUATION_COLLECTION_DISABLED=true): keep detecting
+// graduations and populating graduations.new_pool_address (the copy-trader's
+// dependency — it copies only tokens present in the graduations table), but
+// SKIP the RPC-heavy T+30..T+300 price-snapshot polling, holder enrichment,
+// and velocity-recovery sweep. Frees the entire RPC budget for copy trading
+// while preserving copy coverage. Detection (WS + migration poller + pool
+// tracker) and the shared RPC Connection stay live.
+const GRADUATION_COLLECTION_DISABLED = process.env.GRADUATION_COLLECTION_DISABLED === 'true';
+if (GRADUATION_COLLECTION_DISABLED) {
+  logger.warn('GRADUATION_COLLECTION_DISABLED=true — detect-only mode: graduations are detected + pool addresses recorded for copy coverage, but price collection / enrichment are OFF.');
+}
+
 // Rejects after `ms` if `p` hasn't settled. Note: the underlying promise keeps
 // running — there's no way to cancel an in-flight await in JS. That's fine
 // here: the old subscription/connection is about to be replaced anyway, so a
@@ -523,10 +535,12 @@ export class GraduationListener {
     );
 
     await this.subscribe();
-    await this.poolTracker.start();
-    this.priceCollector.startAutoVelocityRecovery();
+    await this.poolTracker.start();          // backfills new_pool_address via WS — needed for copy coverage
+    if (!GRADUATION_COLLECTION_DISABLED) {
+      this.priceCollector.startAutoVelocityRecovery(); // RPC sweep — collection only
+    }
     this.launchCounter.start();
-    await this.startMigrationPoller();
+    await this.startMigrationPoller();       // detection fallback — needed for copy coverage
 
     this.healthCheckInterval = setInterval(() => {
       const silentMs = Date.now() - this.lastEventTime;
@@ -1005,6 +1019,8 @@ export class GraduationListener {
 
     // Holder enrichment (fire-and-forget — don't block pool tracking).
     // Now uses UPDATE (not INSERT) since the row already exists above.
+    // Skipped in detect-only mode (RPC-heavy DAS calls — graduation collection).
+    if (!GRADUATION_COLLECTION_DISABLED)
     this.holderEnrichment.enrich(event.mint, event.bondingCurveAddress, event.timestamp).then((enrichment) => {
       updateGraduationEnrichment(this.db, graduationId, {
         holder_count: enrichment.holderCount,
@@ -1101,50 +1117,53 @@ export class GraduationListener {
     // Path 3: Nothing found → fallback to pool tracker subscription
     if (event.poolBaseVault && event.poolQuoteVault) {
       const poolAddr = event.poolAddress || `vaults:${event.poolBaseVault.slice(0, 8)}`;
+      // Always record the pool address — copy-trader resolves pools from this.
       updateGraduationPool(
         this.db, graduationId, poolAddr, 'pumpswap',
         event.signature, 0, event.migrationTimestamp || event.timestamp
       );
 
-      this.priceCollector.startObservation({
-        graduationId,
-        mint: event.mint,
-        poolAddress: poolAddr,
-        poolDex: 'pumpswap',
-        bondingCurvePrice: event.finalPriceSol || 0,
-        graduationTimestamp: event.timestamp,
-        migrationTimestamp: event.migrationTimestamp || event.timestamp,
-        baseVault: event.poolBaseVault,
-        quoteVault: event.poolQuoteVault,
-        bondingCurveAddress: event.bondingCurveAddress,
-      });
-
-      logger.info(
-        { graduationId, mint: event.mint, pool: poolAddr, baseVault: event.poolBaseVault, quoteVault: event.poolQuoteVault },
-        'Direct pool observation started with pre-extracted vaults'
-      );
+      if (!GRADUATION_COLLECTION_DISABLED) {
+        this.priceCollector.startObservation({
+          graduationId,
+          mint: event.mint,
+          poolAddress: poolAddr,
+          poolDex: 'pumpswap',
+          bondingCurvePrice: event.finalPriceSol || 0,
+          graduationTimestamp: event.timestamp,
+          migrationTimestamp: event.migrationTimestamp || event.timestamp,
+          baseVault: event.poolBaseVault,
+          quoteVault: event.poolQuoteVault,
+          bondingCurveAddress: event.bondingCurveAddress,
+        });
+        logger.info(
+          { graduationId, mint: event.mint, pool: poolAddr, baseVault: event.poolBaseVault, quoteVault: event.poolQuoteVault },
+          'Direct pool observation started with pre-extracted vaults'
+        );
+      }
     } else if (event.poolAddress) {
-      // Pool address found but no vaults — price-collector will decode from pool account
+      // Pool address found but no vaults — record it (copy-trader decodes vaults itself).
       updateGraduationPool(
         this.db, graduationId, event.poolAddress, 'pumpswap',
         event.signature, 0, event.migrationTimestamp || event.timestamp
       );
 
-      this.priceCollector.startObservation({
-        graduationId,
-        mint: event.mint,
-        poolAddress: event.poolAddress,
-        poolDex: 'pumpswap',
-        bondingCurvePrice: event.finalPriceSol || 0,
-        graduationTimestamp: event.timestamp,
-        migrationTimestamp: event.migrationTimestamp || event.timestamp,
-        bondingCurveAddress: event.bondingCurveAddress,
-      });
-
-      logger.info(
-        { graduationId, mint: event.mint, pool: event.poolAddress },
-        'Pool observation started — vaults will be decoded from pool account'
-      );
+      if (!GRADUATION_COLLECTION_DISABLED) {
+        this.priceCollector.startObservation({
+          graduationId,
+          mint: event.mint,
+          poolAddress: event.poolAddress,
+          poolDex: 'pumpswap',
+          bondingCurvePrice: event.finalPriceSol || 0,
+          graduationTimestamp: event.timestamp,
+          migrationTimestamp: event.migrationTimestamp || event.timestamp,
+          bondingCurveAddress: event.bondingCurveAddress,
+        });
+        logger.info(
+          { graduationId, mint: event.mint, pool: event.poolAddress },
+          'Pool observation started — vaults will be decoded from pool account'
+        );
+      }
     } else {
       // No pool info extracted inline — fall back to pool tracker subscription.
       // We do NOT call cancelSpeculative here: we cannot reliably distinguish a
