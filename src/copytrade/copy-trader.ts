@@ -101,7 +101,6 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    measured per-trade. Detection ~1.1s post-fill + 5s wait ≈ 6s real copy latency
   //    (middle of the observed 5-7s). followSellDelaySec applies the same wait to
   //    follow_sell exits only; TP/SL exits are bot-triggered and stay undelayed.
-  { id: 'copy-consensus2-lag',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5 },
   // ── G: drift-skip — same measured-lag twins, but skip the copy when the price has
   //    already run >X% above the detection snapshot during the wait (don't chase the
   //    pump we just watched happen). Skips are recorded, so the skip rate is visible.
@@ -197,8 +196,12 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    -4.54), copy-consensus2-lag-drift10 (n=117, drop3 -4.63 — drift10 too tight for
   //    consensus). Plain TP/SL and follow-sell don't survive realistic execution; these
   //    were the book's biggest open-position consumers (~100 open) on a tight RPC budget.
-  //    Kept: consensus2-lag (no-drift control, +net) and consensus2-lag-drift5 (best
-  //    realistic candidate, drop3 only -0.28).
+  //    Kept: consensus2-lag-drift5 (best realistic candidate).
+  // ── KILLED 2026-06-17 (redundant, dominated): copy-consensus2-lag (n=183, drop3 -3.84).
+  //    Same consensus2 signal as consensus2-lag-drift5 but WITHOUT the drift gate; drift5
+  //    is strictly better on every metric (drop3 -0.90 vs -3.84). Positive net (+2.99) but
+  //    fails the robustness check decisively at scale — keeping both just doubled the RPC
+  //    for a worse twin. consensus2-lag-drift5 is the realistic consensus2 test we keep.
   // ── KILLED 2026-06-13 (purpose served): copy-tp100-sl30-cons, copy-followsell-cons.
   //    The assumed flat-5%-entry/2%-exit penalty controls. The measured-lag twins
   //    (entryDelaySec) showed real detection->fill drift is ~0% median (not +5%), so
