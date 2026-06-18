@@ -6779,11 +6779,17 @@ export function renderLiveTrainingHtml(data: any): string {
       var lr=rt(lv), sr=rt(tw);
       if(num(lv.gross_return_pct)!==null&&num(tw.gross_return_pct)!==null){ liveGross.push(num(lv.gross_return_pct)); shadowGross.push(num(tw.gross_return_pct)); }
       if(num(lv.tx_land_ms)!==null) liveLand.push(num(lv.tx_land_ms));
-      deltas.push((num(lv.net_profit_sol)||0)-(num(tw.net_profit_sol)||0));
+      // Size-match shadow net to the live trade's size (live 0.05 vs shadow 0.5 twin):
+      // net scales linearly with size, so the cumulative-SOL chart + totals + deltas
+      // are apples-to-apples. Return % is size-independent (left as-is).
+      var lsz=num(lv.trade_size_sol), ssz=num(tw.trade_size_sol);
+      var sizeAdj=(lsz&&ssz&&ssz>0)? lsz/ssz : 1;
+      var twNet=(num(tw.net_profit_sol)||0)*sizeAdj;
+      deltas.push((num(lv.net_profit_sol)||0)-twNet);
       pairs.push({ graduation_id:lv.graduation_id, mint:lv.mint, entry_ts:lv.entry_ts,
         live_return_pct:num(lv.net_return_pct), shadow_return_pct:num(tw.net_return_pct),
         return_delta_pct:(num(lv.net_return_pct)!==null&&num(tw.net_return_pct)!==null)? jround(num(lv.net_return_pct)-num(tw.net_return_pct),2): null,
-        live_net_sol:num(lv.net_profit_sol), shadow_net_sol:num(tw.net_profit_sol),
+        live_net_sol:num(lv.net_profit_sol), shadow_net_sol:jround(twNet,6),
         live_roundtrip_slip_pct:jround(lr,3), shadow_roundtrip_slip_pct:jround(sr,3) });
     }
     pairs.sort(function(a,b){return (a.entry_ts||0)-(b.entry_ts||0);});

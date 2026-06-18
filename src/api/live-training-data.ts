@@ -315,7 +315,16 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
       shadowGross.push(twin.gross_return_pct);
     }
     if (live.tx_land_ms !== null && live.tx_land_ms !== undefined) liveLand.push(live.tx_land_ms);
-    deltas.push((live.net_profit_sol ?? 0) - (twin.net_profit_sol ?? 0));
+    // Size-match the shadow to the live trade's size before any net-SOL comparison.
+    // The copy live strategy trades 0.05 SOL while its research shadow twin trades
+    // 0.5 — without this the cumulative-SOL chart, totals, and deltas mix 10x sizes
+    // (shadow looks 10x worse). net scales linearly with size, so scaling the shadow
+    // net by live_size/shadow_size makes the comparison apples-to-apples. Return %
+    // is size-independent and left untouched.
+    const sizeAdj = (live.trade_size_sol && twin.trade_size_sol && twin.trade_size_sol > 0)
+      ? live.trade_size_sol / twin.trade_size_sol : 1;
+    const twinNet = (twin.net_profit_sol ?? 0) * sizeAdj;
+    deltas.push((live.net_profit_sol ?? 0) - twinNet);
     pairs.push({
       graduation_id: live.graduation_id,
       mint: live.mint,
@@ -328,7 +337,7 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
         ? round(live.net_return_pct - twin.net_return_pct, 2)
         : null,
       live_net_sol: live.net_profit_sol,
-      shadow_net_sol: twin.net_profit_sol,
+      shadow_net_sol: round(twinNet, 6), // size-matched to the live trade
       live_roundtrip_slip_pct: round(liveRt, 3),
       shadow_roundtrip_slip_pct: round(shadowRt, 3),
     });
