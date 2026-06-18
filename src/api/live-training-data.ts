@@ -45,6 +45,10 @@ export const LIVE_SHADOW_MAP: Record<string, string> = {
   'v45-acc-gate-live-micro': 'v45-acc-gate-shadow',
   // v50 strength cohort — dedicated 0.05 SOL shadow twin, identical filters/TP/SL.
   'v50-strength-live-micro': 'v50-strength-shadow',
+  // COPY-TRADE live-micro (separate copy_trades subsystem, unioned into this page so
+  // it's the single live-money hub). Paired with its identical shadow twin; matched
+  // on MINT (copy rows have no graduation_id) — see computeComparison's null-grad path.
+  'copy-consensus2-lag-drift5-live-micro': 'copy-consensus2-lag-drift5',
 };
 
 /** Normalized per-trade row shared by live + shadow series. */
@@ -264,12 +268,20 @@ export function computeMetrics(trades: LtTrade[]): LtMetrics {
  * execution (same token, same entry decision, different fill path).
  */
 export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]): LtComparison {
-  // Index shadow closed trades by (strategy_id, graduation_id).
+  // Index shadow closed trades by (strategy_id, graduation_id) for graduation-keyed
+  // (T+30) pairing, and keep a per-(strategy,mint) list for copy rows that have no
+  // graduation_id (matched by mint + closest entry_ts instead).
   const shadowIdx = new Map<string, LtTrade>();
+  const shadowByMint = new Map<string, LtTrade[]>();
   for (const s of shadowTrades) {
-    if (s.status !== 'closed' || s.graduation_id === null) continue;
-    shadowIdx.set(`${s.strategy_id}:${s.graduation_id}`, s);
+    if (s.status !== 'closed') continue;
+    if (s.graduation_id !== null) shadowIdx.set(`${s.strategy_id}:${s.graduation_id}`, s);
+    if (s.mint) {
+      const k = `${s.strategy_id}:${s.mint}`;
+      (shadowByMint.get(k) ?? shadowByMint.set(k, []).get(k)!).push(s);
+    }
   }
+  const usedMintTwins = new Set<number>();
 
   const pairs: LtComparison['pairs'] = [];
   // Parallel capture for gap-attribution + latency (not exposed per-pair).
@@ -278,10 +290,23 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
   const liveLand: number[] = [];
   const deltas: number[] = []; // per-pair (live − shadow) net SOL
   for (const live of liveTrades) {
-    if (live.status !== 'closed' || live.graduation_id === null) continue;
+    if (live.status !== 'closed') continue;
     const shadowId = LIVE_SHADOW_MAP[live.strategy_id];
     if (!shadowId) continue;
-    const twin = shadowIdx.get(`${shadowId}:${live.graduation_id}`);
+    let twin: LtTrade | undefined;
+    if (live.graduation_id !== null) {
+      twin = shadowIdx.get(`${shadowId}:${live.graduation_id}`);
+    } else if (live.mint) {
+      // Copy path: match the shadow twin on the same mint, closest entry within 60s.
+      const cands = shadowByMint.get(`${shadowId}:${live.mint}`) ?? [];
+      let best: LtTrade | undefined; let bestDiff = 61;
+      for (const c of cands) {
+        if (usedMintTwins.has(c.id)) continue;
+        const diff = Math.abs((c.entry_ts ?? 0) - (live.entry_ts ?? 0));
+        if (diff <= 60 && diff < bestDiff) { best = c; bestDiff = diff; }
+      }
+      if (best) { usedMintTwins.add(best.id); twin = best; }
+    }
     if (!twin) continue;
     const liveRt = roundtripSlip(live);
     const shadowRt = roundtripSlip(twin);
@@ -392,11 +417,55 @@ function tradeSelect(whereSql: string): string {
     ORDER BY t.entry_timestamp ASC, t.id ASC`;
 }
 
+/** Same LtTrade shape, sourced from the copy_trades table (the copy-trade
+ *  subsystem). Lets copy live_micro + its shadow twin appear on this page.
+ *  graduation_id is null (copy isn't graduation-keyed) → comparison matches on mint. */
+function copyTradeSelect(whereSql: string): string {
+  return `
+    SELECT
+      c.id,
+      c.strategy_id,
+      NULL AS graduation_id,
+      c.mint,
+      COALESCE(c.execution_mode, 'shadow') AS execution_mode,
+      c.status,
+      c.entry_ts,
+      c.exit_ts,
+      c.hold_sec AS held_seconds,
+      c.net_sol AS net_profit_sol,
+      CASE WHEN c.size_sol > 0 THEN c.net_sol / c.size_sol * 100 END AS net_return_pct,
+      c.gross_pct AS gross_return_pct,
+      c.entry_drift_pct AS entry_slip_pct,
+      NULL AS exit_slip_pct,
+      c.jito_tip_sol,
+      c.ata_rent_sol AS fees_sol,
+      NULL AS tx_land_ms,
+      c.exit_reason,
+      c.size_sol AS trade_size_sol
+    FROM copy_trades c
+    ${whereSql}
+    ORDER BY c.entry_ts ASC, c.id ASC`;
+}
+
 export function computeLiveTrainingData(db: Database.Database) {
   // ── Live trades: all rows in a live-money execution mode ──────────────────
   const liveTrades = db.prepare(
     tradeSelect(`WHERE COALESCE(t.execution_mode, 'paper') IN ('live_micro', 'live_full')`),
   ).all() as LtTrade[];
+
+  // Union in copy-trade live-money rows (separate copy_trades table). These are
+  // active by virtue of being in COPY_STRATEGIES + having live rows — strategy_configs
+  // doesn't know about them, so we mark their ids active explicitly below.
+  let copyLiveIds: string[] = [];
+  try {
+    const copyLive = db.prepare(
+      copyTradeSelect(`WHERE c.execution_mode = 'live_micro' AND c.status IN ('closed', 'open')`),
+    ).all() as LtTrade[];
+    if (copyLive.length) {
+      liveTrades.push(...copyLive);
+      copyLiveIds = Array.from(new Set(copyLive.map(t => t.strategy_id)));
+    }
+  } catch { /* copy_trades may lack columns on old DBs — skip */ }
 
   // Distinct live strategy ids actually present in the data (drives selector).
   const liveStrategyIds = Array.from(new Set(liveTrades.map(t => t.strategy_id))).sort();
@@ -415,6 +484,13 @@ export function computeLiveTrainingData(db: Database.Database) {
         `WHERE COALESCE(t.execution_mode, 'paper') = 'shadow' AND t.strategy_id IN (${placeholders})`,
       ),
     ).all(...neededShadowIds) as LtTrade[];
+    // Copy shadow twins live in copy_trades, not trades_v2 — fetch those too.
+    try {
+      const copyShadow = db.prepare(
+        copyTradeSelect(`WHERE c.status = 'closed' AND c.strategy_id IN (${placeholders})`),
+      ).all(...neededShadowIds) as LtTrade[];
+      if (copyShadow.length) shadowTrades.push(...copyShadow);
+    } catch { /* skip */ }
   }
 
   // Labels + active-state from strategy_configs (id → label / enabled+mode).
@@ -430,6 +506,9 @@ export function computeLiveTrainingData(db: Database.Database) {
     try { mode = JSON.parse(row.config_json)?.executionMode; } catch { /* ignore */ }
     if (mode === 'live_micro' || mode === 'live_full') activeLiveIds.add(row.id);
   }
+  // Copy live strategies aren't in strategy_configs — mark them active so they
+  // appear in the default "active" view (not tucked under retired/off).
+  for (const id of copyLiveIds) activeLiveIds.add(id);
   const labelFor = (id: string) => labelMap.get(id) || id;
 
   // Per-strategy roster for the selector.
