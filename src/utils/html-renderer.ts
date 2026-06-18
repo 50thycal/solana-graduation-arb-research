@@ -10368,22 +10368,25 @@ export function renderCopyTradesHtml(data: any): string {
       <td>${sol(r.drop_top3)}</td>
       <td>${sol(r.exit_stress)}</td>
       <td>${sol(r.monthly_run_rate_sol)}</td>
+      <td style="white-space:nowrap"><span class="green">${r.max_win_streak ?? 0}W</span> / <span class="red">${r.max_loss_streak ?? 0}L</span></td>
+      <td>${sol(r.max_drawdown_sol)}</td>
       <td style="white-space:nowrap">${gchip(g.realistic_execution, 'ex')} ${gchip(g.n_ge_100, 'n')} ${gchip(g.drop3_positive, 'd3')} ${gchip(g.stress_positive, 'st')} ${gchip(g.monthly_ge_bar, 'mo')}</td></tr>`;
   };
   const allRows = (promo.rows ?? []).filter((r: any) => r.n > 0);
   const realRows = allRows.filter((r: any) => r.realistic_execution).slice(0, 14);
   const idealRows = allRows.filter((r: any) => !r.realistic_execution).slice(0, 10);
-  const thead = `<tr><th>Strategy</th><th>Score</th><th>n</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th>Gates</th></tr>`;
+  const thead = `<tr><th>Strategy</th><th>Score</th><th>n</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th title="longest consecutive wins / losses, in time order">Streak W/L</th><th title="deepest peak-to-trough decline in cumulative net SOL">Max DD</th><th>Gates</th></tr>`;
   const promoCard = !promo.rows ? '' : `<div class="card">
     <h2>Promotion readiness <span class="desc" style="font-size:13px">— ${promo.n_promotable ?? 0} promotable</span></h2>
     <div class="desc">PROMOTABLE (★, green) requires ALL: <b>realistic execution (5s entry delay)</b> · n≥100 ·
     drop-top3&gt;0 · exit-stress&gt;0 · monthly ≥${n(promo.monthly_bar_sol, 2)} SOL (~$300/mo). Score 0-100 =
     realistic-exec 20 + sample 20 + drop3 25 + stress 20 + monthly 15 — so an idealized mirror caps at <b>80</b>
-    and can never reach 100; only a 5s-entry strategy can.</div>
+    and can never reach 100; only a 5s-entry strategy can. <b>Streak W/L</b> = longest consecutive wins / losses;
+    <b>Max DD</b> = deepest peak-to-trough drawdown in cumulative net SOL — the worst run you'd sit through live.</div>
     <h3 style="margin:10px 0 4px">① Realistic execution — 5s buy entry <span class="desc" style="font-size:12px">(live candidates — only these can be promoted)</span></h3>
-    <table>${thead}${realRows.map(promoRow).join('') || '<tr><td colspan="8" class="desc">none with trades yet</td></tr>'}</table>
+    <table>${thead}${realRows.map(promoRow).join('') || '<tr><td colspan="10" class="desc">none with trades yet</td></tr>'}</table>
     <h3 style="margin:14px 0 4px">② Idealized mirror — ~1.1s snapshot <span class="desc" style="font-size:12px">(upper bound / reference only — NOT promotable, capped at 80)</span></h3>
-    <table style="opacity:0.75">${thead}${idealRows.map(promoRow).join('') || '<tr><td colspan="8" class="desc">none</td></tr>'}</table>
+    <table style="opacity:0.75">${thead}${idealRows.map(promoRow).join('') || '<tr><td colspan="10" class="desc">none</td></tr>'}</table>
   </div>`;
 
   // ── Daily book P&L bars — the swings, made visible ────────────────────────
