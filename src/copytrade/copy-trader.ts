@@ -1407,6 +1407,25 @@ export function computeCopyTrades(db: Database.Database): unknown {
     by_strategy: byStrategy,
     paired_vs_baseline: pairedVsBaseline,
     live_vs_shadow: liveVsShadow,
+    // Definitive "is real money trading?" signal: a copy_trades row with
+    // execution_mode='live_micro' only exists when COPY_LIVE_ENABLED + wallet
+    // were active AND a real buy was submitted (a shadow fallback writes
+    // execution_mode='shadow'). So any open/closed live_micro row = confirmed live.
+    live_execution: (() => {
+      const lo = open.filter((r) => r.execution_mode === 'live_micro');
+      const lc = closed.filter((r) => r.execution_mode === 'live_micro');
+      return {
+        confirmed_live: lo.length + lc.length > 0,
+        open_live_positions: lo.length,
+        closed_live_trades: lc.length,
+        open_detail: lo.slice(0, 10).map((r) => ({
+          mint: (r.mint as string).slice(0, 8),
+          entry_ts: r.entry_ts, entry_price_sol: r.entry_price_sol,
+          live_tokens: r.live_tokens ?? null,
+          tx_sig_entry: ((r.tx_sig_entry as string) ?? '').slice(0, 20) || null,
+        })),
+      };
+    })(),
     recent_closed: closed
       .sort((a, b) => (b.exit_ts as number ?? 0) - (a.exit_ts as number ?? 0))
       .slice(0, 30)

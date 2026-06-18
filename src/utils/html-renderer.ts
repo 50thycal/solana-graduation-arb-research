@@ -10389,6 +10389,19 @@ export function renderCopyTradesHtml(data: any): string {
     <table style="opacity:0.75">${thead}${idealRows.map(promoRow).join('') || '<tr><td colspan="10" class="desc">none</td></tr>'}</table>
   </div>`;
 
+  // ── Live execution status: is real money actually trading? ────────────────
+  const le = d.live_execution ?? {};
+  const leCard = `<div class="card" style="border-left:6px solid ${le.confirmed_live ? '#dc2626' : '#6b7280'}">
+    <h2>Live execution — <span style="color:${le.confirmed_live ? '#dc2626' : '#6b7280'}">${le.confirmed_live ? 'LIVE (real funds)' : 'not detected (shadow only)'}</span></h2>
+    <div class="desc">A row with execution_mode=live_micro only exists when COPY_LIVE_ENABLED + wallet are active
+    AND a real swap was submitted. ${le.confirmed_live
+      ? `<b>Real money is trading.</b> ${le.open_live_positions ?? 0} open live position(s), ${le.closed_live_trades ?? 0} closed.`
+      : `No live_micro rows yet — the live-micro strategy is running as a shadow (COPY_LIVE_ENABLED not active, no wallet, or no qualifying entry has fired yet).`}</div>
+    ${(le.open_detail ?? []).length ? `<table><tr><th>Mint</th><th>Entry SOL</th><th>Tokens</th><th>Tx sig</th></tr>${
+      le.open_detail.map((o: any) => `<tr><td style="font-family:monospace">${o.mint}</td><td>${n(o.entry_price_sol, 9)}</td><td>${o.live_tokens != null ? n(o.live_tokens, 0) : '—'}</td><td style="font-family:monospace">${o.tx_sig_entry ?? '—'}</td></tr>`).join('')
+    }</table>` : ''}
+  </div>`;
+
   // ── Live vs shadow: real-fill gap for live_micro strategies ───────────────
   const lvs: any[] = (d.live_vs_shadow ?? []).filter((p: any) => (p.n_live_total ?? 0) > 0);
   const lvsCard = lvs.length === 0 ? '' : `<div class="card" style="border-left:6px solid #2563eb">
@@ -10554,5 +10567,5 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Strategy</th><th>Mint</th><th>Lead</th><th>Tier</th><th>Exit</th><th>Gross%</th><th>Net SOL</th><th>Hold</th></tr>${recentRows}</table>
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + macroCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + recentCard, data as object);
 }
