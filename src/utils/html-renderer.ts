@@ -10389,6 +10389,24 @@ export function renderCopyTradesHtml(data: any): string {
     <table style="opacity:0.75">${thead}${idealRows.map(promoRow).join('') || '<tr><td colspan="10" class="desc">none</td></tr>'}</table>
   </div>`;
 
+  // ── Live vs shadow: real-fill gap for live_micro strategies ───────────────
+  const lvs: any[] = (d.live_vs_shadow ?? []).filter((p: any) => (p.n_live_total ?? 0) > 0);
+  const lvsCard = lvs.length === 0 ? '' : `<div class="card" style="border-left:6px solid #2563eb">
+    <h2>Live vs Shadow <span class="desc" style="font-size:13px">— real execution gap (live_micro)</span></h2>
+    <div class="desc">Each live_micro strategy paired with its identical shadow twin on the SAME lead-buy
+    (same token, same entry decision) — so the gap is pure execution: real fills, slippage, timing, fees.
+    Compared on <b>return %</b> (size-normalized: live trades 0.05 SOL, shadow 0.5). Exec gap &lt; 0 = live
+    underperforms the model — the real-world cost of going live.</div>
+    ${lvs.map((p: any) => `<div style="margin-top:8px">
+      <div class="desc" style="font-size:12px">${p.live_id} vs ${p.shadow_id} — ${p.matched} matched of ${p.n_live_total} live</div>
+      <table><tr><th>Metric</th><th>Live</th><th>Shadow</th></tr>
+        <tr><td>Avg return / trade</td><td class="${p.live.avg_return_pct >= 0 ? 'green' : 'red'}">${n(p.live.avg_return_pct, 2)}%</td><td class="${p.shadow.avg_return_pct >= 0 ? 'green' : 'red'}">${n(p.shadow.avg_return_pct, 2)}%</td></tr>
+        <tr><td>Win rate</td><td>${pct(p.live.win_rate)}</td><td>${pct(p.shadow.win_rate)}</td></tr>
+        <tr><td>Total net SOL <span class="desc">(diff sizes)</span></td><td>${sol(p.live.total_net_sol)}</td><td>${sol(p.shadow.total_net_sol)}</td></tr>
+        <tr><td><b>Exec gap (live − shadow)</b></td><td colspan="2" class="${p.exec_gap_pp >= 0 ? 'green' : 'red'}">${n(p.exec_gap_pp, 2)} pp over ${p.matched} matched</td></tr>
+      </table></div>`).join('')}
+  </div>`;
+
   // ── Daily book P&L bars — the swings, made visible ────────────────────────
   const daily: any[] = ov.daily ?? [];
   const last14 = daily.slice(-14);
@@ -10536,5 +10554,5 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Strategy</th><th>Mint</th><th>Lead</th><th>Tier</th><th>Exit</th><th>Gross%</th><th>Net SOL</th><th>Hold</th></tr>${recentRows}</table>
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + macroCard + promoCard + dailyCard + leadCard + headerCard + stratCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', regimeCard + macroCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + recentCard, data as object);
 }
