@@ -5,6 +5,7 @@ import { SIM_DEFAULT_COST_PCT } from '../api/sim-constants';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { computeCopyRegime, currentRegimeScore, COPY_REGIME_BASELINE } from './copy-regime';
 import { computeMacroRegime, currentMacroScore } from './macro-regime';
+import { CopyLiveExecutor } from './copy-live-executor';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-trader');
@@ -83,6 +84,11 @@ export interface CopyStrategy {
   macroGateMinScore?: number;  // macro gate: only enter when the broad-crypto-market score (1-10 from BTC/SOL
                                // 7d trend + Fear & Greed; macro-regime.ts) is >= this. Tests "only trade when
                                // the overall market is rising". Missing macro data scores 5 (doesn't block).
+  executionMode?: 'shadow' | 'live_micro';
+                               // 'shadow' (default) = modeled fills, no funds. 'live_micro' = submit REAL 0.05
+                               // SOL swaps via CopyLiveExecutor — but ONLY when COPY_LIVE_ENABLED=true + wallet;
+                               // otherwise it's shadowed. Pair a live_micro strategy with an identical shadow
+                               // twin to measure the real-fill-vs-model execution gap (live-vs-shadow panel).
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
@@ -105,6 +111,11 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    already run >X% above the detection snapshot during the wait (don't chase the
   //    pump we just watched happen). Skips are recorded, so the skip rate is visible.
   { id: 'copy-consensus2-lag-drift5',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5 },
+  // LIVE-MICRO twin of copy-consensus2-lag-drift5 (the first promotable strategy). IDENTICAL
+  // config — only executionMode differs — so it pairs 1:1 with the shadow above to measure the
+  // real-fill-vs-model gap. Submits real 0.05 SOL swaps ONLY when COPY_LIVE_ENABLED=true + wallet;
+  // otherwise it runs as a second shadow (harmless). Operator flips the env to actually go live.
+  { id: 'copy-consensus2-lag-drift5-live-micro', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5, executionMode: 'live_micro' },
   // ── H (2026-06-12): smart-wallet-data gates, all on the conservative lag+drift10
   //    base (the best early construction). Each isolates ONE new signal:
   // H1 regime gate — only enter when the 1-10 window score is favorable. Direct
@@ -220,6 +231,10 @@ const COPY_SIZE_SOL = parseFloat(process.env.COPY_SIZE_SOL || '0.5');
 // consensus candidates are gated + low-volume and never hit the cap. 40 keeps
 // their data complete without spending budget on over-sampled references.
 const MAX_CONCURRENT_PER_STRATEGY = parseInt(process.env.COPY_MAX_CONCURRENT || '40', 10);
+// Tight cap on concurrent OPEN live_micro positions (total real exposure bound).
+// Default 5 × 0.05 SOL = 0.25 SOL max at risk in open positions at once. Raise via
+// COPY_LIVE_MAX_CONCURRENT once the micro test is trusted.
+const COPY_LIVE_MAX_CONCURRENT = parseInt(process.env.COPY_LIVE_MAX_CONCURRENT || '5', 10);
 // Poll interval raised 15s -> 25s (2026-06-17): position polling (1 batched vault
 // fetch per UNIQUE open vault per cycle) is the dominant sustained RPC consumer.
 // At 15s the book ran ~4.5 calls/s ≈ 11.7M credits/mo — over the 10M plan. 25s
@@ -248,6 +263,8 @@ interface OpenPos {
   scaledOut: boolean;       // persisted
   realizedPartial: number;  // SOL already realized via scale-out (persisted)
   lastWrittenPrice?: number; // in-memory dedupe for last_price_sol writes
+  executionMode?: 'shadow' | 'live_micro'; // 'live_micro' positions hold real tokens + exit via real sell
+  liveTokens?: number;      // real token qty bought (live_micro) — sold back at exit
 }
 
 interface PoolVaults { pool: string; baseVault: string; quoteVault: string; }
@@ -296,6 +313,10 @@ export class CopyTrader {
   // qualifying events). In-memory accumulator + ~60s flush keeps it cheap.
   private skipCounts = new Map<string, number>();
   private lastSkipFlush = 0;
+  // Real-money execution for live_micro strategies (gated by COPY_LIVE_ENABLED + wallet).
+  private readonly liveExec: CopyLiveExecutor;
+  // Positions with a live sell in flight — prevents double-submitting the exit swap.
+  private closingLive = new Set<number>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private polling = false;
@@ -304,6 +325,7 @@ export class CopyTrader {
   constructor(opts: { db: Database.Database; getConnection: () => Connection | null }) {
     this.db = opts.db;
     this.getConnection = opts.getConnection;
+    this.liveExec = new CopyLiveExecutor(opts);
   }
 
   start(): void {
@@ -386,8 +408,14 @@ export class CopyTrader {
         highPrice: (r.high_price_sol as number) ?? entry,
         scaledOut: r.scaled_out === 1,
         realizedPartial: (r.realized_partial_sol as number) ?? 0,
+        executionMode: (r.execution_mode as 'shadow' | 'live_micro') ?? 'shadow',
+        liveTokens: (r.live_tokens as number) ?? undefined,
       });
     }
+    // Crash reconciliation: a resumed live_micro 'open' row may hold real tokens
+    // (buy landed before a crash). It's loaded here and will exit via a real sell
+    // when it next hits a trigger — the executor reads the actual wallet balance,
+    // so even a row with no recorded live_tokens gets sold down correctly.
   }
 
   /** Current 1-10 regime score for the regime gate — cached 60s so a burst of lead
@@ -565,6 +593,13 @@ export class CopyTrader {
     const open = [...this.positions.values()].filter((p) => p.strategyId === s.id);
     if (open.some((p) => p.mint === mint) || open.length >= MAX_CONCURRENT_PER_STRATEGY) return;
 
+    // LIVE-MICRO: submit a real buy. Only when COPY_LIVE_ENABLED + wallet; otherwise
+    // this strategy falls through to the shadow path below (runs as a second shadow).
+    if (s.executionMode === 'live_micro' && this.liveExec.isLive()) {
+      await this.openLive(s, mint, pv, leadWallet, leadTier, detectionLagSec, detectPrice, price.priceSol, driftPct, nowSec);
+      return;
+    }
+
     const entryP = price.priceSol;
     const tpPrice = s.tpPct != null ? entryP * (1 + s.tpPct / 100) : null;
     const slPrice = s.slPct != null ? entryP * (1 - s.slPct / 100) : null;
@@ -589,6 +624,111 @@ export class CopyTrader {
     const soldAtMs = this.lastLeadSellMs.get(mint);
     if (s.exitFollow && soldAtMs != null && soldAtMs >= detectMs) {
       this.scheduleFollowSellClose([pos], s.followSellDelaySec ?? 0);
+    }
+  }
+
+  /** Real-money entry for a live_micro strategy. Row-first (crash-safety): persist
+   *  the open row BEFORE the swap, then submit, then write the real fill back — so
+   *  a crash mid-buy leaves a row that resume-then-sell can clean up. */
+  private async openLive(
+    s: CopyStrategy, mint: string, pv: PoolVaults, leadWallet: string, leadTier: string,
+    detectionLagSec: number | null, detectPrice: number, snapshotPrice: number, driftPct: number, nowSec: number,
+  ): Promise<void> {
+    // Tight live exposure cap (separate from the shadow concurrency cap).
+    const openLiveCount = [...this.positions.values()].filter((p) => p.strategyId === s.id && p.executionMode === 'live_micro').length;
+    if (openLiveCount >= COPY_LIVE_MAX_CONCURRENT) {
+      this.recordSkip(s.id, 'live_at_capacity');
+      return;
+    }
+    const block = await this.liveExec.preflightBuy();
+    if (block) {
+      this.recordSkip(s.id, 'live_blocked');
+      logger.warn('Copy LIVE buy blocked %s %s: %s', s.id, mint.slice(0, 6), block);
+      return;
+    }
+    // 1) Provisional row at the snapshot price (real fill overwrites it post-buy).
+    const tpP = s.tpPct != null ? snapshotPrice * (1 + s.tpPct / 100) : null;
+    const slP = s.slPct != null ? snapshotPrice * (1 - s.slPct / 100) : null;
+    const id = this.insertOpen({
+      strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
+      leadWallet, leadTier, entryTs: nowSec, entryPrice: snapshotPrice, sizeSol: COPY_SIZE_SOL,
+      tpPrice: tpP, slPrice: slP, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
+      detectPrice, entryDelaySec: s.entryDelaySec ?? 0, entryDriftPct: driftPct, leadBuySol: null,
+      executionMode: 'live_micro',
+    });
+    if (id == null) return;
+    // 2) Submit the real buy.
+    const poolCtx = { poolAddress: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault };
+    let res;
+    try {
+      res = await this.liveExec.buy(mint, poolCtx, snapshotPrice);
+    } catch (err) {
+      res = { success: false, effectivePrice: 0, tokensReceived: 0, dryRun: false, errorMessage: err instanceof Error ? err.message : String(err) } as Awaited<ReturnType<CopyLiveExecutor['buy']>>;
+    }
+    if (!res.success || res.tokensReceived <= 0) {
+      const rentLoss = -(res.ataRentCostSol ?? 0) - (res.jitoTipSol ?? 0);
+      try {
+        this.db.prepare(`UPDATE copy_trades SET status='closed', exit_ts=?, exit_reason='live_buy_failed',
+          net_sol=?, live_error=?, jito_tip_sol=?, ata_rent_sol=? WHERE id=?`)
+          .run(Math.floor(Date.now() / 1000), +rentLoss.toFixed(6), (res.errorMessage ?? 'unknown').slice(0, 300), res.jitoTipSol ?? 0, res.ataRentCostSol ?? 0, id);
+      } catch { /* noop */ }
+      logger.warn('Copy LIVE buy FAILED %s %s: %s', s.id, mint.slice(0, 6), res.errorMessage);
+      return;
+    }
+    // 3) Write the real fill back; TP/SL key off the effective entry price.
+    const effEntry = res.effectivePrice;
+    const tpPrice = s.tpPct != null ? effEntry * (1 + s.tpPct / 100) : null;
+    const slPrice = s.slPct != null ? effEntry * (1 - s.slPct / 100) : null;
+    try {
+      this.db.prepare(`UPDATE copy_trades SET entry_price_sol=?, high_price_sol=?, tp_price_sol=?, sl_price_sol=?,
+        live_tokens=?, tx_sig_entry=?, jito_tip_sol=?, ata_rent_sol=? WHERE id=?`)
+        .run(effEntry, effEntry, tpPrice, slPrice, res.tokensReceived, res.txSignature ?? null, res.jitoTipSol ?? 0, res.ataRentCostSol ?? 0, id);
+    } catch { /* noop */ }
+    this.positions.set(id, {
+      id, strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
+      entryPrice: effEntry, sizeSol: COPY_SIZE_SOL, tpPrice, baseSlPrice: slPrice,
+      exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, entryTs: nowSec,
+      highPrice: effEntry, scaledOut: false, realizedPartial: 0,
+      executionMode: 'live_micro', liveTokens: res.tokensReceived,
+    });
+    logger.warn('Copy LIVE buy OK %s %s tokens=%s tip=%s sig=%s', s.id, mint.slice(0, 6), res.tokensReceived, res.jitoTipSol, (res.txSignature ?? '').slice(0, 12));
+  }
+
+  /** Real-money exit for a live_micro position. Sells the held tokens; on failure
+   *  leaves the position OPEN so the next trigger retries (we still hold tokens).
+   *  Guarded so an exit swap is never submitted twice for the same position. */
+  private async closeLivePosition(p: OpenPos, reason: string, rawExitPrice: number): Promise<void> {
+    if (this.closingLive.has(p.id) || !this.positions.has(p.id)) return;
+    this.closingLive.add(p.id);
+    try {
+      const poolCtx = { poolAddress: p.pool, baseVault: p.baseVault, quoteVault: p.quoteVault };
+      let res;
+      try {
+        res = await this.liveExec.sell(p.mint, p.liveTokens ?? 0, poolCtx, rawExitPrice);
+      } catch (err) {
+        res = { success: false, effectivePrice: 0, tokensReceived: 0, dryRun: false, errorMessage: err instanceof Error ? err.message : String(err) } as Awaited<ReturnType<CopyLiveExecutor['sell']>>;
+      }
+      if (!res.success) {
+        logger.warn('Copy LIVE sell FAILED %s %s: %s — leaving open, will retry', p.strategyId, p.mint.slice(0, 6), res.errorMessage);
+        return; // keep position open; next poll/trigger retries
+      }
+      // net = size * (effExit/effEntry - 1) - real costs (sell tip; buy tip+rent already on the row).
+      const effExit = res.effectivePrice;
+      const grossPct = p.entryPrice > 0 ? (effExit / p.entryPrice - 1) * 100 : 0;
+      const sellTip = res.jitoTipSol ?? 0;
+      const row = this.db.prepare(`SELECT jito_tip_sol, ata_rent_sol FROM copy_trades WHERE id=?`).get(p.id) as { jito_tip_sol: number; ata_rent_sol: number } | undefined;
+      const priorCosts = (row?.jito_tip_sol ?? 0) + (row?.ata_rent_sol ?? 0);
+      const net = +((p.sizeSol * grossPct / 100) - sellTip - priorCosts).toFixed(6);
+      const nowSec = Math.floor(Date.now() / 1000);
+      try {
+        this.db.prepare(`UPDATE copy_trades SET status='closed', exit_ts=?, exit_price_sol=?, exit_reason=?,
+          gross_pct=?, net_sol=?, hold_sec=?, tx_sig_exit=?, jito_tip_sol=? WHERE id=?`)
+          .run(nowSec, effExit, reason, +grossPct.toFixed(3), net, nowSec - p.entryTs, res.txSignature ?? null, (row?.jito_tip_sol ?? 0) + sellTip, p.id);
+      } catch { /* noop */ }
+      this.positions.delete(p.id);
+      logger.warn('Copy LIVE sell OK %s %s %s net=%s sig=%s', p.strategyId, p.mint.slice(0, 6), reason, net, (res.txSignature ?? '').slice(0, 12));
+    } finally {
+      this.closingLive.delete(p.id);
     }
   }
 
@@ -624,7 +764,7 @@ export class CopyTrader {
       const price = await fetchVaultPrice(conn, immediate[0].baseVault, immediate[0].quoteVault);
       exitPrice = price?.priceSol ?? null;
     }
-    for (const p of immediate) this.closePosition(p, 'follow_sell', exitPrice ?? p.entryPrice);
+    for (const p of immediate) this.exitPosition(p, 'follow_sell', exitPrice ?? p.entryPrice);
   }
 
   /** Close positions as follow_sell after `delaySec`, at the price observed THEN.
@@ -641,7 +781,7 @@ export class CopyTrader {
         const price = await fetchVaultPrice(conn, alive[0].baseVault, alive[0].quoteVault);
         exitPrice = price?.priceSol ?? null;
       }
-      for (const p of alive) this.closePosition(p, 'follow_sell', exitPrice ?? p.entryPrice);
+      for (const p of alive) this.exitPosition(p, 'follow_sell', exitPrice ?? p.entryPrice);
     })().catch((err) => logger.warn('delayed follow-sell error: %s', err instanceof Error ? err.message : String(err)));
   }
 
@@ -677,10 +817,10 @@ export class CopyTrader {
           const s = STRAT_BY_ID.get(p.strategyId);
           // Strategy removed from the roster (killed) — wind the open bag down at the
           // current price instead of stranding it 'open' forever. One-time cleanup.
-          if (!s) { this.closePosition(p, 'strategy_removed', price ?? p.lastWrittenPrice ?? p.highPrice ?? p.entryPrice); continue; }
+          if (!s) { this.exitPosition(p, 'strategy_removed', price ?? p.lastWrittenPrice ?? p.highPrice ?? p.entryPrice); continue; }
           // max-hold doesn't need a price
           if (p.maxHoldSec != null && now - p.entryTs >= p.maxHoldSec) {
-            this.closePosition(p, 'timeout', price ?? p.highPrice ?? p.entryPrice);
+            this.exitPosition(p, 'timeout', price ?? p.highPrice ?? p.entryPrice);
             continue;
           }
           if (price == null || price <= 0) continue;
@@ -713,10 +853,10 @@ export class CopyTrader {
           }
           // exits on the remainder
           const stop = effectiveStopPrice(p.entryPrice, p.highPrice, s);
-          if (p.tpPrice != null && price >= p.tpPrice) { this.closePosition(p, 'take_profit', price); continue; }
+          if (p.tpPrice != null && price >= p.tpPrice) { this.exitPosition(p, 'take_profit', price); continue; }
           if (stop != null && price <= stop) {
             const raised = p.baseSlPrice == null || stop > p.baseSlPrice;
-            this.closePosition(p, raised ? 'trail_stop' : 'stop_loss', price);
+            this.exitPosition(p, raised ? 'trail_stop' : 'stop_loss', price);
             continue;
           }
         }
@@ -724,6 +864,17 @@ export class CopyTrader {
     } finally {
       this.polling = false;
     }
+  }
+
+  /** Exit dispatcher: live_micro positions exit via a real sell (async, guarded);
+   *  everything else closes synchronously as a modeled shadow exit. */
+  private exitPosition(p: OpenPos, reason: string, rawExitPrice: number): void {
+    if (p.executionMode === 'live_micro' && this.liveExec.isLive()) {
+      this.closeLivePosition(p, reason, rawExitPrice)
+        .catch((err) => logger.warn('live close error %s: %s', p.mint.slice(0, 6), err instanceof Error ? err.message : String(err)));
+      return;
+    }
+    this.closePosition(p, reason, rawExitPrice);
   }
 
   private closePosition(p: OpenPos, reason: string, rawExitPrice: number): void {
@@ -789,26 +940,26 @@ export class CopyTrader {
     tpPrice: number | null; slPrice: number | null; exitFollow: boolean; maxHoldSec: number | null;
     detectionLagSec: number | null;
     detectPrice: number | null; entryDelaySec: number | null; entryDriftPct: number | null;
-    leadBuySol?: number | null;
+    leadBuySol?: number | null; executionMode?: 'shadow' | 'live_micro';
   }): number | null {
     const res = this.db.prepare(`
       INSERT OR IGNORE INTO copy_trades
         (strategy_id, mint, pool_address, base_vault, quote_vault, lead_wallet, lead_tier,
          entry_ts, entry_price_sol, size_sol, tp_price_sol, sl_price_sol, exit_follow,
          max_hold_sec, detection_lag_sec, high_price_sol, scaled_out, realized_partial_sol, status,
-         detect_price_sol, entry_delay_sec, entry_drift_pct, lead_buy_sol)
+         detect_price_sol, entry_delay_sec, entry_drift_pct, lead_buy_sol, execution_mode)
       VALUES
         (@strategy_id, @mint, @pool, @base_vault, @quote_vault, @lead_wallet, @lead_tier,
          @entry_ts, @entry_price, @size, @tp, @sl, @exit_follow,
          @max_hold, @lag, @entry_price, 0, 0, 'open',
-         @detect_price, @entry_delay, @entry_drift, @lead_buy)
+         @detect_price, @entry_delay, @entry_drift, @lead_buy, @exec_mode)
     `).run({
       strategy_id: d.strategyId, mint: d.mint, pool: d.pool, base_vault: d.baseVault, quote_vault: d.quoteVault,
       lead_wallet: d.leadWallet, lead_tier: d.leadTier, entry_ts: d.entryTs, entry_price: d.entryPrice,
       size: d.sizeSol, tp: d.tpPrice, sl: d.slPrice, exit_follow: d.exitFollow ? 1 : 0,
       max_hold: d.maxHoldSec, lag: d.detectionLagSec,
       detect_price: d.detectPrice, entry_delay: d.entryDelaySec, entry_drift: d.entryDriftPct,
-      lead_buy: d.leadBuySol ?? null,
+      lead_buy: d.leadBuySol ?? null, exec_mode: d.executionMode ?? 'shadow',
     });
     return res.changes > 0 ? (res.lastInsertRowid as number) : null;
   }
@@ -1135,6 +1286,49 @@ export function computeCopyTrades(db: Database.Database): unknown {
     }
   }
 
+  // Live-vs-shadow: pair each live_micro strategy's REAL trades with its identical
+  // shadow twin on the same lead-buy (same mint, entry within 30s). The gap is pure
+  // execution — real fills/slippage/fees/timing vs the modeled shadow. Mirrors the
+  // /live-training panel, copy-side. Empty until real live trades exist.
+  const LIVE_SHADOW_PAIRS = [
+    { live: 'copy-consensus2-lag-drift5-live-micro', shadow: 'copy-consensus2-lag-drift5' },
+  ];
+  // Compare on RETURN % (net / size), not absolute SOL — live trades at 0.05 and
+  // the shadow twin at 0.5, so only size-normalized returns are apples-to-apples.
+  const retPct = (r: Record<string, unknown>) => {
+    const net = r.net_sol as number; const size = r.size_sol as number;
+    return (typeof net === 'number' && typeof size === 'number' && size > 0) ? (net / size) * 100 : 0;
+  };
+  const mean = (xs: number[]) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+  const wr = (rows: Array<Record<string, unknown>>) => rows.length ? +(rows.filter((r) => (r.net_sol as number) > 0).length / rows.length).toFixed(3) : null;
+  const liveVsShadow = LIVE_SHADOW_PAIRS.map(({ live, shadow }) => {
+    const liveRows = closed.filter((r) => r.strategy_id === live && r.execution_mode === 'live_micro');
+    const shadowRows = closed.filter((r) => r.strategy_id === shadow);
+    const mLive: Array<Record<string, unknown>> = []; const mShadow: Array<Record<string, unknown>> = [];
+    const usedShadow = new Set<number>();
+    for (const lr of liveRows) {
+      const lts = lr.entry_ts as number; const lmint = lr.mint as string;
+      let best: Record<string, unknown> | null = null; let bestDiff = 31;
+      for (const sr of shadowRows) {
+        if (usedShadow.has(sr.id as number) || sr.mint !== lmint) continue;
+        const diff = Math.abs((sr.entry_ts as number) - lts);
+        if (diff <= 30 && diff < bestDiff) { best = sr; bestDiff = diff; }
+      }
+      if (best) { usedShadow.add(best.id as number); mLive.push(lr); mShadow.push(best); }
+    }
+    const liveRet = mLive.map(retPct); const shadowRet = mShadow.map(retPct);
+    const sum = (xs: number[]) => +xs.reduce((a, b) => a + b, 0).toFixed(4);
+    return {
+      live_id: live, shadow_id: shadow,
+      n_live_total: liveRows.length, matched: mLive.length,
+      live: { total_net_sol: sum(mLive.map((r) => (r.net_sol as number) ?? 0)), avg_return_pct: +mean(liveRet).toFixed(2), win_rate: wr(mLive) },
+      shadow: { total_net_sol: sum(mShadow.map((r) => (r.net_sol as number) ?? 0)), avg_return_pct: +mean(shadowRet).toFixed(2), win_rate: wr(mShadow) },
+      // execution gap in percentage points: live avg return − shadow avg return.
+      // Negative = live underperforms the model (the real-world cost of going live).
+      exec_gap_pp: +(mean(liveRet) - mean(shadowRet)).toFixed(2),
+    };
+  });
+
   const byStrategy: Record<string, unknown> = {};
   for (const s of COPY_STRATEGIES) {
     const rows = closed.filter((r) => r.strategy_id === s.id);
@@ -1212,6 +1406,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
     retired_summary: { n: retiredClosed.length, net_sol: retiredNet },
     by_strategy: byStrategy,
     paired_vs_baseline: pairedVsBaseline,
+    live_vs_shadow: liveVsShadow,
     recent_closed: closed
       .sort((a, b) => (b.exit_ts as number ?? 0) - (a.exit_ts as number ?? 0))
       .slice(0, 30)

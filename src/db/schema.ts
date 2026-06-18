@@ -1109,6 +1109,18 @@ function runMigrations(db: Database.Database): void {
     // Size of the LEAD's own buy (|SOL delta| parsed from their tx) — lets the
     // conviction-size gate threshold be tuned from stored data instead of guessed.
     if (!have.has('lead_buy_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN lead_buy_sol REAL`);
+    // LIVE-MICRO copy execution (real 0.05 SOL txs). 'shadow' (default) = modeled,
+    // no funds; 'live_micro' = real swap submitted via the executor. The extra
+    // columns capture the real fill so a live row's P&L is from on-chain reality:
+    // tx signatures, the actual token qty bought (sold back at exit), jito tip +
+    // ATA rent paid (real outflows folded into net_sol), and any live error.
+    if (!have.has('execution_mode')) db.exec(`ALTER TABLE copy_trades ADD COLUMN execution_mode TEXT NOT NULL DEFAULT 'shadow'`);
+    if (!have.has('tx_sig_entry')) db.exec(`ALTER TABLE copy_trades ADD COLUMN tx_sig_entry TEXT`);
+    if (!have.has('tx_sig_exit')) db.exec(`ALTER TABLE copy_trades ADD COLUMN tx_sig_exit TEXT`);
+    if (!have.has('live_tokens')) db.exec(`ALTER TABLE copy_trades ADD COLUMN live_tokens REAL`);
+    if (!have.has('jito_tip_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN jito_tip_sol REAL`);
+    if (!have.has('ata_rent_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN ata_rent_sol REAL`);
+    if (!have.has('live_error')) db.exec(`ALTER TABLE copy_trades ADD COLUMN live_error TEXT`);
   }
   // Additive: tier column (promotable vs smart-only) for DBs created before it.
   {
