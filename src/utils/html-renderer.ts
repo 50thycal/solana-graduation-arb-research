@@ -6759,13 +6759,23 @@ export function renderLiveTrainingHtml(data: any): string {
 
   function jsComputeComparison(liveTr, shadowTr){
     var map=LT.mapping||{};
-    var shIdx={};
-    for(var i=0;i<shadowTr.length;i++){ var s=shadowTr[i]; if(s.status==='closed'&&s.graduation_id!==null&&s.graduation_id!==undefined) shIdx[s.strategy_id+':'+s.graduation_id]=s; }
+    var shIdx={}, shByMint={};
+    for(var i=0;i<shadowTr.length;i++){ var s=shadowTr[i]; if(s.status!=='closed') continue;
+      if(s.graduation_id!==null&&s.graduation_id!==undefined) shIdx[s.strategy_id+':'+s.graduation_id]=s;
+      if(s.mint){ var mk=s.strategy_id+':'+s.mint; (shByMint[mk]=shByMint[mk]||[]).push(s); } }
+    var usedMint={};
     var pairs=[], liveGross=[], shadowGross=[], liveLand=[], deltas=[];
     for(var i=0;i<liveTr.length;i++){ var lv=liveTr[i];
-      if(lv.status!=='closed'||lv.graduation_id===null||lv.graduation_id===undefined) continue;
+      if(lv.status!=='closed') continue;
       var sid=map[lv.strategy_id]; if(!sid) continue;
-      var tw=shIdx[sid+':'+lv.graduation_id]; if(!tw) continue;
+      var tw=null;
+      if(lv.graduation_id!==null&&lv.graduation_id!==undefined){ tw=shIdx[sid+':'+lv.graduation_id]; }
+      else if(lv.mint){ // copy rows: no graduation_id — match on mint + closest entry within 60s
+        var cands=shByMint[sid+':'+lv.mint]||[], best=null, bestDiff=61;
+        for(var j=0;j<cands.length;j++){ var c=cands[j]; if(usedMint[c.id]) continue;
+          var diff=Math.abs((c.entry_ts||0)-(lv.entry_ts||0)); if(diff<=60&&diff<bestDiff){ best=c; bestDiff=diff; } }
+        if(best){ usedMint[best.id]=1; tw=best; } }
+      if(!tw) continue;
       var lr=rt(lv), sr=rt(tw);
       if(num(lv.gross_return_pct)!==null&&num(tw.gross_return_pct)!==null){ liveGross.push(num(lv.gross_return_pct)); shadowGross.push(num(tw.gross_return_pct)); }
       if(num(lv.tx_land_ms)!==null) liveLand.push(num(lv.tx_land_ms));
