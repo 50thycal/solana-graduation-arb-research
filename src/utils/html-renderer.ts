@@ -6643,6 +6643,29 @@ export function renderLiveTrainingHtml(data: any): string {
         });
       }
 
+      // fun: meme tags at the most dramatic peaks/dips of the cumulative P&L line.
+      // "we are so back" above the top peaks, "it's so over" below the worst dips.
+      if(cfg.memes && !isHist && cfg.kind!=='point' && cfg.series.length){
+        var mp=cfg.series[0].points.filter(function(p){return p.x>=xv[0]-1e-9 && p.x<=xv[1]+1e-9;});
+        if(mp.length>=3){
+          var turns=[];
+          for(var i=1;i<mp.length-1;i++){ var a=mp[i-1].y,b=mp[i].y,c=mp[i+1].y;
+            if(b>a&&b>=c) turns.push({p:mp[i],type:'peak'});
+            else if(b<a&&b<=c) turns.push({p:mp[i],type:'dip'}); }
+          var peaks=turns.filter(function(e){return e.type==='peak';}).sort(function(x,y){return y.p.y-x.p.y;}).slice(0,3);
+          var dips=turns.filter(function(e){return e.type==='dip';}).sort(function(x,y){return x.p.y-y.p.y;}).slice(0,3);
+          var memeG=svgEl('g',{'pointer-events':'none'});
+          [].concat(peaks,dips).forEach(function(e){ var isP=e.type==='peak';
+            var px=xToPx(e.p.x), py=yToPx(e.p.y);
+            if(px<PADL-1||px>W-PADR+1) return;
+            var t=svgEl('text',{x:px,y:(isP?py-7:py+15),fill:(isP?'#22c55e':'#ef4444'),'font-size':10,'font-weight':'bold','text-anchor':'middle','font-style':'italic'});
+            if(px<PADL+34) t.setAttribute('text-anchor','start'); else if(px>W-PADR-34) t.setAttribute('text-anchor','end');
+            t.textContent=isP?'we are so back':"it's so over";
+            memeG.appendChild(t); });
+          svg.appendChild(memeG);
+        }
+      }
+
       // interaction overlay
       var ov=svgEl('rect',{x:PADL,y:PADT,width:PW,height:PH,fill:'transparent',cursor:'crosshair'});
       svg.appendChild(ov);
@@ -6936,7 +6959,7 @@ export function renderLiveTrainingHtml(data: any): string {
       primaryChart.update({type:'hist',bars:h.bars,unit:h.unit,resetView:true});
     } else {
       var s=buildLineSeries(state.metric);
-      primaryChart.update({type:'line',kind:s.kind,zero:s.zero,unit:s.unit,series:[{name:'Live',color:'#22d3ee',points:s.points}],resetView:true});
+      primaryChart.update({type:'line',kind:s.kind,zero:s.zero,unit:s.unit,memes:true,series:[{name:'Live',color:'#22d3ee',points:s.points}],resetView:true});
     }
   }
 
