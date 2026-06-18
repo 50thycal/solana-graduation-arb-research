@@ -10596,6 +10596,30 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Strategy</th><th>Exit rule</th><th>Closed</th><th>Open</th><th>Net SOL</th><th>Drop top-3</th><th>Stress</th><th>Paired Δ</th><th>Win%</th><th>Drift</th><th>14d</th><th>Gates</th></tr>${stratRows}</table>
   </div>`;
 
+  // ── Time-to-exit: how long positions hold before TP vs SL ─────────────────
+  const fmtDur = (s: any) => {
+    if (typeof s !== 'number') return '—';
+    if (s < 90) return Math.round(s) + 's';
+    if (s < 5400) return (s / 60).toFixed(s < 600 ? 1 : 0) + 'm';
+    return (s / 3600).toFixed(1) + 'h';
+  };
+  const holdRows = Object.entries(d.by_strategy ?? {})
+    .filter(([, s]: [string, any]) => s.hold_by_exit?.take_profit?.n || s.hold_by_exit?.stop_loss?.n)
+    .map(([id, s]: [string, any]) => {
+      const tp = s.hold_by_exit?.take_profit; const sl = s.hold_by_exit?.stop_loss;
+      const cell = (h: any) => h ? `${fmtDur(h.median)} <span class="desc">(${fmtDur(h.min)}–${fmtDur(h.max)}, avg ${fmtDur(h.avg)})</span>` : '—';
+      return `<tr><td>${id}</td>
+        <td>${tp ? tp.n : 0}</td><td>${cell(tp)}</td>
+        <td>${sl ? sl.n : 0}</td><td>${cell(sl)}</td></tr>`;
+    }).join('');
+  const holdCard = !holdRows ? '' : `<div class="card">
+    <h2>Time to exit <span class="desc" style="font-size:13px">— how long a position holds before TP vs SL</span></h2>
+    <div class="desc">Hold time broken out by exit reason (the overall median mixes them). <b>Time to TP</b> =
+    how long until a winner pumps to the +100% target; shown as median (min–max, avg). TP holds are typically
+    much longer than SL holds — losers cut fast, winners take time to run.</div>
+    <table><tr><th>Strategy</th><th>TP n</th><th>Time to TP</th><th>SL n</th><th>Time to SL</th></tr>${holdRows}</table>
+  </div>`;
+
   const recentRows = (d.recent_closed ?? []).map((r: any) => `<tr>
       <td>${r.strategy_id}</td><td style="font-family:monospace">${r.mint}</td>
       <td style="font-family:monospace">${r.lead}</td><td class="desc">${r.tier}</td>
@@ -10606,5 +10630,5 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Strategy</th><th>Mint</th><th>Lead</th><th>Tier</th><th>Exit</th><th>Gross%</th><th>Net SOL</th><th>Hold</th></tr>${recentRows}</table>
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
 }
