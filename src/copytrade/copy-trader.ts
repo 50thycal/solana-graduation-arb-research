@@ -944,6 +944,8 @@ function computeCopyPromotion(summaries: Record<string, any>): unknown {
     ).toFixed(1);
     return { id, n, net_sol: +net.toFixed(3), drop_top3: +drop3.toFixed(3),
       exit_stress: +stress.toFixed(3), monthly_run_rate_sol: monthly,
+      max_win_streak: s.max_win_streak ?? 0, max_loss_streak: s.max_loss_streak ?? 0,
+      max_drawdown_sol: s.max_drawdown_sol ?? 0,
       realistic_execution: realisticExecution, gates, promotable, score };
   });
   rows.sort((a, b) => b.score - a.score);
@@ -1022,6 +1024,28 @@ export function computeCopyTrades(db: Database.Database): unknown {
   };
 
   const utcDay = (ts: number): string => new Date(ts * 1000).toISOString().slice(0, 10);
+
+  // Streak + drawdown profile: walk a strategy's closed trades in time order
+  // (by exit_ts) and find the longest run of consecutive wins, the longest run of
+  // consecutive losses, and the deepest peak-to-trough decline in cumulative net
+  // SOL. These are the live-trading-readiness metrics for a low-win-rate, fat-tail
+  // strategy — the worst losing streak + drawdown you'd actually have to sit through.
+  const streakProfile = (rows: Array<Record<string, unknown>>) => {
+    const seq = rows
+      .filter((r) => typeof r.net_sol === 'number' && typeof r.exit_ts === 'number')
+      .sort((a, b) => (a.exit_ts as number) - (b.exit_ts as number));
+    let maxWin = 0, maxLoss = 0, curWin = 0, curLoss = 0;
+    let cum = 0, peak = 0, maxDD = 0;
+    for (const r of seq) {
+      const net = r.net_sol as number;
+      if (net > 0) { curWin += 1; curLoss = 0; if (curWin > maxWin) maxWin = curWin; }
+      else { curLoss += 1; curWin = 0; if (curLoss > maxLoss) maxLoss = curLoss; }
+      cum += net;
+      if (cum > peak) peak = cum;
+      if (cum - peak < maxDD) maxDD = cum - peak; // most-negative trough below the running peak
+    }
+    return { max_win_streak: maxWin, max_loss_streak: maxLoss, max_drawdown_sol: +maxDD.toFixed(3) };
+  };
 
   const summarize = (rows: Array<Record<string, unknown>>) => {
     const nets = rows.map((r) => r.net_sol as number).filter((v) => typeof v === 'number');
@@ -1137,6 +1161,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
       ...openSummary,
       total_incl_open_sol: +(closedSummary.total_net_sol + openSummary.open_unrealized_sol).toFixed(4),
       ...closedSummary,
+      ...streakProfile(rows),
       drift_skips: skipsForStrat.length,
       entry_drift: driftStats(entered),
       skipped_drift: driftStats(skipsForStrat),
