@@ -6,6 +6,7 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { computeCopyRegime, currentRegimeScore, COPY_REGIME_BASELINE } from './copy-regime';
 import { computeMacroRegime, currentMacroScore } from './macro-regime';
 import { CopyLiveExecutor } from './copy-live-executor';
+import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-trader');
@@ -651,7 +652,7 @@ export class CopyTrader {
     const slP = s.slPct != null ? snapshotPrice * (1 - s.slPct / 100) : null;
     const id = this.insertOpen({
       strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
-      leadWallet, leadTier, entryTs: nowSec, entryPrice: snapshotPrice, sizeSol: COPY_SIZE_SOL,
+      leadWallet, leadTier, entryTs: nowSec, entryPrice: snapshotPrice, sizeSol: MICRO_TRADE_SIZE_SOL,
       tpPrice: tpP, slPrice: slP, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
       detectPrice, entryDelaySec: s.entryDelaySec ?? 0, entryDriftPct: driftPct, leadBuySol: null,
       executionMode: 'live_micro',
@@ -686,7 +687,7 @@ export class CopyTrader {
     } catch { /* noop */ }
     this.positions.set(id, {
       id, strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
-      entryPrice: effEntry, sizeSol: COPY_SIZE_SOL, tpPrice, baseSlPrice: slPrice,
+      entryPrice: effEntry, sizeSol: MICRO_TRADE_SIZE_SOL, tpPrice, baseSlPrice: slPrice,
       exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, entryTs: nowSec,
       highPrice: effEntry, scaledOut: false, realizedPartial: 0,
       executionMode: 'live_micro', liveTokens: res.tokensReceived,

@@ -1121,6 +1121,25 @@ function runMigrations(db: Database.Database): void {
     if (!have.has('jito_tip_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN jito_tip_sol REAL`);
     if (!have.has('ata_rent_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN ata_rent_sol REAL`);
     if (!have.has('live_error')) db.exec(`ALTER TABLE copy_trades ADD COLUMN live_error TEXT`);
+    // One-time correction (bug fixed 2026-06-18): early live_micro rows were sized at
+    // COPY_SIZE_SOL (0.5) instead of MICRO_TRADE_SIZE_SOL (0.05), inflating net_sol 10x
+    // and mis-feeding the daily-loss breaker. Re-derive size + net from the correct
+    // micro size and the (correct) stored gross_pct. Runs once per release.
+    try {
+      const done = db.prepare(`SELECT 1 FROM bot_settings WHERE key = 'copy_live_size_fix_v1'`).get();
+      if (!done) {
+        const micro = parseFloat(process.env.MICRO_TRADE_SIZE_SOL || '0.05');
+        db.prepare(`
+          UPDATE copy_trades
+          SET net_sol = CASE WHEN status = 'closed' AND gross_pct IS NOT NULL
+                THEN ROUND(? * gross_pct / 100 - COALESCE(jito_tip_sol, 0) - COALESCE(ata_rent_sol, 0), 6)
+                ELSE net_sol END,
+              size_sol = ?
+          WHERE execution_mode = 'live_micro' AND size_sol > ?
+        `).run(micro, micro, micro + 1e-9);
+        db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES ('copy_live_size_fix_v1', 'done', unixepoch())`).run();
+      }
+    } catch { /* non-critical */ }
   }
   // Additive: tier column (promotable vs smart-only) for DBs created before it.
   {
