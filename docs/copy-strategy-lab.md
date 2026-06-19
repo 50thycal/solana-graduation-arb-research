@@ -18,6 +18,12 @@ The edge: token-level **consensus** (≥2 smart wallets) + don't-chase drift gat
 Trend: promo score 62.8 → 75 over the last cycle, but drop3 went −0.28 → −0.90 — the new winners
 concentrated in the same ~3 tops rather than broadening. **The convergence problem is drop3, not net.**
 
+**Update 2026-06-19:** per the 2026-06-18 daily journal, `copy-consensus2-lag-drift5` has since
+**crossed the bar** — promo 84, n=180, net +5.94, drop3 **+0.72**, stress +3.97, monthly +18.5
+(all gates clear, PROMOTABLE). drop3 flipped positive on normal-trade accumulation (Δnet = Δdrop3,
+no new lottery ticket) — healthy, but +0.72 is **thin**. Making that drop3 robust (and lifting
+net/monthly) by booking modest winners earlier is the motivation for the exit-sweep cohort below.
+
 ## Durable signal findings (what to exploit / avoid)
 - **Works:** token consensus (consensus2/3), lead selection (hotlead family). These are token/lead-intrinsic.
 - **Doesn't:** window/macro timing (regime-mid/hi, macro, macro-regime all negative at n≥30). Avoid spawning more timing gates.
@@ -50,3 +56,42 @@ drop3 line. **Next exploitation should target drop3** — perturbations that bro
 distribution (e.g. a smaller TP that books more modest winners instead of waiting for moonshots, or a
 scale-out that realizes partial gains). **Hold new spawns until the 5 in-flight experiments mature past
 n≥100** (the hotlead family + J-cohort), then resolve them and spawn the best drop3-targeted variant.
+
+---
+
+## Exit-sweep cohort — `copy-c2rr-*` (operator-directed, 2026-06-19)
+
+A **directed batch**, not an autonomous lab spawn: 1 control + 9 exit variants, all on the
+incumbent's **exact** entry (consensus2, `entryDelaySec:5`, `maxEntryDriftPct:5`), differing
+**only** in the exit. Directly tests this ledger's own stated next move — *broaden the winner
+distribution / "a scale-out that realizes partial gains"* — to make the incumbent's now-positive
+but thin drop3 (+0.72) **robust** and lift net/monthly. Added a `trailingTp` runner-exit mechanic
+to `src/copytrade/copy-trader.ts` (ratchet + scale-out already existed and are reused).
+
+**MAX_INFLIGHT exception (intentional):** 10 arms at once vs the cap of 4. Justified because it's
+operator-directed, shares ONE entry (a focused exit sweep, **not** dimensional sprawl), and is
+self-comparing against its own fresh control. Treat the cohort as a **single experiment with 10
+arms**, resolved together at n≥100. Hold autonomous spawns until it resolves.
+
+**Win/kill (per variant, vs `copy-c2rr-control` over the same forward window):** WIN if it beats
+control on **net_sol AND drop_top3** at n≥100. KILL if no better than control on both at n≥100,
+or catastrophic (net < −3 at n≥40). Calibrate atPct/dropPct/tiers from the consensus2 MFE/peak
+distribution before first resolution. target_n = 100 each (~2 weeks at consensus2's fire rate).
+
+| id | arm | the one lever (vs control's static tp100/sl30) |
+|---|---|---|
+| `copy-c2rr-control` | control | none — fresh static tp100/sl30 baseline (same start window) |
+| `copy-c2rr-breakeven` | ratchet | breakeven stop once +25% |
+| `copy-c2rr-ratchet-tp` | ratchet | 3-tier step-up stops, keep the 2× cap |
+| `copy-c2rr-ratchet-run` | ratchet | 3-tier step-up stops, no hard TP (ride) |
+| `copy-c2rr-scaleout-50` | runner | bank 50% @+50%, rest → 2× |
+| `copy-c2rr-scaleout-run` | runner | bank 50% @+75%, runner protected by a +30% ratchet |
+| `copy-c2rr-trailtp-tight` | runner | trailing-TP: arm +30%, exit on 15% fall from HWM |
+| `copy-c2rr-trailtp-wide` | runner | trailing-TP: arm +50%, exit on 30% fall from HWM |
+| `copy-c2rr-scaleout-trailtp` | hybrid | bank 50% @+50%, then trail the runner |
+| `copy-c2rr-ratchet-trailtp` | hybrid | ratchet downside + trailing-TP upside |
+
+> Committed to dev branch `claude/confident-ritchie-e6tx14` (not yet merged/deployed — operator
+> gate). Resolve via `/copy-daily-report` once arms reach n≥100; the breakeven/scale-out/ratchet
+> arms are the ones most likely to thicken drop3 (book modest winners instead of waiting for the
+> top-3 moonshots).
