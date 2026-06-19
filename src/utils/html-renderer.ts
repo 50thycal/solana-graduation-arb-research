@@ -10397,12 +10397,20 @@ export function renderCopyTradesHtml(data: any): string {
   const promo = d.promotion ?? {};
   const gchip = (ok: boolean, label: string) =>
     `<span style="font-size:10px;padding:1px 4px;border-radius:3px;color:#fff;background:${ok ? '#16a34a' : '#6b7280'}">${label}${ok ? '✓' : '✗'}</span>`;
+  // age = days since the strategy's first trade; — when it hasn't traded yet
+  const formatAge = (dRaw: number | null | undefined): string => {
+    if (dRaw == null) return '—';
+    if (dRaw < 1) return '<1d';
+    if (dRaw < 14) return `${Math.round(dRaw)}d`;
+    return `${Math.round(dRaw / 7)}w`;
+  };
   const promoRow = (r: any) => {
     const g = r.gates ?? {};
     return `<tr${r.promotable ? ' style="background:rgba(22,163,74,0.12)"' : (r.realistic_execution ? '' : ' style="opacity:0.6"')}>
       <td>${r.id}${r.promotable ? ' <span style="color:#16a34a">★</span>' : ''}</td>
       <td><b>${n(r.score, 0)}</b></td>
       <td>${r.n}</td>
+      <td style="white-space:nowrap" title="${r.active_days != null ? `traded ${r.active_days} of ${r.age_days ?? '?'} days` : ''}">${formatAge(r.age_days)}</td>
       <td>${sol(r.net_sol)}</td>
       <td>${sol(r.drop_top3)}</td>
       <td>${sol(r.exit_stress)}</td>
@@ -10414,7 +10422,7 @@ export function renderCopyTradesHtml(data: any): string {
   const allRows = (promo.rows ?? []).filter((r: any) => r.n > 0);
   const realRows = allRows.filter((r: any) => r.realistic_execution).slice(0, 14);
   const idealRows = allRows.filter((r: any) => !r.realistic_execution).slice(0, 10);
-  const thead = `<tr><th>Strategy</th><th>Score</th><th>n</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th title="longest consecutive wins / losses, in time order">Streak W/L</th><th title="deepest peak-to-trough decline in cumulative net SOL">Max DD</th><th>Gates</th></tr>`;
+  const thead = `<tr><th>Strategy</th><th>Score</th><th>n</th><th title="time since this strategy's first trade — proxy for how long it's been running; — = no trades yet">Age</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th title="longest consecutive wins / losses, in time order">Streak W/L</th><th title="deepest peak-to-trough decline in cumulative net SOL">Max DD</th><th>Gates</th></tr>`;
   const promoCard = !promo.rows ? '' : `<div class="card">
     <h2>Promotion readiness <span class="desc" style="font-size:13px">— ${promo.n_promotable ?? 0} promotable</span></h2>
     <div class="desc">PROMOTABLE (★, green) requires ALL: <b>realistic execution (5s entry delay)</b> · n≥100 ·
