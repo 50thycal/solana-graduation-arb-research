@@ -1,7 +1,0 @@
-{
-  "commands": [
-    { "action": "toggle", "id": "v44-climb-live-micro", "enabled": false },
-    { "action": "toggle", "id": "v44-climb-1s-ttp10-live-micro", "enabled": false },
-    { "action": "toggle", "id": "v45-acc-gate-live-micro", "enabled": false }
-  ]
-}
