@@ -1,7 +1,8 @@
 import Database from 'better-sqlite3';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { makeLogger } from '../utils/logger';
-import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourInUtcWindow, SWAP_SLIPPAGE_BPS } from './config';
+import { TradingConfig, DEFAULT_MAX_SLIPPAGE_BPS, MICRO_TRADE_SIZE_SOL, isHourInUtcWindow } from './config';
+import { MAX_BUY_ATTEMPTS, buySlippageBpsForAttempt, buyTipMultiplierForAttempt } from './buy-retry';
 import { runFilterPipeline } from './filter-pipeline';
 import { TradeLogger } from './trade-logger';
 import { Executor } from './executor';
@@ -15,37 +16,6 @@ import { getCurrentRegime } from '../api/regime-analysis';
 import { getEdgeDecayFlag } from '../api/edge-decay';
 
 const logger = makeLogger('trade-evaluator');
-
-/** Live-buy retry schedule (2026-05-27).
- *
- *  Pre-fix: single attempt — any failure (Custom 6004 / InsufficientFundsForRent)
- *  immediately marked the trade failed. Observed ~20 buy failures in last week
- *  on live_micro: ~60% rent issues, ~40% slippage (Custom 6004 from price drift
- *  during tx_land). Most could be salvaged with a retry at higher tip and/or
- *  wider slippage.
- *
- *  New schedule — 3 attempts max (entry timing is critical, can't burn too
- *  long retrying or we enter late on a moving token):
- *
- *    Attempt 1: SWAP_SLIPPAGE_BPS, 1× tip — normal entry (most trades succeed)
- *    Attempt 2: SWAP_SLIPPAGE_BPS, 5× tip — bump Jito priority for faster land
- *    Attempt 3: 2× SWAP_SLIPPAGE_BPS (capped at 2000 bps), 5× tip — widen
- *               slippage room; last shot before terminal fail
- *
- *  After attempt 3 fails, mark trade as failed with buy_failed_after_3_attempts.
- *  The buy retry is shorter than the sell retry (3 vs 9) because late entries
- *  on fast-moving graduations are worse than no entry — we can't widen slippage
- *  too far without making bad entries. */
-const MAX_BUY_ATTEMPTS = 3;
-const BUY_MAX_SLIPPAGE_BPS = 2000;  // 20% absolute cap on attempt-3 slippage
-
-function buySlippageBpsForAttempt(attemptNumber: number): number {
-  if (attemptNumber <= 2) return SWAP_SLIPPAGE_BPS;
-  return Math.min(SWAP_SLIPPAGE_BPS * 2, BUY_MAX_SLIPPAGE_BPS);
-}
-function buyTipMultiplierForAttempt(attemptNumber: number): number {
-  return attemptNumber === 1 ? 1 : 5;
-}
 
 export class TradeEvaluator {
   private strategyId: string;
