@@ -47,6 +47,10 @@ export interface CopyStrategy {
   breakevenBufferPct?: number; // default 3 (entry + cost)
   ratchet?: RatchetTier[];     // tiered raised cutoff
   scaleOut?: { atPct: number; fraction: number }; // sell fraction at +atPct, rest rides
+  trailingTp?: { atPct: number; dropPct: number }; // runner take-profit: once HWM >= entry*(1+atPct),
+                                                    // exit the remainder when price falls dropPct% below
+                                                    // the high-water mark. Pair with tpPct:null to let the
+                                                    // winner ride past the static TP and trail the peak.
   minLeadRank?: number;        // only copy if lead wallet's follow_list rank <= this
   minConsensusRecent?: number; // only copy if >= N distinct smart wallets bought this mint in last 10min
   walletAllowlist?: string[];  // only copy if the lead wallet is in this set (copy-best-wallet)
@@ -198,6 +202,42 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    (cumulative quality). Both are token/lead-intrinsic, not timing.
   { id: 'copy-consensus2-elite', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 } },
+  // ── K (2026-06-19): ratchet/runner EXIT sweep on the one promotable entry edge
+  //    (consensus2 realistic base: >=2 smart wallets, entryDelaySec:5 + drift5). All 10 share
+  //    that EXACT entry and differ ONLY in the exit, so the control isolates the exit effect.
+  //    copy-c2rr-control is a FRESH static-TP/SL twin (new id) so the whole cohort starts the
+  //    same calendar window — apples-to-apples vs the variants, not vs older accumulated history.
+  //    NB: the 2026-06-11 copy-ratchet(-20)/copy-scaleout50 kills were on the LOSING plain base
+  //    pre-realistic-execution; re-testing these exits on the consensus2 edge is a new question.
+  //    Tier/atPct/dropPct levels are first-pass — calibrate from the consensus2 MFE/peak dist.
+  { id: 'copy-c2rr-control',          tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2 },
+  // ratchet arm — step-up / breakeven stops that lock in gains (no new code; effectiveStopPrice)
+  { id: 'copy-c2rr-breakeven',        tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2, breakevenAtPct: 25, breakevenBufferPct: 3 },
+  { id: 'copy-c2rr-ratchet-tp',       tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
+    ratchet: [{ atPct: 20, stopPct: 2 }, { atPct: 45, stopPct: 20 }, { atPct: 80, stopPct: 50 }] },
+  { id: 'copy-c2rr-ratchet-run',      tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
+    ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }, { atPct: 120, stopPct: 80 }] },
+  // runner arm — scale out a fraction and/or trail the peak (trailingTp is the new mechanic)
+  { id: 'copy-c2rr-scaleout-50',      tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2, scaleOut: { atPct: 50, fraction: 0.5 } },
+  { id: 'copy-c2rr-scaleout-run',     tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
+    scaleOut: { atPct: 75, fraction: 0.5 }, ratchet: [{ atPct: 75, stopPct: 30 }] },
+  { id: 'copy-c2rr-trailtp-tight',    tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2, trailingTp: { atPct: 30, dropPct: 15 } },
+  { id: 'copy-c2rr-trailtp-wide',     tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2, trailingTp: { atPct: 50, dropPct: 30 } },
+  // hybrid arm — bank part of the move, then trail/ratchet the runner
+  { id: 'copy-c2rr-scaleout-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
+    scaleOut: { atPct: 50, fraction: 0.5 }, trailingTp: { atPct: 80, dropPct: 30 } },
+  { id: 'copy-c2rr-ratchet-trailtp',  tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
+    ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }], trailingTp: { atPct: 80, dropPct: 30 } },
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
@@ -300,6 +340,17 @@ export function effectiveStopPrice(entryPrice: number, highPrice: number, s: Cop
     }
   }
   return stop;
+}
+
+/** Trailing take-profit exit price (runner exit). Once the high-water mark clears
+ *  entry*(1+atPct), returns the trail line dropPct% below the HWM — exit when price
+ *  falls to/through it. Returns null if no trailingTp configured or not yet armed.
+ *  Pure + exported for testability. */
+export function trailingTpExitPrice(entryPrice: number, highPrice: number, s: CopyStrategy): number | null {
+  if (s.trailingTp == null) return null;
+  const hwmUpPct = (highPrice / entryPrice - 1) * 100;
+  if (hwmUpPct < s.trailingTp.atPct) return null;        // not armed yet
+  return highPrice * (1 - s.trailingTp.dropPct / 100);   // trail line below the peak
 }
 
 /** net SOL for a portion of `size` exiting at `exitPrice` from `entryPrice`,
@@ -883,6 +934,11 @@ export class CopyTrader {
             } catch { /* noop */ }
             logger.info('Copy scale-out %s %s +%d%% partial=%s SOL', p.strategyId, p.mint.slice(0, 6), s.scaleOut.atPct, partialNet);
           }
+          // trailing take-profit (runner): once armed at +atPct, exit the remainder on a
+          // dropPct% fall from the HWM. Checked before the stop so the runner-trail reason wins
+          // when both would trigger on the same tick.
+          const ttpExit = trailingTpExitPrice(p.entryPrice, p.highPrice, s);
+          if (ttpExit != null && price <= ttpExit) { this.exitPosition(p, 'trailing_tp', price); continue; }
           // exits on the remainder
           const stop = effectiveStopPrice(p.entryPrice, p.highPrice, s);
           if (p.tpPrice != null && price >= p.tpPrice) { this.exitPosition(p, 'take_profit', price); continue; }
