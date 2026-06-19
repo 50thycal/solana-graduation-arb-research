@@ -641,10 +641,15 @@ export class CopyTrader {
     await sleep((s.entryDelaySec ?? 0) * 1000);
     if (this.stopped) return;
     const conn = this.getConnection();
-    if (!conn) return;
-    if (!(await globalRpcLimiter.throttleOrDropPriority(20))) return;
+    if (!conn) { this.recordSkip(s.id, 'no_conn'); return; }
+    // RPC-limiter drop: when many strategies queue a delayed entry on the SAME
+    // consensus event, they all race this limiter 5s later. Strategies late in
+    // COPY_STRATEGIES lose the token race and were silently abandoned here — record
+    // it so the funnel shows the drop instead of an unexplained gap (entered=0 with
+    // pendings created). See the c2rr cohort starvation, 2026-06-19.
+    if (!(await globalRpcLimiter.throttleOrDropPriority(20))) { this.recordSkip(s.id, 'rpc_drop'); return; }
     const price = await fetchVaultPrice(conn, pv.baseVault, pv.quoteVault);
-    if (!price || price.priceSol <= 0) return;
+    if (!price || price.priceSol <= 0) { this.recordSkip(s.id, 'price_fail'); return; }
     const driftPct = +((price.priceSol / detectPrice - 1) * 100).toFixed(3);
     const nowSec = Math.floor(Date.now() / 1000);
 
@@ -661,7 +666,7 @@ export class CopyTrader {
 
     // Re-check capacity/dedupe — the roster may have changed during the wait.
     const open = [...this.positions.values()].filter((p) => p.strategyId === s.id);
-    if (open.some((p) => p.mint === mint) || open.length >= MAX_CONCURRENT_PER_STRATEGY) return;
+    if (open.some((p) => p.mint === mint) || open.length >= MAX_CONCURRENT_PER_STRATEGY) { this.recordSkip(s.id, 'raced'); return; }
 
     // LIVE-MICRO: submit a real buy. Only when COPY_LIVE_ENABLED + wallet; otherwise
     // this strategy falls through to the shadow path below (runs as a second shadow).
