@@ -1181,7 +1181,9 @@ function computeCopyPromotion(summaries: Record<string, any>): unknown {
       (stress > 0 ? Math.min(1, stress / 2) * 20 : 0) +
       Math.max(0, Math.min(1, monthly / COPY_MONTHLY_BAR)) * 15
     ).toFixed(1);
-    return { id, n, net_sol: +net.toFixed(3), drop_top3: +drop3.toFixed(3),
+    return { id, n, age_days: s.age_days ?? null, first_entry_ts: s.first_entry_ts ?? null,
+      active_days: activeDays,
+      net_sol: +net.toFixed(3), drop_top3: +drop3.toFixed(3),
       exit_stress: +stress.toFixed(3), monthly_run_rate_sol: monthly,
       max_win_streak: s.max_win_streak ?? 0, max_loss_streak: s.max_loss_streak ?? 0,
       max_drawdown_sol: s.max_drawdown_sol ?? 0,
@@ -1511,6 +1513,13 @@ export function computeCopyTrades(db: Database.Database): unknown {
     closedSummary.daily = closedSummary.daily.slice(-14);
     const openSummary = summarizeOpen(openForStrat);
     const entered = [...rows, ...openForStrat];
+    // strategy age = now − earliest copy (entry_ts is unix sec, NOT NULL on copy_trades).
+    // null when the strategy has never traded (deployed but no fills yet).
+    const entryTsList = entered.map((r) => r.entry_ts as number).filter((t) => Number.isFinite(t));
+    const firstEntryTs = entryTsList.length ? Math.min(...entryTsList) : null;
+    const ageDays = firstEntryTs != null
+      ? +(((Date.now() / 1000) - firstEntryTs) / 86_400).toFixed(1)
+      : null;
     byStrategy[s.id] = {
       config: {
         tp_pct: s.tpPct, sl_pct: s.slPct, exit_follow: s.exitFollow, max_hold_sec: s.maxHoldSec,
@@ -1528,6 +1537,8 @@ export function computeCopyTrades(db: Database.Database): unknown {
       total_incl_open_sol: +(closedSummary.total_net_sol + openSummary.open_unrealized_sol).toFixed(4),
       ...closedSummary,
       ...streakProfile(rows),
+      first_entry_ts: firstEntryTs,
+      age_days: ageDays,
       drift_skips: skipsForStrat.length,
       entry_drift: driftStats(entered),
       skipped_drift: driftStats(skipsForStrat),
