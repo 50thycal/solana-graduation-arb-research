@@ -1208,6 +1208,24 @@ export function computeCopyTrades(db: Database.Database): unknown {
     const lags = rows.map((r) => r.detection_lag_sec as number).filter((v) => typeof v === 'number');
     const byReason: Record<string, number> = {};
     for (const r of rows) byReason[(r.exit_reason as string) ?? 'unknown'] = (byReason[(r.exit_reason as string) ?? 'unknown'] ?? 0) + 1;
+    // Hold-time distribution PER exit reason — answers "how long until a position
+    // pumps to TP" (take_profit), vs how long SL/timeout take. Overall median_hold
+    // mixes all three and is misleading. {n, min, avg, median, max} in seconds.
+    const holdByReason: Record<string, number[]> = {};
+    for (const r of rows) {
+      const h = r.hold_sec as number;
+      if (typeof h !== 'number') continue;
+      (holdByReason[(r.exit_reason as string) ?? 'unknown'] ??= []).push(h);
+    }
+    const holdByExit: Record<string, { n: number; min: number; avg: number; median: number; max: number }> = {};
+    for (const [reason, hs] of Object.entries(holdByReason)) {
+      if (!hs.length) continue;
+      holdByExit[reason] = {
+        n: hs.length, min: Math.min(...hs), max: Math.max(...hs),
+        avg: Math.round(hs.reduce((a, b) => a + b, 0) / hs.length),
+        median: Math.round(median(hs) ?? 0),
+      };
+    }
     // exit-fill stress (uniform, on top of any per-strategy penalty already baked in)
     let stressTotal = 0;
     for (const r of rows) {
@@ -1236,6 +1254,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
       median_hold_sec: median(holds),
       avg_detection_lag_sec: lags.length ? +(lags.reduce((a, b) => a + b, 0) / lags.length).toFixed(2) : null,
       by_exit_reason: byReason,
+      hold_by_exit: holdByExit,
       daily,
     };
   };
