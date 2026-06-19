@@ -112,11 +112,17 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    already run >X% above the detection snapshot during the wait (don't chase the
   //    pump we just watched happen). Skips are recorded, so the skip rate is visible.
   { id: 'copy-consensus2-lag-drift5',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5 },
-  // LIVE-MICRO twin of copy-consensus2-lag-drift5 (the first promotable strategy). IDENTICAL
-  // config — only executionMode differs — so it pairs 1:1 with the shadow above to measure the
-  // real-fill-vs-model gap. Submits real 0.05 SOL swaps ONLY when COPY_LIVE_ENABLED=true + wallet;
-  // otherwise it runs as a second shadow (harmless). Operator flips the env to actually go live.
-  { id: 'copy-consensus2-lag-drift5-live-micro', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5, executionMode: 'live_micro' },
+  // ── KILLED 2026-06-19 (operator request — pause live trading). Removed the ONLY
+  //    live_micro copy strategy from the roster. Consequences on next redeploy:
+  //      • Any open live_micro position reloaded from copy_trades has no matching
+  //        strategy, so the poll loop's `strategy_removed` branch winds it down via a
+  //        REAL sell (exitPosition → closeLivePosition) — provided COPY_LIVE_ENABLED is
+  //        still true + wallet present at that point. Leave the env ON until the open
+  //        bag liquidates, THEN flip COPY_LIVE_ENABLED=false.
+  //      • No new live entries arm regardless of the env flag.
+  //    The shadow twin `copy-consensus2-lag-drift5` (above) keeps the research arm alive.
+  //    To resume live-micro, restore the entry below after a deliberate, reviewed go-live:
+  //    { id: 'copy-consensus2-lag-drift5-live-micro', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5, executionMode: 'live_micro' },
   // ── H (2026-06-12): smart-wallet-data gates, all on the conservative lag+drift10
   //    base (the best early construction). Each isolates ONE new signal:
   // H1 regime gate — only enter when the 1-10 window score is favorable. Direct
