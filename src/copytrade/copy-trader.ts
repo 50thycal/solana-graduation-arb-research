@@ -236,6 +236,14 @@ const MAX_CONCURRENT_PER_STRATEGY = parseInt(process.env.COPY_MAX_CONCURRENT || 
 // Default 5 × 0.05 SOL = 0.25 SOL max at risk in open positions at once. Raise via
 // COPY_LIVE_MAX_CONCURRENT once the micro test is trusted.
 const COPY_LIVE_MAX_CONCURRENT = parseInt(process.env.COPY_LIVE_MAX_CONCURRENT || '5', 10);
+// After a live buy exhausts all 3 retry attempts on a mint, suppress further
+// live entries on that SAME mint for this long. The dominant failure pattern was
+// one bad token (disabled-buy / honeypot / dead pool) getting re-triggered by
+// every consensus lead and single-shot-failing each time (one mint failed 10×).
+// 3 escalating attempts already failed, so a near-term re-try almost certainly
+// fails too — stop burning Jito tips + ATA rent on it. In-memory (clears on
+// restart, which is fine — a restart is rare and the stale entries are cheap).
+const COPY_LIVE_FAIL_COOLDOWN_SEC = parseInt(process.env.COPY_LIVE_FAIL_COOLDOWN_SEC || '600', 10);
 // Poll interval raised 15s -> 25s (2026-06-17): position polling (1 batched vault
 // fetch per UNIQUE open vault per cycle) is the dominant sustained RPC consumer.
 // At 15s the book ran ~4.5 calls/s ≈ 11.7M credits/mo — over the 10M plan. 25s
@@ -318,6 +326,10 @@ export class CopyTrader {
   private readonly liveExec: CopyLiveExecutor;
   // Positions with a live sell in flight — prevents double-submitting the exit swap.
   private closingLive = new Set<number>();
+  // Per-mint cooldown after a live buy exhausted all retries — `mint -> epoch_ms
+  // until which live entries on that mint are suppressed`. Stops a dead/honeypot
+  // token from being re-triggered and single-shot-failing repeatedly. In-memory.
+  private liveFailCooldownUntil = new Map<string, number>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private polling = false;
@@ -641,6 +653,17 @@ export class CopyTrader {
       this.recordSkip(s.id, 'live_at_capacity');
       return;
     }
+    // Suppress mints that just exhausted all buy retries (dead pool / honeypot /
+    // disabled-buy). Checked before the preflight so we skip the wallet-balance
+    // RPC too. Prune the expired entry lazily on read.
+    const cdUntil = this.liveFailCooldownUntil.get(mint);
+    if (cdUntil != null) {
+      if (Date.now() < cdUntil) {
+        this.recordSkip(s.id, 'live_fail_cooldown');
+        return;
+      }
+      this.liveFailCooldownUntil.delete(mint);
+    }
     const block = await this.liveExec.preflightBuy();
     if (block) {
       this.recordSkip(s.id, 'live_blocked');
@@ -673,7 +696,9 @@ export class CopyTrader {
           net_sol=?, live_error=?, jito_tip_sol=?, ata_rent_sol=? WHERE id=?`)
           .run(Math.floor(Date.now() / 1000), +rentLoss.toFixed(6), (res.errorMessage ?? 'unknown').slice(0, 300), res.jitoTipSol ?? 0, res.ataRentCostSol ?? 0, id);
       } catch { /* noop */ }
-      logger.warn('Copy LIVE buy FAILED %s %s: %s', s.id, mint.slice(0, 6), res.errorMessage);
+      // Cool the mint down so it isn't re-triggered + re-failed on the next lead.
+      this.liveFailCooldownUntil.set(mint, Date.now() + COPY_LIVE_FAIL_COOLDOWN_SEC * 1000);
+      logger.warn('Copy LIVE buy FAILED %s %s: %s (cooldown %ds)', s.id, mint.slice(0, 6), res.errorMessage, COPY_LIVE_FAIL_COOLDOWN_SEC);
       return;
     }
     // 3) Write the real fill back; TP/SL key off the effective entry price.
@@ -1135,6 +1160,31 @@ function unrealizedNet(r: Record<string, unknown>, s: CopyStrategy | undefined):
   return partial + tradeNetSol(entry, last, size * (1 - frac), SIM_DEFAULT_COST_PCT);
 }
 
+/** Bucket a persisted `live_error` string into a coarse failure class for the
+ *  live_execution.failure_reasons histogram (2026-06-19). Lets a session tell
+ *  retry-salvageable failures (slippage_6004, rent, not_landed) from terminal
+ *  ones (disabled_buy, no_token_delta, thin_liquidity) before/after the retry
+ *  fix lands. Substring/regex match, most-specific first — order matters
+ *  (pool_read before thin_liquidity so "pool reserves read failed" doesn't fall
+ *  into the liquidity bucket). */
+export function classifyLiveBuyFailure(err: string): string {
+  const e = err.toLowerCase();
+  if (!e) return 'unknown';
+  if (/buy_failed_after_\d+_attempts/.test(e)) {
+    // Retry-exhausted wrapper — classify by the underlying error it carries.
+    return classifyLiveBuyFailure(e.replace(/^.*buy_failed_after_\d+_attempts:\s*/, ''));
+  }
+  if (/6004|exceededslippage/.test(e)) return 'slippage_6004';
+  if (/insufficientfundsforrent|\brent\b/.test(e)) return 'rent';
+  if (/wallet_low|insufficient_balance|insufficient lamports/.test(e)) return 'wallet_low';
+  if (/6020|disabledbuy/.test(e)) return 'disabled_buy';
+  if (/pool reserves read failed|pool context|pool_read/.test(e)) return 'pool_read';
+  if (/6003|6016|liquidity/.test(e)) return 'thin_liquidity';
+  if (/no balance delta|no tokens|transfer.?hook|no_token/.test(e)) return 'no_token_delta';
+  if (/did not land|jito|\brpc\b|timeout|blockhash|not land/.test(e)) return 'not_landed';
+  return 'other';
+}
+
 export function computeCopyTrades(db: Database.Database): unknown {
   let closed: Array<Record<string, unknown>> = [];
   let open: Array<Record<string, unknown>> = [];
@@ -1513,9 +1563,29 @@ export function computeCopyTrades(db: Database.Database): unknown {
               actual_spend_sol: spend, spend_pct_of_target: pct,
               within_band: pct != null ? pct >= 0.93 && pct <= 1.07 : null,
               net_sol: r.net_sol ?? null,
+              live_error: ((r.live_error as string) ?? '').slice(0, 120) || null,
               tx_sig_entry: ((r.tx_sig_entry as string) ?? '').slice(0, 20) || null,
             };
           }),
+        // Failure-reason histogram (2026-06-19). live_buy_failed was ~41% of
+        // closed live trades; classify the persisted live_error so a session can
+        // see which failures the 3-attempt retry should salvage (slippage_6004 /
+        // rent / not_landed) vs the terminal ones the per-mint cooldown handles
+        // (disabled_buy / no_token_delta / thin_liquidity).
+        failure_reasons: (() => {
+          const fails = lc.filter((r) => r.exit_reason === 'live_buy_failed');
+          const byClass: Record<string, number> = {};
+          const otherSamples: string[] = [];
+          for (const r of fails) {
+            const raw = ((r.live_error as string) ?? '').trim();
+            const cls = classifyLiveBuyFailure(raw);
+            byClass[cls] = (byClass[cls] ?? 0) + 1;
+            if ((cls === 'other' || cls === 'unknown') && raw && otherSamples.length < 5) {
+              otherSamples.push(raw.slice(0, 120));
+            }
+          }
+          return { total: fails.length, by_class: byClass, other_samples: otherSamples };
+        })(),
       };
     })(),
     recent_closed: closed

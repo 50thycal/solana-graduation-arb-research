@@ -4,6 +4,7 @@ import { Executor, PoolContext, ExecutionResult } from '../trading/executor';
 import { Wallet } from '../trading/wallet';
 import { isKillswitchTripped } from '../trading/safety';
 import { MICRO_TRADE_SIZE_SOL, DAILY_MAX_LOSS_SOL, WALLET_SOL_BUFFER } from '../trading/config';
+import { MAX_BUY_ATTEMPTS, buySlippageBpsForAttempt, buyTipMultiplierForAttempt } from '../trading/buy-retry';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-live-executor');
@@ -87,11 +88,50 @@ export class CopyLiveExecutor {
     return null;
   }
 
-  /** Submit a real micro buy. Caller persists the row first (crash-safety). */
+  /** Submit a real micro buy. Caller persists the row first (crash-safety).
+   *
+   *  Drives the SHARED 3-attempt retry schedule (`buy-retry.ts`) — identical to
+   *  the main trading path (`trade-evaluator`). Pre-2026-06-19 this fired ONCE,
+   *  so any Custom 6004 / InsufficientFundsForRent / tx-didn't-land failure
+   *  terminally failed the copy buy; live_buy_failed was ~41% of closed live
+   *  trades. Attempts 2-3 bump the Jito tip and widen slippage to salvage those.
+   *  Size is hard-capped to MICRO_TRADE_SIZE_SOL on EVERY attempt (the executor
+   *  re-overrides it in live_micro), so retries can never increase exposure. A
+   *  thrown exception is terminal (no retry) — mirrors the main path. */
   async buy(mint: string, poolCtx: PoolContext, expectedPrice: number): Promise<ExecutionResult> {
     if (!this.executor) return { success: false, effectivePrice: 0, tokensReceived: 0, dryRun: false, errorMessage: 'no_executor' };
-    // amount is hard-overridden to MICRO_TRADE_SIZE_SOL by the executor in live_micro.
-    return this.executor.buy(mint, MICRO_TRADE_SIZE_SOL, expectedPrice, undefined, poolCtx, 'live_micro');
+    let result: ExecutionResult | undefined;
+    let lastErr = 'unknown';
+    for (let attempt = 1; attempt <= MAX_BUY_ATTEMPTS; attempt++) {
+      const slippageBpsOverride = buySlippageBpsForAttempt(attempt);
+      const jitoTipMultiplier = buyTipMultiplierForAttempt(attempt);
+      try {
+        // amount is hard-overridden to MICRO_TRADE_SIZE_SOL by the executor in live_micro.
+        result = await this.executor.buy(
+          mint, MICRO_TRADE_SIZE_SOL, expectedPrice, undefined, poolCtx, 'live_micro',
+          { slippageBpsOverride, jitoTipMultiplier, attemptNumber: attempt },
+        );
+      } catch (err) {
+        // Exception (code bug, malformed pool, …) — don't retry, surface it.
+        lastErr = err instanceof Error ? err.message : String(err);
+        return { success: false, effectivePrice: 0, tokensReceived: 0, dryRun: false, errorMessage: `buy_exception: ${lastErr}` };
+      }
+      if (result.success) return result;
+      lastErr = result.errorMessage ?? 'unknown';
+      if (attempt < MAX_BUY_ATTEMPTS) {
+        logger.warn(
+          'Copy LIVE buy attempt %d/%d failed for %s (slip %d bps, tip %d×): %s — retrying',
+          attempt, MAX_BUY_ATTEMPTS, mint.slice(0, 6), slippageBpsOverride, jitoTipMultiplier, lastErr,
+        );
+      }
+    }
+    // All attempts exhausted — return the last failed result, tagging the
+    // errorMessage so the persisted live_error reflects the retry exhaustion.
+    return {
+      ...(result ?? { success: false, effectivePrice: 0, tokensReceived: 0, dryRun: false }),
+      success: false,
+      errorMessage: `buy_failed_after_${MAX_BUY_ATTEMPTS}_attempts: ${lastErr}`,
+    };
   }
 
   /** Submit a real sell of the held tokens. */
