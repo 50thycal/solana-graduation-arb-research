@@ -1226,6 +1226,45 @@ export function computeCopyTrades(db: Database.Database): unknown {
         median: Math.round(median(hs) ?? 0),
       };
     }
+    // Max favorable excursion (MFE) per exit reason — the peak % gain a position
+    // reached (stored high_price_sol vs entry) BEFORE it exited. Calibrates the two
+    // open design questions from data instead of guessing:
+    //   • ratchet: among stop_loss/timeout exits, what fraction first ran to
+    //     +25/+50/+75/+100%? Those are the losers a raised stop would have saved.
+    //   • runner: among no-TP exits (timeout/follow_sell), how far past +100% do
+    //     winners actually go (p75/p90/max)? That sets a trailing-TP distance.
+    // Note: high_price_sol is sampled at the poll cadence (25s), so fast intraday
+    // spikes between polls are under-counted — read these as a floor on the peak.
+    const pctile = (arr: number[], p: number): number => {
+      if (!arr.length) return 0;
+      const srt = [...arr].sort((a, b) => a - b);
+      return srt[Math.min(srt.length - 1, Math.floor((p / 100) * srt.length))];
+    };
+    const frac = (arr: number[], thr: number): number =>
+      arr.length ? +(arr.filter((v) => v >= thr).length / arr.length).toFixed(3) : 0;
+    const mfeByReason: Record<string, number[]> = {};
+    for (const r of rows) {
+      const entry = r.entry_price_sol as number;
+      const high = r.high_price_sol as number;
+      if (typeof entry !== 'number' || entry <= 0 || typeof high !== 'number' || high <= 0) continue;
+      (mfeByReason[(r.exit_reason as string) ?? 'unknown'] ??= []).push((high / entry - 1) * 100);
+    }
+    const mfeByExit: Record<string, {
+      n: number; median: number; p75: number; p90: number; max: number;
+      frac_ge_25: number; frac_ge_50: number; frac_ge_75: number; frac_ge_100: number;
+    }> = {};
+    for (const [reason, vs] of Object.entries(mfeByReason)) {
+      if (!vs.length) continue;
+      mfeByExit[reason] = {
+        n: vs.length,
+        median: +(median(vs) ?? 0).toFixed(1),
+        p75: +pctile(vs, 75).toFixed(1),
+        p90: +pctile(vs, 90).toFixed(1),
+        max: +Math.max(...vs).toFixed(1),
+        frac_ge_25: frac(vs, 25), frac_ge_50: frac(vs, 50),
+        frac_ge_75: frac(vs, 75), frac_ge_100: frac(vs, 100),
+      };
+    }
     // exit-fill stress (uniform, on top of any per-strategy penalty already baked in)
     let stressTotal = 0;
     for (const r of rows) {
@@ -1255,6 +1294,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
       avg_detection_lag_sec: lags.length ? +(lags.reduce((a, b) => a + b, 0) / lags.length).toFixed(2) : null,
       by_exit_reason: byReason,
       hold_by_exit: holdByExit,
+      mfe_by_exit: mfeByExit,
       daily,
     };
   };
@@ -1444,6 +1484,38 @@ export function computeCopyTrades(db: Database.Database): unknown {
           live_tokens: r.live_tokens ?? null,
           tx_sig_entry: ((r.tx_sig_entry as string) ?? '').slice(0, 20) || null,
         })),
+        // Per-closed-live-trade ACTUAL SOL spent (entry_price_sol × live_tokens =
+        // swapCostSol from the executor) vs the 0.05-SOL target. Surfaces fills
+        // that escaped the ~5% slippage band — the "0.01 SOL worth" buys. A healthy
+        // exact-token-out fill lands ~0.0475 (95% of target, the -5% token floor);
+        // anything below ~0.93× means the expected-tokens math under-bought.
+        target_spend_sol: MICRO_TRADE_SIZE_SOL,
+        anomalous_fills: lc.filter((r) => {
+          const px = r.entry_price_sol as number; const tok = (r.live_tokens as number) ?? 0;
+          if (typeof px !== 'number' || typeof tok !== 'number' || tok <= 0) return false;
+          const pct = (px * tok) / MICRO_TRADE_SIZE_SOL;
+          return pct < 0.93 || pct > 1.07;
+        }).length,
+        closed_detail: lc
+          .sort((a, b) => (b.exit_ts as number ?? 0) - (a.exit_ts as number ?? 0))
+          .slice(0, 30)
+          .map((r) => {
+            const px = r.entry_price_sol as number;
+            const tok = (r.live_tokens as number) ?? 0;
+            const spend = typeof px === 'number' && typeof tok === 'number' && tok > 0
+              ? +(px * tok).toFixed(5) : null;
+            const pct = spend != null && MICRO_TRADE_SIZE_SOL > 0
+              ? +(spend / MICRO_TRADE_SIZE_SOL).toFixed(3) : null;
+            return {
+              mint: (r.mint as string).slice(0, 8),
+              exit_ts: r.exit_ts, exit_reason: r.exit_reason,
+              live_tokens: tok || null, entry_price_sol: px ?? null,
+              actual_spend_sol: spend, spend_pct_of_target: pct,
+              within_band: pct != null ? pct >= 0.93 && pct <= 1.07 : null,
+              net_sol: r.net_sol ?? null,
+              tx_sig_entry: ((r.tx_sig_entry as string) ?? '').slice(0, 20) || null,
+            };
+          }),
       };
     })(),
     recent_closed: closed
