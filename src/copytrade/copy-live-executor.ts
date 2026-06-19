@@ -134,9 +134,20 @@ export class CopyLiveExecutor {
     };
   }
 
-  /** Submit a real sell of the held tokens. */
-  async sell(mint: string, tokensHeld: number, poolCtx: PoolContext, expectedPrice: number): Promise<ExecutionResult> {
+  /** Submit a real sell of the held tokens. `retryOverrides` drives the shared
+   *  escalating-slippage + tip-bump schedule (`sell-retry.ts`) per attempt — the
+   *  caller (`copy-trader.closeLivePosition`) spreads attempts across poll ticks
+   *  and tracks the attempt number on the position. Pre-2026-06-19 this forwarded
+   *  no overrides, so the executor always used default slippage and a reverting
+   *  sell (Custom 6053 / 6004) could never widen out of the failure. */
+  async sell(
+    mint: string,
+    tokensHeld: number,
+    poolCtx: PoolContext,
+    expectedPrice: number,
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
+  ): Promise<ExecutionResult> {
     if (!this.executor) return { success: false, effectivePrice: 0, tokensReceived: 0, dryRun: false, errorMessage: 'no_executor' };
-    return this.executor.sell(mint, tokensHeld, expectedPrice, undefined, poolCtx, 'live_micro');
+    return this.executor.sell(mint, tokensHeld, expectedPrice, undefined, poolCtx, 'live_micro', retryOverrides);
   }
 }
