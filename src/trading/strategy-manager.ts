@@ -7,8 +7,13 @@ import {
   StrategyParams,
   strategyParamsFromConfig,
   mergeStrategyParams,
-  SWAP_SLIPPAGE_BPS,
 } from './config';
+import {
+  MAX_SELL_ATTEMPTS_BEFORE_TERMINAL,
+  sellSlippageBpsForAttempt,
+  sellTipMultiplierForAttempt,
+  TERMINAL_SELL_ERROR_PATTERNS,
+} from './sell-retry';
 import { TradeLogger } from './trade-logger';
 import { Executor, fetchVaultPrice } from './executor';
 import { PositionManager, ExitEvent, DynamicMonitorParams, ActivePosition } from './position-manager';
@@ -31,81 +36,9 @@ const logger = makeLogger('strategy-manager');
 
 const BACKFILL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 
-/** Live-sell retry schedule (2026-05-27 redesign).
- *
- *  Pre-fix: retried up to 20 times with [2s/5s/10s/30s/60s × N] backoff and
- *  flat 10% slippage on every attempt. Took up to 17 min to terminal-close
- *  stuck positions, and most retries fought the same Custom 6004 because
- *  the AMM math hadn't changed.
- *
- *  New approach — 9 attempts total, no explicit backoff (poll cadence is
- *  the floor). Each attempt escalates slippage AND/OR Jito tip to break
- *  out of the failure mode:
- *
- *    Attempt 1: 10% slippage, 1× tip — normal exit (most trades succeed here)
- *    Attempt 2: 20% slippage, 5× tip — bump tip aggressively for faster land
- *    Attempt 3: 20% slippage, 5× tip — one more shot with high tip
- *    Attempt 4: 40% slippage, 1× tip — high tip didn't help, crank slippage
- *    Attempt 5: 50% slippage, 1× tip — slippage ramp
- *    Attempt 6: 60% slippage, 1× tip
- *    Attempt 7: 70% slippage, 1× tip
- *    Attempt 8: 80% slippage, 1× tip
- *    Attempt 9: 90% slippage, 1× tip — last attempt (terminal close after)
- *
- *  After attempt 9 fails, the position is closed with sell_failed_terminal
- *  and net_profit_sol reflects the realized loss. */
-const MAX_SELL_ATTEMPTS_BEFORE_TERMINAL = 9;
-
-/** Per-attempt slippage tolerance in basis points. Index 0 = attempt 1.
- *  Attempt 1 uses the default SWAP_SLIPPAGE_BPS (env-configurable, typically
- *  1000 = 10%); attempts 2+ use absolute values from this table. */
-const SELL_RETRY_SLIPPAGE_BPS: ReadonlyArray<number | null> = [
-  null,   // 1: SWAP_SLIPPAGE_BPS default
-  2000,   // 2: 20%
-  2000,   // 3: 20%
-  4000,   // 4: 40%
-  5000,   // 5: 50%
-  6000,   // 6: 60%
-  7000,   // 7: 70%
-  8000,   // 8: 80%
-  9000,   // 9: 90%
-];
-function sellSlippageBpsForAttempt(attemptNumber: number): number {
-  if (attemptNumber < 1) return SWAP_SLIPPAGE_BPS;
-  const idx = Math.min(attemptNumber - 1, SELL_RETRY_SLIPPAGE_BPS.length - 1);
-  return SELL_RETRY_SLIPPAGE_BPS[idx] ?? SWAP_SLIPPAGE_BPS;
-}
-
-/** Per-attempt Jito tip multiplier vs DEFAULT_JITO_TIP_SOL. Attempts 2-3
- *  use 5× to push the bundle up Jito's priority queue and reduce tx_land_ms.
- *  If that doesn't land the sell, attempt 4+ drops back to 1× since paying
- *  more tip on a tx that's failing for slippage/AMM-state reasons just burns
- *  SOL — switch to widening slippage instead. */
-const SELL_RETRY_TIP_MULTIPLIER: ReadonlyArray<number> = [
-  1,  // 1: default
-  5,  // 2: aggressive land
-  5,  // 3: aggressive land
-  1,  // 4: back to normal, slippage takes over
-  1,  // 5
-  1,  // 6
-  1,  // 7
-  1,  // 8
-  1,  // 9
-];
-function sellTipMultiplierForAttempt(attemptNumber: number): number {
-  if (attemptNumber < 1) return 1;
-  const idx = Math.min(attemptNumber - 1, SELL_RETRY_TIP_MULTIPLIER.length - 1);
-  return SELL_RETRY_TIP_MULTIPLIER[idx];
-}
-
-/** Error patterns that indicate a sell will never succeed — close terminally
- *  immediately instead of waiting for MAX_SELL_RETRIES_BEFORE_TERMINAL. Pattern
- *  match is case-insensitive substring. */
-const TERMINAL_SELL_ERROR_PATTERNS = [
-  'no tokens in wallet',           // wallet is confirmed empty for this mint
-  'pool reserves read failed',     // pool is dead / migrated / removed
-  'pool context incomplete',       // pool was never resolvable
-];
+// Live-sell retry schedule + terminal-error rules moved to ./sell-retry
+// (2026-06-19), shared with the copy-live exit path so the two execution
+// engines can't drift — mirrors the buy-retry.ts split for the buy side.
 
 interface StrategyInstance {
   id: string;

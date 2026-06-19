@@ -7,6 +7,12 @@ import { computeCopyRegime, currentRegimeScore, COPY_REGIME_BASELINE } from './c
 import { computeMacroRegime, currentMacroScore } from './macro-regime';
 import { CopyLiveExecutor } from './copy-live-executor';
 import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
+import {
+  MAX_SELL_ATTEMPTS_BEFORE_TERMINAL,
+  sellSlippageBpsForAttempt,
+  sellTipMultiplierForAttempt,
+  TERMINAL_SELL_ERROR_PATTERNS,
+} from '../trading/sell-retry';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-trader');
@@ -290,6 +296,12 @@ const COPY_LIVE_MAX_CONCURRENT = parseInt(process.env.COPY_LIVE_MAX_CONCURRENT |
 // fails too — stop burning Jito tips + ATA rent on it. In-memory (clears on
 // restart, which is fine — a restart is rare and the stale entries are cheap).
 const COPY_LIVE_FAIL_COOLDOWN_SEC = parseInt(process.env.COPY_LIVE_FAIL_COOLDOWN_SEC || '600', 10);
+// Minimum gap between live-sell retry attempts on the SAME position. The poll
+// cadence (25s) is the real retry floor; this only stops a second exit trigger
+// (e.g. a lead-sell landing between polls) from firing a redundant attempt back-
+// to-back. Set under POLL_INTERVAL_MS so the normal poll-driven retry isn't
+// delayed. The escalating-slippage schedule + the 9-attempt cap do the real work.
+const COPY_SELL_RETRY_MIN_GAP_MS = parseInt(process.env.COPY_SELL_RETRY_MIN_GAP_MS || '20000', 10);
 // Poll interval raised 15s -> 25s (2026-06-17): position polling (1 batched vault
 // fetch per UNIQUE open vault per cycle) is the dominant sustained RPC consumer.
 // At 15s the book ran ~4.5 calls/s ≈ 11.7M credits/mo — over the 10M plan. 25s
@@ -320,6 +332,13 @@ interface OpenPos {
   lastWrittenPrice?: number; // in-memory dedupe for last_price_sol writes
   executionMode?: 'shadow' | 'live_micro'; // 'live_micro' positions hold real tokens + exit via real sell
   liveTokens?: number;      // real token qty bought (live_micro) — sold back at exit
+  // Live-sell retry state (in-memory; live_micro only). sellFailureCount is the
+  // number of consecutive failed exit attempts → drives the escalating-slippage
+  // schedule and the terminal cap. nextSellRetryTs gates back-to-back attempts.
+  // parked = terminal (unsellable / cap hit); the row is closed and removed.
+  sellFailureCount?: number;
+  nextSellRetryTs?: number;
+  parked?: boolean;
 }
 
 interface PoolVaults { pool: string; baseVault: string; quoteVault: string; }
@@ -782,23 +801,69 @@ export class CopyTrader {
     logger.warn('Copy LIVE buy OK %s %s tokens=%s tip=%s sig=%s', s.id, mint.slice(0, 6), res.tokensReceived, res.jitoTipSol, (res.txSignature ?? '').slice(0, 12));
   }
 
-  /** Real-money exit for a live_micro position. Sells the held tokens; on failure
-   *  leaves the position OPEN so the next trigger retries (we still hold tokens).
-   *  Guarded so an exit swap is never submitted twice for the same position. */
+  /** Real-money exit for a live_micro position. Sells the held tokens via the
+   *  shared escalating-slippage schedule (`sell-retry.ts`), spreading attempts
+   *  across poll ticks. On a transient failure it leaves the position open and
+   *  retries on the next poll with wider slippage; on a TERMINAL failure (a
+   *  known-unsellable error like "no tokens in wallet", or the 9-attempt cap) it
+   *  closes the row and removes the position so the loop self-terminates.
+   *
+   *  This terminal handling is the 2026-06-19 bleed-stop: previously ANY failure
+   *  just left the row open and re-attempted every poll forever, so two orphaned
+   *  positions (a manually-sold one → "no tokens", and a reverting one → Custom
+   *  6053) hammered the RPC limiter until the Helius credit budget blew. Guarded
+   *  so an exit swap is never submitted twice for the same position. */
   private async closeLivePosition(p: OpenPos, reason: string, rawExitPrice: number): Promise<void> {
-    if (this.closingLive.has(p.id) || !this.positions.has(p.id)) return;
+    if (p.parked || this.closingLive.has(p.id) || !this.positions.has(p.id)) return;
+    // Don't fire a redundant attempt between polls (a lead-sell trigger can land
+    // mid-cycle); the 25s poll cadence is the real retry floor.
+    if (p.nextSellRetryTs != null && Date.now() < p.nextSellRetryTs) return;
     this.closingLive.add(p.id);
     try {
+      const attemptNumber = (p.sellFailureCount ?? 0) + 1;
       const poolCtx = { poolAddress: p.pool, baseVault: p.baseVault, quoteVault: p.quoteVault };
       let res;
       try {
-        res = await this.liveExec.sell(p.mint, p.liveTokens ?? 0, poolCtx, rawExitPrice);
+        res = await this.liveExec.sell(p.mint, p.liveTokens ?? 0, poolCtx, rawExitPrice, {
+          slippageBpsOverride: sellSlippageBpsForAttempt(attemptNumber),
+          jitoTipMultiplier: sellTipMultiplierForAttempt(attemptNumber),
+          attemptNumber,
+        });
       } catch (err) {
         res = { success: false, effectivePrice: 0, tokensReceived: 0, dryRun: false, errorMessage: err instanceof Error ? err.message : String(err) } as Awaited<ReturnType<CopyLiveExecutor['sell']>>;
       }
       if (!res.success) {
-        logger.warn('Copy LIVE sell FAILED %s %s: %s — leaving open, will retry', p.strategyId, p.mint.slice(0, 6), res.errorMessage);
-        return; // keep position open; next poll/trigger retries
+        const errMsg = res.errorMessage ?? 'unknown';
+        const lowerErr = errMsg.toLowerCase();
+        const matchedPattern = TERMINAL_SELL_ERROR_PATTERNS.find((pat) => lowerErr.includes(pat));
+        const scheduleExhausted = attemptNumber >= MAX_SELL_ATTEMPTS_BEFORE_TERMINAL;
+        if (matchedPattern || scheduleExhausted) {
+          // Terminal — close the row so it leaves this.positions and is never
+          // reloaded (loadOpenPositions reads only status='open'). net_sol stays
+          // NULL: the outcome is genuinely unknown (tokens gone out-of-band, or
+          // the position is parked still holding illiquid tokens) and summarize()
+          // excludes non-numeric net_sol from P&L — we don't fabricate a result.
+          // Park keeps any still-held tokens in the wallet for manual exit; the
+          // loud warn is the manual-review signal.
+          const termReason = matchedPattern
+            ? (lowerErr.includes('no tokens') ? 'reconciled_no_tokens' : 'sell_terminal_dead_pool')
+            : 'sell_parked_unsellable';
+          try {
+            this.db.prepare(`UPDATE copy_trades SET status='closed', exit_ts=?, exit_reason=?, net_sol=NULL, live_error=? WHERE id=?`)
+              .run(Math.floor(Date.now() / 1000), termReason, errMsg.slice(0, 300), p.id);
+          } catch { /* noop */ }
+          p.parked = true;
+          this.positions.delete(p.id);
+          logger.warn('Copy LIVE sell TERMINAL %s %s id=%d after %d attempt(s): %s — %s, no further retries',
+            p.strategyId, p.mint.slice(0, 6), p.id, attemptNumber, termReason, errMsg);
+          return;
+        }
+        // Transient — escalate the next attempt; the next poll retries.
+        p.sellFailureCount = attemptNumber;
+        p.nextSellRetryTs = Date.now() + COPY_SELL_RETRY_MIN_GAP_MS;
+        logger.warn('Copy LIVE sell FAILED %s %s id=%d attempt %d/%d: %s — retry next poll (slip→%d bps)',
+          p.strategyId, p.mint.slice(0, 6), p.id, attemptNumber, MAX_SELL_ATTEMPTS_BEFORE_TERMINAL, errMsg, sellSlippageBpsForAttempt(attemptNumber + 1));
+        return;
       }
       // net = size * (effExit/effEntry - 1) - real costs (sell tip; buy tip+rent already on the row).
       const effExit = res.effectivePrice;
