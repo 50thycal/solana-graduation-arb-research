@@ -11,6 +11,127 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-20
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-06-20",
+  "overall": {"n": 7288, "net": 123.87, "drop3": 71.75, "stress": 46.45, "open": 231},
+  "retired_summary": {"n": 6655, "net": -124.71},
+  "regime_score": 6, "regime_24h": 8, "macro_score": 5, "btc_7d_pct": -1.02,
+  "book_daily_today": 16.27,
+  "leads": {"n_leads": 102, "hot": 34, "cold": 43},
+  "n_promotable_realistic": 4,
+  "strategies": [
+    {"id": "copy-hotlead", "realistic": true, "n": 198, "net": 14.026, "drop3": 8.019, "stress": 11.706, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-deep", "realistic": true, "n": 108, "net": 10.334, "drop3": 4.566, "stress": 9.015, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-consensus", "realistic": true, "n": 114, "net": 7.592, "drop3": 1.823, "stress": 6.266, "promo_score": 97.8, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict", "realistic": true, "n": 80, "net": 7.678, "drop3": 1.910, "stress": 6.700, "promo_score": 94.9, "verdict": "KEEP"},
+    {"id": "copy-elitelead", "realistic": true, "n": 72, "net": 4.395, "drop3": 1.565, "stress": 3.565, "promo_score": 89, "verdict": "KEEP"},
+    {"id": "copy-consensus2-lag-drift5", "realistic": true, "n": 287, "net": 6.568, "drop3": 0.138, "stress": 3.481, "promo_score": 76.7, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m", "realistic": true, "n": 160, "net": 17.651, "drop3": -0.485, "stress": 15.650, "promo_score": 75, "verdict": "KEEP"},
+    {"id": "copy-consensus2-elite", "realistic": true, "n": 58, "net": 3.384, "drop3": 0.568, "stress": 2.719, "promo_score": 73.7, "verdict": "KEEP"},
+    {"id": "copy-consensus3", "realistic": true, "n": 131, "net": 2.701, "drop3": -3.755, "stress": 1.298, "promo_score": 68, "verdict": "KILL"},
+    {"id": "copy-c2rr-ratchet-trailtp", "realistic": true, "n": 15, "net": 2.895, "drop3": -2.513, "stress": 2.683, "promo_score": 58, "verdict": "WATCH"},
+    {"id": "copy-c2rr-trailtp-wide", "realistic": true, "n": 14, "net": 2.722, "drop3": -2.686, "stress": 2.523, "promo_score": 57.8, "verdict": "WATCH"},
+    {"id": "copy-c2rr-scaleout-50", "realistic": true, "n": 14, "net": 0.105, "drop3": -1.842, "stress": 0.006, "promo_score": 29.1, "verdict": "WATCH"},
+    {"id": "copy-c2rr-ratchet-tp", "realistic": true, "n": 19, "net": -0.041, "drop3": -2.228, "stress": -0.236, "promo_score": 23.8, "verdict": "WATCH"},
+    {"id": "copy-c2rr-trailtp-tight", "realistic": true, "n": 18, "net": -0.103, "drop3": -1.947, "stress": -0.286, "promo_score": 23.6, "verdict": "WATCH"},
+    {"id": "copy-c2rr-breakeven", "realistic": true, "n": 17, "net": -0.351, "drop3": -2.075, "stress": -0.519, "promo_score": 23.4, "verdict": "WATCH"},
+    {"id": "copy-c2rr-control", "realistic": true, "n": 15, "net": -1.128, "drop3": -2.906, "stress": -1.260, "promo_score": 23, "verdict": "WATCH"},
+    {"id": "copy-c2rr-scaleout-trailtp", "realistic": true, "n": 14, "net": -0.778, "drop3": -2.309, "stress": -0.867, "promo_score": 22.8, "verdict": "WATCH"},
+    {"id": "copy-c2rr-ratchet-run", "realistic": true, "n": 10, "net": -1.491, "drop3": -2.061, "stress": -1.564, "promo_score": 22, "verdict": "WATCH"},
+    {"id": "copy-c2rr-scaleout-run", "realistic": true, "n": 8, "net": -1.105, "drop3": -1.564, "stress": -1.129, "promo_score": 21.6, "verdict": "WATCH"},
+    {"id": "copy-regime-hi", "realistic": true, "n": 109, "net": -4.027, "drop3": -6.690, "stress": -5.069, "promo_score": 40, "verdict": "KILL"},
+    {"id": "copy-regime-mid", "realistic": true, "n": 200, "net": -4.883, "drop3": -8.316, "stress": -6.845, "promo_score": 40, "verdict": "KILL"},
+    {"id": "copy-macro", "realistic": true, "n": 176, "net": -2.382, "drop3": -8.251, "stress": -4.147, "promo_score": 40, "verdict": "KILL"},
+    {"id": "copy-macro-regime", "realistic": true, "n": 80, "net": -2.218, "drop3": -4.810, "stress": -2.998, "promo_score": 36, "verdict": "WATCH"},
+    {"id": "copy-hotlead-regime", "realistic": true, "n": 67, "net": -1.679, "drop3": -4.206, "stress": -2.336, "promo_score": 33.4, "verdict": "WATCH"},
+    {"id": "copy-bigbuy", "realistic": true, "n": 46, "net": -3.323, "drop3": -5.228, "stress": -3.730, "promo_score": 29.2, "verdict": "KILL"}
+  ]
+}
+```
+
+**Headline:** Three hotlead variants simultaneously hit the promotion bar this morning — `copy-hotlead` (score 100, 3rd consecutive session), `copy-hotlead-deep` (score 100, just crossed n=100), and `copy-hotlead-consensus` (score 97.8, drop3 flipped positive overnight); meanwhile `copy-bigbuy` crossed the catastrophic kill threshold (n=46, net=−3.32), and `copy-consensus3` is now INVALID at n=131 with drop3=−3.755 and declining.
+
+**Day-over-day (vs 2026-06-19 snapshot, snapshot was partial ~10:00 UTC):** Tape turned sharply positive — regime_score 4→6 ("favorable"), regime_24h 1→8 (massive intraday surge). Macro held flat at 5 ("neutral"), BTC 7d improved slightly −1.61%→−1.02%, SOL 1d +3.7% to $71.53. Book daily today: +16.27 SOL at 09:59 UTC snapshot (partial; already ahead of yesterday's full-day +9.87). The whole-book Δnet=+23.70 and Δdrop3=+23.71 are nearly identical — the 608 new trades across all strategies did not produce a single new top-3 winner at the book level. Entirely broad accumulation.
+
+**Roster changes since yesterday:** `copy-consensus2-lag-drift5-live-micro` is gone from active strategies — confirmed killed (per operator action on the recommendation). Live_vs_shadow data confirms the decision was correct: the live-micro averaged −5.35% vs shadow's +4.32% over 172 matched trades, exec_gap = −9.68pp. Ten new c2rr strategies (consensus2 ratchet/trail/scale-out exit variants: copy-c2rr-control, copy-c2rr-ratchet-tp, copy-c2rr-ratchet-trailtp, copy-c2rr-ratchet-run, copy-c2rr-trailtp-tight, copy-c2rr-trailtp-wide, copy-c2rr-scaleout-50, copy-c2rr-scaleout-run, copy-c2rr-scaleout-trailtp, copy-c2rr-breakeven) appeared in today's data — all consensus-gated with 5s delay, n=8–19. Too new to call.
+
+**Key strategy movers today:**
+- `copy-hotlead` (+30 trades): Δnet=+6.21, Δdrop3=+5.69 (2.33→8.02). The drop3 jump is particularly notable — the top-3 winners are now just a 57% slice of net vs historically much higher. Strengthening fast.
+- `copy-hotlead-deep` (+16 trades): Δnet=+3.01, Δdrop3=+2.56 (2.00→4.57), score 98.4→**100**. Crossed n=100 gate today. All gates clear. NEW PROMOTABLE.
+- `copy-hotlead-consensus` (+16 trades): Δnet=+2.96, Δdrop3=+2.58 (−0.76→**+1.82**). Drop3 crossed zero and landed well above it. Score 74.6→**97.8**. NEW PROMOTABLE. n=114 (crossed n=100 gate as well).
+- `copy-hotlead-strict` (+12 trades): Δnet=+1.17, Δdrop3=+0.54 (1.37→1.91), score 85.8→94.9. 20 trades from n=100.
+- `copy-elitelead` (+10 trades): Δnet=+2.28, Δdrop3=+1.90 (−0.33→**+1.57**, FLIPPED), score 61.7→89. Needs 28 more trades to hit n=100.
+- `copy-consensus2-elite` (+10 trades): Δnet=+2.36, Δdrop3=+1.59 (−1.02→**+0.57**, FLIPPED), score 49.7→73.7. Needs 42 more trades.
+- `copy-consensus2-lag-drift5` (+38 trades): Δnet=+1.24, Δdrop3=+1.08 (−0.94→**+0.14**, RE-FLIPPED). Score 75→76.7. Thin margin — this is the third oscillation around zero (positive Jun 18, negative Jun 19, positive Jun 20). All gates technically clear but the buffer (+0.138) is fragile; just 3 bad trades would flip it back. The live execution gap data (−9.68pp) also argues against promoting this one ahead of the hotlead family. Marked WATCH, not PROMOTE.
+- `copy-hotlead-hold30m` (+19 trades): Δnet=+5.36, Δdrop3=+4.55 (−5.03→**−0.49**). Drop3 closing on zero fast — if it crosses positive it will be the highest-monthly strategy in the roster (+88.26 SOL/mo). Watching closely.
+- `copy-consensus3` (+30 trades): Δnet=**−1.52**, Δdrop3=**−1.72** (−2.03→−3.76), score 75→68. Active deterioration at n=131 with all gates failing. First kill proposal.
+- `copy-bigbuy` (+14 trades): Δnet=**−1.76** (−1.56→−3.32). Net < −3 at n=46 ≥ 40 — **catastrophic kill threshold triggered**. Kill immediately.
+- `copy-regime-mid` (+54 trades): Δnet=**−3.37** (−1.52→−4.88). Worst daily loss of any strategy today. All gates failing at n=200. 3rd consecutive kill proposal — still not enacted.
+- `copy-regime-hi` (+33 trades): n 76→109 (now past n=100 gate), Δnet=−0.53 (−3.49→−4.03), drop3=−6.69, monthly=−17.26 SOL. All gates now formally fail at n≥100. 3rd proposal.
+- `copy-macro` (+2 trades): roughly flat (net −2.38). Still failing all gates at n=176. 3rd proposal.
+
+**Week-over-week (4 entries: Jun 17–20):**
+
+Book daily arc: Jun 17 +31.14 → Jun 18 +28.56 → Jun 19 +9.87 → Jun 20 +16.27 (partial). Four consecutive positive days averaging +21.5 SOL/day (σ=10.1). The book has recovered spectacularly from the Jun 13–14 double-digit daily losses. However, today's regime_24h=8 suggests the current conditions are especially favorable — the book may regress toward the mean as regime normalizes.
+
+Realistic strategies converging (positive drop3 trajectory across 4 days):
+- `copy-hotlead` drop3: −1.86 → +0.51 → +2.33 → **+8.02** — linear sustained accumulation; the fastest-growing drop3 in the roster.
+- `copy-hotlead-deep` drop3: −2.21 → +0.24 → +2.00 → **+4.57** — launched later (n=19 on Jun 17), but at n=108 already well past the bar.
+- `copy-hotlead-consensus` drop3: −1.43 → −0.76 → **+1.82** — latest in the family to clear but the trend is consistent.
+- `copy-elitelead` drop3: −1.49 → −0.33 → **+1.57** — fast flip at low n; needs n=100 to confirm.
+- `copy-consensus2-elite` drop3: — → −1.02 → **+0.57** — two-day flip; still too small (n=58) to trust.
+
+Realistic strategies decaying:
+- `copy-consensus3` drop3: −2.49 → −2.03 → **−3.76** — diverging further from zero with each cycle at n=131. INVALID.
+- `copy-bigbuy` net: +0.79 → +0.36 → −1.56 → **−3.32** — complete collapse over 4 days.
+- `copy-regime-mid` net: −0.72 → −1.52 → **−4.88** — accelerating.
+
+Lead pool: hot leads 26 → 30 → 28 → **34** (+6 today), cold 39 → 40 → 46 → **43** (−3 today). The hot/cold balance is improving for the first time in several sessions. Top leads consistent: 5q8osC4C (n=76, +4.10 SOL) and AE7neeVw (n=8, +3.26 SOL, 75% WR) leading; bottom unchanged (6svp2aai n=89/−4.33, 2fHT9wBh n=88/−4.23). New entrant B6yHBbrf (n=12, +3.68 SOL, 58.3% WR, last10 +4.05) — high win rate in recent trades, worth watching.
+
+Macro/BTC pattern over 4 days: macro score 6 → 6 → 4 → **5**. BTC has been in $62k–$65k range all week, mild 7d negative drift. SOL gained today (+3.7% 1d, $71.53). Fear & greed at 23 (extreme fear by traditional standards but book is thriving — suggesting the memecoin/copy-trade alpha is regime-independent).
+
+**Verdicts (proposals — roster changes require operator approval + `COPY_STRATEGIES` code edit):**
+
+- **PROMOTE (3 confirmed):**
+  - `copy-hotlead` — n=198, net=+14.03, drop3=+8.02, stress=+11.71, monthly=+52.60 SOL, score=100, all gates clear. 3rd consecutive session at score 100. Proposed last 2 sessions without action. This is the strongest realistic strategy in the roster. Recommend adding `executionMode: "live_micro"` in `COPY_STRATEGIES`.
+  - `copy-hotlead-deep` — n=108, net=+10.33, drop3=+4.57, stress=+9.02, monthly=+62.01 SOL, score=100, all gates clear. Just crossed n=100 this morning. Stricter hotlead gate (deeper quality filter) with comparable metrics to hotlead itself. Recommend promoting simultaneously with copy-hotlead.
+  - `copy-hotlead-consensus` — n=114, net=+7.59, drop3=+1.82, stress=+6.27, monthly=+37.96 SOL, score=97.8, all gates clear. Drop3 crossed zero today and landed solidly above it. Recommend promoting alongside the other two; at MICRO_TRADE_SIZE_SOL, running 3 hotlead variants concurrently is manageable.
+  - **Note on execution gap:** the live-micro consensus2 test showed a −9.68pp exec gap. The hotlead strategies' margins are large enough to absorb this (drop3/monthly well above the floor), but the operator should monitor execution quality carefully in the first week.
+  - `copy-consensus2-lag-drift5` — gates technically clear (n=287, drop3=+0.138, stress=+3.48, monthly=+19.70 SOL, score=76.7) but drop3 has oscillated +/−/+ across three sessions with only +0.138 buffer. Given the −9.68pp execution gap observed in the live-micro test, this thin margin would likely not survive live execution. **Do NOT promote this session** — keep watching, promote only if drop3 reaches +1.0 and holds for 2+ sessions.
+
+- **KEEP COOKING:**
+  - `copy-hotlead-strict` — n=80, drop3=+1.91, monthly=+46.07 SOL, score=94.9. All metrics strong; 20 trades from the n=100 gate. Will be promotable on the next run if trajectory holds.
+  - `copy-hotlead-hold30m` — n=160, net=+17.65, drop3=−0.485 (2 bad trades from crossing zero), monthly=+88.26 SOL. Drop3 is closing at +4.55/session pace. If it flips positive, this becomes the highest-monthly strategy. Watch daily.
+  - `copy-elitelead` — n=72, drop3=+1.57 (flipped today), score=89. Needs 28 more trades. At current pace should hit n=100 in 2-3 days.
+  - `copy-consensus2-elite` — n=58, drop3=+0.57 (flipped today), score=73.7. Needs 42 more trades. Too new to trust the drop3 sign at this n.
+  - `copy-c2rr-* cluster` (10 strategies, n=8–19 each) — brand-new consensus2-gated exit-variant experiments. All have high skip counts (already_open ~300, consensus ~65). Way too small to evaluate. Keep cooking until n≥50 on the best performers.
+
+- **KILL (5 proposals):**
+  - `copy-bigbuy` — n=46, net=−3.32. Catastrophic kill threshold (net < −3 at n≥40) triggered today. `lead_buy_size` gate starves it (2715 skips) so the few trades it gets are highly concentrated. Recommend removing from `COPY_STRATEGIES` immediately.
+  - `copy-consensus3` — n=131, net=+2.70, drop3=−3.755, stress=+1.30 (stress passes but drop3 decisively fails). Net looks positive but it's lottery-shaped (removing top 3 trades wipes out the net and goes deeply negative). At n=131 with drop3 worsening by −1.72 per session, this is INVALID. First kill proposal.
+  - `copy-macro` — n=176, net=−2.38, drop3=−8.25, monthly=−14.29 SOL. All gates failing at scale. 3rd consecutive kill proposal. No evidence of recovery; macro timing adds noise not edge.
+  - `copy-regime-mid` — n=200, net=−4.88, drop3=−8.32, monthly=−20.93 SOL. 3rd consecutive kill proposal. Lost −3.37 SOL today alone. Worst deterioration in the roster.
+  - `copy-regime-hi` — n=109, net=−4.03, drop3=−6.69, monthly=−17.26 SOL. n≥100 with all gates failing. 3rd proposal. High-regime gating is pure loss at every threshold tested.
+
+- **WATCH (approaching kill or bar):**
+  - `copy-macro-regime` — n=80, net=−2.22, drop3=−4.81. Same failing pattern as the three kills above; propose kill at n=100 if gates still fail (20 trades away).
+  - `copy-hotlead-regime` — n=67, net=−1.68, drop3=−4.21. Regime overlay is clearly dragging the hotlead signal into loss; propose kill at n=80 if net still negative.
+  - `copy-consensus2-lag-drift5` — drop3=+0.138, oscillating. See PROMOTE section — do not promote until buffer ≥ +1.0 sustained for 2 sessions.
+
+**New strategies to try:** None this cycle. Three hotlead strategies are simultaneously promotable and the c2rr cluster (10 strategies) just launched. The roster is at maximum active capacity for useful evaluation. After the kills clear (bigbuy, consensus3, macro, regime-mid, regime-hi = 5 strategies), there may be room to add new hypotheses.
+
+**Operator next steps (priority order):**
+1. **Promote `copy-hotlead`, `copy-hotlead-deep`, `copy-hotlead-consensus` to live-micro** — all three score ≥97.8, all gates clear, all confirmed over multiple sessions. Add `executionMode: "live_micro"` to each in `COPY_STRATEGIES`. `copy-hotlead` is the primary; the other two are bonus if the operator is comfortable running 3 live strategies simultaneously.
+2. **Kill `copy-bigbuy`** — catastrophic threshold triggered today (net=−3.32 at n=46). Stop losses now.
+3. **Kill `copy-consensus3`** — n=131, drop3=−3.755, actively worsening. INVALID at scale.
+4. **Kill `copy-macro`, `copy-regime-mid`, `copy-regime-hi`** — 3rd consecutive proposal, all deteriorating, regime-mid lost −3.37 SOL today alone. These kills are overdue.
+
+---
+
 ## 2026-06-19
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
