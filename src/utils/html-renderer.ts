@@ -89,6 +89,23 @@ const STYLES = `
   .p1-tab.active,.p4-tab.active,.p6-tab.active{background:#3b82f6;color:#fff;border-color:#3b82f6;font-weight:600}
   .p1-horizon-panel,.p4-horizon-panel,.p6-horizon-panel{display:none}
   .p1-horizon-panel.active,.p4-horizon-panel.active,.p6-horizon-panel.active{display:block}
+  /* Mobile (≤640px): tighten chrome + make wide tables scroll within themselves
+     instead of overflowing the page. table:not(.responsive) leaves the Trading
+     Dashboard's stacked-card responsive tables untouched. */
+  @media (max-width: 640px) {
+    .container{padding:8px}
+    nav{gap:4px;padding:6px 8px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+    nav a{padding:4px 9px;font-size:11px;white-space:nowrap}
+    nav .title{font-size:12px;white-space:nowrap}
+    .card{padding:10px;margin-bottom:10px}
+    .card h2{font-size:14px}
+    .card h3{font-size:12px}
+    .grid{grid-template-columns:1fr;gap:8px}
+    table:not(.responsive){display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%}
+    th,td{padding:4px 6px;font-size:11px}
+    .toolbar{gap:6px}
+    .toolbar .timestamp{margin-left:0}
+  }
 `;
 
 function nav(currentPath: string): string {
@@ -10309,6 +10326,18 @@ export function renderCopyTradesHtml(data: any): string {
   const n = (v: any, dp = 2) => (typeof v === 'number' && isFinite(v) ? v.toFixed(dp) : '—');
   const pct = (v: any) => (typeof v === 'number' && isFinite(v) ? (v * 100).toFixed(1) + '%' : '—');
   const sol = (v: any) => (typeof v === 'number' && isFinite(v) ? `<span class="${v >= 0 ? 'green' : 'red'}">${v >= 0 ? '+' : ''}${v.toFixed(3)}</span>` : '—');
+  // entry_ts is unix seconds; age is computed at render time (refresh to update).
+  const fmtAge = (ts: any) => {
+    if (typeof ts !== 'number' || !isFinite(ts)) return '—';
+    const s = Math.max(0, Math.floor(Date.now() / 1000) - ts);
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  };
+  const fmtClock = (ts: any) => {
+    if (typeof ts !== 'number' || !isFinite(ts)) return '—';
+    const dt = new Date(ts * 1000), p = (x: number) => String(x).padStart(2, '0');
+    return `${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())} ${p(dt.getUTCHours())}:${p(dt.getUTCMinutes())}Z`;
+  };
   const ov = d.overall ?? {};
 
   // ── Regime banner: is NOW a good window to copy trade? (1-10 score) ────────
@@ -10444,8 +10473,8 @@ export function renderCopyTradesHtml(data: any): string {
     AND a real swap was submitted. ${le.confirmed_live
       ? `<b>Real money is trading.</b> ${le.open_live_positions ?? 0} open live position(s), ${le.closed_live_trades ?? 0} closed.`
       : `No live_micro rows yet — the live-micro strategy is running as a shadow (COPY_LIVE_ENABLED not active, no wallet, or no qualifying entry has fired yet).`}</div>
-    ${(le.open_detail ?? []).length ? `<table><tr><th>Mint</th><th>Entry SOL</th><th>Tokens</th><th>Tx sig</th></tr>${
-      le.open_detail.map((o: any) => `<tr><td style="font-family:monospace">${o.mint}</td><td>${n(o.entry_price_sol, 9)}</td><td>${o.live_tokens != null ? n(o.live_tokens, 0) : '—'}</td><td style="font-family:monospace">${o.tx_sig_entry ?? '—'}</td></tr>`).join('')
+    ${(le.open_detail ?? []).length ? `<table><tr><th>Mint</th><th>Bought</th><th>Age</th><th>Entry SOL</th><th>Tokens</th><th>Tx sig</th></tr>${
+      le.open_detail.map((o: any) => `<tr><td style="font-family:monospace">${o.mint}</td><td style="white-space:nowrap">${fmtClock(o.entry_ts)}</td><td style="white-space:nowrap">${fmtAge(o.entry_ts)}</td><td>${n(o.entry_price_sol, 9)}</td><td>${o.live_tokens != null ? n(o.live_tokens, 0) : '—'}</td><td style="font-family:monospace">${o.tx_sig_entry ?? '—'}</td></tr>`).join('')
     }</table>` : ''}
   </div>`;
 
