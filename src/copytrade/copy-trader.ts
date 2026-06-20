@@ -310,6 +310,13 @@ const COPY_SELL_RETRY_MIN_GAP_MS = parseInt(process.env.COPY_SELL_RETRY_MIN_GAP_
 // 25s coarser — acceptable for shadow research. Lower COPY_POLL_MS if the budget
 // has room; raise toward 30s if Helius runs hot.
 const POLL_INTERVAL_MS = parseInt(process.env.COPY_POLL_MS || '25000', 10);
+// Global hard ceiling on how long ANY copy position is tracked before it's
+// force-closed at the last known price — regardless of the strategy's own
+// maxHoldSec (which is often null = hold indefinitely). Matches the live-trading
+// max hold so shadow and live wind positions down on the same clock. Without it,
+// follow positions whose lead never sold sat open for days (max observed ~7.5d),
+// inflating the open book and the per-cycle poll RPC. 8h default.
+const GLOBAL_MAX_HOLD_SEC = parseInt(process.env.COPY_MAX_HOLD_SEC || '28800', 10);
 const CONSENSUS_WINDOW_MS = 10 * 60 * 1000;
 
 interface OpenPos {
@@ -971,9 +978,17 @@ export class CopyTrader {
           // Strategy removed from the roster (killed) — wind the open bag down at the
           // current price instead of stranding it 'open' forever. One-time cleanup.
           if (!s) { this.exitPosition(p, 'strategy_removed', price ?? p.lastWrittenPrice ?? p.highPrice ?? p.entryPrice); continue; }
-          // max-hold doesn't need a price
-          if (p.maxHoldSec != null && now - p.entryTs >= p.maxHoldSec) {
-            this.exitPosition(p, 'timeout', price ?? p.highPrice ?? p.entryPrice);
+          // max-hold doesn't need a price. The per-strategy maxHoldSec (when set)
+          // still applies; on top of it we enforce a GLOBAL ceiling (default 8h) so
+          // positions whose strategy holds indefinitely (maxHoldSec=null) or longer
+          // than the cap stop being tracked, matching the live-trading max hold.
+          const effectiveMaxHoldSec = p.maxHoldSec != null
+            ? Math.min(p.maxHoldSec, GLOBAL_MAX_HOLD_SEC)
+            : GLOBAL_MAX_HOLD_SEC;
+          if (now - p.entryTs >= effectiveMaxHoldSec) {
+            const reason = (p.maxHoldSec != null && p.maxHoldSec <= GLOBAL_MAX_HOLD_SEC)
+              ? 'timeout' : 'max_hold_cap';
+            this.exitPosition(p, reason, price ?? p.highPrice ?? p.entryPrice);
             continue;
           }
           if (price == null || price <= 0) continue;
