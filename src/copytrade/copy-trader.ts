@@ -315,8 +315,8 @@ const COPY_LIVE_FAIL_COOLDOWN_SEC = parseInt(process.env.COPY_LIVE_FAIL_COOLDOWN
 // the gap that converted a modeled +106% TP winner into a realized -95% stop-loss
 // on a token that round-tripped in ~2min (mint 9fMPboAS, 2026-06-20). Also gates
 // the 25s poll from firing a redundant attempt while the self-loop owns the exit.
-// Default 1s; tune via COPY_LIVE_SELL_RETRY_MS.
-const LIVE_SELL_RETRY_DELAY_MS = parseInt(process.env.COPY_LIVE_SELL_RETRY_MS || '1000', 10);
+// Default 1s; tune via LIVE_SELL_RETRY_DELAY_MS.
+const LIVE_SELL_RETRY_DELAY_MS = parseInt(process.env.LIVE_SELL_RETRY_DELAY_MS || '1000', 10);
 // Poll interval raised 15s -> 25s (2026-06-17): position polling (1 batched vault
 // fetch per UNIQUE open vault per cycle) is the dominant sustained RPC consumer.
 // At 15s the book ran ~4.5 calls/s ≈ 11.7M credits/mo — over the 10M plan. 25s
