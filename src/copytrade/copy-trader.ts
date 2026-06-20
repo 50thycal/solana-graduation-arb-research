@@ -334,6 +334,32 @@ const POLL_INTERVAL_MS = parseInt(process.env.COPY_POLL_MS || '25000', 10);
 const GLOBAL_MAX_HOLD_SEC = parseInt(process.env.COPY_MAX_HOLD_SEC || '28800', 10);
 const CONSENSUS_WINDOW_MS = 10 * 60 * 1000;
 
+// ── Hot-poll (fast exit detection for the live copy strategy + its shadow twin) ──
+// The 25s base poll is too coarse for the dangerous tail: copy-hotlead-deep TP
+// exits move at p90≈1.3%/s (≈32% per 25s poll) and up to 5.5%/s, so a token can
+// spike toward — and reverse off — its TP entirely inside one poll gap (the
+// 9fMPboAS round-trip, +106%→-95% in ~2.5min). A second timer re-checks ONLY
+// positions that are BOTH near a trigger AND moving fast, on a tight cadence, so
+// the exit is detected near its peak instead of up to 25s late. Velocity-gated +
+// banded so the slow majority (median ~0.12%/s) keeps riding the cheap 25s poll —
+// that's what bounds the extra RPC. Scoped to the live strategy + its identical
+// shadow twin (live + shadow on the same mint share a vault → one fetch serves
+// both, keeping the live-vs-shadow comparison apples-to-apples). Calibrated
+// 2026-06-20 from copy-hotlead-deep exit-velocity distributions; all env-tunable.
+const HOT_POLL_MS = parseInt(process.env.COPY_HOT_POLL_MS || '2000', 10);
+// Fast-poll when the last-known price is within this % of the TP or effective stop
+// (≈ one 25s-poll of a p90 mover, so the position is already armed before the cross).
+const HOT_POLL_BAND_PCT = parseFloat(process.env.COPY_HOT_POLL_BAND_PCT || '30');
+// …and only when recent |Δprice%|/sec exceeds this (above ~p70 of the velocity
+// distribution; excludes the slow median so it isn't fast-polled needlessly).
+const HOT_POLL_MIN_VEL_PCT_PER_S = parseFloat(process.env.COPY_HOT_POLL_MIN_VEL || '0.3');
+// Strategies eligible for hot-polling — the live copy strategy + its shadow twin
+// only (not the whole copy/live roster). Comma-separated override.
+const HOT_POLL_STRATEGY_IDS = new Set(
+  (process.env.COPY_HOT_POLL_STRATEGIES || 'copy-hotlead-deep-live-micro,copy-hotlead-deep')
+    .split(',').map((s) => s.trim()).filter(Boolean),
+);
+
 interface OpenPos {
   id: number;
   strategyId: string;
@@ -361,6 +387,11 @@ interface OpenPos {
   sellFailureCount?: number;
   nextSellRetryTs?: number;
   parked?: boolean;
+  // Hot-poll velocity tracking (in-memory): last observed price + wall-clock ms,
+  // and the derived recent |Δprice%|/sec used by the hot-poll gate.
+  lastObsPrice?: number;
+  lastObsTs?: number;
+  recentVelPctPerSec?: number;
 }
 
 interface PoolVaults { pool: string; baseVault: string; quoteVault: string; }
@@ -429,8 +460,10 @@ export class CopyTrader {
   // token from being re-triggered and single-shot-failing repeatedly. In-memory.
   private liveFailCooldownUntil = new Map<string, number>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private hotPollTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private polling = false;
+  private hotPolling = false;
   private enabled = false;
 
   constructor(opts: { db: Database.Database; getConnection: () => Connection | null }) {
@@ -452,12 +485,19 @@ export class CopyTrader {
       this.poll().catch((err) => logger.warn('poll error: %s', err instanceof Error ? err.message : String(err)));
       this.flushSkipCounts();
     }, POLL_INTERVAL_MS);
+    // Fast exit-detection timer for the scoped strategies' near-trigger, fast-moving
+    // positions (see HOT_POLL_* constants). Cheap when nothing qualifies — the gate
+    // short-circuits before any RPC.
+    this.hotPollTimer = setInterval(() => {
+      this.hotPoll().catch((err) => logger.warn('hot-poll error: %s', err instanceof Error ? err.message : String(err)));
+    }, HOT_POLL_MS);
     logger.info(`CopyTrader started (shadow): ${COPY_STRATEGIES.length} strategies, size=${COPY_SIZE_SOL} SOL, resumed ${this.positions.size} open positions`);
   }
 
   stop(): void {
     this.stopped = true;
     if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+    if (this.hotPollTimer) { clearInterval(this.hotPollTimer); this.hotPollTimer = null; }
   }
 
   isEnabled(): boolean { return this.enabled; }
@@ -1031,69 +1071,138 @@ export class CopyTrader {
           const r = await fetchVaultPrice(conn, ps[0].baseVault, ps[0].quoteVault);
           price = r?.priceSol ?? null;
         }
-        for (const p of ps) {
-          const s = STRAT_BY_ID.get(p.strategyId);
-          // Strategy removed from the roster (killed) — wind the open bag down at the
-          // current price instead of stranding it 'open' forever. One-time cleanup.
-          if (!s) { this.exitPosition(p, 'strategy_removed', price ?? p.lastWrittenPrice ?? p.highPrice ?? p.entryPrice); continue; }
-          // max-hold doesn't need a price. The per-strategy maxHoldSec (when set)
-          // still applies; on top of it we enforce a GLOBAL ceiling (default 8h) so
-          // positions whose strategy holds indefinitely (maxHoldSec=null) or longer
-          // than the cap stop being tracked, matching the live-trading max hold.
-          const effectiveMaxHoldSec = p.maxHoldSec != null
-            ? Math.min(p.maxHoldSec, GLOBAL_MAX_HOLD_SEC)
-            : GLOBAL_MAX_HOLD_SEC;
-          if (now - p.entryTs >= effectiveMaxHoldSec) {
-            const reason = (p.maxHoldSec != null && p.maxHoldSec <= GLOBAL_MAX_HOLD_SEC)
-              ? 'timeout' : 'max_hold_cap';
-            this.exitPosition(p, reason, price ?? p.highPrice ?? p.entryPrice);
-            continue;
-          }
-          if (price == null || price <= 0) continue;
-          // update HWM (persist on new high)
-          if (price > p.highPrice) {
-            p.highPrice = price;
-            try { this.db.prepare(`UPDATE copy_trades SET high_price_sol = ? WHERE id = ?`).run(price, p.id); } catch { /* noop */ }
-          }
-          // persist last seen price so copy-trades.json can mark open positions
-          // to market. Skip the write when unchanged beyond 0.1% to keep poll cheap.
-          if (p.lastWrittenPrice == null || Math.abs(price / p.lastWrittenPrice - 1) > 0.001) {
-            p.lastWrittenPrice = price;
-            try {
-              this.db.prepare(`UPDATE copy_trades SET last_price_sol = ?, last_price_ts = ? WHERE id = ?`).run(price, now, p.id);
-            } catch { /* noop */ }
-          }
-          // scale-out (partial realize, runner continues) — partial fill takes the
-          // same exit penalty as a full close.
-          if (s.scaleOut && !p.scaledOut && price >= p.entryPrice * (1 + s.scaleOut.atPct / 100)) {
-            const portion = p.sizeSol * s.scaleOut.fraction;
-            const fill = s.exitPenaltyPct ? price * (1 - s.exitPenaltyPct / 100) : price;
-            const partialNet = +tradeNetSol(p.entryPrice, fill, portion, SIM_DEFAULT_COST_PCT).toFixed(5);
-            p.realizedPartial += partialNet;
-            p.scaledOut = true;
-            try {
-              this.db.prepare(`UPDATE copy_trades SET scaled_out = 1, realized_partial_sol = ? WHERE id = ?`)
-                .run(p.realizedPartial, p.id);
-            } catch { /* noop */ }
-            logger.info('Copy scale-out %s %s +%d%% partial=%s SOL', p.strategyId, p.mint.slice(0, 6), s.scaleOut.atPct, partialNet);
-          }
-          // trailing take-profit (runner): once armed at +atPct, exit the remainder on a
-          // dropPct% fall from the HWM. Checked before the stop so the runner-trail reason wins
-          // when both would trigger on the same tick.
-          const ttpExit = trailingTpExitPrice(p.entryPrice, p.highPrice, s);
-          if (ttpExit != null && price <= ttpExit) { this.exitPosition(p, 'trailing_tp', price); continue; }
-          // exits on the remainder
-          const stop = effectiveStopPrice(p.entryPrice, p.highPrice, s);
-          if (p.tpPrice != null && price >= p.tpPrice) { this.exitPosition(p, 'take_profit', price); continue; }
-          if (stop != null && price <= stop) {
-            const raised = p.baseSlPrice == null || stop > p.baseSlPrice;
-            this.exitPosition(p, raised ? 'trail_stop' : 'stop_loss', price);
-            continue;
-          }
-        }
+        for (const p of ps) this.evaluatePosition(p, price, now);
       }
     } finally {
       this.polling = false;
+    }
+  }
+
+  /** Evaluate ONE position against an observed pool price (null when the fetch was
+   *  skipped/failed): update HWM + last price + recent velocity, then run the exit
+   *  ladder. Shared by the 25s poll and the fast hot-poll. Synchronous — the only
+   *  async hop is the fire-and-forget exitPosition; the leading membership check +
+   *  the per-exit guards make a double-evaluate (poll racing hot-poll) a no-op.
+   *  `now` is unix seconds. */
+  private evaluatePosition(p: OpenPos, price: number | null, now: number): void {
+    if (!this.positions.has(p.id)) return; // closed since the snapshot was taken
+    const s = STRAT_BY_ID.get(p.strategyId);
+    // Strategy removed from the roster (killed) — wind the open bag down at the
+    // current price instead of stranding it 'open' forever. One-time cleanup.
+    if (!s) { this.exitPosition(p, 'strategy_removed', price ?? p.lastWrittenPrice ?? p.highPrice ?? p.entryPrice); return; }
+    // max-hold doesn't need a price. The per-strategy maxHoldSec (when set) still
+    // applies; on top of it we enforce a GLOBAL ceiling (default 8h) so positions
+    // whose strategy holds indefinitely (maxHoldSec=null) or longer than the cap
+    // stop being tracked, matching the live-trading max hold.
+    const effectiveMaxHoldSec = p.maxHoldSec != null
+      ? Math.min(p.maxHoldSec, GLOBAL_MAX_HOLD_SEC)
+      : GLOBAL_MAX_HOLD_SEC;
+    if (now - p.entryTs >= effectiveMaxHoldSec) {
+      const reason = (p.maxHoldSec != null && p.maxHoldSec <= GLOBAL_MAX_HOLD_SEC)
+        ? 'timeout' : 'max_hold_cap';
+      this.exitPosition(p, reason, price ?? p.highPrice ?? p.entryPrice);
+      return;
+    }
+    if (price == null || price <= 0) return;
+    // recent velocity (|Δprice%| per second) — drives the hot-poll gate. Computed
+    // from the gap since the last observation (25s on the base poll, ~HOT_POLL_MS
+    // once fast-polling), so it tracks the move's current speed, not the lifetime avg.
+    // Seed the baseline from the entry fill on the first observation so the first
+    // poll already yields a velocity (don't wait two polls to arm the gate).
+    const nowMs = Date.now();
+    const prevPrice = p.lastObsPrice ?? p.entryPrice;
+    const prevTsMs = p.lastObsTs ?? p.entryTs * 1000;
+    if (prevPrice > 0 && nowMs > prevTsMs) {
+      p.recentVelPctPerSec = Math.abs(price / prevPrice - 1) * 100 / ((nowMs - prevTsMs) / 1000);
+    }
+    p.lastObsPrice = price; p.lastObsTs = nowMs;
+    // update HWM (persist on new high)
+    if (price > p.highPrice) {
+      p.highPrice = price;
+      try { this.db.prepare(`UPDATE copy_trades SET high_price_sol = ? WHERE id = ?`).run(price, p.id); } catch { /* noop */ }
+    }
+    // persist last seen price so copy-trades.json can mark open positions to
+    // market. Skip the write when unchanged beyond 0.1% to keep the poll cheap.
+    if (p.lastWrittenPrice == null || Math.abs(price / p.lastWrittenPrice - 1) > 0.001) {
+      p.lastWrittenPrice = price;
+      try {
+        this.db.prepare(`UPDATE copy_trades SET last_price_sol = ?, last_price_ts = ? WHERE id = ?`).run(price, now, p.id);
+      } catch { /* noop */ }
+    }
+    // scale-out (partial realize, runner continues) — partial fill takes the same
+    // exit penalty as a full close.
+    if (s.scaleOut && !p.scaledOut && price >= p.entryPrice * (1 + s.scaleOut.atPct / 100)) {
+      const portion = p.sizeSol * s.scaleOut.fraction;
+      const fill = s.exitPenaltyPct ? price * (1 - s.exitPenaltyPct / 100) : price;
+      const partialNet = +tradeNetSol(p.entryPrice, fill, portion, SIM_DEFAULT_COST_PCT).toFixed(5);
+      p.realizedPartial += partialNet;
+      p.scaledOut = true;
+      try {
+        this.db.prepare(`UPDATE copy_trades SET scaled_out = 1, realized_partial_sol = ? WHERE id = ?`)
+          .run(p.realizedPartial, p.id);
+      } catch { /* noop */ }
+      logger.info('Copy scale-out %s %s +%d%% partial=%s SOL', p.strategyId, p.mint.slice(0, 6), s.scaleOut.atPct, partialNet);
+    }
+    // trailing take-profit (runner): once armed at +atPct, exit the remainder on a
+    // dropPct% fall from the HWM. Checked before the stop so the runner-trail reason
+    // wins when both would trigger on the same tick.
+    const ttpExit = trailingTpExitPrice(p.entryPrice, p.highPrice, s);
+    if (ttpExit != null && price <= ttpExit) { this.exitPosition(p, 'trailing_tp', price); return; }
+    // exits on the remainder
+    const stop = effectiveStopPrice(p.entryPrice, p.highPrice, s);
+    if (p.tpPrice != null && price >= p.tpPrice) { this.exitPosition(p, 'take_profit', price); return; }
+    if (stop != null && price <= stop) {
+      const raised = p.baseSlPrice == null || stop > p.baseSlPrice;
+      this.exitPosition(p, raised ? 'trail_stop' : 'stop_loss', price);
+      return;
+    }
+  }
+
+  /** A position qualifies for fast (hot) polling when it belongs to a scoped
+   *  strategy, its last-known price is within HOT_POLL_BAND_PCT of its TP or
+   *  effective stop, AND it's moving faster than HOT_POLL_MIN_VEL_PCT_PER_S. The
+   *  slow majority fails the velocity gate and rides the cheap 25s poll; only the
+   *  fast tail near a trigger is fast-polled, which is what bounds the extra RPC. */
+  private isHotCandidate(p: OpenPos): boolean {
+    if (!HOT_POLL_STRATEGY_IDS.has(p.strategyId)) return false;
+    if ((p.recentVelPctPerSec ?? 0) < HOT_POLL_MIN_VEL_PCT_PER_S) return false;
+    const px = p.lastWrittenPrice ?? p.highPrice ?? p.entryPrice;
+    if (px <= 0) return false;
+    const nearTp = p.tpPrice != null && px >= p.tpPrice * (1 - HOT_POLL_BAND_PCT / 100);
+    const s = STRAT_BY_ID.get(p.strategyId);
+    const stop = s ? effectiveStopPrice(p.entryPrice, p.highPrice, s) : p.baseSlPrice;
+    const nearStop = stop != null && px <= stop * (1 + HOT_POLL_BAND_PCT / 100);
+    return nearTp || nearStop;
+  }
+
+  /** Fast exit-detection pass: re-price ONLY the hot candidates (scoped strategy,
+   *  near a trigger, moving fast) and run the exit ladder on the fresh price, so a
+   *  spike that would reverse inside a 25s gap is caught near its peak. Live + its
+   *  shadow twin on the same mint share a vault → one fetch serves both. */
+  private async hotPoll(): Promise<void> {
+    if (this.hotPolling || this.stopped || this.positions.size === 0) return;
+    this.hotPolling = true;
+    try {
+      const hot = [...this.positions.values()].filter(
+        (p) => !this.closingLive.has(p.id) && this.isHotCandidate(p),
+      );
+      if (hot.length === 0) return;
+      const now = Math.floor(Date.now() / 1000);
+      const byVault = new Map<string, OpenPos[]>();
+      for (const p of hot) {
+        if (!byVault.has(p.baseVault)) byVault.set(p.baseVault, []);
+        byVault.get(p.baseVault)!.push(p);
+      }
+      for (const ps of byVault.values()) {
+        const conn = this.getConnection();
+        if (!conn || !(await globalRpcLimiter.throttleOrDropPriority(12))) continue;
+        const r = await fetchVaultPrice(conn, ps[0].baseVault, ps[0].quoteVault);
+        const price = r?.priceSol ?? null;
+        if (price == null) continue;
+        for (const p of ps) this.evaluatePosition(p, price, now);
+      }
+    } finally {
+      this.hotPolling = false;
     }
   }
 
