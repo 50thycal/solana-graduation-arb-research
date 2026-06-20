@@ -192,6 +192,14 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
   { id: 'copy-hotlead-deep',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 20, minTrades: 5, minNetSol: 0 } },
+  // ── LIVE-MICRO 2026-06-20 (operator go-live): real-money twin of copy-hotlead-deep
+  //    (PROMOTABLE: n=107, net +9.8, drop3 +4.0, exit-stress +8.5, ~58 SOL/mo run rate).
+  //    IDENTICAL entry/exit to the shadow above + executionMode:'live_micro' → submits
+  //    REAL MICRO_TRADE_SIZE_SOL (0.05) swaps, but ONLY when COPY_LIVE_ENABLED=true and a
+  //    funded wallet are present; otherwise it self-shadows. Paired with the shadow twin
+  //    in LIVE_SHADOW_PAIRS below so /live-training shows the real-vs-modeled exec gap.
+  { id: 'copy-hotlead-deep-live-micro', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 20, minTrades: 5, minNetSol: 0 }, executionMode: 'live_micro' },
   // ── J (2026-06-16): consensus2 is the one PROMOTABLE strategy; token-level
   //    consensus (>=N smart wallets on the same mint) is the durable edge — it beats
   //    regime/macro/lead-recency timing. hotlead regressed as n grew (recency is
@@ -1552,7 +1560,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
   // execution — real fills/slippage/fees/timing vs the modeled shadow. Mirrors the
   // /live-training panel, copy-side. Empty until real live trades exist.
   const LIVE_SHADOW_PAIRS = [
-    { live: 'copy-consensus2-lag-drift5-live-micro', shadow: 'copy-consensus2-lag-drift5' },
+    { live: 'copy-hotlead-deep-live-micro', shadow: 'copy-hotlead-deep' },
   ];
   // Compare on RETURN % (net / size), not absolute SOL — live trades at 0.05 and
   // the shadow twin at 0.5, so only size-normalized returns are apples-to-apples.
