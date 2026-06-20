@@ -171,15 +171,15 @@ async function fetchVaultPriceRpc(
   critical: boolean,
 ): Promise<PoolPriceResult | null> {
   if (critical) {
-    await globalRpcLimiter.throttle();
-  } else if (!await globalRpcLimiter.throttleOrDrop(5)) {
+    await globalRpcLimiter.throttle('exec');
+  } else if (!await globalRpcLimiter.throttleOrDrop(5, 'exec')) {
     return null;
   }
   const first = await fetchVaultPriceRpcOnce(connection, baseVault, quoteVault);
   if (first !== null || !critical) return first;
   for (let attempt = 1; attempt <= CRITICAL_READ_RETRIES; attempt++) {
     await new Promise(resolve => setTimeout(resolve, CRITICAL_READ_RETRY_DELAY_MS));
-    await globalRpcLimiter.throttle();
+    await globalRpcLimiter.throttle('exec');
     const retry = await fetchVaultPriceRpcOnce(connection, baseVault, quoteVault);
     if (retry !== null) return retry;
   }

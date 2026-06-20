@@ -68,7 +68,7 @@ export class SwapLogger {
     }
 
     try {
-      if (!await globalRpcLimiter.throttleOrDrop(30)) {
+      if (!await globalRpcLimiter.throttleOrDrop(30, 'swap_logger')) {
         logger.info({ graduationId: ctx.graduationId }, 'Skipping swap backfill: RPC queue full');
         return;
       }
@@ -96,7 +96,7 @@ export class SwapLogger {
 
       for (const sigInfo of toParse) {
         try {
-          if (!await globalRpcLimiter.throttleOrDrop(20)) continue;
+          if (!await globalRpcLimiter.throttleOrDrop(20, 'swap_logger')) continue;
 
           const tx = await this.connection.getParsedTransaction(sigInfo.signature, {
             commitment: 'confirmed',

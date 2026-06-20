@@ -53,7 +53,7 @@ export class CompetitionDetector {
 
     try {
       // Get recent transactions for the pool — drop if queue already backed up
-      if (!await globalRpcLimiter.throttleOrDrop(10)) {
+      if (!await globalRpcLimiter.throttleOrDrop(10, 'competition')) {
         logger.info({ graduationId: ctx.graduationId }, 'Skipping competition detection: RPC queue full');
         return;
       }
@@ -104,7 +104,7 @@ export class CompetitionDetector {
         txFetched++;
 
         try {
-          if (!await globalRpcLimiter.throttleOrDrop(10)) continue;
+          if (!await globalRpcLimiter.throttleOrDrop(10, 'competition')) continue;
           const tx = await this.connection.getParsedTransaction(sigInfo.signature, {
             commitment: 'confirmed',
             maxSupportedTransactionVersion: 0,
@@ -206,7 +206,7 @@ export class CompetitionDetector {
 
     try {
       // Phase A: Fetch signatures and parse new transactions
-      if (!await globalRpcLimiter.throttleOrDrop(20)) {
+      if (!await globalRpcLimiter.throttleOrDrop(20, 'competition')) {
         logger.info({ graduationId: ctx.graduationId }, 'Skipping buy pressure detection: RPC queue full');
         return;
       }
@@ -269,7 +269,7 @@ export class CompetitionDetector {
 
       for (const sigInfo of toParse) {
         try {
-          if (!await globalRpcLimiter.throttleOrDrop(20)) continue;
+          if (!await globalRpcLimiter.throttleOrDrop(20, 'competition')) continue;
 
           const tx = await this.connection.getParsedTransaction(sigInfo.signature, {
             commitment: 'confirmed',

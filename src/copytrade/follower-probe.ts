@@ -212,7 +212,7 @@ export class CopyFollowerProbe {
     let tx = null as Awaited<ReturnType<typeof connection.getParsedTransaction>>;
     for (let attempt = 0; attempt < 4 && tx == null; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
-      if (!(await globalRpcLimiter.throttleOrDropPriority(20))) continue;
+      if (!(await globalRpcLimiter.throttleOrDropPriority(20, 'follower_probe'))) continue;
       try {
         tx = await connection.getParsedTransaction(signature, { commitment: 'confirmed', maxSupportedTransactionVersion: 0 });
       } catch { /* retry */ }

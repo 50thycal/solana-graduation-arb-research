@@ -32,14 +32,20 @@ export class RpcLimiter {
 
   // --- throughput instrumentation (added 2026-06-20) ---
   // Every GRANTED token is counted once, whether served immediately (fast path)
-  // or after queueing. Dropped requests are NOT counted here — they make no RPC
-  // call and live in totalDropped. This is the demand meter the limiter
-  // previously lacked: getStats() could show saturation (tokens=0, queued>0) but
-  // never the actual calls/sec throughput, so steady-state demand was unmeasured.
+  // or after queueing. Dropped requests are NOT counted in totalServed — they make
+  // no RPC call and live in totalDropped / droppedByLabel. This is the demand meter
+  // the limiter previously lacked: getStats() could show saturation (tokens=0,
+  // queued>0) but never the actual calls/sec throughput by caller.
   private totalServed = 0;
   private servedByTier: Record<ServedTier, number> = {
     wait: 0, priority: 0, droppable: 0, copyHot: 0,
   };
+  // Per-call-site breakdown (added 2026-06-20): served + dropped keyed by the
+  // `label` each caller passes. The coarse tiers tell you droppable vs copyHot;
+  // these tell you WHICH droppable caller (wallet_pnl vs swap_logger vs enrichment)
+  // is actually eating the budget — so we cut the right thing, not blindly.
+  private servedByLabel: Record<string, number> = {};
+  private droppedByLabel: Record<string, number> = {};
   private readonly startSec = Math.floor(Date.now() / 1000);
   private rateBuckets = new Array<number>(RATE_WINDOW_SEC).fill(0);
   private rateHeadSec = Math.floor(Date.now() / 1000);
@@ -78,12 +84,20 @@ export class RpcLimiter {
     this.rateHeadSec = nowSec;
   }
 
-  /** Record one granted token against its tier + the rolling throughput meter. */
-  private recordServed(tier: ServedTier): void {
+  /** Record one granted token against its tier, its caller label, and the rolling
+   *  throughput meter. */
+  private recordServed(tier: ServedTier, label: string): void {
     this.totalServed++;
     this.servedByTier[tier]++;
+    this.servedByLabel[label] = (this.servedByLabel[label] ?? 0) + 1;
     this.advanceRate(Math.floor(Date.now() / 1000));
     this.rateBuckets[this.rateHeadIdx]++;
+  }
+
+  /** Record one dropped (skipped, no RPC call) request against its caller label. */
+  private recordDropped(label: string): void {
+    this.totalDropped++;
+    this.droppedByLabel[label] = (this.droppedByLabel[label] ?? 0) + 1;
   }
 
   /** Mean calls/sec over the last `seconds`. While the buffer is still filling
@@ -103,11 +117,11 @@ export class RpcLimiter {
   }
 
   /** Call before every critical RPC request. Always waits for a token. */
-  async throttle(): Promise<void> {
+  async throttle(label = 'other'): Promise<void> {
     this.refill();
     if (this.tokens >= 1) {
       this.tokens--;
-      this.recordServed('wait');
+      this.recordServed('wait', label);
       return;
     }
 
@@ -120,7 +134,7 @@ export class RpcLimiter {
     }
 
     return new Promise<void>((resolve) => {
-      this.queue.push(() => { this.recordServed('wait'); resolve(); });
+      this.queue.push(() => { this.recordServed('wait', label); resolve(); });
       if (!this.processingQueue) {
         this.processQueue();
       }
@@ -131,17 +145,17 @@ export class RpcLimiter {
    * High-priority version of throttle — jumps to the front of the queue.
    * Use for graduation detection and pool matching where latency matters.
    */
-  async throttlePriority(): Promise<void> {
+  async throttlePriority(label = 'other'): Promise<void> {
     this.refill();
     if (this.tokens >= 1) {
       this.tokens--;
-      this.recordServed('priority');
+      this.recordServed('priority', label);
       return;
     }
 
     this.totalThrottled++;
     return new Promise<void>((resolve) => {
-      this.queue.unshift(() => { this.recordServed('priority'); resolve(); }); // front of queue
+      this.queue.unshift(() => { this.recordServed('priority', label); resolve(); }); // front of queue
       if (!this.processingQueue) {
         this.processQueue();
       }
@@ -153,16 +167,16 @@ export class RpcLimiter {
    * Returns false immediately if the queue already has more than maxQueue entries,
    * signalling the caller to skip the request rather than pile onto the backlog.
    */
-  async throttleOrDrop(maxQueue = 10): Promise<boolean> {
+  async throttleOrDrop(maxQueue = 10, label = 'other'): Promise<boolean> {
     this.refill();
     if (this.tokens >= 1) {
       this.tokens--;
-      this.recordServed('droppable');
+      this.recordServed('droppable', label);
       return true;
     }
 
     if (this.queue.length >= maxQueue) {
-      this.totalDropped++;
+      this.recordDropped(label);
       if (this.totalDropped % 20 === 1) {
         logger.warn(
           { queued: this.queue.length, totalDropped: this.totalDropped },
@@ -174,7 +188,7 @@ export class RpcLimiter {
 
     this.totalThrottled++;
     return new Promise<boolean>((resolve) => {
-      this.queue.push(() => { this.recordServed('droppable'); resolve(true); });
+      this.queue.push(() => { this.recordServed('droppable', label); resolve(true); });
       if (!this.processingQueue) {
         this.processQueue();
       }
@@ -188,22 +202,22 @@ export class RpcLimiter {
    * bucket is contended, copy-trade calls win and the research/enrichment
    * callers using plain throttleOrDrop are the ones that drop.
    */
-  async throttleOrDropPriority(maxQueue = 20): Promise<boolean> {
+  async throttleOrDropPriority(maxQueue = 20, label = 'other'): Promise<boolean> {
     this.refill();
     if (this.tokens >= 1) {
       this.tokens--;
-      this.recordServed('copyHot');
+      this.recordServed('copyHot', label);
       return true;
     }
 
     if (this.queue.length >= maxQueue) {
-      this.totalDropped++;
+      this.recordDropped(label);
       return false;
     }
 
     this.totalThrottled++;
     return new Promise<boolean>((resolve) => {
-      this.queue.unshift(() => { this.recordServed('copyHot'); resolve(true); });
+      this.queue.unshift(() => { this.recordServed('copyHot', label); resolve(true); });
       if (!this.processingQueue) {
         this.processQueue();
       }
@@ -230,6 +244,12 @@ export class RpcLimiter {
     setTimeout(check, Math.max(Math.ceil(msUntilToken), 10));
   }
 
+  /** Sort a label→count map descending so the snapshot leads with the heaviest
+   *  callers. Returned as a plain object (insertion order preserved in JSON). */
+  private sortedLabels(m: Record<string, number>): Record<string, number> {
+    return Object.fromEntries(Object.entries(m).sort((a, b) => b[1] - a[1]));
+  }
+
   getStats() {
     // 5m rate is the most stable; reuse it for the daily projection so the two
     // figures can't disagree. projCallsPerDay is CALLS, not Helius credits —
@@ -244,6 +264,8 @@ export class RpcLimiter {
       totalDropped: this.totalDropped,
       totalServed: this.totalServed,
       servedByTier: { ...this.servedByTier },
+      servedByLabel: this.sortedLabels(this.servedByLabel),
+      droppedByLabel: this.sortedLabels(this.droppedByLabel),
       callsPerSec1m: this.rateOver(60),
       callsPerSec5m,
       projCallsPerDay: Math.round(callsPerSec5m * 86400),
