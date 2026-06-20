@@ -202,7 +202,7 @@ export async function fetchWalletSwaps(
   const sigInfos: Array<{ signature: string; blockTime?: number | null }> = [];
   let before: string | undefined;
   while (sigInfos.length < maxSignatures) {
-    if (!(await globalRpcLimiter.throttleOrDrop(30))) break;
+    if (!(await globalRpcLimiter.throttleOrDrop(30, 'wallet_pnl'))) break;
     let page;
     try {
       page = await connection.getSignaturesForAddress(owner, { limit: 1000, before });
@@ -221,7 +221,7 @@ export async function fetchWalletSwaps(
   let parsed = 0;
   for (const info of sigInfos) {
     if (parsed >= maxParse) break;
-    if (!(await globalRpcLimiter.throttleOrDrop(20))) continue;
+    if (!(await globalRpcLimiter.throttleOrDrop(20, 'wallet_pnl'))) continue;
     let tx;
     try {
       tx = await connection.getParsedTransaction(info.signature, {

@@ -1199,7 +1199,7 @@ export class GraduationListener {
     let lastErr: string | null = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) await new Promise(r => setTimeout(r, 1000 * attempt));
-      await globalRpcLimiter.throttlePriority();
+      await globalRpcLimiter.throttlePriority('grad_listener');
       try {
         tx = await this.connection.getParsedTransaction(signature, {
           commitment: 'confirmed',
@@ -1768,13 +1768,13 @@ export class GraduationListener {
         await new Promise(r => setTimeout(r, 2000));
 
         // Fetch pool account to verify it exists and decode vault addresses
-        await globalRpcLimiter.throttlePriority();
+        await globalRpcLimiter.throttlePriority('grad_listener');
         let poolAccountInfo = await this.connection.getAccountInfo(derivedPoolKey);
 
         // Retry once after another 2s if not found — RPC indexing can lag
         if (!poolAccountInfo?.data) {
           await new Promise(r => setTimeout(r, 2000));
-          await globalRpcLimiter.throttlePriority();
+          await globalRpcLimiter.throttlePriority('grad_listener');
           poolAccountInfo = await this.connection.getAccountInfo(derivedPoolKey);
         }
 
@@ -2005,7 +2005,7 @@ export class GraduationListener {
 
   private async fetchBondingCurveState(address: string): Promise<BondingCurveState | null> {
     const pubkey = new PublicKey(address);
-    await globalRpcLimiter.throttlePriority();
+    await globalRpcLimiter.throttlePriority('grad_listener');
     const accountInfo: AccountInfo<Buffer> | null =
       await this.connection.getAccountInfo(pubkey);
 

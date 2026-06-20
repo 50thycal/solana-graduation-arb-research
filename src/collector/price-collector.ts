@@ -1017,9 +1017,9 @@ export class PriceCollector {
         // the drop-on-full path because the T+30 snapshot is on the critical
         // path for trade entry and we'd rather wait than miss the deadline.
         if (priorityMode) {
-          await globalRpcLimiter.throttlePriority();
+          await globalRpcLimiter.throttlePriority('price_path');
         } else {
-          if (!await globalRpcLimiter.throttleOrDrop(15)) {
+          if (!await globalRpcLimiter.throttleOrDrop(15, 'price_snapshot')) {
             this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_pool_decode');
             logger.warn({ graduationId: ctx.graduationId }, 'Pool account fetch dropped — RPC queue full');
             return null;
@@ -1097,9 +1097,9 @@ export class PriceCollector {
       // production: 559 throttles/47min meant T+30 vault fetches were
       // landing past the T+35 deadline).
       if (priorityMode) {
-        await globalRpcLimiter.throttlePriority();
+        await globalRpcLimiter.throttlePriority('price_path');
       } else {
-        if (!await globalRpcLimiter.throttleOrDrop(15)) {
+        if (!await globalRpcLimiter.throttleOrDrop(15, 'price_snapshot')) {
           this.recordSnapshotFailure(ctx.graduationId, -1, 'rpc_queue_full_vault_fetch');
           logger.warn({ graduationId: ctx.graduationId, targetVault: observation.baseVault?.slice(0, 8) }, 'Snapshot dropped — RPC queue full');
           return null;
@@ -1499,7 +1499,7 @@ export class PriceCollector {
       for (let page = 0; page < 3; page++) {
         // throttlePriority: jump to front of queue, never drop — BC age is required
         // for velocity filters and this fallback only fires when enrichment missed it.
-        await globalRpcLimiter.throttlePriority();
+        await globalRpcLimiter.throttlePriority('price_path');
         const sigs = await this.connection.getSignaturesForAddress(bcPubkey, { limit: 1000, before });
         if (sigs.length === 0) break;
         const last = sigs[sigs.length - 1];
@@ -1606,7 +1606,7 @@ export class PriceCollector {
           let totalSigsScanned = 0;
 
           for (let page = 0; page < 5; page++) {
-            if (!await globalRpcLimiter.throttleOrDrop(5)) {
+            if (!await globalRpcLimiter.throttleOrDrop(5, 'bc_age')) {
               logger.info({ graduationId: row.graduation_id }, 'Velocity recovery: RPC queue full, skipping page');
               break;
             }

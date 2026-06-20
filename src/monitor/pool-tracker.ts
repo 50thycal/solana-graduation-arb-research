@@ -649,7 +649,7 @@ export class PoolTracker {
   private async fetchParsedTransaction(signature: string, retries = 1) {
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        await globalRpcLimiter.throttlePriority();
+        await globalRpcLimiter.throttlePriority('pool_track');
         return await this.connection.getParsedTransaction(signature, {
           commitment: 'confirmed',
           maxSupportedTransactionVersion: 0,

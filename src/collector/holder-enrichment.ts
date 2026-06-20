@@ -188,7 +188,7 @@ export class HolderEnrichment {
     let hitPageLimit = false;
 
     for (; page <= MAX_DAS_PAGES; page++) {
-      if (!await globalRpcLimiter.throttleOrDrop(15)) {
+      if (!await globalRpcLimiter.throttleOrDrop(15, 'holder_enrich')) {
         logger.debug({ mint: mint.slice(0, 8), page }, 'DAS getTokenAccounts dropped — RPC queue full');
         return null;
       }
@@ -309,7 +309,7 @@ export class HolderEnrichment {
     // Provides: top5/dev concentration + a guaranteed fallback holder count.
     // holderCount from this path is capped at 19 — will be upgraded in step 2.
     try {
-      if (!await globalRpcLimiter.throttleOrDrop(10)) {
+      if (!await globalRpcLimiter.throttleOrDrop(10, 'holder_enrich')) {
         logger.debug({ mint: mint.slice(0, 8) }, 'getTokenLargestAccounts dropped — RPC queue full');
       } else {
         const largestAccounts = await this.connection.getTokenLargestAccounts(
@@ -425,7 +425,7 @@ export class HolderEnrichment {
     // RPC nodes to evaluate dataSize against the sliced (0) length and return 0 results.
     if (!upgraded) {
       try {
-        if (!await globalRpcLimiter.throttleOrDrop(15)) {
+        if (!await globalRpcLimiter.throttleOrDrop(15, 'holder_enrich')) {
           logger.debug({ mint: mint.slice(0, 8) }, 'getProgramAccounts holder count dropped — RPC queue full');
         } else {
           const mintPubkey = new PublicKey(mint);

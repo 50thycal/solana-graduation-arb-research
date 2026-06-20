@@ -158,7 +158,7 @@ export class Wallet {
     if (solBalanceCache && Date.now() - solBalanceCache.fetchedAt < BALANCE_CACHE_TTL_MS) {
       return solBalanceCache.lamports;
     }
-    await globalRpcLimiter.throttle();
+    await globalRpcLimiter.throttle('wallet');
     const lamports = await connection.getBalance(this.pubkey, 'confirmed');
     solBalanceCache = { lamports, fetchedAt: Date.now() };
     return lamports;
@@ -183,7 +183,7 @@ export class Wallet {
   async getTokenBalanceRaw(connection: Connection, mint: PublicKey): Promise<number> {
     const tokenProgram = await getMintTokenProgram(connection, mint);
     const ata = getAssociatedTokenAddress(mint, this.pubkey, tokenProgram);
-    await globalRpcLimiter.throttle();
+    await globalRpcLimiter.throttle('wallet');
     try {
       const info = await connection.getAccountInfo(ata, 'confirmed');
       if (!info || !info.data) return 0;
