@@ -121,7 +121,9 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   // ── G: drift-skip — same measured-lag twins, but skip the copy when the price has
   //    already run >X% above the detection snapshot during the wait (don't chase the
   //    pump we just watched happen). Skips are recorded, so the skip rate is visible.
-  { id: 'copy-consensus2-lag-drift5',  tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null, minConsensusRecent: 2, entryDelaySec: 5, maxEntryDriftPct: 5 },
+  // ── KILLED 2026-06-20 (INVALID): copy-consensus2-lag-drift5 — n=281, drop_top3 -0.81
+  //    (negative) and declining; fails the robustness gate. The fresh static twin
+  //    copy-c2rr-control covers the same realistic consensus2 entry going forward.
   // ── KILLED 2026-06-19 (operator request — pause live trading). Removed the ONLY
   //    live_micro copy strategy from the roster. Consequences on next redeploy:
   //      • Any open live_micro position reloaded from copy_trades has no matching
@@ -140,19 +142,17 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    SOL/day). Two thresholds bracket the question: -hi (>=7, only strong windows)
   //    and -mid (>=5, just avoid the below-average tape). The old net>0 gate (now
   //    copy-regime-green, removed) was too strict — it sat out everything (n=0).
-  { id: 'copy-regime-hi',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, regimeGateMinScore: 7 },
-  { id: 'copy-regime-mid',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, regimeGateMinScore: 5 },
+  // ── KILLED 2026-06-20 (INVALID): copy-regime-hi, copy-regime-mid — both net-negative
+  //    (-4.4 / -4.8) with drop3 and exit-stress negative at n≥100. The regime-score gate
+  //    sits out good tape without avoiding bad: window-timing is not a usable edge here.
   // H4 (2026-06-15) macro gate — only enter when the broad crypto market is a
   //    tailwind (BTC/SOL 7d trend + Fear & Greed, 1-10). copy-macro isolates the
   //    macro signal; copy-macro-regime requires BOTH macro AND copy-internal regime
   //    favorable (the "both green" the operator asked for). Macro data is free/cached
   //    (market_daily) so these add no RPC.
-  { id: 'copy-macro',        tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, macroGateMinScore: 6 },
-  { id: 'copy-macro-regime', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, macroGateMinScore: 6, regimeGateMinScore: 5 },
+  // ── KILLED 2026-06-20 (INVALID): copy-macro, copy-macro-regime — net-negative
+  //    (-2.4 / -2.2), all robustness metrics negative. Macro-market gating (BTC/SOL
+  //    trend + F&G) adds no edge; stacking it with regime ("both green") only sat out more.
   // H2 hot-lead gate — only copy leads whose last <=10 baseline copies made us
   //    money (>=3 trades of history). Benches cold hands; tests whether lead-level
   //    performance persists short-term.
@@ -161,8 +161,8 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   // H3 conviction-size gate — only copy lead buys >= 2 SOL. Small buys are
   //    spam/probing; size = conviction. lead_buy_sol is stored on every row, so
   //    the threshold is tunable from data after a week.
-  { id: 'copy-bigbuy',        tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, minLeadBuySol: 2 },
+  // ── KILLED 2026-06-20 (INVALID): copy-bigbuy — net -3.1, 16% WR, all robustness
+  //    negative. Lead buy size >=2 SOL is not a conviction signal that survives costs.
   // ── I (2026-06-15): copy-hotlead is the one signal clearing all three robustness
   //    checks (net+drop3+stress, 48% WR). The two working levers are LEAD selection
   //    (hotlead) and WINDOW selection (regime). Indiscriminate copying bleeds. So:
@@ -171,8 +171,9 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    the second factor compounds with lead quality.
   // I1 lead × window — stack the two independently-working filters: a hot lead in a
   //    non-bad window. If both edges are real and independent, this should be cleanest.
-  { id: 'copy-hotlead-regime',    tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, regimeGateMinScore: 5 },
+  // ── KILLED 2026-06-20 (INVALID): copy-hotlead-regime — net -1.7 vs plain copy-hotlead
+  //    +12.4 on the SAME lead signal: the regime overlay flips a winner negative.
+  //    Confirms window-timing destroys edge; keep lead selection, drop regime stacking.
   // I2 lead × token — hotlead picks good WHO; consensus picks good WHAT (>=2 smart
   //    wallets buying the same token). Two orthogonal quality signals stacked.
   { id: 'copy-hotlead-consensus', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
@@ -197,8 +198,9 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    noisy). So: double down on consensus, and replace recency with CUMULATIVE
   //    lead quality. All on the lag+drift10 realistic base.
   // J1 stronger consensus — >=3 smart wallets (vs 2). Higher conviction token signal.
-  { id: 'copy-consensus3',      tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 3 },
+  // ── KILLED 2026-06-20 (INVALID): copy-consensus3 — n=126, net +2.4 but drop_top3 -4.1
+  //    (top-3-trade lottery) and declining. >=3 smart-wallet consensus over-filters; the
+  //    >=2 base (copy-c2rr-control / copy-conviction-consensus2) is the durable version.
   // J2 cumulative lead quality — only copy leads with all-time baseline net > 0 over
   //    >=10 copies. The data: best leads by cumulative net aren't flagged "hot" by
   //    recency, so a stable-reputation gate should beat hotlead.
