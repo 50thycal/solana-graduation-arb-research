@@ -2,6 +2,19 @@ import { makeLogger } from './logger';
 
 const logger = makeLogger('rpc-limiter');
 
+/** Served-call tiers — one per acquire method, so the snapshot shows WHICH
+ *  caller class is driving demand, not just the aggregate:
+ *   - wait     → throttle()                (critical reads; never drop)
+ *   - priority → throttlePriority()        (graduation detection, pool match, T+30)
+ *   - droppable→ throttleOrDrop()          (research/enrichment; first to drop)
+ *   - copyHot  → throttleOrDropPriority()  (copy entries/exits/polls) */
+type ServedTier = 'wait' | 'priority' | 'droppable' | 'copyHot';
+
+/** Rolling throughput window. Second-resolution circular buffer so we can report
+ *  calls/sec over the last 1m / 5m without storing a timestamp per call (which
+ *  would balloon at high request rates). */
+const RATE_WINDOW_SEC = 300;
+
 /**
  * Token-bucket rate limiter for Helius RPC calls.
  * Prevents 429 errors by smoothing out burst request patterns across
@@ -16,6 +29,21 @@ export class RpcLimiter {
   private processingQueue = false;
   private totalThrottled = 0;
   private totalDropped = 0;
+
+  // --- throughput instrumentation (added 2026-06-20) ---
+  // Every GRANTED token is counted once, whether served immediately (fast path)
+  // or after queueing. Dropped requests are NOT counted here — they make no RPC
+  // call and live in totalDropped. This is the demand meter the limiter
+  // previously lacked: getStats() could show saturation (tokens=0, queued>0) but
+  // never the actual calls/sec throughput, so steady-state demand was unmeasured.
+  private totalServed = 0;
+  private servedByTier: Record<ServedTier, number> = {
+    wait: 0, priority: 0, droppable: 0, copyHot: 0,
+  };
+  private readonly startSec = Math.floor(Date.now() / 1000);
+  private rateBuckets = new Array<number>(RATE_WINDOW_SEC).fill(0);
+  private rateHeadSec = Math.floor(Date.now() / 1000);
+  private rateHeadIdx = 0;
 
   constructor(requestsPerSecond: number) {
     this.maxTokens = requestsPerSecond;
@@ -32,11 +60,54 @@ export class RpcLimiter {
     this.lastRefill = now;
   }
 
+  /** Roll the circular rate buffer forward to `nowSec`, zeroing any seconds
+   *  skipped since the last write so stale counts never bleed into a fresh
+   *  window. Idempotent within the same second (delta <= 0 is a no-op). */
+  private advanceRate(nowSec: number): void {
+    const delta = nowSec - this.rateHeadSec;
+    if (delta <= 0) return;
+    if (delta >= this.rateBuckets.length) {
+      this.rateBuckets.fill(0);
+      this.rateHeadIdx = 0;
+    } else {
+      for (let i = 0; i < delta; i++) {
+        this.rateHeadIdx = (this.rateHeadIdx + 1) % this.rateBuckets.length;
+        this.rateBuckets[this.rateHeadIdx] = 0;
+      }
+    }
+    this.rateHeadSec = nowSec;
+  }
+
+  /** Record one granted token against its tier + the rolling throughput meter. */
+  private recordServed(tier: ServedTier): void {
+    this.totalServed++;
+    this.servedByTier[tier]++;
+    this.advanceRate(Math.floor(Date.now() / 1000));
+    this.rateBuckets[this.rateHeadIdx]++;
+  }
+
+  /** Mean calls/sec over the last `seconds`. While the buffer is still filling
+   *  we divide by elapsed uptime (not the full window) so early-life rates
+   *  aren't understated. */
+  private rateOver(seconds: number): number {
+    const nowSec = Math.floor(Date.now() / 1000);
+    this.advanceRate(nowSec);
+    const window = Math.min(seconds, this.rateBuckets.length);
+    let sum = 0;
+    for (let i = 0; i < window; i++) {
+      const idx = (this.rateHeadIdx - i + this.rateBuckets.length) % this.rateBuckets.length;
+      sum += this.rateBuckets[idx];
+    }
+    const elapsed = Math.max(1, Math.min(window, nowSec - this.startSec + 1));
+    return +(sum / elapsed).toFixed(3);
+  }
+
   /** Call before every critical RPC request. Always waits for a token. */
   async throttle(): Promise<void> {
     this.refill();
     if (this.tokens >= 1) {
       this.tokens--;
+      this.recordServed('wait');
       return;
     }
 
@@ -49,7 +120,7 @@ export class RpcLimiter {
     }
 
     return new Promise<void>((resolve) => {
-      this.queue.push(resolve);
+      this.queue.push(() => { this.recordServed('wait'); resolve(); });
       if (!this.processingQueue) {
         this.processQueue();
       }
@@ -64,12 +135,13 @@ export class RpcLimiter {
     this.refill();
     if (this.tokens >= 1) {
       this.tokens--;
+      this.recordServed('priority');
       return;
     }
 
     this.totalThrottled++;
     return new Promise<void>((resolve) => {
-      this.queue.unshift(resolve); // front of queue
+      this.queue.unshift(() => { this.recordServed('priority'); resolve(); }); // front of queue
       if (!this.processingQueue) {
         this.processQueue();
       }
@@ -85,6 +157,7 @@ export class RpcLimiter {
     this.refill();
     if (this.tokens >= 1) {
       this.tokens--;
+      this.recordServed('droppable');
       return true;
     }
 
@@ -101,7 +174,7 @@ export class RpcLimiter {
 
     this.totalThrottled++;
     return new Promise<boolean>((resolve) => {
-      this.queue.push(() => resolve(true));
+      this.queue.push(() => { this.recordServed('droppable'); resolve(true); });
       if (!this.processingQueue) {
         this.processQueue();
       }
@@ -119,6 +192,7 @@ export class RpcLimiter {
     this.refill();
     if (this.tokens >= 1) {
       this.tokens--;
+      this.recordServed('copyHot');
       return true;
     }
 
@@ -129,7 +203,7 @@ export class RpcLimiter {
 
     this.totalThrottled++;
     return new Promise<boolean>((resolve) => {
-      this.queue.unshift(() => resolve(true));
+      this.queue.unshift(() => { this.recordServed('copyHot'); resolve(true); });
       if (!this.processingQueue) {
         this.processQueue();
       }
@@ -157,11 +231,23 @@ export class RpcLimiter {
   }
 
   getStats() {
+    // 5m rate is the most stable; reuse it for the daily projection so the two
+    // figures can't disagree. projCallsPerDay is CALLS, not Helius credits —
+    // most methods are ~1 credit but some (getProgramAccounts, DAS) cost more,
+    // so treat it as a floor for the credit burn, not an exact figure.
+    const callsPerSec5m = this.rateOver(300);
     return {
       tokensAvailable: Math.floor(this.tokens),
       queued: this.queue.length,
+      maxTokens: this.maxTokens,
       totalThrottled: this.totalThrottled,
       totalDropped: this.totalDropped,
+      totalServed: this.totalServed,
+      servedByTier: { ...this.servedByTier },
+      callsPerSec1m: this.rateOver(60),
+      callsPerSec5m,
+      projCallsPerDay: Math.round(callsPerSec5m * 86400),
+      uptimeSec: Math.max(1, Math.floor(Date.now() / 1000) - this.startSec),
     };
   }
 }
