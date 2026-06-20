@@ -6408,7 +6408,7 @@ export function renderLiveTrainingHtml(data: any): string {
       <div class="lt-chart-wrap" id="lt-primary-wrap">
         <div class="lt-tooltip" id="lt-primary-tip"></div>
       </div>
-      <div class="lt-hint">Drag across the chart to zoom · hover to inspect a trade · double-click to reset.</div>
+      <div class="lt-hint">Drag across the chart to zoom · hover to inspect a trade · double-click to reset · right-click for overlays.</div>
     </div>
 
     <div class="card">
@@ -6559,6 +6559,32 @@ export function renderLiveTrainingHtml(data: any): string {
     return ticks;
   }
 
+  // ── chart overlay / meme annotation system ──────────────────────────────
+  // Rotating caption pools so every screenshot looks fresh instead of the same
+  // two phrases. Text-only, no emoji (operator preference). Pick is seeded by
+  // the point so a given peak always shows the same line across re-renders.
+  var MEME_UP=['we are so back','up only','number go up','to the moon','wagmi',
+    'few understand','probably nothing','chart looking thicc','ascending',
+    'green candles only','bullish','locked in','this is the signal','feels good man',
+    'told you','generational wealth','one more leg up'];
+  var MEME_DOWN=["it's so over",'down bad','this is fine','ngmi','rekt','pain',
+    'who did this','it is what it is','exit liquidity','should have sold',
+    'down astronomically','descending','financial damage','not great','copium',
+    'temporary setback','character building'];
+  function memePick(pool, seed){
+    var h=Math.abs(Math.floor(seed))||1; h=(h*48271)%2147483647; return pool[h%pool.length];
+  }
+  // Toggleable overlay layers — persisted so chosen layers survive reloads
+  // (handy for taking a series of consistent screenshots). Right-click the
+  // chart to toggle. Only "memes" defaults on; the data-driven flags are
+  // opt-in via the context menu.
+  var ANNO_DEFAULTS={memes:true,ath:false,extremes:false,drawdown:false,
+    streak:false,flip:false,watermark:false,nowbadge:false};
+  function loadAnno(){ var d={}; for(var k in ANNO_DEFAULTS) d[k]=ANNO_DEFAULTS[k];
+    try{ var s=JSON.parse(localStorage.getItem('lt-anno')||'{}'); for(var k in d) if(k in s) d[k]=!!s[k]; }catch(e){} return d; }
+  function saveAnno(a){ try{ localStorage.setItem('lt-anno', JSON.stringify(a)); }catch(e){} }
+  var ANNO=loadAnno();
+
   // makeChart(container, tooltip): returns { update(cfg) } where cfg describes
   // series. Handles line / point / hist, plus hover + drag-zoom.
   function makeChart(container, tip){
@@ -6566,6 +6592,46 @@ export function renderLiveTrainingHtml(data: any): string {
     container.insertBefore(svg, tip);
     var ctx={ cfg:null, xv:null, fullX:null, xToPx:null, yToPx:null, pxToX:null,
               isHist:false, brush:null, clientToSvgX:null, dragging:false, dragStartX:0 };
+
+    // Right-click overlay menu — only built on charts that opt into annotations
+    // (cfg.memes). Lets the operator toggle the fun/data layers on the live
+    // chart for screenshots. Built lazily on first right-click.
+    var annoMenu=null;
+    function buildAnnoMenu(){
+      if(annoMenu) return annoMenu;
+      annoMenu=document.createElement('div');
+      annoMenu.style.cssText='position:absolute;z-index:30;display:none;background:#0f172af7;border:1px solid #334155;border-radius:8px;padding:6px;font-size:11px;color:#e2e8f0;box-shadow:0 8px 24px #000b;min-width:184px';
+      var head=document.createElement('div'); head.textContent='Chart overlays';
+      head.style.cssText='font-weight:700;color:#94a3b8;padding:3px 6px 6px;text-transform:uppercase;letter-spacing:.04em;font-size:10px';
+      annoMenu.appendChild(head);
+      [['memes','Meme captions'],['ath','New ATH flag'],['extremes','Biggest win / loss'],
+       ['drawdown','Max drawdown'],['streak','Win / loss streaks'],['flip','Flipped green / red'],
+       ['watermark','High / low lines'],['nowbadge','Current P&L badge']].forEach(function(it){
+        var lab=document.createElement('label');
+        lab.style.cssText='display:flex;align-items:center;gap:8px;padding:5px 6px;border-radius:5px;cursor:pointer;white-space:nowrap';
+        lab.onmouseenter=function(){lab.style.background='#1e293b';}; lab.onmouseleave=function(){lab.style.background='transparent';};
+        var cb=document.createElement('input'); cb.type='checkbox'; cb.checked=!!ANNO[it[0]];
+        cb.style.cssText='accent-color:#22d3ee;cursor:pointer'; cb.setAttribute('data-anno',it[0]);
+        cb.onchange=function(){ ANNO[it[0]]=cb.checked; saveAnno(ANNO); draw(); };
+        var sp=document.createElement('span'); sp.textContent=it[1];
+        lab.appendChild(cb); lab.appendChild(sp); annoMenu.appendChild(lab);
+      });
+      container.appendChild(annoMenu);
+      return annoMenu;
+    }
+    svg.addEventListener('contextmenu', function(ev){
+      if(!ctx.cfg || !ctx.cfg.memes) return; // only the annotated primary chart
+      ev.preventDefault();
+      var menu=buildAnnoMenu();
+      menu.querySelectorAll('input[data-anno]').forEach(function(cb){ cb.checked=!!ANNO[cb.getAttribute('data-anno')]; });
+      var r=container.getBoundingClientRect();
+      menu.style.display='block';
+      var mw=menu.offsetWidth||184;
+      menu.style.left=Math.max(0,Math.min(ev.clientX-r.left, container.clientWidth-mw))+'px';
+      menu.style.top=Math.max(0,ev.clientY-r.top)+'px';
+    });
+    document.addEventListener('click', function(ev){ if(annoMenu && annoMenu.style.display==='block' && !annoMenu.contains(ev.target)) annoMenu.style.display='none'; });
+    document.addEventListener('keydown', function(ev){ if(ev.key==='Escape' && annoMenu) annoMenu.style.display='none'; });
 
     // Drag-to-zoom: window-level listeners are bound ONCE per chart (not per
     // redraw) so they don't accumulate. They read live geometry off ctx, which
@@ -6660,27 +6726,107 @@ export function renderLiveTrainingHtml(data: any): string {
         });
       }
 
-      // fun: meme tags at the most dramatic peaks/dips of the cumulative P&L line.
-      // "we are so back" above the top peaks, "it's so over" below the worst dips.
+      // fun: toggleable overlay annotations on the cumulative P&L line. The
+      // base layer ("memes") stamps rotating captions on the dramatic peaks and
+      // dips; the data-driven layers (ATH, biggest win/loss, drawdown, streaks,
+      // flips, high/low lines, current badge) are opt-in via right-click menu.
       if(cfg.memes && !isHist && cfg.kind!=='point' && cfg.series.length){
         var mp=cfg.series[0].points.filter(function(p){return p.x>=xv[0]-1e-9 && p.x<=xv[1]+1e-9;});
-        if(mp.length>=3){
+        var isSol=(cfg.unit==='SOL');
+        var annoG=svgEl('g',{'pointer-events':'none'});
+        function fmtVal(v){ return cfg.unit==='SOL'?(f4(v)+' SOL'):(cfg.unit==='%'?fpct(v):(cfg.unit==='ms'?fint(v)+' ms':fint(v))); }
+        function inX(px){ return px>=PADL-1 && px<=W-PADR+1; }
+        // a text label that auto-anchors so it never clips the chart edges
+        function labelAt(px,py,txt,fill,dy,size){
+          var t=svgEl('text',{x:px,y:py+(dy||0),fill:fill,'font-size':(size||10),'font-weight':'bold','text-anchor':'middle','font-style':'italic'});
+          if(px<PADL+40) t.setAttribute('text-anchor','start'); else if(px>W-PADR-40) t.setAttribute('text-anchor','end');
+          t.textContent=txt; annoG.appendChild(t);
+        }
+        function dot(px,py,fill){ annoG.appendChild(svgEl('circle',{cx:px,cy:py,r:3,fill:fill,stroke:'#0f172a','stroke-width':1})); }
+
+        // ── memes: rotating captions at the top-3 peaks / bottom-3 dips ──
+        if(ANNO.memes && mp.length>=3){
           var turns=[];
           for(var i=1;i<mp.length-1;i++){ var a=mp[i-1].y,b=mp[i].y,c=mp[i+1].y;
             if(b>a&&b>=c) turns.push({p:mp[i],type:'peak'});
             else if(b<a&&b<=c) turns.push({p:mp[i],type:'dip'}); }
           var peaks=turns.filter(function(e){return e.type==='peak';}).sort(function(x,y){return y.p.y-x.p.y;}).slice(0,3);
           var dips=turns.filter(function(e){return e.type==='dip';}).sort(function(x,y){return x.p.y-y.p.y;}).slice(0,3);
-          var memeG=svgEl('g',{'pointer-events':'none'});
-          [].concat(peaks,dips).forEach(function(e){ var isP=e.type==='peak';
-            var px=xToPx(e.p.x), py=yToPx(e.p.y);
-            if(px<PADL-1||px>W-PADR+1) return;
-            var t=svgEl('text',{x:px,y:(isP?py-7:py+15),fill:(isP?'#22c55e':'#ef4444'),'font-size':10,'font-weight':'bold','text-anchor':'middle','font-style':'italic'});
-            if(px<PADL+34) t.setAttribute('text-anchor','start'); else if(px>W-PADR-34) t.setAttribute('text-anchor','end');
-            t.textContent=isP?'we are so back':"it's so over";
-            memeG.appendChild(t); });
-          svg.appendChild(memeG);
+          [].concat(peaks,dips).forEach(function(e,idx){ var isP=e.type==='peak';
+            var px=xToPx(e.p.x), py=yToPx(e.p.y); if(!inX(px)) return;
+            var pool=isP?MEME_UP:MEME_DOWN;
+            labelAt(px,py,memePick(pool, Math.round(e.p.x)+idx*7919),(isP?'#22c55e':'#ef4444'),(isP?-7:15));
+          });
         }
+
+        // ── new ATH flag: a marker at the curve's all-time high ──
+        if(ANNO.ath && isSol && mp.length){
+          var hi=mp[0]; for(var i=1;i<mp.length;i++){ if(mp[i].y>hi.y) hi=mp[i]; }
+          var px=xToPx(hi.x), py=yToPx(hi.y);
+          if(inX(px) && hi.y>0){ dot(px,py,'#facc15'); labelAt(px,py,'new ATH','#facc15',-8,9.5); }
+        }
+
+        // ── biggest win / biggest loss: tag the single best & worst trade ──
+        if(ANNO.extremes && isSol && mp.length){
+          var bestW=null,worstL=null;
+          for(var i=0;i<mp.length;i++){ var d=num(mp[i].t&&mp[i].t.net_profit_sol); if(d===null) continue;
+            if(d>0 && (!bestW || d>num(bestW.t.net_profit_sol))) bestW=mp[i];
+            if(d<0 && (!worstL || d<num(worstL.t.net_profit_sol))) worstL=mp[i]; }
+          if(bestW){ var pxw=xToPx(bestW.x),pyw=yToPx(bestW.y); if(inX(pxw)){ dot(pxw,pyw,'#22c55e'); labelAt(pxw,pyw,'biggest bag '+f4(num(bestW.t.net_profit_sol)),'#22c55e',-8,9.5); } }
+          if(worstL){ var pxl=xToPx(worstL.x),pyl=yToPx(worstL.y); if(inX(pxl)){ dot(pxl,pyl,'#ef4444'); labelAt(pxl,pyl,'max pain '+f4(num(worstL.t.net_profit_sol)),'#ef4444',16,9.5); } }
+        }
+
+        // ── max drawdown: deepest peak→trough decline on the cumulative line ──
+        if(ANNO.drawdown && isSol && mp.length>1){
+          var pk=mp[0], ddPk=mp[0], ddTr=mp[0], maxDD=0;
+          for(var i=1;i<mp.length;i++){ if(mp[i].y>pk.y) pk=mp[i];
+            var dd=pk.y-mp[i].y; if(dd>maxDD){ maxDD=dd; ddPk=pk; ddTr=mp[i]; } }
+          if(maxDD>0){ var pxp=xToPx(ddPk.x),pyp=yToPx(ddPk.y),pxt=xToPx(ddTr.x),pyt=yToPx(ddTr.y);
+            if(inX(pxp)||inX(pxt)){
+              annoG.appendChild(svgEl('line',{x1:pxp,y1:pyp,x2:pxt,y2:pyt,stroke:'#f97316','stroke-width':1.2,'stroke-dasharray':'4 3',opacity:0.9}));
+              dot(pxp,pyp,'#f97316'); dot(pxt,pyt,'#f97316');
+              labelAt((pxp+pxt)/2,Math.max(pyp,pyt),'max drawdown -'+f4u(maxDD)+' SOL','#f97316',16,9.5);
+            }
+          }
+        }
+
+        // ── win / loss streaks: longest consecutive run of green / red trades ──
+        if(ANNO.streak && isSol && mp.length){
+          function longestRun(want){ var bs=0,bi=-1,cs=0,ci=0;
+            for(var i=0;i<mp.length;i++){ var d=num(mp[i].t&&mp[i].t.net_profit_sol);
+              var hit=(d!==null)&&(want>0?d>0:d<0);
+              if(hit){ if(cs===0) ci=i; cs++; if(cs>bs){bs=cs;bi=ci;} } else cs=0; }
+            return bs>=3?{len:bs,end:mp[bi+bs-1]}:null; }
+          var heater=longestRun(1), cold=longestRun(-1);
+          if(heater){ var pxh=xToPx(heater.end.x),pyh=yToPx(heater.end.y); if(inX(pxh)){ labelAt(pxh,pyh,heater.len+'-trade heater','#22c55e',-8,9.5); } }
+          if(cold){ var pxc=xToPx(cold.end.x),pyc=yToPx(cold.end.y); if(inX(pxc)){ labelAt(pxc,pyc,cold.len+'-trade ice age','#ef4444',16,9.5); } }
+        }
+
+        // ── flips: where cumulative crossed zero (into / out of profit) ──
+        if(ANNO.flip && cfg.zero && mp.length>1){
+          var flips=[];
+          for(var i=1;i<mp.length;i++){ var a=mp[i-1].y,b=mp[i].y;
+            if(a<0&&b>=0) flips.push({p:mp[i],up:true}); else if(a>=0&&b<0) flips.push({p:mp[i],up:false}); }
+          flips.slice(0,6).forEach(function(fl){ var px=xToPx(fl.p.x),py=yToPx(fl.p.y); if(!inX(px)) return;
+            dot(px,py,fl.up?'#22c55e':'#ef4444'); labelAt(px,py,fl.up?'flipped green':'flipped red',(fl.up?'#22c55e':'#ef4444'),(fl.up?-8:16),9); });
+        }
+
+        // ── high / low watermark lines across the visible window ──
+        if(ANNO.watermark && mp.length){
+          var hiW=mp[0],loW=mp[0]; for(var i=1;i<mp.length;i++){ if(mp[i].y>hiW.y) hiW=mp[i]; if(mp[i].y<loW.y) loW=mp[i]; }
+          [[hiW,'high','#22c55e'],[loW,'low','#ef4444']].forEach(function(w){ var py=yToPx(w[0].y);
+            annoG.appendChild(svgEl('line',{x1:PADL,y1:py,x2:W-PADR,y2:py,stroke:w[2],'stroke-width':0.8,'stroke-dasharray':'2 4',opacity:0.6}));
+            var t=svgEl('text',{x:W-PADR-2,y:py-3,fill:w[2],'font-size':9,'font-weight':'bold','text-anchor':'end'}); t.textContent=w[1]+' '+fmtVal(w[0].y); annoG.appendChild(t); });
+        }
+
+        // ── current P&L badge pinned to the last point ──
+        if(ANNO.nowbadge && mp.length){
+          var last=mp[mp.length-1]; var px=Math.min(xToPx(last.x),W-PADR-2), py=yToPx(last.y);
+          var pos=last.y>=0; dot(px,py,pos?'#22c55e':'#ef4444');
+          var t=svgEl('text',{x:px-6,y:py-7,fill:pos?'#22c55e':'#ef4444','font-size':10,'font-weight':'bold','text-anchor':'end'}); t.textContent='now '+fmtVal(last.y); annoG.appendChild(t);
+        }
+
+        svg.appendChild(annoG);
       }
 
       // interaction overlay
