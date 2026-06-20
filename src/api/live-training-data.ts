@@ -48,7 +48,9 @@ export const LIVE_SHADOW_MAP: Record<string, string> = {
   // COPY-TRADE live-micro (separate copy_trades subsystem, unioned into this page so
   // it's the single live-money hub). Paired with its identical shadow twin; matched
   // on MINT (copy rows have no graduation_id) — see computeComparison's null-grad path.
-  'copy-consensus2-lag-drift5-live-micro': 'copy-consensus2-lag-drift5',
+  // Killed copy live strategies are removed here so they drop to "retired/off"
+  // (the active gate below keys off membership in this map).
+  'copy-hotlead-deep-live-micro': 'copy-hotlead-deep',
 };
 
 /** Normalized per-trade row shared by live + shadow series. */
@@ -515,9 +517,11 @@ export function computeLiveTrainingData(db: Database.Database) {
     try { mode = JSON.parse(row.config_json)?.executionMode; } catch { /* ignore */ }
     if (mode === 'live_micro' || mode === 'live_full') activeLiveIds.add(row.id);
   }
-  // Copy live strategies aren't in strategy_configs — mark them active so they
-  // appear in the default "active" view (not tucked under retired/off).
-  for (const id of copyLiveIds) activeLiveIds.add(id);
+  // Copy live strategies aren't in strategy_configs — mark active ONLY those still
+  // paired in LIVE_SHADOW_MAP (i.e. the current roster). A killed copy live strategy
+  // keeps its historical trades + selector chip but drops to "retired/off" instead of
+  // lingering "active" on trade history alone.
+  for (const id of copyLiveIds) if (LIVE_SHADOW_MAP[id]) activeLiveIds.add(id);
   const labelFor = (id: string) => labelMap.get(id) || id;
 
   // Per-strategy roster for the selector.
