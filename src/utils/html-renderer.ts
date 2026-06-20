@@ -6404,6 +6404,7 @@ export function renderLiveTrainingHtml(data: any): string {
           <select id="lt-metric"></select>
         </label>
         <button id="lt-reset-zoom" type="button" style="background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;display:none">Reset zoom</button>
+        <button id="lt-copy-img" type="button" title="Copy the chart as a PNG (title + axes included) for sharing" style="margin-left:auto;background:#0e7490;color:#e0f2fe;border:1px solid #155e75;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer">Copy image</button>
       </div>
       <div class="lt-chart-wrap" id="lt-primary-wrap">
         <div class="lt-tooltip" id="lt-primary-tip"></div>
@@ -6881,9 +6882,84 @@ export function renderLiveTrainingHtml(data: any): string {
       svg.ondblclick=function(){ ctx.xv=null; document.getElementById('lt-reset-zoom').style.display='none'; draw(); };
     }
 
+    // ── export the chart as a shareable PNG ─────────────────────────────────
+    // Clones the live SVG, wraps it with a title / subtitle / axis titles /
+    // footer so the image is self-explanatory on social media, rasterizes at 2x
+    // for crisp output, then copies to clipboard (falling back to download).
+    function renderBlob(){
+      return new Promise(function(resolve, reject){
+        var cfg=ctx.cfg; if(!cfg){ reject(new Error('no chart')); return; }
+        var ML=26, MR=16, MT=62, MB=58;          // export margins around the W×H chart
+        var EW=ML+W+MR, EH=MT+H+MB;
+        var SVGNS='http://www.w3.org/2000/svg';
+        var out=document.createElementNS(SVGNS,'svg');
+        out.setAttribute('xmlns',SVGNS);
+        out.setAttribute('width',EW); out.setAttribute('height',EH);
+        out.setAttribute('viewBox','0 0 '+EW+' '+EH);
+        out.setAttribute('font-family',"'Helvetica Neue',Helvetica,Arial,sans-serif");
+        function t(x,y,txt,attrs){ var e=document.createElementNS(SVGNS,'text');
+          e.setAttribute('x',x); e.setAttribute('y',y); for(var k in attrs) e.setAttribute(k,attrs[k]); e.textContent=txt; out.appendChild(e); }
+        // backdrop
+        var bg=document.createElementNS(SVGNS,'rect'); bg.setAttribute('width',EW); bg.setAttribute('height',EH); bg.setAttribute('fill','#0c0c14'); out.appendChild(bg);
+        // title + subtitle
+        t(ML, 28, cfg.title||'Performance Chart', {fill:'#f1f5f9','font-size':21,'font-weight':'700'});
+        var sub='';
+        if(cfg.type==='hist'){ sub=(cfg.bars?cfg.bars.length:0)+' trades'; }
+        else { var pts=(cfg.series&&cfg.series[0])?cfg.series[0].points:[];
+          var vr=ctx.xv||ctx.fullX||null;
+          var vis=vr? pts.filter(function(p){return p.x>=vr[0]-1e-9 && p.x<=vr[1]+1e-9;}) : pts;
+          if(vis.length) sub=fts(vis[0].x)+' – '+fts(vis[vis.length-1].x)+' · '+vis.length+' trades'; }
+        if(cfg.scope) sub += (sub?'   ·   ':'')+cfg.scope;
+        if(sub) t(ML, 48, sub, {fill:'#94a3b8','font-size':12});
+        // clone the live chart body into a translated group
+        var g=document.createElementNS(SVGNS,'g'); g.setAttribute('transform','translate('+ML+','+MT+')');
+        for(var i=0;i<svg.childNodes.length;i++){ g.appendChild(svg.childNodes[i].cloneNode(true)); }
+        out.appendChild(g);
+        // axis titles
+        var yTitle=cfg.unit==='SOL'?'SOL':(cfg.unit==='%'?'%':(cfg.unit==='ms'?'ms':'count'));
+        var yt=document.createElementNS(SVGNS,'text'); var ycy=MT+PADT+PH/2;
+        yt.setAttribute('transform','translate(13,'+ycy+') rotate(-90)'); yt.setAttribute('text-anchor','middle');
+        yt.setAttribute('fill','#94a3b8'); yt.setAttribute('font-size',11); yt.textContent=yTitle; out.appendChild(yt);
+        t(ML+PADL+PW/2, MT+H+18, cfg.type==='hist'?'Trade #':'Time', {fill:'#94a3b8','font-size':11,'text-anchor':'middle'});
+        // footer
+        t(ML, EH-9, 'Captured '+new Date().toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}), {fill:'#64748b','font-size':10});
+        t(EW-MR, EH-9, 'post-graduation PumpFun trading research', {fill:'#475569','font-size':10,'text-anchor':'end'});
+
+        var xml=new XMLSerializer().serializeToString(out);
+        var url='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));
+        var img=new Image();
+        img.onload=function(){
+          var scale=2, canvas=document.createElement('canvas');
+          canvas.width=EW*scale; canvas.height=EH*scale;
+          var c=canvas.getContext('2d'); c.fillStyle='#0c0c14'; c.fillRect(0,0,canvas.width,canvas.height);
+          c.drawImage(img,0,0,canvas.width,canvas.height);
+          canvas.toBlob(function(b){ b?resolve(b):reject(new Error('toBlob failed')); },'image/png');
+        };
+        img.onerror=function(){ reject(new Error('svg load failed')); };
+        img.src=url;
+      });
+    }
+    function download(blob){ var a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+      a.download='chart-'+Date.now()+'.png'; document.body.appendChild(a); a.click();
+      setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1500); }
+
     return {
       update:function(cfg){ ctx.cfg=cfg; if(cfg.resetView){ ctx.xv=null; } draw(); },
-      resetZoom:function(){ ctx.xv=null; draw(); }
+      resetZoom:function(){ ctx.xv=null; draw(); },
+      // copyImage(cb): copies the chart PNG to the clipboard, or downloads it if
+      // clipboard image-write isn't available. cb('copied'|'downloaded'|'error').
+      copyImage:function(cb){
+        var p=renderBlob();
+        if(navigator.clipboard && window.ClipboardItem){
+          try{
+            navigator.clipboard.write([new window.ClipboardItem({'image/png':p})])
+              .then(function(){ cb&&cb('copied'); })
+              .catch(function(){ p.then(function(b){ download(b); cb&&cb('downloaded'); }).catch(function(){ cb&&cb('error'); }); });
+          }catch(e){ p.then(function(b){ download(b); cb&&cb('downloaded'); }).catch(function(){ cb&&cb('error'); }); }
+        } else {
+          p.then(function(b){ download(b); cb&&cb('downloaded'); }).catch(function(){ cb&&cb('error'); });
+        }
+      }
     };
   }
 
@@ -7117,12 +7193,13 @@ export function renderLiveTrainingHtml(data: any): string {
     sel.value=state.metric;
   }
   function renderPrimary(){
+    var scope=scopeLabel().replace(/^—\s*/,'');
     if(state.type==='hist'){
       var h=buildHist(state.metric);
-      primaryChart.update({type:'hist',bars:h.bars,unit:h.unit,resetView:true});
+      primaryChart.update({type:'hist',bars:h.bars,unit:h.unit,resetView:true,title:h.label,scope:scope});
     } else {
       var s=buildLineSeries(state.metric);
-      primaryChart.update({type:'line',kind:s.kind,zero:s.zero,unit:s.unit,memes:true,series:[{name:'Live',color:'#22d3ee',points:s.points}],resetView:true});
+      primaryChart.update({type:'line',kind:s.kind,zero:s.zero,unit:s.unit,memes:true,title:s.label,scope:scope,series:[{name:'Live',color:'#22d3ee',points:s.points}],resetView:true});
     }
   }
 
@@ -7170,6 +7247,13 @@ export function renderLiveTrainingHtml(data: any): string {
     });
     document.getElementById('lt-metric').addEventListener('change', function(){ state.metric=this.value; document.getElementById('lt-reset-zoom').style.display='none'; renderPrimary(); });
     document.getElementById('lt-reset-zoom').addEventListener('click', function(){ primaryChart.resetZoom(); this.style.display='none'; });
+    document.getElementById('lt-copy-img').addEventListener('click', function(){
+      var btn=this, old=btn.textContent; btn.disabled=true; btn.style.opacity='0.7'; btn.textContent='Rendering…';
+      primaryChart.copyImage(function(res){
+        btn.textContent = res==='copied'?'Copied!':(res==='downloaded'?'Saved PNG':'Failed — retry');
+        setTimeout(function(){ btn.textContent=old; btn.disabled=false; btn.style.opacity='1'; },1900);
+      });
+    });
     populateMetricSelect();
     renderAll();
   }
