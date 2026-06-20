@@ -21,6 +21,20 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('price-collector');
 
+// Enrichment-only mode (GRADUATION_PRICE_PATH_DISABLED=true): keep the cheap
+// per-graduation WALLET enrichment that feeds copy-trade wallet discovery
+// (competition_signals @ T+10, firstbuyer + buy-pressure @ T+35), but SKIP the
+// heavy price-path collection — the up-to-61 vault snapshots (T+0..T+600), the
+// T+30 research callback, and the completion-time velocity/label/swap-backfill
+// RPC. The surgical middle ground between full collection and detect-only
+// (GRADUATION_COLLECTION_DISABLED): copy trading + wallet discovery stay alive,
+// the graduation-momentum RESEARCH (pct_t30, PUMP/DUMP label, panels) goes dark,
+// and the dominant RPC/Helius-credit consumer is eliminated.
+const GRADUATION_PRICE_PATH_DISABLED = process.env.GRADUATION_PRICE_PATH_DISABLED === 'true';
+if (GRADUATION_PRICE_PATH_DISABLED) {
+  logger.warn('GRADUATION_PRICE_PATH_DISABLED=true — enrichment-only mode: wallet-discovery enrichment ON, price-path snapshots + research collection OFF.');
+}
+
 // Momentum research schedule: T+0 for open price, then every 5s through T+300
 // (full 5-minute monitoring window, 60 snapshots), plus T+600 for final state.
 const SNAPSHOT_SCHEDULE: number[] = (() => {
@@ -489,19 +503,22 @@ export class PriceCollector {
       'Starting price observation'
     );
 
-    // Take an immediate snapshot
-    this.takeSnapshot(ctx.graduationId, elapsedSec);
+    // Take an immediate snapshot + schedule the rest. Skipped in enrichment-only
+    // mode — the wallet-discovery enrichment below doesn't read snapshots, and
+    // these vault reads (up to 61/grad) are the dominant RPC/Helius consumer.
+    if (!GRADUATION_PRICE_PATH_DISABLED) {
+      this.takeSnapshot(ctx.graduationId, elapsedSec);
 
-    // Schedule remaining snapshots
-    for (const targetSec of remaining) {
-      const delayMs = (targetSec - elapsedSec) * 1000;
-      if (delayMs <= 0) continue;
+      for (const targetSec of remaining) {
+        const delayMs = (targetSec - elapsedSec) * 1000;
+        if (delayMs <= 0) continue;
 
-      const timer = setTimeout(() => {
-        this.takeSnapshot(ctx.graduationId, targetSec);
-      }, delayMs);
+        const timer = setTimeout(() => {
+          this.takeSnapshot(ctx.graduationId, targetSec);
+        }, delayMs);
 
-      observation.timers.push(timer);
+        observation.timers.push(timer);
+      }
     }
 
     // Schedule competition detection at T+10s
@@ -557,6 +574,25 @@ export class PriceCollector {
       observation.timers.push(hfTimer);
     } else {
       runHolderFlow();
+    }
+
+    // Enrichment-only mode: no snapshots were scheduled, so there is no T+30
+    // callback / T+45 deadline / T+605 completion lifecycle to run — and
+    // completeObservation() fires velocity + momentum-label + swap-backfill RPC
+    // we're explicitly avoiding. The wallet enrichment (competition T+10 +
+    // buy-pressure/firstbuyer T+35 + holder-flow T+36) is done by ~T+37, so free
+    // the concurrency slot ~T+40 with a lightweight cleanup and skip the
+    // snapshot lifecycle below.
+    if (GRADUATION_PRICE_PATH_DISABLED) {
+      const cleanupDelay = Math.max((40 - elapsedSec) * 1000, 1000);
+      const cleanupTimer = setTimeout(() => {
+        const obs = this.active.get(ctx.graduationId);
+        if (!obs) return;
+        for (const t of obs.timers) clearTimeout(t);
+        this.active.delete(ctx.graduationId);
+      }, cleanupDelay);
+      observation.timers.push(cleanupTimer);
+      return;
     }
 
     // Schedule observation completion
