@@ -306,12 +306,17 @@ const COPY_LIVE_MAX_CONCURRENT = parseInt(process.env.COPY_LIVE_MAX_CONCURRENT |
 // fails too — stop burning Jito tips + ATA rent on it. In-memory (clears on
 // restart, which is fine — a restart is rare and the stale entries are cheap).
 const COPY_LIVE_FAIL_COOLDOWN_SEC = parseInt(process.env.COPY_LIVE_FAIL_COOLDOWN_SEC || '600', 10);
-// Minimum gap between live-sell retry attempts on the SAME position. The poll
-// cadence (25s) is the real retry floor; this only stops a second exit trigger
-// (e.g. a lead-sell landing between polls) from firing a redundant attempt back-
-// to-back. Set under POLL_INTERVAL_MS so the normal poll-driven retry isn't
-// delayed. The escalating-slippage schedule + the 9-attempt cap do the real work.
-const COPY_SELL_RETRY_MIN_GAP_MS = parseInt(process.env.COPY_SELL_RETRY_MIN_GAP_MS || '20000', 10);
+// Self-cadence between consecutive live-sell retries on the SAME position. A
+// transiently-failed sell no longer waits for the next 25s poll —
+// closeLivePosition schedules its OWN retry this many ms after the failure
+// confirms (and again after each consecutive failure) via scheduleLiveSellRetry.
+// This burns the escalating-slippage ladder (sell-retry.ts) down in seconds so
+// the exit lands near its trigger instead of riding the price ~25s per attempt —
+// the gap that converted a modeled +106% TP winner into a realized -95% stop-loss
+// on a token that round-tripped in ~2min (mint 9fMPboAS, 2026-06-20). Also gates
+// the 25s poll from firing a redundant attempt while the self-loop owns the exit.
+// Default 1s; tune via COPY_LIVE_SELL_RETRY_MS.
+const LIVE_SELL_RETRY_DELAY_MS = parseInt(process.env.COPY_LIVE_SELL_RETRY_MS || '1000', 10);
 // Poll interval raised 15s -> 25s (2026-06-17): position polling (1 batched vault
 // fetch per UNIQUE open vault per cycle) is the dominant sustained RPC consumer.
 // At 15s the book ran ~4.5 calls/s ≈ 11.7M credits/mo — over the 10M plan. 25s
@@ -819,11 +824,13 @@ export class CopyTrader {
   }
 
   /** Real-money exit for a live_micro position. Sells the held tokens via the
-   *  shared escalating-slippage schedule (`sell-retry.ts`), spreading attempts
-   *  across poll ticks. On a transient failure it leaves the position open and
-   *  retries on the next poll with wider slippage; on a TERMINAL failure (a
-   *  known-unsellable error like "no tokens in wallet", or the 9-attempt cap) it
-   *  closes the row and removes the position so the loop self-terminates.
+   *  shared escalating-slippage schedule (`sell-retry.ts`). On a transient failure
+   *  it leaves the position open and schedules its OWN fast retry
+   *  LIVE_SELL_RETRY_DELAY_MS later (scheduleLiveSellRetry) with wider slippage —
+   *  NOT the next 25s poll, so a fast-reversing token doesn't ride the price down a
+   *  full poll per attempt. On a TERMINAL failure (a known-unsellable error like
+   *  "no tokens in wallet", or the 9-attempt cap) it closes the row and removes the
+   *  position so the loop self-terminates.
    *
    *  This terminal handling is the 2026-06-19 bleed-stop: previously ANY failure
    *  just left the row open and re-attempted every poll forever, so two orphaned
@@ -832,8 +839,9 @@ export class CopyTrader {
    *  so an exit swap is never submitted twice for the same position. */
   private async closeLivePosition(p: OpenPos, reason: string, rawExitPrice: number): Promise<void> {
     if (p.parked || this.closingLive.has(p.id) || !this.positions.has(p.id)) return;
-    // Don't fire a redundant attempt between polls (a lead-sell trigger can land
-    // mid-cycle); the 25s poll cadence is the real retry floor.
+    // Don't fire a redundant attempt while a self-scheduled retry is pending (the
+    // 25s poll, or a lead-sell trigger landing mid-cycle, can race the fast loop).
+    // The scheduled retry fires AT nextSellRetryTs, so it always passes this guard.
     if (p.nextSellRetryTs != null && Date.now() < p.nextSellRetryTs) return;
     this.closingLive.add(p.id);
     try {
@@ -875,11 +883,15 @@ export class CopyTrader {
             p.strategyId, p.mint.slice(0, 6), p.id, attemptNumber, termReason, errMsg);
           return;
         }
-        // Transient — escalate the next attempt; the next poll retries.
+        // Transient — escalate + retry on our OWN fast cadence
+        // (LIVE_SELL_RETRY_DELAY_MS after this failure), not the next 25s poll.
+        // nextSellRetryTs keeps the poll from firing a redundant attempt until the
+        // self-scheduled retry runs.
         p.sellFailureCount = attemptNumber;
-        p.nextSellRetryTs = Date.now() + COPY_SELL_RETRY_MIN_GAP_MS;
-        logger.warn('Copy LIVE sell FAILED %s %s id=%d attempt %d/%d: %s — retry next poll (slip→%d bps)',
-          p.strategyId, p.mint.slice(0, 6), p.id, attemptNumber, MAX_SELL_ATTEMPTS_BEFORE_TERMINAL, errMsg, sellSlippageBpsForAttempt(attemptNumber + 1));
+        p.nextSellRetryTs = Date.now() + LIVE_SELL_RETRY_DELAY_MS;
+        this.scheduleLiveSellRetry(p, reason);
+        logger.warn('Copy LIVE sell FAILED %s %s id=%d attempt %d/%d: %s — retry in %dms (slip→%d bps)',
+          p.strategyId, p.mint.slice(0, 6), p.id, attemptNumber, MAX_SELL_ATTEMPTS_BEFORE_TERMINAL, errMsg, LIVE_SELL_RETRY_DELAY_MS, sellSlippageBpsForAttempt(attemptNumber + 1));
         return;
       }
       // net = size * (effExit/effEntry - 1) - real costs (sell tip; buy tip+rent already on the row).
@@ -900,6 +912,42 @@ export class CopyTrader {
     } finally {
       this.closingLive.delete(p.id);
     }
+  }
+
+  /** Fast self-retry for a transiently-failed live sell. Fires
+   *  LIVE_SELL_RETRY_DELAY_MS after the failure confirms — and again after each
+   *  consecutive failure (closeLivePosition re-schedules) — instead of waiting for
+   *  the next 25s poll. Re-fetches the pool price so the re-derived exit reason
+   *  matches the market at fill time (closeLivePosition→liveSell already re-reads
+   *  reserves for the min-out, so the fresh price here only keeps the stored reason
+   *  honest, not the fill). Once an exit is in flight we keep retrying until it
+   *  lands or hits the terminal cap, regardless of price band — the position
+   *  (removed on success, parked on terminal) is re-checked before every re-fire,
+   *  so the loop self-terminates and a closed/removed position never re-fires. */
+  private scheduleLiveSellRetry(p: OpenPos, fallbackReason: string): void {
+    setTimeout(() => {
+      void (async () => {
+        if (this.stopped || p.parked || !this.positions.has(p.id)) return;
+        const conn = this.getConnection();
+        let price: number | null = null;
+        if (conn && (await globalRpcLimiter.throttleOrDropPriority(15))) {
+          const r = await fetchVaultPrice(conn, p.baseVault, p.quoteVault);
+          price = r?.priceSol ?? null;
+        }
+        const exitPrice = price ?? p.lastWrittenPrice ?? p.highPrice ?? p.entryPrice;
+        // Re-derive the reason from the fresh price (matches the poll's exit logic):
+        // TP if still at/above target, else stop if at/below the effective stop,
+        // else carry the reason that first triggered the exit.
+        let reason = fallbackReason;
+        const s = STRAT_BY_ID.get(p.strategyId);
+        if (price != null && s) {
+          const stop = effectiveStopPrice(p.entryPrice, p.highPrice, s);
+          if (p.tpPrice != null && price >= p.tpPrice) reason = 'take_profit';
+          else if (stop != null && price <= stop) reason = (p.baseSlPrice == null || stop > p.baseSlPrice) ? 'trail_stop' : 'stop_loss';
+        }
+        await this.closeLivePosition(p, reason, exitPrice);
+      })().catch((err) => logger.warn('live sell retry error %s: %s', p.mint.slice(0, 6), err instanceof Error ? err.message : String(err)));
+    }, LIVE_SELL_RETRY_DELAY_MS);
   }
 
   /** A followed wallet sold `mint` — close every follow-exit position in it.
