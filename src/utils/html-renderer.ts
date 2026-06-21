@@ -10667,5 +10667,63 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Strategy</th><th>Mint</th><th>Lead</th><th>Tier</th><th>Exit</th><th>Gross%</th><th>Net SOL</th><th>Hold</th></tr>${recentRows}</table>
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
+  // ── Wallet discovery funnel: how the smart-wallet pool grows over time ──────
+  const w = (a: any) => typeof a === 'string' && a.length > 9 ? `${a.slice(0, 4)}…${a.slice(-4)}` : (a ?? '—');
+  const wd = d.wallet_discovery ?? {};
+  const wds = wd.summary ?? {};
+  const wdg = wd.gate ?? {};
+  const scoredPct = (wds.total_candidates ?? 0) > 0 ? (100 * (wds.scored ?? 0) / wds.total_candidates).toFixed(1) : '0';
+  const promoRows = (wd.top_promotable ?? []).map((r: any) => `<tr>
+      <td style="font-family:monospace">${w(r.address)}</td><td>${r.n_round_trips}</td>
+      <td>${sol(r.total_realized_sol)}</td><td>${sol(r.total_realized_sol_drop_top3)}</td>
+      <td>${n(r.monthly_run_rate_sol, 0)}</td><td>${pct(r.win_rate)}</td>
+      <td>${r.last_active_days_ago != null ? r.last_active_days_ago + 'd' : '—'}</td></tr>`).join('');
+  const discoveryCard = wd.summary == null ? '' : `<div class="card" style="border-left:6px solid #7c3aed">
+    <h2>Wallet discovery <span class="desc" style="font-size:13px">— smart-money funnel (refresh to track over time)</span></h2>
+    <div class="desc">Candidates seeded from graduation buyers → scored by lifetime P&amp;L → gated to promotable.
+    Gate: ≥${wdg.min_round_trips ?? 100} round-trips · ≥${wdg.min_total_sol ?? 0.5} SOL · drop_top3&gt;${wdg.min_drop_top3_sol ?? 0} ·
+    ≥${wdg.min_monthly_run_rate_sol ?? 3.75} SOL/mo · active ≤${wdg.max_days_since_active ?? 14}d.</div>
+    <div class="grid">
+      <div class="stat"><span class="label">Candidates seeded</span><span class="value">${(wds.total_candidates ?? 0).toLocaleString()}</span></div>
+      <div class="stat"><span class="label">Scored</span><span class="value">${(wds.scored ?? 0).toLocaleString()} <span class="desc">(${scoredPct}%)</span></span></div>
+      <div class="stat"><span class="label">Promotable</span><span class="value green">${wds.promotable ?? 0}</span></div>
+      <div class="stat"><span class="label">Watch</span><span class="value yellow">${wds.watch ?? 0}</span></div>
+    </div>
+    ${promoRows ? `<h3>Top promotable wallets</h3>
+    <table><tr><th>Wallet</th><th>RTs</th><th>Net SOL</th><th>Drop3</th><th>SOL/mo</th><th>WR</th><th>Active</th></tr>${promoRows}</table>` : ''}
+  </div>`;
+
+  // ── Per-strategy lead attribution: which wallets drive TP vs SL per strategy ─
+  const attribRows = (d.lead_attribution ?? []).map((s: any) => {
+    const leads = (s.top_leads ?? []).map((l: any) => `<tr>
+        <td style="font-family:monospace">${w(l.wallet)}</td><td>${l.n}</td>
+        <td>${sol(l.net)}</td><td class="green">${l.n_tp}</td><td class="red">${l.n_sl}</td>
+        <td>${l.n > 0 ? pct(l.n_win / l.n) : '—'}</td></tr>`).join('');
+    const worst = (s.worst_leads ?? []).map((l: any) => `<tr>
+        <td style="font-family:monospace">${w(l.wallet)}</td><td>${l.n}</td>
+        <td>${sol(l.net)}</td><td class="green">${l.n_tp}</td><td class="red">${l.n_sl}</td>
+        <td>${l.n > 0 ? pct(l.n_win / l.n) : '—'}</td></tr>`).join('');
+    const concentrated = (s.top_wallet_share_pct ?? 0) >= 50;
+    return `<details class="card" style="border-left:6px solid ${concentrated ? '#16a34a' : '#334155'};padding:0">
+      <summary style="cursor:pointer;padding:12px 16px;font-size:13px">
+        <b>${s.strategy_id}</b> <span class="desc">· ${s.n_leads} leads · ${s.n_trades} trades · net ${sol(s.total_net)}</span>
+        <span style="float:right" class="${concentrated ? 'green' : 'desc'}">top wallet ${s.top_wallet_share_pct}% · top3 ${s.top3_share_pct}% of profit</span>
+      </summary>
+      <div style="padding:0 16px 14px">
+        <h3>Top leads (winners)</h3>
+        <table><tr><th>Wallet</th><th>n</th><th>Net SOL</th><th>TP</th><th>SL</th><th>WR</th></tr>${leads}</table>
+        ${worst ? `<h3>Worst leads (SL drivers)</h3>
+        <table><tr><th>Wallet</th><th>n</th><th>Net SOL</th><th>TP</th><th>SL</th><th>WR</th></tr>${worst}</table>` : ''}
+      </div>
+    </details>`;
+  }).join('');
+  const attribCard = (d.lead_attribution ?? []).length === 0 ? '' : `<div class="card" style="border-left:6px solid #16a34a">
+    <h2>Per-strategy lead attribution <span class="desc" style="font-size:13px">— who drives TP vs SL</span></h2>
+    <div class="desc">For each strategy (≥20 closed trades), lead wallets ranked by net SOL contributed. A high
+    "top wallet %" means the edge is a few wallets — candidates for a <code>walletAllowlist</code> to copy ONLY
+    the proven leads and shed the SL tail. Green = top wallet drives ≥50% of gross profit.</div>
+    ${attribRows}
+  </div>`;
+
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + discoveryCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
 }

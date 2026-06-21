@@ -5,6 +5,7 @@ import { SIM_DEFAULT_COST_PCT } from '../api/sim-constants';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { computeCopyRegime, currentRegimeScore, COPY_REGIME_BASELINE } from './copy-regime';
 import { computeMacroRegime, currentMacroScore } from './macro-regime';
+import { computeWalletLeaderboard } from './leaderboard';
 import { CopyLiveExecutor } from './copy-live-executor';
 import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
 import {
@@ -1344,6 +1345,57 @@ export function classifyLiveBuyFailure(err: string): string {
   return 'other';
 }
 
+/** Per-(strategy, lead_wallet) P&L attribution from active closed copy trades.
+ *  Surfaces, per strategy, WHICH lead wallets drive the wins (TP) vs losses (SL)
+ *  and how concentrated the profit is. Basis for a per-strategy walletAllowlist —
+ *  copy only the leads that actually work for THAT strategy, dropping the SL tail. */
+function computeLeadAttribution(activeClosed: Array<Record<string, unknown>>): unknown[] {
+  type Lead = { wallet: string; n: number; net: number; n_tp: number; n_sl: number; n_win: number };
+  const byStrat = new Map<string, Map<string, Lead>>();
+  for (const r of activeClosed) {
+    const sid = r.strategy_id as string;
+    const lw = r.lead_wallet as string | null;
+    const net = r.net_sol as number | null;
+    if (!sid || !lw || net == null) continue;
+    let leads = byStrat.get(sid);
+    if (!leads) { leads = new Map(); byStrat.set(sid, leads); }
+    let a = leads.get(lw);
+    if (!a) { a = { wallet: lw, n: 0, net: 0, n_tp: 0, n_sl: 0, n_win: 0 }; leads.set(lw, a); }
+    a.n++; a.net += net;
+    const reason = r.exit_reason as string;
+    if (reason === 'take_profit') a.n_tp++;
+    else if (reason === 'stop_loss' || reason === 'trail_stop') a.n_sl++;
+    if (net > 0) a.n_win++;
+  }
+  const out: Array<Record<string, unknown>> = [];
+  for (const [sid, leads] of byStrat) {
+    const arr = [...leads.values()];
+    const nTrades = arr.reduce((s, a) => s + a.n, 0);
+    if (nTrades < 20) continue; // too thin to attribute meaningfully
+    const grossWin = arr.reduce((s, a) => s + Math.max(0, a.net), 0);
+    arr.sort((a, b) => b.net - a.net);
+    const top = arr[0];
+    const top3GrossWin = arr.slice(0, 3).reduce((s, a) => s + Math.max(0, a.net), 0);
+    const round = (a: Lead) => ({ ...a, net: +a.net.toFixed(4) });
+    out.push({
+      strategy_id: sid,
+      n_leads: arr.length,
+      n_trades: nTrades,
+      total_net: +arr.reduce((s, a) => s + a.net, 0).toFixed(4),
+      gross_win: +grossWin.toFixed(4),
+      gross_loss: +arr.reduce((s, a) => s + Math.min(0, a.net), 0).toFixed(4),
+      // % of gross PROFIT delivered by the single best / top-3 leads — high = the
+      // edge is a handful of wallets (allowlist them); low = broadly distributed.
+      top_wallet_share_pct: grossWin > 0 ? +(Math.max(0, top.net) / grossWin * 100).toFixed(1) : 0,
+      top3_share_pct: grossWin > 0 ? +(top3GrossWin / grossWin * 100).toFixed(1) : 0,
+      top_leads: arr.slice(0, 6).map(round),
+      worst_leads: arr.filter((a) => a.net < 0).slice(-5).reverse().map(round),
+    });
+  }
+  out.sort((a, b) => (b.total_net as number) - (a.total_net as number));
+  return out;
+}
+
 export function computeCopyTrades(db: Database.Database): unknown {
   let closed: Array<Record<string, unknown>> = [];
   let open: Array<Record<string, unknown>> = [];
@@ -1670,6 +1722,20 @@ export function computeCopyTrades(db: Database.Database): unknown {
     // Per-lead-wallet copy P&L on the baseline — makes the lead-selection signal
     // (the book's strongest) legible: who's hot, who's cold.
     lead_performance: computeLeadPerformance(db),
+    // Wallet-discovery funnel (mirrors wallet-leaderboard.json) so the copy page
+    // shows the smart-wallet pool growing over time without leaving the page.
+    wallet_discovery: (() => {
+      const wl = computeWalletLeaderboard(db, 50) as {
+        summary?: unknown; gate?: unknown; rows?: Array<{ passed_gate?: boolean }>;
+      };
+      return {
+        summary: wl.summary ?? null,
+        gate: wl.gate ?? null,
+        top_promotable: (wl.rows ?? []).filter((r) => r.passed_gate).slice(0, 8),
+      };
+    })(),
+    // Per-strategy lead-wallet P&L attribution — who drives TP vs SL per strategy.
+    lead_attribution: computeLeadAttribution(activeClosed),
     // Copy promotion bar (n>=100 · drop3>0 · stress>0 · monthly>=3.75) + readiness.
     promotion: computeCopyPromotion(byStrategy),
     overall: {
