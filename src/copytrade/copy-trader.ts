@@ -255,6 +255,38 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-c2rr-ratchet-trailtp',  tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
     ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }], trailingTp: { atPct: 80, dropPct: 30 } },
+  // ── L (2026-06-21): FAT-TAIL WALLET allowlist cohort. Follow the 3 promotable
+  //    wallets with WIN RATE < 60% (9LxM 37%, 2o9U 54%, 5hYs 58%) — they're profitable
+  //    DESPITE low WR because of a fat right tail (most trades lose small, a few win
+  //    huge; 9LxM median RT is −12% but drop_top3 is +57 SOL). Hypothesis: a standard
+  //    TP100 CAPS their edge, so the right exit must LET WINNERS RUN / mirror their own
+  //    sell. All 5 share the EXACT same walletAllowlist + realistic entry (delay 5s,
+  //    drift 10) and differ ONLY in the exit, so the control isolates the exit effect.
+  //    maxHold 3600s ≈ the wallets' own avg hold (16–44 min). We can only copy their
+  //    POST-graduation PumpSwap buys (they trade heavily on the bonding curve too).
+  //    These wallets are in follow_list (promotable) so the probe already watches them.
+  //  -tp100 = CONTROL (standard exit — expected to cap the fat tail and underperform).
+  { id: 'copy-fatwallet-tp100',   tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10,
+    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
+  //  -follow = purest replication: exit when the wallet exits (mirror their own sell),
+  //    loose SL only as rug protection. Directly captures THEIR exit timing = their edge.
+  { id: 'copy-fatwallet-follow',  tpPct: null, slPct: 50, exitFollow: true, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10,
+    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
+  //  -runner = no TP, trail the peak: let winners run, exit on a 25% fall after +60%.
+  { id: 'copy-fatwallet-runner',  tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10, trailingTp: { atPct: 60, dropPct: 25 },
+    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
+  //  -hightp = high fixed TP (300%) to capture moonshots, cut losers at −35%.
+  { id: 'copy-fatwallet-hightp',  tpPct: 300, slPct: 35, exitFollow: false, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10,
+    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
+  //  -scaleout = bank half at +100%, trail the runner — fat-tail capture with de-risk.
+  { id: 'copy-fatwallet-scaleout', tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10,
+    scaleOut: { atPct: 100, fraction: 0.5 }, trailingTp: { atPct: 100, dropPct: 30 },
+    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
