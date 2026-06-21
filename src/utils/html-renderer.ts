@@ -6386,6 +6386,30 @@ export function renderLiveTrainingHtml(data: any): string {
     .lt-strat-chip.lt-active .lt-chk{display:inline}.lt-chk{display:none;font-size:10px}
     .lt-attrib{margin-top:12px;padding:10px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;font-size:11px;color:#94a3b8;line-height:1.7}
     .lt-attrib b{color:#cbd5e1}
+    /* The Analyst — AI commentary stream */
+    .an-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+    .an-ava{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#0e7490,#7c3aed);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:#e0f2fe;flex:0 0 auto}
+    .an-name{font-weight:700;color:#e2e8f0;font-size:14px;line-height:1}
+    .an-sub{color:#64748b;font-size:10px;margin-top:2px}
+    .an-pill{margin-left:auto;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:4px 10px;border-radius:12px;border:1px solid}
+    .an-goal{font-size:11px;color:#94a3b8;background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:4px 9px;font-variant-numeric:tabular-nums}
+    .an-goal b{color:#cbd5e1}
+    .an-btn{background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:4px;padding:4px 9px;font-size:11px;cursor:pointer;font-family:inherit}
+    .an-btn:hover{color:#e2e8f0}
+    .an-feed{background:#0b0b12;border:1px solid #1e293b;border-radius:8px;padding:10px 12px;height:230px;overflow-y:auto;font-size:12.5px;line-height:1.5;scroll-behavior:smooth}
+    .an-msg{margin:0 0 9px;animation:anfade .35s ease}
+    .an-msg:last-child{margin-bottom:0}
+    .an-ts{color:#475569;font-size:10px;font-variant-numeric:tabular-nums;margin-right:7px}
+    .an-msg.t-bad .an-tx{color:#fca5a5}
+    .an-msg.t-cold .an-tx{color:#fcd34d}
+    .an-msg.t-ok .an-tx{color:#86efac}
+    .an-msg.t-good .an-tx{color:#5eead4}
+    .an-msg.t-wait .an-tx{color:#94a3b8}
+    .an-typing{display:inline-flex;gap:3px;align-items:center;color:#64748b}
+    .an-typing i{width:5px;height:5px;border-radius:50%;background:#64748b;display:inline-block;animation:anblink 1.1s infinite}
+    .an-typing i:nth-child(2){animation-delay:.18s}.an-typing i:nth-child(3){animation-delay:.36s}
+    @keyframes anblink{0%,60%,100%{opacity:.25}30%{opacity:1}}
+    @keyframes anfade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
     @media (max-width:640px){.container{padding:8px}}
   `;
 
@@ -6410,6 +6434,20 @@ export function renderLiveTrainingHtml(data: any): string {
         <div class="lt-tooltip" id="lt-primary-tip"></div>
       </div>
       <div class="lt-hint">Drag across the chart to zoom · hover to inspect a trade · double-click to reset · right-click for overlays.</div>
+    </div>
+
+    <div class="card" id="lt-analyst-card">
+      <div class="an-head">
+        <div class="an-ava">AI</div>
+        <div>
+          <div class="an-name">The Analyst</div>
+          <div class="an-sub">live commentary · goal: +3.75 SOL / month</div>
+        </div>
+        <span class="an-pill" id="an-pill" style="color:#94a3b8;border-color:#475569">booting</span>
+        <span class="an-goal" id="an-goal">—</span>
+        <button class="an-btn" id="an-toggle" type="button">Pause</button>
+      </div>
+      <div class="an-feed" id="lt-analyst-feed"></div>
     </div>
 
     <div class="card">
@@ -7205,10 +7243,139 @@ export function renderLiveTrainingHtml(data: any): string {
 
   function renderAll(){ renderPrimary(); renderMetrics(); renderDiagnostics(); renderComparison(); }
 
+  // ── The Analyst: live AI-style commentary keyed to the 3.75 SOL/month goal ──
+  // Self-contained persona — no API key, no per-view cost. Each "beat" it
+  // recomputes the current scope's monthly run rate from the embedded live data,
+  // classifies it into a tier, and streams a dry/sarcastic line: it roasts when
+  // off-goal and grudgingly praises when clearing +3.75 SOL/mo. anPick() is the
+  // single seam to later swap in a real LLM call (keep the (tier,stats)→string
+  // contract; await a fetch to /api/roast and fall back to the local pool).
+  var AN_GOAL=3.75;
+  var AN={ feed:null, timer:null, paused:false, last:'', started:false };
+  function anM(v){ if(v===null||v===undefined||!isFinite(v)) return '0.00'; return (v>=0?'+':'')+v.toFixed(2); }
+  function anS(v){ v=num(v); return v===null?'0 SOL':f4(v)+' SOL'; }
+  function anW(v){ return (v===null||v===undefined)?'unknown':(v+'%'); }
+  function anEta(s){ if(!(s.monthly>0)) return 'a geological era'; var d=AN_GOAL/(s.monthly/30); return d>60?((d/30).toFixed(1)+' months'):(Math.round(d)+' days'); }
+
+  // assess current scope vs the goal → tier + stats for interpolation
+  function anAssess(){
+    var ts=liveTrades(); var m=jsComputeMetrics(ts);
+    var firstTs=null; for(var i=0;i<ts.length;i++){ if(ts[i].status==='closed'&&ts[i].entry_ts!=null){ if(firstTs===null||ts[i].entry_ts<firstTs) firstTs=ts[i].entry_ts; } }
+    var days=firstTs!==null?Math.max((Date.now()/1000-firstTs)/86400,7):7;
+    var net=m.total_net_sol||0;
+    var monthly=(m.n_closed>0)?(net/days*30):0;
+    var dd=0; try{ var pts=buildLineSeries('cum_sol').points, pk=-1e18;
+      for(var i=0;i<pts.length;i++){ if(pts[i].y>pk) pk=pts[i].y; var d=pk-pts[i].y; if(d>dd) dd=d; } }catch(e){}
+    var tier;
+    if(m.n_closed<8) tier='wait';
+    else if(net<0||monthly<0) tier='bad';
+    else if(monthly<AN_GOAL) tier='cold';
+    else if(monthly<AN_GOAL*2) tier='ok';
+    else tier='good';
+    return {tier:tier,monthly:monthly,net:net,n:m.n_closed,wr:m.win_rate_pct,
+      worstLoss:m.largest_loser_sol,bestWin:m.largest_winner_sol,dd:dd,
+      pct:(monthly/AN_GOAL*100),scope:scopeLabel().replace(/^—\s*/,'')};
+  }
+
+  // tier line pools — functions of the stats so jabs are data-aware
+  var AN_LINES={
+    wait:[
+      function(s){return "Only "+s.n+" closed trades. I don't roast small samples — that's just bullying. The bar says n>=100 before anyone's allowed to feel anything.";},
+      function(s){return s.n+" trades in. Statistically this is a rumor, not a track record. Wake me at 100.";},
+      function(s){return "Not enough data to be mean yet. I'm very patient, and very disappointed in advance.";},
+      function(s){return "Sample size "+s.n+". That's an anecdote, not an edge. Keep going.";}
+    ],
+    bad:[
+      function(s){return "Run rate "+anM(s.monthly)+" SOL/month against a +3.75 goal. The arrow points at the floor and so does morale.";},
+      function(s){return "Net "+anS(s.net)+" total. You've built a machine that converts SOL into tuition for lessons you keep failing.";},
+      function(s){return "Win rate "+anW(s.wr)+". A coin flip would like its reputation back.";},
+      function(s){return "Goal is +3.75/mo. You're at "+anM(s.monthly)+". At this pace you hit it shortly after the heat death of the universe.";},
+      function(s){return "Worst drawdown -"+f4u(s.dd)+" SOL. That wasn't a dip, that was a confession.";},
+      function(s){return "Biggest single loss "+anS(s.worstLoss)+". We don't talk about that trade. You know what you did.";},
+      function(s){return "Bleeding "+anM(s.monthly)+" a month. The mempool says thanks for the donation.";},
+      function(s){return "I asked the equity curve how it's doing and it just pointed at the stairs going down.";},
+      function(s){return "A whole strategy called '"+s.scope+"' and this is the result. Bold to put a name on it.";}
+    ],
+    cold:[
+      function(s){return anM(s.monthly)+" / 3.75 SOL a month. Green — technically. Like a participation trophy is technically a trophy.";},
+      function(s){return "You're at "+Math.round(s.pct)+"% of the goal. The other "+Math.max(0,Math.round(100-s.pct))+"% is doing heavy lifting in your imagination.";},
+      function(s){return "Up "+anS(s.net)+" all-time. Don't spend it on one priority fee.";},
+      function(s){return "At this rate it takes ~"+anEta(s)+" to clear a single 3.75. Rent, meanwhile, is monthly.";},
+      function(s){return "Positive but under target. The financial equivalent of 'we should hang out sometime.'";},
+      function(s){return "Win rate "+anW(s.wr)+" and still only "+anM(s.monthly)+"/mo. The winners are shy, the losers load-bearing.";},
+      function(s){return "Profitable-ish. The 'ish' is where I live.";}
+    ],
+    ok:[
+      function(s){return anM(s.monthly)+" SOL/month — above the 3.75 line. I'm contractually required to say 'good job,' so: good job. Don't make it weird.";},
+      function(s){return "Clearing the goal at "+Math.round(s.pct)+"% of target. Look at you, almost responsible.";},
+      function(s){return "Net "+anS(s.net)+" and the run rate covers the bills. I'd celebrate, but I've seen the sequel.";},
+      function(s){return "Hitting +3.75/mo. This is the calm, well-lit room right before the drawdown montage. Enjoy it.";},
+      function(s){return "Above target. Suspicious. I'll allow it, but I'm watching the tape.";},
+      function(s){return "Making money on memecoins. Either the edge is real or the market's generous. History votes generous.";}
+    ],
+    good:[
+      function(s){return anM(s.monthly)+" SOL/month — about "+(s.monthly/AN_GOAL).toFixed(1)+"x the goal. Either the edge is real or I'm about to be very wrong on camera.";},
+      function(s){return "Doubling the target. I'm not impressed, I'm just quietly recalculating my entire worldview.";},
+      function(s){return "Net "+anS(s.net)+". Fine. FINE. It's good. There, I said it. Don't screenshot this.";},
+      function(s){return "Crushing 3.75 by a mile. The part of the movie where everyone's happy and the music's nice. We both know the next scene.";},
+      function(s){return "Best trade "+anS(s.bestWin)+", run rate "+anM(s.monthly)+"/mo. Touch grass while it lasts.";},
+      function(s){return "Beating the goal "+(s.monthly/AN_GOAL).toFixed(1)+"x. I came to roast and I'm leaving grudgingly impressed. Disgusting.";}
+    ]
+  };
+  function anOpener(s){
+    if(s.tier==='wait') return "Booting up. "+s.n+" trades on the tape — not enough to start swinging. Yet.";
+    if(s.tier==='bad') return "Alright, let's see the damage. Run rate "+anM(s.monthly)+" SOL/month vs a +3.75 goal. Oh. Oh no.";
+    if(s.tier==='cold') return "Clocking in. Green but under the 3.75 line at "+anM(s.monthly)+"/mo. Mediocrity, my old friend.";
+    if(s.tier==='ok') return "Tuning in. "+anM(s.monthly)+" SOL/month — above target. Suspicious, but allowed.";
+    return "Well well. "+anM(s.monthly)+" SOL/month, "+(s.monthly/AN_GOAL).toFixed(1)+"x the goal. This better not be a setup.";
+  }
+  function anPick(tier,s){ var pool=AN_LINES[tier]||AN_LINES.wait, txt, g=0;
+    do{ txt=pool[Math.floor(Math.random()*pool.length)](s); g++; }while(txt===AN.last && g<8); AN.last=txt; return txt; }
+  function anTime(){ var d=new Date(),p=function(n){return(n<10?'0':'')+n;}; return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); }
+  function anScroll(){ if(AN.feed) AN.feed.scrollTop=AN.feed.scrollHeight; }
+  function anTyping(){ var w=document.createElement('div'); w.className='an-msg'; w.innerHTML='<span class="an-typing"><i></i><i></i><i></i></span>'; AN.feed.appendChild(w); anScroll(); return w; }
+  function anAppend(text,tier){ var el=document.createElement('div'); el.className='an-msg t-'+tier;
+    var ts=document.createElement('span'); ts.className='an-ts'; ts.textContent=anTime();
+    var tx=document.createElement('span'); tx.className='an-tx'; tx.textContent=text;
+    el.appendChild(ts); el.appendChild(tx); AN.feed.appendChild(el);
+    while(AN.feed.children.length>60) AN.feed.removeChild(AN.feed.firstChild); anScroll(); }
+  function anStatus(s){
+    var pill=document.getElementById('an-pill');
+    var map={wait:['WARMING UP','#94a3b8','#475569'],bad:['ROASTING','#fca5a5','#7f1d1d'],
+      cold:['UNIMPRESSED','#fcd34d','#854d0e'],ok:['GRUDGING RESPECT','#86efac','#166534'],good:['STANDING OVATION','#5eead4','#115e59']};
+    var v=map[s.tier]||map.wait; if(pill){ pill.textContent=v[0]; pill.style.color=v[1]; pill.style.borderColor=v[2]; }
+    var g=document.getElementById('an-goal');
+    if(g){ g.innerHTML = s.tier==='wait' ? ('gathering data · '+s.n+' trades')
+      : ('<b>'+anM(s.monthly)+'</b> / 3.75 SOL/mo · <b>'+Math.round(s.pct)+'%</b> of goal'); }
+  }
+  function anSay(line,tier,delay){ var typ=anTyping();
+    setTimeout(function(){ if(typ&&typ.parentNode) AN.feed.removeChild(typ); anAppend(line,tier); }, delay||(900+Math.random()*700)); }
+  function anBeat(forced){ if(AN.paused&&!forced) return; var s=anAssess(); anStatus(s); anSay(anPick(s.tier,s),s.tier); }
+  function anReact(kind){ if(!AN.started||AN.paused) return; var s=anAssess(); var line;
+    if(kind==='scope'){ line="Now judging "+(s.scope||'the whole book')+". Let's see if this one's different. (They rarely are.)"; }
+    else if(kind==='metric'){ var sel=document.getElementById('lt-metric'); var lbl=(sel&&sel.options[sel.selectedIndex])?sel.options[sel.selectedIndex].text:'that';
+      line = state.metric==='cum_sol' ? "Back to the P&L — the only chart that keeps score." : ("Switching to "+lbl+"? Bold, staring at anything except the bottom line."); }
+    else return;
+    anStatus(s); anSay(line,s.tier,650);
+  }
+  function anStart(){
+    AN.feed=document.getElementById('lt-analyst-feed'); if(!AN.feed) return; AN.started=true;
+    var s=anAssess(); anStatus(s); anSay(anOpener(s),s.tier,600);
+    AN.timer=setInterval(anBeat,8500);
+    var tg=document.getElementById('an-toggle');
+    if(tg) tg.addEventListener('click', function(){ AN.paused=!AN.paused; this.textContent=AN.paused?'Resume':'Pause'; if(!AN.paused) anBeat(true); });
+  }
+
   // ── init ──
   var primaryChart, cmpChart;
   function init(){
-    if(!LT.has_live_data) return;
+    if(!LT.has_live_data){
+      var f=document.getElementById('lt-analyst-feed');
+      if(f) f.innerHTML='<div class="an-msg t-wait"><span class="an-tx">No live trades on the tape yet. I can’t roast a blank chart — that’s just yelling at a wall. Come back when there’s a P&L to insult.</span></div>';
+      var p=document.getElementById('an-pill'); if(p){ p.textContent='STANDBY'; }
+      var tg0=document.getElementById('an-toggle'); if(tg0) tg0.style.display='none';
+      return;
+    }
     primaryChart=makeChart(document.getElementById('lt-primary-wrap'), document.getElementById('lt-primary-tip'));
     cmpChart=makeChart(document.getElementById('lt-cmp-wrap'), document.getElementById('lt-cmp-tip'));
     // strategy chips — MULTI-SELECT. "All Live" (data-strat="") clears the
@@ -7234,6 +7401,7 @@ export function renderLiveTrainingHtml(data: any): string {
       syncChips();
       document.getElementById('lt-reset-zoom').style.display='none';
       renderAll();
+      anReact('scope');
     });
     // type segment
     document.getElementById('lt-type-seg').addEventListener('click', function(ev){
@@ -7245,7 +7413,7 @@ export function renderLiveTrainingHtml(data: any): string {
       document.getElementById('lt-reset-zoom').style.display='none';
       populateMetricSelect(); renderPrimary();
     });
-    document.getElementById('lt-metric').addEventListener('change', function(){ state.metric=this.value; document.getElementById('lt-reset-zoom').style.display='none'; renderPrimary(); });
+    document.getElementById('lt-metric').addEventListener('change', function(){ state.metric=this.value; document.getElementById('lt-reset-zoom').style.display='none'; renderPrimary(); anReact('metric'); });
     document.getElementById('lt-reset-zoom').addEventListener('click', function(){ primaryChart.resetZoom(); this.style.display='none'; });
     document.getElementById('lt-copy-img').addEventListener('click', function(){
       var btn=this, old=btn.textContent; btn.disabled=true; btn.style.opacity='0.7'; btn.textContent='Rendering…';
@@ -7256,6 +7424,7 @@ export function renderLiveTrainingHtml(data: any): string {
     });
     populateMetricSelect();
     renderAll();
+    anStart();
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
