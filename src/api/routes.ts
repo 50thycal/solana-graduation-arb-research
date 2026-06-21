@@ -54,6 +54,7 @@ import { computeCounterfactual } from './counterfactual';
 import { computeLossPostmortem } from './loss-postmortem';
 import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
 import { computeDailyReport } from './daily-report';
+import { handleRoast } from './roast';
 import {
   renderStrategyPercentilesPanel,
   renderEdgeDecayPanel,
@@ -202,6 +203,12 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     res.send(html);
   };
   const wantsHtml = (req: Request): boolean => req.query.format === 'html';
+
+  // ── /api/roast ──
+  // "The Analyst" LLM commentary for the live dashboard stream. POST stats →
+  // one dry/sarcastic line keyed to the +3.75 SOL/month goal. Always 200 with a
+  // {source}; the page falls back to local lines on disabled/cooldown/error.
+  app.post('/api/roast', wrap(handleRoast));
 
   // ── /api/diagnose ──
   // Runs the CLAUDE.md Level 1-5 bug triage and returns a verdict, plus a

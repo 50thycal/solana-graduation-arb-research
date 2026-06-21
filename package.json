@@ -11,6 +11,7 @@
     "wallet-pnl": "ts-node src/copytrade/run-wallet-pnl.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.69.0",
     "@pump-fun/pump-swap-sdk": "^1.15.0",
     "@solana/spl-token": "^0.4.6",
     "@solana/web3.js": "^1.95.0",
