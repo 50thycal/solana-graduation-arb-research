@@ -6451,7 +6451,15 @@ export function renderLiveTrainingHtml(data: any): string {
         </div>
         <span class="an-pill" id="an-pill" style="color:#94a3b8;border-color:#475569">booting</span>
         <span class="an-goal" id="an-goal">—</span>
+        <select class="an-btn" id="an-persona" title="The Analyst's personality">
+          <option value="quant">Deadpan Quant</option>
+          <option value="hype">Hype Man</option>
+          <option value="doomer">Permabear Doomer</option>
+          <option value="zen">Zen Monk</option>
+          <option value="drill">Drill Sergeant</option>
+        </select>
         <button class="an-btn" id="an-toggle" type="button">Pause</button>
+        <button class="an-btn" id="an-recap" type="button" title="Generate a shareable recap card (title, stats, chart + an AI summary) and copy it to your clipboard">Recap card</button>
       </div>
       <div class="an-feed" id="lt-analyst-feed"></div>
     </div>
@@ -7258,7 +7266,9 @@ export function renderLiveTrainingHtml(data: any): string {
   // single seam to later swap in a real LLM call (keep the (tier,stats)→string
   // contract; await a fetch to /api/roast and fall back to the local pool).
   var AN_GOAL=3.75;
-  var AN={ feed:null, timer:null, paused:false, last:'', started:false, llm:'unknown', llmBadge:false, seq:0, typingEl:null };
+  var AN_PERSONAS={ quant:{label:'Deadpan Quant'}, hype:{label:'Hype Man'}, doomer:{label:'Permabear Doomer'}, zen:{label:'Zen Monk'}, drill:{label:'Drill Sergeant'} };
+  var AN={ feed:null, timer:null, paused:false, last:'', started:false, llm:'unknown', llmBadge:false, seq:0, typingEl:null, persona:'quant' };
+  try{ var _p=localStorage.getItem('an-persona'); if(_p && AN_PERSONAS[_p]) AN.persona=_p; }catch(e){}
   function anM(v){ if(v===null||v===undefined||!isFinite(v)) return '0.00'; return (v>=0?'+':'')+v.toFixed(2); }
   function anS(v){ v=num(v); return v===null?'0 SOL':f4(v)+' SOL'; }
   function anW(v){ return (v===null||v===undefined)?'unknown':(v+'%'); }
@@ -7382,7 +7392,7 @@ export function renderLiveTrainingHtml(data: any): string {
     if(AN.llm==='off' || typeof fetch!=='function') return Promise.resolve(local());
     try{
       return fetch('/api/roast',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({monthly:s.monthly,net:s.net,n:s.n,winRate:s.wr,worstLoss:s.worstLoss,bestWin:s.bestWin,drawdown:s.dd,scope:s.scope})})
+        body:JSON.stringify({monthly:s.monthly,net:s.net,n:s.n,winRate:s.wr,worstLoss:s.worstLoss,bestWin:s.bestWin,drawdown:s.dd,scope:s.scope,persona:AN.persona,mode:'line'})})
         .then(function(resp){ return resp.ok?resp.json():null; })
         .then(function(j){
           if(j && j.source==='llm' && j.line){ AN.llm='on'; AN.last=j.line; return {line:j.line, source:'llm'}; }
@@ -7404,12 +7414,134 @@ export function renderLiveTrainingHtml(data: any): string {
     else return;
     anStatus(s); anShow(function(){ return {line:line, source:'local'}; }, s.tier, 650);
   }
+
+  // ── Recap card: a shareable PNG (title + stats + chart + an AI summary) ──
+  var anMeasureCtx=null;
+  function anWrap(text, font, maxW, maxLines){
+    if(!anMeasureCtx) anMeasureCtx=document.createElement('canvas').getContext('2d');
+    anMeasureCtx.font=font;
+    var words=String(text||'').split(/\s+/), lines=[], cur='';
+    for(var i=0;i<words.length;i++){ var t=cur?cur+' '+words[i]:words[i];
+      if(anMeasureCtx.measureText(t).width>maxW && cur){ lines.push(cur); cur=words[i]; } else cur=t; }
+    if(cur) lines.push(cur);
+    if(maxLines && lines.length>maxLines){ lines=lines.slice(0,maxLines);
+      var last=lines[maxLines-1];
+      while(anMeasureCtx.measureText(last+'…').width>maxW && last.length>1) last=last.slice(0,-1);
+      lines[maxLines-1]=last.replace(/[\s.,;:]+$/,'')+'…'; }
+    return lines;
+  }
+  function anLocalRecap(s){ var a=anPick(s.tier,s), b=anPick(s.tier,s); return a+(b&&b!==a?' '+b:''); }
+  function anFetchRecap(s){
+    if(AN.llm==='off' || typeof fetch!=='function') return Promise.resolve(anLocalRecap(s));
+    try{
+      return fetch('/api/roast',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({monthly:s.monthly,net:s.net,n:s.n,winRate:s.wr,worstLoss:s.worstLoss,bestWin:s.bestWin,drawdown:s.dd,scope:s.scope,persona:AN.persona,mode:'recap'})})
+        .then(function(r){ return r.ok?r.json():null; })
+        .then(function(j){ if(j&&j.source==='llm'&&j.line){ AN.llm='on'; return j.line; } if(j&&j.source==='disabled') AN.llm='off'; return anLocalRecap(s); })
+        .catch(function(){ return anLocalRecap(s); });
+    }catch(e){ return Promise.resolve(anLocalRecap(s)); }
+  }
+  function anBuildCard(s, recap){
+    var NS='http://www.w3.org/2000/svg', FS="'Helvetica Neue',Helvetica,Arial,sans-serif";
+    var CW=1200, CH=630;
+    var pos=s.monthly>=AN_GOAL, neg=(s.net<0||s.monthly<0);
+    var accent=neg?'#ef4444':(pos?'#22c55e':'#22d3ee');
+    var out=document.createElementNS(NS,'svg');
+    out.setAttribute('xmlns',NS); out.setAttribute('width',CW); out.setAttribute('height',CH);
+    out.setAttribute('viewBox','0 0 '+CW+' '+CH); out.setAttribute('font-family',FS);
+    function txt(x,y,str,a){ a=a||{}; a.x=x; a.y=y; var e=svgEl('text',a); e.textContent=str; out.appendChild(e); return e; }
+    function rect(a){ out.appendChild(svgEl('rect',a)); }
+    rect({x:0,y:0,width:CW,height:CH,fill:'#0b0b12'});
+    rect({x:0,y:0,width:CW,height:6,fill:accent,opacity:0.9});
+    // header
+    txt(48,58,(s.scope||'all active strategies'),{fill:'#f1f5f9','font-size':27,'font-weight':'700'});
+    txt(48,84,'post-graduation PumpFun trading bot',{fill:'#94a3b8','font-size':15});
+    txt(CW-48,56,((AN_PERSONAS[AN.persona]||{}).label||'The Analyst'),{fill:accent,'font-size':16,'font-weight':'700','text-anchor':'end'});
+    txt(CW-48,80,(AN.llm==='on'?'powered by Claude':'The Analyst'),{fill:'#64748b','font-size':13,'text-anchor':'end'});
+    // recap text
+    var rlines=anWrap(recap,'italic 30px '+FS,CW-96,3);
+    for(var i=0;i<rlines.length;i++){ txt(48,150+i*40,rlines[i],{fill:'#e2e8f0','font-size':30,'font-style':'italic','font-weight':'500'}); }
+    // sparkline panel
+    var px=48,py=300,pw=CW-96,ph=160;
+    rect({x:px,y:py,width:pw,height:ph,fill:'#13131f',rx:10});
+    txt(px+14,py+24,'Cumulative SOL P&L',{fill:'#64748b','font-size':13,'font-weight':'700'});
+    var pts=[]; try{ pts=buildLineSeries('cum_sol').points; }catch(e){}
+    if(pts.length>=2){
+      var ip=18,plx=px+ip,ply=py+34,plw=pw-ip*2,plh=ph-34-16;
+      var xs=pts.map(function(p){return p.x;}), ys=pts.map(function(p){return p.y;});
+      var x0=Math.min.apply(null,xs),x1=Math.max.apply(null,xs);
+      var ymin=Math.min.apply(null,ys.concat([0])),ymax=Math.max.apply(null,ys.concat([0]));
+      if(x1===x0)x1=x0+1; if(ymax===ymin)ymax=ymin+1;
+      var X=function(x){return plx+(x-x0)/(x1-x0)*plw;}, Y=function(y){return ply+(1-(y-ymin)/(ymax-ymin))*plh;};
+      out.appendChild(svgEl('line',{x1:plx,y1:Y(0),x2:plx+plw,y2:Y(0),stroke:'#334155','stroke-width':1,'stroke-dasharray':'4 4'}));
+      var d=''; for(var k=0;k<pts.length;k++){ d+=(k?'L':'M')+X(pts[k].x).toFixed(1)+' '+Y(pts[k].y).toFixed(1)+' '; }
+      out.appendChild(svgEl('path',{d:d+'L'+X(pts[pts.length-1].x).toFixed(1)+' '+Y(0).toFixed(1)+' L'+X(pts[0].x).toFixed(1)+' '+Y(0).toFixed(1)+' Z',fill:accent,opacity:0.12}));
+      out.appendChild(svgEl('path',{d:d,fill:'none',stroke:accent,'stroke-width':3}));
+    } else { txt(px+pw/2,py+ph/2+6,'not enough trades to chart yet',{fill:'#475569','font-size':16,'text-anchor':'middle','font-style':'italic'}); }
+    // stat tiles
+    var tiles=[
+      ['NET SOL', anS(s.net), s.net>=0?'#22c55e':'#ef4444'],
+      ['RUN RATE / MO', anM(s.monthly)+' SOL', s.monthly>=AN_GOAL?'#22c55e':(s.monthly<0?'#ef4444':'#e2e8f0')],
+      ['% OF GOAL', Math.round(s.pct)+'%', s.pct>=100?'#22c55e':'#e2e8f0'],
+      ['WIN RATE', (s.wr==null?'—':s.wr+'%'), '#e2e8f0'],
+      ['TRADES', String(s.n), '#e2e8f0']
+    ];
+    var tw=(CW-96)/tiles.length;
+    for(var t=0;t<tiles.length;t++){ var tx0=48+t*tw;
+      txt(tx0,496,tiles[t][0],{fill:'#64748b','font-size':13,'font-weight':'700','letter-spacing':'0.5'});
+      txt(tx0,530,tiles[t][1],{fill:tiles[t][2],'font-size':28,'font-weight':'700'}); }
+    // footer
+    var dt=new Date();
+    txt(48,CH-22,'Captured '+dt.toLocaleString(undefined,{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),{fill:'#64748b','font-size':13});
+    txt(CW-48,CH-22,(neg?"it's so over":(pos?'we are so back':'warming up')),{fill:accent,'font-size':16,'font-weight':'700','font-style':'italic','text-anchor':'end'});
+    return {svg:out, w:CW, h:CH};
+  }
+  function anSvgBlob(svg, W, H){
+    return new Promise(function(resolve,reject){
+      var xml=new XMLSerializer().serializeToString(svg);
+      var img=new Image();
+      img.onload=function(){ var sc=2,c=document.createElement('canvas'); c.width=W*sc; c.height=H*sc;
+        var x=c.getContext('2d'); x.fillStyle='#0b0b12'; x.fillRect(0,0,c.width,c.height);
+        x.drawImage(img,0,0,c.width,c.height); c.toBlob(function(bl){ bl?resolve(bl):reject(new Error('toBlob')); },'image/png'); };
+      img.onerror=function(){ reject(new Error('img')); };
+      img.src='data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(xml)));
+    });
+  }
+  function anCardDownload(bl){ var a=document.createElement('a'); a.href=URL.createObjectURL(bl);
+    a.download='recap-'+Date.now()+'.png'; document.body.appendChild(a); a.click();
+    setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1500); }
+  function anCardCopy(p, cb){
+    if(navigator.clipboard && window.ClipboardItem){
+      try{ navigator.clipboard.write([new window.ClipboardItem({'image/png':p})])
+        .then(function(){ cb&&cb('copied'); })
+        .catch(function(){ p.then(function(b){ anCardDownload(b); cb&&cb('downloaded'); }).catch(function(){ cb&&cb('error'); }); });
+      }catch(e){ p.then(function(b){ anCardDownload(b); cb&&cb('downloaded'); }).catch(function(){ cb&&cb('error'); }); }
+    } else { p.then(function(b){ anCardDownload(b); cb&&cb('downloaded'); }).catch(function(){ cb&&cb('error'); }); }
+  }
+  function anRecap(btn){
+    var old=btn.textContent; btn.disabled=true; btn.style.opacity='0.7'; btn.textContent='Generating…';
+    var s=anAssess();
+    anFetchRecap(s).then(function(text){
+      btn.textContent='Rendering…';
+      var card=anBuildCard(s, text);
+      anCardCopy(anSvgBlob(card.svg, card.w, card.h), function(res){
+        btn.textContent = res==='copied'?'Copied!':(res==='downloaded'?'Saved PNG':'Failed — retry');
+        setTimeout(function(){ btn.textContent=old; btn.disabled=false; btn.style.opacity='1'; }, 2100);
+      });
+    });
+  }
   function anStart(){
     AN.feed=document.getElementById('lt-analyst-feed'); if(!AN.feed) return; AN.started=true;
     var s=anAssess(); anStatus(s); anEmit(s,true,600);
     AN.timer=setInterval(anBeat, (typeof AN_BEAT_MS==='number' && AN_BEAT_MS>0)?AN_BEAT_MS:30000);
     var tg=document.getElementById('an-toggle');
     if(tg) tg.addEventListener('click', function(){ AN.paused=!AN.paused; this.textContent=AN.paused?'Resume':'Pause'; if(!AN.paused) anBeat(true); });
+    var pf=document.getElementById('an-persona');
+    if(pf){ pf.value=AN.persona;
+      pf.addEventListener('change', function(){ AN.persona=this.value; try{ localStorage.setItem('an-persona',AN.persona); }catch(e){}
+        if(AN.started && !AN.paused) anEmit(anAssess(), false, 500); }); }
+    var rb=document.getElementById('an-recap');
+    if(rb) rb.addEventListener('click', function(){ anRecap(this); });
   }
 
   // ── init ──
