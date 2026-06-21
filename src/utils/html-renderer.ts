@@ -7251,7 +7251,7 @@ export function renderLiveTrainingHtml(data: any): string {
   // single seam to later swap in a real LLM call (keep the (tier,stats)→string
   // contract; await a fetch to /api/roast and fall back to the local pool).
   var AN_GOAL=3.75;
-  var AN={ feed:null, timer:null, paused:false, last:'', started:false };
+  var AN={ feed:null, timer:null, paused:false, last:'', started:false, llm:'unknown', llmBadge:false };
   function anM(v){ if(v===null||v===undefined||!isFinite(v)) return '0.00'; return (v>=0?'+':'')+v.toFixed(2); }
   function anS(v){ v=num(v); return v===null?'0 SOL':f4(v)+' SOL'; }
   function anW(v){ return (v===null||v===undefined)?'unknown':(v+'%'); }
@@ -7350,7 +7350,31 @@ export function renderLiveTrainingHtml(data: any): string {
   }
   function anSay(line,tier,delay){ var typ=anTyping();
     setTimeout(function(){ if(typ&&typ.parentNode) AN.feed.removeChild(typ); anAppend(line,tier); }, delay||(900+Math.random()*700)); }
-  function anBeat(forced){ if(AN.paused&&!forced) return; var s=anAssess(); anStatus(s); anSay(anPick(s.tier,s),s.tier); }
+  // anProduce: try the real Claude endpoint (/api/roast); fall back to the local
+  // pool on disabled/cooldown/error so the stream never stalls. Resolves
+  // {line, source}. isOpener swaps the local fallback to the tier opener.
+  function anProduce(s, isOpener){
+    var local=function(){ return {line:(isOpener?anOpener(s):anPick(s.tier,s)), source:'local'}; };
+    if(AN.llm==='off' || typeof fetch!=='function') return Promise.resolve(local());
+    try{
+      return fetch('/api/roast',{method:'POST',headers:{'content-type':'application/json'},
+        body:JSON.stringify({monthly:s.monthly,net:s.net,n:s.n,winRate:s.wr,worstLoss:s.worstLoss,bestWin:s.bestWin,drawdown:s.dd,scope:s.scope})})
+        .then(function(resp){ return resp.ok?resp.json():null; })
+        .then(function(j){
+          if(j && j.source==='llm' && j.line){ AN.llm='on'; AN.last=j.line; return {line:j.line, source:'llm'}; }
+          if(j && j.source==='disabled'){ AN.llm='off'; }
+          return local();
+        })
+        .catch(function(){ return local(); });
+    }catch(e){ return Promise.resolve(local()); }
+  }
+  function anSource(src){ if(src==='llm' && !AN.llmBadge){ AN.llmBadge=true;
+    var sub=document.querySelector('#lt-analyst-card .an-sub');
+    if(sub) sub.textContent='live commentary · powered by Claude · goal +3.75 SOL/mo'; } }
+  function anEmit(s, isOpener, floorMs){ var typ=anTyping(), t0=Date.now();
+    anProduce(s, isOpener).then(function(r){ var wait=Math.max(0,(floorMs||700)-(Date.now()-t0));
+      setTimeout(function(){ if(typ&&typ.parentNode) AN.feed.removeChild(typ); anAppend(r.line, s.tier); anSource(r.source); }, wait); }); }
+  function anBeat(forced){ if(AN.paused&&!forced) return; var s=anAssess(); anStatus(s); anEmit(s,false,700); }
   function anReact(kind){ if(!AN.started||AN.paused) return; var s=anAssess(); var line;
     if(kind==='scope'){ line="Now judging "+(s.scope||'the whole book')+". Let's see if this one's different. (They rarely are.)"; }
     else if(kind==='metric'){ var sel=document.getElementById('lt-metric'); var lbl=(sel&&sel.options[sel.selectedIndex])?sel.options[sel.selectedIndex].text:'that';
@@ -7360,7 +7384,7 @@ export function renderLiveTrainingHtml(data: any): string {
   }
   function anStart(){
     AN.feed=document.getElementById('lt-analyst-feed'); if(!AN.feed) return; AN.started=true;
-    var s=anAssess(); anStatus(s); anSay(anOpener(s),s.tier,600);
+    var s=anAssess(); anStatus(s); anEmit(s,true,600);
     AN.timer=setInterval(anBeat,8500);
     var tg=document.getElementById('an-toggle');
     if(tg) tg.addEventListener('click', function(){ AN.paused=!AN.paused; this.textContent=AN.paused?'Resume':'Pause'; if(!AN.paused) anBeat(true); });
