@@ -6789,13 +6789,18 @@ export function renderLiveTrainingHtml(data: any): string {
         var mp=cfg.series[0].points.filter(function(p){return p.x>=xv[0]-1e-9 && p.x<=xv[1]+1e-9;});
         var isSol=(cfg.unit==='SOL');
         var annoG=svgEl('g',{'pointer-events':'none'});
+        // Text labels are collected here, then de-overlapped + drawn at the end
+        // so the memes yield to the data labels instead of stacking on them.
+        var labels=[];
         function fmtVal(v){ return cfg.unit==='SOL'?(f4(v)+' SOL'):(cfg.unit==='%'?fpct(v):(cfg.unit==='ms'?fint(v)+' ms':fint(v))); }
         function inX(px){ return px>=PADL-1 && px<=W-PADR+1; }
-        // a text label that auto-anchors so it never clips the chart edges
-        function labelAt(px,py,txt,fill,dy,size){
-          var t=svgEl('text',{x:px,y:py+(dy||0),fill:fill,'font-size':(size||10),'font-weight':'bold','text-anchor':'middle','font-style':'italic'});
-          if(px<PADL+40) t.setAttribute('text-anchor','start'); else if(px>W-PADR-40) t.setAttribute('text-anchor','end');
-          t.textContent=txt; annoG.appendChild(t);
+        // record a label (auto-anchored away from the chart edges). dy<0 places
+        // it above the point (and nudges upward on collision), dy>0 below. Higher
+        // prio keeps its spot; lower-prio labels move out of the way.
+        function labelAt(px,py,txt,fill,dy,size,prio,style){
+          var anchor='middle'; if(px<PADL+40) anchor='start'; else if(px>W-PADR-40) anchor='end';
+          labels.push({x:px,y:py+(dy||0),text:txt,fill:fill,size:(size||10),anchor:anchor,
+            dir:((dy||0)<0?-1:1),prio:(prio==null?5:prio),style:(style||'italic')});
         }
         function dot(px,py,fill){ annoG.appendChild(svgEl('circle',{cx:px,cy:py,r:3,fill:fill,stroke:'#0f172a','stroke-width':1})); }
 
@@ -6810,7 +6815,7 @@ export function renderLiveTrainingHtml(data: any): string {
           [].concat(peaks,dips).forEach(function(e,idx){ var isP=e.type==='peak';
             var px=xToPx(e.p.x), py=yToPx(e.p.y); if(!inX(px)) return;
             var pool=isP?MEME_UP:MEME_DOWN;
-            labelAt(px,py,memePick(pool, Math.round(e.p.x)+idx*7919),(isP?'#22c55e':'#ef4444'),(isP?-7:15));
+            labelAt(px,py,memePick(pool, Math.round(e.p.x)+idx*7919),(isP?'#22c55e':'#ef4444'),(isP?-7:15),9.5,1);
           });
         }
 
@@ -6818,7 +6823,7 @@ export function renderLiveTrainingHtml(data: any): string {
         if(ANNO.ath && isSol && mp.length){
           var hi=mp[0]; for(var i=1;i<mp.length;i++){ if(mp[i].y>hi.y) hi=mp[i]; }
           var px=xToPx(hi.x), py=yToPx(hi.y);
-          if(inX(px) && hi.y>0){ dot(px,py,'#facc15'); labelAt(px,py,'new ATH','#facc15',-8,9.5); }
+          if(inX(px) && hi.y>0){ dot(px,py,'#facc15'); labelAt(px,py,'new ATH','#facc15',-8,9.5,6); }
         }
 
         // ── biggest win / biggest loss: tag the single best & worst trade ──
@@ -6827,8 +6832,8 @@ export function renderLiveTrainingHtml(data: any): string {
           for(var i=0;i<mp.length;i++){ var d=num(mp[i].t&&mp[i].t.net_profit_sol); if(d===null) continue;
             if(d>0 && (!bestW || d>num(bestW.t.net_profit_sol))) bestW=mp[i];
             if(d<0 && (!worstL || d<num(worstL.t.net_profit_sol))) worstL=mp[i]; }
-          if(bestW){ var pxw=xToPx(bestW.x),pyw=yToPx(bestW.y); if(inX(pxw)){ dot(pxw,pyw,'#22c55e'); labelAt(pxw,pyw,'biggest bag '+f4(num(bestW.t.net_profit_sol)),'#22c55e',-8,9.5); } }
-          if(worstL){ var pxl=xToPx(worstL.x),pyl=yToPx(worstL.y); if(inX(pxl)){ dot(pxl,pyl,'#ef4444'); labelAt(pxl,pyl,'max pain '+f4(num(worstL.t.net_profit_sol)),'#ef4444',16,9.5); } }
+          if(bestW){ var pxw=xToPx(bestW.x),pyw=yToPx(bestW.y); if(inX(pxw)){ dot(pxw,pyw,'#22c55e'); labelAt(pxw,pyw,'biggest bag '+f4(num(bestW.t.net_profit_sol)),'#22c55e',-8,9.5,7); } }
+          if(worstL){ var pxl=xToPx(worstL.x),pyl=yToPx(worstL.y); if(inX(pxl)){ dot(pxl,pyl,'#ef4444'); labelAt(pxl,pyl,'max pain '+f4(num(worstL.t.net_profit_sol)),'#ef4444',16,9.5,7); } }
         }
 
         // ── max drawdown: deepest peak→trough decline on the cumulative line ──
@@ -6840,7 +6845,7 @@ export function renderLiveTrainingHtml(data: any): string {
             if(inX(pxp)||inX(pxt)){
               annoG.appendChild(svgEl('line',{x1:pxp,y1:pyp,x2:pxt,y2:pyt,stroke:'#f97316','stroke-width':1.2,'stroke-dasharray':'4 3',opacity:0.9}));
               dot(pxp,pyp,'#f97316'); dot(pxt,pyt,'#f97316');
-              labelAt((pxp+pxt)/2,Math.max(pyp,pyt),'max drawdown -'+f4u(maxDD)+' SOL','#f97316',16,9.5);
+              labelAt((pxp+pxt)/2,Math.max(pyp,pyt),'max drawdown -'+f4u(maxDD)+' SOL','#f97316',16,9.5,6);
             }
           }
         }
@@ -6853,8 +6858,8 @@ export function renderLiveTrainingHtml(data: any): string {
               if(hit){ if(cs===0) ci=i; cs++; if(cs>bs){bs=cs;bi=ci;} } else cs=0; }
             return bs>=3?{len:bs,end:mp[bi+bs-1]}:null; }
           var heater=longestRun(1), cold=longestRun(-1);
-          if(heater){ var pxh=xToPx(heater.end.x),pyh=yToPx(heater.end.y); if(inX(pxh)){ labelAt(pxh,pyh,heater.len+'-trade heater','#22c55e',-8,9.5); } }
-          if(cold){ var pxc=xToPx(cold.end.x),pyc=yToPx(cold.end.y); if(inX(pxc)){ labelAt(pxc,pyc,cold.len+'-trade ice age','#ef4444',16,9.5); } }
+          if(heater){ var pxh=xToPx(heater.end.x),pyh=yToPx(heater.end.y); if(inX(pxh)){ labelAt(pxh,pyh,heater.len+'-trade heater','#22c55e',-8,9.5,4); } }
+          if(cold){ var pxc=xToPx(cold.end.x),pyc=yToPx(cold.end.y); if(inX(pxc)){ labelAt(pxc,pyc,cold.len+'-trade ice age','#ef4444',16,9.5,4); } }
         }
 
         // ── flips: where cumulative crossed zero (into / out of profit) ──
@@ -6863,7 +6868,7 @@ export function renderLiveTrainingHtml(data: any): string {
           for(var i=1;i<mp.length;i++){ var a=mp[i-1].y,b=mp[i].y;
             if(a<0&&b>=0) flips.push({p:mp[i],up:true}); else if(a>=0&&b<0) flips.push({p:mp[i],up:false}); }
           flips.slice(0,6).forEach(function(fl){ var px=xToPx(fl.p.x),py=yToPx(fl.p.y); if(!inX(px)) return;
-            dot(px,py,fl.up?'#22c55e':'#ef4444'); labelAt(px,py,fl.up?'flipped green':'flipped red',(fl.up?'#22c55e':'#ef4444'),(fl.up?-8:16),9); });
+            dot(px,py,fl.up?'#22c55e':'#ef4444'); labelAt(px,py,fl.up?'flipped green':'flipped red',(fl.up?'#22c55e':'#ef4444'),(fl.up?-8:16),9,3); });
         }
 
         // ── high / low watermark lines across the visible window ──
@@ -6871,15 +6876,35 @@ export function renderLiveTrainingHtml(data: any): string {
           var hiW=mp[0],loW=mp[0]; for(var i=1;i<mp.length;i++){ if(mp[i].y>hiW.y) hiW=mp[i]; if(mp[i].y<loW.y) loW=mp[i]; }
           [[hiW,'high','#22c55e'],[loW,'low','#ef4444']].forEach(function(w){ var py=yToPx(w[0].y);
             annoG.appendChild(svgEl('line',{x1:PADL,y1:py,x2:W-PADR,y2:py,stroke:w[2],'stroke-width':0.8,'stroke-dasharray':'2 4',opacity:0.6}));
-            var t=svgEl('text',{x:W-PADR-2,y:py-3,fill:w[2],'font-size':9,'font-weight':'bold','text-anchor':'end'}); t.textContent=w[1]+' '+fmtVal(w[0].y); annoG.appendChild(t); });
+            labels.push({x:W-PADR-2,y:py-3,text:w[1]+' '+fmtVal(w[0].y),fill:w[2],size:9,anchor:'end',dir:-1,prio:8,style:'normal'}); });
         }
 
         // ── current P&L badge pinned to the last point ──
         if(ANNO.nowbadge && mp.length){
           var last=mp[mp.length-1]; var px=Math.min(xToPx(last.x),W-PADR-2), py=yToPx(last.y);
           var pos=last.y>=0; dot(px,py,pos?'#22c55e':'#ef4444');
-          var t=svgEl('text',{x:px-6,y:py-7,fill:pos?'#22c55e':'#ef4444','font-size':10,'font-weight':'bold','text-anchor':'end'}); t.textContent='now '+fmtVal(last.y); annoG.appendChild(t);
+          labels.push({x:px-6,y:py-7,text:'now '+fmtVal(last.y),fill:pos?'#22c55e':'#ef4444',size:10,anchor:'end',dir:-1,prio:10,style:'normal'});
         }
+
+        // ── de-overlap pass: place high-priority labels first, nudge the rest ──
+        function anBox(L){ var w=Math.max(8, L.text.length*L.size*0.6), h=L.size+3;
+          var x0=(L.anchor==='start')?L.x:((L.anchor==='end')?L.x-w:L.x-w/2);
+          return {x0:x0-1,x1:x0+w+1,y0:L.y-h,y1:L.y+3}; }
+        function anHit(a,b){ return a.x0<b.x1 && a.x1>b.x0 && a.y0<b.y1 && a.y1>b.y0; }
+        labels.sort(function(a,b){ return b.prio-a.prio; });
+        var placed=[];
+        labels.forEach(function(L){ var box=anBox(L), tries=0;
+          while(tries<16){ var clash=false;
+            for(var i=0;i<placed.length;i++){ if(anHit(box,placed[i])){ clash=true; break; } }
+            if(!clash) break;
+            L.y += (L.dir<0?-1:1)*(L.size+4); box=anBox(L); tries++; }
+          if(box.y0<PADT+2){ L.y+=(PADT+2-box.y0); box=anBox(L); }
+          if(box.y1>PADT+PH-2){ L.y-=(box.y1-(PADT+PH-2)); box=anBox(L); }
+          placed.push(box);
+          var t=svgEl('text',{x:L.x,y:L.y,fill:L.fill,'font-size':L.size,'font-weight':'bold','text-anchor':L.anchor});
+          if(L.style==='italic') t.setAttribute('font-style','italic');
+          t.textContent=L.text; annoG.appendChild(t);
+        });
 
         svg.appendChild(annoG);
       }
