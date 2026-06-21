@@ -32,8 +32,10 @@ const GOAL_SOL_PER_MONTH = 3.75;
 const ROAST_MODEL = process.env.ROAST_MODEL || 'claude-opus-4-8';
 const MIN_INTERVAL_MS = Number.parseInt(process.env.ROAST_MIN_INTERVAL_MS || '15000', 10);
 // Recap is a deliberate button press, not a poll loop — exempt it from the beat
-// cooldown but keep a light anti-double-click throttle.
+// cooldown but keep a light anti-double-click throttle. Same idea for a manual
+// "new take" press on the live stream.
 const RECAP_MIN_INTERVAL_MS = 2500;
+const MANUAL_MIN_INTERVAL_MS = 3000;
 
 let client: Anthropic | null = null;
 let warnedNoKey = false;
@@ -43,8 +45,9 @@ function getClient(): Anthropic | null {
   return client;
 }
 
-let lastCallAt = 0;   // line-stream cooldown
-let lastRecapAt = 0;  // recap anti-spam
+let lastCallAt = 0;    // line-stream beat cooldown
+let lastRecapAt = 0;   // recap anti-spam
+let lastManualAt = 0;  // manual "new take" anti-spam
 
 const SHARED =
   'You are "The Analyst", embedded in the dashboard of a Solana memecoin trading bot. ' +
@@ -132,8 +135,16 @@ export async function handleRoast(req: Request, res: Response): Promise<void> {
 
   const now = Date.now();
   if (mode === 'line') {
-    if (now - lastCallAt < MIN_INTERVAL_MS) { res.json({ source: 'cooldown' }); return; }
-    lastCallAt = now;
+    if (b.force === true) {
+      // Manual "new take" — bypass the beat cooldown, keep a light anti-spam
+      // throttle, and push the beat timer forward so the next auto-line waits.
+      if (now - lastManualAt < MANUAL_MIN_INTERVAL_MS) { res.json({ source: 'cooldown' }); return; }
+      lastManualAt = now;
+      lastCallAt = now;
+    } else {
+      if (now - lastCallAt < MIN_INTERVAL_MS) { res.json({ source: 'cooldown' }); return; }
+      lastCallAt = now;
+    }
   } else {
     if (now - lastRecapAt < RECAP_MIN_INTERVAL_MS) { res.json({ source: 'cooldown' }); return; }
     lastRecapAt = now;

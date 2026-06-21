@@ -6458,6 +6458,7 @@ export function renderLiveTrainingHtml(data: any): string {
           <option value="zen">Zen Monk</option>
           <option value="drill">Drill Sergeant</option>
         </select>
+        <button class="an-btn" id="an-now" type="button" title="Fire off a fresh take right now (skips the timer)">New take</button>
         <button class="an-btn" id="an-toggle" type="button">Pause</button>
         <button class="an-btn" id="an-recap" type="button" title="Generate a shareable recap card (title, stats, chart + an AI summary) and copy it to your clipboard">Recap card</button>
       </div>
@@ -7387,12 +7388,12 @@ export function renderLiveTrainingHtml(data: any): string {
   // anProduce: try the real Claude endpoint (/api/roast); fall back to the local
   // pool on disabled/cooldown/error so the stream never stalls. Resolves
   // {line, source}. isOpener swaps the local fallback to the tier opener.
-  function anProduce(s, isOpener){
+  function anProduce(s, isOpener, force){
     var local=function(){ return {line:(isOpener?anOpener(s):anPick(s.tier,s)), source:'local'}; };
     if(AN.llm==='off' || typeof fetch!=='function') return Promise.resolve(local());
     try{
       return fetch('/api/roast',{method:'POST',headers:{'content-type':'application/json'},
-        body:JSON.stringify({monthly:s.monthly,net:s.net,n:s.n,winRate:s.wr,worstLoss:s.worstLoss,bestWin:s.bestWin,drawdown:s.dd,scope:s.scope,persona:AN.persona,mode:'line'})})
+        body:JSON.stringify({monthly:s.monthly,net:s.net,n:s.n,winRate:s.wr,worstLoss:s.worstLoss,bestWin:s.bestWin,drawdown:s.dd,scope:s.scope,persona:AN.persona,mode:'line',force:!!force})})
         .then(function(resp){ return resp.ok?resp.json():null; })
         .then(function(j){
           if(j && j.source==='llm' && j.line){ AN.llm='on'; AN.last=j.line; return {line:j.line, source:'llm'}; }
@@ -7405,8 +7406,11 @@ export function renderLiveTrainingHtml(data: any): string {
   function anSource(src){ if(src==='llm' && !AN.llmBadge){ AN.llmBadge=true;
     var sub=document.querySelector('#lt-analyst-card .an-sub');
     if(sub) sub.textContent='live commentary · powered by Claude · goal +3.75 SOL/mo'; } }
-  function anEmit(s, isOpener, floorMs){ anShow(function(){ return anProduce(s, isOpener); }, s.tier, floorMs); }
+  function anEmit(s, isOpener, floorMs, force){ anShow(function(){ return anProduce(s, isOpener, force); }, s.tier, floorMs); }
   function anBeat(forced){ if(AN.paused&&!forced) return; var s=anAssess(); anStatus(s); anEmit(s,false,700); }
+  // Manual "new take" — fires immediately (skips the timer + the beat cooldown),
+  // works even while paused; the server throttles rapid clicks.
+  function anNow(){ if(!AN.started) return; var s=anAssess(); anStatus(s); anEmit(s,false,400,true); }
   function anReact(kind){ if(!AN.started||AN.paused) return; var s=anAssess(); var line;
     if(kind==='scope'){ line="Now judging "+(s.scope||'the whole book')+". Let's see if this one's different. (They rarely are.)"; }
     else if(kind==='metric'){ var sel=document.getElementById('lt-metric'); var lbl=(sel&&sel.options[sel.selectedIndex])?sel.options[sel.selectedIndex].text:'that';
@@ -7540,6 +7544,9 @@ export function renderLiveTrainingHtml(data: any): string {
     if(pf){ pf.value=AN.persona;
       pf.addEventListener('change', function(){ AN.persona=this.value; try{ localStorage.setItem('an-persona',AN.persona); }catch(e){}
         if(AN.started && !AN.paused) anEmit(anAssess(), false, 500); }); }
+    var nb=document.getElementById('an-now');
+    if(nb) nb.addEventListener('click', function(){ var b=this; b.disabled=true; b.style.opacity='0.7';
+      anNow(); setTimeout(function(){ b.disabled=false; b.style.opacity='1'; }, 700); });
     var rb=document.getElementById('an-recap');
     if(rb) rb.addEventListener('click', function(){ anRecap(this); });
   }
