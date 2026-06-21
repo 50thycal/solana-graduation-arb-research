@@ -142,6 +142,18 @@ export interface LtComparison {
   // Live execution latency over the matched set (shadow is modeled, 0-latency).
   live_avg_tx_land_ms: number | null;
   live_p90_tx_land_ms: number | null;
+  // Longest consecutive win / loss streaks per side over the matched pairs
+  // (time-ordered; a win is net_sol > 0). Compared live-vs-shadow on the page.
+  live_longest_win_streak: number;
+  live_longest_loss_streak: number;
+  shadow_longest_win_streak: number;
+  shadow_longest_loss_streak: number;
+  // Divergence tally: matched pairs where live materially differs from its shadow
+  // twin (|return_delta_pct| >= DIVERGENCE_PP). live_worse = live underperformed.
+  divergence_pp_threshold: number;
+  divergence_count: number;
+  divergence_live_worse: number;
+  divergence_live_better: number;
   // Tally of pairs by divergence_class (see classifyDivergence) — the at-a-glance
   // answer to "are the live underperformers entry-gap or exit-execution failures".
   divergence_class_counts: Record<string, number>;
@@ -448,6 +460,28 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     if (p.divergence_class) divergenceClassCounts[p.divergence_class] = (divergenceClassCounts[p.divergence_class] ?? 0) + 1;
   }
 
+  // Longest consecutive win / loss streaks per side (pairs are time-ordered above).
+  const streaks = (net: (p: typeof pairs[number]) => number | null) => {
+    let maxWin = 0, maxLoss = 0, curWin = 0, curLoss = 0;
+    for (const p of pairs) {
+      if ((net(p) ?? 0) > 0) { curWin += 1; curLoss = 0; if (curWin > maxWin) maxWin = curWin; }
+      else { curLoss += 1; curWin = 0; if (curLoss > maxLoss) maxLoss = curLoss; }
+    }
+    return { win: maxWin, loss: maxLoss };
+  };
+  const liveStreak = streaks(p => p.live_net_sol);
+  const shadowStreak = streaks(p => p.shadow_net_sol);
+
+  // Divergence tally: pairs where live materially differs from its shadow twin.
+  const DIVERGENCE_PP = 15;
+  let divLiveWorse = 0, divLiveBetter = 0;
+  for (const p of pairs) {
+    const d = p.return_delta_pct;
+    if (d === null) continue;
+    if (d <= -DIVERGENCE_PP) divLiveWorse += 1;
+    else if (d >= DIVERGENCE_PP) divLiveBetter += 1;
+  }
+
   return {
     matched_n: pairs.length,
     live_total_net_sol: round(liveTotal)!,
@@ -468,6 +502,14 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     delta_drop_top3_sol: deltas.length ? round(totalDelta - top3) : null,
     live_avg_tx_land_ms: round(mean(liveLand), 0),
     live_p90_tx_land_ms: round(pctl(liveLand, 0.9), 0),
+    live_longest_win_streak: liveStreak.win,
+    live_longest_loss_streak: liveStreak.loss,
+    shadow_longest_win_streak: shadowStreak.win,
+    shadow_longest_loss_streak: shadowStreak.loss,
+    divergence_pp_threshold: DIVERGENCE_PP,
+    divergence_count: divLiveWorse + divLiveBetter,
+    divergence_live_worse: divLiveWorse,
+    divergence_live_better: divLiveBetter,
     divergence_class_counts: divergenceClassCounts,
     pairs,
   };

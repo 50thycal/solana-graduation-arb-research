@@ -6846,6 +6846,11 @@ export function renderLiveTrainingHtml(data: any): string {
     var byAbs=deltas.slice().sort(function(a,b){return Math.abs(b)-Math.abs(a);});
     var totalDelta=0; for(var i=0;i<deltas.length;i++) totalDelta+=deltas[i];
     var top3=0; for(var i=0;i<Math.min(3,byAbs.length);i++) top3+=byAbs[i];
+    // Longest consecutive win/loss streaks per side + divergence tally (pairs time-ordered).
+    function jStreaks(getNet){ var mw=0,ml=0,cw=0,cl=0; for(var i=0;i<pairs.length;i++){ var n=getNet(pairs[i])||0; if(n>0){cw++;cl=0;if(cw>mw)mw=cw;} else {cl++;cw=0;if(cl>ml)ml=cl;} } return {win:mw,loss:ml}; }
+    var liveStreak=jStreaks(function(p){return num(p.live_net_sol);}), shadowStreak=jStreaks(function(p){return num(p.shadow_net_sol);});
+    var DIV_PP=15, divWorse=0, divBetter=0;
+    for(var i=0;i<pairs.length;i++){ var dd=pairs[i].return_delta_pct; if(dd===null||dd===undefined) continue; if(dd<=-DIV_PP) divWorse++; else if(dd>=DIV_PP) divBetter++; }
     return { matched_n:pairs.length,
       live_total_net_sol:jround(liveTotal), shadow_total_net_sol:jround(shadowTotal), total_net_sol_delta:jround(liveTotal-shadowTotal),
       live_avg_return_pct:jround(la,2), shadow_avg_return_pct:jround(sa,2),
@@ -6857,6 +6862,9 @@ export function renderLiveTrainingHtml(data: any): string {
       gross_gap_pp:jround(grossGap,2), cost_gap_pp:(netGap!==null&&grossGap!==null)? jround(netGap-grossGap,2): null,
       median_delta_sol:jround(jmedian(deltas)), delta_drop_top3_sol: deltas.length? jround(totalDelta-top3): null,
       live_avg_tx_land_ms:jround(jmean(liveLand),0), live_p90_tx_land_ms:jround(jpctl(liveLand,0.9),0),
+      live_longest_win_streak:liveStreak.win, live_longest_loss_streak:liveStreak.loss,
+      shadow_longest_win_streak:shadowStreak.win, shadow_longest_loss_streak:shadowStreak.loss,
+      divergence_pp_threshold:DIV_PP, divergence_count:divWorse+divBetter, divergence_live_worse:divWorse, divergence_live_better:divBetter,
       pairs:pairs };
   }
 
@@ -6924,7 +6932,13 @@ export function renderLiveTrainingHtml(data: any): string {
     g+=cmpTr('Total net SOL', cspan(c.live_total_net_sol,f4(c.live_total_net_sol)), cspan(c.shadow_total_net_sol,f4(c.shadow_total_net_sol)));
     g+=cmpTr('Avg return %', cspan(c.live_avg_return_pct,fpct(c.live_avg_return_pct)), cspan(c.shadow_avg_return_pct,fpct(c.shadow_avg_return_pct)));
     g+=cmpTr('Win rate', (c.live_win_rate_pct===null?'—':c.live_win_rate_pct+'%'), (c.shadow_win_rate_pct===null?'—':c.shadow_win_rate_pct+'%'));
+    g+=cmpTr('Longest win streak', c.live_longest_win_streak, c.shadow_longest_win_streak);
+    g+=cmpTr('Longest loss streak', c.live_longest_loss_streak, c.shadow_longest_loss_streak);
     g+=cmpTr('Avg round-trip slip', fpctp(c.live_avg_roundtrip_slip_pct), fpctp(c.shadow_avg_roundtrip_slip_pct));
+    g+='<tr class="lt-cmp-delta"><td class="rl">Divergences (|Δ|≥'+c.divergence_pp_threshold+'pp)</td><td colspan="2">'
+      +'<b>'+c.divergence_count+'</b> of '+c.matched_n+' · '
+      +cspan(-1,c.divergence_live_worse+' live worse')+' · '
+      +cspan(1,c.divergence_live_better+' live better')+'</td></tr>';
     g+='<tr class="lt-cmp-delta"><td class="rl">Live − Shadow</td><td colspan="2">'
       +cspan(c.total_net_sol_delta,f4(c.total_net_sol_delta)+' SOL')+' · '
       +cspan(c.avg_return_delta_pct,fpct(c.avg_return_delta_pct)+' avg/trade')+'</td></tr>';
