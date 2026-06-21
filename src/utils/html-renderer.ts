@@ -6346,6 +6346,12 @@ export function renderLiveTrainingHtml(data: any): string {
   // can never break out of the <script> context.
   const ltJson = JSON.stringify(data).replace(/</g, '\\u003c');
 
+  // Client beat interval for "The Analyst" stream (ms) — how often a new line
+  // appears. Env-tunable (ROAST_BEAT_MS), floored at 3s so it can't be set to
+  // hammer the /api/roast endpoint. Cost is also capped server-side by
+  // ROAST_MIN_INTERVAL_MS regardless of this value.
+  const anBeatMs = Math.max(3000, Number.parseInt(process.env.ROAST_BEAT_MS || '30000', 10) || 30000);
+
   const pageStyles = `
     .lt-controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
     .lt-strat-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
@@ -6501,6 +6507,7 @@ export function renderLiveTrainingHtml(data: any): string {
   const js = `<script>
 (function(){
   var LT = ${ltJson};
+  var AN_BEAT_MS = ${anBeatMs};
   // ── helpers ──
   function num(v){ return (v===null||v===undefined||isNaN(v))?null:v; }
   function f4(v){ v=num(v); return v===null?'—':(v>=0?'+':'')+v.toFixed(4); }
@@ -7251,7 +7258,7 @@ export function renderLiveTrainingHtml(data: any): string {
   // single seam to later swap in a real LLM call (keep the (tier,stats)→string
   // contract; await a fetch to /api/roast and fall back to the local pool).
   var AN_GOAL=3.75;
-  var AN={ feed:null, timer:null, paused:false, last:'', started:false, llm:'unknown', llmBadge:false };
+  var AN={ feed:null, timer:null, paused:false, last:'', started:false, llm:'unknown', llmBadge:false, seq:0, typingEl:null };
   function anM(v){ if(v===null||v===undefined||!isFinite(v)) return '0.00'; return (v>=0?'+':'')+v.toFixed(2); }
   function anS(v){ v=num(v); return v===null?'0 SOL':f4(v)+' SOL'; }
   function anW(v){ return (v===null||v===undefined)?'unknown':(v+'%'); }
@@ -7348,8 +7355,25 @@ export function renderLiveTrainingHtml(data: any): string {
     if(g){ g.innerHTML = s.tier==='wait' ? ('gathering data · '+s.n+' trades')
       : ('<b>'+anM(s.monthly)+'</b> / 3.75 SOL/mo · <b>'+Math.round(s.pct)+'%</b> of goal'); }
   }
-  function anSay(line,tier,delay){ var typ=anTyping();
-    setTimeout(function(){ if(typ&&typ.parentNode) AN.feed.removeChild(typ); anAppend(line,tier); }, delay||(900+Math.random()*700)); }
+  // anShow: render one message, newest-wins. Each call bumps AN.seq and replaces
+  // any pending typing bubble; if a newer call starts before this one resolves
+  // (e.g. a slow Claude response), the stale one is dropped so the freshest
+  // roast is always what lands on screen, in order.
+  function anShow(producer, tier, floorMs){
+    var myseq=++AN.seq;
+    if(AN.typingEl && AN.typingEl.parentNode) AN.feed.removeChild(AN.typingEl);
+    AN.typingEl=anTyping(); var t0=Date.now();
+    Promise.resolve(producer()).then(function(r){
+      if(myseq!==AN.seq || !r) return;
+      var wait=Math.max(0,(floorMs||700)-(Date.now()-t0));
+      setTimeout(function(){
+        if(myseq!==AN.seq) return;
+        if(AN.typingEl && AN.typingEl.parentNode) AN.feed.removeChild(AN.typingEl);
+        AN.typingEl=null;
+        anAppend(r.line, r.tier||tier); anSource(r.source);
+      }, wait);
+    });
+  }
   // anProduce: try the real Claude endpoint (/api/roast); fall back to the local
   // pool on disabled/cooldown/error so the stream never stalls. Resolves
   // {line, source}. isOpener swaps the local fallback to the tier opener.
@@ -7371,21 +7395,19 @@ export function renderLiveTrainingHtml(data: any): string {
   function anSource(src){ if(src==='llm' && !AN.llmBadge){ AN.llmBadge=true;
     var sub=document.querySelector('#lt-analyst-card .an-sub');
     if(sub) sub.textContent='live commentary · powered by Claude · goal +3.75 SOL/mo'; } }
-  function anEmit(s, isOpener, floorMs){ var typ=anTyping(), t0=Date.now();
-    anProduce(s, isOpener).then(function(r){ var wait=Math.max(0,(floorMs||700)-(Date.now()-t0));
-      setTimeout(function(){ if(typ&&typ.parentNode) AN.feed.removeChild(typ); anAppend(r.line, s.tier); anSource(r.source); }, wait); }); }
+  function anEmit(s, isOpener, floorMs){ anShow(function(){ return anProduce(s, isOpener); }, s.tier, floorMs); }
   function anBeat(forced){ if(AN.paused&&!forced) return; var s=anAssess(); anStatus(s); anEmit(s,false,700); }
   function anReact(kind){ if(!AN.started||AN.paused) return; var s=anAssess(); var line;
     if(kind==='scope'){ line="Now judging "+(s.scope||'the whole book')+". Let's see if this one's different. (They rarely are.)"; }
     else if(kind==='metric'){ var sel=document.getElementById('lt-metric'); var lbl=(sel&&sel.options[sel.selectedIndex])?sel.options[sel.selectedIndex].text:'that';
       line = state.metric==='cum_sol' ? "Back to the P&L — the only chart that keeps score." : ("Switching to "+lbl+"? Bold, staring at anything except the bottom line."); }
     else return;
-    anStatus(s); anSay(line,s.tier,650);
+    anStatus(s); anShow(function(){ return {line:line, source:'local'}; }, s.tier, 650);
   }
   function anStart(){
     AN.feed=document.getElementById('lt-analyst-feed'); if(!AN.feed) return; AN.started=true;
     var s=anAssess(); anStatus(s); anEmit(s,true,600);
-    AN.timer=setInterval(anBeat,8500);
+    AN.timer=setInterval(anBeat, (typeof AN_BEAT_MS==='number' && AN_BEAT_MS>0)?AN_BEAT_MS:30000);
     var tg=document.getElementById('an-toggle');
     if(tg) tg.addEventListener('click', function(){ AN.paused=!AN.paused; this.textContent=AN.paused?'Resume':'Pause'; if(!AN.paused) anBeat(true); });
   }
