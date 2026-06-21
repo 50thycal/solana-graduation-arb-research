@@ -74,6 +74,13 @@ export interface LtTrade {
   tx_land_ms: number | null;
   exit_reason: string | null;
   trade_size_sol: number | null;
+  // Diagnostic fields for entry-gap vs exit-execution classification: the effective
+  // entry fill, the high-water mark reached during the hold, and the TP trigger
+  // price. high_price is null for trades_v2 (no stored HWM) — only the copy_trades
+  // path records it, which is the path that matters for the copy live↔shadow gap.
+  entry_price: number | null;
+  high_price: number | null;
+  tp_price: number | null;
 }
 
 /** Aggregate performance metrics over a set of trades. */
@@ -135,6 +142,9 @@ export interface LtComparison {
   // Live execution latency over the matched set (shadow is modeled, 0-latency).
   live_avg_tx_land_ms: number | null;
   live_p90_tx_land_ms: number | null;
+  // Tally of pairs by divergence_class (see classifyDivergence) — the at-a-glance
+  // answer to "are the live underperformers entry-gap or exit-execution failures".
+  divergence_class_counts: Record<string, number>;
   // Per-graduation pairs (chronological by live entry).
   pairs: Array<{
     graduation_id: number | null;
@@ -149,6 +159,17 @@ export interface LtComparison {
     shadow_net_sol: number | null;
     live_roundtrip_slip_pct: number | null;
     shadow_roundtrip_slip_pct: number | null;
+    // ── Divergence diagnostics (entry-gap vs exit-execution) ──
+    live_entry_price: number | null;
+    shadow_entry_price: number | null;
+    entry_gap_pct: number | null;       // (live_entry/shadow_entry − 1)·100; >0 = live filled HIGHER
+    live_high_price: number | null;     // HWM during the hold (copy path only; null for trades_v2)
+    live_tp_price: number | null;       // TP trigger price
+    live_high_pct_of_tp: number | null; // live_high/live_tp·100; ≥100 = price reached live's TP
+    live_reached_tp: boolean | null;    // live_high ≥ live_tp (null when HWM unknown)
+    live_exit_reason: string | null;
+    shadow_exit_reason: string | null;
+    divergence_class: string | null;    // 'exit_execution' | 'entry_gap' | 'small_move' | 'aligned' | 'live_outperform' | 'unclassified'
   }>;
 }
 
@@ -188,6 +209,32 @@ function pctl(xs: number[], p: number): number | null {
 function roundtripSlip(t: LtTrade): number | null {
   if (t.entry_slip_pct === null && t.exit_slip_pct === null) return null;
   return (t.entry_slip_pct ?? 0) + (t.exit_slip_pct ?? 0);
+}
+
+/** Classify WHY a matched pair diverged, so a session can tell entry-gap from
+ *  exit-execution failure without pulling the DB. Only material live
+ *  UNDERperformance (return_delta ≤ −15pp) is diagnosed; the rest is labeled plainly.
+ *   - exit_execution: the price reached live's TP but live did NOT exit at TP (rode
+ *     to a stop / timeout). The 9fMPboAS class — the fast-retry + hot-poll target.
+ *   - entry_gap: live never reached its TP but the shadow twin DID hit its TP, so
+ *     live's higher fill (its TP sits above where the token topped) is the cause.
+ *   - small_move: neither side reached TP — the move just wasn't big enough (not a bug).
+ *   - unclassified: live's HWM is unknown (trades_v2 has no stored high_price).
+ *  Decisive input is liveReachedTp (= live_high ≥ live_tp), available on the copy path. */
+function classifyDivergence(args: {
+  returnDeltaPct: number | null;
+  liveReachedTp: boolean | null;
+  liveExitReason: string | null;
+  shadowExitReason: string | null;
+}): string | null {
+  const { returnDeltaPct, liveReachedTp, liveExitReason, shadowExitReason } = args;
+  if (returnDeltaPct === null) return null;
+  if (returnDeltaPct >= 15) return 'live_outperform';
+  if (returnDeltaPct > -15) return 'aligned';
+  // Live materially worse than the shadow twin — diagnose the cause.
+  if (liveReachedTp === true) return liveExitReason === 'take_profit' ? 'aligned' : 'exit_execution';
+  if (liveReachedTp === false) return shadowExitReason === 'take_profit' ? 'entry_gap' : 'small_move';
+  return 'unclassified'; // HWM unknown (trades_v2) — can't decide
 }
 
 export function computeMetrics(trades: LtTrade[]): LtMetrics {
@@ -327,6 +374,22 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
       ? live.trade_size_sol / twin.trade_size_sol : 1;
     const twinNet = (twin.net_profit_sol ?? 0) * sizeAdj;
     deltas.push((live.net_profit_sol ?? 0) - twinNet);
+    // ── Divergence diagnostics ──
+    // Entry gap: how much higher (or lower) the live REAL fill landed vs the
+    // shadow's modeled snapshot entry. Reached-TP: did the price ever hit live's
+    // TP during the hold (HWM ≥ TP)? Together they separate an entry-fill miss
+    // from an exit-execution miss. Prices are per-token, so size-independent.
+    const liveEntry = live.entry_price;
+    const shadowEntry = twin.entry_price;
+    const entryGapPct = (liveEntry != null && shadowEntry != null && shadowEntry > 0)
+      ? (liveEntry / shadowEntry - 1) * 100 : null;
+    const liveHigh = live.high_price;
+    const liveTp = live.tp_price;
+    const liveHighPctOfTp = (liveHigh != null && liveTp != null && liveTp > 0)
+      ? (liveHigh / liveTp) * 100 : null;
+    const liveReachedTp = (liveHigh != null && liveTp != null) ? liveHigh >= liveTp : null;
+    const returnDeltaPct = (live.net_return_pct !== null && twin.net_return_pct !== null)
+      ? round(live.net_return_pct - twin.net_return_pct, 2) : null;
     pairs.push({
       graduation_id: live.graduation_id,
       mint: live.mint,
@@ -335,13 +398,24 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
       entry_ts: live.entry_ts,
       live_return_pct: live.net_return_pct,
       shadow_return_pct: twin.net_return_pct,
-      return_delta_pct: (live.net_return_pct !== null && twin.net_return_pct !== null)
-        ? round(live.net_return_pct - twin.net_return_pct, 2)
-        : null,
+      return_delta_pct: returnDeltaPct,
       live_net_sol: live.net_profit_sol,
       shadow_net_sol: round(twinNet, 6), // size-matched to the live trade
       live_roundtrip_slip_pct: round(liveRt, 3),
       shadow_roundtrip_slip_pct: round(shadowRt, 3),
+      live_entry_price: liveEntry,
+      shadow_entry_price: shadowEntry,
+      entry_gap_pct: round(entryGapPct, 2),
+      live_high_price: liveHigh,
+      live_tp_price: liveTp,
+      live_high_pct_of_tp: round(liveHighPctOfTp, 1),
+      live_reached_tp: liveReachedTp,
+      live_exit_reason: live.exit_reason,
+      shadow_exit_reason: twin.exit_reason,
+      divergence_class: classifyDivergence({
+        returnDeltaPct, liveReachedTp,
+        liveExitReason: live.exit_reason, shadowExitReason: twin.exit_reason,
+      }),
     });
   }
   pairs.sort((a, b) => (a.entry_ts ?? 0) - (b.entry_ts ?? 0));
@@ -368,6 +442,12 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
   const totalDelta = deltas.reduce((a, b) => a + b, 0);
   const top3 = byAbs.slice(0, 3).reduce((a, b) => a + b, 0);
 
+  // Tally pairs by divergence_class for the at-a-glance entry-gap-vs-exit breakdown.
+  const divergenceClassCounts: Record<string, number> = {};
+  for (const p of pairs) {
+    if (p.divergence_class) divergenceClassCounts[p.divergence_class] = (divergenceClassCounts[p.divergence_class] ?? 0) + 1;
+  }
+
   return {
     matched_n: pairs.length,
     live_total_net_sol: round(liveTotal)!,
@@ -388,6 +468,7 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     delta_drop_top3_sol: deltas.length ? round(totalDelta - top3) : null,
     live_avg_tx_land_ms: round(mean(liveLand), 0),
     live_p90_tx_land_ms: round(pctl(liveLand, 0.9), 0),
+    divergence_class_counts: divergenceClassCounts,
     pairs,
   };
 }
@@ -422,7 +503,13 @@ function tradeSelect(whereSql: string): string {
       t.estimated_fees_sol AS fees_sol,
       t.tx_land_ms,
       t.exit_reason,
-      t.trade_size_sol
+      t.trade_size_sol,
+      -- Diagnostic prices: effective entry fill; no stored HWM on trades_v2 (null);
+      -- TP price derived from the effective entry × (1 + take_profit_pct/100).
+      COALESCE(t.entry_effective_price, t.entry_price_sol) AS entry_price,
+      NULL AS high_price,
+      CASE WHEN t.take_profit_pct IS NOT NULL
+           THEN COALESCE(t.entry_effective_price, t.entry_price_sol) * (1 + t.take_profit_pct / 100.0) END AS tp_price
     FROM trades_v2 t
     ${whereSql}
     ORDER BY t.entry_timestamp ASC, t.id ASC`;
@@ -452,7 +539,13 @@ function copyTradeSelect(whereSql: string): string {
       c.ata_rent_sol AS fees_sol,
       NULL AS tx_land_ms,
       c.exit_reason,
-      c.size_sol AS trade_size_sol
+      c.size_sol AS trade_size_sol,
+      -- Diagnostic prices: live rows store the REAL fill in entry_price_sol, the
+      -- HWM in high_price_sol, and the TP trigger in tp_price_sol — exactly what
+      -- separates an entry-fill miss from an exit-execution miss.
+      c.entry_price_sol AS entry_price,
+      c.high_price_sol AS high_price,
+      c.tp_price_sol AS tp_price
     FROM copy_trades c
     ${whereSql}
     ORDER BY c.entry_ts ASC, c.id ASC`;

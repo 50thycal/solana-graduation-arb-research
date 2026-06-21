@@ -360,6 +360,23 @@ const HOT_POLL_STRATEGY_IDS = new Set(
     .split(',').map((s) => s.trim()).filter(Boolean),
 );
 
+// ── Follow-shadow profit-taking (entry-gap mitigation) ──
+// When a shadow twin (key) closes via take_profit, mirror that exit on the paired
+// live position (value) on the same mint — so live exits at the shadow's TP moment
+// instead of holding for its OWN take-profit, which the entry gap (live's real fill
+// landing above the shadow's modeled fill) can push out of reach (the BvmRJMTv
+// failure: shadow +107%, live held for an unreachable TP and stopped out at -46%).
+// This is ADDITIVE and TP-ONLY: live keeps its own SL + own TP as independent
+// triggers (so a cheaper live entry still books its own earlier TP, and a crashing
+// live position still hits its own SL without waiting on shadow). The follow only
+// fires on a same-entry pairing (entry_ts within FOLLOW_PAIR_WINDOW_SEC) so a stale
+// live position from an earlier entry on the same mint is never closed by mistake.
+// Inverse of the live↔shadow pairing in live-training-data.ts.
+const SHADOW_TP_FOLLOW_LIVE: Record<string, string> = {
+  'copy-hotlead-deep': 'copy-hotlead-deep-live-micro',
+};
+const FOLLOW_PAIR_WINDOW_SEC = parseInt(process.env.COPY_FOLLOW_PAIR_WINDOW_SEC || '120', 10);
+
 interface OpenPos {
   id: number;
   strategyId: string;
@@ -1243,6 +1260,26 @@ export class CopyTrader {
     }
     this.positions.delete(p.id);
     logger.info('Copy close %s %s %s net=%s SOL hold=%ds', p.strategyId, p.mint.slice(0, 6), reason, netSol, holdSec);
+    if (reason === 'take_profit') this.followShadowTpExit(p, rawExitPrice);
+  }
+
+  /** When a shadow twin takes profit, mirror the exit on the paired live position
+   *  (same mint, same-entry pairing) so live exits at the shadow's TP moment rather
+   *  than holding for its own — possibly entry-gap-unreachable — take-profit. Routes
+   *  through exitPosition → closeLivePosition (real sell, guarded against double
+   *  submit; reason 'follow_shadow'). Additive: live's own SL/TP still fire on their
+   *  own in the poll. No-op unless the shadow is a SHADOW_TP_FOLLOW_LIVE key. */
+  private followShadowTpExit(shadow: OpenPos, rawExitPrice: number): void {
+    const liveId = SHADOW_TP_FOLLOW_LIVE[shadow.strategyId];
+    if (!liveId) return;
+    for (const lp of this.positions.values()) {
+      if (lp.strategyId !== liveId || lp.mint !== shadow.mint) continue;
+      if (lp.executionMode !== 'live_micro') continue;
+      // Same-entry pairing only — never close a stale live position from a prior
+      // entry on the same mint.
+      if (Math.abs(lp.entryTs - shadow.entryTs) > FOLLOW_PAIR_WINDOW_SEC) continue;
+      this.exitPosition(lp, 'follow_shadow', rawExitPrice);
+    }
   }
 
   /** Remaining (un-scaled) size of a position. */
