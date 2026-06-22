@@ -360,21 +360,27 @@ const HOT_POLL_STRATEGY_IDS = new Set(
     .split(',').map((s) => s.trim()).filter(Boolean),
 );
 
-// ── Follow-shadow profit-taking (entry-gap mitigation) ──
-// When a shadow twin (key) closes via take_profit, mirror that exit on the paired
-// live position (value) on the same mint — so live exits at the shadow's TP moment
-// instead of holding for its OWN take-profit, which the entry gap (live's real fill
-// landing above the shadow's modeled fill) can push out of reach (the BvmRJMTv
-// failure: shadow +107%, live held for an unreachable TP and stopped out at -46%).
-// This is ADDITIVE and TP-ONLY: live keeps its own SL + own TP as independent
-// triggers (so a cheaper live entry still books its own earlier TP, and a crashing
-// live position still hits its own SL without waiting on shadow). The follow only
-// fires on a same-entry pairing (entry_ts within FOLLOW_PAIR_WINDOW_SEC) so a stale
-// live position from an earlier entry on the same mint is never closed by mistake.
-// Inverse of the live↔shadow pairing in live-training-data.ts.
-const SHADOW_TP_FOLLOW_LIVE: Record<string, string> = {
+// ── Follow-shadow exits (entry-gap + stop mitigation) ──
+// When a shadow twin (key) closes via a PRICE-TRIGGER exit (take_profit / stop_loss
+// / trail variants), mirror that exit on the paired live position (value) on the
+// same mint — so live exits at the shadow's decision point instead of waiting for
+// its OWN trigger, which the entry gap (live's real fill differing from the shadow's
+// modeled fill) can shift out of position. On the TP side this rescues a winner live
+// would otherwise miss (the BvmRJMTv case: shadow +107%, live held for an unreachable
+// TP and stopped at -46%); on the SL side it caps the loss when live entered cheaper
+// (its lower stop would otherwise let it ride further down than the shadow).
+// ADDITIVE: live keeps its own SL + TP as independent triggers, so the follow can
+// only make live exit SOONER, never later. Fires only on a same-entry pairing
+// (entry_ts within FOLLOW_PAIR_WINDOW_SEC) so a stale live position from an earlier
+// entry on the same mint is never closed by mistake. Inverse of the live↔shadow
+// pairing in live-training-data.ts.
+const SHADOW_FOLLOW_LIVE: Record<string, string> = {
   'copy-hotlead-deep': 'copy-hotlead-deep-live-micro',
 };
+// Shadow exit reasons that trigger the live mirror — price-trigger exits only.
+// Time/admin exits (timeout, max_hold_cap, strategy_removed, follow_sell) are NOT
+// mirrored; live has its own global max-hold for those.
+const FOLLOW_SHADOW_EXIT_REASONS = new Set(['take_profit', 'stop_loss', 'trail_stop', 'trailing_tp']);
 const FOLLOW_PAIR_WINDOW_SEC = parseInt(process.env.COPY_FOLLOW_PAIR_WINDOW_SEC || '120', 10);
 
 interface OpenPos {
@@ -468,6 +474,12 @@ export class CopyTrader {
   // qualifying events). In-memory accumulator + ~60s flush keeps it cheap.
   private skipCounts = new Map<string, number>();
   private lastSkipFlush = 0;
+  // Hot-poll telemetry (cumulative; persisted to bot_settings alongside skipCounts,
+  // surfaced in copy-trades.json → live_execution.hot_poll). Confirms the fast
+  // exit-detection loop is actually engaging: active_cycles = hot-poll ticks that
+  // found >=1 near-trigger fast-moving position, fetches = extra vault re-prices it
+  // did, exits = exits it triggered. All zero ⇒ the band/velocity gate never fired.
+  private hotPollStats = { active_cycles: 0, fetches: 0, exits: 0 };
   // Real-money execution for live_micro strategies (gated by COPY_LIVE_ENABLED + wallet).
   private readonly liveExec: CopyLiveExecutor;
   // Positions with a live sell in flight — prevents double-submitting the exit swap.
@@ -531,7 +543,7 @@ export class CopyTrader {
     this.skipCounts.set(k, (this.skipCounts.get(k) ?? 0) + 1);
   }
 
-  /** Load cumulative skip counts from bot_settings so they survive restarts. */
+  /** Load cumulative skip counts + hot-poll stats from bot_settings (survive restarts). */
   private loadSkipCounts(): void {
     try {
       const row = this.db.prepare(`SELECT value FROM bot_settings WHERE key = 'copy_gate_skips'`).get() as { value: string } | undefined;
@@ -540,17 +552,27 @@ export class CopyTrader {
         this.skipCounts = new Map(Object.entries(obj));
       }
     } catch { /* table may not exist yet / bad JSON — start fresh */ }
+    try {
+      const row = this.db.prepare(`SELECT value FROM bot_settings WHERE key = 'copy_hotpoll_stats'`).get() as { value: string } | undefined;
+      if (row?.value) {
+        const obj = JSON.parse(row.value) as Partial<{ active_cycles: number; fetches: number; exits: number }>;
+        this.hotPollStats = { active_cycles: obj.active_cycles ?? 0, fetches: obj.fetches ?? 0, exits: obj.exits ?? 0 };
+      }
+    } catch { /* start fresh */ }
   }
 
-  /** Flush the cumulative skip counts to bot_settings (throttled ~60s). */
+  /** Flush the cumulative skip counts + hot-poll stats to bot_settings (throttled ~60s). */
   private flushSkipCounts(): void {
     const now = Date.now();
-    if (now - this.lastSkipFlush < 60_000 || this.skipCounts.size === 0) return;
+    if (now - this.lastSkipFlush < 60_000) return;
     this.lastSkipFlush = now;
     try {
-      const obj = Object.fromEntries(this.skipCounts);
-      this.db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES ('copy_gate_skips', ?, unixepoch())`)
-        .run(JSON.stringify(obj));
+      if (this.skipCounts.size > 0) {
+        this.db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES ('copy_gate_skips', ?, unixepoch())`)
+          .run(JSON.stringify(Object.fromEntries(this.skipCounts)));
+      }
+      this.db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES ('copy_hotpoll_stats', ?, unixepoch())`)
+        .run(JSON.stringify(this.hotPollStats));
     } catch { /* noop — non-critical telemetry */ }
   }
 
@@ -1204,6 +1226,7 @@ export class CopyTrader {
         (p) => !this.closingLive.has(p.id) && this.isHotCandidate(p),
       );
       if (hot.length === 0) return;
+      this.hotPollStats.active_cycles += 1;
       const now = Math.floor(Date.now() / 1000);
       const byVault = new Map<string, OpenPos[]>();
       for (const p of hot) {
@@ -1216,7 +1239,13 @@ export class CopyTrader {
         const r = await fetchVaultPrice(conn, ps[0].baseVault, ps[0].quoteVault);
         const price = r?.priceSol ?? null;
         if (price == null) continue;
-        for (const p of ps) this.evaluatePosition(p, price, now);
+        this.hotPollStats.fetches += 1;
+        for (const p of ps) {
+          this.evaluatePosition(p, price, now);
+          // An exit just dispatched on this fast pass (shadow removed synchronously;
+          // live's sell guarded into closingLive) — credit the hot-poll for the catch.
+          if (!this.positions.has(p.id) || this.closingLive.has(p.id)) this.hotPollStats.exits += 1;
+        }
       }
     } finally {
       this.hotPolling = false;
@@ -1260,17 +1289,18 @@ export class CopyTrader {
     }
     this.positions.delete(p.id);
     logger.info('Copy close %s %s %s net=%s SOL hold=%ds', p.strategyId, p.mint.slice(0, 6), reason, netSol, holdSec);
-    if (reason === 'take_profit') this.followShadowTpExit(p, rawExitPrice);
+    if (FOLLOW_SHADOW_EXIT_REASONS.has(reason)) this.followShadowExit(p, rawExitPrice);
   }
 
-  /** When a shadow twin takes profit, mirror the exit on the paired live position
-   *  (same mint, same-entry pairing) so live exits at the shadow's TP moment rather
-   *  than holding for its own — possibly entry-gap-unreachable — take-profit. Routes
-   *  through exitPosition → closeLivePosition (real sell, guarded against double
-   *  submit; reason 'follow_shadow'). Additive: live's own SL/TP still fire on their
-   *  own in the poll. No-op unless the shadow is a SHADOW_TP_FOLLOW_LIVE key. */
-  private followShadowTpExit(shadow: OpenPos, rawExitPrice: number): void {
-    const liveId = SHADOW_TP_FOLLOW_LIVE[shadow.strategyId];
+  /** When a shadow twin closes via a price-trigger exit (TP / SL / trail), mirror it
+   *  on the paired live position (same mint, same-entry pairing) so live exits at the
+   *  shadow's decision point rather than waiting for its own — possibly entry-gap-
+   *  shifted — trigger. Routes through exitPosition → closeLivePosition (real sell,
+   *  guarded against double submit; reason 'follow_shadow'). Additive: live's own
+   *  TP/SL still fire on their own in the poll, so the follow can only exit live
+   *  sooner. No-op unless the shadow is a SHADOW_FOLLOW_LIVE key. */
+  private followShadowExit(shadow: OpenPos, rawExitPrice: number): void {
+    const liveId = SHADOW_FOLLOW_LIVE[shadow.strategyId];
     if (!liveId) return;
     for (const lp of this.positions.values()) {
       if (lp.strategyId !== liveId || lp.mint !== shadow.mint) continue;
@@ -1947,6 +1977,15 @@ export function computeCopyTrades(db: Database.Database): unknown {
             }
           }
           return { total: fails.length, by_class: byClass, other_samples: otherSamples };
+        })(),
+        // Hot-poll engagement (persisted by the live CopyTrader). active_cycles>0
+        // means the fast near-trigger re-pricing loop is firing; exits>0 means it
+        // caught exits the 25s poll would have seen later. All zero = gate never met.
+        hot_poll: (() => {
+          try {
+            const row = db.prepare(`SELECT value FROM bot_settings WHERE key = 'copy_hotpoll_stats'`).get() as { value: string } | undefined;
+            return row?.value ? JSON.parse(row.value) : { active_cycles: 0, fetches: 0, exits: 0 };
+          } catch { return { active_cycles: 0, fetches: 0, exits: 0 }; }
         })(),
       };
     })(),
