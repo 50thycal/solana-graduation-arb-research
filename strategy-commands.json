@@ -1,0 +1,21 @@
+{
+  "commands": [
+    {
+      "action": "lesson-upsert",
+      "id": "lesson-live-rent-buy-failures-are-balance-not-retry",
+      "lesson_id": "lesson-live-rent-buy-failures-are-balance-not-retry",
+      "lesson_title": "Live copy-buy 'rent' failures are a wallet-balance symptom, NOT a retry bug — don't re-investigate as new",
+      "lesson_body": "RECURRING QUESTION, RESOLVED 2026-06-22: copy-trades.json live_execution.failure_reasons shows a large cumulative live_buy_failed count (134 at resolution: rent=131, slippage_6004=3). This is NOT a sign we are actively missing trades. (1) 98% of live buy failures are 'rent' (InsufficientFundsForRent), which fires when the live wallet sits near/below the preflight floor (MICRO_TRADE_SIZE_SOL 0.05 + WALLET_SOL_BUFFER 0.02 = 0.07 SOL) with no headroom for the new-token ATA rent (~0.002) + base/priority fees + Jito tip — worst when several consensus leads fire near-simultaneously against a stale balance read. They cluster in low-balance windows. (2) The 2026-06-19 retry hardening (commit eef8b0e: buy-retry.ts 3-attempt escalating slippage+tip) only salvages the slippage-6004 / not-landed class (3 of 134). It CANNOT fix rent failures — retrying adds no lamports. So a rising rent count is a fund-the-wallet / raise-WALLET_SOL_BUFFER signal, never a retry-logic regression. (3) failure_reasons is a CUMULATIVE counter since live-micro began 2026-06-18 (commit 61e2565) with NO time-series, and the live wallet balance is a 403 live endpoint — so you cannot date individual failures from bot-status; bound them instead by checking live_execution.closed_detail/open_detail for recent clean fills. As of the 2026-06-22 01:13Z snapshot, live buys were landing fine (30+ clean closes with live_error=null + 2 open positions opened on 2026-06-21), so we were NOT missing trades. BOTTOM LINE: if the rent count climbs, top up the wallet / widen the rent+fee+tip buffer; do not open it as a new retry/exec bug.",
+      "evidence": {
+        "resolved_at": "2026-06-22",
+        "failure_reasons": { "total": 134, "rent": 131, "slippage_6004": 3 },
+        "retry_fix_commit": "eef8b0e (2026-06-19 12:33Z) — buy-retry.ts, slippage/tip escalation only",
+        "live_micro_start_commit": "61e2565 (2026-06-18 14:24Z)",
+        "preflight_floor_sol": 0.07,
+        "wallet_sol_buffer_default": 0.02,
+        "latest_evidence_buys_landing": "2026-06-21: 30+ clean closes (live_error=null), 2 open positions opened up to 22:27Z",
+        "verification_limits": "failure_reasons is cumulative (no time-series); live wallet balance is a 403 live endpoint"
+      }
+    }
+  ]
+}
