@@ -11,6 +11,80 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-22
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-06-22",
+  "overall": {"n": 8916, "net": 138.23, "drop3": 86.10, "stress": 45.13, "open": 229},
+  "retired_summary": {"n": 7845, "net": -132.55},
+  "regime_score": 8, "regime_24h": 2, "macro_score": 4, "btc_7d_pct": -3.63,
+  "book_daily_today": 27.93,
+  "leads": {"n_leads": 127, "hot": 41, "cold": 52},
+  "n_promotable_realistic": 6,
+  "strategies": [
+    {"id": "copy-hotlead",               "realistic": true,  "n": 304, "net": 18.390, "drop3": 11.983, "stress": 14.890, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-hold30m",        "realistic": true,  "n": 281, "net": 23.522, "drop3":  4.607, "stress": 20.157, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-deep",           "realistic": true,  "n": 189, "net": 11.984, "drop3":  5.634, "stress":  9.797, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict",         "realistic": true,  "n": 149, "net": 12.427, "drop3":  6.077, "stress": 10.643, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-consensus",      "realistic": true,  "n": 165, "net": 12.327, "drop3":  5.977, "stress": 10.381, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-elitelead",              "realistic": true,  "n": 108, "net":  7.348, "drop3":  4.518, "stress":  6.088, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-consensus2-elite",       "realistic": true,  "n":  72, "net":  5.410, "drop3":  2.594, "stress":  4.560, "promo_score":  94.4, "verdict": "KEEP"},
+    {"id": "copy-c2rr-scaleout-50",       "realistic": true,  "n":  84, "net":  2.513, "drop3":  0.076, "stress":  1.923, "promo_score":  72.0, "verdict": "KEEP"},
+    {"id": "copy-c2rr-ratchet-trailtp",   "realistic": true,  "n":  85, "net":  3.816, "drop3": -2.390, "stress":  2.865, "promo_score":  72.0, "verdict": "WATCH"},
+    {"id": "copy-c2rr-trailtp-wide",      "realistic": true,  "n":  78, "net":  3.225, "drop3": -3.320, "stress":  2.357, "promo_score":  70.6, "verdict": "WATCH"},
+    {"id": "copy-c2rr-scaleout-trailtp",  "realistic": true,  "n":  74, "net":  1.945, "drop3": -1.419, "stress":  1.430, "promo_score":  64.1, "verdict": "KEEP"},
+    {"id": "copy-c2rr-breakeven",         "realistic": true,  "n": 114, "net":  2.030, "drop3": -0.084, "stress":  0.815, "promo_score":  63.1, "verdict": "WATCH"},
+    {"id": "copy-c2rr-ratchet-tp",        "realistic": true,  "n": 121, "net":  1.733, "drop3": -0.884, "stress":  0.452, "promo_score":  59.5, "verdict": "WATCH"},
+    {"id": "copy-c2rr-control",           "realistic": true,  "n": 102, "net":  1.197, "drop3": -1.805, "stress":  0.123, "promo_score":  56.2, "verdict": "WATCH"},
+    {"id": "copy-c2rr-trailtp-tight",     "realistic": true,  "n": 104, "net": -0.383, "drop3": -2.277, "stress": -1.446, "promo_score":  40.0, "verdict": "WATCH"},
+    {"id": "copy-c2rr-ratchet-run",       "realistic": true,  "n":  88, "net": -4.076, "drop3": -5.098, "stress": -4.901, "promo_score":  37.6, "verdict": "KILL"},
+    {"id": "copy-c2rr-scaleout-run",      "realistic": true,  "n":  58, "net": -2.921, "drop3": -4.037, "stress": -3.238, "promo_score":  31.6, "verdict": "WATCH"},
+    {"id": "copy-hotlead-deep-live-micro","realistic": true,  "n":  64, "net": -0.080, "drop3": -0.379, "stress": -0.066, "promo_score":  32.8, "verdict": "KEEP"},
+    {"id": "copy-fatwallet-hightp",       "realistic": true,  "n":  12, "net": -0.563, "drop3": -0.579, "stress": -0.675, "promo_score":  22.4, "verdict": "WATCH"},
+    {"id": "copy-fatwallet-tp100",        "realistic": true,  "n":  11, "net": -0.347, "drop3": -0.363, "stress": -0.453, "promo_score":  22.2, "verdict": "WATCH"},
+    {"id": "copy-fatwallet-follow",       "realistic": true,  "n":  11, "net": -0.179, "drop3": -0.182, "stress": -0.289, "promo_score":  22.2, "verdict": "WATCH"},
+    {"id": "copy-fatwallet-runner",       "realistic": true,  "n":  11, "net": -0.347, "drop3": -0.363, "stress": -0.453, "promo_score":  22.2, "verdict": "WATCH"},
+    {"id": "copy-fatwallet-scaleout",     "realistic": true,  "n":  10, "net": -0.453, "drop3": -0.466, "stress": -0.547, "promo_score":  22.0, "verdict": "WATCH"}
+  ]
+}
+```
+
+**Headline:** copy-elitelead crosses n≥100 today (n=108, all gates clear) — six realistic strategies are now fully promotable; book surged +27.93 SOL as the copy-internal regime flipped to "strong" (score 8, up from 3 yesterday).
+
+**Day-over-day (vs 2026-06-21):**
+- Regime score: 3 → 8 (strong flip); book_net_6h=+36.23 SOL. The 24h lagging score only shows 2, confirming the recovery is recent.
+- Macro: 5 → 4 (headwind). BTC 7d pct swung +0.58% → -3.63% — the whole week's BTC drift turned negative.
+- Book daily: +4.58 → +27.93 SOL (strong recovery after yesterday's −8.04 close).
+- **copy-elitelead newly promotable**: crossed n=100 gate (91→108), all gates now clear — the 6th PROMOTE candidate.
+- **Big score jumpers (>10 pts):** copy-c2rr-scaleout-trailtp +34.1pts (net turned positive, −0.794→+1.945); copy-c2rr-control +22.2pts (net turned positive, −0.721→+1.197); copy-c2rr-scaleout-50 +22pts (drop3 turned positive for first time, −1.286→+0.076).
+- **NEW additions:** 5 copy-fatwallet-* variants appeared (n=10-12 each, all early negative, gate-starved — wallet_allowlist filtering ~96% of events). A new dimension under test; too early to evaluate.
+- **copy-c2rr-ratchet-run** continued its decline: net −2.743→−4.076 at n=88 → now catastrophic (net<−3 at n≥40 rule applies). Was on KILL list yesterday; still on KILL list.
+
+**Week-over-week (2026-06-17 → 2026-06-22):**
+- *Convergence:* copy-elitelead reached score 100 today (was untracked before Jun 17); copy-consensus2-elite 79→94.4 and approaching n=100; copy-c2rr-scaleout-50 score 50→72 with drop3 turning positive. n_promotable_realistic went 0→2→1→4→5→6 — a clean weekly climb.
+- *Decay:* copy-c2rr-ratchet-run has been losing ground every day (net −2.743 → −4.076); copy-c2rr-scaleout-run also trending down (−2.204 → −2.921). Both need resolution.
+- *Regime:* Volatile all week (scores 2→5→4→6→3→8). No sustained favorable stretch — sharp daily reversals. Today's 8 is the highest of the week.
+- *BTC/macro:* BTC 7d pct deteriorated steadily: +5.72→+1.34→−1.61→−1.02→+0.58→−3.63. Persistent macro headwind despite BTC being roughly flat day-over-day.
+- *Lead pool:* Hot leads 26→30→28→34→37→41. Steady growth in hot leads week-over-week — positive for the hotlead-family signal quality.
+- *Book:* Daily P&L volatile (23→−11→3→16→−8→+28). Positive days outnumber negative; the book net grew +15.3 SOL today alone.
+
+**Verdicts (proposals — require operator approval + code edit to COPY_STRATEGIES):**
+
+- **PROMOTE (6):** copy-hotlead (n=304, net=+18.39, drop3=+11.98, monthly=55 SOL/mo), copy-hotlead-hold30m (n=281, monthly=88 SOL/mo), copy-hotlead-deep (n=189, monthly=51), copy-hotlead-strict (n=149, monthly=53), copy-hotlead-consensus (n=165, monthly=46), **copy-elitelead (n=108, monthly=37 — newly cleared today)**. All gates green on realistic execution. These have been pending approval; recommend starting with copy-hotlead (broadest coverage, highest sample) for the first live-micro slot.
+- **KEEP COOKING (3):** copy-consensus2-elite (n=72, score=94.4, drop3=+2.59 — needs 28 more trades to clear n gate); copy-c2rr-scaleout-50 (n=84, drop3 just turned +0.076 — fragile, needs 16 more trades to confirm); copy-c2rr-scaleout-trailtp (n=74, net just turned positive +1.945, drop3 still −1.419 — promising momentum but not there yet).
+- **WATCH (9):** copy-c2rr-breakeven (n=114, drop3=−0.084 — nearly zero, one good day from clearing); copy-c2rr-ratchet-tp (n=121, drop3=−0.884); copy-c2rr-ratchet-trailtp (n=85, net positive but drop3=−2.39); copy-c2rr-trailtp-wide (n=78, drop3=−3.32); copy-c2rr-control (n=102, drop3=−1.81); copy-c2rr-trailtp-tight (n=104, net=−0.38, all stress negative — approaching kill if it doesn't recover); copy-c2rr-scaleout-run (n=58, net=−2.92 — approaching catastrophic); fatwallet family (n=10-12 each, too early).
+- **KILL (1 — propose):** copy-c2rr-ratchet-run — net=−4.076 at n=88 qualifies as catastrophic (net<−3 at n≥40 rule). Was on KILL list yesterday. Recommend removing from COPY_STRATEGIES.
+
+**New strategies to try:** None proposed this cycle. The fatwallet family (5 variants) is a brand-new dimension just launched and needs time to cook. With 6 strategies already fully promotable and no operator approval enacted yet, the bottleneck is deployment speed, not hypothesis generation.
+
+**Operator next steps:**
+1. **(Most urgent)** Approve and enact the first PROMOTE from the hotlead family — recommend copy-hotlead (n=304, broadest base, 55 SOL/mo) as the first live-micro slot if not already approved.
+2. Confirm kill of copy-c2rr-ratchet-run (catastrophic at −4.08 SOL, n=88) via code edit + push.
+
+---
+
 ## 2026-06-21
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
