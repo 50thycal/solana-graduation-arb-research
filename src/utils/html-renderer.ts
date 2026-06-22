@@ -10683,11 +10683,14 @@ export function renderCopyTradesHtml(data: any): string {
   const promoRows = (wd.top_promotable ?? []).map((r: any) => {
     const sp = swapPct(r.venues);
     const spClass = sp >= 40 ? 'green' : sp < 20 ? 'red' : 'yellow';
+    const r24 = r.rt_24h ?? 0;
+    const recentClass = r24 > 0 ? 'green' : (r.rt_7d ?? 0) > 0 ? 'yellow' : 'red';
     return `<tr>
       <td style="font-family:monospace">${w(r.address)}</td><td>${r.n_round_trips}</td>
       <td>${sol(r.total_realized_sol)}</td><td>${sol(r.total_realized_sol_drop_top3)}</td>
       <td>${n(r.monthly_run_rate_sol, 0)}</td><td>${pct(r.win_rate)}</td>
       <td class="${spClass}">${sp}%</td><td>${fmtHold(r.avg_hold_sec)}</td>
+      <td class="${recentClass}">${r24}/${r.rt_7d ?? 0}</td>
       <td>${r.last_active_days_ago != null ? r.last_active_days_ago + 'd' : '—'}</td></tr>`;
   }).join('');
   const discoveryCard = wd.summary == null ? '' : `<div class="card" style="border-left:6px solid #7c3aed">
@@ -10695,7 +10698,9 @@ export function renderCopyTradesHtml(data: any): string {
     <div class="desc">Candidates seeded from graduation buyers → scored by lifetime P&amp;L → gated to promotable.
     Gate: ≥${wdg.min_round_trips ?? 100} round-trips · ≥${wdg.min_total_sol ?? 0.5} SOL · drop_top3&gt;${wdg.min_drop_top3_sol ?? 0} ·
     ≥${wdg.min_monthly_run_rate_sol ?? 3.75} SOL/mo · active ≤${wdg.max_days_since_active ?? 14}d.
-    <b>Swap%</b> = share of trades on the post-grad PumpSwap pool we can actually copy — <span class="red">low % = uncopyable bonding-curve scalper</span>; <b>Hold</b> = avg hold time.</div>
+    <b>Swap%</b> = share of trades on the post-grad PumpSwap pool we can actually copy (<span class="red">low % = uncopyable bonding-curve scalper</span>);
+    <b>Hold</b> = avg hold; <b>24h/7d</b> = round-trips in the last 1/7 days (freshness — <span class="red">0/0 = gone quiet</span>; as of last scoring, see Active);
+    <b>Active</b> = days since its last trade.</div>
     <div class="grid">
       <div class="stat"><span class="label">Candidates seeded</span><span class="value">${(wds.total_candidates ?? 0).toLocaleString()}</span></div>
       <div class="stat"><span class="label">Scored</span><span class="value">${(wds.scored ?? 0).toLocaleString()} <span class="desc">(${scoredPct}%)</span></span></div>
@@ -10703,7 +10708,7 @@ export function renderCopyTradesHtml(data: any): string {
       <div class="stat"><span class="label">Watch</span><span class="value yellow">${wds.watch ?? 0}</span></div>
     </div>
     ${promoRows ? `<h3>Top promotable wallets</h3>
-    <table><tr><th>Wallet</th><th>RTs</th><th>Net SOL</th><th>Drop3</th><th>SOL/mo</th><th>WR</th><th>Swap%</th><th>Hold</th><th>Active</th></tr>${promoRows}</table>` : ''}
+    <table><tr><th>Wallet</th><th>RTs</th><th>Net SOL</th><th>Drop3</th><th>SOL/mo</th><th>WR</th><th>Swap%</th><th>Hold</th><th>24h/7d</th><th>Active</th></tr>${promoRows}</table>` : ''}
   </div>`;
 
   // ── Per-strategy lead attribution: which wallets drive TP vs SL per strategy ─

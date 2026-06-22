@@ -49,6 +49,22 @@ export function computeWalletLeaderboard(db: Database.Database, limit = 50): unk
     };
   }
 
+  // Recent activity (freshness): round-trips closed in the last 24h / 7d, per wallet.
+  // Bounded by scoring recency — a wallet scored >24h ago won't reflect brand-new
+  // trades, which is exactly what last_active_days_ago discloses. One grouped query.
+  const cut7d = nowTs - 7 * 86_400;
+  const cut24h = nowTs - 86_400;
+  const recentByAddr = new Map<string, { rt_24h: number; rt_7d: number }>();
+  try {
+    const recent = db.prepare(
+      `SELECT address,
+         SUM(CASE WHEN close_ts >= ? THEN 1 ELSE 0 END) AS rt_24h,
+         COUNT(*) AS rt_7d
+       FROM wallet_round_trips WHERE close_ts >= ? GROUP BY address`,
+    ).all(cut24h, cut7d) as Array<{ address: string; rt_24h: number; rt_7d: number }>;
+    for (const r of recent) recentByAddr.set(r.address, { rt_24h: r.rt_24h, rt_7d: r.rt_7d });
+  } catch { /* wallet_round_trips absent on older DB — leave counts at 0 */ }
+
   const rows = scored.map((r) => {
     const ev = evaluateWallet(rowToScore(r), nowTs);
     return {
@@ -61,6 +77,8 @@ export function computeWalletLeaderboard(db: Database.Database, limit = 50): unk
       win_rate: r.win_rate != null ? +r.win_rate.toFixed(3) : null,
       avg_hold_sec: r.avg_hold_sec != null ? Math.round(r.avg_hold_sec) : null,
       last_active_days_ago: r.last_active != null ? +((nowTs - r.last_active) / 86_400).toFixed(1) : null,
+      rt_24h: recentByAddr.get(r.address)?.rt_24h ?? 0,
+      rt_7d: recentByAddr.get(r.address)?.rt_7d ?? 0,
       venues: r.venues_json ? JSON.parse(r.venues_json) : {},
       passed_gate: ev.passed,
       failed_gates: ev.failedGates,
