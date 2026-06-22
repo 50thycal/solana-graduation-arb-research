@@ -287,6 +287,26 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
     entryDelaySec: 5, maxEntryDriftPct: 10,
     scaleOut: { atPct: 100, fraction: 0.5 }, trailingTp: { atPct: 100, dropPct: 30 },
     walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
+  // ── M (2026-06-22): SINGLE-WALLET one-to-one copy of 3eG16XXd…pBde — the cleanest
+  //    copy target on the board: 99% PumpSwap (copyable), drop_top3 +126 ≈ total +135
+  //    (broad-based edge, NOT a lottery), WR 90%, 11.5-min avg hold, median RT +798%
+  //    (holds for big runners). A standard TP would chop that median — so follow its
+  //    sell / let it run. 3 variants share the SAME allowlist + realistic entry and
+  //    differ ONLY in exit. Promotable → in follow_list → already watched by the probe.
+  //    NB: last active ~7d ago — signal flow needs it to keep trading.
+  //  -follow = ONE-TO-ONE: enter on its buy, exit on its sell (mirror its exit timing);
+  //    loose SL only as rug protection.
+  { id: 'copy-3eg1-follow',  tpPct: null, slPct: 50, exitFollow: true, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10,
+    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
+  //  -runner = no TP, trail the peak — capture the runner without waiting for its sell.
+  { id: 'copy-3eg1-runner',  tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10, trailingTp: { atPct: 100, dropPct: 30 },
+    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
+  //  -tp100 = CONTROL (standard exit — expected to cap this wallet's huge median run).
+  { id: 'copy-3eg1-tp100',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10,
+    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
