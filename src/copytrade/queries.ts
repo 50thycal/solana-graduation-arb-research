@@ -284,6 +284,28 @@ export function getSmartSetAddresses(db: Database.Database): string[] {
   return getSmartSet(db).map((r) => r.address);
 }
 
+/** From a set of addresses (the wallets we actually copy: follow_list ∪ smart set),
+ *  return those whose cached score is stale (last_refreshed < cutoff or never set),
+ *  oldest first, capped at `limit`. Drives the worker's priority-refresh pass so the
+ *  wallets we use stay fresh ahead of the never-scored backlog — getCandidates sorts
+ *  never-scored first, so without this the promotable set goes days-stale and good
+ *  wallets falsely age out of the active gate. */
+export function getStaleAddresses(
+  db: Database.Database,
+  addresses: string[],
+  cutoffTs: number,
+  limit: number,
+): string[] {
+  if (addresses.length === 0 || limit <= 0) return [];
+  const placeholders = addresses.map(() => '?').join(',');
+  return (db.prepare(`
+    SELECT address FROM wallet_candidates
+    WHERE address IN (${placeholders}) AND (last_refreshed IS NULL OR last_refreshed < ?)
+    ORDER BY (last_refreshed IS NULL) DESC, last_refreshed ASC
+    LIMIT ?
+  `).all(...addresses, cutoffTs, limit) as Array<{ address: string }>).map((r) => r.address);
+}
+
 export interface ProbeEventInsert {
   wallet_address: string;
   signature: string;

@@ -8,6 +8,9 @@ import {
   upsertWalletScore,
   getTopWalletScores,
   upsertFollow,
+  getFollowListAddresses,
+  getSmartSetAddresses,
+  getStaleAddresses,
 } from './queries';
 import { fetchWalletSwaps, scoreWallet, reconstructRoundTrips } from './wallet-pnl';
 import { rankWallets } from './ranker';
@@ -44,9 +47,16 @@ const DEFAULTS = {
   // of the ~250k/day copy budget for position polling. Tune via COPYTRADE_* envs.
   intervalMs: 4 * 60 * 60 * 1000, // 4h between scoring passes (was 6h)
   firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
-  scoreBatchLimit: 30,            // wallets scored per tick (was 15)
+  scoreBatchLimit: 30,            // total wallets scored per tick (was 15)
   maxSignaturesPerWallet: 300,    // history depth per wallet (was 250)
-  restaleSeconds: 24 * 3600,      // re-score a wallet at most once / 24h
+  restaleSeconds: 24 * 3600,      // re-score a BACKLOG wallet at most once / 24h
+  // Priority-refresh: keep the wallets we actually copy (follow_list ∪ smart set)
+  // fresh on a TIGHT cadence, ahead of the never-scored backlog. Without this the
+  // promotable set goes days-stale (the 24h activity column reads 0 for everyone and
+  // good wallets falsely age out of the active≤14d gate). RPC-neutral — the refresh
+  // batch is taken OUT of scoreBatchLimit, not added on top.
+  refreshSeconds: 6 * 3600,       // re-score a USED wallet at most once / 6h
+  refreshBatchLimit: 12,          // max used-wallets refreshed per tick (of scoreBatchLimit)
 };
 
 function intEnv(name: string, fallback: number): number {
@@ -63,6 +73,8 @@ export class CopytradeWorker {
   private readonly scoreBatchLimit: number;
   private readonly maxSignatures: number;
   private readonly restaleSeconds: number;
+  private readonly refreshSeconds: number;
+  private readonly refreshBatchLimit: number;
   private firstRunTimer: ReturnType<typeof setTimeout> | null = null;
   private interval: ReturnType<typeof setInterval> | null = null;
   private running = false;
@@ -74,6 +86,8 @@ export class CopytradeWorker {
     this.scoreBatchLimit = intEnv('COPYTRADE_SCORE_BATCH', DEFAULTS.scoreBatchLimit);
     this.maxSignatures = intEnv('COPYTRADE_MAX_SIGS', DEFAULTS.maxSignaturesPerWallet);
     this.restaleSeconds = intEnv('COPYTRADE_RESTALE_SEC', DEFAULTS.restaleSeconds);
+    this.refreshSeconds = intEnv('COPYTRADE_REFRESH_SEC', DEFAULTS.refreshSeconds);
+    this.refreshBatchLimit = intEnv('COPYTRADE_REFRESH_BATCH', DEFAULTS.refreshBatchLimit);
   }
 
   start(): void {
@@ -114,6 +128,23 @@ export class CopytradeWorker {
     if (this.interval) { clearInterval(this.interval); this.interval = null; }
   }
 
+  /** Score a single wallet: fetch swaps → cache → score → store round-trips →
+   *  upsert (which stamps wallet_candidates.last_refreshed). Returns true on success.
+   *  Shared by the priority-refresh and backlog passes. */
+  private async scoreOne(connection: Connection, address: string, now: number): Promise<boolean> {
+    try {
+      const swaps = await fetchWalletSwaps(connection, address, { maxSignatures: this.maxSignatures });
+      cacheWalletSwaps(this.db, address, swaps);
+      const score = scoreWallet(address, swaps);
+      replaceRoundTrips(this.db, address, reconstructRoundTrips(swaps));
+      upsertWalletScore(this.db, score, now);
+      return true;
+    } catch (err) {
+      logger.warn('Scoring %s failed: %s', address.slice(0, 8), err instanceof Error ? err.message : String(err));
+      return false;
+    }
+  }
+
   /** One seed + score-batch + rank pass. Guarded against overlap. */
   async runOnce(): Promise<void> {
     if (this.running) {
@@ -132,23 +163,34 @@ export class CopytradeWorker {
       // Rank candidates by in-DB signal so we score likely-alpha wallets first.
       recomputeCandidatePriorities(this.db);
 
+      // 1) PRIORITY REFRESH: re-score the wallets we actually copy (follow_list ∪
+      //    smart set) that have gone stale, BEFORE the backlog. getCandidates sorts
+      //    never-scored wallets first, so without this the promotable set never gets
+      //    refreshed and its activity/freshness data rots. Budget comes out of
+      //    scoreBatchLimit (RPC-neutral), so the backlog gets whatever's left.
+      const used = Array.from(new Set([
+        ...getFollowListAddresses(this.db),
+        ...getSmartSetAddresses(this.db),
+      ]));
+      const refreshList = getStaleAddresses(
+        this.db, used, now - this.refreshSeconds, this.refreshBatchLimit,
+      );
+      let refreshed = 0;
+      for (const addr of refreshList) {
+        if (await this.scoreOne(connection, addr, now)) refreshed++;
+      }
+
+      // 2) BACKLOG DISCOVERY with the remaining budget (total ≈ scoreBatchLimit).
+      const backlogBudget = Math.max(0, this.scoreBatchLimit - refreshed);
       const staleBefore = now - this.restaleSeconds;
-      const candidates = getCandidates(this.db, { staleBeforeTs: staleBefore, limit: this.scoreBatchLimit });
-      logger.info('Scoring %d stale candidates', candidates.length);
+      const candidates = backlogBudget > 0
+        ? getCandidates(this.db, { staleBeforeTs: staleBefore, limit: backlogBudget })
+        : [];
+      logger.info('Refreshed %d used wallets; scoring %d backlog candidates', refreshed, candidates.length);
 
       let scored = 0;
       for (const c of candidates) {
-        try {
-          const swaps = await fetchWalletSwaps(connection, c.address, { maxSignatures: this.maxSignatures });
-          cacheWalletSwaps(this.db, c.address, swaps);
-          const score = scoreWallet(c.address, swaps);
-          replaceRoundTrips(this.db, c.address, reconstructRoundTrips(swaps));
-          upsertWalletScore(this.db, score, now); // also stamps last_refreshed
-          scored++;
-        } catch (err) {
-          logger.warn('Scoring %s failed: %s', c.address.slice(0, 8),
-            err instanceof Error ? err.message : String(err));
-        }
+        if (await this.scoreOne(connection, c.address, now)) scored++;
       }
 
       // Re-rank the full scored set and record promotable wallets to follow_list
