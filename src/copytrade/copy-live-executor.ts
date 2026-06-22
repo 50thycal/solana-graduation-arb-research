@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { Connection } from '@solana/web3.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import { Executor, PoolContext, ExecutionResult } from '../trading/executor';
 import { Wallet } from '../trading/wallet';
 import { isKillswitchTripped } from '../trading/safety';
@@ -56,6 +56,22 @@ export class CopyLiveExecutor {
       this.warnedDisabled = true;
     }
     return this.enabled;
+  }
+
+  /** STRICT wallet token-balance read for position reconciliation. Returns the
+   *  raw u64 token amount the wallet holds for `mint`, or NULL when it can't be
+   *  determined (live execution off, no wallet/connection, or the RPC read
+   *  failed). The caller MUST treat null as "unknown" and never as zero, so a
+   *  transient RPC error is never mistaken for a confirmed-empty wallet. */
+  async tokenBalanceRawStrict(mint: string): Promise<number | null> {
+    if (!this.enabled || !this.wallet) return null;
+    const conn = this.getConnection();
+    if (!conn) return null;
+    try {
+      return await this.wallet.getTokenBalanceRawStrict(conn, new PublicKey(mint));
+    } catch {
+      return null;
+    }
   }
 
   /** Sum net_sol of CLOSED live_micro copy trades in the current UTC day. */
