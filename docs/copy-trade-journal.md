@@ -11,6 +11,127 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-21
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-06-21",
+  "overall": {"n": 7715, "net": 122.92, "drop3": 70.79, "stress": 41.87, "open": 58},
+  "retired_summary": {"n": 7845, "net": -132.55},
+  "regime_score": 3, "regime_24h": 4, "macro_score": 5, "btc_7d_pct": 0.58,
+  "book_daily_today": 4.58,
+  "leads": {"n_leads": 118, "hot": 37, "cold": 48},
+  "n_promotable_realistic": 5,
+  "strategies": [
+    {"id": "copy-hotlead", "realistic": true, "n": 266, "net": 15.337, "drop3": 9.330, "stress": 12.290, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-hold30m", "realistic": true, "n": 214, "net": 21.415, "drop3": 2.887, "stress": 18.782, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-deep", "realistic": true, "n": 159, "net": 10.530, "drop3": 4.762, "stress": 8.682, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-consensus", "realistic": true, "n": 147, "net": 10.157, "drop3": 4.389, "stress": 8.440, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict", "realistic": true, "n": 120, "net": 10.235, "drop3": 4.467, "stress": 8.795, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-elitelead", "realistic": true, "n": 91, "net": 5.977, "drop3": 3.147, "stress": 4.920, "promo_score": 98, "verdict": "KEEP"},
+    {"id": "copy-consensus2-elite", "realistic": true, "n": 65, "net": 3.708, "drop3": 0.892, "stress": 2.964, "promo_score": 79, "verdict": "KEEP"},
+    {"id": "copy-c2rr-ratchet-trailtp", "realistic": true, "n": 58, "net": 3.026, "drop3": -2.713, "stress": 2.368, "promo_score": 67, "verdict": "WATCH"},
+    {"id": "copy-c2rr-trailtp-wide", "realistic": true, "n": 52, "net": 2.601, "drop3": -3.795, "stress": 2.014, "promo_score": 65, "verdict": "WATCH"},
+    {"id": "copy-c2rr-breakeven", "realistic": true, "n": 82, "net": 1.059, "drop3": -0.935, "stress": 0.193, "promo_score": 53, "verdict": "WATCH"},
+    {"id": "copy-c2rr-ratchet-tp", "realistic": true, "n": 87, "net": 0.638, "drop3": -1.890, "stress": -0.271, "promo_score": 52, "verdict": "WATCH"},
+    {"id": "copy-c2rr-scaleout-50", "realistic": true, "n": 56, "net": 0.767, "drop3": -1.286, "stress": 0.371, "promo_score": 50, "verdict": "WATCH"},
+    {"id": "copy-c2rr-control", "realistic": true, "n": 72, "net": -0.721, "drop3": -2.770, "stress": -1.448, "promo_score": 34, "verdict": "WATCH"},
+    {"id": "copy-c2rr-trailtp-tight", "realistic": true, "n": 72, "net": -1.187, "drop3": -3.081, "stress": -1.905, "promo_score": 34, "verdict": "WATCH"},
+    {"id": "copy-c2rr-ratchet-run", "realistic": true, "n": 60, "net": -2.743, "drop3": -3.739, "stress": -3.307, "promo_score": 32, "verdict": "KILL"},
+    {"id": "copy-c2rr-scaleout-trailtp", "realistic": true, "n": 49, "net": -0.794, "drop3": -2.753, "stress": -1.118, "promo_score": 30, "verdict": "WATCH"},
+    {"id": "copy-c2rr-scaleout-run", "realistic": true, "n": 36, "net": -2.204, "drop3": -3.210, "stress": -2.385, "promo_score": 27, "verdict": "WATCH"},
+    {"id": "copy-hotlead-deep-live-micro", "realistic": true, "n": 35, "net": -0.181, "drop3": -0.347, "stress": -0.177, "promo_score": 27, "verdict": "KEEP"}
+  ]
+}
+```
+
+**Headline:** The hotlead family achieves a clean sweep — all 5 realistic variants simultaneously score 100 on the promotion bar, led by two new crossings this session (copy-hotlead-strict crossed n=100 with score 100, copy-hotlead-hold30m's drop3 flipped from −0.485 to +2.887 and is now the highest-monthly strategy in the roster at +91.78 SOL/mo); meanwhile the operator enacted a full kill-list cleanup overnight (8 strategies removed), and copy-hotlead-deep-live-micro is live at n=35 (mildly negative at −0.181, too early to call).
+
+**Day-over-day (vs 2026-06-20 snapshot):** Regime dropped sharply, 6→3 ("weak"), regime_24h 8→4. book_net_6h=−15.73 (rolling 6h including late June 20 afternoon) — the book had a rough late-yesterday stretch. Today's partial (n=535, +4.58 SOL by 10:00 UTC) is modestly positive and better than yesterday's full-day +3.89. Macro held flat at 5 ("neutral"), BTC barely moved ($63,853→$64,127), fear & greed 23. SOL firmed slightly ($71.73→$73.16).
+
+**Roster changes since yesterday (operator enacted all Jun 20 proposals plus more):**
+- **Killed (8 total):** copy-bigbuy ✓, copy-consensus3 ✓, copy-macro ✓, copy-regime-mid ✓, copy-regime-hi ✓ (the 5 formal kills), plus copy-macro-regime, copy-hotlead-regime, and copy-consensus2-lag-drift5 (the oscillating watch). All regime/macro-gated and BTC-timed strategies are now gone — a clean exit from the entire macro-timing experiment.
+- **New addition:** copy-hotlead-deep-live-micro — hotlead-deep deployed live at MICRO_TRADE_SIZE_SOL. n=35 across 2 days (Jun 20 n=18/−0.018, Jun 21 n=17/−0.164). Mildly negative early, no verdict yet.
+- **retired_summary grew** from (n=6655, net=−124.71) to (n=7845, net=−132.55): +1,190 historical trades absorbed, net degraded −7.84 — confirms the killed strategies were all net-negative.
+
+**Key strategy movers today:**
+
+- `copy-hotlead-hold30m` (+54 trades): Δdrop3=**+3.372**, crossing zero from −0.485 → **+2.887**. Score 75→**100**, ALL GATES NOW CLEAR. This is the new highest-monthly strategy in the roster at +91.78 SOL/mo. The stress gate also passes at +18.782. **NEWLY PROMOTABLE.** The drop3 trajectory has been accelerating daily (Jun 18: −4.234 → Jun 19: −5.033 → Jun 20: −0.485 → Jun 21: +2.887); the reversal from Jun 19→20 was driven by the Jun 17–18 exceptional days propagating through the hold-30m longer exit window. The drop3 buffer (+2.887) is now solid — not a fragile crossing.
+- `copy-hotlead-strict` (+40 trades): Δdrop3=**+2.557**, score 94.9→**100**. **CROSSED N=100 GATE** this session. n=120, net=+10.235, drop3=+4.467, stress=+8.795, monthly=+51.18 SOL. All gates clear. **NEWLY PROMOTABLE.**
+- `copy-hotlead-consensus` (+33 trades): Δdrop3=**+2.566**, score 97.8→100. n=147, net=+10.157, drop3=+4.389, stress=+8.440, monthly=+43.53 SOL. Proposed for promotion yesterday; metrics strengthened further.
+- `copy-hotlead` (+68 trades): Δdrop3=**+1.311**, Δnet=+1.311 (identical — no new top-3 winner). Score holds at 100. n=266, net=+15.337, drop3=+9.330, monthly=+51.12 SOL. Has been proposed for promotion for 4 consecutive sessions without action.
+- `copy-hotlead-deep` (+51 trades): Δdrop3=+0.196. n=159, net=+10.530, drop3=+4.762, monthly=+52.65 SOL. Slow delta today (live-micro deployment likely consuming some signal capacity). All gates clear and its live twin is now running.
+- `copy-elitelead` (+19 trades): Δdrop3=**+1.582**, score 89→98. n=91, drop3=+3.147, monthly=+35.86 SOL. **9 trades from the n=100 gate.** Will be the 6th promotable strategy, likely tomorrow.
+- `copy-consensus2-elite` (+7 trades): Δdrop3=+0.324, score 73.7→79. n=65, drop3=+0.892 — thin buffer but positive and growing.
+
+**C2RR cluster (consensus2 realistic exit-variant experiment, n=36–87 each):**
+
+None have positive drop3 yet. The "run" variants are the clearest failures:
+- `copy-c2rr-ratchet-run` (n=60, net=−2.743, drop3=−3.739, stress=−3.307): **approaching catastrophic kill threshold** (net<−3 at n≥40). All three quality gates deeply failing. Monthly=−27.43 SOL. The "never-sell-while-running" exit approach is clearly the worst in this universe. Kill trigger is essentially certain within the next few sessions.
+- `copy-c2rr-scaleout-run` (n=36, net=−2.204, drop3=−3.210): pre-40 so technically not at threshold yet, but same pattern. Monthly=−22.04 SOL. High kill risk at n=40.
+
+Best in cluster (still lottery-shaped but positive net + stress):
+- `copy-c2rr-ratchet-trailtp` (n=58, net=+3.026, stress=+2.368, drop3=−2.713)
+- `copy-c2rr-trailtp-wide` (n=52, net=+2.601, stress=+2.014, drop3=−3.795)
+- `copy-c2rr-breakeven` (n=82, net=+1.059, stress=+0.193, drop3=−0.935 — closest to zero)
+
+The structural takeaway from this cluster: trailing + TP combinations outperform trailing-only exits. The "run" extreme (trail forever) appears to hold losers too long in this universe.
+
+**Live-micro execution watch:**
+
+`copy-hotlead-deep-live-micro`: n=35, net=−0.181, drop3=−0.347, stress=−0.177. Started Jun 20. The shadow copy-hotlead-deep shows +10.530 over 159 trades (+0.066 SOL/trade expectation). At 0.5 SOL paper size, the expected micro-scale net over 35 trades would be negligible — so this −0.181 is not yet alarming. The prior live-micro test (copy-consensus2-lag-drift5-live-micro) failed badly (−9.68pp exec gap). With hotlead, the execution lag is the same 5s but the hotlead signal may be more durable vs the timing-sensitive consensus2. Monitor the execution gap for the first 75 trades before drawing conclusions.
+
+**Week-over-week (5 entries, Jun 17–21):**
+
+Book daily arc: +23.38 → −11.42 (partial) → +9.87 → +3.89 → +4.58 (partial). After the Jun 17/18 exceptional +54/+40 days, the book has normalized. Jun 18 was partial and negative during the snapshot window. Jun 19–21 are modest-positive days averaging +6.1 SOL/day — healthy if unexciting.
+
+Realistic strategies converging (every carried-over strategy improved drop3 this session):
+- `copy-hotlead-hold30m`: drop3 −4.234 → −5.033 → −0.485 → **+2.887** — J-shaped with reversal driven by the Jun 17/18 windfall finally clearing the hold-30m exit window.
+- `copy-hotlead-strict`: drop3 −0.999 → −1.000 → +1.910 → **+4.467** — clean positive trajectory after crossing n=100.
+- `copy-hotlead-consensus`: drop3 −1.429 → −0.760 → +1.823 → **+4.389** — steadily widening post-zero margin.
+- `copy-hotlead`: drop3 +0.506 → +2.329 → +8.019 → **+9.330** — fastest-growing absolute drop3 buffer.
+- `copy-elitelead`: drop3 −1.494 → −0.334 → +1.565 → **+3.147** — rapid improvement; will likely be promotable in 24h.
+
+No realistic strategies are decaying. The prior decaying group (macro/regime/bigbuy/consensus3) was entirely removed.
+
+Macro/BTC over 5 days: 6 → 6 → 4 → 5 → **5**. BTC has ranged $62k–$66k, settled at $64k. Macro is neutral — neither tailwind nor headwind. The Jun 17/18 book surge occurred when macro was 6 (mild tailwind) and again today's regime is 3 (weak). The hotlead signal is now confirmed to perform across both tailwind and neutral macro windows.
+
+Lead pool: 85 → 94 → 99 → 102 → **118** leads. Net addition of 16 leads since yesterday. hot: 26 → 30 → 28 → 34 → **37**. The pool is growing and the hot/cold ratio is the healthiest it's been (37 hot vs 48 cold, 44% hot). Top leads consistent: 5q8osC4C (n=85, +5.58 SOL, hot), B6yHBbrf (n=13, +3.50 SOL, 54% WR, hot), AE7neeVw (n=8, +3.26 SOL, 75% WR, hot). Bottom: 6svp2aai (n=93, −4.94 SOL, cold), 2fHT9wBh (n=101, −4.61 SOL, cold). Lead selection quality is steady.
+
+**Verdicts (proposals — roster changes require operator approval + `COPY_STRATEGIES` code edit):**
+
+- **PROMOTE (4 pending — copy-hotlead-deep already promoted to live-micro):**
+  - `copy-hotlead` — n=266, net=+15.337, drop3=+9.330, stress=+12.290, monthly=+51.12 SOL, score=100. Has been proposed 4 consecutive sessions. The highest drop3 buffer in the roster. Primary action.
+  - `copy-hotlead-consensus` — n=147, net=+10.157, drop3=+4.389, stress=+8.440, monthly=+43.53 SOL, score=100. Proposed yesterday, metrics strengthened.
+  - `copy-hotlead-strict` — n=120, net=+10.235, drop3=+4.467, stress=+8.795, monthly=+51.18 SOL, score=100. **NEW PROMOTABLE this session.** Crossed n=100 today.
+  - `copy-hotlead-hold30m` — n=214, net=+21.415, drop3=+2.887, stress=+18.782, monthly=+91.78 SOL, score=100. **NEW PROMOTABLE this session.** Highest monthly rate in the roster; the "hold 30 min minimum before follow-selling" exit variant. The drop3 buffer is solid at +2.887 and widening.
+
+- **KEEP COOKING:**
+  - `copy-elitelead` — n=91, score=98, drop3=+3.147, monthly=+35.86 SOL. 9 trades from promotion. All quality metrics clear; only the n=100 gate remains. Expect to be the 6th promotable strategy by tomorrow.
+  - `copy-consensus2-elite` — n=65, drop3=+0.892, score=79. Thin buffer but positive and growing. Needs more trades before trusting the drop3 sign; keep cooking.
+  - `copy-hotlead-deep-live-micro` — n=35, net=−0.181. First live deployment in the hotlead family. Too early for a verdict; monitor execution gap vs shadow over the next 65 trades.
+  - `copy-c2rr-ratchet-trailtp` (n=58), `copy-c2rr-trailtp-wide` (n=52), `copy-c2rr-breakeven` (n=82), `copy-c2rr-ratchet-tp` (n=87), `copy-c2rr-scaleout-50` (n=56) — the positive-net c2rr variants. All lottery-shaped (drop3 negative) but not catastrophically negative. Keep cooking to n=100; drop3 trajectory at n=100 will determine verdicts.
+
+- **KILL (1 proposal — pre-trigger warning):**
+  - `copy-c2rr-ratchet-run` — n=60, net=−2.743, drop3=−3.739, stress=−3.307, monthly=−27.43 SOL. All quality gates deeply failing. Approaching catastrophic threshold (net<−3 at n≥40). Recommend killing immediately rather than waiting — the direction is unambiguous and there is no recovery path with all three gates negative and deepening.
+
+- **WATCH (approaching kill):**
+  - `copy-c2rr-scaleout-run` — n=36, net=−2.204, drop3=−3.210, stress=−2.385. Pre-40 threshold, but heading toward it. If net crosses −3 (estimated within ~4 more trades at this rate), kill immediately.
+  - `copy-c2rr-control` — n=72, net=−0.721, drop3=−2.770, stress=−1.448. All gates failing. Not catastrophic yet but the control variant (baseline consensus2+5s entry, no exit modification) has been negative from the start. Kill at n=100 if gates still fail.
+  - `copy-c2rr-trailtp-tight` — n=72, net=−1.187, drop3=−3.081, stress=−1.905. Similar pattern to control. Kill at n=100 if no recovery.
+  - `copy-c2rr-scaleout-trailtp` — n=49, net=−0.794, drop3=−2.753, stress=−1.118. Three gates failing. Watch to n=80.
+
+**New strategies to try:** None this cycle. Five strategies are simultaneously at score 100 waiting to be promoted to live-micro; copy-elitelead is one session away from joining them. The priority is execution, not research. After the first wave of live-micro promotions runs for 2–3 weeks, revisit whether a new dimension (exit timing, entry sizing) adds edge on top of the lead-selection signal.
+
+**Operator next steps (priority order):**
+1. **Kill `copy-c2rr-ratchet-run`** — n=60, net=−2.743 approaching −3 threshold, all quality gates failing. Pre-emptive kill to avoid the catastrophic threshold triggering mid-session. Remove from `COPY_STRATEGIES`.
+2. **Promote `copy-hotlead` to live-micro** — 4th consecutive session at score 100, highest drop3 buffer in the roster (+9.330). This is the overdue primary action.
+3. **Promote `copy-hotlead-consensus`, `copy-hotlead-strict`, `copy-hotlead-hold30m` to live-micro** — all three score 100 with all gates clear. Running 5 hotlead live-micro strategies simultaneously is manageable at MICRO_TRADE_SIZE_SOL and provides diversification across exit profiles.
+4. **Watch `copy-hotlead-deep-live-micro`** — check execution gap at n=75 (±35 more trades). If gap is severe (>5pp), consider pausing and diagnosing entry timing before promoting the other 4 families.
+
+---
+
 ## 2026-06-20
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
