@@ -10673,16 +10673,29 @@ export function renderCopyTradesHtml(data: any): string {
   const wds = wd.summary ?? {};
   const wdg = wd.gate ?? {};
   const scoredPct = (wds.total_candidates ?? 0) > 0 ? (100 * (wds.scored ?? 0) / wds.total_candidates).toFixed(1) : '0';
-  const promoRows = (wd.top_promotable ?? []).map((r: any) => `<tr>
+  // PumpSwap share = fraction of trades on the post-grad pool we can actually copy.
+  // Low % = bonding-curve scalper (uncopyable). avg_hold formatted compactly.
+  const swapPct = (v: any) => {
+    const tot = v ? Object.values(v).reduce((a: number, b: any) => a + (b as number), 0) : 0;
+    return tot > 0 ? Math.round(100 * ((v.pumpswap ?? 0) / tot)) : 0;
+  };
+  const fmtHold = (s: any) => s == null ? '—' : s < 90 ? `${s}s` : s < 3600 ? `${Math.round(s / 60)}m` : `${(s / 3600).toFixed(1)}h`;
+  const promoRows = (wd.top_promotable ?? []).map((r: any) => {
+    const sp = swapPct(r.venues);
+    const spClass = sp >= 40 ? 'green' : sp < 20 ? 'red' : 'yellow';
+    return `<tr>
       <td style="font-family:monospace">${w(r.address)}</td><td>${r.n_round_trips}</td>
       <td>${sol(r.total_realized_sol)}</td><td>${sol(r.total_realized_sol_drop_top3)}</td>
       <td>${n(r.monthly_run_rate_sol, 0)}</td><td>${pct(r.win_rate)}</td>
-      <td>${r.last_active_days_ago != null ? r.last_active_days_ago + 'd' : '—'}</td></tr>`).join('');
+      <td class="${spClass}">${sp}%</td><td>${fmtHold(r.avg_hold_sec)}</td>
+      <td>${r.last_active_days_ago != null ? r.last_active_days_ago + 'd' : '—'}</td></tr>`;
+  }).join('');
   const discoveryCard = wd.summary == null ? '' : `<div class="card" style="border-left:6px solid #7c3aed">
     <h2>Wallet discovery <span class="desc" style="font-size:13px">— smart-money funnel (refresh to track over time)</span></h2>
     <div class="desc">Candidates seeded from graduation buyers → scored by lifetime P&amp;L → gated to promotable.
     Gate: ≥${wdg.min_round_trips ?? 100} round-trips · ≥${wdg.min_total_sol ?? 0.5} SOL · drop_top3&gt;${wdg.min_drop_top3_sol ?? 0} ·
-    ≥${wdg.min_monthly_run_rate_sol ?? 3.75} SOL/mo · active ≤${wdg.max_days_since_active ?? 14}d.</div>
+    ≥${wdg.min_monthly_run_rate_sol ?? 3.75} SOL/mo · active ≤${wdg.max_days_since_active ?? 14}d.
+    <b>Swap%</b> = share of trades on the post-grad PumpSwap pool we can actually copy — <span class="red">low % = uncopyable bonding-curve scalper</span>; <b>Hold</b> = avg hold time.</div>
     <div class="grid">
       <div class="stat"><span class="label">Candidates seeded</span><span class="value">${(wds.total_candidates ?? 0).toLocaleString()}</span></div>
       <div class="stat"><span class="label">Scored</span><span class="value">${(wds.scored ?? 0).toLocaleString()} <span class="desc">(${scoredPct}%)</span></span></div>
@@ -10690,7 +10703,7 @@ export function renderCopyTradesHtml(data: any): string {
       <div class="stat"><span class="label">Watch</span><span class="value yellow">${wds.watch ?? 0}</span></div>
     </div>
     ${promoRows ? `<h3>Top promotable wallets</h3>
-    <table><tr><th>Wallet</th><th>RTs</th><th>Net SOL</th><th>Drop3</th><th>SOL/mo</th><th>WR</th><th>Active</th></tr>${promoRows}</table>` : ''}
+    <table><tr><th>Wallet</th><th>RTs</th><th>Net SOL</th><th>Drop3</th><th>SOL/mo</th><th>WR</th><th>Swap%</th><th>Hold</th><th>Active</th></tr>${promoRows}</table>` : ''}
   </div>`;
 
   // ── Per-strategy lead attribution: which wallets drive TP vs SL per strategy ─
