@@ -6434,12 +6434,13 @@ export function renderLiveTrainingHtml(data: any): string {
           <select id="lt-metric"></select>
         </label>
         <button id="lt-reset-zoom" type="button" style="background:#334155;color:#94a3b8;border:1px solid #475569;border-radius:4px;padding:5px 10px;font-size:11px;cursor:pointer;display:none">Reset zoom</button>
-        <button id="lt-copy-img" type="button" title="Copy the chart as a PNG (title + axes included) for sharing" style="margin-left:auto;background:#0e7490;color:#e0f2fe;border:1px solid #155e75;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer">Copy image</button>
+        <button id="lt-overlays" type="button" title="Toggle chart overlays (memes, ATH, drawdown, …)" style="margin-left:auto;background:#334155;color:#cbd5e1;border:1px solid #475569;border-radius:4px;padding:5px 12px;font-size:11px;cursor:pointer">Overlays</button>
+        <button id="lt-copy-img" type="button" title="Copy the chart as a PNG (title + axes included) for sharing" style="background:#0e7490;color:#e0f2fe;border:1px solid #155e75;border-radius:4px;padding:5px 12px;font-size:11px;font-weight:600;cursor:pointer">Copy image</button>
       </div>
       <div class="lt-chart-wrap" id="lt-primary-wrap">
         <div class="lt-tooltip" id="lt-primary-tip"></div>
       </div>
-      <div class="lt-hint">Drag across the chart to zoom · hover to inspect a trade · double-click to reset · right-click for overlays.</div>
+      <div class="lt-hint">Drag across the chart to zoom · hover to inspect a trade · double-click to reset · tap <b>Overlays</b> (or right-click) to toggle layers.</div>
     </div>
 
     <div class="card" id="lt-analyst-card">
@@ -6687,6 +6688,18 @@ export function renderLiveTrainingHtml(data: any): string {
     });
     document.addEventListener('click', function(ev){ if(annoMenu && annoMenu.style.display==='block' && !annoMenu.contains(ev.target)) annoMenu.style.display='none'; });
     document.addEventListener('keydown', function(ev){ if(ev.key==='Escape' && annoMenu) annoMenu.style.display='none'; });
+    // Mobile / no-right-click entry point: open the same overlay menu from a
+    // button. Toggles open/closed; anchored top-right inside the chart.
+    function toggleAnnoMenu(){
+      if(!ctx.cfg || !ctx.cfg.memes) return;
+      var menu=buildAnnoMenu();
+      if(menu.style.display==='block'){ menu.style.display='none'; return; }
+      menu.querySelectorAll('input[data-anno]').forEach(function(cb){ cb.checked=!!ANNO[cb.getAttribute('data-anno')]; });
+      menu.style.display='block';
+      var mw=menu.offsetWidth||184;
+      menu.style.left=Math.max(8, container.clientWidth-mw-8)+'px';
+      menu.style.top='8px';
+    }
 
     // Drag-to-zoom: window-level listeners are bound ONCE per chart (not per
     // redraw) so they don't accumulate. They read live geometry off ctx, which
@@ -7025,6 +7038,7 @@ export function renderLiveTrainingHtml(data: any): string {
     return {
       update:function(cfg){ ctx.cfg=cfg; if(cfg.resetView){ ctx.xv=null; } draw(); },
       resetZoom:function(){ ctx.xv=null; draw(); },
+      toggleMenu:toggleAnnoMenu,
       // copyImage(cb): copies the chart PNG to the clipboard, or downloads it if
       // clipboard image-write isn't available. cb('copied'|'downloaded'|'error').
       copyImage:function(cb){
@@ -7639,6 +7653,7 @@ export function renderLiveTrainingHtml(data: any): string {
     });
     document.getElementById('lt-metric').addEventListener('change', function(){ state.metric=this.value; document.getElementById('lt-reset-zoom').style.display='none'; renderPrimary(); anReact('metric'); });
     document.getElementById('lt-reset-zoom').addEventListener('click', function(){ primaryChart.resetZoom(); this.style.display='none'; });
+    document.getElementById('lt-overlays').addEventListener('click', function(ev){ ev.stopPropagation(); primaryChart.toggleMenu(); });
     document.getElementById('lt-copy-img').addEventListener('click', function(){
       var btn=this, old=btn.textContent; btn.disabled=true; btn.style.opacity='0.7'; btn.textContent='Rendering…';
       primaryChart.copyImage(function(res){
