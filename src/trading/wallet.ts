@@ -208,6 +208,41 @@ export class Wallet {
     }
   }
 
+  /**
+   * STRICT raw token balance for `mint` — like getTokenBalanceRaw but THROWS on
+   * an RPC failure instead of masking it as 0. Position reconciliation
+   * (copy-trader) uses this so a transient RPC error is never mistaken for a
+   * confirmed-empty wallet (which would wrongly close a live position).
+   *
+   * Two robustness differences from getTokenBalanceRaw:
+   *  - It checks BOTH the standard-SPL and the Token-2022 ATA in a single
+   *    getMultipleAccountsInfo call, so it does NOT depend on getMintTokenProgram
+   *    (which silently falls back to standard SPL on an RPC error — the exact
+   *    2026-05-17 false-zero bug). Whichever ATA actually holds the tokens is
+   *    summed; both confirmed-missing/zero ⇒ an authoritative 0.
+   *  - The RPC read is NOT wrapped in try/catch: a thrown error propagates so the
+   *    caller can treat it as "unknown" rather than "empty".
+   */
+  async getTokenBalanceRawStrict(connection: Connection, mint: PublicKey): Promise<number> {
+    const stdAta = getAssociatedTokenAddress(mint, this.pubkey, TOKEN_PROGRAM_ID);
+    const t22Ata = getAssociatedTokenAddress(mint, this.pubkey, TOKEN_2022_PROGRAM_ID);
+    await globalRpcLimiter.throttle();
+    // Throws on RPC failure — intentional (strict). Returns one entry per
+    // requested key, null where the account doesn't exist.
+    const infos = await connection.getMultipleAccountsInfo([stdAta, t22Ata], 'confirmed');
+    let total = 0;
+    for (const info of infos) {
+      if (!info || !info.data) continue;
+      const data = info.data as Buffer;
+      if (data.length < 72) continue;
+      // amount = u64 LE at offset 64 (same layout for Token + Token-2022 base).
+      const lo = data.readUInt32LE(64);
+      const hi = data.readUInt32LE(68);
+      total += hi * 2 ** 32 + lo;
+    }
+    return total;
+  }
+
   /** Sign a legacy or versioned transaction in-place. */
   sign(tx: Transaction | VersionedTransaction): void {
     if (tx instanceof VersionedTransaction) {

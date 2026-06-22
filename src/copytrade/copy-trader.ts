@@ -385,6 +385,19 @@ const POLL_INTERVAL_MS = parseInt(process.env.COPY_POLL_MS || '25000', 10);
 // follow positions whose lead never sold sat open for days (max observed ~7.5d),
 // inflating the open book and the per-cycle poll RPC. 8h default.
 const GLOBAL_MAX_HOLD_SEC = parseInt(process.env.COPY_MAX_HOLD_SEC || '28800', 10);
+// Proactive reconciliation of open live_micro positions against the REAL wallet
+// token balance. The exit path only discovers a vanished balance when it ATTEMPTS
+// a sell (TP/SL/follow trigger, or the 8h GLOBAL_MAX_HOLD_SEC cap). A position
+// whose triggers never fire (maxHoldSec=null, price between SL and TP) can hold a
+// phantom 'open' row for hours after its tokens leave the wallet out-of-band
+// (manual sell, token clawback, or a sell that landed on-chain but was misread as
+// failed). This sweep reads the actual balance and closes any confirmed-empty
+// position so the dashboard matches the wallet. Slow cadence + tiny candidate set
+// (open live positions only, usually 1-3) keeps it within the RPC budget.
+const RECONCILE_INTERVAL_MS = parseInt(process.env.COPY_RECONCILE_MS || '300000', 10);
+// Don't reconcile a position younger than this — give a fresh buy time to settle
+// and be visible at 'confirmed' on the read node before we'd act on a zero.
+const RECONCILE_MIN_AGE_SEC = parseInt(process.env.COPY_RECONCILE_MIN_AGE_SEC || '180', 10);
 const CONSENSUS_WINDOW_MS = 10 * 60 * 1000;
 
 // ── Hot-poll (fast exit detection for the live copy strategy + its shadow twin) ──
@@ -543,9 +556,11 @@ export class CopyTrader {
   private liveFailCooldownUntil = new Map<string, number>();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private hotPollTimer: ReturnType<typeof setInterval> | null = null;
+  private reconcileTimer: ReturnType<typeof setInterval> | null = null;
   private stopped = false;
   private polling = false;
   private hotPolling = false;
+  private reconciling = false;
   private enabled = false;
 
   constructor(opts: { db: Database.Database; getConnection: () => Connection | null }) {
@@ -573,6 +588,16 @@ export class CopyTrader {
     this.hotPollTimer = setInterval(() => {
       this.hotPoll().catch((err) => logger.warn('hot-poll error: %s', err instanceof Error ? err.message : String(err)));
     }, HOT_POLL_MS);
+    // Proactive wallet reconciliation (see RECONCILE_* constants). Periodic +
+    // an initial sweep ~30s after start so a phantom 'open' whose tokens left
+    // before this process booted (e.g. resumed from a prior run) clears promptly
+    // instead of waiting a full interval.
+    this.reconcileTimer = setInterval(() => {
+      this.reconcileLivePositions().catch((err) => logger.warn('reconcile error: %s', err instanceof Error ? err.message : String(err)));
+    }, RECONCILE_INTERVAL_MS);
+    setTimeout(() => {
+      this.reconcileLivePositions().catch((err) => logger.warn('initial reconcile error: %s', err instanceof Error ? err.message : String(err)));
+    }, 30_000);
     logger.info(`CopyTrader started (shadow): ${COPY_STRATEGIES.length} strategies, size=${COPY_SIZE_SOL} SOL, resumed ${this.positions.size} open positions`);
   }
 
@@ -580,6 +605,7 @@ export class CopyTrader {
     this.stopped = true;
     if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
     if (this.hotPollTimer) { clearInterval(this.hotPollTimer); this.hotPollTimer = null; }
+    if (this.reconcileTimer) { clearInterval(this.reconcileTimer); this.reconcileTimer = null; }
   }
 
   isEnabled(): boolean { return this.enabled; }
@@ -659,6 +685,68 @@ export class CopyTrader {
     // (buy landed before a crash). It's loaded here and will exit via a real sell
     // when it next hits a trigger — the executor reads the actual wallet balance,
     // so even a row with no recorded live_tokens gets sold down correctly.
+  }
+
+  /** Proactive reconciliation of open live_micro positions against the REAL wallet
+   *  token balance (see RECONCILE_* constants). Closes any position whose tokens
+   *  are no longer in the wallet — a confirmed-empty read — directly as
+   *  `reconciled_no_tokens` with net_sol=NULL. Key safety properties:
+   *
+   *   - It does NOT submit a sell. The tokens are gone; a sell would just fail
+   *     "no tokens" and burn RPC (the exact pre-2026-06-19 bleed). It writes the
+   *     same terminal row closeLivePosition's "no tokens" branch writes, minus the
+   *     wasted swap.
+   *   - It NEVER acts on an unconfirmed read. `tokenBalanceRawStrict` returns null
+   *     on a live-off / no-wallet / RPC-error condition; only a confirmed numeric
+   *     0 (both the standard-SPL and Token-2022 ATA empty) triggers a close, so a
+   *     transient RPC blip can't kill a real position.
+   *   - It only touches positions older than RECONCILE_MIN_AGE_SEC and not already
+   *     closing (closingLive), so it can't race a fresh buy's settlement or a sell
+   *     in flight (which would record the proper net_sol itself).
+   *
+   *  net_sol stays NULL because the outcome is genuinely unknown: the tokens left
+   *  out-of-band (manual sell, token clawback, or a sell that landed but was
+   *  misread as failed). summarize() excludes non-numeric net_sol from P&L, so we
+   *  surface the row for manual review without fabricating a result. */
+  private async reconcileLivePositions(): Promise<void> {
+    if (this.reconciling || this.stopped || !this.enabled) return;
+    if (!this.liveExec.isLive()) return; // no real wallet → nothing to reconcile
+    const nowSec = Math.floor(Date.now() / 1000);
+    const candidates = [...this.positions.values()].filter(
+      (p) => p.executionMode === 'live_micro'
+        && !this.closingLive.has(p.id)
+        && (nowSec - p.entryTs) >= RECONCILE_MIN_AGE_SEC,
+    );
+    if (candidates.length === 0) return;
+    this.reconciling = true;
+    try {
+      for (const p of candidates) {
+        if (this.stopped) break;
+        // Re-check guards — a normal exit may have started since we snapshotted.
+        if (this.closingLive.has(p.id) || !this.positions.has(p.id)) continue;
+        const raw = await this.liveExec.tokenBalanceRawStrict(p.mint);
+        if (raw == null) continue; // unknown (live off / RPC error) — never close
+        if (raw > 0) continue;     // still held — leave it open
+        // Confirmed empty. Guard once more, then close the phantom row directly.
+        if (this.closingLive.has(p.id) || !this.positions.has(p.id)) continue;
+        this.closingLive.add(p.id);
+        try {
+          this.db.prepare(`UPDATE copy_trades SET status='closed', exit_ts=?, exit_reason='reconciled_no_tokens', net_sol=NULL, live_error=? WHERE id=?`)
+            .run(Math.floor(Date.now() / 1000),
+              'proactive reconcile: wallet token balance 0 — tokens left out-of-band (no bot sell recorded)',
+              p.id);
+        } catch { /* noop — non-critical */ }
+        p.parked = true;
+        this.positions.delete(p.id);
+        this.closingLive.delete(p.id);
+        logger.warn(
+          'Copy LIVE reconcile CLOSE %s %s id=%d (age %ds) — wallet balance 0, closed reconciled_no_tokens, net_sol NULL (manual review: tokens left out-of-band)',
+          p.strategyId, p.mint.slice(0, 6), p.id, nowSec - p.entryTs,
+        );
+      }
+    } finally {
+      this.reconciling = false;
+    }
   }
 
   /** Current 1-10 regime score for the regime gate — cached 60s so a burst of lead
@@ -2038,6 +2126,10 @@ export function computeCopyTrades(db: Database.Database): unknown {
         confirmed_live: lo.length + lc.length > 0,
         open_live_positions: lo.length,
         closed_live_trades: lc.length,
+        // Positions closed by the proactive wallet reconciler (tokens left the
+        // wallet out-of-band; net_sol NULL, excluded from P&L). A non-zero count
+        // here is the "phantom open got cleaned up" signal — see reconcileLivePositions.
+        reconciled_no_tokens: lc.filter((r) => r.exit_reason === 'reconciled_no_tokens').length,
         open_detail: lo.slice(0, 10).map((r) => ({
           mint: (r.mint as string).slice(0, 8),
           entry_ts: r.entry_ts, entry_price_sol: r.entry_price_sol,

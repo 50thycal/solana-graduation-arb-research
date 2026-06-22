@@ -157,6 +157,39 @@ export interface LtComparison {
   // Tally of pairs by divergence_class (see classifyDivergence) — the at-a-glance
   // answer to "are the live underperformers entry-gap or exit-execution failures".
   divergence_class_counts: Record<string, number>;
+  // Strategy age + run-rate projection + original-strategy benchmark + an
+  // "adjusted" live that strips the wildly-off-shadow execution blowups. All run
+  // rates use ACTIVE TRADING DAYS (distinct UTC days with >=1 closed trade) — the
+  // same basis as the copy promotion bar — and are expressed in LIVE trade-size
+  // SOL, so live / shadow / parent compare at one size.
+  run_rate: {
+    basis: string;
+    live_trade_size_sol: number | null;
+    parent_trade_size_sol: number | null;
+    // Live + shadow are computed over the MATCHED pairs (the panel's domain).
+    live: {
+      first_entry_ts: number | null; age_days: number | null; active_days: number;
+      total_net_sol: number | null; weekly_sol: number | null; monthly_sol: number | null;
+    };
+    shadow: {
+      active_days: number; total_net_sol: number | null;
+      weekly_sol: number | null; monthly_sol: number | null;
+    };
+    // Parent = the FULL standalone shadow strategy (e.g. all copy-hotlead-deep,
+    // not just matched pairs) — the benchmark the live should track. Net is
+    // normalized to live size for an apples-to-apples run-rate comparison.
+    parent: {
+      strategy_id: string | null; n: number; age_days: number | null; active_days: number;
+      total_net_sol_live_size: number | null; weekly_sol: number | null; monthly_sol: number | null;
+    };
+    // Live with the >=N-pp-off-shadow pairs removed (the rent/phantom-class
+    // execution blowups). Shows what live earns once known-broken fills are out.
+    adjusted_live: {
+      divergence_pp_threshold: number; excluded_n: number; active_days: number;
+      total_net_sol: number | null; avg_return_pct: number | null;
+      weekly_sol: number | null; monthly_sol: number | null;
+    };
+  };
   // Per-graduation pairs (chronological by live entry).
   pairs: Array<{
     graduation_id: number | null;
@@ -482,6 +515,84 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     else if (d >= DIVERGENCE_PP) divLiveBetter += 1;
   }
 
+  // ── Strategy age + run-rate projection + parent benchmark + adjusted live ──
+  // Run rates use ACTIVE TRADING DAYS (distinct UTC days with a closed trade),
+  // matching the copy promotion bar, and are expressed in LIVE trade-size SOL.
+  const utcDay = (ts: number | null | undefined): string | null =>
+    ts == null ? null : new Date(ts * 1000).toISOString().slice(0, 10);
+  const activeDaysOf = (tss: Array<number | null | undefined>): number => {
+    const s = new Set<string>();
+    for (const ts of tss) { const d = utcDay(ts); if (d) s.add(d); }
+    return s.size;
+  };
+  const firstTsOf = (tss: Array<number | null | undefined>): number | null => {
+    const xs = tss.filter((t): t is number => t != null && isFinite(t));
+    return xs.length ? Math.min(...xs) : null;
+  };
+  const ageDaysOf = (firstTs: number | null): number | null =>
+    firstTs == null ? null : round((Date.now() / 1000 - firstTs) / 86_400, 1);
+  const perPeriod = (total: number, days: number, mult: number): number | null =>
+    days > 0 ? round((total / days) * mult, 4) : null;
+
+  const liveClosed = liveTrades.filter(t => t.status === 'closed');
+  const liveSize = liveClosed.find(t => (t.trade_size_sol ?? 0) > 0)?.trade_size_sol ?? null;
+  const liveFirstTs = firstTsOf(liveClosed.map(t => t.entry_ts));
+  // Live + shadow run rate over the matched pairs (panel domain). shadow_net_sol
+  // is already size-matched to live, so both are in live-size SOL.
+  const matchedActiveDays = activeDaysOf(pairs.map(p => p.entry_ts));
+
+  // Parent = the full standalone shadow strategy(ies) mapped to these live trades.
+  const mappedShadowIds = new Set(
+    liveClosed.map(t => LIVE_SHADOW_MAP[t.strategy_id]).filter((x): x is string => !!x),
+  );
+  const parentTrades = shadowTrades.filter(t => t.status === 'closed' && mappedShadowIds.has(t.strategy_id));
+  const parentNativeTotal = parentTrades.reduce((a, t) => a + (t.net_profit_sol ?? 0), 0);
+  const parentSize = parentTrades.find(t => (t.trade_size_sol ?? 0) > 0)?.trade_size_sol ?? null;
+  const sizeNorm = (liveSize && parentSize && parentSize > 0) ? liveSize / parentSize : 1;
+  const parentTotalLiveSize = parentTrades.length ? round(parentNativeTotal * sizeNorm) : null;
+  const parentActiveDays = activeDaysOf(parentTrades.map(t => t.entry_ts));
+  const parentFirstTs = firstTsOf(parentTrades.map(t => t.entry_ts));
+  const parentId = mappedShadowIds.size === 1 ? Array.from(mappedShadowIds)[0] : null;
+
+  // Adjusted live: drop matched pairs where live is wildly off its shadow twin
+  // (|return_delta_pct| >= ADJ_DIVERGENCE_PP) — the execution-failure blowups.
+  const ADJ_DIVERGENCE_PP = 50;
+  const adjPairs = pairs.filter(p => p.return_delta_pct === null || Math.abs(p.return_delta_pct) < ADJ_DIVERGENCE_PP);
+  const adjExcluded = pairs.length - adjPairs.length;
+  const adjLiveTotal = adjPairs.reduce((a, p) => a + (p.live_net_sol ?? 0), 0);
+  const adjLiveRets = adjPairs.map(p => p.live_return_pct).filter((x): x is number => x !== null);
+  const adjActiveDays = activeDaysOf(adjPairs.map(p => p.entry_ts));
+
+  const runRate: LtComparison['run_rate'] = {
+    basis: 'net_sol_per_active_trading_day_utc_x_period (live-size normalized)',
+    live_trade_size_sol: liveSize,
+    parent_trade_size_sol: parentSize,
+    live: {
+      first_entry_ts: liveFirstTs, age_days: ageDaysOf(liveFirstTs), active_days: matchedActiveDays,
+      total_net_sol: round(liveTotal),
+      weekly_sol: perPeriod(liveTotal, matchedActiveDays, 7),
+      monthly_sol: perPeriod(liveTotal, matchedActiveDays, 30),
+    },
+    shadow: {
+      active_days: matchedActiveDays, total_net_sol: round(shadowTotal),
+      weekly_sol: perPeriod(shadowTotal, matchedActiveDays, 7),
+      monthly_sol: perPeriod(shadowTotal, matchedActiveDays, 30),
+    },
+    parent: {
+      strategy_id: parentId, n: parentTrades.length,
+      age_days: ageDaysOf(parentFirstTs), active_days: parentActiveDays,
+      total_net_sol_live_size: parentTotalLiveSize,
+      weekly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentActiveDays, 7),
+      monthly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentActiveDays, 30),
+    },
+    adjusted_live: {
+      divergence_pp_threshold: ADJ_DIVERGENCE_PP, excluded_n: adjExcluded, active_days: adjActiveDays,
+      total_net_sol: round(adjLiveTotal), avg_return_pct: round(mean(adjLiveRets), 2),
+      weekly_sol: perPeriod(adjLiveTotal, adjActiveDays, 7),
+      monthly_sol: perPeriod(adjLiveTotal, adjActiveDays, 30),
+    },
+  };
+
   return {
     matched_n: pairs.length,
     live_total_net_sol: round(liveTotal)!,
@@ -511,6 +622,7 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     divergence_live_worse: divLiveWorse,
     divergence_live_better: divLiveBetter,
     divergence_class_counts: divergenceClassCounts,
+    run_rate: runRate,
     pairs,
   };
 }
