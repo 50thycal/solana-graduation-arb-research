@@ -6817,16 +6817,25 @@ export function renderLiveTrainingHtml(data: any): string {
         }
         function dot(px,py,fill){ annoG.appendChild(svgEl('circle',{cx:px,cy:py,r:3,fill:fill,stroke:'#0f172a','stroke-width':1})); }
 
-        // ── memes: rotating captions at the top-3 peaks / bottom-3 dips ──
+        // ── memes: rotating captions spread across the timeline's peaks/dips ──
         if(ANNO.memes && mp.length>=3){
           var turns=[];
           for(var i=1;i<mp.length-1;i++){ var a=mp[i-1].y,b=mp[i].y,c=mp[i+1].y;
-            if(b>a&&b>=c) turns.push({p:mp[i],type:'peak'});
-            else if(b<a&&b<=c) turns.push({p:mp[i],type:'dip'}); }
-          var peaks=turns.filter(function(e){return e.type==='peak';}).sort(function(x,y){return y.p.y-x.p.y;}).slice(0,3);
-          var dips=turns.filter(function(e){return e.type==='dip';}).sort(function(x,y){return x.p.y-y.p.y;}).slice(0,3);
-          [].concat(peaks,dips).forEach(function(e,idx){ var isP=e.type==='peak';
-            var px=xToPx(e.p.x), py=yToPx(e.p.y); if(!inX(px)) return;
+            if(b>a&&b>=c) turns.push({p:mp[i],type:'peak',prom:Math.abs(b-(a+c)/2)});
+            else if(b<a&&b<=c) turns.push({p:mp[i],type:'dip',prom:Math.abs(b-(a+c)/2)}); }
+          // Take the most dramatic turns first, but skip any too close (in x) to
+          // one already chosen — so captions land on DISTINCT peaks/valleys
+          // spread along the chart instead of clustering at the global extremes.
+          turns.sort(function(x,y){ return y.prom-x.prom; });
+          var minGap=Math.max(95, PW/8), sel=[];
+          for(var ti=0; ti<turns.length && sel.length<8; ti++){
+            var tpx=xToPx(turns[ti].p.x); if(!inX(tpx)) continue;
+            var ok=true; for(var si=0; si<sel.length; si++){ if(Math.abs(xToPx(sel[si].p.x)-tpx)<minGap){ ok=false; break; } }
+            if(ok) sel.push(turns[ti]);
+          }
+          sel.sort(function(x,y){ return x.p.x-y.p.x; });
+          sel.forEach(function(e,idx){ var isP=e.type==='peak';
+            var px=xToPx(e.p.x), py=yToPx(e.p.y);
             var pool=isP?MEME_UP:MEME_DOWN;
             labelAt(px,py,memePick(pool, Math.round(e.p.x)+idx*7919),(isP?'#22c55e':'#ef4444'),(isP?-7:15),9.5,1);
           });
@@ -6899,21 +6908,26 @@ export function renderLiveTrainingHtml(data: any): string {
           labels.push({x:px-6,y:py-7,text:'now '+fmtVal(last.y),fill:pos?'#22c55e':'#ef4444',size:10,anchor:'end',dir:-1,prio:10,style:'normal'});
         }
 
-        // ── de-overlap pass: place high-priority labels first, nudge the rest ──
-        function anBox(L){ var w=Math.max(8, L.text.length*L.size*0.6), h=L.size+3;
+        // ── de-overlap pass: place high-priority labels first, then each
+        // remaining label at the nearest clear slot — preferred direction first,
+        // then the opposite — staying within the plot. ──
+        function anBox(L,y){ if(y==null) y=L.y; var w=Math.max(8, L.text.length*L.size*0.6), h=L.size+3;
           var x0=(L.anchor==='start')?L.x:((L.anchor==='end')?L.x-w:L.x-w/2);
-          return {x0:x0-1,x1:x0+w+1,y0:L.y-h,y1:L.y+3}; }
+          return {x0:x0-1,x1:x0+w+1,y0:y-h,y1:y+3}; }
         function anHit(a,b){ return a.x0<b.x1 && a.x1>b.x0 && a.y0<b.y1 && a.y1>b.y0; }
+        function anClear(box){ for(var i=0;i<placed.length;i++){ if(anHit(box,placed[i])) return false; } return true; }
         labels.sort(function(a,b){ return b.prio-a.prio; });
         var placed=[];
-        labels.forEach(function(L){ var box=anBox(L), tries=0;
-          while(tries<16){ var clash=false;
-            for(var i=0;i<placed.length;i++){ if(anHit(box,placed[i])){ clash=true; break; } }
-            if(!clash) break;
-            L.y += (L.dir<0?-1:1)*(L.size+4); box=anBox(L); tries++; }
-          if(box.y0<PADT+2){ L.y+=(PADT+2-box.y0); box=anBox(L); }
-          if(box.y1>PADT+PH-2){ L.y-=(box.y1-(PADT+PH-2)); box=anBox(L); }
-          placed.push(box);
+        labels.forEach(function(L){
+          var base=L.y, dirs=[(L.dir<0?-1:1),(L.dir<0?1:-1)], best=null;
+          for(var di=0; di<dirs.length && !best; di++){ var y=base;
+            for(var tries=0; tries<22; tries++){ var b=anBox(L,y);
+              if(b.y0>=PADT+2 && b.y1<=PADT+PH-2 && anClear(b)){ best={y:y,box:b}; break; }
+              y += dirs[di]*(L.size+4); } }
+          if(!best){ var y2=base, b2=anBox(L,y2);
+            if(b2.y0<PADT+2) y2+=(PADT+2-b2.y0); else if(b2.y1>PADT+PH-2) y2-=(b2.y1-(PADT+PH-2));
+            best={y:y2, box:anBox(L,y2)}; }
+          L.y=best.y; placed.push(best.box);
           var t=svgEl('text',{x:L.x,y:L.y,fill:L.fill,'font-size':L.size,'font-weight':'bold','text-anchor':L.anchor});
           if(L.style==='italic') t.setAttribute('font-style','italic');
           t.textContent=L.text; annoG.appendChild(t);
