@@ -97,7 +97,18 @@ export class CopyLiveExecutor {
    *  trades. Attempts 2-3 bump the Jito tip and widen slippage to salvage those.
    *  Size is hard-capped to MICRO_TRADE_SIZE_SOL on EVERY attempt (the executor
    *  re-overrides it in live_micro), so retries can never increase exposure. A
-   *  thrown exception is terminal (no retry) — mirrors the main path. */
+   *  thrown exception is terminal (no retry) — mirrors the main path.
+   *
+   *  IMPORTANT — what retries can and CANNOT fix (resolved 2026-06-22, see the
+   *  `lesson-live-rent-buy-failures-are-balance-not-retry` lesson in report.json):
+   *  the slippage+tip escalation only salvages the slippage-6004 / not-landed
+   *  class. It does NOT fix 'rent' (InsufficientFundsForRent) failures — retrying
+   *  adds no lamports. Rent is the DOMINANT live-buy failure class (131 of 134 at
+   *  resolution) and is a wallet-balance SYMPTOM: it fires when the wallet sits
+   *  near/below the preflight floor (MICRO_TRADE_SIZE_SOL + WALLET_SOL_BUFFER)
+   *  with no headroom for the new-token ATA rent (~0.002) + fees + Jito tip.
+   *  A climbing `failure_reasons.rent` count means fund the wallet / widen
+   *  WALLET_SOL_BUFFER — it is never a retry-logic regression. */
   async buy(mint: string, poolCtx: PoolContext, expectedPrice: number): Promise<ExecutionResult> {
     if (!this.executor) return { success: false, effectivePrice: 0, tokensReceived: 0, dryRun: false, errorMessage: 'no_executor' };
     let result: ExecutionResult | undefined;
