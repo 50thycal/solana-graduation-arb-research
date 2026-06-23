@@ -158,36 +158,32 @@ export interface LtComparison {
   // answer to "are the live underperformers entry-gap or exit-execution failures".
   divergence_class_counts: Record<string, number>;
   // Strategy age + run-rate projection + original-strategy benchmark + an
-  // "adjusted" live that strips the wildly-off-shadow execution blowups. All run
-  // rates use ACTIVE TRADING DAYS (distinct UTC days with >=1 closed trade) — the
-  // same basis as the copy promotion bar — and are expressed in LIVE trade-size
-  // SOL, so live / shadow / parent compare at one size.
+  // "adjusted" live that strips the worst execution blowups. Run rates use the
+  // SAME basis as "The Analyst" on /live-training: FULL-strategy net ÷ days since
+  // first trade (floored at 7) × period, so the panel's Live SOL/mo MATCHES the
+  // Analyst's headline number instead of computing a competing figure. Live +
+  // parent are normalized to LIVE trade size so they compare apples-to-apples.
   run_rate: {
     basis: string;
     live_trade_size_sol: number | null;
     parent_trade_size_sol: number | null;
-    // Live + shadow are computed over the MATCHED pairs (the panel's domain).
+    // FULL live strategy (all closed live trades, NOT just matched pairs).
     live: {
-      first_entry_ts: number | null; age_days: number | null; active_days: number;
+      first_entry_ts: number | null; age_days: number | null; run_days: number;
       total_net_sol: number | null; weekly_sol: number | null; monthly_sol: number | null;
     };
-    shadow: {
-      active_days: number; total_net_sol: number | null;
-      weekly_sol: number | null; monthly_sol: number | null;
-    };
-    // Parent = the FULL standalone shadow strategy (e.g. all copy-hotlead-deep,
-    // not just matched pairs) — the benchmark the live should track. Net is
-    // normalized to live size for an apples-to-apples run-rate comparison.
+    // Parent = the FULL standalone shadow strategy (e.g. all copy-hotlead-deep) —
+    // the benchmark the live should track, normalized to live size.
     parent: {
-      strategy_id: string | null; n: number; age_days: number | null; active_days: number;
+      strategy_id: string | null; n: number; age_days: number | null; run_days: number;
       total_net_sol_live_size: number | null; weekly_sol: number | null; monthly_sol: number | null;
     };
-    // Live with the >=N-pp-off-shadow pairs removed (the rent/phantom-class
-    // execution blowups). Shows what live earns once known-broken fills are out.
+    // FULL live MINUS the matched pairs where live underperformed its shadow twin
+    // by >= divergence_pp_threshold (the rent/phantom-class execution blowups) —
+    // what live earns once its worst execution misses are stripped.
     adjusted_live: {
-      divergence_pp_threshold: number; excluded_n: number; active_days: number;
-      total_net_sol: number | null; avg_return_pct: number | null;
-      weekly_sol: number | null; monthly_sol: number | null;
+      divergence_pp_threshold: number; excluded_n: number;
+      total_net_sol: number | null; weekly_sol: number | null; monthly_sol: number | null;
     };
   };
   // Per-graduation pairs (chronological by live entry).
@@ -516,30 +512,32 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
   }
 
   // ── Strategy age + run-rate projection + parent benchmark + adjusted live ──
-  // Run rates use ACTIVE TRADING DAYS (distinct UTC days with a closed trade),
-  // matching the copy promotion bar, and are expressed in LIVE trade-size SOL.
-  const utcDay = (ts: number | null | undefined): string | null =>
-    ts == null ? null : new Date(ts * 1000).toISOString().slice(0, 10);
-  const activeDaysOf = (tss: Array<number | null | undefined>): number => {
-    const s = new Set<string>();
-    for (const ts of tss) { const d = utcDay(ts); if (d) s.add(d); }
-    return s.size;
-  };
+  // SAME basis as "The Analyst" headline (anAssess): FULL-strategy net ÷ days
+  // since first trade (floored at 7) × period, normalized to live size. This is
+  // deliberately NOT the matched-pairs subset — the matched numbers are for the
+  // execution-gap rows only. Computing run rate on the full strategy makes the
+  // panel's Live SOL/mo equal the Analyst / Metrics-Summary figure instead of a
+  // competing one (the 2026-06-23 "top doesn't match bottom" mismatch).
   const firstTsOf = (tss: Array<number | null | undefined>): number | null => {
     const xs = tss.filter((t): t is number => t != null && isFinite(t));
     return xs.length ? Math.min(...xs) : null;
   };
   const ageDaysOf = (firstTs: number | null): number | null =>
     firstTs == null ? null : round((Date.now() / 1000 - firstTs) / 86_400, 1);
+  // Denominator: calendar days since the first trade, floored at 7 — IDENTICAL to
+  // The Analyst's `days = max((now-firstTs)/86400, 7)`.
+  const runDaysOf = (firstTs: number | null): number =>
+    firstTs == null ? 7 : Math.max((Date.now() / 1000 - firstTs) / 86_400, 7);
   const perPeriod = (total: number, days: number, mult: number): number | null =>
     days > 0 ? round((total / days) * mult, 4) : null;
 
   const liveClosed = liveTrades.filter(t => t.status === 'closed');
   const liveSize = liveClosed.find(t => (t.trade_size_sol ?? 0) > 0)?.trade_size_sol ?? null;
   const liveFirstTs = firstTsOf(liveClosed.map(t => t.entry_ts));
-  // Live + shadow run rate over the matched pairs (panel domain). shadow_net_sol
-  // is already size-matched to live, so both are in live-size SOL.
-  const matchedActiveDays = activeDaysOf(pairs.map(p => p.entry_ts));
+  const liveRunDays = runDaysOf(liveFirstTs);
+  // FULL live net — sum over ALL closed live trades (matches jsComputeMetrics /
+  // The Analyst's m.total_net_sol), NOT the matched-pairs subset.
+  const liveNetFull = liveClosed.reduce((a, t) => a + (t.net_profit_sol ?? 0), 0);
 
   // Parent = the full standalone shadow strategy(ies) mapped to these live trades.
   const mappedShadowIds = new Set(
@@ -550,46 +548,40 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
   const parentSize = parentTrades.find(t => (t.trade_size_sol ?? 0) > 0)?.trade_size_sol ?? null;
   const sizeNorm = (liveSize && parentSize && parentSize > 0) ? liveSize / parentSize : 1;
   const parentTotalLiveSize = parentTrades.length ? round(parentNativeTotal * sizeNorm) : null;
-  const parentActiveDays = activeDaysOf(parentTrades.map(t => t.entry_ts));
   const parentFirstTs = firstTsOf(parentTrades.map(t => t.entry_ts));
+  const parentRunDays = runDaysOf(parentFirstTs);
   const parentId = mappedShadowIds.size === 1 ? Array.from(mappedShadowIds)[0] : null;
 
-  // Adjusted live: drop matched pairs where live is wildly off its shadow twin
-  // (|return_delta_pct| >= ADJ_DIVERGENCE_PP) — the execution-failure blowups.
+  // Adjusted live: FULL live net minus the matched pairs where live underperformed
+  // its shadow twin by >= ADJ_DIVERGENCE_PP (the execution-failure blowups). Shows
+  // what the strategy earns once its worst execution misses are stripped.
   const ADJ_DIVERGENCE_PP = 50;
-  const adjPairs = pairs.filter(p => p.return_delta_pct === null || Math.abs(p.return_delta_pct) < ADJ_DIVERGENCE_PP);
-  const adjExcluded = pairs.length - adjPairs.length;
-  const adjLiveTotal = adjPairs.reduce((a, p) => a + (p.live_net_sol ?? 0), 0);
-  const adjLiveRets = adjPairs.map(p => p.live_return_pct).filter((x): x is number => x !== null);
-  const adjActiveDays = activeDaysOf(adjPairs.map(p => p.entry_ts));
+  const blowupPairs = pairs.filter(p => p.return_delta_pct != null && p.return_delta_pct <= -ADJ_DIVERGENCE_PP);
+  const blowupLiveNet = blowupPairs.reduce((a, p) => a + (p.live_net_sol ?? 0), 0);
+  const adjLiveNetFull = liveNetFull - blowupLiveNet;
 
   const runRate: LtComparison['run_rate'] = {
-    basis: 'net_sol_per_active_trading_day_utc_x_period (live-size normalized)',
+    basis: 'full_strategy_net / days_since_first_trade(min 7) x period (live-size normalized) — same basis as The Analyst',
     live_trade_size_sol: liveSize,
     parent_trade_size_sol: parentSize,
     live: {
-      first_entry_ts: liveFirstTs, age_days: ageDaysOf(liveFirstTs), active_days: matchedActiveDays,
-      total_net_sol: round(liveTotal),
-      weekly_sol: perPeriod(liveTotal, matchedActiveDays, 7),
-      monthly_sol: perPeriod(liveTotal, matchedActiveDays, 30),
-    },
-    shadow: {
-      active_days: matchedActiveDays, total_net_sol: round(shadowTotal),
-      weekly_sol: perPeriod(shadowTotal, matchedActiveDays, 7),
-      monthly_sol: perPeriod(shadowTotal, matchedActiveDays, 30),
+      first_entry_ts: liveFirstTs, age_days: ageDaysOf(liveFirstTs), run_days: round(liveRunDays, 1) ?? 7,
+      total_net_sol: round(liveNetFull),
+      weekly_sol: perPeriod(liveNetFull, liveRunDays, 7),
+      monthly_sol: perPeriod(liveNetFull, liveRunDays, 30),
     },
     parent: {
       strategy_id: parentId, n: parentTrades.length,
-      age_days: ageDaysOf(parentFirstTs), active_days: parentActiveDays,
+      age_days: ageDaysOf(parentFirstTs), run_days: round(parentRunDays, 1) ?? 7,
       total_net_sol_live_size: parentTotalLiveSize,
-      weekly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentActiveDays, 7),
-      monthly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentActiveDays, 30),
+      weekly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentRunDays, 7),
+      monthly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentRunDays, 30),
     },
     adjusted_live: {
-      divergence_pp_threshold: ADJ_DIVERGENCE_PP, excluded_n: adjExcluded, active_days: adjActiveDays,
-      total_net_sol: round(adjLiveTotal), avg_return_pct: round(mean(adjLiveRets), 2),
-      weekly_sol: perPeriod(adjLiveTotal, adjActiveDays, 7),
-      monthly_sol: perPeriod(adjLiveTotal, adjActiveDays, 30),
+      divergence_pp_threshold: ADJ_DIVERGENCE_PP, excluded_n: blowupPairs.length,
+      total_net_sol: round(adjLiveNetFull),
+      weekly_sol: perPeriod(adjLiveNetFull, liveRunDays, 7),
+      monthly_sol: perPeriod(adjLiveNetFull, liveRunDays, 30),
     },
   };
 
