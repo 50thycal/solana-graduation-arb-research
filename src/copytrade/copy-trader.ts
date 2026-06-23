@@ -458,11 +458,16 @@ const HOT_POLL_BAND_PCT = parseFloat(process.env.COPY_HOT_POLL_BAND_PCT || '30')
 // …and only when recent |Δprice%|/sec exceeds this (above ~p70 of the velocity
 // distribution; excludes the slow median so it isn't fast-polled needlessly).
 const HOT_POLL_MIN_VEL_PCT_PER_S = parseFloat(process.env.COPY_HOT_POLL_MIN_VEL || '0.3');
-// Strategies eligible for hot-polling — the live copy strategy + its shadow twin
-// only (not the whole copy/live roster). Comma-separated override.
+// Strategies eligible for hot-polling — auto-derived: every live_micro copy strategy
+// + its pair shadow (driven twin). A live + its pair shadow on the same mint share a
+// vault, so one fast fetch serves both, keeping the comparison apples-to-apples. Adding
+// a makeLivePair() entry auto-enrolls it — no stale hardcoded ids. Env override
+// (comma-separated COPY_HOT_POLL_STRATEGIES) wins when set.
 const HOT_POLL_STRATEGY_IDS = new Set(
-  (process.env.COPY_HOT_POLL_STRATEGIES || 'copy-hotlead-deep-live-micro,copy-hotlead-deep')
-    .split(',').map((s) => s.trim()).filter(Boolean),
+  process.env.COPY_HOT_POLL_STRATEGIES
+    ? process.env.COPY_HOT_POLL_STRATEGIES.split(',').map((s) => s.trim()).filter(Boolean)
+    : COPY_STRATEGIES.flatMap((s) => s.executionMode === 'live_micro'
+        ? [s.id, ...(s.drivenBy ? [s.drivenBy] : [])] : []),
 );
 
 // ── Follow-shadow exits (entry-gap + stop mitigation) ──
