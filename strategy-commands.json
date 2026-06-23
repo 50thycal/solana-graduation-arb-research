@@ -1,0 +1,10 @@
+{
+  "commands": [
+    {
+      "action": "report-append",
+      "id": "checkin-refresh-2026-06-22",
+      "date": "2026-06-22",
+      "note": "[CLAUDE 12h CHECK-IN — set 2026-06-22, due ~12h after the priority-refresh + freshness deploy] BASELINE captured now: (1) fat-wallet cohort (copy-fatwallet-{follow,runner,hightp,scaleout,tp100}) ~11 closed trades each, all net -0.18 to -0.56, WR ~9%, exits dominated by timeout (no fat-tail winner captured yet). (2) copy-3eg1-{follow,runner,tp100} just deployed, n=0. (3) Wallet discovery: promotable 17, scored 4104/73509; the 24h activity column read 0 for ALL promotable wallets (the staleness this deploy fixes). ACTION at check-in: re-pull copy-trades.json + wallet-leaderboard.json and judge BETTER/WORSE/SAME vs baseline on: (a) does the 24h column now show green counts for promotable wallets = priority-refresh working / staleness dropped; (b) did promotable count hold or rise = good wallets stopped falsely aging out; (c) fat-wallet + 3eg1 cohort trend (still n too low to conclude — note direction only, read drop_top3 not raw net)."
+    }
+  ]
+}
