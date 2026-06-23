@@ -10549,9 +10549,24 @@ export function renderCopyTradesHtml(data: any): string {
     AND a real swap was submitted. ${le.confirmed_live
       ? `<b>Real money is trading.</b> ${le.open_live_positions ?? 0} open live position(s), ${le.closed_live_trades ?? 0} closed.`
       : `No live_micro rows yet — the live-micro strategy is running as a shadow (COPY_LIVE_ENABLED not active, no wallet, or no qualifying entry has fired yet).`}</div>
-    ${(le.open_detail ?? []).length ? `<table><tr><th>Mint</th><th>Bought</th><th>Age</th><th>Entry SOL</th><th>Tokens</th><th>Tx sig</th></tr>${
-      le.open_detail.map((o: any) => `<tr><td style="font-family:monospace">${o.mint}</td><td style="white-space:nowrap">${fmtClock(o.entry_ts)}</td><td style="white-space:nowrap">${fmtAge(o.entry_ts)}</td><td>${n(o.entry_price_sol, 9)}</td><td>${o.live_tokens != null ? n(o.live_tokens, 0) : '—'}</td><td style="font-family:monospace">${o.tx_sig_entry ?? '—'}</td></tr>`).join('')
-    }</table>` : ''}
+    ${(le.open_detail ?? []).length ? `<table><tr><th>Mint</th><th>Bought</th><th>Age</th><th>Entry SOL</th><th>Tracked tok</th><th>Wallet tok</th><th>Status</th><th>Tx sig</th></tr>${
+      le.open_detail.map((o: any) => {
+        const st = o.recon_status;
+        const stColor = st === 'held' ? '#16a34a' : (st === 'settling' ? '#d97706' : (st === 'closing' ? '#6b7280' : '#6b7280'));
+        const stLabel = st === 'held' ? 'held ✓' : (st ? st : 'unchecked');
+        const wt = o.wallet_tokens != null ? n(o.wallet_tokens, 0) : '—';
+        // Flag a tracked position whose wallet balance reads 0 (phantom pending reconcile).
+        const wtColor = (o.wallet_tokens != null && o.wallet_tokens <= 0) ? '#dc2626' : 'inherit';
+        return `<tr><td style="font-family:monospace">${o.mint}</td><td style="white-space:nowrap">${fmtClock(o.entry_ts)}</td><td style="white-space:nowrap">${fmtAge(o.entry_ts)}</td><td>${n(o.entry_price_sol, 9)}</td><td>${o.live_tokens != null ? n(o.live_tokens, 0) : '—'}</td><td style="color:${wtColor}">${wt}</td><td style="color:${stColor};white-space:nowrap">${stLabel}</td><td style="font-family:monospace">${o.tx_sig_entry ?? '—'}</td></tr>`;
+      }).join('')
+    }</table>
+    <div class="desc" style="margin-top:6px">Wallet reconciliation ${le.reconciliation?.checked_at ? `last checked ${fmtAge(le.reconciliation.checked_at)} ago` : '— not run yet'}.
+    <b>Wallet tok</b> = the bot's read of the REAL on-chain balance; <span style="color:#16a34a">held ✓</span> = chain matches the open row,
+    <span style="color:#d97706">settling</span> = empty but too fresh to reconcile, <span style="color:#dc2626">wallet 0</span> = phantom (will close on the next sweep).</div>
+    ${(le.reconciliation?.orphan_count ?? 0) > 0 ? `<div class="desc" style="margin-top:8px;color:#dc2626"><b>⚠ ${le.reconciliation.orphan_count} orphan token balance(s)</b> — mints the bot live-traded that are no longer tracked as open but still sit in the wallet (a sell/terminal-close left them behind). Manual review:</div>
+    <table><tr><th>Mint</th><th>Wallet tokens</th></tr>${
+      (le.reconciliation.orphans ?? []).map((o: any) => `<tr><td style="font-family:monospace">${o.mint}</td><td>${n(o.tokens, 0)}</td></tr>`).join('')
+    }</table>` : ''}` : ''}
   </div>`;
 
   // ── Live vs shadow: real-fill gap for live_micro strategies ───────────────
