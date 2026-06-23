@@ -96,6 +96,11 @@ export interface CopyStrategy {
   macroGateMinScore?: number;  // macro gate: only enter when the broad-crypto-market score (1-10 from BTC/SOL
                                // 7d trend + Fear & Greed; macro-regime.ts) is >= this. Tests "only trade when
                                // the overall market is rising". Missing macro data scores 5 (doesn't block).
+  dailyLossCapSol?: number;    // daily-loss circuit breaker (research, 2026-06-23): once THIS strategy's realized
+                               // net for the current UTC day is <= -dailyLossCapSol, halt NEW entries for the rest
+                               // of the day (resets 00:00 UTC). Reactive, not predictive — regime can't tell a +54
+                               // day from a -74 day (backtested), but a loss cap keeps the good days and caps the
+                               // disasters. Open positions still close normally.
   executionMode?: 'shadow' | 'live_micro';
                                // 'shadow' (default) = modeled fills, no funds. 'live_micro' = submit REAL 0.05
                                // SOL swaps via CopyLiveExecutor — but ONLY when COPY_LIVE_ENABLED=true + wallet;
@@ -307,6 +312,27 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-3eg1-tp100',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: 3600,
     entryDelaySec: 5, maxEntryDriftPct: 10,
     walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
+  // ── N (2026-06-23): DAILY-LOSS CIRCUIT BREAKER test. Backtest (regime-analysis ×
+  //    copy daily P&L) showed a regime/rug-rate pause CAN'T work — the +54 SOL day and
+  //    the -74 SOL day had identical regime, so pausing on rug-rate skips the winners
+  //    too and loses net. A REACTIVE daily-loss cap does work in the backtest: keep the
+  //    good days, cap the disasters. Test it on 3 base strategies, each as a -cap variant
+  //    (dailyLossCapSol=3: halt this strategy's new entries for the UTC day once its
+  //    realized net <= -3 SOL) vs an identical -ctrl twin (no cap). Matched pairs start
+  //    fresh together → clean one-to-one. Win = -cap has a higher floor (smaller worst
+  //    day) AND net >= its -ctrl twin (the cap shouldn't cost net). Run >= 7 days.
+  { id: 'copy-hotlead-cap',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, dailyLossCapSol: 3 },
+  { id: 'copy-hotlead-ctrl', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-elitelead-cap',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, eliteLeadGate: { minTrades: 10, minNetSol: 0 }, dailyLossCapSol: 3 },
+  { id: 'copy-elitelead-ctrl', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, eliteLeadGate: { minTrades: 10, minNetSol: 0 } },
+  { id: 'copy-hotlead-consensus-cap',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, minConsensusRecent: 2, dailyLossCapSol: 3 },
+  { id: 'copy-hotlead-consensus-ctrl', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, minConsensusRecent: 2 },
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
@@ -645,6 +671,27 @@ export class CopyTrader {
     return res;
   }
 
+  /** This strategy's realized net for the current UTC day (sum of net_sol on closed
+   *  copies that exited today). Drives the dailyLossCapSol breaker. Cached 60s per
+   *  strategy; the day-start cutoff moves forward at 00:00 UTC so it resets daily. */
+  private dailyNetCache = new Map<string, { ts: number; dayStart: number; net: number }>();
+  private strategyDailyRealizedNet(strategyId: string): number {
+    const now = Date.now();
+    const dayStart = Math.floor(now / 86_400_000) * 86_400; // 00:00 UTC today, unix sec
+    const hit = this.dailyNetCache.get(strategyId);
+    if (hit && hit.dayStart === dayStart && now - hit.ts < 60_000) return hit.net;
+    let net = 0;
+    try {
+      const row = this.db.prepare(`
+        SELECT COALESCE(SUM(net_sol), 0) AS net FROM copy_trades
+        WHERE strategy_id = ? AND status = 'closed' AND net_sol IS NOT NULL AND exit_ts >= ?
+      `).get(strategyId, dayStart) as { net: number };
+      net = row.net;
+    } catch { /* table may be empty */ }
+    this.dailyNetCache.set(strategyId, { ts: now, dayStart, net });
+    return net;
+  }
+
   /** A followed wallet bought `mint` — open shadow copies for armed strategies.
    *  `leadBuySol` is the size of the lead's own buy (|SOL delta| from their tx). */
   async onLeadBuy(mint: string, leadWallet: string, leadTier: string, detectionLagSec: number | null, leadBuySol: number | null = null): Promise<void> {
@@ -669,6 +716,10 @@ export class CopyTrader {
       if (open.some((p) => p.mint === mint)) { this.recordSkip(s.id, 'already_open'); continue; }
       if (this.pendingEntries.has(pendingKey)) { this.recordSkip(s.id, 'already_open'); continue; }
       if (open.length >= MAX_CONCURRENT_PER_STRATEGY) { this.recordSkip(s.id, 'at_capacity'); continue; }
+      // daily-loss circuit breaker: halt new entries once today's realized net <= -cap (reset at 00:00 UTC)
+      if (s.dailyLossCapSol != null && this.strategyDailyRealizedNet(s.id) <= -s.dailyLossCapSol) {
+        this.recordSkip(s.id, 'daily_loss_cap'); continue;
+      }
       // conviction gates — record the FIRST gate that rejects (funnel semantics)
       if (s.walletAllowlist && !s.walletAllowlist.includes(leadWallet)) { this.recordSkip(s.id, 'wallet_allowlist'); continue; }
       if (s.minLeadRank != null && leadRank > s.minLeadRank) { this.recordSkip(s.id, 'lead_rank'); continue; }
