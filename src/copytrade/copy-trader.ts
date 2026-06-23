@@ -869,6 +869,11 @@ export class CopyTrader {
     let consensusRecent: number | null = null; // computed lazily, once per call
     const nowSec = Math.floor(Date.now() / 1000);
     const detectMs = Date.now();
+    // One id per lead-buy event, shared by EVERY row this call spawns (each armed
+    // strategy + its live_micro twin). Deterministic 1:1 join key for the
+    // Live-vs-Shadow pairing — copy rows have no graduation_id, so without this the
+    // matcher falls back to mint+time and under-matches re-entries / offset fills.
+    const copyEventId = `${detectMs}-${mint.slice(0, 10)}-${leadWallet.slice(0, 8)}`;
 
     for (const s of COPY_STRATEGIES) {
       const pendingKey = `${s.id}:${mint}`;
@@ -900,7 +905,7 @@ export class CopyTrader {
       // Measured-lag entry — wait, re-fetch the real price, enter at that.
       if (s.entryDelaySec) {
         this.pendingEntries.add(pendingKey);
-        this.openDelayed(s, mint, pv, leadWallet, leadTier, detectionLagSec, price.priceSol, detectMs, leadBuySol)
+        this.openDelayed(s, mint, pv, leadWallet, leadTier, detectionLagSec, price.priceSol, detectMs, leadBuySol, copyEventId)
           .catch((err) => logger.warn('delayed entry error %s %s: %s', s.id, mint.slice(0, 6), err instanceof Error ? err.message : String(err)))
           .finally(() => this.pendingEntries.delete(pendingKey));
         continue;
@@ -916,6 +921,7 @@ export class CopyTrader {
         leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: COPY_SIZE_SOL,
         tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
         detectPrice: price.priceSol, entryDelaySec: null, entryDriftPct: null, leadBuySol,
+        copyEventId,
       });
       if (id == null) continue;
       this.positions.set(id, {
@@ -933,7 +939,7 @@ export class CopyTrader {
   private async openDelayed(
     s: CopyStrategy, mint: string, pv: PoolVaults, leadWallet: string, leadTier: string,
     detectionLagSec: number | null, detectPrice: number, detectMs: number,
-    leadBuySol: number | null = null,
+    leadBuySol: number | null = null, copyEventId: string | null = null,
   ): Promise<void> {
     await sleep((s.entryDelaySec ?? 0) * 1000);
     if (this.stopped) return;
@@ -968,7 +974,7 @@ export class CopyTrader {
     // LIVE-MICRO: submit a real buy. Only when COPY_LIVE_ENABLED + wallet; otherwise
     // this strategy falls through to the shadow path below (runs as a second shadow).
     if (s.executionMode === 'live_micro' && this.liveExec.isLive()) {
-      await this.openLive(s, mint, pv, leadWallet, leadTier, detectionLagSec, detectPrice, price.priceSol, driftPct, nowSec);
+      await this.openLive(s, mint, pv, leadWallet, leadTier, detectionLagSec, detectPrice, price.priceSol, driftPct, nowSec, copyEventId);
       return;
     }
 
@@ -980,6 +986,7 @@ export class CopyTrader {
       leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: COPY_SIZE_SOL,
       tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
       detectPrice, entryDelaySec: s.entryDelaySec ?? 0, entryDriftPct: driftPct, leadBuySol,
+      copyEventId,
     });
     if (id == null) return;
     const pos: OpenPos = {
@@ -1005,6 +1012,7 @@ export class CopyTrader {
   private async openLive(
     s: CopyStrategy, mint: string, pv: PoolVaults, leadWallet: string, leadTier: string,
     detectionLagSec: number | null, detectPrice: number, snapshotPrice: number, driftPct: number, nowSec: number,
+    copyEventId: string | null = null,
   ): Promise<void> {
     // Tight live exposure cap (separate from the shadow concurrency cap).
     const openLiveCount = [...this.positions.values()].filter((p) => p.strategyId === s.id && p.executionMode === 'live_micro').length;
@@ -1037,7 +1045,7 @@ export class CopyTrader {
       leadWallet, leadTier, entryTs: nowSec, entryPrice: snapshotPrice, sizeSol: MICRO_TRADE_SIZE_SOL,
       tpPrice: tpP, slPrice: slP, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
       detectPrice, entryDelaySec: s.entryDelaySec ?? 0, entryDriftPct: driftPct, leadBuySol: null,
-      executionMode: 'live_micro',
+      executionMode: 'live_micro', copyEventId,
     });
     if (id == null) return;
     // 2) Submit the real buy.
@@ -1525,18 +1533,19 @@ export class CopyTrader {
     detectionLagSec: number | null;
     detectPrice: number | null; entryDelaySec: number | null; entryDriftPct: number | null;
     leadBuySol?: number | null; executionMode?: 'shadow' | 'live_micro';
+    copyEventId?: string | null;
   }): number | null {
     const res = this.db.prepare(`
       INSERT OR IGNORE INTO copy_trades
         (strategy_id, mint, pool_address, base_vault, quote_vault, lead_wallet, lead_tier,
          entry_ts, entry_price_sol, size_sol, tp_price_sol, sl_price_sol, exit_follow,
          max_hold_sec, detection_lag_sec, high_price_sol, scaled_out, realized_partial_sol, status,
-         detect_price_sol, entry_delay_sec, entry_drift_pct, lead_buy_sol, execution_mode)
+         detect_price_sol, entry_delay_sec, entry_drift_pct, lead_buy_sol, execution_mode, copy_event_id)
       VALUES
         (@strategy_id, @mint, @pool, @base_vault, @quote_vault, @lead_wallet, @lead_tier,
          @entry_ts, @entry_price, @size, @tp, @sl, @exit_follow,
          @max_hold, @lag, @entry_price, 0, 0, 'open',
-         @detect_price, @entry_delay, @entry_drift, @lead_buy, @exec_mode)
+         @detect_price, @entry_delay, @entry_drift, @lead_buy, @exec_mode, @copy_event_id)
     `).run({
       strategy_id: d.strategyId, mint: d.mint, pool: d.pool, base_vault: d.baseVault, quote_vault: d.quoteVault,
       lead_wallet: d.leadWallet, lead_tier: d.leadTier, entry_ts: d.entryTs, entry_price: d.entryPrice,
@@ -1544,6 +1553,7 @@ export class CopyTrader {
       max_hold: d.maxHoldSec, lag: d.detectionLagSec,
       detect_price: d.detectPrice, entry_delay: d.entryDelaySec, entry_drift: d.entryDriftPct,
       lead_buy: d.leadBuySol ?? null, exec_mode: d.executionMode ?? 'shadow',
+      copy_event_id: d.copyEventId ?? null,
     });
     return res.changes > 0 ? (res.lastInsertRowid as number) : null;
   }
@@ -2008,12 +2018,15 @@ export function computeCopyTrades(db: Database.Database): unknown {
   }
 
   // Live-vs-shadow: pair each live_micro strategy's REAL trades with its identical
-  // shadow twin on the same lead-buy (same mint, entry within 30s). The gap is pure
+  // shadow twin on the SAME lead-buy event. Preferred join is copy_event_id (one id
+  // per onLeadBuy(), written to both rows — exact 1:1). Pre-migration rows that lack
+  // it fall back to same mint + entry within a widened window. The gap is pure
   // execution — real fills/slippage/fees/timing vs the modeled shadow. Mirrors the
   // /live-training panel, copy-side. Empty until real live trades exist.
   const LIVE_SHADOW_PAIRS = [
     { live: 'copy-hotlead-deep-live-micro', shadow: 'copy-hotlead-deep' },
   ];
+  const COPY_LVS_WINDOW_SEC = 300; // mint+time fallback window (mirror of computeComparison)
   // Compare on RETURN % (net / size), not absolute SOL — live trades at 0.05 and
   // the shadow twin at 0.5, so only size-normalized returns are apples-to-apples.
   const retPct = (r: Record<string, unknown>) => {
@@ -2027,13 +2040,27 @@ export function computeCopyTrades(db: Database.Database): unknown {
     const shadowRows = closed.filter((r) => r.strategy_id === shadow);
     const mLive: Array<Record<string, unknown>> = []; const mShadow: Array<Record<string, unknown>> = [];
     const usedShadow = new Set<number>();
+    const shadowByEvent = new Map<string, Record<string, unknown>>();
+    for (const sr of shadowRows) {
+      const ev = sr.copy_event_id as string | null;
+      if (ev) shadowByEvent.set(ev, sr);
+    }
     for (const lr of liveRows) {
       const lts = lr.entry_ts as number; const lmint = lr.mint as string;
-      let best: Record<string, unknown> | null = null; let bestDiff = 31;
-      for (const sr of shadowRows) {
-        if (usedShadow.has(sr.id as number) || sr.mint !== lmint) continue;
-        const diff = Math.abs((sr.entry_ts as number) - lts);
-        if (diff <= 30 && diff < bestDiff) { best = sr; bestDiff = diff; }
+      const lev = lr.copy_event_id as string | null;
+      let best: Record<string, unknown> | null = null;
+      if (lev) {
+        // Deterministic: both rows from the same onLeadBuy() share copy_event_id.
+        const ex = shadowByEvent.get(lev);
+        if (ex && !usedShadow.has(ex.id as number)) best = ex;
+      } else {
+        // Pre-migration rows only: same mint, closest entry within the window.
+        let bestDiff = COPY_LVS_WINDOW_SEC + 1;
+        for (const sr of shadowRows) {
+          if (usedShadow.has(sr.id as number) || sr.mint !== lmint || sr.copy_event_id) continue;
+          const diff = Math.abs((sr.entry_ts as number) - lts);
+          if (diff <= COPY_LVS_WINDOW_SEC && diff < bestDiff) { best = sr; bestDiff = diff; }
+        }
       }
       if (best) { usedShadow.add(best.id as number); mLive.push(lr); mShadow.push(best); }
     }

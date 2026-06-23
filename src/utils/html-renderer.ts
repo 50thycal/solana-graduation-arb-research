@@ -7129,9 +7129,11 @@ export function renderLiveTrainingHtml(data: any): string {
 
   function jsComputeComparison(liveTr, shadowTr){
     var map=LT.mapping||{};
-    var shIdx={}, shByMint={};
+    var COPY_WIN=300; // mint+time fallback window (mirror of COPY_MINT_MATCH_WINDOW_SEC)
+    var shIdx={}, shByMint={}, shByEvent={};
     for(var i=0;i<shadowTr.length;i++){ var s=shadowTr[i]; if(s.status!=='closed') continue;
       if(s.graduation_id!==null&&s.graduation_id!==undefined) shIdx[s.strategy_id+':'+s.graduation_id]=s;
+      if(s.copy_event_id) shByEvent[s.strategy_id+':'+s.copy_event_id]=s;
       if(s.mint){ var mk=s.strategy_id+':'+s.mint; (shByMint[mk]=shByMint[mk]||[]).push(s); } }
     var usedMint={};
     var pairs=[], liveGross=[], shadowGross=[], liveLand=[], deltas=[];
@@ -7140,10 +7142,13 @@ export function renderLiveTrainingHtml(data: any): string {
       var sid=map[lv.strategy_id]; if(!sid) continue;
       var tw=null;
       if(lv.graduation_id!==null&&lv.graduation_id!==undefined){ tw=shIdx[sid+':'+lv.graduation_id]; }
-      else if(lv.mint){ // copy rows: no graduation_id — match on mint + closest entry within 60s
-        var cands=shByMint[sid+':'+lv.mint]||[], best=null, bestDiff=61;
-        for(var j=0;j<cands.length;j++){ var c=cands[j]; if(usedMint[c.id]) continue;
-          var diff=Math.abs((c.entry_ts||0)-(lv.entry_ts||0)); if(diff<=60&&diff<bestDiff){ best=c; bestDiff=diff; } }
+      else if(lv.copy_event_id){ // deterministic copy join: same onLeadBuy() event id
+        var ex=shByEvent[sid+':'+lv.copy_event_id]; if(ex&&!usedMint[ex.id]){ usedMint[ex.id]=1; tw=ex; } }
+      if(!tw && (lv.graduation_id===null||lv.graduation_id===undefined) && lv.mint && !lv.copy_event_id){
+        // pre-migration copy rows only: mint + closest entry within the widened window
+        var cands=shByMint[sid+':'+lv.mint]||[], best=null, bestDiff=COPY_WIN+1;
+        for(var j=0;j<cands.length;j++){ var c=cands[j]; if(usedMint[c.id]) continue; if(c.copy_event_id) continue;
+          var diff=Math.abs((c.entry_ts||0)-(lv.entry_ts||0)); if(diff<=COPY_WIN&&diff<bestDiff){ best=c; bestDiff=diff; } }
         if(best){ usedMint[best.id]=1; tw=best; } }
       if(!tw) continue;
       var lr=rt(lv), sr=rt(tw);
