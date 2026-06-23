@@ -46,11 +46,21 @@ export const LIVE_SHADOW_MAP: Record<string, string> = {
   // v50 strength cohort — dedicated 0.05 SOL shadow twin, identical filters/TP/SL.
   'v50-strength-live-micro': 'v50-strength-shadow',
   // COPY-TRADE live-micro (separate copy_trades subsystem, unioned into this page so
-  // it's the single live-money hub). Paired with its identical shadow twin; matched
-  // on MINT (copy rows have no graduation_id) — see computeComparison's null-grad path.
-  // Killed copy live strategies are removed here so they drop to "retired/off"
+  // it's the single live-money hub). Paired with its DEDICATED pair shadow — a 0.05-SOL
+  // twin spawned 1:1 with each live entry (shared copy_event_id), so the comparison is
+  // exact. Killed copy live strategies are removed here so they drop to "retired/off"
   // (the active gate below keys off membership in this map).
-  'copy-hotlead-deep-live-micro': 'copy-hotlead-deep',
+  // KILLED 2026-06-23: copy-hotlead-deep-live-micro — was wired to the ORIGINAL research
+  // strategy (copy-hotlead-deep), not a dedicated twin; removed → retired/off.
+  'copy-hotlead-hold30m-live-micro': 'copy-hotlead-hold30m-pair-shadow',
+};
+
+// Trend benchmark only: the ORIGINAL research strategy each live strategy is derived
+// from (0.5 SOL, longer-running). NOT the execution twin — used to confirm the live +
+// pair shadow track the same TREND as the proven original, never for gating or 1:1
+// matching. live → original-strategy-id.
+export const LIVE_ORIGINAL_MAP: Record<string, string> = {
+  'copy-hotlead-hold30m-live-micro': 'copy-hotlead-hold30m',
 };
 
 /** Normalized per-trade row shared by live + shadow series. */
@@ -565,18 +575,21 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
   // The Analyst's m.total_net_sol), NOT the matched-pairs subset.
   const liveNetFull = liveClosed.reduce((a, t) => a + (t.net_profit_sol ?? 0), 0);
 
-  // Parent = the full standalone shadow strategy(ies) mapped to these live trades.
-  const mappedShadowIds = new Set(
-    liveClosed.map(t => LIVE_SHADOW_MAP[t.strategy_id]).filter((x): x is string => !!x),
+  // Parent = the ORIGINAL research strategy (LIVE_ORIGINAL_MAP), the proven 0.5-SOL
+  // strategy the live is derived from — a TREND benchmark, size-normalized to live.
+  // (The execution twin for the 1:1 panel is the pair shadow via LIVE_SHADOW_MAP; this
+  // parent is deliberately the original so we can see live + pair shadow track its trend.)
+  const mappedOriginalIds = new Set(
+    liveClosed.map(t => LIVE_ORIGINAL_MAP[t.strategy_id]).filter((x): x is string => !!x),
   );
-  const parentTrades = shadowTrades.filter(t => t.status === 'closed' && mappedShadowIds.has(t.strategy_id));
+  const parentTrades = shadowTrades.filter(t => t.status === 'closed' && mappedOriginalIds.has(t.strategy_id));
   const parentNativeTotal = parentTrades.reduce((a, t) => a + (t.net_profit_sol ?? 0), 0);
   const parentSize = parentTrades.find(t => (t.trade_size_sol ?? 0) > 0)?.trade_size_sol ?? null;
   const sizeNorm = (liveSize && parentSize && parentSize > 0) ? liveSize / parentSize : 1;
   const parentTotalLiveSize = parentTrades.length ? round(parentNativeTotal * sizeNorm) : null;
   const parentFirstTs = firstTsOf(parentTrades.map(t => t.entry_ts));
   const parentRunDays = runDaysOf(parentFirstTs);
-  const parentId = mappedShadowIds.size === 1 ? Array.from(mappedShadowIds)[0] : null;
+  const parentId = mappedOriginalIds.size === 1 ? Array.from(mappedOriginalIds)[0] : null;
 
   // Adjusted live: FULL live net minus the matched pairs where live underperformed
   // its shadow twin by >= ADJ_DIVERGENCE_PP (the execution-failure blowups). Shows
@@ -750,9 +763,12 @@ export function computeLiveTrainingData(db: Database.Database) {
 
   // Shadow twins we need for the comparison (only those referenced by a present
   // live strategy AND defined in the explicit map).
-  const neededShadowIds = Array.from(
-    new Set(liveStrategyIds.map(id => LIVE_SHADOW_MAP[id]).filter((x): x is string => !!x)),
-  );
+  // Both the execution twin (pair shadow, for the 1:1 panel) AND the original research
+  // strategy (trend benchmark in the run-rate block) — fetch trades for both.
+  const neededShadowIds = Array.from(new Set([
+    ...liveStrategyIds.map(id => LIVE_SHADOW_MAP[id]),
+    ...liveStrategyIds.map(id => LIVE_ORIGINAL_MAP[id]),
+  ].filter((x): x is string => !!x)));
 
   let shadowTrades: LtTrade[] = [];
   if (neededShadowIds.length) {

@@ -101,6 +101,31 @@ export interface CopyStrategy {
                                // SOL swaps via CopyLiveExecutor — but ONLY when COPY_LIVE_ENABLED=true + wallet;
                                // otherwise it's shadowed. Pair a live_micro strategy with an identical shadow
                                // twin to measure the real-fill-vs-model execution gap (live-vs-shadow panel).
+  tradeSizeSol?: number;       // explicit trade-size override (SOL). Default: COPY_SIZE_SOL (shadow). A
+                               // pair-shadow twin sets MICRO_TRADE_SIZE_SOL (0.05) so it's apples-to-apples
+                               // with its live (no size-scaling in the comparison).
+  drivenBy?: string;           // PAIR-SHADOW-DRIVEN LIVE: if set, this (live) strategy does NOT self-gate in
+                               // onLeadBuy. Its entries are spawned 1:1 by its pair shadow (id in drivenBy)
+                               // at the moment that shadow opens, and it follows the pair shadow's exits.
+                               // Live keeps its own SL/TP/maxHold as a SOONER-ONLY safety backstop (recommendation
+                               // A). Guarantees live ⊆ pair shadow — live can never enter a lead-buy the pair
+                               // shadow didn't, so no "rogue" un-twinned live trades.
+}
+
+// Pair-shadow-driven live cohort generator. From a base config, emit a dedicated
+// 0.05-SOL PAIR SHADOW (modeled) + a 0.05-SOL LIVE that the pair shadow drives 1:1:
+// the live enters when the pair shadow enters (same lead-buy event, shared copy_event_id)
+// and follows its exits, keeping its own SL/TP/maxHold only as a SOONER-ONLY safety
+// backstop. The ORIGINAL base strategy (0.5) is NOT emitted here — it stays elsewhere as
+// a trend benchmark only. This is the correct twin pattern: the live can never enter a
+// lead-buy its pair shadow didn't, so there are no "rogue" un-twinned live trades.
+function makeLivePair(base: CopyStrategy): CopyStrategy[] {
+  const pairId = `${base.id}-pair-shadow`;
+  return [
+    { ...base, id: pairId, tradeSizeSol: MICRO_TRADE_SIZE_SOL },
+    { ...base, id: `${base.id}-live-micro`, tradeSizeSol: MICRO_TRADE_SIZE_SOL,
+      executionMode: 'live_micro', drivenBy: pairId },
+  ];
 }
 
 export const COPY_STRATEGIES: CopyStrategy[] = [
@@ -340,6 +365,14 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    (entryDelaySec) showed real detection->fill drift is ~0% median (not +5%), so
   //    the cons twins' deep losses (-15.5 / -15.4) were a wrong-assumption artifact.
   //    The lag twins are the honest cost model now; the cons controls are redundant.
+  // ── N (2026-06-23): PAIR-SHADOW-DRIVEN LIVE — first strategy on the corrected twin
+  //    architecture. makeLivePair emits a dedicated 0.05-SOL pair shadow + a 0.05-SOL
+  //    live it drives 1:1. Based on copy-hotlead-hold30m (its original 0.5 research
+  //    strategy, above, kept as the trend benchmark). The pair shadow always runs
+  //    (modeled); the live submits REAL 0.05 swaps ONLY when COPY_LIVE_ENABLED=true +
+  //    a funded wallet. Emits copy-hotlead-hold30m-pair-shadow + -live-micro.
+  ...makeLivePair({ id: 'copy-hotlead-hold30m', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } }),
 ];
 
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
@@ -446,13 +479,22 @@ const HOT_POLL_STRATEGY_IDS = new Set(
 // (entry_ts within FOLLOW_PAIR_WINDOW_SEC) so a stale live position from an earlier
 // entry on the same mint is never closed by mistake. Inverse of the live↔shadow
 // pairing in live-training-data.ts.
-const SHADOW_FOLLOW_LIVE: Record<string, string> = {
-  'copy-hotlead-deep': 'copy-hotlead-deep-live-micro',
-};
-// Shadow exit reasons that trigger the live mirror — price-trigger exits only.
-// Time/admin exits (timeout, max_hold_cap, strategy_removed, follow_sell) are NOT
-// mirrored; live has its own global max-hold for those.
-const FOLLOW_SHADOW_EXIT_REASONS = new Set(['take_profit', 'stop_loss', 'trail_stop', 'trailing_tp']);
+// Auto-derived from the pair-shadow cohort: pairShadowId → liveId (the shadow whose
+// exits the live mirrors) and pairShadowId → live CopyStrategy (the live to spawn 1:1
+// when the pair shadow opens). Built from every strategy declaring `drivenBy`, so adding
+// a makeLivePair() entry wires both the entry-spawn and the exit-follow with no manual map.
+const SHADOW_FOLLOW_LIVE: Record<string, string> = Object.fromEntries(
+  COPY_STRATEGIES.filter((s) => s.drivenBy).map((s) => [s.drivenBy as string, s.id]),
+);
+const DRIVER_TO_LIVE: Map<string, CopyStrategy> = new Map(
+  COPY_STRATEGIES.filter((s) => s.drivenBy).map((s) => [s.drivenBy as string, s]),
+);
+// Pair-shadow exit reasons that drive the live mirror. Price triggers + the hold-timeout
+// (max_hold_cap/timeout) so a hold-style pair shadow exits its live with it. Admin exits
+// (strategy_removed) and follow_sell are NOT mirrored; live has its own handling. Live
+// also keeps its OWN SL/TP/maxHold as independent triggers, so the follow can only ever
+// make live exit SOONER, never later (recommendation A: sooner-only safety backstop).
+const FOLLOW_SHADOW_EXIT_REASONS = new Set(['take_profit', 'stop_loss', 'trail_stop', 'trailing_tp', 'timeout', 'max_hold_cap']);
 const FOLLOW_PAIR_WINDOW_SEC = parseInt(process.env.COPY_FOLLOW_PAIR_WINDOW_SEC || '120', 10);
 
 interface OpenPos {
@@ -882,6 +924,10 @@ export class CopyTrader {
     const copyEventId = `${detectMs}-${mint.slice(0, 10)}-${leadWallet.slice(0, 8)}`;
 
     for (const s of COPY_STRATEGIES) {
+      // Pair-shadow-driven live strategies do NOT self-gate: their entries are spawned
+      // 1:1 by their pair shadow when it opens (see openDelayed). Skip them here so live
+      // can never independently enter a lead-buy the pair shadow didn't take.
+      if (s.drivenBy) continue;
       const pendingKey = `${s.id}:${mint}`;
       const open = [...this.positions.values()].filter((p) => p.strategyId === s.id);
       // already-positioned / in-flight / at-capacity: not an interesting "gate" skip
@@ -920,11 +966,12 @@ export class CopyTrader {
       // Penalized entry — models a realistic confirmation lag (fill higher than the
       // optimistic ~1.1s snapshot). Default 0 = enter at snapshot price as before.
       const entryP = s.entryPenaltyPct ? price.priceSol * (1 + s.entryPenaltyPct / 100) : price.priceSol;
+      const size = s.tradeSizeSol ?? COPY_SIZE_SOL;
       const tpPrice = s.tpPct != null ? entryP * (1 + s.tpPct / 100) : null;
       const slPrice = s.slPct != null ? entryP * (1 - s.slPct / 100) : null;
       const id = this.insertOpen({
         strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
-        leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: COPY_SIZE_SOL,
+        leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: size,
         tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
         detectPrice: price.priceSol, entryDelaySec: null, entryDriftPct: null, leadBuySol,
         copyEventId,
@@ -932,7 +979,7 @@ export class CopyTrader {
       if (id == null) continue;
       this.positions.set(id, {
         id, strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
-        entryPrice: entryP, sizeSol: COPY_SIZE_SOL, tpPrice, baseSlPrice: slPrice,
+        entryPrice: entryP, sizeSol: size, tpPrice, baseSlPrice: slPrice,
         exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, entryTs: nowSec,
         highPrice: entryP, scaledOut: false, realizedPartial: 0,
       });
@@ -985,11 +1032,12 @@ export class CopyTrader {
     }
 
     const entryP = price.priceSol;
+    const size = s.tradeSizeSol ?? COPY_SIZE_SOL;
     const tpPrice = s.tpPct != null ? entryP * (1 + s.tpPct / 100) : null;
     const slPrice = s.slPct != null ? entryP * (1 - s.slPct / 100) : null;
     const id = this.insertOpen({
       strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
-      leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: COPY_SIZE_SOL,
+      leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: size,
       tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
       detectPrice, entryDelaySec: s.entryDelaySec ?? 0, entryDriftPct: driftPct, leadBuySol,
       copyEventId,
@@ -997,11 +1045,24 @@ export class CopyTrader {
     if (id == null) return;
     const pos: OpenPos = {
       id, strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
-      entryPrice: entryP, sizeSol: COPY_SIZE_SOL, tpPrice, baseSlPrice: slPrice,
+      entryPrice: entryP, sizeSol: size, tpPrice, baseSlPrice: slPrice,
       exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, entryTs: nowSec,
       highPrice: entryP, scaledOut: false, realizedPartial: 0,
     };
     this.positions.set(id, pos);
+
+    // ENTRY MIRROR: this pair shadow just opened — spawn its driven live's REAL buy on
+    // the SAME lead-buy event (shared copyEventId), so live ⊆ pair shadow by construction.
+    // Real money only when COPY_LIVE_ENABLED + wallet (liveExec.isLive()); otherwise the
+    // pair shadow still recorded the entry and the live is simply "missed" (no real fill).
+    // openLive applies its own real-money safety gates (preflight/capacity/cooldown).
+    const drivenLive = DRIVER_TO_LIVE.get(s.id);
+    if (drivenLive && this.liveExec.isLive()) {
+      await this.openLive(drivenLive, mint, pv, leadWallet, leadTier, detectionLagSec,
+        detectPrice, price.priceSol, driftPct, nowSec, copyEventId)
+        .catch((err) => logger.warn('pair-shadow live spawn error %s %s: %s',
+          drivenLive.id, mint.slice(0, 6), err instanceof Error ? err.message : String(err)));
+    }
 
     // Lead sold while our buy was in flight — a real copy bot would have bought
     // into the dump and then chased the exit. Model exactly that: follow-sell out
