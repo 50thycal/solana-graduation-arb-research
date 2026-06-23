@@ -136,13 +136,13 @@ function makeLivePair(base: CopyStrategy): CopyStrategy[] {
 export const COPY_STRATEGIES: CopyStrategy[] = [
   // ── KEEP: the three robust variants (positive net + the only ones whose edge
   //    survives drop_top3 / exit-stress) plus the paired baseline they're compared to.
-  { id: 'copy-followsell',        tpPct: null, slPct: null, exitFollow: true,  maxHoldSec: null },
-  { id: 'copy-tp100-sl30',        tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null }, // PAIRED_BASELINE — keep
+  // ── KILLED 2026-06-23 (INVALID): copy-followsell — n=2210, drop_top3 -25, exit_stress
+  //    -36 (idealized 1:1 follow baseline; net is tail-driven, no robust edge). Operator kill.
+  { id: 'copy-tp100-sl30',        tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null }, // PAIRED_BASELINE / COPY_REGIME_BASELINE — load-bearing, keep
   { id: 'copy-conviction-consensus2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, minConsensusRecent: 2 },
-  // ── WATCH: fat-tail hold variants — strongly positive net but negative drop_top3
-  //    (lottery-driven). Kept on watch, not promotable as-is.
-  { id: 'copy-hold30m',           tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: 1800 },
-  { id: 'copy-hold2h',            tpPct: null, slPct: 30,   exitFollow: false, maxHoldSec: 7200 },
+  // ── KILLED 2026-06-23 (INVALID): copy-hold30m (n=1919, drop_top3 -14), copy-hold2h —
+  //    fat-tail hold variants; strong raw net but drop_top3 deeply negative (lottery, not
+  //    edge). Operator kill.
   // ── F: measured-lag twins of the three robust variants (followsell / tp100-sl30 /
   //    consensus2). The flat-% cons twins above ASSUME 5% entry drift; these WAIT
   //    entryDelaySec after detection and re-fetch the real pool price, so drift is
@@ -291,38 +291,12 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-c2rr-ratchet-trailtp',  tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
     ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }], trailingTp: { atPct: 80, dropPct: 30 } },
-  // ── L (2026-06-21): FAT-TAIL WALLET allowlist cohort. Follow the 3 promotable
-  //    wallets with WIN RATE < 60% (9LxM 37%, 2o9U 54%, 5hYs 58%) — they're profitable
-  //    DESPITE low WR because of a fat right tail (most trades lose small, a few win
-  //    huge; 9LxM median RT is −12% but drop_top3 is +57 SOL). Hypothesis: a standard
-  //    TP100 CAPS their edge, so the right exit must LET WINNERS RUN / mirror their own
-  //    sell. All 5 share the EXACT same walletAllowlist + realistic entry (delay 5s,
-  //    drift 10) and differ ONLY in the exit, so the control isolates the exit effect.
-  //    maxHold 3600s ≈ the wallets' own avg hold (16–44 min). We can only copy their
-  //    POST-graduation PumpSwap buys (they trade heavily on the bonding curve too).
-  //    These wallets are in follow_list (promotable) so the probe already watches them.
-  //  -tp100 = CONTROL (standard exit — expected to cap the fat tail and underperform).
-  { id: 'copy-fatwallet-tp100',   tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
-  //  -follow = purest replication: exit when the wallet exits (mirror their own sell),
-  //    loose SL only as rug protection. Directly captures THEIR exit timing = their edge.
-  { id: 'copy-fatwallet-follow',  tpPct: null, slPct: 50, exitFollow: true, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
-  //  -runner = no TP, trail the peak: let winners run, exit on a 25% fall after +60%.
-  { id: 'copy-fatwallet-runner',  tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10, trailingTp: { atPct: 60, dropPct: 25 },
-    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
-  //  -hightp = high fixed TP (300%) to capture moonshots, cut losers at −35%.
-  { id: 'copy-fatwallet-hightp',  tpPct: 300, slPct: 35, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
-  //  -scaleout = bank half at +100%, trail the runner — fat-tail capture with de-risk.
-  { id: 'copy-fatwallet-scaleout', tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    scaleOut: { atPct: 100, fraction: 0.5 }, trailingTp: { atPct: 100, dropPct: 30 },
-    walletAllowlist: ['9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm', '2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks', '5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG'] },
+  // ── KILLED 2026-06-23 (INVALID): copy-fatwallet-{tp100,follow,runner,hightp,scaleout} —
+  //    the fat-tail-wallet allowlist cohort (9LxM/2o9U/5hYs, WR<60). After ~20 trades each
+  //    ALL five variants fail the bar: drop_top3 negative (-1.0 to -2.0), WR 9-19%, no exit
+  //    style recovered an edge. Their fat-tail winners live mostly in BONDING-CURVE entries
+  //    we can't copy; the post-grad PumpSwap slice we CAN copy is just the drift. Lesson:
+  //    rank copy targets by post-grad Swap% + drop3, not raw WR/net.
   // ── M (2026-06-22): SINGLE-WALLET one-to-one copy of 3eG16XXd…pBde — the cleanest
   //    copy target on the board: 99% PumpSwap (copyable), drop_top3 +126 ≈ total +135
   //    (broad-based edge, NOT a lottery), WR 90%, 11.5-min avg hold, median RT +798%
