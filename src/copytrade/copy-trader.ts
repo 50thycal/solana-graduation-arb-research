@@ -198,14 +198,20 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
   { id: 'copy-hotlead-deep',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 20, minTrades: 5, minNetSol: 0 } },
-  // ── LIVE-MICRO 2026-06-20 (operator go-live): real-money twin of copy-hotlead-deep
-  //    (PROMOTABLE: n=107, net +9.8, drop3 +4.0, exit-stress +8.5, ~58 SOL/mo run rate).
-  //    IDENTICAL entry/exit to the shadow above + executionMode:'live_micro' → submits
-  //    REAL MICRO_TRADE_SIZE_SOL (0.05) swaps, but ONLY when COPY_LIVE_ENABLED=true and a
-  //    funded wallet are present; otherwise it self-shadows. Paired with the shadow twin
-  //    in LIVE_SHADOW_PAIRS below so /live-training shows the real-vs-modeled exec gap.
-  { id: 'copy-hotlead-deep-live-micro', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 20, minTrades: 5, minNetSol: 0 }, executionMode: 'live_micro' },
+  // ── KILLED 2026-06-23 (operator request): copy-hotlead-deep-live-micro. It was the
+  //    one live strategy paired to the ORIGINAL research strategy (copy-hotlead-deep)
+  //    instead of a dedicated same-age twin — every other live strategy maps to a
+  //    `-shadow` twin, this one didn't. The original has its own 4-day-older timeline +
+  //    independent already_open holding state, so it skipped lead-buys live took, making
+  //    the live↔shadow comparison invalid (live "rogue" trades with no control). Killing
+  //    it to rebuild with a TRUE pair-shadow that drives live entries/exits 1:1 (see the
+  //    pair-shadow infra below). On redeploy, any open live_micro position has no matching
+  //    strategy → the poll loop's `strategy_removed` branch winds it down via a REAL sell
+  //    (needs COPY_LIVE_ENABLED + wallet). For an IMMEDIATE stop before deploy, the
+  //    operator can set COPY_LIVE_ENABLED=false. Re-add a live entry only via the new
+  //    pair-shadow-driven path after a reviewed go-live.
+  // { id: 'copy-hotlead-deep-live-micro', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+  //   entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 20, minTrades: 5, minNetSol: 0 }, executionMode: 'live_micro' },
   // ── J (2026-06-16): consensus2 is the one PROMOTABLE strategy; token-level
   //    consensus (>=N smart wallets on the same mint) is the durable edge — it beats
   //    regime/macro/lead-recency timing. hotlead regressed as n grew (recency is
@@ -2077,7 +2083,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
   const LIVE_SHADOW_PAIRS = [
     { live: 'copy-hotlead-deep-live-micro', shadow: 'copy-hotlead-deep' },
   ];
-  const COPY_LVS_WINDOW_SEC = 300; // mint+time fallback window (mirror of computeComparison)
+  const COPY_LVS_WINDOW_SEC = 60; // tight mint+time fallback (genuine same-event twins enter <=5s apart)
   // Compare on RETURN % (net / size), not absolute SOL — live trades at 0.05 and
   // the shadow twin at 0.5, so only size-normalized returns are apples-to-apples.
   const retPct = (r: Record<string, unknown>) => {
