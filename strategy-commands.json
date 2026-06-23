@@ -1,0 +1,12 @@
+{
+  "commands": [
+    {
+      "action": "journal-upsert",
+      "id": "keep-tp100-sl30-baseline",
+      "strategy_id": "copy-tp100-sl30",
+      "cohort_label": "baseline",
+      "hypothesis": "DO NOT KILL (operator decision 2026-06-23). copy-tp100-sl30 looks like a losing strategy on the dashboard (n100 ok but drop3 / stress fail) but it is NOT a profit strategy -- it is the load-bearing measurement baseline. It is hardcoded as COPY_REGIME_BASELINE + PAIRED_BASELINE: the hotLeadGate and eliteLeadGate score every lead against ITS trade stream (it copies all leads ungated, so it has the broadest lead coverage), and the 1-10 regime score + paired_vs_baseline panel are built from it. Killing it would freeze the lead-selection gates on stale data and degrade copy-hotlead / copy-elitelead / copy-hotlead-consensus and the loss-cap experiment. Keep it running as a silent reference; ignore its net. If it ever must be retired, repoint COPY_REGIME_BASELINE to another ungated broad-coverage strategy FIRST.",
+      "status": "PAUSED"
+    }
+  ]
+}
