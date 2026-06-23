@@ -81,6 +81,11 @@ export interface LtTrade {
   entry_price: number | null;
   high_price: number | null;
   tp_price: number | null;
+  // Shared lead-buy event id (copy_trades only). One value per onLeadBuy() call,
+  // written to a live row and its shadow twin alike — the deterministic 1:1 join
+  // key for copy pairing (copy rows have no graduation_id). Null for graduation
+  // strategies and pre-migration copy rows; matcher falls back to mint+time then.
+  copy_event_id: string | null;
 }
 
 /** Aggregate performance metrics over a set of trades. */
@@ -363,15 +368,23 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
   // graduation_id (matched by mint + closest entry_ts instead).
   const shadowIdx = new Map<string, LtTrade>();
   const shadowByMint = new Map<string, LtTrade[]>();
+  const shadowByEvent = new Map<string, LtTrade>(); // (shadowId:copy_event_id) → twin
   for (const s of shadowTrades) {
     if (s.status !== 'closed') continue;
     if (s.graduation_id !== null) shadowIdx.set(`${s.strategy_id}:${s.graduation_id}`, s);
+    if (s.copy_event_id) shadowByEvent.set(`${s.strategy_id}:${s.copy_event_id}`, s);
     if (s.mint) {
       const k = `${s.strategy_id}:${s.mint}`;
       (shadowByMint.get(k) ?? shadowByMint.set(k, []).get(k)!).push(s);
     }
   }
   const usedMintTwins = new Set<number>();
+  // Mint+time fallback window for copy rows that predate the copy_event_id join key.
+  // Was 60s, which under-matched: live and shadow enter the same mint at offset
+  // times (live has real fill latency + a 5s entry delay) and re-enter it a
+  // different number of times, so genuine twins routinely landed >60s apart and got
+  // dropped — biasing the live column (the dropped trades skewed toward losers).
+  const COPY_MINT_MATCH_WINDOW_SEC = 300;
 
   const pairs: LtComparison['pairs'] = [];
   // Parallel capture for gap-attribution + latency (not exposed per-pair).
@@ -386,14 +399,24 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     let twin: LtTrade | undefined;
     if (live.graduation_id !== null) {
       twin = shadowIdx.get(`${shadowId}:${live.graduation_id}`);
-    } else if (live.mint) {
-      // Copy path: match the shadow twin on the same mint, closest entry within 60s.
+    } else if (live.copy_event_id) {
+      // Copy path, deterministic: both rows from the same onLeadBuy() carry the same
+      // copy_event_id → exact 1:1, regardless of fill-timing offset or re-entries.
+      const exact = shadowByEvent.get(`${shadowId}:${live.copy_event_id}`);
+      if (exact && !usedMintTwins.has(exact.id)) { usedMintTwins.add(exact.id); twin = exact; }
+    }
+    if (!twin && live.graduation_id === null && live.mint && !live.copy_event_id) {
+      // Fallback for pre-migration copy rows ONLY (no copy_event_id): same mint,
+      // closest entry within the widened window. A live row that HAS an event id is
+      // new-era — it pairs by event id above or is genuinely unpairable (shadow
+      // skipped that event); never let it mint-grab an unrelated twin.
       const cands = shadowByMint.get(`${shadowId}:${live.mint}`) ?? [];
-      let best: LtTrade | undefined; let bestDiff = 61;
+      let best: LtTrade | undefined; let bestDiff = COPY_MINT_MATCH_WINDOW_SEC + 1;
       for (const c of cands) {
         if (usedMintTwins.has(c.id)) continue;
+        if (c.copy_event_id) continue; // event-keyed twins are paired above, not here
         const diff = Math.abs((c.entry_ts ?? 0) - (live.entry_ts ?? 0));
-        if (diff <= 60 && diff < bestDiff) { best = c; bestDiff = diff; }
+        if (diff <= COPY_MINT_MATCH_WINDOW_SEC && diff < bestDiff) { best = c; bestDiff = diff; }
       }
       if (best) { usedMintTwins.add(best.id); twin = best; }
     }
@@ -655,7 +678,8 @@ function tradeSelect(whereSql: string): string {
       COALESCE(t.entry_effective_price, t.entry_price_sol) AS entry_price,
       NULL AS high_price,
       CASE WHEN t.take_profit_pct IS NOT NULL
-           THEN COALESCE(t.entry_effective_price, t.entry_price_sol) * (1 + t.take_profit_pct / 100.0) END AS tp_price
+           THEN COALESCE(t.entry_effective_price, t.entry_price_sol) * (1 + t.take_profit_pct / 100.0) END AS tp_price,
+      NULL AS copy_event_id
     FROM trades_v2 t
     ${whereSql}
     ORDER BY t.entry_timestamp ASC, t.id ASC`;
@@ -691,7 +715,8 @@ function copyTradeSelect(whereSql: string): string {
       -- separates an entry-fill miss from an exit-execution miss.
       c.entry_price_sol AS entry_price,
       c.high_price_sol AS high_price,
-      c.tp_price_sol AS tp_price
+      c.tp_price_sol AS tp_price,
+      c.copy_event_id
     FROM copy_trades c
     ${whereSql}
     ORDER BY c.entry_ts ASC, c.id ASC`;

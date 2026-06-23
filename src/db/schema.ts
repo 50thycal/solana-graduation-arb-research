@@ -1109,6 +1109,14 @@ function runMigrations(db: Database.Database): void {
     // Size of the LEAD's own buy (|SOL delta| parsed from their tx) — lets the
     // conviction-size gate threshold be tuned from stored data instead of guessed.
     if (!have.has('lead_buy_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN lead_buy_sol REAL`);
+    // Shared lead-buy event id: one value per onLeadBuy() call, written to EVERY
+    // row that event spawns (shadow + its live_micro twin). Gives the Live-vs-Shadow
+    // pairing a deterministic 1:1 join key — copy rows have no graduation_id, so
+    // pairing previously fell back to mint + entry-within-60s, which under-matched
+    // when live/shadow entered the same mint at offset times or re-entered it a
+    // different number of times. Null on pre-migration rows; matcher falls back to
+    // the (widened) mint+time heuristic when absent.
+    if (!have.has('copy_event_id')) db.exec(`ALTER TABLE copy_trades ADD COLUMN copy_event_id TEXT`);
     // LIVE-MICRO copy execution (real 0.05 SOL txs). 'shadow' (default) = modeled,
     // no funds; 'live_micro' = real swap submitted via the executor. The extra
     // columns capture the real fill so a live row's P&L is from on-chain reality:
