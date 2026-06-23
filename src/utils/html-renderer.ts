@@ -7129,7 +7129,7 @@ export function renderLiveTrainingHtml(data: any): string {
 
   function jsComputeComparison(liveTr, shadowTr){
     var map=LT.mapping||{};
-    var COPY_WIN=300; // mint+time fallback window (mirror of COPY_MINT_MATCH_WINDOW_SEC)
+    var COPY_WIN=60; // tight mint+time fallback (mirror of COPY_MINT_MATCH_WINDOW_SEC); genuine twins enter <=5s apart
     var shIdx={}, shByMint={}, shByEvent={};
     for(var i=0;i<shadowTr.length;i++){ var s=shadowTr[i]; if(s.status!=='closed') continue;
       if(s.graduation_id!==null&&s.graduation_id!==undefined) shIdx[s.strategy_id+':'+s.graduation_id]=s;

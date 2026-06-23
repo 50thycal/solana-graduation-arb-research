@@ -379,12 +379,15 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     }
   }
   const usedMintTwins = new Set<number>();
-  // Mint+time fallback window for copy rows that predate the copy_event_id join key.
-  // Was 60s, which under-matched: live and shadow enter the same mint at offset
-  // times (live has real fill latency + a 5s entry delay) and re-enter it a
-  // different number of times, so genuine twins routinely landed >60s apart and got
-  // dropped — biasing the live column (the dropped trades skewed toward losers).
-  const COPY_MINT_MATCH_WINDOW_SEC = 300;
+  // Mint+time fallback for copy rows that predate the copy_event_id join key.
+  // Genuine same-event twins enter within ~5s of each other (both delay 5s after
+  // the lead buy, then enter) — 82% of real pairs land inside 0-5s. So this window
+  // is deliberately TIGHT: it approximates "same lead-buy event" for legacy rows.
+  // Do NOT widen it — entries that land minutes/hours apart on the same mint are
+  // NOT delayed twins, they're independent re-entries (the shadow was still holding
+  // from an earlier entry, so it skipped that lead-buy via already_open; live had
+  // exited and re-entered). Pairing those would compare unrelated trades.
+  const COPY_MINT_MATCH_WINDOW_SEC = 60;
 
   const pairs: LtComparison['pairs'] = [];
   // Parallel capture for gap-attribution + latency (not exposed per-pair).

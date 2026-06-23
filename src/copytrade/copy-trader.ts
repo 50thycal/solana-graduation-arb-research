@@ -2026,7 +2026,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
   const LIVE_SHADOW_PAIRS = [
     { live: 'copy-hotlead-deep-live-micro', shadow: 'copy-hotlead-deep' },
   ];
-  const COPY_LVS_WINDOW_SEC = 300; // mint+time fallback window (mirror of computeComparison)
+  const COPY_LVS_WINDOW_SEC = 60; // tight mint+time fallback (genuine same-event twins enter <=5s apart)
   // Compare on RETURN % (net / size), not absolute SOL — live trades at 0.05 and
   // the shadow twin at 0.5, so only size-normalized returns are apples-to-apples.
   const retPct = (r: Record<string, unknown>) => {
