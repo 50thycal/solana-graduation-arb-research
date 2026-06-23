@@ -46,6 +46,8 @@ const logger = makeLogger('main');
 // otherwise return plain JSON for API/curl clients.
 // Navigation links for the dashboard (excludes reset for safety)
 const NAV_LINKS = [
+  { path: '/copy-trades', label: 'Copy Trades' },
+  { path: '/live-training', label: 'Live Training' },
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
@@ -56,9 +58,7 @@ const NAV_LINKS = [
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
-  { path: '/live-training', label: 'Live Training' },
   { path: '/smart-money', label: 'Smart Money' },
-  { path: '/copy-trades', label: 'Copy Trades' },
   { path: '/health', label: 'Health' },
   { path: '/data', label: 'Raw Data' },
   { path: '/raydium-check', label: 'DEX Check' },

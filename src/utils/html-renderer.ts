@@ -7,6 +7,8 @@
 import Database from 'better-sqlite3';
 
 const NAV_LINKS = [
+  { path: '/copy-trades', label: 'Copy Trades' },
+  { path: '/live-training', label: 'Live Training' },
   { path: '/dashboard', label: 'Dashboard' },
   { path: '/thesis', label: 'Thesis' },
   { path: '/filter-analysis', label: 'Filters' },
@@ -14,7 +16,6 @@ const NAV_LINKS = [
   { path: '/filter-analysis-v3', label: 'Filters V3' },
   { path: '/wallet-rep-analysis', label: 'Wallet Rep' },
   { path: '/smart-money', label: 'Smart Money' },
-  { path: '/copy-trades', label: 'Copy Trades' },
   { path: '/peak-analysis', label: 'Peak Analysis' },
   { path: '/exit-sim', label: 'Exit Sim' },
   { path: '/exit-sim-matrix', label: 'Exit Matrix' },
@@ -23,7 +24,6 @@ const NAV_LINKS = [
   { path: '/tokens?label=PUMP&min_sol=80', label: 'Tokens' },
   { path: '/pipeline', label: 'Pipeline' },
   { path: '/trading', label: 'Trading' },
-  { path: '/live-training', label: 'Live Training' },
   { path: '/report', label: 'Report' },
   { path: '/regime-analysis', label: 'Regime' },
   { path: '/health', label: 'Health' },
