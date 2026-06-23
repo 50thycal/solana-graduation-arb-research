@@ -687,63 +687,99 @@ export class CopyTrader {
     // so even a row with no recorded live_tokens gets sold down correctly.
   }
 
-  /** Proactive reconciliation of open live_micro positions against the REAL wallet
-   *  token balance (see RECONCILE_* constants). Closes any position whose tokens
-   *  are no longer in the wallet — a confirmed-empty read — directly as
-   *  `reconciled_no_tokens` with net_sol=NULL. Key safety properties:
+  /** Proactive reconciliation of live_micro position tracking against the REAL
+   *  wallet, against ONE full-wallet token snapshot per sweep (see RECONCILE_*
+   *  constants). The snapshot makes the open book self-verifying and catches BOTH
+   *  drift directions:
    *
-   *   - It does NOT submit a sell. The tokens are gone; a sell would just fail
-   *     "no tokens" and burn RPC (the exact pre-2026-06-19 bleed). It writes the
-   *     same terminal row closeLivePosition's "no tokens" branch writes, minus the
-   *     wasted swap.
-   *   - It NEVER acts on an unconfirmed read. `tokenBalanceRawStrict` returns null
-   *     on a live-off / no-wallet / RPC-error condition; only a confirmed numeric
-   *     0 (both the standard-SPL and Token-2022 ATA empty) triggers a close, so a
-   *     transient RPC blip can't kill a real position.
-   *   - It only touches positions older than RECONCILE_MIN_AGE_SEC and not already
-   *     closing (closingLive), so it can't race a fresh buy's settlement or a sell
-   *     in flight (which would record the proper net_sol itself).
+   *   1. PHANTOM (bot open, wallet empty): a confirmed-empty open position older
+   *      than RECONCILE_MIN_AGE_SEC is closed directly as `reconciled_no_tokens`
+   *      (net_sol=NULL). It does NOT submit a sell — the tokens are gone, so a
+   *      sell would just fail "no tokens" and burn RPC.
+   *   2. ORPHAN (wallet holds tokens for a mint the bot live-traded but no longer
+   *      tracks as open): surfaced for manual review (NOT auto-acted) — these are
+   *      tokens a sell/terminal-close left behind (e.g. a transient-RPC false
+   *      "no tokens" close, or a sell that reverted on-chain).
    *
-   *  net_sol stays NULL because the outcome is genuinely unknown: the tokens left
-   *  out-of-band (manual sell, token clawback, or a sell that landed but was
-   *  misread as failed). summarize() excludes non-numeric net_sol from P&L, so we
-   *  surface the row for manual review without fabricating a result. */
+   *  Safety: it NEVER acts on an unconfirmed read. walletTokenBalances() returns
+   *  null on a live-off / no-wallet / RPC-error condition and the whole sweep is
+   *  skipped — only a mint ABSENT from a SUCCESSFUL snapshot counts as zero, so a
+   *  transient RPC blip can't kill a real position. Phantom closes also require
+   *  the position to be aged + not already closing, so it can't race a fresh buy's
+   *  settlement or a sell in flight. Per-position balances + the orphan list are
+   *  persisted to bot_settings('copy_live_recon') and surfaced on /copy-trades so
+   *  the open book can be eyeballed against the wallet without DB/chain access. */
   private async reconcileLivePositions(): Promise<void> {
     if (this.reconciling || this.stopped || !this.enabled) return;
     if (!this.liveExec.isLive()) return; // no real wallet → nothing to reconcile
-    const nowSec = Math.floor(Date.now() / 1000);
-    const candidates = [...this.positions.values()].filter(
-      (p) => p.executionMode === 'live_micro'
-        && !this.closingLive.has(p.id)
-        && (nowSec - p.entryTs) >= RECONCILE_MIN_AGE_SEC,
-    );
-    if (candidates.length === 0) return;
+    const walletBal = await this.liveExec.walletTokenBalances();
+    if (walletBal == null) return; // unknown (RPC error / off) — never reconcile on no data
     this.reconciling = true;
     try {
-      for (const p of candidates) {
+      const nowSec = Math.floor(Date.now() / 1000);
+      const livePositions = [...this.positions.values()].filter((p) => p.executionMode === 'live_micro');
+      const openMints = new Set(livePositions.map((p) => p.mint));
+      const positionObs: Array<Record<string, unknown>> = [];
+      for (const p of livePositions) {
         if (this.stopped) break;
-        // Re-check guards — a normal exit may have started since we snapshotted.
-        if (this.closingLive.has(p.id) || !this.positions.has(p.id)) continue;
-        const raw = await this.liveExec.tokenBalanceRawStrict(p.mint);
-        if (raw == null) continue; // unknown (live off / RPC error) — never close
-        if (raw > 0) continue;     // still held — leave it open
-        // Confirmed empty. Guard once more, then close the phantom row directly.
-        if (this.closingLive.has(p.id) || !this.positions.has(p.id)) continue;
-        this.closingLive.add(p.id);
-        try {
-          this.db.prepare(`UPDATE copy_trades SET status='closed', exit_ts=?, exit_reason='reconciled_no_tokens', net_sol=NULL, live_error=? WHERE id=?`)
-            .run(Math.floor(Date.now() / 1000),
-              'proactive reconcile: wallet token balance 0 — tokens left out-of-band (no bot sell recorded)',
-              p.id);
-        } catch { /* noop — non-critical */ }
-        p.parked = true;
-        this.positions.delete(p.id);
-        this.closingLive.delete(p.id);
-        logger.warn(
-          'Copy LIVE reconcile CLOSE %s %s id=%d (age %ds) — wallet balance 0, closed reconciled_no_tokens, net_sol NULL (manual review: tokens left out-of-band)',
-          p.strategyId, p.mint.slice(0, 6), p.id, nowSec - p.entryTs,
-        );
+        const walletRaw = walletBal.get(p.mint) ?? 0;
+        const walletTokens = +(walletRaw / 1e6).toFixed(2);
+        const aged = (nowSec - p.entryTs) >= RECONCILE_MIN_AGE_SEC;
+        let status: string;
+        if (walletRaw > 0) {
+          status = 'held'; // chain-confirmed — the open row matches the wallet
+        } else if (!aged) {
+          status = 'settling'; // confirmed-empty but too fresh — re-check next sweep
+        } else if (this.closingLive.has(p.id) || !this.positions.has(p.id)) {
+          status = 'closing'; // a normal exit is already handling it
+        } else {
+          // Confirmed-empty + aged → close the phantom row directly (no sell).
+          this.closingLive.add(p.id);
+          try {
+            this.db.prepare(`UPDATE copy_trades SET status='closed', exit_ts=?, exit_reason='reconciled_no_tokens', net_sol=NULL, live_error=? WHERE id=?`)
+              .run(nowSec, 'proactive reconcile: wallet token balance 0 — tokens left out-of-band (no bot sell recorded)', p.id);
+          } catch { /* noop — non-critical */ }
+          p.parked = true;
+          this.positions.delete(p.id);
+          this.closingLive.delete(p.id);
+          status = 'reconciled_closed';
+          logger.warn(
+            'Copy LIVE reconcile CLOSE %s %s id=%d (age %ds) — wallet balance 0, closed reconciled_no_tokens, net_sol NULL (manual review: tokens left out-of-band)',
+            p.strategyId, p.mint.slice(0, 6), p.id, nowSec - p.entryTs,
+          );
+        }
+        positionObs.push({
+          id: p.id, mint: p.mint.slice(0, 8), strategy_id: p.strategyId, entry_ts: p.entryTs,
+          tracked_tokens: p.liveTokens ?? null, wallet_tokens: walletTokens, status,
+        });
       }
+      // Orphans: wallet mints with a balance that the bot has live-traded but does
+      // NOT currently track as open. Restrict to live-traded mints so a shared
+      // wallet's main-path / manual holdings aren't flagged as copy drift.
+      let liveTradedMints = new Set<string>();
+      try {
+        const rows = this.db.prepare(`SELECT DISTINCT mint FROM copy_trades WHERE execution_mode = 'live_micro'`).all() as Array<{ mint: string }>;
+        liveTradedMints = new Set(rows.map((r) => r.mint));
+      } catch { /* noop */ }
+      const orphans: Array<Record<string, unknown>> = [];
+      for (const [mint, raw] of walletBal) {
+        if (raw > 0 && !openMints.has(mint) && liveTradedMints.has(mint)) {
+          orphans.push({ mint: mint.slice(0, 8), tokens: +(raw / 1e6).toFixed(2) });
+        }
+      }
+      orphans.sort((a, b) => (b.tokens as number) - (a.tokens as number));
+      if (orphans.length) {
+        logger.warn('Copy LIVE reconcile: %d orphan token balance(s) — live-traded mints held in wallet but not tracked as open (manual review)', orphans.length);
+      }
+      try {
+        this.db.prepare(`INSERT OR REPLACE INTO bot_settings (key, value, updated_at) VALUES ('copy_live_recon', ?, unixepoch())`)
+          .run(JSON.stringify({
+            checked_at: nowSec,
+            positions: positionObs,
+            orphans: orphans.slice(0, 50),
+            orphan_count: orphans.length,
+          }));
+      } catch { /* noop — non-critical telemetry */ }
     } finally {
       this.reconciling = false;
     }
@@ -2122,6 +2158,18 @@ export function computeCopyTrades(db: Database.Database): unknown {
     live_execution: (() => {
       const lo = open.filter((r) => r.execution_mode === 'live_micro');
       const lc = closed.filter((r) => r.execution_mode === 'live_micro');
+      // Latest wallet-reconciliation snapshot (written by the live CopyTrader's
+      // reconcileLivePositions sweep). Lets the open book be eyeballed against the
+      // REAL wallet — per-position chain balance + status, plus orphan mints.
+      const recon = (() => {
+        try {
+          const row = db.prepare(`SELECT value FROM bot_settings WHERE key = 'copy_live_recon'`).get() as { value: string } | undefined;
+          return row?.value ? JSON.parse(row.value) as { checked_at?: number; positions?: Array<{ id: number; wallet_tokens: number; status: string }>; orphans?: unknown[]; orphan_count?: number } : null;
+        } catch { return null; }
+      })();
+      const reconById = new Map<number, { wallet_tokens: number; status: string }>(
+        (recon?.positions ?? []).map((p) => [p.id, { wallet_tokens: p.wallet_tokens, status: p.status }]),
+      );
       return {
         confirmed_live: lo.length + lc.length > 0,
         open_live_positions: lo.length,
@@ -2130,12 +2178,28 @@ export function computeCopyTrades(db: Database.Database): unknown {
         // wallet out-of-band; net_sol NULL, excluded from P&L). A non-zero count
         // here is the "phantom open got cleaned up" signal — see reconcileLivePositions.
         reconciled_no_tokens: lc.filter((r) => r.exit_reason === 'reconciled_no_tokens').length,
-        open_detail: lo.slice(0, 10).map((r) => ({
-          mint: (r.mint as string).slice(0, 8),
-          entry_ts: r.entry_ts, entry_price_sol: r.entry_price_sol,
-          live_tokens: r.live_tokens ?? null,
-          tx_sig_entry: ((r.tx_sig_entry as string) ?? '').slice(0, 20) || null,
-        })),
+        // Wallet reconciliation: per-position chain balance + orphan mints (tokens
+        // the bot live-traded, no longer tracks as open, but still in the wallet).
+        // checked_at null = the reconciler hasn't run yet (live off / pre-deploy).
+        reconciliation: recon ? {
+          checked_at: recon.checked_at ?? null,
+          orphan_count: recon.orphan_count ?? (recon.orphans?.length ?? 0),
+          orphans: recon.orphans ?? [],
+        } : { checked_at: null, orphan_count: 0, orphans: [] },
+        // Uncapped (was slice(0,10), which under-showed the true open count — the
+        // 2026-06-23 "table 10 vs header 11" mismatch). wallet_tokens/recon_status
+        // come from the latest reconciliation snapshot (— = not yet checked).
+        open_detail: lo.slice(0, 100).map((r) => {
+          const rc = reconById.get(r.id as number);
+          return {
+            mint: (r.mint as string).slice(0, 8),
+            entry_ts: r.entry_ts, entry_price_sol: r.entry_price_sol,
+            live_tokens: r.live_tokens ?? null,
+            wallet_tokens: rc?.wallet_tokens ?? null,
+            recon_status: rc?.status ?? null,
+            tx_sig_entry: ((r.tx_sig_entry as string) ?? '').slice(0, 20) || null,
+          };
+        }),
         // Per-closed-live-trade ACTUAL SOL spent (entry_price_sol × live_tokens =
         // swapCostSol from the executor) vs the 0.05-SOL target. Surfaces fills
         // that escaped the ~5% slippage band — the "0.01 SOL worth" buys. A healthy

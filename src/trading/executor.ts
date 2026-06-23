@@ -747,6 +747,30 @@ export class Executor {
     };
   }
 
+  /** Strict pre-sell wallet balance read. Returns the raw u64 token amount on a
+   *  CONFIRMED read, or an ExecutionResult error when the read can't be trusted.
+   *  Critically distinguishes a confirmed-empty wallet (0 → caller emits the
+   *  terminal "no tokens in wallet to sell") from an RPC FAILURE (returns a
+   *  TRANSIENT "balance read failed" result, which is NOT a terminal-close
+   *  pattern, so the caller retries instead of orphaning a position that may
+   *  still hold tokens). The error-swallowing getTokenBalanceRaw used here before
+   *  returned 0 on an RPC error too, so a transient blip during RPC pressure /
+   *  a restart could terminal-close a real position and strand its tokens in the
+   *  wallet (the 2026-06-23 RDR2-style orphan). */
+  private async readSellableBalanceRaw(
+    mintPk: PublicKey, exitPriceSol: number, mode: ExecutionMode,
+  ): Promise<number | ExecutionResult> {
+    try {
+      return await this.wallet!.getTokenBalanceRawStrict(this.connection!, mintPk);
+    } catch (err) {
+      return {
+        success: false, effectivePrice: exitPriceSol, tokensReceived: 0,
+        dryRun: false, executionMode: mode,
+        errorMessage: `live: balance read failed (transient): ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
   private async liveSell(
     mint: string,
     tokensHeld: number,
@@ -774,7 +798,8 @@ export class Executor {
     const poolPk = new PublicKey(poolCtx.poolAddress);
     const walletPk = this.wallet.pubkey;
 
-    const actualBaseRaw = await this.wallet.getTokenBalanceRaw(this.connection, mintPk);
+    const actualBaseRaw = await this.readSellableBalanceRaw(mintPk, exitPriceSol, mode);
+    if (typeof actualBaseRaw !== 'number') return actualBaseRaw; // transient/empty error result
     if (actualBaseRaw <= 0) {
       return {
         success: false, effectivePrice: exitPriceSol, tokensReceived: 0,

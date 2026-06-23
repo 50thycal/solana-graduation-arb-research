@@ -1,10 +1,11 @@
 import type Database from 'better-sqlite3';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { Connection } from '@solana/web3.js';
 import { Executor, PoolContext, ExecutionResult } from '../trading/executor';
-import { Wallet } from '../trading/wallet';
+import { Wallet, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '../trading/wallet';
 import { isKillswitchTripped } from '../trading/safety';
 import { MICRO_TRADE_SIZE_SOL, DAILY_MAX_LOSS_SOL, WALLET_SOL_BUFFER } from '../trading/config';
 import { MAX_BUY_ATTEMPTS, buySlippageBpsForAttempt, buyTipMultiplierForAttempt } from '../trading/buy-retry';
+import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-live-executor');
@@ -58,17 +59,33 @@ export class CopyLiveExecutor {
     return this.enabled;
   }
 
-  /** STRICT wallet token-balance read for position reconciliation. Returns the
-   *  raw u64 token amount the wallet holds for `mint`, or NULL when it can't be
-   *  determined (live execution off, no wallet/connection, or the RPC read
-   *  failed). The caller MUST treat null as "unknown" and never as zero, so a
-   *  transient RPC error is never mistaken for a confirmed-empty wallet. */
-  async tokenBalanceRawStrict(mint: string): Promise<number | null> {
+  /** Full snapshot of the wallet's SPL token balances for position reconciliation
+   *  — mint(base58) -> raw u64 amount, non-zero only, across BOTH the standard
+   *  Token and Token-2022 programs. Returns NULL when it can't be determined
+   *  (live off, no wallet/connection, or an RPC failure); the caller MUST treat
+   *  null as "unknown" and skip reconciliation rather than assume the wallet is
+   *  empty. One snapshot answers every open position AND surfaces orphan mints in
+   *  a fixed 2 RPC calls regardless of how many positions are open. A mint absent
+   *  from a SUCCESSFUL snapshot is authoritatively zero (no/empty token account). */
+  async walletTokenBalances(): Promise<Map<string, number> | null> {
     if (!this.enabled || !this.wallet) return null;
     const conn = this.getConnection();
     if (!conn) return null;
     try {
-      return await this.wallet.getTokenBalanceRawStrict(conn, new PublicKey(mint));
+      const out = new Map<string, number>();
+      for (const programId of [TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID]) {
+        await globalRpcLimiter.throttle();
+        const res = await conn.getParsedTokenAccountsByOwner(this.wallet.pubkey, { programId });
+        for (const { account } of res.value) {
+          const info = (account.data as { parsed?: { info?: { mint?: string; tokenAmount?: { amount?: string } } } })?.parsed?.info;
+          const mint = info?.mint;
+          const rawStr = info?.tokenAmount?.amount;
+          if (!mint || rawStr == null) continue;
+          const raw = Number(rawStr);
+          if (Number.isFinite(raw) && raw > 0) out.set(mint, (out.get(mint) ?? 0) + raw);
+        }
+      }
+      return out;
     } catch {
       return null;
     }
