@@ -3,12 +3,17 @@ import { Connection } from '@solana/web3.js';
 import { Executor, PoolContext, ExecutionResult } from '../trading/executor';
 import { Wallet, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '../trading/wallet';
 import { isKillswitchTripped } from '../trading/safety';
-import { MICRO_TRADE_SIZE_SOL, DAILY_MAX_LOSS_SOL, WALLET_SOL_BUFFER } from '../trading/config';
+import { MICRO_TRADE_SIZE_SOL, DAILY_MAX_LOSS_SOL, WALLET_SOL_BUFFER, COPY_JITO_TIP_SOL, DEFAULT_JITO_TIP_SOL } from '../trading/config';
 import { MAX_BUY_ATTEMPTS, buySlippageBpsForAttempt, buyTipMultiplierForAttempt } from '../trading/buy-retry';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-live-executor');
+
+// Base Jito-tip multiplier for ALL copy live swaps so copy tips COPY_JITO_TIP_SOL while
+// the executor's base stays DEFAULT_JITO_TIP_SOL (the main strategies are untouched). The
+// per-attempt retry escalation (buy-retry/sell-retry) multiplies ON TOP of this.
+const COPY_TIP_BASE_MULT = DEFAULT_JITO_TIP_SOL > 0 ? COPY_JITO_TIP_SOL / DEFAULT_JITO_TIP_SOL : 1;
 
 /**
  * Real-money execution wrapper for live-micro copy trades. The CopyTrader is
@@ -148,7 +153,8 @@ export class CopyLiveExecutor {
     let lastErr = 'unknown';
     for (let attempt = 1; attempt <= MAX_BUY_ATTEMPTS; attempt++) {
       const slippageBpsOverride = buySlippageBpsForAttempt(attempt);
-      const jitoTipMultiplier = buyTipMultiplierForAttempt(attempt);
+      // Copy base tip (COPY_JITO_TIP_SOL) × the per-attempt retry escalation.
+      const jitoTipMultiplier = buyTipMultiplierForAttempt(attempt) * COPY_TIP_BASE_MULT;
       try {
         // amount is hard-overridden to MICRO_TRADE_SIZE_SOL by the executor in live_micro.
         result = await this.executor.buy(
@@ -192,6 +198,11 @@ export class CopyLiveExecutor {
     retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
   ): Promise<ExecutionResult> {
     if (!this.executor) return { success: false, effectivePrice: 0, tokensReceived: 0, dryRun: false, errorMessage: 'no_executor' };
-    return this.executor.sell(mint, tokensHeld, expectedPrice, undefined, poolCtx, 'live_micro', retryOverrides);
+    // Scale the copy sell tip by the same copy base multiplier (× any per-attempt escalation).
+    const ov = {
+      ...retryOverrides,
+      jitoTipMultiplier: (retryOverrides?.jitoTipMultiplier ?? 1) * COPY_TIP_BASE_MULT,
+    };
+    return this.executor.sell(mint, tokensHeld, expectedPrice, undefined, poolCtx, 'live_micro', ov);
   }
 }
