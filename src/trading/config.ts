@@ -24,14 +24,12 @@ export const MICRO_TRADE_SIZE_SOL = parseFloat(process.env.MICRO_TRADE_SIZE_SOL 
  *  driving the live-vs-shadow drift. Overridable via DEFAULT_JITO_TIP_SOL env;
  *  retry escalation still multiplies this (tipMult). */
 export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL || '0.0005');
-/** Copy-trade-specific Jito tip (SOL). Copy buys/sells are sniper-competitive — the
- *  global 0.0005 default loses every bundle auction (telemetry: 100% RPC fallback at
- *  ~4.7s median on copy-hotlead-hold30m, while STILL paying the tip), so copy tips a
- *  higher amount WITHOUT raising the main strategies' (v44/v50, T+30 entry) tips.
- *  Applied as a base multiplier over DEFAULT_JITO_TIP_SOL; the per-attempt retry
- *  escalation still multiplies on top. env-tunable — tune down to the minimum that
- *  lands once telemetry shows `jito` entries appearing. */
-export const COPY_JITO_TIP_SOL = parseFloat(process.env.COPY_JITO_TIP_SOL || '0.003');
+/** Copy-trade-specific Jito tip (SOL). Default 0.0005 = NEUTRAL (same as the global
+ *  base, i.e. no copy bump). The 0.003 experiment (2026-06-24) proved the tip is NOT
+ *  the problem: copy buys stayed 100% RPC-fallback even at 0.018 SOL tips, so paying
+ *  more was pure waste. Kept as an env knob for when the bundle-landing path is fixed;
+ *  until then leave at base. Applied as a base multiplier over DEFAULT_JITO_TIP_SOL. */
+export const COPY_JITO_TIP_SOL = parseFloat(process.env.COPY_JITO_TIP_SOL || '0.0005');
 /** Max acceptable expected slippage at entry. 500 = 5%. */
 export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAGE_BPS || '500', 10);
 /**

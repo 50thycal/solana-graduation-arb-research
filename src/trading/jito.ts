@@ -19,6 +19,25 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('trading-jito');
 
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+/** Encode bytes to base58 (standard bigint-accumulator). Inlined to avoid a bs58 dep
+ *  (same reason as wallet.ts). Used to derive a tx signature from a signed tx so we can
+ *  verify it on-chain after getInflightBundleStatuses reports the bundle Landed. */
+function base58Encode(bytes: Uint8Array): string {
+  let num = 0n;
+  for (const b of bytes) num = num * 256n + BigInt(b);
+  let out = '';
+  while (num > 0n) { out = BASE58_ALPHABET[Number(num % 58n)] + out; num /= 58n; }
+  for (const b of bytes) { if (b === 0) out = '1' + out; else break; }
+  return out;
+}
+
+/** First signature of a serialized (signed) tx: a compact-u16 sig count (1 byte for our
+ *  single-signer txs) followed by 64-byte signatures. So bytes [1,65) = sig 0. */
+function firstSignatureOf(signedTx: Uint8Array): string {
+  return base58Encode(signedTx.slice(1, 65));
+}
+
 /** Jito public tip accounts. We pick one at random per bundle — Jito rotates
  *  validator tip routing across these, so spreading load reduces collisions. */
 export const JITO_TIP_ACCOUNTS: PublicKey[] = [
@@ -93,10 +112,11 @@ export async function submitBundle(
       throw new Error(`Jito sendBundle returned no bundleId: ${JSON.stringify(resp.data)}`);
     }
 
-    // Poll for bundle status up to max(timeoutMs, 4s). Jito typically lands in <1s
-    // but we extend the deadline so the Jito path doesn't fall through prematurely
-    // while the RPC fallback deadline is ~6s — keeps path: 'jito' the common case.
-    const landed = await pollBundleStatus(connection, bundleId, Math.max(timeoutMs, 4_000));
+    // Poll getInflightBundleStatuses (NOT getBundleStatuses — that only sees rooted
+    // bundles) at a rate-limit-respecting cadence. Free tier is 1 req/s/IP/region, so a
+    // tight poll gets 429'd and we never see the land. Window is wide enough for ~4 polls.
+    const expectedSig = firstSignatureOf(signedTxs[0]);
+    const landed = await pollBundleStatus(connection, bundleId, expectedSig, Math.max(timeoutMs, 5_000));
     if (landed) {
       return {
         landed: true,
@@ -167,61 +187,54 @@ export async function submitBundle(
 async function pollBundleStatus(
   connection: Connection,
   bundleId: string,
+  expectedSig: string,
   timeoutMs: number,
 ): Promise<{ txSignature: string; landedSlot: number } | null> {
   const deadline = Date.now() + timeoutMs;
-  const pollInterval = 150;
+  // Free Jito tier = 1 req/s/IP/region. getBundleStatuses (the old method) only sees
+  // ROOTED bundles and returned null for our whole window; getInflightBundleStatuses
+  // reports Pending/Landed/Failed/Invalid in real time. Poll at >=1s so we don't get
+  // 429'd into a silent miss. sendBundle just consumed the budget, so wait first.
+  const pollInterval = 1_100;
+  let pollErrors = 0;
+  let landedSlot: number | null = null;
   while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, pollInterval));
     try {
       const resp = await axios.post(
-        `${JITO_BLOCK_ENGINE_URL}/api/v1/getBundleStatuses`,
-        {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'getBundleStatuses',
-          params: [[bundleId]],
-        },
-        { timeout: 1_000, headers: { 'Content-Type': 'application/json' } },
+        `${JITO_BLOCK_ENGINE_URL}/api/v1/bundles`,
+        { jsonrpc: '2.0', id: 1, method: 'getInflightBundleStatuses', params: [[bundleId]] },
+        { timeout: 2_000, headers: { 'Content-Type': 'application/json' } },
       );
-      const statuses = resp.data?.result?.value as Array<{
-        bundle_id: string;
-        transactions: string[];
-        slot: number;
-        confirmation_status: string;
-        err?: { Ok: null } | Record<string, unknown> | null;
-      }> | undefined;
-      const s = statuses?.[0];
-      if (!s) {
-        await new Promise((r) => setTimeout(r, pollInterval));
-        continue;
-      }
-      const conf = s.confirmation_status;
-      const isLanded = conf === 'processed' || conf === 'confirmed' || conf === 'finalized';
-      if (!isLanded) {
-        await new Promise((r) => setTimeout(r, pollInterval));
-        continue;
-      }
-      // Bundle-level err: Jito wraps success as { Ok: null }. Anything else is a failure.
-      const bundleErr = s.err && typeof s.err === 'object' && 'Ok' in s.err ? null : s.err ?? null;
-      if (bundleErr != null) {
-        logger.warn({ bundleId, bundleErr }, 'Jito bundle landed but bundle-level err non-null');
+      const v = resp.data?.result?.value?.[0] as
+        { bundle_id: string; status: string; landed_slot: number | null } | undefined;
+      const status = v?.status;
+      if (status === 'Landed') { landedSlot = v?.landed_slot ?? 0; break; }
+      if (status === 'Failed') {
+        logger.warn({ bundleId }, 'Jito bundle Failed (all regions rejected) — falling back to RPC');
         return null;
       }
-      // Tx-level err: a bundle can land with confirmation_status=confirmed
-      // while its constituent tx reverted on-chain. Verify via RPC before
-      // returning success — Jito's bundle status doesn't always reflect this.
-      const sig = s.transactions[0];
-      const txStatuses = await connection.getSignatureStatuses([sig]).catch(() => null);
-      const txEntry = txStatuses?.value?.[0];
-      if (txEntry?.err != null) {
-        logger.warn({ bundleId, sig, txErr: txEntry.err }, 'Jito bundle landed but tx reverted');
-        return null;
-      }
-      return { txSignature: sig, landedSlot: s.slot };
-    } catch {
-      // transient poll failure — retry
+      // 'Pending', 'Invalid' (not yet indexed / 5-min lookback), or no value → keep polling.
+    } catch (err) {
+      pollErrors++;
+      const msg = err instanceof AxiosError
+        ? `HTTP ${err.response?.status ?? '?'} ${err.code ?? ''} ${err.message}`
+        : err instanceof Error ? err.message : String(err);
+      // NOT silent anymore: a recurring 'HTTP 429' here is the rate-limit smoking gun.
+      logger.warn({ bundleId, pollErrors, msg }, 'getInflightBundleStatuses poll error');
     }
-    await new Promise((r) => setTimeout(r, pollInterval));
   }
-  return null;
+  if (landedSlot === null) {
+    logger.warn({ bundleId, pollErrors }, 'Jito bundle did not report Landed in window');
+    return null;
+  }
+  // Bundle landed. Verify the swap tx itself didn't revert on-chain (atomic bundles can
+  // still carry a reverted tx). This hits the Helius RPC, not Jito — no rate-limit impact.
+  const txStatuses = await connection.getSignatureStatuses([expectedSig]).catch(() => null);
+  const txEntry = txStatuses?.value?.[0];
+  if (txEntry?.err != null) {
+    logger.warn({ bundleId, expectedSig, txErr: txEntry.err }, 'Jito bundle landed but tx reverted');
+    return null;
+  }
+  return { txSignature: expectedSig, landedSlot };
 }
