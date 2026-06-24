@@ -1146,8 +1146,8 @@ export class CopyTrader {
     const slPrice = s.slPct != null ? effEntry * (1 - s.slPct / 100) : null;
     try {
       this.db.prepare(`UPDATE copy_trades SET entry_price_sol=?, high_price_sol=?, tp_price_sol=?, sl_price_sol=?,
-        live_tokens=?, tx_sig_entry=?, jito_tip_sol=?, ata_rent_sol=? WHERE id=?`)
-        .run(effEntry, effEntry, tpPrice, slPrice, res.tokensReceived, res.txSignature ?? null, res.jitoTipSol ?? 0, res.ataRentCostSol ?? 0, id);
+        live_tokens=?, tx_sig_entry=?, jito_tip_sol=?, ata_rent_sol=?, tx_land_ms=? WHERE id=?`)
+        .run(effEntry, effEntry, tpPrice, slPrice, res.tokensReceived, res.txSignature ?? null, res.jitoTipSol ?? 0, res.ataRentCostSol ?? 0, res.txLandMs ?? null, id);
     } catch { /* noop */ }
     this.positions.set(id, {
       id, strategyId: s.id, mint, pool: pv.pool, baseVault: pv.baseVault, quoteVault: pv.quoteVault,
