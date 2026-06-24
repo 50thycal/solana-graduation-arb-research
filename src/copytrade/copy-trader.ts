@@ -224,41 +224,64 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    (cumulative quality). Both are token/lead-intrinsic, not timing.
   { id: 'copy-consensus2-elite', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 } },
-  // ── K (2026-06-19): ratchet/runner EXIT sweep on the one promotable entry edge
-  //    (consensus2 realistic base: >=2 smart wallets, entryDelaySec:5 + drift5). All 10 share
-  //    that EXACT entry and differ ONLY in the exit, so the control isolates the exit effect.
-  //    copy-c2rr-control is a FRESH static-TP/SL twin (new id) so the whole cohort starts the
-  //    same calendar window — apples-to-apples vs the variants, not vs older accumulated history.
-  //    NB: the 2026-06-11 copy-ratchet(-20)/copy-scaleout50 kills were on the LOSING plain base
-  //    pre-realistic-execution; re-testing these exits on the consensus2 edge is a new question.
-  //    Tier/atPct/dropPct levels are first-pass — calibrate from the consensus2 MFE/peak dist.
-  { id: 'copy-c2rr-control',          tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2 },
-  // ratchet arm — step-up / breakeven stops that lock in gains (no new code; effectiveStopPrice)
-  { id: 'copy-c2rr-breakeven',        tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2, breakevenAtPct: 25, breakevenBufferPct: 3 },
-  { id: 'copy-c2rr-ratchet-tp',       tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
-    ratchet: [{ atPct: 20, stopPct: 2 }, { atPct: 45, stopPct: 20 }, { atPct: 80, stopPct: 50 }] },
-  { id: 'copy-c2rr-ratchet-run',      tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
-    ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }, { atPct: 120, stopPct: 80 }] },
-  // runner arm — scale out a fraction and/or trail the peak (trailingTp is the new mechanic)
-  { id: 'copy-c2rr-scaleout-50',      tpPct: 100,  slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2, scaleOut: { atPct: 50, fraction: 0.5 } },
-  { id: 'copy-c2rr-scaleout-run',     tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
-    scaleOut: { atPct: 75, fraction: 0.5 }, ratchet: [{ atPct: 75, stopPct: 30 }] },
-  { id: 'copy-c2rr-trailtp-tight',    tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2, trailingTp: { atPct: 30, dropPct: 15 } },
-  { id: 'copy-c2rr-trailtp-wide',     tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2, trailingTp: { atPct: 50, dropPct: 30 } },
-  // hybrid arm — bank part of the move, then trail/ratchet the runner
-  { id: 'copy-c2rr-scaleout-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
+  // ── K (2026-06-19) → KILLED 2026-06-24 (cohort retired, findings ported forward, operator request):
+  //    the c2rr ratchet/runner EXIT sweep on the realistic consensus2 entry (>=2 smart wallets,
+  //    entryDelaySec:5 + drift5). 10 ids — control / breakeven / ratchet-tp / ratchet-run /
+  //    scaleout-50 / scaleout-run / trailtp-tight / trailtp-wide / scaleout-trailtp / ratchet-trailtp.
+  //    Ran 06-19→06-24, n=145-270 each. FINDINGS:
+  //      • Every variant beat the static control (control: net -2.2, drop3 -6.8, stress -4.6) —
+  //        exit engineering IS additive on this entry — but NONE cleared drop3>0, so none was
+  //        promotable. The cons2-realistic entry is too weak a base for any exit to rescue.
+  //      • TRAILING-TP is the load-bearing mechanic: every stress-positive variant uses it. Pure
+  //        static TP100/SL30 and the breakeven stop were the worst (stress-negative).
+  //      • Robustness ranking: scaleout-trailtp (drop3 -2.1, stress +2.6, WR .44 — least tail-
+  //        dependent) > trailtp-wide (net +7.1, stress +5.2) ≈ ratchet-trailtp (net +7.1, stress
+  //        +5.0). Scale-out adds drop3 robustness; trailing-TP adds net+stress.
+  //      • ratchet-run (net +8.4 / drop3 -13.4) and scaleout-run (drop3 -10.4) are LOTTERY TRAPS —
+  //        one carry day each, profit is 3 moonshots. High raw net, no robust edge. Avoid.
+  //    → Section O grafts the 3 robust exits onto the entries that already clear the bar.
+
+  // ── O (2026-06-24): EXIT × ENTRY cross. The c2rr sweep proved the exit SHAPE but on a base too
+  //    weak to promote. So graft the 3 best c2rr exits (scaleout-trailtp / trailtp-wide /
+  //    ratchet-trailtp — all tpNull + SL30 runners, trailing-TP based) onto the 3 PROMOTABLE
+  //    entry edges (hotlead, hotlead-hold30m, consensus2-elite). 3 entries × 3 exits = 9. Each
+  //    keeps its ENTRY untouched — including the lead/elite drift10 gate, NOT c2rr's drift5 — and
+  //    swaps ONLY the exit. The hotlead-hold30m arm KEEPS maxHoldSec:1800 as a time-stop backstop
+  //    under the trail (the 30m cap is its identity vs plain hotlead; the trail/scale-out/ratchet
+  //    fire first if they trigger, else the 30m timeout force-closes a slow position).
+  //    Hypothesis: a promotable entry × a robust runner-exit pushes drop3 clearly positive and
+  //    lifts the monthly run-rate above the static TP100/SL30 these entries ship today.
+  //    Kill criterion per id: n>=100 and drop3 < its static-exit twin's drop3 (the runner exit
+  //    must beat the entry's current TP100/SL30 on robustness, not just on raw net).
+  // hotlead entry (lastN10 / >=3 trades / net>0, drift10) × 3 runner exits
+  { id: 'copy-hotlead-scaleout-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
     scaleOut: { atPct: 50, fraction: 0.5 }, trailingTp: { atPct: 80, dropPct: 30 } },
-  { id: 'copy-c2rr-ratchet-trailtp',  tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 5, minConsensusRecent: 2,
+  { id: 'copy-hotlead-trailtp-wide', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    trailingTp: { atPct: 50, dropPct: 30 } },
+  { id: 'copy-hotlead-ratchet-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }], trailingTp: { atPct: 80, dropPct: 30 } },
+  // hotlead entry + 30m time-stop backstop (maxHoldSec:1800) × 3 runner exits
+  { id: 'copy-hotlead-hold30m-scaleout-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    scaleOut: { atPct: 50, fraction: 0.5 }, trailingTp: { atPct: 80, dropPct: 30 } },
+  { id: 'copy-hotlead-hold30m-trailtp-wide', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    trailingTp: { atPct: 50, dropPct: 30 } },
+  { id: 'copy-hotlead-hold30m-ratchet-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }], trailingTp: { atPct: 80, dropPct: 30 } },
+  // consensus2 × elite-lead entry (>=2 smart wallets + cumulative-positive lead >=10 trades, drift10) × 3 runner exits
+  { id: 'copy-cons2elite-scaleout-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 },
+    scaleOut: { atPct: 50, fraction: 0.5 }, trailingTp: { atPct: 80, dropPct: 30 } },
+  { id: 'copy-cons2elite-trailtp-wide', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 },
+    trailingTp: { atPct: 50, dropPct: 30 } },
+  { id: 'copy-cons2elite-ratchet-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 },
     ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }], trailingTp: { atPct: 80, dropPct: 30 } },
   // ── KILLED 2026-06-23 (INVALID): copy-fatwallet-{tp100,follow,runner,hightp,scaleout} —
   //    the fat-tail-wallet allowlist cohort (9LxM/2o9U/5hYs, WR<60). After ~20 trades each
