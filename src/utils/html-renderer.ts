@@ -7199,15 +7199,29 @@ export function renderLiveTrainingHtml(data: any): string {
     var liveFirstTs=firstTsOf(liveClosed.map(function(t){return t.entry_ts;}));
     var liveRunDays=runDaysOf(liveFirstTs);
     var liveNetFull=0; for(var i=0;i<liveClosed.length;i++) liveNetFull+=num(liveClosed[i].net_profit_sol)||0;
+    // Build a size-normalized run-rate leg from a strategy-id→1 map over shadowTr.
+    var origMap=(typeof LT!=='undefined'&&LT.original_mapping)? LT.original_mapping : {};
+    function legFrom(mappedSet){
+      var tr=shadowTr.filter(function(t){return t.status==='closed'&&mappedSet[t.strategy_id];});
+      var nativeTotal=0; for(var i=0;i<tr.length;i++) nativeTotal+=num(tr[i].net_profit_sol)||0;
+      var sz=null; for(var i=0;i<tr.length;i++){ var z2=num(tr[i].trade_size_sol); if(z2&&z2>0){sz=z2;break;} }
+      var sn=(liveSize&&sz&&sz>0)? liveSize/sz : 1;
+      var totalLive=tr.length? jround(nativeTotal*sn): null;
+      var ft=firstTsOf(tr.map(function(t){return t.entry_ts;}));
+      var rd=runDaysOf(ft);
+      var keys=Object.keys(mappedSet); var sid=keys.length===1? keys[0]: null;
+      return { strategy_id:sid, n:tr.length, age_days:ageDaysOf(ft), run_days:jround(rd,1),
+        total_net_sol_live_size:totalLive, _size:sz,
+        weekly_sol:totalLive===null? null: perPeriod(totalLive,rd,7),
+        monthly_sol:totalLive===null? null: perPeriod(totalLive,rd,30) };
+    }
+    // Parent = ORIGINAL research strategy (original_mapping), the long-running trend.
+    var mappedOriginal={}; for(var i=0;i<liveClosed.length;i++){ var osid=origMap[liveClosed[i].strategy_id]; if(osid) mappedOriginal[osid]=1; }
+    var parentLeg=legFrom(mappedOriginal);
+    // Pair shadow = dedicated same-age twin (LIVE_SHADOW_MAP) — the "ideal execution" leg.
     var mappedShadow={}; for(var i=0;i<liveClosed.length;i++){ var msid=map[liveClosed[i].strategy_id]; if(msid) mappedShadow[msid]=1; }
-    var parentTrades=shadowTr.filter(function(t){return t.status==='closed'&&mappedShadow[t.strategy_id];});
-    var parentNativeTotal=0; for(var i=0;i<parentTrades.length;i++) parentNativeTotal+=num(parentTrades[i].net_profit_sol)||0;
-    var parentSize=null; for(var i=0;i<parentTrades.length;i++){ var z2=num(parentTrades[i].trade_size_sol); if(z2&&z2>0){parentSize=z2;break;} }
-    var sizeNorm=(liveSize&&parentSize&&parentSize>0)? liveSize/parentSize : 1;
-    var parentTotalLiveSize=parentTrades.length? jround(parentNativeTotal*sizeNorm): null;
-    var parentFirstTs=firstTsOf(parentTrades.map(function(t){return t.entry_ts;}));
-    var parentRunDays=runDaysOf(parentFirstTs);
-    var mappedKeys=Object.keys(mappedShadow); var parentId=mappedKeys.length===1? mappedKeys[0]: null;
+    var pairLeg=legFrom(mappedShadow);
+    var parentSize=parentLeg._size;
     // Adjusted: FULL live net minus matched pairs where live underperformed shadow by >=ADJ_PP.
     var ADJ_PP=50;
     var blowupPairs=pairs.filter(function(p){return p.return_delta_pct!=null&&p.return_delta_pct<=-ADJ_PP;});
@@ -7217,10 +7231,8 @@ export function renderLiveTrainingHtml(data: any): string {
       live_trade_size_sol:liveSize, parent_trade_size_sol:parentSize,
       live:{ first_entry_ts:liveFirstTs, age_days:ageDaysOf(liveFirstTs), run_days:jround(liveRunDays,1),
         total_net_sol:jround(liveNetFull), weekly_sol:perPeriod(liveNetFull,liveRunDays,7), monthly_sol:perPeriod(liveNetFull,liveRunDays,30) },
-      parent:{ strategy_id:parentId, n:parentTrades.length, age_days:ageDaysOf(parentFirstTs), run_days:jround(parentRunDays,1),
-        total_net_sol_live_size:parentTotalLiveSize,
-        weekly_sol:parentTotalLiveSize===null? null: perPeriod(parentTotalLiveSize,parentRunDays,7),
-        monthly_sol:parentTotalLiveSize===null? null: perPeriod(parentTotalLiveSize,parentRunDays,30) },
+      parent:parentLeg,
+      pair:pairLeg,
       adjusted_live:{ divergence_pp_threshold:ADJ_PP, excluded_n:blowupPairs.length,
         total_net_sol:jround(adjLiveNetFull),
         weekly_sol:perPeriod(adjLiveNetFull,liveRunDays,7), monthly_sol:perPeriod(adjLiveNetFull,liveRunDays,30) } };
@@ -7337,11 +7349,14 @@ export function renderLiveTrainingHtml(data: any): string {
       var onTrack=(liveMo!==null&&parMo!==null&&parMo!==0)?(liveMo>=parMo*0.75):null;
       var verdict=onTrack===null?'—':(onTrack?'<span class="green">on track</span>':'<span class="red">lagging</span>');
       var sz=rr.live_trade_size_sol;
+      var pairMo=(rr.pair?num(rr.pair.monthly_sol):null);
       var b='<b>Run rate</b> — full strategy, net SOL ÷ days since first trade (min 7) × period'+(sz!=null?(', normalized to live size '+f4u(sz)+' SOL'):'')+'. Matches The Analyst / Metrics Summary.'
         +'<br><b>Live</b> ('+(rr.live.age_days==null?'—':rr.live.age_days+'d')+' old, '+f4(rr.live.total_net_sol)+' SOL total): '
         +cspan(rr.live.weekly_sol,f4(rr.live.weekly_sol)+' SOL/wk')+' · '+cspan(liveMo,f4(liveMo)+' SOL/mo')+'.'
-        +'<br><b>vs original'+(rr.parent.strategy_id?(' '+rr.parent.strategy_id):'')+'</b> (n='+rr.parent.n+(rr.parent.age_days==null?'':', '+rr.parent.age_days+'d')+', size-normalized): '
-        +'original '+cspan(parMo,f4(parMo)+' SOL/mo')+' vs live '+cspan(liveMo,f4(liveMo)+' SOL/mo')+' → '+verdict+'.'
+        +'<br><b>Trend check</b> — SOL/mo, size + run-rate normalized so the longer-running original is apples-to-apples:'
+        +'<br>&nbsp;&nbsp;· <b>original</b>'+(rr.parent.strategy_id?(' '+rr.parent.strategy_id):'')+' (n='+rr.parent.n+(rr.parent.age_days==null?'':', '+rr.parent.age_days+'d')+'): '+cspan(parMo,f4(parMo)+' SOL/mo')
+        +'<br>&nbsp;&nbsp;· <b>pair shadow</b> (n='+(rr.pair?rr.pair.n:0)+(rr.pair&&rr.pair.age_days!=null?(', '+rr.pair.age_days+'d'):'')+', ideal exec, same window): '+cspan(pairMo,(pairMo===null?'—':f4(pairMo)+' SOL/mo'))
+        +'<br>&nbsp;&nbsp;· <b>live</b>: '+cspan(liveMo,f4(liveMo)+' SOL/mo')+' → '+verdict+' vs original.'
         +'<br><b>Adjusted live</b> (excl. '+rr.adjusted_live.excluded_n+' pair'+(rr.adjusted_live.excluded_n===1?'':'s')+' where live ≥'+rr.adjusted_live.divergence_pp_threshold+'pp worse than shadow): '
         +cspan(rr.adjusted_live.total_net_sol,f4(rr.adjusted_live.total_net_sol)+' SOL')+' total · '+cspan(adjMo,f4(adjMo)+' SOL/mo')+' projected.';
       benchEl.innerHTML=b;
