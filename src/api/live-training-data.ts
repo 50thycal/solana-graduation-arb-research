@@ -19,6 +19,7 @@
 
 import type Database from 'better-sqlite3';
 import { getStrategyConfigs } from '../db/queries';
+import { jitoBundleStats } from '../trading/jito';
 
 /** Execution modes that count as "live money". */
 export const LIVE_MODES = ['live_micro', 'live_full'] as const;
@@ -883,6 +884,9 @@ export function computeLiveTrainingData(db: Database.Database) {
     live_modes: LIVE_MODES,
     mapping: LIVE_SHADOW_MAP,
     original_mapping: LIVE_ORIGINAL_MAP,
+    // Process-lifetime Jito bundle diagnostics (resets on redeploy) — lets us see WHY
+    // bundles fall back (429 rate-limit vs not-landed-auction vs failed) without Railway logs.
+    jito_bundle_stats: jitoBundleStats,
     has_live_data: liveTrades.length > 0,
     strategies,
     trades: {
