@@ -7212,6 +7212,7 @@ export function renderLiveTrainingHtml(data: any): string {
       var keys=Object.keys(mappedSet); var sid=keys.length===1? keys[0]: null;
       return { strategy_id:sid, n:tr.length, age_days:ageDaysOf(ft), run_days:jround(rd,1),
         total_net_sol_live_size:totalLive, _size:sz,
+        net_per_trade_live_size:(totalLive!==null&&tr.length)? jround(totalLive/tr.length,6): null,
         weekly_sol:totalLive===null? null: perPeriod(totalLive,rd,7),
         monthly_sol:totalLive===null? null: perPeriod(totalLive,rd,30) };
     }
@@ -7230,7 +7231,9 @@ export function renderLiveTrainingHtml(data: any): string {
     var runRate={ basis:'full_strategy_net / days_since_first_trade(min 7) x period (live-size normalized) — same basis as The Analyst',
       live_trade_size_sol:liveSize, parent_trade_size_sol:parentSize,
       live:{ first_entry_ts:liveFirstTs, age_days:ageDaysOf(liveFirstTs), run_days:jround(liveRunDays,1),
-        total_net_sol:jround(liveNetFull), weekly_sol:perPeriod(liveNetFull,liveRunDays,7), monthly_sol:perPeriod(liveNetFull,liveRunDays,30) },
+        n:liveClosed.length, total_net_sol:jround(liveNetFull),
+        net_per_trade:liveClosed.length? jround(liveNetFull/liveClosed.length,6): null,
+        weekly_sol:perPeriod(liveNetFull,liveRunDays,7), monthly_sol:perPeriod(liveNetFull,liveRunDays,30) },
       parent:parentLeg,
       pair:pairLeg,
       adjusted_live:{ divergence_pp_threshold:ADJ_PP, excluded_n:blowupPairs.length,
@@ -7345,18 +7348,24 @@ export function renderLiveTrainingHtml(data: any): string {
     var benchEl=document.getElementById('lt-cmp-bench');
     if(rr && benchEl){
       var liveMo=num(rr.live.monthly_sol), parMo=num(rr.parent.monthly_sol), adjMo=num(rr.adjusted_live.monthly_sol);
-      // "On track" = live monthly within 25% of the original (some execution drag is expected).
-      var onTrack=(liveMo!==null&&parMo!==null&&parMo!==0)?(liveMo>=parMo*0.75):null;
+      // Trend check uses NET PER TRADE (size-normalized) — run-length-independent, so the
+      // longer-running original is apples-to-apples with the <7d live/pair WITHOUT the
+      // 7-day run-day floor that deflates the young legs in the SOL/mo figure.
+      var liveNpt=num(rr.live.net_per_trade);
+      var parNpt=(rr.parent?num(rr.parent.net_per_trade_live_size):null);
+      var pairNpt=(rr.pair?num(rr.pair.net_per_trade_live_size):null);
+      // "On track" = live net/trade within 25% of the original's (some execution drag expected).
+      var onTrack=(liveNpt!==null&&parNpt!==null&&parNpt!==0)?(liveNpt>=parNpt*0.75):null;
       var verdict=onTrack===null?'—':(onTrack?'<span class="green">on track</span>':'<span class="red">lagging</span>');
       var sz=rr.live_trade_size_sol;
-      var pairMo=(rr.pair?num(rr.pair.monthly_sol):null);
+      function npt(v){ return v===null||v===undefined?'—':(v>=0?'+':'')+v.toFixed(5)+' SOL/trade'; }
       var b='<b>Run rate</b> — full strategy, net SOL ÷ days since first trade (min 7) × period'+(sz!=null?(', normalized to live size '+f4u(sz)+' SOL'):'')+'. Matches The Analyst / Metrics Summary.'
         +'<br><b>Live</b> ('+(rr.live.age_days==null?'—':rr.live.age_days+'d')+' old, '+f4(rr.live.total_net_sol)+' SOL total): '
         +cspan(rr.live.weekly_sol,f4(rr.live.weekly_sol)+' SOL/wk')+' · '+cspan(liveMo,f4(liveMo)+' SOL/mo')+'.'
-        +'<br><b>Trend check</b> — SOL/mo, size + run-rate normalized so the longer-running original is apples-to-apples:'
-        +'<br>&nbsp;&nbsp;· <b>original</b>'+(rr.parent.strategy_id?(' '+rr.parent.strategy_id):'')+' (n='+rr.parent.n+(rr.parent.age_days==null?'':', '+rr.parent.age_days+'d')+'): '+cspan(parMo,f4(parMo)+' SOL/mo')
-        +'<br>&nbsp;&nbsp;· <b>pair shadow</b> (n='+(rr.pair?rr.pair.n:0)+(rr.pair&&rr.pair.age_days!=null?(', '+rr.pair.age_days+'d'):'')+', ideal exec, same window): '+cspan(pairMo,(pairMo===null?'—':f4(pairMo)+' SOL/mo'))
-        +'<br>&nbsp;&nbsp;· <b>live</b>: '+cspan(liveMo,f4(liveMo)+' SOL/mo')+' → '+verdict+' vs original.'
+        +'<br><b>Trend check</b> — net per trade, size-normalized to '+(sz!=null?f4u(sz):'0.05')+' SOL (run-length-independent — valid at any age, no run-day floor):'
+        +'<br>&nbsp;&nbsp;· <b>original</b>'+(rr.parent.strategy_id?(' '+rr.parent.strategy_id):'')+' (n='+rr.parent.n+(rr.parent.age_days==null?'':', '+rr.parent.age_days+'d')+'): '+cspan(parNpt,npt(parNpt))
+        +'<br>&nbsp;&nbsp;· <b>pair shadow</b> (n='+(rr.pair?rr.pair.n:0)+(rr.pair&&rr.pair.age_days!=null?(', '+rr.pair.age_days+'d'):'')+', ideal exec, same window): '+cspan(pairNpt,npt(pairNpt))
+        +'<br>&nbsp;&nbsp;· <b>live</b> (n='+(rr.live.n==null?'—':rr.live.n)+'): '+cspan(liveNpt,npt(liveNpt))+' → '+verdict+' vs original.'
         +'<br><b>Adjusted live</b> (excl. '+rr.adjusted_live.excluded_n+' pair'+(rr.adjusted_live.excluded_n===1?'':'s')+' where live ≥'+rr.adjusted_live.divergence_pp_threshold+'pp worse than shadow): '
         +cspan(rr.adjusted_live.total_net_sol,f4(rr.adjusted_live.total_net_sol)+' SOL')+' total · '+cspan(adjMo,f4(adjMo)+' SOL/mo')+' projected.';
       benchEl.innerHTML=b;

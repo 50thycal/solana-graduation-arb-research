@@ -188,22 +188,27 @@ export interface LtComparison {
     // FULL live strategy (all closed live trades, NOT just matched pairs).
     live: {
       first_entry_ts: number | null; age_days: number | null; run_days: number;
-      total_net_sol: number | null; weekly_sol: number | null; monthly_sol: number | null;
+      n: number; total_net_sol: number | null; net_per_trade: number | null;
+      weekly_sol: number | null; monthly_sol: number | null;
     };
     // Parent = the FULL standalone ORIGINAL research strategy (LIVE_ORIGINAL_MAP, e.g.
     // copy-hotlead-hold30m) — the long-running proven trend the live should track,
-    // size-normalized to live. NOT the pair shadow.
+    // size-normalized to live. NOT the pair shadow. net_per_trade_live_size is the
+    // run-length-INDEPENDENT trend metric (avg net per trade @ live size) — unlike
+    // monthly_sol it needs no time extrapolation, so it's apples-to-apples at any age.
     parent: {
       strategy_id: string | null; n: number; age_days: number | null; run_days: number;
-      total_net_sol_live_size: number | null; weekly_sol: number | null; monthly_sol: number | null;
+      total_net_sol_live_size: number | null; net_per_trade_live_size: number | null;
+      weekly_sol: number | null; monthly_sol: number | null;
     };
     // Pair shadow = the dedicated same-age modeled twin (LIVE_SHADOW_MAP). Same window
     // as live → the "ideal execution" run-rate the live is measured against. The 3-way
     // (live / pair / parent) is the apples-to-apples trend check: are the young pair +
-    // live tracking the long-running original's rate?
+    // live tracking the long-running original's per-trade edge?
     pair: {
       strategy_id: string | null; n: number; age_days: number | null; run_days: number;
-      total_net_sol_live_size: number | null; weekly_sol: number | null; monthly_sol: number | null;
+      total_net_sol_live_size: number | null; net_per_trade_live_size: number | null;
+      weekly_sol: number | null; monthly_sol: number | null;
     };
     // FULL live MINUS the matched pairs where live underperformed its shadow twin
     // by >= divergence_pp_threshold (the rent/phantom-class execution blowups) —
@@ -631,7 +636,9 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     parent_trade_size_sol: parentSize,
     live: {
       first_entry_ts: liveFirstTs, age_days: ageDaysOf(liveFirstTs), run_days: round(liveRunDays, 1) ?? 7,
+      n: liveClosed.length,
       total_net_sol: round(liveNetFull),
+      net_per_trade: liveClosed.length ? round(liveNetFull / liveClosed.length, 6) : null,
       weekly_sol: perPeriod(liveNetFull, liveRunDays, 7),
       monthly_sol: perPeriod(liveNetFull, liveRunDays, 30),
     },
@@ -639,6 +646,7 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
       strategy_id: parentId, n: parentTrades.length,
       age_days: ageDaysOf(parentFirstTs), run_days: round(parentRunDays, 1) ?? 7,
       total_net_sol_live_size: parentTotalLiveSize,
+      net_per_trade_live_size: (parentTotalLiveSize !== null && parentTrades.length) ? round(parentTotalLiveSize / parentTrades.length, 6) : null,
       weekly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentRunDays, 7),
       monthly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentRunDays, 30),
     },
@@ -646,6 +654,7 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
       strategy_id: pairId, n: pairTrades.length,
       age_days: ageDaysOf(pairFirstTs), run_days: round(pairRunDays, 1) ?? 7,
       total_net_sol_live_size: pairTotalLiveSize,
+      net_per_trade_live_size: (pairTotalLiveSize !== null && pairTrades.length) ? round(pairTotalLiveSize / pairTrades.length, 6) : null,
       weekly_sol: pairTotalLiveSize === null ? null : perPeriod(pairTotalLiveSize, pairRunDays, 7),
       monthly_sol: pairTotalLiveSize === null ? null : perPeriod(pairTotalLiveSize, pairRunDays, 30),
     },
