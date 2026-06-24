@@ -190,9 +190,18 @@ export interface LtComparison {
       first_entry_ts: number | null; age_days: number | null; run_days: number;
       total_net_sol: number | null; weekly_sol: number | null; monthly_sol: number | null;
     };
-    // Parent = the FULL standalone shadow strategy (e.g. all copy-hotlead-deep) —
-    // the benchmark the live should track, normalized to live size.
+    // Parent = the FULL standalone ORIGINAL research strategy (LIVE_ORIGINAL_MAP, e.g.
+    // copy-hotlead-hold30m) — the long-running proven trend the live should track,
+    // size-normalized to live. NOT the pair shadow.
     parent: {
+      strategy_id: string | null; n: number; age_days: number | null; run_days: number;
+      total_net_sol_live_size: number | null; weekly_sol: number | null; monthly_sol: number | null;
+    };
+    // Pair shadow = the dedicated same-age modeled twin (LIVE_SHADOW_MAP). Same window
+    // as live → the "ideal execution" run-rate the live is measured against. The 3-way
+    // (live / pair / parent) is the apples-to-apples trend check: are the young pair +
+    // live tracking the long-running original's rate?
+    pair: {
       strategy_id: string | null; n: number; age_days: number | null; run_days: number;
       total_net_sol_live_size: number | null; weekly_sol: number | null; monthly_sol: number | null;
     };
@@ -594,6 +603,20 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
   const parentRunDays = runDaysOf(parentFirstTs);
   const parentId = mappedOriginalIds.size === 1 ? Array.from(mappedOriginalIds)[0] : null;
 
+  // Pair shadow leg (LIVE_SHADOW_MAP) — same-age dedicated twin, already 0.05 size.
+  // Gives the 3-way trend check: live (real) / pair (ideal, same window) / parent (original).
+  const mappedPairIds = new Set(
+    liveClosed.map(t => LIVE_SHADOW_MAP[t.strategy_id]).filter((x): x is string => !!x),
+  );
+  const pairTrades = shadowTrades.filter(t => t.status === 'closed' && mappedPairIds.has(t.strategy_id));
+  const pairNativeTotal = pairTrades.reduce((a, t) => a + (t.net_profit_sol ?? 0), 0);
+  const pairSize = pairTrades.find(t => (t.trade_size_sol ?? 0) > 0)?.trade_size_sol ?? null;
+  const pairSizeNorm = (liveSize && pairSize && pairSize > 0) ? liveSize / pairSize : 1;
+  const pairTotalLiveSize = pairTrades.length ? round(pairNativeTotal * pairSizeNorm) : null;
+  const pairFirstTs = firstTsOf(pairTrades.map(t => t.entry_ts));
+  const pairRunDays = runDaysOf(pairFirstTs);
+  const pairId = mappedPairIds.size === 1 ? Array.from(mappedPairIds)[0] : null;
+
   // Adjusted live: FULL live net minus the matched pairs where live underperformed
   // its shadow twin by >= ADJ_DIVERGENCE_PP (the execution-failure blowups). Shows
   // what the strategy earns once its worst execution misses are stripped.
@@ -618,6 +641,13 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
       total_net_sol_live_size: parentTotalLiveSize,
       weekly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentRunDays, 7),
       monthly_sol: parentTotalLiveSize === null ? null : perPeriod(parentTotalLiveSize, parentRunDays, 30),
+    },
+    pair: {
+      strategy_id: pairId, n: pairTrades.length,
+      age_days: ageDaysOf(pairFirstTs), run_days: round(pairRunDays, 1) ?? 7,
+      total_net_sol_live_size: pairTotalLiveSize,
+      weekly_sol: pairTotalLiveSize === null ? null : perPeriod(pairTotalLiveSize, pairRunDays, 7),
+      monthly_sol: pairTotalLiveSize === null ? null : perPeriod(pairTotalLiveSize, pairRunDays, 30),
     },
     adjusted_live: {
       divergence_pp_threshold: ADJ_DIVERGENCE_PP, excluded_n: blowupPairs.length,
@@ -843,6 +873,7 @@ export function computeLiveTrainingData(db: Database.Database) {
     generated_at: new Date().toISOString(),
     live_modes: LIVE_MODES,
     mapping: LIVE_SHADOW_MAP,
+    original_mapping: LIVE_ORIGINAL_MAP,
     has_live_data: liveTrades.length > 0,
     strategies,
     trades: {
