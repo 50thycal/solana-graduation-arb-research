@@ -1,0 +1,27 @@
+{
+  "commands": [
+    {
+      "action": "journal-upsert",
+      "id": "c2rr-exit-sweep",
+      "strategy_id": "copy-c2rr-scaleout-trailtp",
+      "cohort_label": "c2rr",
+      "hypothesis": "c2rr = 10-variant EXIT sweep on the realistic consensus-2 entry (>=2 smart wallets, entryDelaySec:5 + drift5); all share that EXACT entry and differ only in exit, with copy-c2rr-control as the static-TP100/SL30 isolator. Question: can a smarter exit (ratchet / breakeven / scale-out / trailing-TP / hybrids) turn the consensus-2 entry promotable? RESOLVED 2026-06-24 (n=145-270 each, 06-19->06-24): NO on this base, but the exit shape is now known. (1) Every variant beat the static control (control net -2.2, drop3 -6.8, stress -4.6) -- exit engineering is additive -- but NONE cleared drop3>0, so none was promotable; the cons2-realistic entry is too weak a base for any exit to rescue. (2) TRAILING-TP is the load-bearing mechanic: every stress-positive variant uses it; pure static TP100/SL30 and the breakeven stop were the worst (stress-negative). (3) Robustness ranking: scaleout-trailtp (scaleOut@50%x0.5 + trailingTp@80/30; drop3 -2.1, stress +2.6, WR .44 -- least tail-dependent) > trailtp-wide (trailingTp@50/30; net +7.1, stress +5.2) ~ ratchet-trailtp (ratchet[25->5,60->35] + trailingTp@80/30; net +7.1, stress +5.0). Scale-out adds drop3 robustness; trailing-TP adds net+stress. (4) ratchet-run (net +8.4 / drop3 -13.4) and scaleout-run (drop3 -10.4) are LOTTERY TRAPS -- one carry day each, profit is 3 moonshots; high raw net, no robust edge. DECISION: kill all 10 c2rr ids; port the 3 robust exits onto the 3 entries that already clear the bar (hotlead, hotlead-hold30m, consensus2-elite) = 9 new section-O strategies. LESSON: on the copy book the EDGE lives in entry selection; exits modulate it. Test new exits on a promotable entry, not on a marginal one.",
+      "status": "KILLED"
+    },
+    {
+      "action": "journal-upsert",
+      "id": "section-o-exit-x-entry",
+      "strategy_id": "copy-hotlead-scaleout-trailtp",
+      "cohort_label": "O",
+      "hypothesis": "EXIT x ENTRY cross (2026-06-24). Graft the 3 robust c2rr exits (scaleout-trailtp, trailtp-wide, ratchet-trailtp -- all tpNull+SL30 runners, trailing-TP based) onto the 3 promotable entry edges (hotlead, hotlead-hold30m, consensus2-elite); 3x3=9 strategies. Each keeps its entry untouched (lead/elite drift10 gate, NOT c2rr's drift5) and swaps only the exit; the hold30m arm keeps maxHoldSec:1800 as a time-stop backstop under the trail. Hypothesis: a promotable entry x a robust runner-exit pushes drop3 clearly positive and lifts the monthly run-rate above the static TP100/SL30 these entries ship today (hotlead TP100/SL30 = drop3 +9.5, mo +40; hotlead-hold30m = drop3 +6.6, mo +92; cons2-elite = drop3 +2.6, mo +20). The runner exit must beat the entry's current static-TP/SL twin on ROBUSTNESS (drop3), not just raw net.",
+      "prediction": {
+        "target_drop_top3": 3,
+        "target_sol_per_mo": 30,
+        "target_n": 100,
+        "target_days": 12,
+        "kill_criterion": "n>=100 and drop3<0"
+      },
+      "status": "OPEN"
+    }
+  ]
+}
