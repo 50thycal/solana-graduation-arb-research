@@ -723,7 +723,7 @@ function copyTradeSelect(whereSql: string): string {
       NULL AS exit_slip_pct,
       c.jito_tip_sol,
       c.ata_rent_sol AS fees_sol,
-      NULL AS tx_land_ms,
+      c.tx_land_ms,
       c.exit_reason,
       c.size_sol AS trade_size_sol,
       -- Diagnostic prices: live rows store the REAL fill in entry_price_sol, the

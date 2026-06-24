@@ -1129,6 +1129,13 @@ function runMigrations(db: Database.Database): void {
     if (!have.has('jito_tip_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN jito_tip_sol REAL`);
     if (!have.has('ata_rent_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN ata_rent_sol REAL`);
     if (!have.has('live_error')) db.exec(`ALTER TABLE copy_trades ADD COLUMN live_error TEXT`);
+    // Landing latency of the real entry swap (ms from submit to confirmed land/fallback),
+    // captured from ExecutionResult.txLandMs. live_micro only. Lets us correlate the
+    // live-vs-shadow entry gap with how long the buy took to land — i.e. is the gap
+    // landing latency (tunable via Jito tip / priority fee) or AMM slippage. Was NULL on
+    // every copy live trade (the copy path discarded res.txLandMs), so the /live-training
+    // latency panel showed nothing.
+    if (!have.has('tx_land_ms')) db.exec(`ALTER TABLE copy_trades ADD COLUMN tx_land_ms INTEGER`);
     // One-time correction (bug fixed 2026-06-18): early live_micro rows were sized at
     // COPY_SIZE_SOL (0.5) instead of MICRO_TRADE_SIZE_SOL (0.05), inflating net_sol 10x
     // and mis-feeding the daily-loss breaker. Re-derive size + net from the correct
