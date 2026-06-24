@@ -69,6 +69,22 @@ export interface BundleSubmitResult {
   errorMessage?: string;
 }
 
+/** Process-lifetime Jito bundle diagnostics (reset on redeploy). Surfaced into
+ *  live-training.json so the failure mode is visible WITHOUT Railway log access:
+ *  a high `poll_429` = rate-limited; high `not_landed` = bundle isn't winning the
+ *  auction (tip); high `bundle_failed` = rejected; `send_err` = sendBundle itself failing. */
+export const jitoBundleStats = {
+  submitted: 0,
+  landed_jito: 0,
+  fell_back_rpc: 0,
+  not_landed: 0,
+  bundle_failed: 0,
+  poll_429: 0,
+  poll_err: 0,
+  send_err: 0,
+  last_poll_error: '',
+};
+
 /**
  * Submit a single signed transaction as a Jito bundle. If Jito rejects or
  * does not confirm within `timeoutMs`, fall back to RPC sendRawTransaction.
@@ -111,6 +127,7 @@ export async function submitBundle(
     if (!bundleId) {
       throw new Error(`Jito sendBundle returned no bundleId: ${JSON.stringify(resp.data)}`);
     }
+    jitoBundleStats.submitted++;
 
     // Poll getInflightBundleStatuses (NOT getBundleStatuses — that only sees rooted
     // bundles) at a rate-limit-respecting cadence. Free tier is 1 req/s/IP/region, so a
@@ -118,6 +135,7 @@ export async function submitBundle(
     const expectedSig = firstSignatureOf(signedTxs[0]);
     const landed = await pollBundleStatus(connection, bundleId, expectedSig, Math.max(timeoutMs, 5_000));
     if (landed) {
+      jitoBundleStats.landed_jito++;
       return {
         landed: true,
         bundleId,
@@ -130,13 +148,16 @@ export async function submitBundle(
 
     logger.warn({ bundleId }, 'Jito bundle did not land in window — falling back to RPC');
   } catch (err) {
+    jitoBundleStats.send_err++;
     const msg = err instanceof AxiosError
       ? `${err.code ?? ''} ${err.message}`
       : err instanceof Error ? err.message : String(err);
+    jitoBundleStats.last_poll_error = `send: ${msg}`;
     logger.warn({ msg }, 'Jito bundle submission failed — falling back to RPC');
   }
 
   // ── RPC fallback ──────────────────────────────────────────────────
+  jitoBundleStats.fell_back_rpc++;
   try {
     const txSignature = await connection.sendRawTransaction(signedTxs[0], {
       skipPreflight: true,
@@ -211,20 +232,25 @@ async function pollBundleStatus(
       const status = v?.status;
       if (status === 'Landed') { landedSlot = v?.landed_slot ?? 0; break; }
       if (status === 'Failed') {
+        jitoBundleStats.bundle_failed++;
         logger.warn({ bundleId }, 'Jito bundle Failed (all regions rejected) — falling back to RPC');
         return null;
       }
       // 'Pending', 'Invalid' (not yet indexed / 5-min lookback), or no value → keep polling.
     } catch (err) {
       pollErrors++;
+      const httpStatus = err instanceof AxiosError ? err.response?.status : undefined;
+      if (httpStatus === 429) jitoBundleStats.poll_429++; else jitoBundleStats.poll_err++;
       const msg = err instanceof AxiosError
-        ? `HTTP ${err.response?.status ?? '?'} ${err.code ?? ''} ${err.message}`
+        ? `HTTP ${httpStatus ?? '?'} ${err.code ?? ''} ${err.message}`
         : err instanceof Error ? err.message : String(err);
+      jitoBundleStats.last_poll_error = msg;
       // NOT silent anymore: a recurring 'HTTP 429' here is the rate-limit smoking gun.
       logger.warn({ bundleId, pollErrors, msg }, 'getInflightBundleStatuses poll error');
     }
   }
   if (landedSlot === null) {
+    jitoBundleStats.not_landed++;
     logger.warn({ bundleId, pollErrors }, 'Jito bundle did not report Landed in window');
     return null;
   }
