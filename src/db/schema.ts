@@ -1136,6 +1136,10 @@ function runMigrations(db: Database.Database): void {
     // every copy live trade (the copy path discarded res.txLandMs), so the /live-training
     // latency panel showed nothing.
     if (!have.has('tx_land_ms')) db.exec(`ALTER TABLE copy_trades ADD COLUMN tx_land_ms INTEGER`);
+    // Which path the entry swap LANDED through: 'jito' (bundle landed fast) or 'rpc'
+    // (bundle timed out → slow RPC fallback). Pairs with tx_land_ms to confirm whether
+    // the ~4.8s copy-live latency is Jito bundles failing to land. live_micro only.
+    if (!have.has('entry_land_path')) db.exec(`ALTER TABLE copy_trades ADD COLUMN entry_land_path TEXT`);
     // One-time correction (bug fixed 2026-06-18): early live_micro rows were sized at
     // COPY_SIZE_SOL (0.5) instead of MICRO_TRADE_SIZE_SOL (0.05), inflating net_sol 10x
     // and mis-feeding the daily-loss breaker. Re-derive size + net from the correct
