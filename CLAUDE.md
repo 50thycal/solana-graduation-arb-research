@@ -136,6 +136,22 @@ NOT responsible for:
 
 ---
 
+## PULL REQUEST WORKFLOW (operator preference)
+
+After pushing code changes to the feature branch, **always open a GitHub PR into the
+default branch (`main`)** so the operator can review and merge — don't leave changes on
+the branch expecting raw pushes to be merged. Mechanics:
+
+- Use the GitHub MCP (`mcp__github__create_pull_request`). The `gh` CLI is NOT available
+  in this environment, and a `settings.json` hook can't create a PR (hooks run shell
+  commands; PR creation goes through the MCP), so this is a standing instruction, not a hook.
+- **One open PR per branch.** If a PR is already open for the branch, new pushes update it
+  automatically — don't open a second. Check with `list_pull_requests` (head filter) first.
+- Don't open a PR when there are no unmerged commits (branch already in `main`).
+- Give the PR a clear title + body summarizing the change for review.
+
+---
+
 ## BUG TRIAGE PROTOCOL
 
 When `diagnose.json` is not HEALTHY, diagnose in order. Fix bugs in order — do not skip levels.
