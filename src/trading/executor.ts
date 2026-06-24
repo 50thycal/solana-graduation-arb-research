@@ -60,6 +60,10 @@ export interface ExecutionResult {
    *  live executions; undefined for paper/shadow. Useful for the post-mortem
    *  diagnostic surface in trading.json. Added 2026-05-21. */
   failurePath?: string;
+  /** 'jito' or 'rpc' — which submission path the tx actually LANDED through, on
+   *  success. 'rpc' means the Jito bundle timed out and we fell back to slow RPC
+   *  send — the dominant copy-live latency driver. Live executions only. */
+  landPath?: string;
   /** Comma-joined list of mint extension flags (e.g. "token2022,transfer_fee").
    *  Empty string when the mint is plain SPL. Captured at buy time. */
   mintExtensionFlags?: string;
@@ -743,6 +747,7 @@ export class Executor {
       dryRun: false, executionMode: mode,
       measuredSlippagePct, jitoTipSol,
       txLandMs: submission.latencyMs,
+      landPath: submission.path,
       ataRentCostSol: recordedAtaRentLamports / 1e9,
     };
   }

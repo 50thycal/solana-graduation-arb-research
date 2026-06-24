@@ -96,6 +96,9 @@ export interface LtTrade {
   // key for copy pairing (copy rows have no graduation_id). Null for graduation
   // strategies and pre-migration copy rows; matcher falls back to mint+time then.
   copy_event_id: string | null;
+  // Which path the live entry swap landed through: 'jito' (bundle) or 'rpc' (fallback).
+  // copy live_micro only; null elsewhere. Pairs with tx_land_ms for the latency post-mortem.
+  entry_land_path: string | null;
 }
 
 /** Aggregate performance metrics over a set of trades. */
@@ -695,7 +698,8 @@ function tradeSelect(whereSql: string): string {
       NULL AS high_price,
       CASE WHEN t.take_profit_pct IS NOT NULL
            THEN COALESCE(t.entry_effective_price, t.entry_price_sol) * (1 + t.take_profit_pct / 100.0) END AS tp_price,
-      NULL AS copy_event_id
+      NULL AS copy_event_id,
+      NULL AS entry_land_path
     FROM trades_v2 t
     ${whereSql}
     ORDER BY t.entry_timestamp ASC, t.id ASC`;
@@ -732,7 +736,8 @@ function copyTradeSelect(whereSql: string): string {
       c.entry_price_sol AS entry_price,
       c.high_price_sol AS high_price,
       c.tp_price_sol AS tp_price,
-      c.copy_event_id
+      c.copy_event_id,
+      c.entry_land_path
     FROM copy_trades c
     ${whereSql}
     ORDER BY c.entry_ts ASC, c.id ASC`;
