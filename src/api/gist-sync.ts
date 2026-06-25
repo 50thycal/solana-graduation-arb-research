@@ -69,6 +69,7 @@ import { globalRpcLimiter } from '../utils/rpc-limiter';
 import {
   getGraduationCount,
   getLastBotError,
+  getRecentBotErrors,
   getRecentTrades,
   getTradeStats,
   getTradeStatsByStrategy,
@@ -98,7 +99,23 @@ const OWNER = '50thycal';
 const REPO = 'solana-graduation-arb-research';
 const BRANCH = 'bot-status';
 const COMMANDS_FILE = 'strategy-commands.json';
+// Inbound ad-hoc DB query channel (mirror of COMMANDS_FILE). Claude pushes a
+// db-query.json to main with read-only SELECTs; we run them against the live
+// SQLite handle, publish db-query-results.json to bot-status, and delete the
+// request. Lets a web session self-serve arbitrary DB reads without direct
+// Railway access — same push/poll loop the strategy commands already use.
+const DB_QUERY_FILE = 'db-query.json';
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
+
+// How many recent log-buffer entries to publish to logs.json each sync cycle.
+// The buffer caps at 5000 (~2 MB); 1500 keeps the synced file readable via the
+// GitHub MCP while still covering recent activity. Override with LOG_SYNC_LIMIT.
+const LOG_SYNC_LIMIT = parseInt(process.env.LOG_SYNC_LIMIT ?? '1500', 10) || 1500;
+
+// Hard ceiling on rows returned by an ad-hoc DB query, regardless of the
+// per-query max_rows. Bounds memory + the size of db-query-results.json.
+const DB_QUERY_HARD_ROW_CAP = 50_000;
+const DB_QUERY_DEFAULT_ROW_CAP = 1000;
 
 // Heavy compute panels — entryTimeMatrix walks ~60 catalog filters × 6 entry
 // checkpoints × the 12×10 sim grid every cycle, exitSimMatrix runs the dynamic
@@ -329,6 +346,34 @@ interface StrategyCommandsFile {
   commands: StrategyCommand[];
 }
 
+/** One read-only query request inside db-query.json (pushed to main by Claude). */
+interface DbQueryRequest {
+  id: string;
+  sql: string;
+  max_rows?: number;
+}
+interface DbQueryFile {
+  queries: DbQueryRequest[];
+}
+/** One query's outcome, published in db-query-results.json on bot-status. */
+interface DbQueryResult {
+  id: string;
+  sql: string;
+  ok: boolean;
+  error?: string;
+  columns?: string[];
+  rows?: unknown[];
+  row_count?: number;
+  truncated?: boolean;
+  elapsed_ms?: number;
+}
+interface DbQueryResultsFile {
+  generated_at: string;
+  processed_at: string | null;
+  query_count: number;
+  results: DbQueryResult[];
+}
+
 export class GistSync {
   private readonly db: Database.Database;
   private readonly logBuffer: LogBuffer;
@@ -357,6 +402,11 @@ export class GistSync {
     results: Array<{ id: string; action: string; ok: boolean; error?: string }>;
   }> = [];
   private static readonly COMMAND_BATCH_HISTORY = 20;
+
+  // Latest ad-hoc DB query outcome, published as db-query-results.json each
+  // sync cycle. Overwritten whenever a new db-query.json is processed; null
+  // until the first query runs.
+  private lastDbQueryResults: DbQueryResultsFile | null = null;
 
   constructor(opts: {
     db: Database.Database;
@@ -692,6 +742,120 @@ export class GistSync {
       });
     } catch (err) {
       logger.error({ err }, 'Failed to delete strategy-commands.json');
+    }
+  }
+
+  /**
+   * Poll for db-query.json on the main branch. When found, run each read-only
+   * query against the live SQLite handle, stash the outcome in
+   * lastDbQueryResults (published as db-query-results.json by buildPayloads on
+   * this same cycle), then delete the request file.
+   *
+   * Safety: every statement is rejected unless better-sqlite3 reports it as
+   * `readonly` (no INSERT/UPDATE/DELETE/DDL/PRAGMA-write can run) and `reader`
+   * (it returns rows). Results are row-capped. better-sqlite3 is synchronous,
+   * so a pathological full-table scan still blocks the event loop for its
+   * duration — the row cap bounds memory, not scan time. This is the operator's
+   * own research DB, so that tradeoff is acceptable; keep queries selective.
+   */
+  private async processDbQueries(): Promise<void> {
+    let fileInfo: { sha: string; content: string };
+    try {
+      const resp = await fetch(
+        `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DB_QUERY_FILE}?ref=main`,
+        { headers: this.headers() },
+      );
+      if (resp.status === 404) return; // No query pending
+      if (!resp.ok) {
+        logger.debug('Inbound db-query check returned %d', resp.status);
+        return;
+      }
+      fileInfo = (await resp.json()) as { sha: string; content: string };
+    } catch (err) {
+      logger.warn({ err }, 'Inbound db-query check failed — will retry next cycle');
+      return;
+    }
+
+    const content = Buffer.from(fileInfo.content, 'base64').toString('utf-8');
+    let parsed: DbQueryFile;
+    try {
+      parsed = JSON.parse(content) as DbQueryFile;
+    } catch {
+      logger.error('Failed to parse db-query.json — deleting');
+      await this.deleteDbQueryFile(fileInfo.sha);
+      return;
+    }
+
+    const queries = Array.isArray(parsed.queries) ? parsed.queries : [];
+    const results: DbQueryResult[] = [];
+    for (const q of queries) {
+      if (!q || typeof q.sql !== 'string' || typeof q.id !== 'string') {
+        results.push({ id: q?.id ?? '(missing id)', sql: q?.sql ?? '', ok: false, error: 'each query needs string id + sql' });
+        continue;
+      }
+      results.push(this.executeDbQuery(q.id, q.sql, q.max_rows));
+    }
+
+    this.lastDbQueryResults = {
+      generated_at: new Date().toISOString(),
+      processed_at: new Date().toISOString(),
+      query_count: results.length,
+      results,
+    };
+    logger.info({ query_count: results.length }, 'Processed inbound DB queries');
+    await this.deleteDbQueryFile(fileInfo.sha);
+  }
+
+  /** Run one guarded read-only query and shape it into a DbQueryResult. */
+  private executeDbQuery(id: string, sql: string, maxRows?: number): DbQueryResult {
+    const startedAt = Date.now();
+    const cap = Math.min(
+      Math.max(1, Number.isFinite(maxRows as number) ? (maxRows as number) : DB_QUERY_DEFAULT_ROW_CAP),
+      DB_QUERY_HARD_ROW_CAP,
+    );
+    let stmt: Database.Statement;
+    try {
+      // better-sqlite3.prepare() compiles exactly one statement and throws on a
+      // multi-statement string, so "SELECT 1; DROP TABLE x" never reaches exec.
+      stmt = this.db.prepare(sql);
+    } catch (err) {
+      return { id, sql, ok: false, error: `prepare failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    if (!stmt.readonly) {
+      return { id, sql, ok: false, error: 'rejected: only read-only queries are allowed (statement writes or is DDL/PRAGMA-write)' };
+    }
+    if (!stmt.reader) {
+      return { id, sql, ok: false, error: 'rejected: query returns no rows (must be a SELECT or other row-returning read)' };
+    }
+    const rows: unknown[] = [];
+    let truncated = false;
+    try {
+      for (const row of stmt.iterate()) {
+        if (rows.length >= cap) { truncated = true; break; }
+        rows.push(row);
+      }
+    } catch (err) {
+      return { id, sql, ok: false, error: `execution failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+    let columns: string[] = [];
+    try {
+      columns = stmt.columns().map(c => c.name);
+    } catch { /* columns() only valid on readers; we already gated on stmt.reader */ }
+    return {
+      id, sql, ok: true, columns, rows,
+      row_count: rows.length, truncated, elapsed_ms: Date.now() - startedAt,
+    };
+  }
+
+  private async deleteDbQueryFile(sha: string): Promise<void> {
+    try {
+      await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DB_QUERY_FILE}`, {
+        method: 'DELETE',
+        headers: this.headers(),
+        body: JSON.stringify({ message: 'bot: processed db query [skip ci]', sha }),
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to delete db-query.json');
     }
   }
 
@@ -1155,6 +1319,33 @@ export class GistSync {
       'trading.json': JSON.stringify(tradingData, null, 2),
       'live-execution.json': JSON.stringify(liveExecutionStats, null, 2),
       'live-training.json': JSON.stringify(liveTrainingData, null, 2),
+
+      // ── Log + error self-service (no more "logs are live-only on Railway") ──
+      // logs.json: recent log-buffer tail (all levels) + a retained warn/error
+      // slice so warnings survive even after info logs push them out of the tail.
+      'logs.json': JSON.stringify({
+        generated_at: genAt,
+        buffer_size: this.logBuffer.size(),
+        tail_limit: LOG_SYNC_LIMIT,
+        entries: this.logBuffer.query({ limit: LOG_SYNC_LIMIT }),
+        warn_error_entries: this.logBuffer.query({ level: 'warn', limit: 500 }),
+      }, null, 2),
+      'bot-errors.json': JSON.stringify({
+        generated_at: genAt,
+        last_error: getLastBotError(this.db),
+        recent: getRecentBotErrors(this.db, 20),
+      }, null, 2),
+      // db-query-results.json: outcome of the most recent db-query.json request.
+      'db-query-results.json': JSON.stringify(
+        this.lastDbQueryResults ?? {
+          generated_at: genAt,
+          processed_at: null,
+          query_count: 0,
+          results: [],
+          note: 'No DB query has run yet. Push db-query.json to the main branch ({ "queries": [{ "id", "sql", "max_rows" }] }) to run a read-only SELECT; results land here on the next sync (~2 min).',
+        },
+        null, 2,
+      ),
     };
   }
 
@@ -1206,6 +1397,10 @@ export class GistSync {
   private async sync(): Promise<void> {
     // Process any inbound strategy commands before building status
     await this.processInboundCommands();
+
+    // Process any inbound ad-hoc DB queries so their results ride out on this
+    // same push cycle (db-query-results.json is built inside buildPayloads).
+    await this.processDbQueries();
 
     const payloads = await this.buildPayloads();
 
