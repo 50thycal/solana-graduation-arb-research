@@ -317,6 +317,8 @@ export interface ProbeEventInsert {
   their_block_time: number | null;
   detected_at: number;        // unix ms
   detection_lag_sec: number | null;
+  decision_lag_ms: number | null;  // WS notification arrival → copy dispatch (our processing)
+  total_lag_sec: number | null;    // lead block_time → copy dispatch (transport + decision)
   slot: number | null;
 }
 
@@ -324,7 +326,27 @@ export interface ProbeEventInsert {
 export function insertProbeEvent(db: Database.Database, ev: ProbeEventInsert): void {
   db.prepare(`
     INSERT OR IGNORE INTO copy_probe_events
-      (wallet_address, signature, mint, action, sol_delta, venue, tier, their_block_time, detected_at, detection_lag_sec, slot)
-    VALUES (@wallet_address, @signature, @mint, @action, @sol_delta, @venue, @tier, @their_block_time, @detected_at, @detection_lag_sec, @slot)
+      (wallet_address, signature, mint, action, sol_delta, venue, tier, their_block_time, detected_at, detection_lag_sec, decision_lag_ms, total_lag_sec, slot)
+    VALUES (@wallet_address, @signature, @mint, @action, @sol_delta, @venue, @tier, @their_block_time, @detected_at, @detection_lag_sec, @decision_lag_ms, @total_lag_sec, @slot)
   `).run(ev);
+}
+
+/**
+ * Backfill the transport-derived lags once block_time is known. The fast WS-parse
+ * path dispatches the copy BEFORE block_time is available (it isn't in the
+ * processed-commitment push), so detection_lag_sec / total_lag_sec are filled in
+ * here from a cheap async getBlockTime(slot). total = transport + the row's own
+ * already-stored decision_lag_ms. Updates every wallet row sharing the signature.
+ */
+export function updateProbeEventLag(
+  db: Database.Database,
+  args: { signature: string; their_block_time: number; detection_lag_sec: number },
+): void {
+  db.prepare(`
+    UPDATE copy_probe_events
+    SET their_block_time = @their_block_time,
+        detection_lag_sec = @detection_lag_sec,
+        total_lag_sec = ROUND(@detection_lag_sec + COALESCE(decision_lag_ms, 0) / 1000.0, 2)
+    WHERE signature = @signature
+  `).run(args);
 }

@@ -11155,6 +11155,12 @@ export function renderCopyTradesHtml(data: any): string {
     return `${p(dt.getUTCMonth() + 1)}-${p(dt.getUTCDate())} ${p(dt.getUTCHours())}:${p(dt.getUTCMinutes())}Z`;
   };
   const ov = d.overall ?? {};
+  const lat = d.latency ?? null;
+  // Compact "avg X (p50 / p95, n=…)" line for a latency stat block (or — if empty).
+  const latLine = (o: any, unit: string) =>
+    o && typeof o.mean === 'number'
+      ? `avg ${o.mean}${unit} <span class="desc">(p50 ${o.p50} / p95 ${o.p95})</span>`
+      : '—';
 
   // ── Regime banner: is NOW a good window to copy trade? (1-10 score) ────────
   const rg = d.regime ?? {};
@@ -11393,9 +11399,15 @@ export function renderCopyTradesHtml(data: any): string {
       </div>
       <div>
         <div class="stat"><span class="label">Median hold</span><span class="value">${ov.median_hold_sec != null ? Math.round(ov.median_hold_sec) + 's' : '—'}</span></div>
-        <div class="stat"><span class="label">Avg detection lag</span><span class="value">${n(ov.avg_detection_lag_sec)}s</span></div>
+        <div class="stat"><span class="label">Avg copy latency</span><span class="value">${lat?.total_lag_sec ? n(lat.total_lag_sec.mean) + 's' : n(ov.avg_detection_lag_sec) + 's'}</span></div>
       </div>
     </div>
+    ${lat ? `<div class="desc" style="margin-top:8px;line-height:1.5">
+      <b>End-to-end follower latency</b> (last ${lat.window_days}d, n=${lat.total_lag_sec?.n ?? lat.transport_lag_sec?.n ?? 0}):
+      transport (lead fill→our WS) ${latLine(lat.transport_lag_sec, 's')} ·
+      decision (WS→copy dispatch) ${latLine(lat.decision_lag_ms, 'ms')} ·
+      <b>total (lead fill→copy dispatch) ${latLine(lat.total_lag_sec, 's')}</b>.
+      Live execution would add a further ~1–2 block on-chain land gap on top.</div>` : ''}
   </div>`;
 
   // ── Per-strategy table: robustness gates, drift, paired delta, 14d sparkline ──

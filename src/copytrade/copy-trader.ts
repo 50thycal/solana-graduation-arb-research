@@ -2260,6 +2260,32 @@ export function computeCopyTrades(db: Database.Database): unknown {
     phase: 'phase2-shadow-copy',
     note: 'SHADOW copy trades — no real funds. Entry at pool price ~1.1s after the lead wallet; net_sol after the SIM round-trip cost (scale-out partials folded in). Coverage limited to tokens in our graduations table. OVERALL counts ACTIVE strategies only (killed strategies leave closed rows in the DB; retired_summary reports those separately). CAVEATS: strategies share entry signals — totals are not independent (see paired_vs_baseline); total_net_sol_exit_stress re-nets every closed remainder leg with the exit fill worsened by ' + EXIT_STRESS_PCT + '% (scale-out partials kept as recorded); open_unrealized_sol marks open positions to the last polled pool price (open_priced = how many have one); total_incl_open_sol = closed + unrealized. MEASURED-LAG (-lag) variants wait entry_delay_sec after detection and enter at the re-fetched price (entry_drift = measured detection→fill drift); follow_sell exits on those variants are re-fetched after follow_sell_delay_sec; -drift variants skip entries whose measured drift exceeds max_entry_drift_pct (drift_skips + skipped_drift report the gate).',
     size_sol: COPY_SIZE_SOL,
+    // End-to-end follower latency over the last 7d of probe events. transport =
+    // lead block_time → our WS notification; decision = notification → copy
+    // dispatch (our in-process parse, ~ms since we stopped blocking on a
+    // confirm-fetch); total = block_time → dispatch (the real disadvantage we'd
+    // carry into live execution, before the on-chain land gap).
+    latency: (() => {
+      let rows: Array<{ detection_lag_sec: number | null; decision_lag_ms: number | null; total_lag_sec: number | null }> = [];
+      try {
+        rows = db.prepare(`
+          SELECT detection_lag_sec, decision_lag_ms, total_lag_sec
+          FROM copy_probe_events WHERE detected_at > ?
+        `).all(Date.now() - 7 * 86400_000) as typeof rows;
+      } catch { return null; }
+      const sum = (vals: Array<number | null>) => {
+        const s = vals.filter((v): v is number => typeof v === 'number').sort((a, b) => a - b);
+        if (!s.length) return null;
+        const pc = (q: number) => +s[Math.min(s.length - 1, Math.floor(s.length * q))].toFixed(2);
+        return { n: s.length, mean: +(s.reduce((a, b) => a + b, 0) / s.length).toFixed(2), p50: pc(0.5), p95: pc(0.95), max: +s[s.length - 1].toFixed(2) };
+      };
+      return {
+        window_days: 7,
+        transport_lag_sec: sum(rows.map((r) => r.detection_lag_sec)),
+        decision_lag_ms: sum(rows.map((r) => r.decision_lag_ms)),
+        total_lag_sec: sum(rows.map((r) => r.total_lag_sec)),
+      };
+    })(),
     paired_baseline: PAIRED_BASELINE,
     // 1-10 window score + hourly series — "is NOW a good time to copy trade".
     // Baseline series = copy-tp100-sl30 (roster-stable).
