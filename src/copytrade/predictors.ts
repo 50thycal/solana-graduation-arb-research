@@ -1,23 +1,14 @@
 /**
- * src/api/price-path-v2-predictors.ts
+ * src/copytrade/predictors.ts
  *
- * Source-of-truth list of columns allowed as PREDICTORS on the /price-path-v2
- * feature investigator. Outcome-only fields (anything that exists only AFTER
- * the T+30 entry decision) MUST NOT appear here.
+ * T+30-safe predictor column whitelist used by the copy-trade smart-money
+ * analysis (smart-money.ts) to compare feature signatures of tokens bought by
+ * smart wallets vs. the rest. Relocated here from the (deleted) graduation
+ * research module src/api/price-path-v2-predictors.ts during the copy-trading
+ * refactor so smart-money no longer depends on research code.
  *
- * Whitelist is hand-curated against schema.ts (columns 159-294) — do NOT
- * auto-derive from FILTER_CATALOG. FILTER_CATALOG groups by filter usability,
- * not time-window safety; some catalog filters wrap post-T+30 inputs that are
- * safe in that strategy context but NOT safe as a backward-looking predictor
- * here. Cross-check at code review.
- *
- * Coverage classes:
- *   `always`         populated on every complete row (full coverage)
- *   `auto-backfill`  backfilled at boot via idempotent bot_settings marker —
- *                    safe on historical rows
- *   `new-only`       permanent NULL on pre-rollout rows because raw inputs
- *                    weren't stored; Panel 2 surfaces winner_n_with_data so
- *                    the coverage gap is visible
+ * Outcome-only fields (anything that exists only AFTER the T+30 entry decision)
+ * MUST NOT appear here — using them as a predictor would be a look-ahead leak.
  */
 
 export type CoverageClass = 'always' | 'auto-backfill' | 'new-only';
@@ -84,20 +75,4 @@ export const PREDICTOR_WHITELIST: PredictorDef[] = [
   { col: 'buy_pressure_buy_ratio',      display: 'Buy ratio (buys / total)',        units: 'ratio 0-1',  coverage: 'new-only', direction_hint: 'higher_is_better' },
   { col: 'buy_pressure_whale_pct',      display: 'Whale share of buy SOL',          units: '%',          coverage: 'new-only', direction_hint: 'lower_is_better' },
   { col: 'buy_pressure_trade_count',    display: 'Buy pressure tx count',           units: 'count',      coverage: 'new-only', direction_hint: 'higher_is_better' },
-];
-
-/**
- * Curated bivariate pairs for Panel 4. First pair is mandatory: concentration
- * × velocity is the strongest combined signal in both the MemeTrans
- * literature and the GMGN terminal's surfaced metrics.
- */
-export const BIVARIATE_PAIRS: Array<[string, string]> = [
-  ['top10_wallet_pct',           'bc_velocity_sol_per_min'], // mandatory
-  ['top5_wallet_pct',            'bc_velocity_sol_per_min'],
-  ['flow_imbalance_t30',         'sniper_count_t0_t2'],
-  ['monotonicity_0_30',          'max_drawdown_0_30'],
-  ['holder_count',               'dev_wallet_pct'],
-  ['creator_prior_rug_rate',     'sniper_wallet_velocity_avg'],
-  ['buy_pressure_buy_ratio',     'buy_pressure_whale_pct'],
-  ['liquidity_sol_t30',          'price_vs_vwap_t30_pct'],
 ];
