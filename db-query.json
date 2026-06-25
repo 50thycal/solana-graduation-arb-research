@@ -1,9 +1,0 @@
-{
-  "queries": [
-    { "id": "fix-grad-count", "sql": "SELECT COUNT(*) AS n FROM graduation_momentum", "max_rows": 10 },
-    { "id": "fix-label-dist", "sql": "SELECT label, COUNT(*) AS n FROM graduation_momentum GROUP BY label ORDER BY n DESC", "max_rows": 20 },
-    { "id": "fix-pragma", "sql": "PRAGMA table_info(graduation_momentum)", "max_rows": 250 },
-    { "id": "fix-sqlite-master", "sql": "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", "max_rows": 200 },
-    { "id": "fix-guard-write", "sql": "UPDATE graduation_momentum SET label='PUMP' WHERE 1=0", "max_rows": 10 }
-  ]
-}
