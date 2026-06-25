@@ -6502,6 +6502,7 @@ export function renderLiveTrainingHtml(data: any): string {
         <div style="margin-top:14px;overflow-x:auto" id="lt-cmp-table"></div>
         <div class="lt-attrib" id="lt-cmp-attrib"></div>
         <div class="lt-attrib" id="lt-cmp-bench"></div>
+        <div class="lt-attrib" id="lt-cmp-slipcap"></div>
         <details style="margin-top:12px">
           <summary style="cursor:pointer;color:#94a3b8;font-size:12px">Per-graduation pairs (<span id="lt-cmp-n">0</span>)</summary>
           <div style="overflow-x:auto;margin-top:8px">
@@ -7127,6 +7128,40 @@ export function renderLiveTrainingHtml(data: any): string {
     };
   }
 
+  // ── Slip-cap counterfactual (Tier 1) — mirrors computeSlipCapOverlay server-side ──
+  var SLIP_CAP_FLIP_ON_TS = 1782408610; // 2026-06-25T17:30Z — keep in sync with live-training-data.ts
+  var SLIP_CAP_LEVELS = [1,2,3];
+  function jsComputeSlipCapWindow(trades, flipOnTs){
+    var elig=trades.filter(function(t){return t.status==='closed'&&num(t.entry_slip_pct)!==null&&num(t.net_profit_sol)!==null;});
+    function sumNet(xs){ var s=0; for(var i=0;i<xs.length;i++) s+=num(xs[i].net_profit_sol)||0; return s; }
+    var baseNet=sumNet(elig);
+    var startTs=null; for(var i=0;i<elig.length;i++){ var t=num(elig[i].entry_ts); if(t!==null&&(startTs===null||t<startTs)) startTs=t; }
+    var slips=notNull(elig.map(function(t){return num(t.entry_slip_pct);}));
+    var rows=SLIP_CAP_LEVELS.map(function(cap){
+      var kept=elig.filter(function(t){return (num(t.entry_slip_pct)||0)<=cap;});
+      var skipped=elig.filter(function(t){return (num(t.entry_slip_pct)||0)>cap;});
+      var winners=skipped.filter(function(t){return (num(t.net_profit_sol)||0)>0;});
+      var losers=skipped.filter(function(t){return (num(t.net_profit_sol)||0)<=0;});
+      var keptWins=kept.filter(function(t){return (num(t.net_profit_sol)||0)>0;}).length;
+      var keptNet=sumNet(kept);
+      return { cap_pct:cap, kept_n:kept.length, skipped_n:skipped.length,
+        kept_net_sol:jround(keptNet), skipped_net_sol:jround(sumNet(skipped)),
+        improvement_sol:jround(keptNet-baseNet),
+        winners_dropped_n:winners.length, winners_dropped_sol:jround(sumNet(winners)),
+        losers_dropped_n:losers.length, losers_dropped_sol:jround(sumNet(losers)),
+        kept_win_rate_pct:kept.length? jround(keptWins/kept.length*100,1): null,
+        skipped_win_rate_pct:skipped.length? jround(winners.length/skipped.length*100,1): null };
+    });
+    return { window_start_ts:startTs, flip_on_ts:flipOnTs, n_eligible:elig.length,
+      baseline_net_sol:jround(baseNet), avg_entry_slip_pct:jround(jmean(slips),3), rows:rows };
+  }
+  function jsComputeSlipCapOverlay(liveTr){
+    var closed=liveTr.filter(function(t){return t.status==='closed';});
+    return { flip_on_ts:SLIP_CAP_FLIP_ON_TS, caps_pct:SLIP_CAP_LEVELS,
+      since_conception:jsComputeSlipCapWindow(closed,null),
+      since_flip_on:jsComputeSlipCapWindow(closed.filter(function(t){return (num(t.entry_ts)||0)>=SLIP_CAP_FLIP_ON_TS;}),SLIP_CAP_FLIP_ON_TS) };
+  }
+
   function jsComputeComparison(liveTr, shadowTr){
     var map=LT.mapping||{};
     var COPY_WIN=60; // tight mint+time fallback (mirror of COPY_MINT_MATCH_WINDOW_SEC); genuine twins enter <=5s apart
@@ -7309,6 +7344,39 @@ export function renderLiveTrainingHtml(data: any): string {
   // Real <table> (3 fixed columns) — robust alignment vs the old flow grid.
   function cmpTr(lab, live, shadow){ return '<tr><td class="rl">'+lab+'</td><td>'+live+'</td><td>'+shadow+'</td></tr>'; }
   function cspan(v,fmt){ return '<span class="'+colorClass(v)+'">'+fmt+'</span>'; }
+  function renderSlipCap(sc){
+    function sgn(v){ return (v===null||v===undefined)?'—':((v>=0?'+':'')+f4(v)); }
+    function win(w, title, sub){
+      if(!w || w.n_eligible===0){
+        return '<b>'+title+'</b> <span style="color:#64748b">'+sub+'</span>'
+          +'<br><span style="color:#64748b">— no eligible fills in this window yet (accumulating going forward).</span>';
+      }
+      var h='<b>'+title+'</b> <span style="color:#64748b">'+sub+'</span>'
+        +'<br>baseline (no cap): '+cspan(w.baseline_net_sol,f4(w.baseline_net_sol)+' SOL')
+        +' on n='+w.n_eligible+' fills · avg entry slip '+fpctp(w.avg_entry_slip_pct);
+      h+='<table class="lt-cmp-tbl" style="margin-top:6px"><thead><tr>'
+        +'<th>cap</th><th>kept</th><th>book w/ cap</th><th>Δ vs base</th>'
+        +'<th>dropped W/L</th><th>dropped net</th><th>drop win%</th></tr></thead><tbody>';
+      for(var i=0;i<w.rows.length;i++){ var r=w.rows[i];
+        h+='<tr><td>≤'+r.cap_pct+'%</td>'
+          +'<td>'+r.kept_n+'/'+(r.kept_n+r.skipped_n)+'</td>'
+          +'<td>'+cspan(r.kept_net_sol,f4(r.kept_net_sol))+'</td>'
+          +'<td>'+cspan(r.improvement_sol,sgn(r.improvement_sol))+'</td>'
+          +'<td><span class="green">'+r.winners_dropped_n+'W</span> / <span class="red">'+r.losers_dropped_n+'L</span></td>'
+          +'<td>'+cspan(r.skipped_net_sol,f4(r.skipped_net_sol))+'</td>'
+          +'<td>'+(r.skipped_win_rate_pct===null?'—':r.skipped_win_rate_pct+'%')+'</td></tr>';
+      }
+      h+='</tbody></table>';
+      return h;
+    }
+    var hdr='<b>Slippage-cap counterfactual</b> <span style="color:#64748b">(Tier 1 — measurement only, no behavior change)</span>. '
+      +'Drops closed live entries whose <i>realized</i> entry slip exceeded the cap = the revert outcome of an on-chain max-slip cap. '
+      +'A good cut shows a positive Δ, mostly losers dropped (high "dropped net" loss, low drop win%), and few winners lost. '
+      +'<span style="color:#64748b">Ignores the freed-concurrency-slot substitution (a reverted entry frees a slot live might refill).</span>';
+    return hdr
+      +'<div style="margin-top:8px">'+win(sc.since_conception,'Since live conception','(full backtest on realized slip)')+'</div>'
+      +'<div style="margin-top:12px">'+win(sc.since_flip_on,'Since flip-on '+(sc.flip_on_ts?fts(sc.flip_on_ts):'—'),'(forward test from when the cap turns on)')+'</div>';
+  }
   function renderComparison(){
     var c=comparisonFor();
     var body=document.getElementById('lt-cmp-body'), empty=document.getElementById('lt-cmp-empty');
@@ -7370,6 +7438,10 @@ export function renderLiveTrainingHtml(data: any): string {
         +cspan(rr.adjusted_live.total_net_sol,f4(rr.adjusted_live.total_net_sol)+' SOL')+' total · '+cspan(adjMo,f4(adjMo)+' SOL/mo')+' projected.';
       benchEl.innerHTML=b;
     } else if(benchEl){ benchEl.innerHTML=''; }
+    // Slip-cap counterfactual overlay (Tier 1) — computed on the currently-selected
+    // live trades so it tracks the strategy selector, same as the rest of the panel.
+    var scEl=document.getElementById('lt-cmp-slipcap');
+    if(scEl){ scEl.innerHTML=renderSlipCap(jsComputeSlipCapOverlay(liveTrades())); }
     document.getElementById('lt-cmp-n').textContent=c.matched_n;
     // pairs table
     var tb=document.querySelector('#lt-cmp-pairs tbody'); var rows='';
