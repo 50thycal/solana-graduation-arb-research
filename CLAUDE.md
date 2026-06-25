@@ -232,6 +232,9 @@ Use `WebFetch` against `https://raw.githubusercontent.com/50thycal/solana-gradua
 - **`regime-analysis.json`** — universe-level rolling pump_rate (% pct_t300 ≥ +50% over last 50 grads) + fast_rug_rate (% ≤ −50%) classified GREEN/YELLOW/RED per hourly bucket, with `live_strategies[]` overlay (each strategy's `cum_net_sol[]`, `hourly_net_sol[]` with regime tags, and `green_net_sol` / `yellow_net_sol` / `red_net_sol` per-regime breakdown). Use `current.regime` for the live snapshot; `regime_summary.green_avg_live_sol_per_hr` vs `red_avg_live_sol_per_hr` for the headline "does the signal separate good from bad windows" test; `signal_vs_pnl[].best_pump_lag` / `best_rug_lag` to check if signals lead live PnL (lag > 0 = predictive). Phase 1 research overlay — no gating yet.
 - **`counterfactual.json`** — per-strategy filter contribution + TP/SL grid sweep.
 - **`loss-postmortem.json`** — worst-20 closed trades clustered by entry-time feature deviation.
+- **`logs.json`** — recent in-process log-buffer tail (`entries`, last `LOG_SYNC_LIMIT`=1500 lines, all levels) + a retained `warn_error_entries` slice (last 500 warn/error) so warnings survive even after info logs push them out of the tail. Synced every cycle — no more "logs are live-only on Railway". Each entry: `{ts, level, name, msg, bindings}`.
+- **`bot-errors.json`** — `last_error` + `recent` (last 20) uncaught exceptions / unhandled rejections from the DB error table. Synced every cycle.
+- **`db-query-results.json`** — outcome of the most recent ad-hoc DB query you pushed via `db-query.json` (see "Pushing DB queries" below). Holds `results[]` with `{id, sql, ok, columns, rows, row_count, truncated, elapsed_ms, error}` per query.
 
 ### Example: reading data via GitHub MCP + python3
 
@@ -379,17 +382,40 @@ Claude manages strategies via `strategy-commands.json` on the **main branch**. T
 
 **Latency:** ~2 minutes (next sync cycle). Confirm via `strategies.json` / `journal.json` / `report.json` on bot-status. Per-batch outcomes are also in `command-results.json`.
 
-### Live-only endpoints (NOT synced to bot-status)
+### Pushing DB queries (self-serve the database)
 
-These require direct Railway access (currently 403 from Claude sessions). If you need this data, ask the human operator.
+You can run **arbitrary read-only SELECTs** against the live SQLite DB without operator help. Same push/poll loop as strategy commands: push `db-query.json` to the **main branch** via `mcp__github__create_or_update_file`. The bot polls every sync cycle (~2 min), runs each query, writes the answers to `db-query-results.json` on **bot-status**, and deletes the request file.
 
-| Endpoint | Description |
+**File format (`db-query.json` on `main`):**
+
+```json
+{
+  "queries": [
+    { "id": "vel-dist", "sql": "SELECT label, COUNT(*) n, AVG(bc_velocity_sol_per_min) avg_vel FROM graduation_momentum WHERE token_age_seconds > 600 GROUP BY label", "max_rows": 100 },
+    { "id": "recent-pumps", "sql": "SELECT mint, pct_t300 FROM graduation_momentum WHERE label='PUMP' ORDER BY graduation_id DESC LIMIT 20" }
+  ]
+}
+```
+
+**Guards (enforced bot-side — a rejected query comes back with an `error`, nothing runs):**
+- **Read-only only.** Anything that isn't `readonly` per better-sqlite3 — INSERT/UPDATE/DELETE/DDL, write-PRAGMAs — is rejected. SELECTs and read PRAGMAs (e.g. `PRAGMA table_info(graduation_momentum)`) pass.
+- **Single statement.** Multi-statement strings (`SELECT 1; DROP …`) throw at prepare and are rejected.
+- **Row-capped.** `max_rows` defaults to 1000, hard ceiling 50000. If hit, the result sets `truncated: true`.
+- Write literal SQL (no `?` placeholders — they aren't bound). better-sqlite3 is synchronous, so keep queries selective; a full-table scan blocks the bot for its duration.
+
+**Reading results:** fetch `db-query-results.json` from bot-status (~2 min later). Match by your `id`. Use this to inspect schema, sanity-check a filter's row counts before adding it to `FILTER_CATALOG`, or pull raw rows for any ad-hoc analysis.
+
+### Live endpoints — now mostly self-served
+
+Logs + errors are synced to bot-status every cycle: read **`logs.json`** and **`bot-errors.json`** instead of hitting Railway. Arbitrary graduation / skip rows are reachable via the DB-query channel above (`SELECT … FROM graduation_momentum` / `FROM trade_skips`). The endpoints below still exist on Railway for live/manual use but are **no longer required** for a Claude session — only ask the operator if the synced data is somehow stale or missing.
+
+| Endpoint | Self-serve equivalent |
 |---|---|
-| `GET /api/filter-catalog` | All filter definitions (`FILTER_CATALOG` in `src/api/aggregates.ts`) |
-| `GET /api/graduations?limit=50&label=PUMP&vel_min=5&vel_max=20` | Filtered graduation rows |
-| `GET /api/skips?limit=50` | Recent skipped candidates + reason counts |
-| `GET /api/logs?level=warn&limit=500&grep=<substr>&since=<epoch_ms>` | In-process log ring buffer |
-| `GET /api/bot-errors?limit=20` | Recent uncaught exceptions + unhandled rejections |
+| `GET /api/filter-catalog` | `FILTER_CATALOG` in `src/api/aggregates.ts` (read the source) |
+| `GET /api/graduations?…` | `db-query.json`: `SELECT … FROM graduation_momentum WHERE …` |
+| `GET /api/skips?limit=50` | `db-query.json`: `SELECT … FROM trade_skips ORDER BY … DESC LIMIT 50` |
+| `GET /api/logs?…` | **`logs.json`** on bot-status (synced every cycle) |
+| `GET /api/bot-errors?limit=20` | **`bot-errors.json`** on bot-status (synced every cycle) |
 
 ---
 
