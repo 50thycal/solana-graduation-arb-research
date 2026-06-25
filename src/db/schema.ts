@@ -1167,6 +1167,16 @@ function runMigrations(db: Database.Database): void {
       db.exec(`ALTER TABLE copy_probe_events ADD COLUMN tier TEXT`);
     }
   }
+  // Additive: pipeline-latency columns. decision_lag_ms = our processing time
+  // (WS notification arrival → copy dispatch); total_lag_sec = lead block_time →
+  // copy dispatch (transport + decision). Added when the probe stopped blocking
+  // the copy decision on a confirm-fetch and began parsing the WS push directly.
+  {
+    const pc = db.prepare("PRAGMA table_info(copy_probe_events)").all() as Array<{ name: string }>;
+    const have = new Set(pc.map((c) => c.name));
+    if (!have.has('decision_lag_ms')) db.exec(`ALTER TABLE copy_probe_events ADD COLUMN decision_lag_ms REAL`);
+    if (!have.has('total_lag_sec')) db.exec(`ALTER TABLE copy_probe_events ADD COLUMN total_lag_sec REAL`);
+  }
 
   // Add strategy_id to trades_v2 and trade_skips (safe migration)
   {

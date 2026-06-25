@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
-import { Connection } from '@solana/web3.js';
+import { Connection, PublicKey, ParsedTransactionWithMeta } from '@solana/web3.js';
 import WebSocket from 'ws';
-import { getFollowListAddresses, getSmartSetAddresses, insertProbeEvent } from './queries';
+import { getFollowListAddresses, getSmartSetAddresses, insertProbeEvent, updateProbeEventLag } from './queries';
 import { parseSwapForOwner } from './parse-swap';
 import type { CopyTrader } from './copy-trader';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -50,6 +50,10 @@ export class CopyFollowerProbe {
   private totalEvents = 0;
   private lastEventAt: number | null = null;
   private connected = false;
+  // How the swap was parsed: ws = straight off the WS push (fast, no RPC),
+  // rpc = fell back to getParsedTransaction because the push was unusable.
+  private parsedWs = 0;
+  private parsedRpc = 0;
   // Per-stage drop counters — surfaced in status so we can see WHERE
   // notifications are lost between arrival and a recorded event.
   private drops = { sig_missing: 0, dup: 0, no_connection: 0, fetch_null: 0, no_involved: 0 };
@@ -186,8 +190,16 @@ export class CopyFollowerProbe {
     return false;
   }
 
-  /** Parse a transactionNotification, fetch the tx for block time + a clean
-   *  parse, and record one probe event per watched wallet that swapped. */
+  /**
+   * Handle a transactionNotification. FAST PATH: the subscription requests
+   * `transactionDetails: 'full', encoding: 'jsonParsed'`, so the full parsed tx
+   * is already in the push — we parse it in-process and dispatch the copy with
+   * ZERO RPC and no confirm-fetch wait (which previously gated every copy by
+   * 1.1s + up to 4×1.5s of getParsedTransaction retries). block_time isn't in the
+   * processed-commitment push, so the transport lags are backfilled async via a
+   * cheap getBlockTime(slot) AFTER the copy already fired. FALLBACK: if the push
+   * is unusable, fetch + parse via RPC as before (so detection never regresses).
+   */
   private async handleNotification(params: unknown): Promise<void> {
     const detectedAtMs = Date.now();
     const p = params as { result?: Record<string, unknown> } | undefined;
@@ -200,15 +212,24 @@ export class CopyFollowerProbe {
       (value as { transaction?: { signatures?: string[] } }).transaction?.signatures?.[0];
     if (!signature) { this.drops.sig_missing++; return; }
     if (this.isDup(signature)) { this.drops.dup++; return; }
-    const slot = (value as { slot?: number }).slot ?? null;
+    const slot =
+      (value as { slot?: number }).slot ??
+      (result as { context?: { slot?: number } }).context?.slot ?? null;
 
+    // ── FAST PATH: parse straight off the WS push (no RPC) ──
+    const built = this.buildTxFromNotification(value);
+    if (built) {
+      this.parsedWs++;
+      // processed push has no block_time → transport lags filled async below.
+      this.processTx(built, signature, slot, built.blockTime ?? null, detectedAtMs);
+      if (built.blockTime == null && slot != null) this.scheduleLagFill(signature, slot, detectedAtMs);
+      this.writeStatus();
+      return;
+    }
+
+    // ── FALLBACK: push unusable — fetch + parse via RPC (legacy path) ──
     const connection = this.getConnection();
     if (!connection) { this.drops.no_connection++; return; }
-
-    // The notification fires at 'processed'; getParsedTransaction('confirmed')
-    // right then often returns null until the slot confirms. Retry a few times
-    // with backoff. Priority lane: this parse is THE copy-trade entry signal —
-    // under RPC contention it must win over research/enrichment callers.
     let tx = null as Awaited<ReturnType<typeof connection.getParsedTransaction>>;
     for (let attempt = 0; attempt < 4 && tx == null; attempt++) {
       if (attempt > 0) await new Promise((r) => setTimeout(r, 1500));
@@ -218,13 +239,14 @@ export class CopyFollowerProbe {
       } catch { /* retry */ }
     }
     if (!tx) { this.drops.fetch_null++; return; }
+    this.parsedRpc++;
+    this.processTx(tx, signature, slot, tx.blockTime ?? null, detectedAtMs);
+    this.writeStatus();
+  }
 
-    const blockTime = tx.blockTime ?? null;
-    const lag = blockTime != null ? +(detectedAtMs / 1000 - blockTime).toFixed(2) : null;
-
-    // Build the account-key set from BOTH static keys and address-lookup-table
-    // loaded addresses, so versioned txs (common for router swaps) still match.
-    const watch = new Set(this.watchlist);
+  /** All watchlist wallets present in a tx, from both static account keys and
+   *  address-lookup-table loaded addresses (router swaps are versioned). */
+  private accountKeysOf(tx: ParsedTransactionWithMeta): string[] {
     const keys = tx.transaction.message.accountKeys.map((k) =>
       typeof (k as { pubkey?: { toBase58(): string } }).pubkey !== 'undefined'
         ? (k as { pubkey: { toBase58(): string } }).pubkey.toBase58()
@@ -232,8 +254,28 @@ export class CopyFollowerProbe {
     for (const arr of [tx.meta?.loadedAddresses?.writable, tx.meta?.loadedAddresses?.readonly]) {
       for (const k of arr ?? []) keys.push(typeof k === 'string' ? k : k.toBase58());
     }
-    const involved = keys.filter((k) => watch.has(k));
+    return keys;
+  }
+
+  /** Record one probe event per watched wallet that swapped, and dispatch the
+   *  shadow copy. decision_lag_ms = our processing time (push arrival → dispatch);
+   *  total_lag_sec = block_time → dispatch. block_time may be null on the fast
+   *  path (backfilled later); the copy itself never waits on it. */
+  private processTx(
+    tx: ParsedTransactionWithMeta,
+    signature: string,
+    slot: number | null,
+    blockTime: number | null,
+    detectedAtMs: number,
+  ): void {
+    const watch = new Set(this.watchlist);
+    const involved = this.accountKeysOf(tx).filter((k) => watch.has(k));
     if (involved.length === 0) { this.drops.no_involved++; return; }
+
+    const dispatchMs = Date.now();
+    const decisionLagMs = +(dispatchMs - detectedAtMs).toFixed(1);
+    const detectionLagSec = blockTime != null ? +(detectedAtMs / 1000 - blockTime).toFixed(2) : null;
+    const totalLagSec = blockTime != null ? +(dispatchMs / 1000 - blockTime).toFixed(2) : null;
 
     for (const wallet of involved) {
       const swap = parseSwapForOwner(tx, wallet);
@@ -248,26 +290,90 @@ export class CopyFollowerProbe {
         tier,
         their_block_time: blockTime,
         detected_at: detectedAtMs,
-        detection_lag_sec: lag,
+        detection_lag_sec: detectionLagSec,
+        decision_lag_ms: decisionLagMs,
+        total_lag_sec: totalLagSec,
         slot,
       });
       this.totalEvents++;
       this.lastEventAt = detectedAtMs;
       if (swap) {
-        logger.info('Probe: %s %s %s %s lag=%ss',
-          wallet.slice(0, 6), swap.action, swap.venue, (swap.mint ?? '').slice(0, 6), lag ?? '?');
+        logger.info('Probe: %s %s %s %s lag=%ss dec=%sms',
+          wallet.slice(0, 6), swap.action, swap.venue, (swap.mint ?? '').slice(0, 6), detectionLagSec ?? '?', decisionLagMs);
         // Drive the shadow copy-trader (no real funds). Fire-and-forget.
         if (this.copyTrader) {
           if (swap.action === 'buy') {
             // |solDelta| = the SOL the lead spent — conviction-size signal.
-            this.copyTrader.onLeadBuy(swap.mint, wallet, tier, lag, Math.abs(swap.solDelta)).catch(() => { /* logged inside */ });
+            this.copyTrader.onLeadBuy(swap.mint, wallet, tier, detectionLagSec, Math.abs(swap.solDelta)).catch(() => { /* logged inside */ });
           } else if (swap.action === 'sell') {
             this.copyTrader.onLeadSell(swap.mint).catch(() => { /* logged inside */ });
           }
         }
       }
     }
-    this.writeStatus();
+  }
+
+  /** Normalize a transactionNotification push into a ParsedTransactionWithMeta
+   *  shape parseSwapForOwner/accountKeysOf can consume. jsonParsed account keys
+   *  arrive as base58 strings; we rebuild them as PublicKey objects so the parse
+   *  is identical whether the tx came from the WS push or getParsedTransaction.
+   *  Returns null (→ RPC fallback) if the push lacks meta/message. */
+  private buildTxFromNotification(value: Record<string, unknown>):
+    (ParsedTransactionWithMeta & { blockTime: number | null }) | null {
+    try {
+      const txWrap = (value as { transaction?: Record<string, unknown> }).transaction;
+      if (!txWrap) return null;
+      // EncodedTransactionWithStatusMeta ({transaction:{message}, meta}) or flat.
+      const inner = (txWrap as { transaction?: Record<string, unknown> }).transaction ?? txWrap;
+      const meta = ((txWrap as { meta?: Record<string, unknown> }).meta
+        ?? (value as { meta?: Record<string, unknown> }).meta) as ParsedTransactionWithMeta['meta'] | undefined;
+      const message = (inner as { message?: Record<string, unknown> }).message;
+      if (!meta || !message) return null;
+
+      const rawKeys = (message as { accountKeys?: unknown[] }).accountKeys ?? [];
+      const accountKeys = rawKeys.map((k) => {
+        const pk = typeof k === 'string' ? k : (k as { pubkey?: string }).pubkey;
+        const src = (k as { signer?: boolean; writable?: boolean });
+        return { pubkey: new PublicKey(pk as string), signer: !!src.signer, writable: !!src.writable };
+      });
+
+      const toPk = (arr?: unknown[]) =>
+        (arr ?? []).map((s) => (typeof s === 'string' ? new PublicKey(s) : s as PublicKey));
+      const la = (meta as { loadedAddresses?: { writable?: unknown[]; readonly?: unknown[] } }).loadedAddresses;
+      const normMeta = {
+        ...meta,
+        loadedAddresses: la ? { writable: toPk(la.writable), readonly: toPk(la.readonly) } : undefined,
+      } as ParsedTransactionWithMeta['meta'];
+
+      const blockTime = ((value as { blockTime?: number }).blockTime
+        ?? (txWrap as { blockTime?: number }).blockTime ?? null);
+
+      return {
+        slot: 0,
+        blockTime,
+        meta: normMeta,
+        transaction: { message: { ...(message as object), accountKeys } },
+      } as unknown as ParsedTransactionWithMeta & { blockTime: number | null };
+    } catch {
+      return null; // malformed push → fall back to RPC
+    }
+  }
+
+  /** Off-hot-path backfill of the transport lags once block_time is resolvable.
+   *  getBlockTime(slot) is one light call vs a full getParsedTransaction, and it
+   *  runs AFTER the copy has already dispatched, so it never adds entry latency. */
+  private scheduleLagFill(signature: string, slot: number, detectedAtMs: number): void {
+    void (async () => {
+      const conn = this.getConnection();
+      if (!conn) return;
+      if (!(await globalRpcLimiter.throttleOrDropPriority(20, 'probe_blocktime'))) return;
+      let bt: number | null = null;
+      try { bt = await conn.getBlockTime(slot); } catch { return; }
+      if (bt == null) return;
+      const detectionLagSec = +(detectedAtMs / 1000 - bt).toFixed(2);
+      try { updateProbeEventLag(this.db, { signature, their_block_time: bt, detection_lag_sec: detectionLagSec }); }
+      catch { /* non-fatal */ }
+    })();
   }
 
   private writeStatus(): void {
@@ -279,6 +385,11 @@ export class CopyFollowerProbe {
         total_notifications: this.totalNotifications,
         total_events: this.totalEvents,
         last_event_at: this.lastEventAt,
+        // Parse source split — ws = fast WS-push parse (no RPC), rpc = fallback
+        // fetch. ws should dominate; a rising rpc share means the push shape
+        // changed and we're paying the latency/credit cost again.
+        parsed_ws: this.parsedWs,
+        parsed_rpc: this.parsedRpc,
         drops: { ...this.drops },
         updated_at: Date.now(),
       };
@@ -309,9 +420,14 @@ export function computeCopyProbe(db: Database.Database): unknown {
     return { generated_at: new Date().toISOString(), phase: 'phase2-latency-probe', pending: true };
   }
 
+  const lagSummary = (rs: Array<Record<string, unknown>>, col: string) => {
+    const xs = rs.map((r) => r[col]).filter((v): v is number => typeof v === 'number').sort((a, b) => a - b);
+    if (!xs.length) return null;
+    return { n: xs.length, p50: percentile(xs, 0.5), p95: percentile(xs, 0.95), max: xs[xs.length - 1], mean: +(xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(2) };
+  };
+
   const summarize = (rs: Array<Record<string, unknown>>) => {
     const swaps = rs.filter((r) => r.action === 'buy' || r.action === 'sell');
-    const lags = rs.map((r) => r.detection_lag_sec).filter((v): v is number => typeof v === 'number').sort((a, b) => a - b);
     const byAction: Record<string, number> = {};
     const byVenue: Record<string, number> = {};
     const byWallet: Record<string, number> = {};
@@ -326,9 +442,12 @@ export function computeCopyProbe(db: Database.Database): unknown {
       by_action: byAction,
       by_venue: byVenue,
       by_wallet: byWallet,
-      detection_lag_sec: lags.length
-        ? { n: lags.length, p50: percentile(lags, 0.5), p95: percentile(lags, 0.95), max: lags[lags.length - 1], mean: +(lags.reduce((a, b) => a + b, 0) / lags.length).toFixed(2) }
-        : null,
+      // transport = lead block_time → our WS notification; decision = notification
+      // → copy dispatch (our processing, ~ms since the WS-push parse landed);
+      // total = block_time → dispatch (the real latency disadvantage).
+      detection_lag_sec: lagSummary(rs, 'detection_lag_sec'),
+      decision_lag_ms: lagSummary(rs, 'decision_lag_ms'),
+      total_lag_sec: lagSummary(rs, 'total_lag_sec'),
     };
   };
 
