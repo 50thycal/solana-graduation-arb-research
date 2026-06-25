@@ -25,7 +25,7 @@
  * Optional env var: GIST_SYNC_INTERVAL_MS — defaults to 120000 (2 min).
  */
 
-import type Database from 'better-sqlite3';
+import Database from 'better-sqlite3';
 import path from 'path';
 import { Worker } from 'worker_threads';
 import {
@@ -813,38 +813,63 @@ export class GistSync {
       Math.max(1, Number.isFinite(maxRows as number) ? (maxRows as number) : DB_QUERY_DEFAULT_ROW_CAP),
       DB_QUERY_HARD_ROW_CAP,
     );
-    let stmt: Database.Statement;
+
+    // CRITICAL: run ad-hoc Claude queries on a DEDICATED, short-lived read-only
+    // connection — never the shared read-write `this.db` handle that the
+    // collector, position-manager, and buildPayloads all use. The original
+    // #465 implementation ran `.iterate()` / `.columns()` directly on `this.db`
+    // and the process hard-crashed within seconds of every query (a native
+    // better-sqlite3 abort, leaving no catchable JS error / bot_errors row —
+    // confirmed by the container restarting 18s after each query). Opening our
+    // own readonly handle (mirrors gist-sync-worker.ts) fully isolates the blast
+    // radius, and we close it in `finally`. Columns are derived from the first
+    // row's keys rather than the native `.columns()` call (another crash vector).
+    let conn: Database.Database | null = null;
     try {
-      // better-sqlite3.prepare() compiles exactly one statement and throws on a
-      // multi-statement string, so "SELECT 1; DROP TABLE x" never reaches exec.
-      stmt = this.db.prepare(sql);
-    } catch (err) {
-      return { id, sql, ok: false, error: `prepare failed: ${err instanceof Error ? err.message : String(err)}` };
-    }
-    if (!stmt.readonly) {
-      return { id, sql, ok: false, error: 'rejected: only read-only queries are allowed (statement writes or is DDL/PRAGMA-write)' };
-    }
-    if (!stmt.reader) {
-      return { id, sql, ok: false, error: 'rejected: query returns no rows (must be a SELECT or other row-returning read)' };
-    }
-    const rows: unknown[] = [];
-    let truncated = false;
-    try {
-      for (const row of stmt.iterate()) {
-        if (rows.length >= cap) { truncated = true; break; }
-        rows.push(row);
+      conn = new Database(resolveDbPath(this.db), { readonly: true, fileMustExist: true });
+      conn.pragma('busy_timeout = 5000');
+
+      let stmt: Database.Statement;
+      try {
+        // better-sqlite3.prepare() compiles exactly one statement and throws on a
+        // multi-statement string, so "SELECT 1; DROP TABLE x" never reaches exec.
+        stmt = conn.prepare(sql);
+      } catch (err) {
+        return { id, sql, ok: false, error: `prepare failed: ${err instanceof Error ? err.message : String(err)}` };
       }
+      if (!stmt.readonly) {
+        return { id, sql, ok: false, error: 'rejected: only read-only queries are allowed (statement writes or is DDL/PRAGMA-write)' };
+      }
+      if (!stmt.reader) {
+        return { id, sql, ok: false, error: 'rejected: query returns no rows (must be a SELECT or other row-returning read)' };
+      }
+      const rows: unknown[] = [];
+      let truncated = false;
+      try {
+        for (const row of stmt.iterate()) {
+          if (rows.length >= cap) { truncated = true; break; }
+          rows.push(row);
+        }
+      } catch (err) {
+        return { id, sql, ok: false, error: `execution failed: ${err instanceof Error ? err.message : String(err)}` };
+      }
+      // Derive column order from the first row's keys — avoids the native
+      // stmt.columns() call (a suspected crash vector on some statement shapes).
+      const first = rows[0];
+      const columns = first && typeof first === 'object' && !Array.isArray(first)
+        ? Object.keys(first as Record<string, unknown>)
+        : [];
+      return {
+        id, sql, ok: true, columns, rows,
+        row_count: rows.length, truncated, elapsed_ms: Date.now() - startedAt,
+      };
     } catch (err) {
-      return { id, sql, ok: false, error: `execution failed: ${err instanceof Error ? err.message : String(err)}` };
+      return { id, sql, ok: false, error: `query connection failed: ${err instanceof Error ? err.message : String(err)}` };
+    } finally {
+      if (conn) {
+        try { conn.close(); } catch { /* ignore — best-effort cleanup */ }
+      }
     }
-    let columns: string[] = [];
-    try {
-      columns = stmt.columns().map(c => c.name);
-    } catch { /* columns() only valid on readers; we already gated on stmt.reader */ }
-    return {
-      id, sql, ok: true, columns, rows,
-      row_count: rows.length, truncated, elapsed_ms: Date.now() - startedAt,
-    };
   }
 
   private async deleteDbQueryFile(sha: string): Promise<void> {
