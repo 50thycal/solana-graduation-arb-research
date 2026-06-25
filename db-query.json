@@ -1,6 +1,0 @@
-{
-  "queries": [
-    { "id": "probe-recent-errors", "sql": "SELECT created_at, error_type, message FROM bot_errors ORDER BY id DESC LIMIT 15", "max_rows": 20 },
-    { "id": "probe-tables", "sql": "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", "max_rows": 200 }
-  ]
-}
