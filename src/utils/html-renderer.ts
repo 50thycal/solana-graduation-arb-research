@@ -5,6 +5,7 @@
  */
 
 import Database from 'better-sqlite3';
+import { ICON_HEAD_TAGS } from './app-icon';
 
 const NAV_LINKS = [
   { path: '/copy-trades', label: 'Copy Trades' },
@@ -162,6 +163,7 @@ function shell(title: string, currentPath: string, body: string, jsonData: objec
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${title}</title>
+${ICON_HEAD_TAGS}
 <style>${STYLES}</style></head><body>
 <nav><span class="title">Graduation Arb Research</span>${nav(currentPath)}</nav>
 <div class="container">
@@ -6155,6 +6157,7 @@ export function renderTradingHtml(data: any): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Trading Dashboard</title>
+${ICON_HEAD_TAGS}
 <style>${STYLES}
   .card{background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px}
   .card-title{font-size:14px;font-weight:600;color:#94a3b8;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em}
@@ -7774,6 +7777,7 @@ export function renderLiveTrainingHtml(data: any): string {
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Live Training</title>
+${ICON_HEAD_TAGS}
 <style>${STYLES}
   .card{background:#1e293b;border-radius:8px;padding:16px;margin-bottom:16px}
   .card-title{font-size:14px;font-weight:600;color:#94a3b8;margin-bottom:12px;text-transform:uppercase;letter-spacing:.05em}

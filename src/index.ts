@@ -27,6 +27,7 @@ import { StrategyManager } from './trading';
 import { backfillLivePnlFromChain } from './trading/live-pnl-backfill';
 import { StrategyParams } from './trading/config';
 import { makeLogger, logBuffer } from './utils/logger';
+import { APP_ICON_PNG_BUFFER, ICON_HEAD_TAGS } from './utils/app-icon';
 import { installStderrThrottle } from './utils/stderr-throttle';
 import { startEventLoopLagMonitor } from './utils/event-loop-lag-monitor';
 import { registerApiRoutes } from './api/routes';
@@ -105,6 +106,7 @@ function sendJsonOrHtml(req: express.Request, res: express.Response, data: objec
   res.send(`<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Graduation Research — ${req.path}</title>
+${ICON_HEAD_TAGS}
 <style>
   body{margin:0;background:#111;color:#e0e0e0;font-family:monospace;font-size:13px}
   nav{position:sticky;top:0;z-index:10;background:#1a1a2e;padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #333}
@@ -820,6 +822,7 @@ async function main() {
       const dashboardHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Graduation Research Dashboard</title>
+${ICON_HEAD_TAGS}
 <style>
   body{margin:0;background:#111;color:#e0e0e0;font-family:monospace;font-size:13px}
   nav{position:sticky;top:0;z-index:10;background:#1a1a2e;padding:8px 12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;border-bottom:1px solid #333}
@@ -892,6 +895,14 @@ async function main() {
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
+  });
+
+  // App icon for browsers + iOS "Add to Home Screen". Linked from every page
+  // head via ICON_HEAD_TAGS. Cached aggressively — the icon is immutable.
+  app.get(['/apple-touch-icon.png', '/apple-touch-icon-precomposed.png', '/favicon.png', '/favicon.ico'], (_req, res) => {
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    res.send(APP_ICON_PNG_BUFFER);
   });
 
   // Redirect root to dashboard
