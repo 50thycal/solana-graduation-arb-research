@@ -11,6 +11,103 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-25
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-06-25",
+  "overall": {"n": 6192, "net": 35.41, "drop3": 11.43, "stress": -26.71, "open": 136},
+  "retired_summary": {"n": 16367, "net": -95.47},
+  "regime_score": 2, "regime_24h": 1, "macro_score": 6, "btc_7d_pct": -1.74,
+  "book_daily_today": -8.47,
+  "leads": {"n_leads": 143, "hot": 41, "cold": 65},
+  "n_promotable_realistic": 4,
+  "strategies": [
+    {"id": "copy-hotlead",                       "realistic": true,  "n": 619, "net": 12.758, "drop3":  6.177, "stress":  6.127, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-hold30m",               "realistic": true,  "n": 595, "net": 28.551, "drop3":  4.566, "stress": 21.851, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict",                "realistic": true,  "n": 352, "net":  8.285, "drop3":  1.703, "stress":  4.494, "promo_score":  96, "verdict": "PROMOTE"},
+    {"id": "copy-consensus2-elite",              "realistic": true,  "n": 134, "net":  3.877, "drop3":  1.061, "stress":  2.419, "promo_score":  88, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-consensus",             "realistic": true,  "n": 284, "net":  5.681, "drop3": -0.759, "stress":  2.642, "promo_score":  75, "verdict": "WATCH"},
+    {"id": "copy-elitelead",                     "realistic": true,  "n": 228, "net":  3.292, "drop3": -0.246, "stress":  0.878, "promo_score":  63, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-pair-shadow",   "realistic": true,  "n": 108, "net":  0.543, "drop3": -0.567, "stress":  0.421, "promo_score":  59, "verdict": "WATCH"},
+    {"id": "copy-hotlead-deep",                  "realistic": true,  "n": 444, "net":  4.967, "drop3": -1.616, "stress":  0.294, "promo_score":  57, "verdict": "KILL"},
+    {"id": "copy-hotlead-ratchet-trailtp",       "realistic": true,  "n":  17, "net":  0.509, "drop3": -1.005, "stress":  0.324, "promo_score":  41, "verdict": "WATCH"},
+    {"id": "copy-hotlead-ctrl",                  "realistic": true,  "n": 112, "net": -2.835, "drop3": -5.350, "stress": -3.932, "promo_score":  40, "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-live-micro",    "realistic": true,  "n": 108, "net": -0.295, "drop3": -0.915, "stress": -0.155, "promo_score":  40, "verdict": "KILL"},
+    {"id": "copy-hotlead-cap",                   "realistic": true,  "n":  98, "net": -3.344, "drop3": -5.363, "stress": -4.287, "promo_score":  39, "verdict": "KILL"},
+    {"id": "copy-elitelead-ctrl",                "realistic": true,  "n":  67, "net": -3.184, "drop3": -5.416, "stress": -3.811, "promo_score":  33, "verdict": "KILL"},
+    {"id": "copy-hotlead-consensus-cap",         "realistic": true,  "n":  56, "net": -1.426, "drop3": -3.563, "stress": -1.975, "promo_score":  31, "verdict": "WATCH"},
+    {"id": "copy-hotlead-consensus-ctrl",        "realistic": true,  "n":  55, "net": -2.084, "drop3": -4.221, "stress": -2.609, "promo_score":  31, "verdict": "WATCH"},
+    {"id": "copy-elitelead-cap",                 "realistic": true,  "n":  45, "net": -2.856, "drop3": -4.472, "stress": -3.263, "promo_score":  29, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-scaleout-trailtp","realistic": true,"n":  26, "net": -0.462, "drop3": -1.460, "stress": -0.674, "promo_score":  25, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-ratchet-trailtp","realistic": true, "n":  26, "net": -0.186, "drop3": -1.357, "stress": -0.450, "promo_score":  25, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-trailtp-wide",  "realistic": true,  "n":  25, "net": -0.557, "drop3": -1.729, "stress": -0.803, "promo_score":  25, "verdict": "WATCH"},
+    {"id": "copy-hotlead-scaleout-trailtp",      "realistic": true,  "n":  19, "net": -0.750, "drop3": -2.149, "stress": -0.876, "promo_score":  23, "verdict": "WATCH"},
+    {"id": "copy-hotlead-trailtp-wide",          "realistic": true,  "n":  15, "net": -0.812, "drop3": -2.212, "stress": -0.951, "promo_score":  23, "verdict": "WATCH"},
+    {"id": "copy-cons2elite-ratchet-trailtp",    "realistic": true,  "n":   7, "net": -0.875, "drop3": -0.909, "stress": -0.930, "promo_score":  21, "verdict": "WATCH"},
+    {"id": "copy-cons2elite-scaleout-trailtp",   "realistic": true,  "n":   6, "net": -1.062, "drop3": -0.909, "stress": -1.087, "promo_score":  21, "verdict": "WATCH"},
+    {"id": "copy-cons2elite-trailtp-wide",       "realistic": true,  "n":   6, "net": -1.055, "drop3": -0.909, "stress": -1.096, "promo_score":  21, "verdict": "WATCH"},
+    {"id": "copy-3eg1-follow",                   "realistic": true,  "n":   0, "net":  0.000, "drop3":  0.000, "stress":  0.000, "promo_score":  20, "verdict": "WATCH"},
+    {"id": "copy-3eg1-runner",                   "realistic": true,  "n":   0, "net":  0.000, "drop3":  0.000, "stress":  0.000, "promo_score":  20, "verdict": "WATCH"},
+    {"id": "copy-3eg1-tp100",                    "realistic": true,  "n":   0, "net":  0.000, "drop3":  0.000, "stress":  0.000, "promo_score":  20, "verdict": "WATCH"}
+  ]
+}
+```
+
+**Headline:** Regime stays in "poor" (score=2) for a third consecutive day; copy-elitelead and copy-hotlead-consensus both have their drop3 sign-flip today; 5 strategies now qualify for kill while copy-hotlead-strict is the lone bright spot (+15 promo-score, drop3 +0.495→+1.703 during bad tape).
+
+**Day-over-day (vs 2026-06-24):**
+- Regime: 1→2 (still poor), 24h trailing=1. Book −8.47 SOL today (partial, as of ~10:00 UTC). Three consecutive losing days: Jun 23 −12.40, Jun 24 −56.71, Jun 25 partial −8.47.
+- Macro: BTC score 5→6 ("tailwind"). BTC had a +3.33% day but 7d still −1.74%; F&G=12 (extreme fear). A daily bounce inside a weak week — not a regime recovery.
+- **c2rr family kill enacted:** The entire c2rr block (10 strategies, ~2274 trades) disappeared from active and moved to retired. Retired_summary jumped from n=14093 to n=16367. Well done.
+- **2 new drop3 SIGN FLIPs:**
+  - copy-hotlead-consensus: drop3 +0.061→**−0.759** (Δ−0.820 in 23 trades). Now fails gate at n=284.
+  - copy-elitelead: drop3 +1.367→**−0.246** (Δ−1.613 in 36 trades, Δscore −28). Was scored 92.1/PROMOTE yesterday, now 63/fails.
+- **copy-hotlead-strict GAINS robustness:** drop3 +0.495→**+1.703** (Δ+1.208 in 55 trades), score 81→96. The only realistic strategy improving through poor tape. Its stricter filter appears to be screening out bad-regime entries better than the base hotlead.
+- **Promotable count drops: 6→4.** copy-elitelead and copy-hotlead-consensus lost the drop3 gate.
+- **copy-hotlead-ctrl crosses n=100 with all gates negative:** n=112, net=−2.835, drop3=−5.350, stress=−3.932. Full kill qualification reached.
+- **copy-hotlead-hold30m-live-micro crosses n=100 with all gates negative:** n=108, net=−0.295, drop3=−0.915, stress=−0.155. Full kill qualification reached.
+- **copy-hotlead-cap approaches catastrophic threshold:** n=98, net=−3.344 (net<−3 at n≥40 → catastrophic kill criterion met).
+- **copy-elitelead-ctrl catastrophic threshold crossed:** n=67, net=−3.184 (net<−3 at n≥40 → kill).
+- **New trailtp family appeared:** copy-hotlead-ratchet-trailtp (n=17), copy-hotlead-scaleout-trailtp (n=19), copy-hotlead-trailtp-wide (n=15), copy-hotlead-hold30m-{ratchet,scaleout,trailtp-wide} (n=25-26), copy-cons2elite-{ratchet,scaleout,trailtp-wide} (n=6-7). All negative at small n — too early to judge; poor regime is expected headwind.
+- **3eg1 family still gate-starved:** n=0 with 2152 wallet_allowlist skips. 100% of events are blocked by the allowlist — the wallets on the list may be inactive. Investigate before concluding the signal is bad.
+- **Lead pool:** 138→143 leads (+5), 40→41 hot, 62→65 cold. Marginal improvement in pool depth.
+
+**Week-over-week (Jun 17→25):**
+- Regime arc: 2→5→4→6→3→8 (peak Jun 22)→1→2. The week had a strong mid-section (Jun 20-22, regime 6-8) followed by a hard crash (Jun 23-25, regime 1-2). The current poor stretch is now 3 days old.
+- Book daily pattern: mostly positive Jun 17-22 (+23.38, −11.42, +2.64, +16.27, +4.58, +27.93), then crash Jun 23-25 (−12.40, −56.71, −8.47 partial). Cumulative book swing of ~−77 SOL in 3 days after the peak. The Jun 22 surge was partially a one-day lottery event.
+- Macro BTC: ranged 4-8 this week, peaked at 8 on Jun 15 (before our tracking window), settling to 2-5 in the crash days (Jun 23-24), now recovering to 6. No sustained macro tailwind.
+- **Converging (realistic):** copy-hotlead-strict is the week's surprise — promo score has climbed from ~75 (Jun 18 estimate) to 96 today while tape was poor. Suggests the strict filter genuinely screens bad entries.
+- **Decaying (realistic):** copy-elitelead (score 92→63, drop3 sign-flip), copy-hotlead-consensus (borderline all week, now failed). Both were fragile candidates that poor regime has eliminated.
+- **Steady (realistic):** copy-hotlead and copy-hotlead-hold30m remain at score=100 despite drop3 erosion — their cushions (6.2 and 4.6 SOL respectively) are large enough to survive the current stretch.
+- Lead pool: hot leads grew from 26 to 41 over the week (+15), pool depth from 65 to 143. Pool is healthier now than at the start of the week. Cold count also grew (39→65) — new leads being added that haven't proven themselves yet.
+- **Strengthening kill case:** copy-hotlead-deep has had negative drop3 for 2 consecutive days (Jun 24: −0.446, Jun 25: −1.616) — multi-day confirmation met.
+
+**Verdicts (proposals — roster changes require operator approval + code edit to `COPY_STRATEGIES`):**
+
+- **PROMOTE:** copy-hotlead (score=100, n=619, drop3=+6.18, monthly=+29 SOL), copy-hotlead-hold30m (score=100, n=595, drop3=+4.57, monthly=+78 SOL), copy-hotlead-strict (score=96, n=352, drop3=+1.70, monthly=+25 SOL), copy-consensus2-elite (score=88, n=134, drop3=+1.06, monthly=+13 SOL). All four have been recommended for multiple consecutive days — awaiting operator action.
+- **KILL (5 strategies, code edit required):**
+  - copy-hotlead-deep: n=444, drop3=−1.616 (negative for 2 consecutive days, multi-day confirmed); net positive but robustness gate fails.
+  - copy-hotlead-ctrl: n=112, net=−2.835, drop3=−5.350, stress=−3.932 — all three gates fail at n≥100.
+  - copy-hotlead-hold30m-live-micro: n=108, net=−0.295, drop3=−0.915, stress=−0.155 — all gates fail at n≥100.
+  - copy-hotlead-cap: n=98, net=−3.344 — catastrophic (net<−3 at n≥40); all gates fail.
+  - copy-elitelead-ctrl: n=67, net=−3.184 — catastrophic (net<−3 at n≥40); all gates fail.
+- **WATCH (one more cycle before kill decision):**
+  - copy-hotlead-consensus: n=284, drop3=−0.759 (first day negative — single-day flip in poor regime; will confirm kill next cycle if still negative).
+  - copy-elitelead: n=228, drop3=−0.246 (first day negative, was +1.367 yesterday — marginal, give one cycle).
+  - copy-hotlead-hold30m-pair-shadow: n=108, drop3=−0.567 but net positive (+0.543) and stress positive; lottery-shaped, not catastrophic — watch.
+  - copy-elitelead-cap: n=45, net=−2.856 — approaching catastrophic threshold; watch one cycle.
+  - copy-hotlead-consensus-cap/ctrl: n=55-56, both negative but n<100 — watch.
+  - New trailtp family (n=6-26): Too early; poor regime makes early numbers unreliable.
+  - copy-3eg1-*: n=0, 100% gate-starved by wallet_allowlist (2152 skips). Investigate whether the allowlist wallets are still active before any verdict.
+
+**New strategies to try:** None proposed this cycle. The roster has 5 pending kills, 4 pending promotions, and several experiments in flight. Priority is clearing the backlog rather than adding surface area. Revisit once regime recovers and pending kills are enacted.
+
+**Operator next step:** Enact 5 kills (copy-hotlead-deep, copy-hotlead-ctrl, copy-hotlead-hold30m-live-micro, copy-hotlead-cap, copy-elitelead-ctrl) — these are confirmed kills, code edit to `COPY_STRATEGIES`. Then consider promoting copy-hotlead and copy-hotlead-hold30m to live-micro (both score=100, waiting multiple days). Investigate copy-3eg1 wallet_allowlist gate-starve as a background task.
+
+---
+
 ## 2026-06-24
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
