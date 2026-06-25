@@ -55,9 +55,15 @@ export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAG
 export const SWAP_SLIPPAGE_BPS = parseInt(process.env.SWAP_SLIPPAGE_BPS || '500', 10);
 /** SOL kept as buffer above tradeSize for tx fees + ATA rent. */
 export const WALLET_SOL_BUFFER = parseFloat(process.env.WALLET_SOL_BUFFER || '0.02');
-/** Regional Jito block engine endpoint. Frankfurt/NY/Amsterdam/Tokyo also available. */
+/** Jito block engine endpoint. PINNED to a single region (ny — closest to the US East
+ *  Railway deploy) on purpose: the GLOBAL endpoint (mainnet.block-engine.jito.wtf) load-
+ *  balances each request independently, so sendBundle and getInflightBundleStatuses can
+ *  hit DIFFERENT regions — the status poll then never finds the bundle and reports
+ *  not-landed even when it landed (telemetry 2026-06-25: submitted 5, landed 0,
+ *  not_landed 5 on the global endpoint). One region = consistent send+poll. Other regions:
+ *  frankfurt / amsterdam / london / slc / tokyo / singapore. env-overridable. */
 export const JITO_BLOCK_ENGINE_URL =
-  process.env.JITO_BLOCK_ENGINE_URL || 'https://mainnet.block-engine.jito.wtf';
+  process.env.JITO_BLOCK_ENGINE_URL || 'https://ny.mainnet.block-engine.jito.wtf';
 /** File path — presence trips the killswitch. Checked on every safety cycle. */
 export const KILLSWITCH_FILE = process.env.TRADING_KILLSWITCH_FILE || '.trading-kill';
 
