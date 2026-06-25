@@ -24,13 +24,11 @@ export const MICRO_TRADE_SIZE_SOL = parseFloat(process.env.MICRO_TRADE_SIZE_SOL 
  *  driving the live-vs-shadow drift. Overridable via DEFAULT_JITO_TIP_SOL env;
  *  retry escalation still multiplies this (tipMult). */
 export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL || '0.0005');
-/** Copy-trade-specific Jito tip (SOL). Default 0.003. Now that the bundle-status poll is
- *  fixed (getInflightBundleStatuses + 1 rps — PR #463), a competitive tip should actually
- *  win the auction; 0.0005 likely doesn't. This pairs "fixed polling + competitive tip" so
- *  we can see if bundles land. Applied as a base multiplier over DEFAULT_JITO_TIP_SOL; the
- *  per-attempt retry escalation multiplies on top. env-tunable — tune DOWN to the minimum
- *  that lands once telemetry shows `jito` entries. The main strategies are untouched. */
-export const COPY_JITO_TIP_SOL = parseFloat(process.env.COPY_JITO_TIP_SOL || '0.003');
+/** Copy-trade-specific Jito tip (SOL). Default 0 — copy now goes RPC-PRIMARY (skipJito),
+ *  because bundles never landed for the copy path (0/26 even after the poll + ny-region
+ *  fixes). With skipJito the Jito tip ix is omitted entirely, so this value is moot unless
+ *  copy is put back on the Jito path. Kept as an env knob for that scenario. */
+export const COPY_JITO_TIP_SOL = parseFloat(process.env.COPY_JITO_TIP_SOL || '0');
 /** Max acceptable expected slippage at entry. 500 = 5%. */
 export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAGE_BPS || '500', 10);
 /**

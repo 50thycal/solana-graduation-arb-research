@@ -216,7 +216,7 @@ export class Executor {
      *  schedule in trade-evaluator (2026-05-27): attempts 2-3 bump tip and/or
      *  widen slippage to break out of Custom 6004 / InsufficientFundsForRent
      *  failures. Ignored in paper/shadow. */
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number; skipJito?: boolean },
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
     if (effectiveMode === 'paper') {
@@ -244,7 +244,7 @@ export class Executor {
     /** Per-retry overrides for the live sell path. Drives the
      *  escalating-slippage + tip-bump retry schedule in
      *  strategy-manager.handleExit (2026-05-27). Ignored in paper/shadow. */
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number; skipJito?: boolean },
   ): Promise<ExecutionResult> {
     const effectiveMode = mode ?? this.globalMode;
     if (effectiveMode === 'paper') {
@@ -344,7 +344,7 @@ export class Executor {
     expectedPriceSol: number,
     poolCtx: PoolContext | undefined,
     mode: ExecutionMode,
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number; skipJito?: boolean },
   ): Promise<ExecutionResult> {
     if (!this.connection || !this.wallet) {
       return {
@@ -523,19 +523,24 @@ export class Executor {
       );
     }
 
+    // skipJito (copy live): bundles never land for the copy path (validated: 0/26 even
+    // after the poll + region fixes), so skip the Jito attempt entirely — go straight to
+    // RPC (priority-fee'd) and omit the Jito tip ix (it'd be paid for nothing). Cuts ~5s
+    // of dead Jito-poll latency per trade. Main strategies keep their Jito path.
+    const skipJito = retryOverrides?.skipJito === true;
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000_000 }),
       ...ataPreCreateIxs,
       ...swapIxs,
-      buildJitoTipIx(walletPk, jitoTipLamports),
+      ...(skipJito ? [] : [buildJitoTipIx(walletPk, jitoTipLamports)]),
     ];
 
     const { blockhash } = await this.connection.getLatestBlockhash('confirmed');
     const tx = new Transaction({ feePayer: walletPk, recentBlockhash: blockhash }).add(...ixs);
     this.wallet.sign(tx);
 
-    const submission = await submitBundle(this.connection, [tx.serialize()]);
+    const submission = await submitBundle(this.connection, [tx.serialize()], { rpcOnly: skipJito });
     this.wallet.invalidateSolBalance();
 
     if (!submission.landed) {
@@ -782,7 +787,7 @@ export class Executor {
     exitPriceSol: number,
     poolCtx: PoolContext | undefined,
     mode: ExecutionMode,
-    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number },
+    retryOverrides?: { slippageBpsOverride?: number; jitoTipMultiplier?: number; attemptNumber?: number; skipJito?: boolean },
   ): Promise<ExecutionResult> {
     if (!this.connection || !this.wallet) {
       return {
@@ -898,11 +903,13 @@ export class Executor {
       ));
     }
 
+    // skipJito (copy live) — see the buy path: RPC-only, no Jito tip ix.
+    const skipJito = retryOverrides?.skipJito === true;
     const ixs = [
       ComputeBudgetProgram.setComputeUnitLimit({ units: 200_000 }),
       ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 1_000_000 }),
       ...swapIxs,
-      buildJitoTipIx(walletPk, jitoTipLamports),
+      ...(skipJito ? [] : [buildJitoTipIx(walletPk, jitoTipLamports)]),
       ...closeBaseAtaIxs,
     ];
 
@@ -929,7 +936,7 @@ export class Executor {
     const tx = new Transaction({ feePayer: walletPk, recentBlockhash: blockhash }).add(...ixs);
     this.wallet.sign(tx);
 
-    const submission = await submitBundle(this.connection, [tx.serialize()]);
+    const submission = await submitBundle(this.connection, [tx.serialize()], { rpcOnly: skipJito });
     this.wallet.invalidateSolBalance();
 
     if (!submission.landed) {

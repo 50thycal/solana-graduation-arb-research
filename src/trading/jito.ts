@@ -96,7 +96,7 @@ export const jitoBundleStats = {
 export async function submitBundle(
   connection: Connection,
   signedTxs: Uint8Array[],
-  opts: { timeoutMs?: number } = {},
+  opts: { timeoutMs?: number; rpcOnly?: boolean } = {},
 ): Promise<BundleSubmitResult> {
   const timeoutMs = opts.timeoutMs ?? 3_000;
   const t0 = Date.now();
@@ -109,7 +109,12 @@ export async function submitBundle(
     throw new Error(`submitBundle requires exactly 1 signed tx, got ${signedTxs.length} — RPC fallback would silently drop the rest`);
   }
 
-  // ── Try Jito first ────────────────────────────────────────────────
+  // ── Try Jito first (unless rpcOnly) ───────────────────────────────
+  // rpcOnly skips the Jito bundle attempt entirely and submits via RPC. Used by the
+  // copy live path, where bundles never land (validated 0/26 after the poll+region
+  // fixes) — so the Jito attempt is pure wasted latency. The tx still carries the
+  // compute-unit priority fee, so RPC landing is fast (~0.7s).
+  if (!opts.rpcOnly) {
   const base64Txs = signedTxs.map((tx) => Buffer.from(tx).toString('base64'));
   try {
     const resp = await axios.post(
@@ -155,9 +160,10 @@ export async function submitBundle(
     jitoBundleStats.last_poll_error = `send: ${msg}`;
     logger.warn({ msg }, 'Jito bundle submission failed — falling back to RPC');
   }
+  } // end if(!rpcOnly)
 
-  // ── RPC fallback ──────────────────────────────────────────────────
-  jitoBundleStats.fell_back_rpc++;
+  // ── RPC (fallback for the Jito path; primary for rpcOnly) ─────────
+  if (!opts.rpcOnly) jitoBundleStats.fell_back_rpc++;
   try {
     const txSignature = await connection.sendRawTransaction(signedTxs[0], {
       skipPreflight: true,
