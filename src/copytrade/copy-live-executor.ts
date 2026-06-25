@@ -159,7 +159,9 @@ export class CopyLiveExecutor {
         // amount is hard-overridden to MICRO_TRADE_SIZE_SOL by the executor in live_micro.
         result = await this.executor.buy(
           mint, MICRO_TRADE_SIZE_SOL, expectedPrice, undefined, poolCtx, 'live_micro',
-          { slippageBpsOverride, jitoTipMultiplier, attemptNumber: attempt },
+          // skipJito: copy bundles never land (0/26 after the poll+region fixes) — go
+          // RPC-primary (no Jito tip, no 5s dead-poll latency). See submitBundle rpcOnly.
+          { slippageBpsOverride, jitoTipMultiplier, attemptNumber: attempt, skipJito: true },
         );
       } catch (err) {
         // Exception (code bug, malformed pool, …) — don't retry, surface it.
@@ -202,6 +204,7 @@ export class CopyLiveExecutor {
     const ov = {
       ...retryOverrides,
       jitoTipMultiplier: (retryOverrides?.jitoTipMultiplier ?? 1) * COPY_TIP_BASE_MULT,
+      skipJito: true, // copy is RPC-primary — see buy()
     };
     return this.executor.sell(mint, tokensHeld, expectedPrice, undefined, poolCtx, 'live_micro', ov);
   }
