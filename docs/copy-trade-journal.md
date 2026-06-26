@@ -11,6 +11,106 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-26
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-06-26",
+  "overall": {"n": 7272, "net": 59.70, "drop3": 35.71, "stress": -13.02, "open": 17},
+  "retired_summary": {"n": 16367, "net": -95.47},
+  "regime_score": 5, "regime_24h": 6, "macro_score": 5, "btc_7d_pct": -3.94,
+  "book_daily_today": 31.77,
+  "leads": {"n_leads": 148, "hot": 42, "cold": 68},
+  "n_promotable_realistic": 5,
+  "strategies": [
+    {"id": "copy-hotlead",                         "realistic": true,  "n": 691, "net": 14.074, "drop3":  7.493, "stress":  6.675, "promo_score": 100.0, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-hold30m",                 "realistic": true,  "n": 651, "net": 30.410, "drop3":  6.425, "stress": 23.096, "promo_score": 100.0, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict",                  "realistic": true,  "n": 390, "net": 11.129, "drop3":  4.547, "stress":  6.890, "promo_score": 100.0, "verdict": "PROMOTE"},
+    {"id": "copy-consensus2-elite",                "realistic": true,  "n": 147, "net":  3.838, "drop3":  0.987, "stress":  2.247, "promo_score":  87.3, "verdict": "PROMOTE"},
+    {"id": "copy-elitelead",                       "realistic": true,  "n": 257, "net":  4.300, "drop3":  0.761, "stress":  1.566, "promo_score":  80.2, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-consensus",               "realistic": true,  "n": 309, "net":  5.849, "drop3": -0.591, "stress":  2.550, "promo_score":  75.0, "verdict": "WATCH"},
+    {"id": "copy-hotlead-trailtp-wide",            "realistic": true,  "n":  65, "net":  2.260, "drop3": -1.662, "stress":  1.545, "promo_score":  63.4, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-pair-shadow",     "realistic": true,  "n": 145, "net":  0.930, "drop3": -0.262, "stress":  0.762, "promo_score":  62.6, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-trailtp-wide",    "realistic": true,  "n":  63, "net":  1.763, "drop3": -1.736, "stress":  1.079, "promo_score":  58.4, "verdict": "WATCH"},
+    {"id": "copy-hotlead-deep",                    "realistic": true,  "n": 509, "net":  5.683, "drop3": -0.900, "stress":  0.327, "promo_score":  58.3, "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-ratchet-trailtp", "realistic": true,  "n":  63, "net":  1.203, "drop3": -2.296, "stress":  0.530, "promo_score":  52.9, "verdict": "WATCH"},
+    {"id": "copy-hotlead-ratchet-trailtp",         "realistic": true,  "n":  63, "net":  1.081, "drop3": -1.905, "stress":  0.411, "promo_score":  51.7, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-scaleout-trailtp","realistic": true,  "n":  66, "net":  0.804, "drop3": -1.673, "stress":  0.258, "promo_score":  50.8, "verdict": "WATCH"},
+    {"id": "copy-hotlead-scaleout-trailtp",        "realistic": true,  "n":  75, "net":  0.260, "drop3": -2.327, "stress": -0.305, "promo_score":  45.4, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-live-micro",      "realistic": true,  "n": 145, "net": -0.015, "drop3": -0.721, "stress":  0.098, "promo_score":  41.0, "verdict": "KILL"},
+    {"id": "copy-hotlead-ctrl",                    "realistic": true,  "n": 158, "net":  0.011, "drop3": -2.697, "stress": -1.617, "promo_score":  40.3, "verdict": "KILL"},
+    {"id": "copy-hotlead-cap",                     "realistic": true,  "n": 144, "net": -1.371, "drop3": -3.774, "stress": -2.826, "promo_score":  40.0, "verdict": "KILL"},
+    {"id": "copy-elitelead-ctrl",                  "realistic": true,  "n":  93, "net": -1.287, "drop3": -3.962, "stress": -2.219, "promo_score":  38.6, "verdict": "WATCH"},
+    {"id": "copy-hotlead-consensus-cap",           "realistic": true,  "n":  73, "net": -1.258, "drop3": -3.589, "stress": -1.985, "promo_score":  34.6, "verdict": "WATCH"},
+    {"id": "copy-hotlead-consensus-ctrl",          "realistic": true,  "n":  72, "net": -1.916, "drop3": -4.246, "stress": -2.619, "promo_score":  34.4, "verdict": "WATCH"},
+    {"id": "copy-elitelead-cap",                   "realistic": true,  "n":  72, "net": -1.430, "drop3": -3.617, "stress": -2.143, "promo_score":  34.4, "verdict": "WATCH"},
+    {"id": "copy-cons2elite-ratchet-trailtp",      "realistic": true,  "n":  19, "net": -1.735, "drop3": -2.971, "stress": -1.896, "promo_score":  23.8, "verdict": "WATCH"},
+    {"id": "copy-cons2elite-scaleout-trailtp",     "realistic": true,  "n":  19, "net": -1.758, "drop3": -3.129, "stress": -1.858, "promo_score":  23.8, "verdict": "WATCH"},
+    {"id": "copy-cons2elite-trailtp-wide",         "realistic": true,  "n":  19, "net": -1.887, "drop3": -3.265, "stress": -2.045, "promo_score":  23.8, "verdict": "WATCH"},
+    {"id": "copy-3eg1-follow",                     "realistic": true,  "n":   0, "net":  0.000, "drop3":  0.000, "stress":  0.000, "promo_score":  20.0, "verdict": "WATCH"},
+    {"id": "copy-3eg1-runner",                     "realistic": true,  "n":   0, "net":  0.000, "drop3":  0.000, "stress":  0.000, "promo_score":  20.0, "verdict": "WATCH"},
+    {"id": "copy-3eg1-tp100",                      "realistic": true,  "n":   0, "net":  0.000, "drop3":  0.000, "stress":  0.000, "promo_score":  20.0, "verdict": "WATCH"}
+  ]
+}
+```
+
+**Headline:** Tape recovery: regime flips from poor (score=2) to neutral (score=5); book surges +31.77 SOL today reversing three losing days; copy-elitelead drop3 sign-flip BACK to positive (+0.761) restores it as the 5th promotable realistic strategy; copy-hotlead-strict reaches score=100.
+
+**Day-over-day (vs 2026-06-25):**
+- Regime: 2 (poor) → 5 (neutral). 24h trailing score rose 1→6 — the recovery is broad, not a single spike. Book net_6h = −3.25 (slightly negative in the last 6h as of snapshot time ~10am UTC, but overall daily +31.77).
+- Macro: BTC score 6→5 (neutral). BTC 7d pct deteriorated further (−1.74%→−3.94%), but today's daily bounce +2.15% is giving a locally positive tailwind. No macro recovery yet on the weekly timeframe.
+- **Book daily:** −8.47 (partial Jun 25) → Jun 25 closed at −15.96 → Jun 26 currently +31.77. A strong single-day recovery after three consecutive losing days (Jun 23 −8.63, Jun 24 −40.84, Jun 25 −15.96 closed). Cumulative swing over 3 bad days was approximately −65 SOL; today has returned ~31.77 of that.
+- **copy-elitelead DROP3 SIGN FLIP BACK TO POSITIVE:** drop3 −0.246→+0.761 (+1.007 Δ), score 63→80.2 (+17.2 pts). Was WATCH yesterday after losing its drop3 gate on Jun 25; today's strong tape closed enough winning trades to restore robustness. All gates now clear (n=257, drop3>0, stress>0, monthly=+12.90 SOL). Restored to promotable.
+- **copy-hotlead-strict REACHES score=100:** drop3 +1.703→+4.547 (+2.844 Δ), score 96→100. A standout improvement — three consecutive days of drop3 gains despite the surrounding tape volatility confirms this filter is genuinely screening out bad entries. Monthly=+30.35 SOL.
+- **copy-hotlead and copy-hotlead-hold30m continue steady accretion:** hotlead +72 trades, net +1.316, drop3 +1.316. hold30m +56 trades, net +1.859, drop3 +1.859. Both absorbing the tape swings well.
+- **Pending kills partially recovering on today's tape — gates still fail:** copy-hotlead-ctrl net −2.835→+0.011 (+2.846 on good tape), but drop3 still −2.697. copy-hotlead-cap net −3.344→−1.371 (+1.973), drop3 still −3.774. copy-elitelead-ctrl net −3.184→−1.287 (was catastrophic, no longer; n=93, not yet at n=100). Today's numbers make these look less dire but none have escaped their structural negative drop3 at n≥100.
+- **copy-hotlead-ratchet-trailtp added 46 trades in one day** (n=17→63): net +0.572, but drop3 worsened (−1.005→−1.905). Volume is arriving fast but the tail is concentrating, not dispersing.
+- **Trailtp family big score jumps:** copy-hotlead-trailtp-wide 23→63.4, hold30m-trailtp-wide 25→58.4, hold30m-ratchet-trailtp 25→52.9. All have positive net and stress on today's strong tape, but drop3 remains negative everywhere (n<100, too early).
+- **copy-conviction-consensus2 appeared:** n=929, net=+16.808, drop3=+4.021, realistic_execution=False. The idealized mirror. Both realistic twins (copy-consensus2-lag, killed 2026-06-17; copy-consensus2-lag-drift5, killed 2026-06-20 at drop3=−0.81) have already been tried and are invalid. copy-consensus2-elite (realistic, n=147, promotable) is the current live test of this signal. No new strategy warranted.
+- **Retired_summary unchanged:** n=16367, net=−95.47. None of the 4 pending kills (copy-hotlead-deep, copy-hotlead-ctrl, copy-hotlead-hold30m-live-micro, copy-hotlead-cap) have been enacted by the operator. They remain consuming slots and capital.
+- **Leads:** 143→148 leads (+5), 41→42 hot (+1), 65→68 cold (+3). Marginal pool growth; cold count growing faster than hot (ratio slightly weakening).
+- **n_promotable_realistic: 4→5** (copy-elitelead restored).
+
+**Week-over-week (Jun 20→26):**
+- Regime arc this week: 6 (Jun 20) → 3 (Jun 21) → 8 (Jun 22 peak) → poor stretch (Jun 23-25, scores 2-3) → 5 today. The week had a sharp mid-week peak followed by a 3-day crash and now a partial recovery. Volatility is extremely high (book range: +31.77 to −40.84 SOL on individual days).
+- **Converging (realistic):** copy-hotlead-strict is the week's clear winner — drop3 grew from ~+0.495 (Jun 24) to +1.703 (Jun 25) to +4.547 today, all while the tape was either poor or recovering. This is regime-robust evidence of a real filter. copy-hotlead and copy-hotlead-hold30m are steady accreters with large drop3 cushions (7.49 and 6.43 SOL respectively).
+- **Volatile but recovering (realistic):** copy-elitelead experienced a sign-flip cycle: positive (pre-Jun 25) → negative Jun 25 → positive again today. This is a fragile candidate — drop3=+0.761 is a thin cushion. One more bad day would flip it again. Monitor closely.
+- **Structurally negative (realistic):** copy-hotlead-consensus has had negative drop3 for 2 consecutive days (Jun 25: −0.759, Jun 26: −0.591). Still improving marginally today but has never recovered its original drop3 buffer since it turned negative.
+- **Strengthening kill case:** copy-hotlead-deep negative drop3 for 4+ consecutive days (Jun 22 was the last positive reading). copy-hotlead-ctrl, copy-hotlead-cap: n≥100 with consistently negative drop3; today's tape improvement did NOT flip drop3 positive. These are structurally bad.
+- **Lead pool:** hot leads grew from ~37 (Jun 20) to 42 today (+5). cold leads grew from 48→68 (+20 over the week). Pool is deepening but the cold proportion is rising — new leads being onboarded haven't proven themselves. The hot-to-cold ratio is weakening.
+- **Macro BTC:** 7d pct has deteriorated all week (score ranged 4-6, now 5). The daily bounce today (+2.15%) is not yet a trend reversal.
+
+**Verdicts (proposals — roster changes require operator approval + code edit to `COPY_STRATEGIES`):**
+
+- **PROMOTE (5 strategies — all gates clear, all pending for multiple sessions):**
+  - copy-hotlead — n=691, net=+14.07, drop3=+7.49, stress=+6.68, monthly=+30.16 SOL. Score 100. Has been on the promote list for 7+ sessions. **Most urgent live-micro candidate.**
+  - copy-hotlead-hold30m — n=651, net=+30.41, drop3=+6.43, stress=+23.10, monthly=+76.03 SOL. Score 100. Highest monthly rate in the roster.
+  - copy-hotlead-strict — n=390, net=+11.13, drop3=+4.55, stress=+6.89, monthly=+30.35 SOL. Score 100. Strong regime-robust performance this week confirms real filter signal.
+  - copy-consensus2-elite — n=147, net=+3.84, drop3=+0.99, stress=+2.25, monthly=+11.51 SOL. Score 87.3. Thin drop3 cushion (+0.987) — give one more week to build buffer before promoting.
+  - copy-elitelead — n=257, net=+4.30, drop3=+0.76, stress=+1.57, monthly=+12.90 SOL. Score 80.2. **Restored today after yesterday's sign-flip.** Drop3 cushion is thin (+0.761) — promote only after another 1-2 sessions confirm stability.
+
+- **KILL (4 strategies — n≥100, gates fail, operator action still pending):**
+  - copy-hotlead-deep — n=509, drop3=−0.900 (negative for 4+ consecutive days); net positive (+5.68) but the edge is concentrated in top trades. n≥100, drop3≤0 gate fails. **Recommend kill.**
+  - copy-hotlead-ctrl — n=158, net=+0.011, drop3=−2.697. Net barely positive today (good tape one-day effect), but structural robustness gate fails at n≥100 with drop3 deeply negative. **Recommend kill.**
+  - copy-hotlead-hold30m-live-micro — n=145, net=−0.015, drop3=−0.721. Near-breakeven net but drop3≤0 at n≥100. **Recommend kill.**
+  - copy-hotlead-cap — n=144, net=−1.371, drop3=−3.774. Fails all gates including net<0. **Recommend kill.**
+
+- **WATCH (downgrade from kill, one more cycle):**
+  - copy-elitelead-ctrl — n=93, net=−1.287 (was catastrophic at −3.184 yesterday; recovered +1.897 on today's tape). Catastrophic criterion no longer applies. n<100, so the n≥100 drop3 kill gate hasn't triggered yet. Drop3=−3.962 is deeply negative — expect KILL verdict at n=100 unless tape recovers the entire deficit. Keep on watch; do not kill before n=100 given the small-n rule.
+  - copy-hotlead-consensus — n=309, drop3=−0.591 (2nd consecutive day negative). Not yet a multi-day confirmed kill by the "multi-day consecutive" rule in prior sessions, but the trend is clear. Recommend KILL next session if drop3 stays negative.
+  - copy-hotlead-hold30m-pair-shadow — n=145, drop3=−0.262 at n≥100. Stress still positive (+0.762). Borderline — watch one more cycle.
+  - Trailtp family (n=63-75): positive net on today's good tape, but drop3 universally negative and n<100. Keep cooking; re-evaluate after n=100.
+  - Cap/ctrl secondary family (consensus-cap/ctrl, elitelead-cap, n=72-73): all negative, approaching catastrophic in some cases. Watch through n=100 or until catastrophic criterion triggers.
+  - copy-cons2elite-trailtp family (n=19): too early, poor tape environment for recent entries. Watch.
+  - copy-3eg1-* (n=0, 2611 wallet_allowlist skips): still gate-starved. The wallet allowlist appears to be blocking all events. This needs an operator code investigation — if the allowlisted wallets are inactive, the entire family will never trade. Flag for code review.
+
+**New strategies to try:** None proposed this cycle. Both realistic consensus2 twins (copy-consensus2-lag, copy-consensus2-lag-drift5) were tried and killed in June at drop3≤0 — the copy-conviction-consensus2 idealized mirror's strong numbers (+16.808 SOL, n=929) are encouraging but the research arm is already covered by copy-consensus2-elite (the realistic elite-gated version, currently promotable). With 4 confirmed kills pending enactment, 5 promotable strategies awaiting deployment, and multiple experiments in flight, adding more surface area would increase noise.
+
+**Operator next step:** Enact 4 pending kills (copy-hotlead-deep, copy-hotlead-ctrl, copy-hotlead-hold30m-live-micro, copy-hotlead-cap) via a single COPY_STRATEGIES code edit — these are confirmed invalid at n≥100 and are blocking capital/slots. Then approve copy-hotlead or copy-hotlead-hold30m for the first live-micro promotion (both score=100, pending for 7+ sessions). If enacting the live-micro test of hold30m is already in flight via copy-hotlead-hold30m-live-micro, note that this strategy's kill removes it — the live-micro test effectively failed at net=−0.015 and drop3=−0.721.
+
+---
+
 ## 2026-06-25
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
