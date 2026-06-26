@@ -7144,7 +7144,7 @@ export function renderLiveTrainingHtml(data: any): string {
       var losers=skipped.filter(function(t){return (num(t.net_profit_sol)||0)<=0;});
       var keptWins=kept.filter(function(t){return (num(t.net_profit_sol)||0)>0;}).length;
       var keptNet=sumNet(kept);
-      return { cap_pct:cap, kept_n:kept.length, skipped_n:skipped.length,
+      return { cap_pct:cap, kept_n:kept.length, kept_winners_n:keptWins, kept_losers_n:kept.length-keptWins, skipped_n:skipped.length,
         kept_net_sol:jround(keptNet), skipped_net_sol:jround(sumNet(skipped)),
         improvement_sol:jround(keptNet-baseNet),
         winners_dropped_n:winners.length, winners_dropped_sol:jround(sumNet(winners)),
@@ -7355,11 +7355,12 @@ export function renderLiveTrainingHtml(data: any): string {
         +'<br>baseline (no cap): '+cspan(w.baseline_net_sol,f4(w.baseline_net_sol)+' SOL')
         +' on n='+w.n_eligible+' fills · avg entry slip '+fpctp(w.avg_entry_slip_pct);
       h+='<table class="lt-cmp-tbl" style="margin-top:6px"><thead><tr>'
-        +'<th>cap</th><th>kept</th><th>book w/ cap</th><th>Δ vs base</th>'
+        +'<th>cap</th><th>kept</th><th>kept W/L</th><th>book w/ cap</th><th>Δ vs base</th>'
         +'<th>dropped W/L</th><th>dropped net</th><th>drop win%</th></tr></thead><tbody>';
       for(var i=0;i<w.rows.length;i++){ var r=w.rows[i];
         h+='<tr><td>≤'+r.cap_pct+'%</td>'
           +'<td>'+r.kept_n+'/'+(r.kept_n+r.skipped_n)+'</td>'
+          +'<td><span class="green">'+r.kept_winners_n+'W</span> / <span class="red">'+r.kept_losers_n+'L</span></td>'
           +'<td>'+cspan(r.kept_net_sol,f4(r.kept_net_sol))+'</td>'
           +'<td>'+cspan(r.improvement_sol,sgn(r.improvement_sol))+'</td>'
           +'<td><span class="green">'+r.winners_dropped_n+'W</span> / <span class="red">'+r.losers_dropped_n+'L</span></td>'

@@ -156,6 +156,8 @@ export interface LtMetrics {
 export interface LtSlipCapRow {
   cap_pct: number;
   kept_n: number;
+  kept_winners_n: number;
+  kept_losers_n: number;
   skipped_n: number;
   kept_net_sol: number | null;      // book after reverting slip>cap entries
   skipped_net_sol: number | null;   // net of the dropped entries
@@ -387,6 +389,8 @@ function computeSlipCapWindow(trades: LtTrade[], flipOnTs: number | null): LtSli
     return {
       cap_pct: cap,
       kept_n: kept.length,
+      kept_winners_n: keptWins,
+      kept_losers_n: kept.length - keptWins,
       skipped_n: skipped.length,
       kept_net_sol: round(keptNet),
       skipped_net_sol: round(sumNet(skipped)),
