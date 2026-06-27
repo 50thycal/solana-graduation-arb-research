@@ -307,26 +307,14 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    style recovered an edge. Their fat-tail winners live mostly in BONDING-CURVE entries
   //    we can't copy; the post-grad PumpSwap slice we CAN copy is just the drift. Lesson:
   //    rank copy targets by post-grad Swap% + drop3, not raw WR/net.
-  // ── M (2026-06-22): SINGLE-WALLET one-to-one copy of 3eG16XXd…pBde — the cleanest
-  //    copy target on the board: 99% PumpSwap (copyable), drop_top3 +126 ≈ total +135
-  //    (broad-based edge, NOT a lottery), WR 90%, 11.5-min avg hold, median RT +798%
-  //    (holds for big runners). A standard TP would chop that median — so follow its
-  //    sell / let it run. 3 variants share the SAME allowlist + realistic entry and
-  //    differ ONLY in exit. Promotable → in follow_list → already watched by the probe.
-  //    NB: last active ~7d ago — signal flow needs it to keep trading.
-  //  -follow = ONE-TO-ONE: enter on its buy, exit on its sell (mirror its exit timing);
-  //    loose SL only as rug protection.
-  { id: 'copy-3eg1-follow',  tpPct: null, slPct: 50, exitFollow: true, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
-  //  -runner = no TP, trail the peak — capture the runner without waiting for its sell.
-  { id: 'copy-3eg1-runner',  tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10, trailingTp: { atPct: 100, dropPct: 30 },
-    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
-  //  -tp100 = CONTROL (standard exit — expected to cap this wallet's huge median run).
-  { id: 'copy-3eg1-tp100',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
+  // ── M (2026-06-22) → KILLED 2026-06-27 (NO SIGNAL; RPC cleanup): copy-3eg1-{follow,runner,tp100}
+  //    — single-wallet one-to-one copy of 3eG16XXd…pBde. The wallet went dormant: after ~5 days the
+  //    allowlist produced ZERO copyable buys (n=0 on all three, "entered 0"). Same failure mode as
+  //    the 06-11 single-wallet group (igiybn/2snlnx/buwg6b) — one-wallet mirroring can't generate
+  //    evaluable signal frequency once the wallet pauses. Re-add only if 3eG1 resumes trading
+  //    (watch wallet-leaderboard); these were never the bottleneck on config, just on the wallet
+  //    being active. LESSON: don't keep allowlist-of-one strategies armed on dormant wallets — they
+  //    cost roster slots + reconnect overhead for no data.
   // ── N (2026-06-23) → KILLED 2026-06-27 (cohort N closed — inconclusive/INVALID; RPC cleanup):
   //    DAILY-LOSS CIRCUIT BREAKER test — 3 matched -cap (dailyLossCapSol=3: halt new entries for
   //    the UTC day once realized net <= -3 SOL) vs -ctrl pairs on hotlead / elitelead /
