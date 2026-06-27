@@ -218,6 +218,35 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    only on hot leads.
   { id: 'copy-hotlead-hold30m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // ── P (2026-06-27): copy-hotlead-hold30m is the best strategy on the board (net +35.9,
+  //    drop3 +11.9, ~89 SOL/mo). This cohort hill-climbs it by varying ONE lever each, all on
+  //    the IDENTICAL hot-lead entry (lastN10/>=3/net>0, lag5+drift10) so they share entry +
+  //    poll RPC with the parent (poll() dedupes by baseVault) — near-zero marginal budget.
+  //    Kill per id: n>=100 and drop3 < parent copy-hotlead-hold30m's drop3 (must beat the parent
+  //    on robustness, not just raw net). 5-day window. Exits/hold sweep — NOT trailing-TP/
+  //    scale-out/ratchet (cohort O already proved those cut drop3 on this base).
+  // Hold-duration sweep: is the 30m time-stop cutting runners short, or holding fades too long?
+  { id: 'copy-hotlead-hold45m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 2700,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-hotlead-hold60m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-hotlead-hold20m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1200,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // Stop-level sweep: the only price-based exit on this no-TP runner — tighter cuts losers
+  // faster (WR up, maybe drop3 down); wider gives runners room.
+  { id: 'copy-hotlead-hold30m-sl20', tpPct: null, slPct: 20, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-hotlead-hold30m-sl40', tpPct: null, slPct: 40, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // Breakeven de-risk: once +30%, raise the stop to entry+buffer — protects the pop-then-fade
+  // positions WITHOUT capping runners (distinct from the killed trailing-TP variants).
+  { id: 'copy-hotlead-hold30m-be30', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    breakevenAtPct: 30 },
+  // Best-entry × best-exit: the promotable -strict net floor (>=0.5) on the 30m runner exit.
+  // A SUBSET of hold30m's tokens → fully shares its polls (zero marginal RPC).
+  { id: 'copy-hotlead-hold30m-strict', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
   // I4 hotlead parameter sweep — copy-hotlead works at {last10, >=3, net>0}; bracket
   //    the calibration. -strict raises the net floor (lead must be clearly profitable
   //    recently, not marginally positive); -deep uses a longer, more stable lookback.
@@ -307,26 +336,14 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    style recovered an edge. Their fat-tail winners live mostly in BONDING-CURVE entries
   //    we can't copy; the post-grad PumpSwap slice we CAN copy is just the drift. Lesson:
   //    rank copy targets by post-grad Swap% + drop3, not raw WR/net.
-  // ── M (2026-06-22): SINGLE-WALLET one-to-one copy of 3eG16XXd…pBde — the cleanest
-  //    copy target on the board: 99% PumpSwap (copyable), drop_top3 +126 ≈ total +135
-  //    (broad-based edge, NOT a lottery), WR 90%, 11.5-min avg hold, median RT +798%
-  //    (holds for big runners). A standard TP would chop that median — so follow its
-  //    sell / let it run. 3 variants share the SAME allowlist + realistic entry and
-  //    differ ONLY in exit. Promotable → in follow_list → already watched by the probe.
-  //    NB: last active ~7d ago — signal flow needs it to keep trading.
-  //  -follow = ONE-TO-ONE: enter on its buy, exit on its sell (mirror its exit timing);
-  //    loose SL only as rug protection.
-  { id: 'copy-3eg1-follow',  tpPct: null, slPct: 50, exitFollow: true, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
-  //  -runner = no TP, trail the peak — capture the runner without waiting for its sell.
-  { id: 'copy-3eg1-runner',  tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10, trailingTp: { atPct: 100, dropPct: 30 },
-    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
-  //  -tp100 = CONTROL (standard exit — expected to cap this wallet's huge median run).
-  { id: 'copy-3eg1-tp100',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
+  // ── M (2026-06-22) → KILLED 2026-06-27 (NO SIGNAL; RPC cleanup): copy-3eg1-{follow,runner,tp100}
+  //    — single-wallet one-to-one copy of 3eG16XXd…pBde. The wallet went dormant: after ~5 days the
+  //    allowlist produced ZERO copyable buys (n=0 on all three, "entered 0"). Same failure mode as
+  //    the 06-11 single-wallet group (igiybn/2snlnx/buwg6b) — one-wallet mirroring can't generate
+  //    evaluable signal frequency once the wallet pauses. Re-add only if 3eG1 resumes trading
+  //    (watch wallet-leaderboard); these were never the bottleneck on config, just on the wallet
+  //    being active. LESSON: don't keep allowlist-of-one strategies armed on dormant wallets — they
+  //    cost roster slots + reconnect overhead for no data.
   // ── N (2026-06-23) → KILLED 2026-06-27 (cohort N closed — inconclusive/INVALID; RPC cleanup):
   //    DAILY-LOSS CIRCUIT BREAKER test — 3 matched -cap (dailyLossCapSol=3: halt new entries for
   //    the UTC day once realized net <= -3 SOL) vs -ctrl pairs on hotlead / elitelead /
