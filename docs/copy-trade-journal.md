@@ -11,6 +11,60 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-27 — Roster cut (RPC-budget + robustness)
+
+> Roster-change entry, not a daily snapshot (no machine `SNAPSHOT` block — `/copy-daily-report`
+> regenerates those). Operator-approved cut driven by the Helius RPC budget: monthly cap 10M,
+> reset on the 22nd, already at 2.5M on the 27th (~500k/day ≈ 15M/mo trajectory). Copy position
+> polling (`copy_poll`) is ~23% of REST RPC and scales directly with concurrent open positions.
+
+**Action: removed 19 strategies from `COPY_STRATEGIES`** (`src/copytrade/copy-trader.ts`). All 19
+fail the realistic-execution bar (drop3 < 0). Removes ~20 of 37 polled open positions (~54%),
+cutting the `copy_poll` slice roughly in half on top of the scoring-worker reductions already made.
+
+**Kept (5 research + 1 live twin):** `copy-hotlead` (+14.5 / drop3 +7.9, PROMOTABLE),
+`copy-hotlead-hold30m` (+35.9 / +11.9, PROMOTABLE, best), `copy-hotlead-strict` (+12.0 / +5.4,
+PROMOTABLE), `copy-conviction-consensus2` (+17.7 / +5.0, robust idealized anchor),
+`copy-tp100-sl30` (load-bearing paired/regime baseline — kept despite worst P&L −24.5 & highest
+poll cost; flag for separate review), plus the `copy-hotlead-hold30m-pair-shadow` / `-live-micro`
+twins (the live-execution pipeline for the best strategy — NOT cut; removing them would force-sell
+the open live bag).
+
+**Conclusions recorded per cohort:**
+
+- **Cohort O (exit × entry cross, 9 killed)** — `copy-hotlead`/`-hold30m`/`cons2elite` ×
+  `scaleout-trailtp`/`trailtp-wide`/`ratchet-trailtp`. Kill criterion was drop3 ≥ the entry's
+  static-exit twin; **all 9 failed** (drop3 −1.8 to −5.7). **Trailing-TP / scale-out / ratchet
+  runner exits do not beat static TP100/SL30 on the promotable entries** — they trade drop3
+  robustness for raw net. The `cons2elite` arm is net- and drop3-negative on every exit (entry too
+  weak, confirms the 06-24 c2rr finding). The runner-exit search is closed.
+- **Cohort N (daily-loss circuit breaker, 6 killed)** — 3 matched `-cap` (dailyLossCapSol=3) vs
+  `-ctrl` pairs on hotlead / elitelead / hotlead-consensus. Win was `-cap` higher floor AND net ≥
+  `-ctrl`. **All six arms net-negative** (cap −2.7/−3.9/−1.5, ctrl −1.3/−3.8/−2.1); the cap can't be
+  validated on bases that themselves lose, so the circuit-breaker question is **unresolved, not
+  refuted**. **LESSON:** the fresh same-age `-ctrl` twin of our best strategy ran negative (−1.3)
+  while the older `copy-hotlead` booked +14.5 on the identical gate → **the hotlead edge is
+  front-loaded / regime-sensitive; watch `copy-hotlead` for decay.** Re-run the cap test only once a
+  base clears the bar fresh.
+- **`copy-hotlead-deep` (lottery)** — lastN20/≥5-trade "stable" lookback. n=550 net +5.2 but drop3
+  −1.37: net is tail-driven. The longer lookback adds nothing over `copy-hotlead` (lastN10/≥3) and
+  `copy-hotlead-strict` (net-floor 0.5), which are the robust calibrations.
+- **`copy-elitelead` (J2, lottery)** — cumulative-positive lead ≥10 trades. n=285 net +1.6 drop3
+  −1.92: **stable-reputation lead selection underperforms recency.** Cumulative lead quality is not
+  the durable signal; recency + a net floor is. Token-level consensus remains the keeper, not lead
+  reputation.
+- **`copy-hotlead-consensus` (I2, borderline)** — lead × token (hot lead's pick + ≥2 smart wallets).
+  n=327 net +5.6 drop3 −0.87: the consensus overlay adds no robustness over plain `copy-hotlead`.
+  Marginal sign-flip (was WATCH 06-25) — revivable if regime turns.
+- **`copy-consensus2-elite` (J3, borderline)** — consensus2 × elite lead. n=164 net +2.1 drop3
+  −0.75, sign-flipped from +1.06 on 06-25. Stacking two weak-positive gates didn't compound into a
+  robust edge. Revivable.
+
+**Not touched:** the 3 new `copy-3eg1-*` single-wallet experiments (n=0, just launched) stay as the
+active experiment per operator.
+
+---
+
 ## 2026-06-25
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
