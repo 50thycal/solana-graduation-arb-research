@@ -26,6 +26,8 @@
  */
 
 import Database from 'better-sqlite3';
+import path from 'path';
+import { execFile } from 'child_process';
 import { runDiagnosis, type ChannelWinCounts } from './diagnose';
 import { getEventLoopLagStats } from '../utils/event-loop-lag-monitor';
 import { computeWalletLeaderboard } from '../copytrade/leaderboard';
@@ -65,6 +67,20 @@ function resolveDbPath(db: Database.Database): string {
   const filename = (db as any).name as string | undefined;
   if (!filename) throw new Error('Cannot resolve DB path from better-sqlite3 handle');
   return filename;
+}
+
+/**
+ * Resolve the compiled db-query-runner.js path. It only exists in the compiled
+ * (dist) layout: dist/api/gist-sync.js -> __dirname = dist/api/. Under ts-node
+ * (dev) __dirname is src/api/ and there's no compiled runner — return null so
+ * processDbQueries falls back to running the query in-process (acceptable in
+ * dev; production always has dist).
+ */
+function resolveDbQueryRunnerPath(): string | null {
+  const here = __dirname;
+  const isCompiled = here.endsWith(`${path.sep}dist${path.sep}api`);
+  if (!isCompiled) return null;
+  return path.join(here, 'db-query-runner.js');
 }
 
 /** One read-only query request inside db-query.json (pushed to main by Claude). */
@@ -214,14 +230,9 @@ export class GistSync {
     }
 
     const queries = Array.isArray(parsed.queries) ? parsed.queries : [];
-    const results: DbQueryResult[] = [];
-    for (const q of queries) {
-      if (!q || typeof q.sql !== 'string' || typeof q.id !== 'string') {
-        results.push({ id: q?.id ?? '(missing id)', sql: q?.sql ?? '', ok: false, error: 'each query needs string id + sql' });
-        continue;
-      }
-      results.push(this.executeDbQuery(q.id, q.sql, q.max_rows));
-    }
+    // Run the batch in an isolated child process so a native crash / OOM in any
+    // query can NEVER take down the bot (see runQueriesInChild + db-query-runner).
+    const results = await this.runQueriesInChild(queries);
 
     this.lastDbQueryResults = {
       generated_at: new Date().toISOString(),
@@ -231,6 +242,74 @@ export class GistSync {
     };
     logger.info({ query_count: results.length }, 'Processed inbound DB queries');
     await this.deleteDbQueryFile(fileInfo.sha);
+  }
+
+  /**
+   * Run a batch of ad-hoc queries in a SEPARATE child process (db-query-runner).
+   * A native better-sqlite3 abort or an OOM inside the runner kills only that
+   * child — the parent (the live bot) sees the failure and records error results
+   * for the batch, then carries on. This is the crash fix: doing the DB work
+   * in-process (even on a dedicated read-only connection) destabilized the same
+   * cycle's heavy work and SIGKILL'd the container ~14s after the query ran.
+   *
+   * Falls back to in-process execution only under ts-node/dev (no compiled
+   * runner). Production always has dist, so it always uses the child process.
+   */
+  private runQueriesInChild(queries: DbQueryRequest[]): Promise<DbQueryResult[]> {
+    const errResult = (q: DbQueryRequest | undefined, error: string): DbQueryResult => ({
+      id: (q && typeof q.id === 'string') ? q.id : '(missing id)',
+      sql: (q && typeof q.sql === 'string') ? q.sql : '',
+      ok: false,
+      error,
+    });
+
+    const runnerPath = resolveDbQueryRunnerPath();
+    if (!runnerPath) {
+      // Dev (ts-node): no compiled runner — run in-process on an isolated
+      // read-only connection. Acceptable in dev; never reached in production.
+      return Promise.resolve(queries.map((q) =>
+        (!q || typeof q.sql !== 'string' || typeof q.id !== 'string')
+          ? errResult(q, 'each query needs string id + sql')
+          : this.executeDbQuery(q.id, q.sql, q.max_rows)));
+    }
+
+    const payload = JSON.stringify({
+      dbPath: resolveDbPath(this.db),
+      defaultRowCap: DB_QUERY_DEFAULT_ROW_CAP,
+      hardRowCap: DB_QUERY_HARD_ROW_CAP,
+      queries,
+    });
+
+    return new Promise((resolve) => {
+      // process.execPath = the absolute path to THIS node binary (robust vs
+      // relying on `node` being on PATH inside the container).
+      const child = execFile(
+        process.execPath,
+        [runnerPath],
+        { timeout: 60_000, maxBuffer: 64 * 1024 * 1024 },
+        (err, stdout) => {
+          if (err) {
+            // Child crashed (signal/segfault), exited non-zero, or timed out.
+            // The bot is unaffected — report the whole batch as errored.
+            const reason = err.signal
+              ? `child killed by ${err.signal}`
+              : ((err as NodeJS.ErrnoException).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+                ? 'result exceeded 64MB buffer'
+                : err.message);
+            logger.warn({ err: reason }, 'db-query child process failed — bot unaffected');
+            resolve(queries.map((q) => errResult(q, `query runner failed: ${reason}`)));
+            return;
+          }
+          try {
+            const out = JSON.parse(stdout) as { results?: DbQueryResult[] };
+            resolve(Array.isArray(out.results) ? out.results : []);
+          } catch (e) {
+            resolve(queries.map((q) => errResult(q, `runner output parse failed: ${e instanceof Error ? e.message : String(e)}`)));
+          }
+        },
+      );
+      child.stdin?.end(payload);
+    });
   }
 
   /** Run one guarded read-only query and shape it into a DbQueryResult. */
