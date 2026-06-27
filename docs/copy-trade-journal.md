@@ -11,6 +11,94 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-27 — New experiment cohort P (hold30m hill-climb)
+
+> Spawned 7 variants of the board's best strategy, `copy-hotlead-hold30m` (parent: net +35.9,
+> drop3 +11.9, ~89 SOL/mo, WR 34%). Each changes exactly ONE lever and shares the parent's
+> hot-lead entry (lastN10 / ≥3 / net>0, lag5 + drift10). Because `poll()` dedupes price fetches
+> by `baseVault`, every variant that enters the same lead-buys as the parent **shares its entry +
+> poll RPC** — near-zero marginal budget. Removed `copy-3eg1-*` (dormant single wallet, n=0) in the
+> same change to free roster slots.
+
+**Bar / kill criterion (per id):** `n >= 100 AND drop3 < parent copy-hotlead-hold30m's drop3` — a
+variant must beat the parent on *robustness* (drop_top3), not just raw net. **Window: 5 days**
+(re-evaluate ~2026-07-02; most will still be n<100 → WATCH unless they decisively bleed).
+
+| Strategy | Lever changed | Hypothesis |
+|---|---|---|
+| `copy-hotlead-hold45m` | `maxHoldSec` 1800→2700 | 30m time-stop cuts runners short; +15m captures more of the runner tail. |
+| `copy-hotlead-hold60m` | `maxHoldSec` 1800→3600 | Same, further out — finds where the hold curve turns. |
+| `copy-hotlead-hold20m` | `maxHoldSec` 1800→1200 | Opposite: positions not moving by 20m just fade; exit earlier lifts drop3. |
+| `copy-hotlead-hold30m-sl20` | `slPct` 30→20 | Tighter stop cuts losers faster (WR↑); test if drop3 survives. |
+| `copy-hotlead-hold30m-sl40` | `slPct` 30→40 | Wider stop gives runners room before the no-TP ride. |
+| `copy-hotlead-hold30m-be30` | +`breakevenAtPct:30` | Once +30%, raise stop to entry+buffer — de-risk pop-then-fade WITHOUT capping runners. |
+| `copy-hotlead-hold30m-strict` | `hotLeadGate.minNetSol` 0→0.5 | Best-entry × best-exit: the promotable `-strict` net floor on the 30m runner exit. Subset of parent's tokens (zero marginal RPC). |
+
+**Explicitly NOT tested:** trailing-TP / scale-out / ratchet exits on this base (cohort O already
+proved they cut drop3 here — INVALID), and the consensus overlay (`minConsensusRecent:2`) — deferred
+per operator (`copy-hotlead-consensus` already failed drop3 on the no-hold base).
+
+**Predictions (resolve at n≥100 or 5 days):** each variant `{target_drop3 > 0, target_n: 100,
+target_days: 5, kill: "n>=100 and drop3 < parent"}`. The hold-duration and breakeven arms are the
+highest-information (they move the exit the parent leaves on the table); `-strict` is the highest-
+conviction (proven entry floor × proven exit).
+
+---
+
+## 2026-06-27 — Roster cut (RPC-budget + robustness)
+
+> Roster-change entry, not a daily snapshot (no machine `SNAPSHOT` block — `/copy-daily-report`
+> regenerates those). Operator-approved cut driven by the Helius RPC budget: monthly cap 10M,
+> reset on the 22nd, already at 2.5M on the 27th (~500k/day ≈ 15M/mo trajectory). Copy position
+> polling (`copy_poll`) is ~23% of REST RPC and scales directly with concurrent open positions.
+
+**Action: removed 19 strategies from `COPY_STRATEGIES`** (`src/copytrade/copy-trader.ts`). All 19
+fail the realistic-execution bar (drop3 < 0). Removes ~20 of 37 polled open positions (~54%),
+cutting the `copy_poll` slice roughly in half on top of the scoring-worker reductions already made.
+
+**Kept (5 research + 1 live twin):** `copy-hotlead` (+14.5 / drop3 +7.9, PROMOTABLE),
+`copy-hotlead-hold30m` (+35.9 / +11.9, PROMOTABLE, best), `copy-hotlead-strict` (+12.0 / +5.4,
+PROMOTABLE), `copy-conviction-consensus2` (+17.7 / +5.0, robust idealized anchor),
+`copy-tp100-sl30` (load-bearing paired/regime baseline — kept despite worst P&L −24.5 & highest
+poll cost; flag for separate review), plus the `copy-hotlead-hold30m-pair-shadow` / `-live-micro`
+twins (the live-execution pipeline for the best strategy — NOT cut; removing them would force-sell
+the open live bag).
+
+**Conclusions recorded per cohort:**
+
+- **Cohort O (exit × entry cross, 9 killed)** — `copy-hotlead`/`-hold30m`/`cons2elite` ×
+  `scaleout-trailtp`/`trailtp-wide`/`ratchet-trailtp`. Kill criterion was drop3 ≥ the entry's
+  static-exit twin; **all 9 failed** (drop3 −1.8 to −5.7). **Trailing-TP / scale-out / ratchet
+  runner exits do not beat static TP100/SL30 on the promotable entries** — they trade drop3
+  robustness for raw net. The `cons2elite` arm is net- and drop3-negative on every exit (entry too
+  weak, confirms the 06-24 c2rr finding). The runner-exit search is closed.
+- **Cohort N (daily-loss circuit breaker, 6 killed)** — 3 matched `-cap` (dailyLossCapSol=3) vs
+  `-ctrl` pairs on hotlead / elitelead / hotlead-consensus. Win was `-cap` higher floor AND net ≥
+  `-ctrl`. **All six arms net-negative** (cap −2.7/−3.9/−1.5, ctrl −1.3/−3.8/−2.1); the cap can't be
+  validated on bases that themselves lose, so the circuit-breaker question is **unresolved, not
+  refuted**. **LESSON:** the fresh same-age `-ctrl` twin of our best strategy ran negative (−1.3)
+  while the older `copy-hotlead` booked +14.5 on the identical gate → **the hotlead edge is
+  front-loaded / regime-sensitive; watch `copy-hotlead` for decay.** Re-run the cap test only once a
+  base clears the bar fresh.
+- **`copy-hotlead-deep` (lottery)** — lastN20/≥5-trade "stable" lookback. n=550 net +5.2 but drop3
+  −1.37: net is tail-driven. The longer lookback adds nothing over `copy-hotlead` (lastN10/≥3) and
+  `copy-hotlead-strict` (net-floor 0.5), which are the robust calibrations.
+- **`copy-elitelead` (J2, lottery)** — cumulative-positive lead ≥10 trades. n=285 net +1.6 drop3
+  −1.92: **stable-reputation lead selection underperforms recency.** Cumulative lead quality is not
+  the durable signal; recency + a net floor is. Token-level consensus remains the keeper, not lead
+  reputation.
+- **`copy-hotlead-consensus` (I2, borderline)** — lead × token (hot lead's pick + ≥2 smart wallets).
+  n=327 net +5.6 drop3 −0.87: the consensus overlay adds no robustness over plain `copy-hotlead`.
+  Marginal sign-flip (was WATCH 06-25) — revivable if regime turns.
+- **`copy-consensus2-elite` (J3, borderline)** — consensus2 × elite lead. n=164 net +2.1 drop3
+  −0.75, sign-flipped from +1.06 on 06-25. Stacking two weak-positive gates didn't compound into a
+  robust edge. Revivable.
+
+**Not touched:** the 3 new `copy-3eg1-*` single-wallet experiments (n=0, just launched) stay as the
+active experiment per operator.
+
+---
+
 ## 2026-06-25
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
