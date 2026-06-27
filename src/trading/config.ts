@@ -24,13 +24,11 @@ export const MICRO_TRADE_SIZE_SOL = parseFloat(process.env.MICRO_TRADE_SIZE_SOL 
  *  driving the live-vs-shadow drift. Overridable via DEFAULT_JITO_TIP_SOL env;
  *  retry escalation still multiplies this (tipMult). */
 export const DEFAULT_JITO_TIP_SOL = parseFloat(process.env.DEFAULT_JITO_TIP_SOL || '0.0005');
-/** Copy-trade-specific Jito tip (SOL). Default 0.003. Now that the bundle-status poll is
- *  fixed (getInflightBundleStatuses + 1 rps — PR #463), a competitive tip should actually
- *  win the auction; 0.0005 likely doesn't. This pairs "fixed polling + competitive tip" so
- *  we can see if bundles land. Applied as a base multiplier over DEFAULT_JITO_TIP_SOL; the
- *  per-attempt retry escalation multiplies on top. env-tunable — tune DOWN to the minimum
- *  that lands once telemetry shows `jito` entries. The main strategies are untouched. */
-export const COPY_JITO_TIP_SOL = parseFloat(process.env.COPY_JITO_TIP_SOL || '0.003');
+/** Copy-trade-specific Jito tip (SOL). Default 0 — copy now goes RPC-PRIMARY (skipJito),
+ *  because bundles never landed for the copy path (0/26 even after the poll + ny-region
+ *  fixes). With skipJito the Jito tip ix is omitted entirely, so this value is moot unless
+ *  copy is put back on the Jito path. Kept as an env knob for that scenario. */
+export const COPY_JITO_TIP_SOL = parseFloat(process.env.COPY_JITO_TIP_SOL || '0');
 /** Max acceptable expected slippage at entry. 500 = 5%. */
 export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAGE_BPS || '500', 10);
 /**
@@ -55,9 +53,15 @@ export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAG
 export const SWAP_SLIPPAGE_BPS = parseInt(process.env.SWAP_SLIPPAGE_BPS || '500', 10);
 /** SOL kept as buffer above tradeSize for tx fees + ATA rent. */
 export const WALLET_SOL_BUFFER = parseFloat(process.env.WALLET_SOL_BUFFER || '0.02');
-/** Regional Jito block engine endpoint. Frankfurt/NY/Amsterdam/Tokyo also available. */
+/** Jito block engine endpoint. PINNED to a single region (ny — closest to the US East
+ *  Railway deploy) on purpose: the GLOBAL endpoint (mainnet.block-engine.jito.wtf) load-
+ *  balances each request independently, so sendBundle and getInflightBundleStatuses can
+ *  hit DIFFERENT regions — the status poll then never finds the bundle and reports
+ *  not-landed even when it landed (telemetry 2026-06-25: submitted 5, landed 0,
+ *  not_landed 5 on the global endpoint). One region = consistent send+poll. Other regions:
+ *  frankfurt / amsterdam / london / slc / tokyo / singapore. env-overridable. */
 export const JITO_BLOCK_ENGINE_URL =
-  process.env.JITO_BLOCK_ENGINE_URL || 'https://mainnet.block-engine.jito.wtf';
+  process.env.JITO_BLOCK_ENGINE_URL || 'https://ny.mainnet.block-engine.jito.wtf';
 /** File path — presence trips the killswitch. Checked on every safety cycle. */
 export const KILLSWITCH_FILE = process.env.TRADING_KILLSWITCH_FILE || '.trading-kill';
 

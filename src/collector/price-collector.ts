@@ -21,18 +21,19 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('price-collector');
 
-// Enrichment-only mode (GRADUATION_PRICE_PATH_DISABLED=true): keep the cheap
+// Enrichment-only is now the DEFAULT (copy-trading-only posture). Keep the cheap
 // per-graduation WALLET enrichment that feeds copy-trade wallet discovery
 // (competition_signals @ T+10, firstbuyer + buy-pressure @ T+35), but SKIP the
 // heavy price-path collection — the up-to-61 vault snapshots (T+0..T+600), the
 // T+30 research callback, and the completion-time velocity/label/swap-backfill
-// RPC. The surgical middle ground between full collection and detect-only
-// (GRADUATION_COLLECTION_DISABLED): copy trading + wallet discovery stay alive,
-// the graduation-momentum RESEARCH (pct_t30, PUMP/DUMP label, panels) goes dark,
-// and the dominant RPC/Helius-credit consumer is eliminated.
-const GRADUATION_PRICE_PATH_DISABLED = process.env.GRADUATION_PRICE_PATH_DISABLED === 'true';
+// RPC. The price-path snapshots fed only the (now-archived, see
+// docs/research-archive/) graduation research and were the dominant RPC/Helius
+// consumer. They stay OFF unless GRADUATION_PRICE_PATH_ENABLED=true is set to
+// revive full research collection. The stronger detect-only mode
+// (GRADUATION_COLLECTION_DISABLED) drops wallet enrichment too.
+const GRADUATION_PRICE_PATH_DISABLED = process.env.GRADUATION_PRICE_PATH_ENABLED !== 'true';
 if (GRADUATION_PRICE_PATH_DISABLED) {
-  logger.warn('GRADUATION_PRICE_PATH_DISABLED=true — enrichment-only mode: wallet-discovery enrichment ON, price-path snapshots + research collection OFF.');
+  logger.warn('Enrichment-only mode (default): wallet-discovery enrichment ON, price-path snapshots + research collection OFF. Set GRADUATION_PRICE_PATH_ENABLED=true to revive full collection.');
 }
 
 // Momentum research schedule: T+0 for open price, then every 5s through T+300

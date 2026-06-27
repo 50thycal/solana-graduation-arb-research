@@ -64,6 +64,22 @@ export const LIVE_ORIGINAL_MAP: Record<string, string> = {
   'copy-hotlead-hold30m-live-micro': 'copy-hotlead-hold30m',
 };
 
+// ── Slippage-cap counterfactual overlay (Tier 1: measurement only, ZERO behavior change) ──
+// Simulates what the live book WOULD earn if we'd reverted entries whose REALIZED entry
+// slippage exceeded a cap — using the slip we already log per fill, so it needs no new
+// trades. Dropping a high-slip fill is exactly the outcome of an on-chain max-slippage cap
+// (the tx reverts → no position). Two windows are reported so a forward test is separable
+// from the backtest:
+//   • since_conception — every closed live trade (full retrospective).
+//   • since_flip_on    — only trades entered at/after SLIP_CAP_FLIP_ON_TS, i.e. the moment
+//                        we'd enable the cap. Starts ~empty and fills going forward, so we
+//                        can watch the cap's real forward effect without backtest bleed-in.
+// Caveat the panel surfaces: this ignores the 2nd-order freed-concurrency-slot substitution
+// (a reverted entry frees a slot that live might fill with a different trade).
+// Flip-on = 2026-06-25T17:30Z. Bump only when re-baselining the forward test.
+export const SLIP_CAP_FLIP_ON_TS = 1782408610;
+export const SLIP_CAP_LEVELS = [1, 2, 3];
+
 /** Normalized per-trade row shared by live + shadow series. */
 export interface LtTrade {
   id: number;
@@ -134,6 +150,44 @@ export interface LtMetrics {
   execution_success_rate_pct: number | null;
   sharpe_like: number | null;
   exit_reason_counts: Record<string, number>;
+}
+
+/** One cap level's counterfactual book over a window of live trades. */
+export interface LtSlipCapRow {
+  cap_pct: number;
+  kept_n: number;
+  kept_winners_n: number;
+  kept_losers_n: number;
+  skipped_n: number;
+  kept_net_sol: number | null;      // book after reverting slip>cap entries
+  skipped_net_sol: number | null;   // net of the dropped entries
+  improvement_sol: number | null;   // kept − baseline (= −skipped_net_sol)
+  winners_dropped_n: number;        // winners the cap would have cost us
+  winners_dropped_sol: number | null;
+  losers_dropped_n: number;
+  losers_dropped_sol: number | null;
+  kept_win_rate_pct: number | null;
+  skipped_win_rate_pct: number | null; // win rate of the dropped cohort (low = good cut)
+}
+
+/** Slip-cap overlay for one window (since-conception OR since-flip-on). */
+export interface LtSlipCapWindow {
+  window_start_ts: number | null;   // first eligible live entry in the window
+  flip_on_ts: number | null;        // null for since_conception
+  n_eligible: number;               // closed live trades with a realized entry slip
+  baseline_net_sol: number | null;  // book with NO cap (status quo)
+  avg_entry_slip_pct: number | null;
+  rows: LtSlipCapRow[];
+}
+
+/** Tier-1 slippage-cap counterfactual: no behavior change, computed from realized slip. */
+export interface LtSlipCapOverlay {
+  flip_on_ts: number;
+  flip_on_iso: string;
+  caps_pct: number[];
+  note: string;
+  since_conception: LtSlipCapWindow;
+  since_flip_on: LtSlipCapWindow;
 }
 
 /** Matched-graduation Live-vs-Shadow comparison. */
@@ -219,6 +273,9 @@ export interface LtComparison {
       total_net_sol: number | null; weekly_sol: number | null; monthly_sol: number | null;
     };
   };
+  // Tier-1 slippage-cap counterfactual (measurement only) — what the live book would
+  // earn if high-slip entries had reverted. Two windows: full backtest + forward-from-flip-on.
+  slip_cap_overlay: LtSlipCapOverlay;
   // Per-graduation pairs (chronological by live entry).
   pairs: Array<{
     graduation_id: number | null;
@@ -309,6 +366,64 @@ function classifyDivergence(args: {
   if (liveReachedTp === true) return liveExitReason === 'take_profit' ? 'aligned' : 'exit_execution';
   if (liveReachedTp === false) return shadowExitReason === 'take_profit' ? 'entry_gap' : 'small_move';
   return 'unclassified'; // HWM unknown (trades_v2) — can't decide
+}
+
+/** One window of the slip-cap counterfactual (since-conception or since-flip-on). */
+function computeSlipCapWindow(trades: LtTrade[], flipOnTs: number | null): LtSlipCapWindow {
+  // Eligible = closed live trades that have a realized entry slip AND a net — these are
+  // the only ones whose cap outcome we can actually evaluate from logged data.
+  const elig = trades.filter(t =>
+    t.status === 'closed' && t.entry_slip_pct !== null && t.net_profit_sol !== null);
+  const sumNet = (xs: LtTrade[]) => xs.reduce((a, t) => a + (t.net_profit_sol ?? 0), 0);
+  const baseNet = sumNet(elig);
+  const entryTss = elig.map(t => t.entry_ts).filter((x): x is number => x != null && isFinite(x));
+  const startTs = entryTss.length ? Math.min(...entryTss) : null;
+  const slips = elig.map(t => t.entry_slip_pct).filter((x): x is number => x !== null);
+  const rows: LtSlipCapRow[] = SLIP_CAP_LEVELS.map(cap => {
+    const kept = elig.filter(t => (t.entry_slip_pct ?? 0) <= cap);
+    const skipped = elig.filter(t => (t.entry_slip_pct ?? 0) > cap);
+    const keptNet = sumNet(kept);
+    const winners = skipped.filter(t => (t.net_profit_sol ?? 0) > 0);
+    const losers = skipped.filter(t => (t.net_profit_sol ?? 0) <= 0);
+    const keptWins = kept.filter(t => (t.net_profit_sol ?? 0) > 0).length;
+    return {
+      cap_pct: cap,
+      kept_n: kept.length,
+      kept_winners_n: keptWins,
+      kept_losers_n: kept.length - keptWins,
+      skipped_n: skipped.length,
+      kept_net_sol: round(keptNet),
+      skipped_net_sol: round(sumNet(skipped)),
+      improvement_sol: round(keptNet - baseNet),
+      winners_dropped_n: winners.length,
+      winners_dropped_sol: round(sumNet(winners)),
+      losers_dropped_n: losers.length,
+      losers_dropped_sol: round(sumNet(losers)),
+      kept_win_rate_pct: kept.length ? round((keptWins / kept.length) * 100, 1) : null,
+      skipped_win_rate_pct: skipped.length ? round((winners.length / skipped.length) * 100, 1) : null,
+    };
+  });
+  return {
+    window_start_ts: startTs,
+    flip_on_ts: flipOnTs,
+    n_eligible: elig.length,
+    baseline_net_sol: round(baseNet),
+    avg_entry_slip_pct: round(mean(slips), 3),
+    rows,
+  };
+}
+
+/** Tier-1 slip-cap counterfactual over all closed live trades (no behavior change). */
+export function computeSlipCapOverlay(liveTrades: LtTrade[], flipOnTs: number): LtSlipCapOverlay {
+  const closed = liveTrades.filter(t => t.status === 'closed');
+  return {
+    flip_on_ts: flipOnTs,
+    flip_on_iso: new Date(flipOnTs * 1000).toISOString(),
+    caps_pct: SLIP_CAP_LEVELS,
+    note: 'Tier-1 counterfactual: drops closed live entries whose REALIZED entry_slip_pct exceeded the cap — exactly the revert outcome of an on-chain max-slippage cap. Measurement only, no behavior change. Ignores the 2nd-order freed-concurrency-slot substitution.',
+    since_conception: computeSlipCapWindow(closed, null),
+    since_flip_on: computeSlipCapWindow(closed.filter(t => (t.entry_ts ?? 0) >= flipOnTs), flipOnTs),
+  };
 }
 
 export function computeMetrics(trades: LtTrade[]): LtMetrics {
@@ -697,6 +812,7 @@ export function computeComparison(liveTrades: LtTrade[], shadowTrades: LtTrade[]
     divergence_live_better: divLiveBetter,
     divergence_class_counts: divergenceClassCounts,
     run_rate: runRate,
+    slip_cap_overlay: computeSlipCapOverlay(liveTrades, SLIP_CAP_FLIP_ON_TS),
     pairs,
   };
 }

@@ -1,95 +1,43 @@
 /**
  * src/api/gist-sync.ts
  *
- * Pushes every Claude-facing JSON view to a dedicated `bot-status` branch every
+ * Pushes the Claude-facing JSON views to a dedicated `bot-status` branch every
  * SYNC_INTERVAL_MS so Claude can self-serve via WebFetch / GitHub MCP tools.
  *
- * Files published (see buildPayloads for full list):
- *   - Core: diagnose.json, snapshot.json, best-combos.json, strategies.json
- *   - Trades/trading: trades.json, trading.json
- *   - /filter-analysis-v2: panel1.json, panel2.json, panel3.json, panel4.json,
- *     panel5.json, panel6.json, panel7.json, panel8.json, panel9.json,
- *     panel10.json, panel11.json
- *   - /price-path: price-path-stats.json (compact), price-path-detail.json (full)
- *   - /peak-analysis: peak-analysis.json
+ * Copy-trading-only posture (post-refactor). Files published:
+ *   - Infra:  diagnose.json, snapshot.json, logs.json, bot-errors.json
+ *   - Copy:   copy-trades.json, wallet-leaderboard.json, smart-money.json,
+ *             copy-probe.json
+ *   - Live:   live-training.json, live-execution.json
+ *   - Self-serve DB: db-query-results.json (results of an inbound db-query.json)
  *
- * Also polls for `strategy-commands.json` on the main branch — when found,
- * applies the commands (upsert/delete/toggle strategies) and deletes the file.
- * This lets Claude push strategy configs via git without needing direct API access.
+ * The graduation-research panels and the inbound strategy-commands.json
+ * apparatus were removed — copy strategies are code-defined (COPY_STRATEGIES in
+ * copy-trader.ts) and the copy journals live in docs/copy-trade-journal.md +
+ * docs/copy-strategy-lab.md. The ad-hoc read-only DB query channel
+ * (db-query.json → db-query-results.json) is retained.
  *
- * Uses the low-level GitHub Git Tree API + force-push so the branch always
- * has exactly ONE commit — no history accumulates regardless of sync frequency.
+ * Uses the low-level GitHub Git Tree API + force-push so the branch always has
+ * exactly ONE commit — no history accumulates regardless of sync frequency.
  *
- * Required env var: GITHUB_TOKEN — classic token with `public_repo` scope,
- *   or fine-grained token with Contents:Write permission.
+ * Required env var: GITHUB_TOKEN — classic token with `public_repo` scope, or
+ *   fine-grained token with Contents:Write permission.
  * Optional env var: GIST_SYNC_INTERVAL_MS — defaults to 120000 (2 min).
  */
 
 import Database from 'better-sqlite3';
 import path from 'path';
-import { Worker } from 'worker_threads';
 import { execFile } from 'child_process';
-import {
-  computeThesisScorecard,
-  computeDataQualityFlags,
-  computeRecentGraduationsEnriched,
-  computeBestCombos,
-} from './aggregates';
 import { runDiagnosis, type ChannelWinCounts } from './diagnose';
 import { getEventLoopLagStats } from '../utils/event-loop-lag-monitor';
-import { computePanel11 } from './panel11';
-import { computePanel3Summary } from './panel3-summary';
-import { computePricePathStats } from './price-path-stats';
-import { computePeakAnalysis } from './peak-analysis';
-import { computeExitSim } from './exit-sim';
-import { computeExitSimMatrix } from './exit-sim-matrix';
-import { computeEntryTimeMatrix } from './entry-time-matrix';
-import { computeWalletRepAnalysis } from './wallet-rep-analysis';
-import { computeSniperPanel } from './sniper-panel';
-import { computeStrategyPercentiles } from './strategy-percentiles';
-import { computeJournal } from './journal';
-import { computeEdgeDecay } from './edge-decay';
-import { computeTrendsTime } from './trends-time';
-import { computeSlPrecursor } from './sl-precursor';
-import { computePortfolioCorr } from './portfolio-corr';
-import { computeTrendsMarket } from './trends-market';
-import { computeCounterfactual } from './counterfactual';
-import { computeLossPostmortem } from './loss-postmortem';
-import { computeLeaveOneOutPnl } from './leave-one-out-pnl';
-import { computeRegimeAnalysis } from './regime-analysis';
-import { computeTradingData } from './trading-data';
 import { computeWalletLeaderboard } from '../copytrade/leaderboard';
 import { getSmartMoneyAnalysis } from '../copytrade/smart-money';
 import { computeCopyProbe } from '../copytrade/follower-probe';
 import { computeCopyTrades } from '../copytrade/copy-trader';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { computeLiveTrainingData } from './live-training-data';
-import { computeDailyReport } from './daily-report';
-import { getHeavyData } from './heavy-cache';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
-import {
-  getGraduationCount,
-  getLastBotError,
-  getRecentBotErrors,
-  getRecentTrades,
-  getTradeStats,
-  getTradeStatsByStrategy,
-  getStrategyConfigs,
-  upsertJournalEntry,
-  appendJournalUpdate,
-  deleteJournalEntry,
-  upsertDailyReport,
-  upsertSnapshotOnly,
-  appendReportUpdate,
-  updateActionItemStatus,
-  upsertLesson,
-  archiveLesson,
-  type JournalPrediction,
-  type ActionItem,
-} from '../db/queries';
-import type { StrategyManager } from '../trading/strategy-manager';
-import type { StrategyParams } from '../trading/config';
-import type { MarketDataFetcher } from '../collector/market-data-fetcher';
+import { getGraduationCount, getLastBotError, getRecentBotErrors } from '../db/queries';
 import { makeLogger } from '../utils/logger';
 import type { LogBuffer } from '../utils/log-buffer';
 
@@ -99,60 +47,20 @@ const GITHUB_API = 'https://api.github.com';
 const OWNER = '50thycal';
 const REPO = 'solana-graduation-arb-research';
 const BRANCH = 'bot-status';
-const COMMANDS_FILE = 'strategy-commands.json';
-// Inbound ad-hoc DB query channel (mirror of COMMANDS_FILE). Claude pushes a
-// db-query.json to main with read-only SELECTs; we run them against the live
-// SQLite handle, publish db-query-results.json to bot-status, and delete the
-// request. Lets a web session self-serve arbitrary DB reads without direct
-// Railway access — same push/poll loop the strategy commands already use.
-const DB_QUERY_FILE = 'db-query.json';
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
+// Inbound ad-hoc DB query channel: Claude pushes db-query.json to the main
+// branch ({ queries: [{ id, sql, max_rows }] }); the bot runs each as a guarded
+// read-only SELECT and publishes the outcome to db-query-results.json.
+const DB_QUERY_FILE = 'db-query.json';
+
 // How many recent log-buffer entries to publish to logs.json each sync cycle.
-// The buffer caps at 5000 (~2 MB); 1500 keeps the synced file readable via the
-// GitHub MCP while still covering recent activity. Override with LOG_SYNC_LIMIT.
 const LOG_SYNC_LIMIT = parseInt(process.env.LOG_SYNC_LIMIT ?? '1500', 10) || 1500;
 
 // Hard ceiling on rows returned by an ad-hoc DB query, regardless of the
 // per-query max_rows. Bounds memory + the size of db-query-results.json.
 const DB_QUERY_HARD_ROW_CAP = 50_000;
 const DB_QUERY_DEFAULT_ROW_CAP = 1000;
-
-// Heavy compute panels — entryTimeMatrix walks ~60 catalog filters × 6 entry
-// checkpoints × the 12×10 sim grid every cycle, exitSimMatrix runs the dynamic
-// exit grids over the top 20 combos, walletRepAnalysis layers rep modifiers
-// over them. Each one was adding seconds of synchronous main-thread work per
-// 2-min sync cycle, which queued every HTTP request behind it (dashboard /,
-// /pipeline, /trading all stuck for minutes — Railway 408s in production).
-//
-// Default OFF; set SYNC_HEAVY_PANELS=true on Railway to re-enable. When off
-// we still publish a small stub for each so the file exists on bot-status
-// and downstream consumers don't 404.
-const HEAVY_PANELS_ENABLED = process.env.SYNC_HEAVY_PANELS === 'true';
-
-/** Yield to the event loop between heavy compute phases so queued HTTP
- *  requests can drain. better-sqlite3 is synchronous, so without this the
- *  full sync pipeline holds the loop hostage end-to-end. */
-function yieldEventLoop(): Promise<void> {
-  return new Promise(resolve => setImmediate(resolve));
-}
-
-// ── Per-cycle worker-thread runner ───────────────────────────────────────
-// Spawns gist-sync-worker.ts each cycle to offload computeBestCombos +
-// computeCounterfactual (~30s wall-clock combined). Result is serialized
-// over postMessage; the parent main thread stays free to serve HTTP, WS,
-// and the price-collector T+30 deadline timers while the worker churns.
-// Falls back to in-process if the worker file can't be resolved (dev mode,
-// ts-node, missing dist build) — same fallback pattern as heavy-cache.ts.
-
-interface GistSyncWorkerResult {
-  ok: boolean;
-  error?: string;
-  stack?: string;
-  bestCombosFull?: Awaited<ReturnType<typeof computeBestCombos>>;
-  counterfactual?: Awaited<ReturnType<typeof computeCounterfactual>>;
-  timings?: { bestCombosMs: number; counterfactualMs: number };
-}
 
 function resolveDbPath(db: Database.Database): string {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -161,203 +69,18 @@ function resolveDbPath(db: Database.Database): string {
   return filename;
 }
 
-function resolveGistSyncWorkerPath(): string | null {
-  // Compiled layout: dist/api/gist-sync.js -> __dirname = dist/api/.
-  // Worker file ships as dist/api/gist-sync-worker.js. Under ts-node (dev),
-  // __dirname is src/api/ and `new Worker(.ts)` won't load — return null
-  // so the caller falls back to in-process.
-  const here = __dirname;
-  const isCompiled = here.endsWith(`${path.sep}dist${path.sep}api`);
-  if (!isCompiled) return null;
-  return path.join(here, 'gist-sync-worker.js');
-}
-
 /**
- * Resolve the compiled db-query-runner.js path. Like the gist-sync worker, this
- * only exists in the compiled (dist) layout. Under ts-node (dev) there's no
- * compiled runner — return null so processDbQueries falls back to running the
- * query in-process (acceptable in dev; production always has dist).
+ * Resolve the compiled db-query-runner.js path. It only exists in the compiled
+ * (dist) layout: dist/api/gist-sync.js -> __dirname = dist/api/. Under ts-node
+ * (dev) __dirname is src/api/ and there's no compiled runner — return null so
+ * processDbQueries falls back to running the query in-process (acceptable in
+ * dev; production always has dist).
  */
 function resolveDbQueryRunnerPath(): string | null {
   const here = __dirname;
   const isCompiled = here.endsWith(`${path.sep}dist${path.sep}api`);
   if (!isCompiled) return null;
   return path.join(here, 'db-query-runner.js');
-}
-
-function runGistSyncInWorker(
-  dbPath: string,
-  bestCombosOpts: { min_n?: number; top?: number; include_pairs?: boolean },
-): Promise<GistSyncWorkerResult> {
-  const workerFile = resolveGistSyncWorkerPath();
-  if (!workerFile) {
-    return Promise.reject(new Error('Worker file path unresolved (dev mode?)'));
-  }
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const worker = new Worker(workerFile, {
-      workerData: { dbPath, bestCombos: bestCombosOpts },
-    });
-    worker.once('message', (msg: GistSyncWorkerResult) => {
-      if (settled) return;
-      settled = true;
-      if (msg.ok && msg.bestCombosFull && msg.counterfactual) {
-        resolve(msg);
-      } else {
-        reject(new Error(`Worker reported failure: ${msg.error || 'unknown'}`));
-      }
-      worker.terminate().catch(() => { /* ignore */ });
-    });
-    worker.once('error', (err) => {
-      if (settled) return;
-      settled = true;
-      reject(err);
-    });
-    worker.once('exit', (code) => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(`Worker exited with code ${code} before posting result`));
-    });
-  });
-}
-
-function disabledPanelStub(name: string): { disabled: true; panel: string; reason: string; generated_at: string } {
-  return {
-    disabled: true,
-    panel: name,
-    reason: 'Heavy compute panel disabled (SYNC_HEAVY_PANELS!=true) to keep the dashboard responsive. Set SYNC_HEAVY_PANELS=true to re-enable.',
-    generated_at: new Date().toISOString(),
-  };
-}
-
-export interface StatusUrls {
-  diagnose: string;
-  snapshot: string;
-  best_combos: string;
-  trades: string;
-  panel11: string;
-  panel3: string;
-  price_path_stats: string;
-  peak_analysis: string;
-  strategies: string;
-  markov_matrix: string;
-  exit_sim: string;
-  // New files (overhaul 2026-04-17): per-panel filter-v2 slices, full price-path
-  // detail with raw overlay paths, and full /trading dashboard data.
-  panel1: string;
-  panel2: string;
-  panel4: string;
-  panel5: string;
-  panel6: string;
-  panel7: string;
-  panel8: string;
-  panel9: string;
-  panel10: string;
-  price_path_detail: string;
-  price_path_v2: string;
-  trading: string;
-  live_training: string;
-  wallet_rep_analysis: string;
-  sniper_panel: string;
-  strategy_percentiles: string;
-  exit_sim_matrix: string;
-  entry_time_matrix: string;
-  // Trading-page research panels (2026-05-07): journal, edge-decay,
-  // filter+TP/SL counterfactual, and loss-postmortem clusterer.
-  journal: string;
-  edge_decay: string;
-  counterfactual: string;
-  loss_postmortem: string;
-  /** Outlier-robust SOL accumulation panel — drops top 1 / top 3 winners. */
-  leave_one_out_pnl: string;
-  /** Copy-trade (Option B) wallet P&L leaderboard. */
-  wallet_leaderboard: string;
-  /** Copy-trade (Option B) smart-money token-selection analysis. */
-  smart_money: string;
-  /** Copy-follower latency probe (Phase 2 pre-work). */
-  copy_probe: string;
-  /** Shadow copy-trader P&L (Phase 2). */
-  copy_trades: string;
-  // Daily report — cross-session memory written by the routine /daily-report
-  // Claude run via report-upsert commands. Bot publishes auto-stats every
-  // sync cycle so the page is populated even before the first Claude run.
-  report: string;
-  branch_html: string;
-}
-
-/**
- * Inbound command shape. The handler dispatches on `action`:
- *
- *   upsert / delete / toggle      — strategy CRUD (existing).
- *   journal-upsert                — create or replace a journal entry.
- *   journal-update                — append an update note to an existing entry.
- *   journal-delete                — remove a journal entry.
- *
- * Field requirements per action are enforced at dispatch time, not in the
- * type, so Claude / the operator gets a clear validation error in
- * command-results.json instead of a silent rejection.
- */
-interface StrategyCommand {
-  action:
-    | 'upsert' | 'delete' | 'toggle'
-    | 'journal-upsert' | 'journal-update' | 'journal-delete'
-    | 'report-upsert' | 'report-append'
-    | 'action-item-update'
-    | 'lesson-upsert' | 'lesson-archive';
-  id: string;
-  // upsert / toggle
-  label?: string;
-  enabled?: boolean;
-  params?: StrategyParams;
-  // journal-upsert
-  strategy_id?: string;
-  cohort_label?: string | null;
-  hypothesis?: string;
-  prediction?: JournalPrediction | null;
-  status?: string;
-  // journal-update / report-append
-  note?: string;
-  // report-upsert / report-append / action-item-update
-  date?: string;
-  generated_by?: string | null;
-  winners?: unknown;
-  losers?: unknown;
-  recommendations?: unknown;
-  anomalies?: unknown;
-  patterns?: unknown;
-  /** Per-strategy daily snapshot (n_trades_today, net_sol_today, readiness_score,
-   *  lifetime SOL, monthly run rate) — persisted into patterns_json so
-   *  per-strategy history can be charted as a time-series. */
-  by_strategy_daily?: unknown;
-  /** Snapshot of which strategies were configured + enabled at upsert time —
-   *  enables day-over-day roster diff to spot toggle-offs and removals. */
-  active_strategies_snapshot?: unknown;
-  action_items?: ActionItem[];
-  narrative?: string | null;
-  /** When true on report-upsert, every entry in recommendations.create_new[]
-   *  with shape { strategy_id, hypothesis, prediction?, cohort_label? } also
-   *  seeds a journal entry. Closes the Claude → strategy → journal loop. */
-  auto_journal?: boolean;
-  // action-item-update
-  action_item_id?: string;
-  action_item_status?: ActionItem['status'];
-  action_item_note?: string;
-  // lesson-upsert / lesson-archive
-  lesson_id?: string;
-  lesson_title?: string;
-  lesson_body?: string;
-  evidence?: unknown;
-}
-
-interface CreateNewRecommendation {
-  strategy_id: string;
-  hypothesis: string;
-  prediction?: JournalPrediction | null;
-  cohort_label?: string | null;
-}
-
-interface StrategyCommandsFile {
-  commands: StrategyCommand[];
 }
 
 /** One read-only query request inside db-query.json (pushed to main by Claude). */
@@ -388,6 +111,22 @@ interface DbQueryResultsFile {
   results: DbQueryResult[];
 }
 
+export interface StatusUrls {
+  diagnose: string;
+  snapshot: string;
+  /** Shadow copy-trader P&L (the primary scoreboard). */
+  copy_trades: string;
+  /** Copy-trade wallet P&L leaderboard. */
+  wallet_leaderboard: string;
+  /** Copy-trade smart-money token-selection analysis. */
+  smart_money: string;
+  /** Copy-follower latency probe. */
+  copy_probe: string;
+  live_training: string;
+  live_execution: string;
+  branch_html: string;
+}
+
 export class GistSync {
   private readonly db: Database.Database;
   private readonly logBuffer: LogBuffer;
@@ -395,31 +134,15 @@ export class GistSync {
   private readonly getListenerStats: () => unknown;
   private readonly token: string;
   private readonly intervalMs: number;
-  private strategyManager: StrategyManager | null = null;
-  private marketDataFetcher: MarketDataFetcher | null = null;
 
   private timer: ReturnType<typeof setInterval> | null = null;
 
   // Track consecutive sync-cycle failures so transient GitHub network glitches
-  // don't flood Railway logs with identical error stacks. After the first
-  // failure we drop to a single `warn` per cycle until recovery.
+  // don't flood logs with identical error stacks.
   private consecutiveFailures = 0;
 
-  // Ring buffer of recent inbound-command batches. Each entry captures one
-  // processInboundCommands() invocation that found a non-empty file. Surfaced
-  // as command-results.json on bot-status so callers can see why a strategy
-  // upsert was rejected (e.g. id-length violation) without reading bot logs.
-  // Bounded at 20 batches — enough history to investigate any recent push.
-  private recentCommandBatches: Array<{
-    processed_at: string;
-    command_count: number;
-    results: Array<{ id: string; action: string; ok: boolean; error?: string }>;
-  }> = [];
-  private static readonly COMMAND_BATCH_HISTORY = 20;
-
-  // Latest ad-hoc DB query outcome, published as db-query-results.json each
-  // sync cycle. Overwritten whenever a new db-query.json is processed; null
-  // until the first query runs.
+  // Outcome of the most recent inbound db-query.json — published as
+  // db-query-results.json by buildPayloads on the same sync cycle.
   private lastDbQueryResults: DbQueryResultsFile | null = null;
 
   constructor(opts: {
@@ -438,16 +161,6 @@ export class GistSync {
       process.env.GIST_SYNC_INTERVAL_MS ?? String(DEFAULT_INTERVAL_MS),
       10,
     );
-  }
-
-  /** Wire up the strategy manager so inbound commands can be applied live */
-  setStrategyManager(sm: StrategyManager): void {
-    this.strategyManager = sm;
-  }
-
-  /** Wire up the market-data fetcher so its status surfaces in trends-market.json */
-  setMarketDataFetcher(fetcher: MarketDataFetcher): void {
-    this.marketDataFetcher = fetcher;
   }
 
   async start(): Promise<void> {
@@ -472,305 +185,21 @@ export class GistSync {
     return {
       diagnose: `${base}/diagnose.json`,
       snapshot: `${base}/snapshot.json`,
-      best_combos: `${base}/best-combos.json`,
-      trades: `${base}/trades.json`,
-      panel11: `${base}/panel11.json`,
-      panel3: `${base}/panel3.json`,
-      price_path_stats: `${base}/price-path-stats.json`,
-      peak_analysis: `${base}/peak-analysis.json`,
-      strategies: `${base}/strategies.json`,
-      markov_matrix: `${base}/markov-matrix.json`,
-      exit_sim: `${base}/exit-sim.json`,
-      exit_sim_matrix: `${base}/exit-sim-matrix.json`,
-      entry_time_matrix: `${base}/entry-time-matrix.json`,
-      panel1: `${base}/panel1.json`,
-      panel2: `${base}/panel2.json`,
-      panel4: `${base}/panel4.json`,
-      panel5: `${base}/panel5.json`,
-      panel6: `${base}/panel6.json`,
-      panel7: `${base}/panel7.json`,
-      panel8: `${base}/panel8.json`,
-      panel9: `${base}/panel9.json`,
-      panel10: `${base}/panel10.json`,
-      price_path_detail: `${base}/price-path-detail.json`,
-      price_path_v2: `${base}/price-path-v2.json`,
-      trading: `${base}/trading.json`,
-      live_training: `${base}/live-training.json`,
-      wallet_rep_analysis: `${base}/wallet-rep-analysis.json`,
-      sniper_panel: `${base}/sniper-panel.json`,
-      strategy_percentiles: `${base}/strategy-percentiles.json`,
-      journal: `${base}/journal.json`,
-      edge_decay: `${base}/edge-decay.json`,
-      counterfactual: `${base}/counterfactual.json`,
-      loss_postmortem: `${base}/loss-postmortem.json`,
-      leave_one_out_pnl: `${base}/leave-one-out-pnl.json`,
+      copy_trades: `${base}/copy-trades.json`,
       wallet_leaderboard: `${base}/wallet-leaderboard.json`,
       smart_money: `${base}/smart-money.json`,
       copy_probe: `${base}/copy-probe.json`,
-      copy_trades: `${base}/copy-trades.json`,
-      report: `${base}/report.json`,
+      live_training: `${base}/live-training.json`,
+      live_execution: `${base}/live-execution.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
   }
 
-  // ── Inbound strategy commands ───────────────────────────────────
-
+  // ── Inbound ad-hoc DB queries ───────────────────────────────────
   /**
-   * Check for strategy-commands.json on the main branch. If found,
-   * apply each command (upsert/delete/toggle) and delete the file.
-   * Runs at the start of each sync cycle.
-   */
-  private async processInboundCommands(): Promise<void> {
-    if (!this.strategyManager) return;
-
-    // Reconcile in-memory strategies with strategy_configs first. Catches the
-    // "deleted strategy still trading" class of bug where memory and DB drift
-    // (observed 2026-05-07: trades flowed for 5 deleted strategies until restart).
-    try {
-      const drift = this.strategyManager.reconcileFromDb();
-      if (drift.removed || drift.added || drift.toggled) {
-        logger.warn({ drift }, 'Strategy cache drift detected during reconcile');
-      }
-    } catch (err) {
-      logger.error({ err }, 'reconcileFromDb threw — continuing with command processing');
-    }
-
-    try {
-      const resp = await fetch(
-        `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${COMMANDS_FILE}?ref=main`,
-        { headers: this.headers() },
-      );
-
-      if (resp.status === 404) return; // No commands pending
-      if (!resp.ok) {
-        logger.debug('Inbound commands check returned %d', resp.status);
-        return;
-      }
-
-      const fileInfo = (await resp.json()) as { sha: string; content: string };
-      const content = Buffer.from(fileInfo.content, 'base64').toString('utf-8');
-      let commands: StrategyCommandsFile;
-      try {
-        commands = JSON.parse(content) as StrategyCommandsFile;
-      } catch {
-        logger.error('Failed to parse strategy-commands.json — deleting');
-        await this.deleteCommandsFile(fileInfo.sha);
-        return;
-      }
-
-      if (!Array.isArray(commands.commands) || commands.commands.length === 0) {
-        await this.deleteCommandsFile(fileInfo.sha);
-        return;
-      }
-
-      const results: Array<{ id: string; action: string; ok: boolean; error?: string }> = [];
-
-      for (const cmd of commands.commands) {
-        try {
-          if (cmd.action === 'upsert' && cmd.params && cmd.label) {
-            this.strategyManager.upsertStrategy(
-              cmd.id, cmd.label, cmd.params, cmd.enabled !== false,
-            );
-            results.push({ id: cmd.id, action: 'upsert', ok: true });
-          } else if (cmd.action === 'delete') {
-            const result = this.strategyManager.deleteStrategy(cmd.id);
-            results.push({
-              id: cmd.id, action: 'delete',
-              ok: !result.error, error: result.error,
-            });
-          } else if (cmd.action === 'toggle') {
-            this.strategyManager.toggleStrategy(cmd.id, cmd.enabled ?? true);
-            results.push({ id: cmd.id, action: 'toggle', ok: true });
-          } else if (cmd.action === 'journal-upsert') {
-            // strategy_id + hypothesis are required; everything else has a sensible default.
-            if (!cmd.strategy_id || !cmd.hypothesis) {
-              results.push({ id: cmd.id, action: 'journal-upsert', ok: false, error: 'strategy_id and hypothesis are required' });
-            } else {
-              upsertJournalEntry(this.db, {
-                id: cmd.id,
-                strategy_id: cmd.strategy_id,
-                cohort_label: cmd.cohort_label ?? null,
-                hypothesis: cmd.hypothesis,
-                prediction: cmd.prediction ?? null,
-                status: cmd.status,
-              });
-              results.push({ id: cmd.id, action: 'journal-upsert', ok: true });
-            }
-          } else if (cmd.action === 'journal-update') {
-            if (!cmd.note) {
-              results.push({ id: cmd.id, action: 'journal-update', ok: false, error: 'note is required' });
-            } else {
-              const r = appendJournalUpdate(this.db, cmd.id, cmd.note);
-              results.push({ id: cmd.id, action: 'journal-update', ok: r.ok, error: r.error });
-            }
-          } else if (cmd.action === 'journal-delete') {
-            deleteJournalEntry(this.db, cmd.id);
-            results.push({ id: cmd.id, action: 'journal-delete', ok: true });
-          } else if (cmd.action === 'report-upsert') {
-            // Write/replace the daily report row for `date`. Idempotent —
-            // re-pushing the same date overwrites narrative + structured
-            // fields but preserves any action_items not explicitly set
-            // (handled inside upsertDailyReport).
-            const date = cmd.date ?? cmd.id;
-            if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-              results.push({ id: cmd.id, action: 'report-upsert', ok: false, error: 'date must be YYYY-MM-DD' });
-            } else {
-              upsertDailyReport(this.db, {
-                date,
-                generated_by: cmd.generated_by ?? 'claude',
-                winners: cmd.winners,
-                losers: cmd.losers,
-                recommendations: cmd.recommendations,
-                anomalies: cmd.anomalies,
-                patterns: cmd.patterns,
-                by_strategy_daily: cmd.by_strategy_daily,
-                active_strategies_snapshot: cmd.active_strategies_snapshot,
-                action_items: cmd.action_items,
-                narrative: cmd.narrative ?? null,
-              });
-              results.push({ id: cmd.id, action: 'report-upsert', ok: true });
-
-              // Auto-journal: seed a strategy_journal entry for each
-              // create_new recommendation so the proposal is tracked even
-              // before the strategy itself is upserted. Tomorrow's Claude
-              // sees the hypothesis + prediction in /api/journal alongside
-              // the report context that proposed it.
-              if (cmd.auto_journal && cmd.recommendations
-                  && typeof cmd.recommendations === 'object') {
-                const recs = cmd.recommendations as { create_new?: CreateNewRecommendation[] };
-                if (Array.isArray(recs.create_new)) {
-                  for (const rec of recs.create_new) {
-                    if (!rec.strategy_id || !rec.hypothesis) continue;
-                    try {
-                      upsertJournalEntry(this.db, {
-                        id: `${rec.strategy_id}-proposal-${date}`,
-                        strategy_id: rec.strategy_id,
-                        cohort_label: rec.cohort_label ?? `proposed:${date}`,
-                        hypothesis: rec.hypothesis,
-                        prediction: rec.prediction ?? null,
-                      });
-                      results.push({
-                        id: `${rec.strategy_id}-proposal-${date}`,
-                        action: 'auto-journal-upsert',
-                        ok: true,
-                      });
-                    } catch (err) {
-                      results.push({
-                        id: rec.strategy_id,
-                        action: 'auto-journal-upsert',
-                        ok: false,
-                        error: err instanceof Error ? err.message : String(err),
-                      });
-                    }
-                  }
-                }
-              }
-            }
-          } else if (cmd.action === 'report-append') {
-            const date = cmd.date ?? cmd.id;
-            if (!date) {
-              results.push({ id: cmd.id, action: 'report-append', ok: false, error: 'date is required' });
-            } else if (!cmd.note) {
-              results.push({ id: cmd.id, action: 'report-append', ok: false, error: 'note is required' });
-            } else {
-              const r = appendReportUpdate(this.db, date, cmd.note);
-              results.push({ id: cmd.id, action: 'report-append', ok: r.ok, error: r.error });
-            }
-          } else if (cmd.action === 'action-item-update') {
-            const date = cmd.date;
-            if (!date || !cmd.action_item_id || !cmd.action_item_status) {
-              results.push({
-                id: cmd.id, action: 'action-item-update', ok: false,
-                error: 'date, action_item_id, action_item_status are required',
-              });
-            } else {
-              const r = updateActionItemStatus(
-                this.db, date, cmd.action_item_id,
-                cmd.action_item_status, cmd.action_item_note,
-              );
-              results.push({ id: cmd.id, action: 'action-item-update', ok: r.ok, error: r.error });
-            }
-          } else if (cmd.action === 'lesson-upsert') {
-            const lessonId = cmd.lesson_id ?? cmd.id;
-            if (!lessonId || !cmd.lesson_title || !cmd.lesson_body) {
-              results.push({
-                id: cmd.id, action: 'lesson-upsert', ok: false,
-                error: 'lesson_id, lesson_title, lesson_body are required',
-              });
-            } else {
-              upsertLesson(this.db, {
-                id: lessonId,
-                title: cmd.lesson_title,
-                body: cmd.lesson_body,
-                evidence: cmd.evidence,
-              });
-              results.push({ id: cmd.id, action: 'lesson-upsert', ok: true });
-            }
-          } else if (cmd.action === 'lesson-archive') {
-            const lessonId = cmd.lesson_id ?? cmd.id;
-            const r = archiveLesson(this.db, lessonId);
-            results.push({ id: cmd.id, action: 'lesson-archive', ok: r.ok, error: r.error });
-          } else {
-            results.push({ id: cmd.id, action: cmd.action, ok: false, error: 'invalid command' });
-          }
-        } catch (err) {
-          results.push({
-            id: cmd.id, action: cmd.action, ok: false,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }
-      }
-
-      // Delete the commands file after processing
-      await this.deleteCommandsFile(fileInfo.sha);
-
-      // Record into the ring buffer so command-results.json on bot-status
-      // exposes per-command outcomes (rejected ids, validation errors, etc).
-      this.recentCommandBatches.unshift({
-        processed_at: new Date().toISOString(),
-        command_count: commands.commands.length,
-        results,
-      });
-      if (this.recentCommandBatches.length > GistSync.COMMAND_BATCH_HISTORY) {
-        this.recentCommandBatches.length = GistSync.COMMAND_BATCH_HISTORY;
-      }
-
-      logger.info(
-        { results, commandCount: commands.commands.length },
-        'Inbound strategy commands processed',
-      );
-    } catch (err) {
-      logger.error({ err }, 'Error checking inbound strategy commands');
-    }
-  }
-
-  private async deleteCommandsFile(sha: string): Promise<void> {
-    try {
-      await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${COMMANDS_FILE}`, {
-        method: 'DELETE',
-        headers: this.headers(),
-        body: JSON.stringify({
-          message: 'bot: processed strategy commands [skip ci]',
-          sha,
-        }),
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to delete strategy-commands.json');
-    }
-  }
-
-  /**
-   * Poll for db-query.json on the main branch. When found, run each read-only
-   * query against the live SQLite handle, stash the outcome in
-   * lastDbQueryResults (published as db-query-results.json by buildPayloads on
-   * this same cycle), then delete the request file.
-   *
-   * Safety: every statement is rejected unless better-sqlite3 reports it as
-   * `readonly` (no INSERT/UPDATE/DELETE/DDL/PRAGMA-write can run) and `reader`
-   * (it returns rows). Results are row-capped. better-sqlite3 is synchronous,
-   * so a pathological full-table scan still blocks the event loop for its
-   * duration — the row cap bounds memory, not scan time. This is the operator's
-   * own research DB, so that tradeoff is acceptable; keep queries selective.
+   * Check for db-query.json on the main branch. Each query is run as a guarded
+   * read-only SELECT on a dedicated short-lived readonly connection (never the
+   * shared read-write handle) and the outcome is stashed for db-query-results.json.
    */
   private async processDbQueries(): Promise<void> {
     let fileInfo: { sha: string; content: string };
@@ -821,7 +250,7 @@ export class GistSync {
    * child — the parent (the live bot) sees the failure and records error results
    * for the batch, then carries on. This is the crash fix: doing the DB work
    * in-process (even on a dedicated read-only connection) destabilized the same
-   * cycle's heavy buildPayloads + worker thread and SIGKILL'd the container.
+   * cycle's heavy work and SIGKILL'd the container ~14s after the query ran.
    *
    * Falls back to in-process execution only under ts-node/dev (no compiled
    * runner). Production always has dist, so it always uses the child process.
@@ -893,14 +322,11 @@ export class GistSync {
 
     // CRITICAL: run ad-hoc Claude queries on a DEDICATED, short-lived read-only
     // connection — never the shared read-write `this.db` handle that the
-    // collector, position-manager, and buildPayloads all use. The original
-    // #465 implementation ran `.iterate()` / `.columns()` directly on `this.db`
-    // and the process hard-crashed within seconds of every query (a native
-    // better-sqlite3 abort, leaving no catchable JS error / bot_errors row —
-    // confirmed by the container restarting 18s after each query). Opening our
-    // own readonly handle (mirrors gist-sync-worker.ts) fully isolates the blast
-    // radius, and we close it in `finally`. Columns are derived from the first
-    // row's keys rather than the native `.columns()` call (another crash vector).
+    // collector and buildPayloads use. Running .iterate()/.columns() on the
+    // shared handle hard-crashed the process (native better-sqlite3 abort, no
+    // catchable JS error). Opening our own readonly handle isolates the blast
+    // radius; we close it in `finally`. Columns are derived from the first row's
+    // keys rather than the native `.columns()` call (another crash vector).
     let conn: Database.Database | null = null;
     try {
       conn = new Database(resolveDbPath(this.db), { readonly: true, fileMustExist: true });
@@ -930,8 +356,6 @@ export class GistSync {
       } catch (err) {
         return { id, sql, ok: false, error: `execution failed: ${err instanceof Error ? err.message : String(err)}` };
       }
-      // Derive column order from the first row's keys — avoids the native
-      // stmt.columns() call (a suspected crash vector on some statement shapes).
       const first = rows[0];
       const columns = first && typeof first === 'object' && !Array.isArray(first)
         ? Object.keys(first as Record<string, unknown>)
@@ -965,11 +389,10 @@ export class GistSync {
 
   private async buildPayloads(): Promise<Record<string, string>> {
     const nowMs = Date.now();
+    const genAt = new Date(nowMs).toISOString();
 
-    // Pull live pipeline signals so /api/diagnose and snapshot.json can
-    // surface a stalled trade pipeline (WS dead, T+30 callbacks silent, no
-    // entries flowing). Listener stats are best-effort — shape varies but
-    // wsConnected is the only field we need for the watchdog.
+    // Pull live pipeline signals so diagnose.json + snapshot.json can surface a
+    // stalled detection pipeline (WS dead, no candidates flowing).
     let pipelineWsConnected: boolean | null = null;
     let pipelineChannelWins: ChannelWinCounts | undefined = undefined;
     let pipelineLastCandidateSecAgo: number | null = null;
@@ -979,452 +402,65 @@ export class GistSync {
         channel_wins?: ChannelWinCounts;
         lastCandidateSecondsAgo?: number;
       } | null;
-      if (stats && typeof stats.wsConnected === 'boolean') {
-        pipelineWsConnected = stats.wsConnected;
-      }
+      if (stats && typeof stats.wsConnected === 'boolean') pipelineWsConnected = stats.wsConnected;
       if (stats && stats.channel_wins) pipelineChannelWins = stats.channel_wins;
       if (stats && typeof stats.lastCandidateSecondsAgo === 'number') {
         pipelineLastCandidateSecAgo = stats.lastCandidateSecondsAgo;
       }
     } catch { /* listener may not be initialized yet */ }
 
-    const enabledStrategies = this.strategyManager
-      ? this.strategyManager.getStrategies().filter(s => s.enabled).length
-      : 0;
-    const lastT30CallbackAt = this.strategyManager?.getLastT30CallbackAt() ?? null;
-
-    // Per-step timings for buildPayloads. Aggregated into the `timings` object
-    // built below (main thread compute stages) and surfaced on snapshot.json
-    // under gist_sync_compute_ms so we can pinpoint which compute step is
-    // monopolizing the main thread without needing live log access. The yield
-    // helper (yieldEventLoop) inside the main panel block keeps HTTP requests
-    // draining between phases — see HEAVY_PANELS_ENABLED comment.
+    // The graduation-arb StrategyManager (and its T+30 callback) was removed —
+    // diagnose's trade-pipeline fields no longer apply, so pass neutral values.
     const diagnose = runDiagnosis(this.db, this.logBuffer, {
       wsConnected: pipelineWsConnected,
-      lastT30CallbackAt,
-      enabledStrategies,
+      lastT30CallbackAt: null,
+      enabledStrategies: 0,
       channelWins: pipelineChannelWins,
       lastCandidateSecAgo: pipelineLastCandidateSecAgo,
     });
 
-    // Compute leaderboard first so we can pass the live leader into the scorecard.
-    // Use a wide top (500) so the same result can be reused by computePanel11
-    // (needs top 40) and computeSniperPanel (needs top 500) — running the full
-    // ~1100-candidate grid sweep three times per cycle was the dominant source
-    // of main-thread block (~75s/cycle), causing the event-loop lag pattern in
-    // directPriceCollector.lastT30Timeouts.
-    //
-    // Per-cycle worker (added 2026-05-12): bestCombos + counterfactual together
-    // are ~30-46s of wall-clock work. With per-iteration yields they still chew
-    // the main thread in 130ms chunks 350+ times per cycle. The worker thread
-    // runs both off the main loop entirely so HTTP requests, WS handlers, and
-    // T+30 deadline timers stay responsive. Falls back to in-process if the
-    // worker file isn't resolvable (dev mode, ts-node).
-    const bestCombosT0 = Date.now();
-    const bestCombosOpts = { min_n: 20, top: 500, include_pairs: true };
-    let bestCombosFull: Awaited<ReturnType<typeof computeBestCombos>>;
-    let counterfactual: Awaited<ReturnType<typeof computeCounterfactual>>;
-    let bestCombosMs: number;
-    let counterfactualMs: number;
-    let workerMode: 'worker' | 'in-process-fallback' = 'worker';
-    try {
-      const workerResult = await runGistSyncInWorker(
-        resolveDbPath(this.db),
-        bestCombosOpts,
-      );
-      bestCombosFull = workerResult.bestCombosFull!;
-      counterfactual = workerResult.counterfactual!;
-      bestCombosMs = workerResult.timings!.bestCombosMs;
-      counterfactualMs = workerResult.timings!.counterfactualMs;
-    } catch (err) {
-      workerMode = 'in-process-fallback';
-      logger.warn(
-        { err: err instanceof Error ? err.message : String(err) },
-        'gist-sync worker unavailable — running bestCombos + counterfactual in-process (will block event loop)',
-      );
-      const inProcBcT0 = Date.now();
-      bestCombosFull = await computeBestCombos(this.db, bestCombosOpts);
-      bestCombosMs = Date.now() - inProcBcT0;
-      await yieldEventLoop();
-      const inProcCfT0 = Date.now();
-      counterfactual = await computeCounterfactual(this.db);
-      counterfactualMs = Date.now() - inProcCfT0;
-    }
-    const totalWorkerWallclockMs = Date.now() - bestCombosT0;
-    // best-combos.json keeps its top-20 contract.
-    const bestCombos = { ...bestCombosFull, rows: bestCombosFull.rows.slice(0, 20) };
-    await yieldEventLoop();
-
-    // Find the best combo with n≥100 that beats the rolling entry-gated
-    // baseline — this becomes the live best_known_baseline shown in
-    // snapshot.json. Ranking is by opt_avg_ret (per-combo TP/SL optimum),
-    // matching Panel 6's top_pairs approach.
-    const liveLeader = bestCombos.rows
-      .filter(r => r.n >= 100 && r.beats_baseline && r.opt_avg_ret != null)
-      .sort((a, b) => (b.opt_avg_ret ?? 0) - (a.opt_avg_ret ?? 0))[0];
-
-    const scorecard = computeThesisScorecard(this.db, liveLeader);
-    const quality = computeDataQualityFlags(this.db);
-    const recent = computeRecentGraduationsEnriched(this.db, 10);
-    const lastError = getLastBotError(this.db);
     const listenerStats = this.getListenerStats();
-
-    // Singleton RPC limiter stats — useful upstream of pipeline_health so the
-    // operator can see whether observations are stalling because the limiter
-    // is dropping requests. tokensAvailable near 0 + queued > 0 + drops/min
-    // climbing = Helius is the bottleneck, not our code.
     const rpcLimiter = globalRpcLimiter.getStats();
+    const eventLoopLag = getEventLoopLagStats();
+    const lastError = getLastBotError(this.db);
 
-    // Listener verified-vs-recorded gap. When totalVerifiedGraduations grows
-    // faster than totalGraduationsRecorded, the listener is processing the
-    // same migration tx multiple times (WS replay or duplicate handleLogs
-    // delivery). Surfacing the ratio here so it doesn't masquerade as a
-    // PriceCollector problem — observations only ever start on a recorded
-    // graduation, so a 78% dupe rate (seen in production after restart)
-    // means 78% of verified graduations get no observation at all.
+    // Listener verified-vs-recorded dupe gap (detection-health diagnostic).
     const lst = (listenerStats as { totalVerifiedGraduations?: number; totalGraduationsRecorded?: number } | null) ?? null;
     const verified = lst?.totalVerifiedGraduations ?? 0;
     const recorded = lst?.totalGraduationsRecorded ?? 0;
     const dupePct = verified > 0 ? +(((verified - recorded) / verified) * 100).toFixed(1) : 0;
 
-    // Build snapshot AFTER the panel block runs so `timings` is fully
-    // populated. snapshot is consumed by the JSON payload writer further
-    // below — no early callers depend on it.
-    const recentTrades = getRecentTrades(this.db, 50);
-    const trades = {
-      generated_at: new Date(nowMs).toISOString(),
-      stats: getTradeStats(this.db),
-      by_strategy: getTradeStatsByStrategy(this.db),
-      count: recentTrades.length,
-      trades: recentTrades,
-    };
-
-    // Run each compute, log its wall-clock time, and yield to the event loop
-    // between phases. Without the yields the whole batch holds the Node loop
-    // for tens of seconds and every HTTP request queues behind it. The three
-    // heaviest panels (entryTimeMatrix, exitSimMatrix, walletRepAnalysis) are
-    // gated behind HEAVY_PANELS_ENABLED — see the constant comment.
-    // computeBestCombos + counterfactual run in the gist-sync worker (added
-    // 2026-05-12). The numbers here are still surfaced for visibility but
-    // they're WORKER wall-clock — they don't add to main-thread block time.
-    // `gist_sync_worker_ms` (added below) records the total worker spin and
-    // its mode (worker vs in-process-fallback) so the operator can tell at
-    // a glance whether the offload is healthy.
-    const timings: Record<string, number> = {
-      computeBestCombos: bestCombosMs,
-      counterfactual: counterfactualMs,
-    };
-    // `fn` may return a sync value or a Promise — we await either way so the
-    // measured wall-clock includes the full async resolution. Several of the
-    // panel computes (panel11, sniperPanel, walletRepAnalysis, entryTimeMatrix,
-    // exitSimMatrix) are async because they internally yield to the event loop
-    // every ~50 simulateCombo iterations to avoid blocking T+30 deadline timers
-    // in the price collector. See yieldEventLoop comment in aggregates.ts.
-    const timed = async <T>(name: string, fn: () => T | Promise<T>): Promise<T> => {
-      const t0 = Date.now();
-      const result = await fn();
-      timings[name] = Date.now() - t0;
-      await yieldEventLoop();
-      return result;
-    };
-
-    const panel11 = await timed('panel11', () => computePanel11(this.db, bestCombosFull));
-    const panel3 = await timed('panel3', () => computePanel3Summary(this.db));
-    const pricePathStats = await timed('pricePathStats', () => computePricePathStats(this.db));
-    const peakAnalysis = await timed('peakAnalysis', () => computePeakAnalysis(this.db));
-    const exitSim = await timed('exitSim', () => computeExitSim(this.db));
-    const sniperPanel = await timed('sniperPanel', () => computeSniperPanel(this.db, bestCombosFull));
-    const strategyPercentiles = await timed('strategyPercentiles', () => computeStrategyPercentiles(this.db));
-    // Trading-page research panels — all are O(strategies × trades) at most;
-    // none touch graduation_momentum × the grid except `counterfactual`, which
-    // yields between filters internally.
-    const journal = await timed('journal', () => computeJournal(this.db));
-    const edgeDecay = await timed('edgeDecay', () => computeEdgeDecay(this.db));
-    const trendsTime = await timed('trendsTime', () => computeTrendsTime(this.db));
-    const slPrecursor = await timed('slPrecursor', () => computeSlPrecursor(this.db));
-    const portfolioCorr = await timed('portfolioCorr', () => computePortfolioCorr(this.db));
-    const trendsMarket = await timed('trendsMarket', () => computeTrendsMarket(
-      this.db,
-      this.marketDataFetcher?.getStatus() ?? null,
-    ));
-    // counterfactual now runs in the gist-sync worker — see top of buildPayloads.
-    const lossPostmortem = await timed('lossPostmortem', () => computeLossPostmortem(this.db));
-    const leaveOneOutPnl = await timed('leaveOneOutPnl', () => computeLeaveOneOutPnl(this.db));
-    const regimeAnalysis = await timed('regimeAnalysis', () => computeRegimeAnalysis(this.db));
-    // Copy-trade wallet leaderboard — pure SQL read of wallet_scores (populated
-    // out-of-band by CopytradeWorker). Cheap; no RPC, no grid sweep.
-    const walletLeaderboard = await timed('walletLeaderboard', () => computeWalletLeaderboard(this.db));
-    // Smart-money token-selection analysis — cheap read of the bot_settings cache
-    // (computed out-of-band by CopytradeWorker every ~3h). No compute here.
-    const smartMoney = getSmartMoneyAnalysis(this.db);
-    // Copy-follower latency probe — cheap SQL read of copy_probe_events.
-    const copyProbe = computeCopyProbe(this.db);
-    // Shadow copy-trader P&L — cheap SQL read of copy_trades.
-    const copyTrades = computeCopyTrades(this.db);
-    // dailyReport reads leaveOneOutPnl internally to populate
-    // promotion_readiness_top5 — keep this ordering.
-    const dailyReport = await timed('dailyReport', () => computeDailyReport(this.db));
-
-    // Auto-persist today's per-strategy + active-strategies snapshot every
-    // gist-sync cycle. Removes the dependency on Claude including these
-    // fields in /daily-report's report-upsert payload (May 14/15 reports
-    // collapsed patterns_json without the snapshot, costing day-over-day
-    // diff capability). upsertSnapshotOnly touches ONLY the snapshot fields —
-    // narrative / winners / recommendations stay intact if Claude wrote them.
-    try {
-      upsertSnapshotOnly(
-        this.db,
-        dailyReport.today_auto.date,
-        dailyReport.today_auto.by_strategy_daily_snapshot,
-        dailyReport.today_auto.active_strategies_snapshot,
-      );
-    } catch (err) {
-      logger.warn({ err: err instanceof Error ? err.message : String(err) }, 'Auto-snapshot persist failed');
-    }
-
-    const exitSimMatrix = HEAVY_PANELS_ENABLED
-      ? await timed('exitSimMatrix', () => computeExitSimMatrix(this.db))
-      : disabledPanelStub('exit-sim-matrix');
-    const entryTimeMatrix = HEAVY_PANELS_ENABLED
-      ? await timed('entryTimeMatrix', () => computeEntryTimeMatrix(this.db))
-      : disabledPanelStub('entry-time-matrix');
-    const walletRepAnalysis = HEAVY_PANELS_ENABLED
-      ? await timed('walletRepAnalysis', () => computeWalletRepAnalysis(this.db))
-      : disabledPanelStub('wallet-rep-analysis');
-
-    logger.debug({ bestCombosMs, ...timings, heavyEnabled: HEAVY_PANELS_ENABLED }, 'Sync compute timings');
-
-    // ── Diagnostics: per-step compute timings + event-loop lag ──
-    // Sum of all main-thread compute steps. If this exceeds ~5000ms regularly,
-    // that's how long the bot is frozen — which directly explains T+30 timer
-    // drift observed in directPriceCollector.lastT30Timeouts. Ranked desc so
-    // the worst offender surfaces first when reading snapshot.json.
-    // `timings` already includes computeBestCombos (seeded from bestCombosMs)
-    // plus everything wrapped by `timed()` above. Heavy panels gated behind
-    // HEAVY_PANELS_ENABLED only contribute when enabled.
-    // When the worker succeeded, computeBestCombos + counterfactual happened
-    // OFF the main thread — exclude them from the main-thread block tally so
-    // the alarm threshold (~5000ms) reflects actual blocking work, not worker
-    // wall-clock that the loop was free during. When the worker fell back to
-    // in-process, the work DID block the main thread and is counted normally.
-    const offMainThreadStepsWhenWorkerOk = workerMode === 'worker'
-      ? new Set(['computeBestCombos', 'counterfactual'])
-      : new Set<string>();
-    const totalMainThreadBlockMs = Object.entries(timings)
-      .filter(([k]) => !offMainThreadStepsWhenWorkerOk.has(k))
-      .reduce((a, [, b]) => a + b, 0);
-    const computeTimingsMsRanked: Record<string, number> = Object.fromEntries(
-      Object.entries(timings).sort(([, a], [, b]) => b - a)
-    );
-    const eventLoopLag = getEventLoopLagStats();
-
     const snapshot = {
-      generated_at: new Date(nowMs).toISOString(),
+      generated_at: genAt,
       uptime_sec: Math.floor((nowMs - this.startTime) / 1000),
-      counts: {
-        graduations: getGraduationCount(this.db),
-        momentum_labeled: scorecard.total_labeled,
-        pump: scorecard.PUMP,
-        dump: scorecard.DUMP,
-        stable: scorecard.STABLE,
-        unlabeled: scorecard.unlabeled,
-      },
-      scorecard,
-      data_quality: quality,
+      counts: { graduations: getGraduationCount(this.db) },
       listener: listenerStats,
       listener_dedupe: { verified, recorded, dupe_pct: dupePct },
       rpc_limiter: rpcLimiter,
-      // Mirror the trade-pipeline watchdog up to snapshot.json so a glance at
-      // bot-status tells the operator whether trades are flowing without
-      // having to cross-reference diagnose.json. See diagnose.PipelineHealth
-      // for verdict semantics.
       pipeline_health: diagnose.pipeline_health,
-      // Event-loop lag (sampled at 1Hz, 10-min ring buffer). p50 should be
-      // 0-10 ms in a healthy loop; p95 >100ms means hot-path sync work is
-      // intermittently freezing the loop; max_ms_in_window > 1000 ties
-      // directly to the T+30 timer drift pattern.
       event_loop_lag: eventLoopLag,
-      // Per-step durations of this gist-sync cycle's main-thread compute.
-      // Sorted descending so the heaviest step is on top. total_main_thread_block_ms
-      // is the cumulative freeze duration; tally it against event_loop_lag.max_ms_in_window
-      // to confirm gist-sync is the source.
-      gist_sync_compute_ms: {
-        total_main_thread_block_ms: totalMainThreadBlockMs,
-        per_step: computeTimingsMsRanked,
-      },
-      // Per-cycle worker stats (added 2026-05-12). mode='worker' means
-      // computeBestCombos + counterfactual ran off-thread. mode='in-process-
-      // fallback' means the worker file couldn't be resolved or the worker
-      // failed — main thread paid the full ~30-46s of blocking work and
-      // event_loop_lag will spike accordingly. wall_clock_ms is end-to-end
-      // (spawn → result) so includes the ~50-200ms of Worker construction +
-      // postMessage roundtrip; subtract per_step.computeBestCombos +
-      // per_step.counterfactual to get pure overhead.
-      gist_sync_worker_ms: {
-        mode: workerMode,
-        wall_clock_ms: totalWorkerWallclockMs,
-      },
-      recent_graduations: recent,
       last_error: lastError,
     };
 
-    // Heavy compute (filter-v2 panels, price-path detail, trading data) is
-    // cached with a 24h TTL — computeFilterV2Data alone is ~100s at current
-    // data volume, and running it every 2-min sync was blocking the Node
-    // event loop long enough to 502 live dashboard requests. Cache refreshes
-    // on boot (first call) and at most once/day after that. Each sync cycle
-    // still re-publishes the cached JSON strings so all files stay on
-    // bot-status.
-    const heavy = await getHeavyData(this.db, this.strategyManager);
-    const v2 = heavy.v2;
-    const pricePathDetail = heavy.pricePathDetail;
-    const pricePathV2Detail = heavy.pricePathV2Detail;
-    // Don't reuse heavy.tradingData — strategies/config can drift from what
-    // was captured at the last heavy cache refresh (up to 24h old). Recompute
-    // fresh each sync cycle so trading.json on bot-status reflects live
-    // strategy state. The queries inside computeTradingData are all <100ms.
-    const tradingData = computeTradingData(this.db, this.strategyManager, {
-      topPairs: v2.panel6.top_pairs,
-    });
+    // ── Copy-trade + live views (all cheap SQL / cache reads; no RPC) ──
+    const walletLeaderboard = computeWalletLeaderboard(this.db);
+    const smartMoney = getSmartMoneyAnalysis(this.db);
+    const copyProbe = computeCopyProbe(this.db);
+    const copyTrades = computeCopyTrades(this.db);
     const liveExecutionStats = computeLiveExecutionStats(this.db);
     const liveTrainingData = computeLiveTrainingData(this.db);
 
-    // Strategy configs — includes all DPM params per strategy
-    const strategyRows = getStrategyConfigs(this.db);
-    const strategies = strategyRows.map(row => ({
-      id: row.id,
-      label: row.label,
-      enabled: row.enabled === 1,
-      params: JSON.parse(row.config_json),
-    }));
-
-    // Markov state-conditional exit matrix — present only when StrategyManager
-    // has finished initializing and at least one strategy registered a filter.
-    const markovMatrix = this.strategyManager
-      ? this.strategyManager.getMarkovStore().toJson()
-      : { generated_at: null, paths_consumed: 0, filters: {} };
-
-    const genAt = new Date(nowMs).toISOString();
-
-    // Panel 6 sync shape: omit the URL-driven `dynamic` slice (needs user input)
-    // and keep only the auto-scanned `top_pairs*` leaderboards.
-    const panel6Published = {
-      title: v2.panel6.title,
-      description: v2.panel6.description,
-      filter_names: v2.panel6.filter_names,
-      top_pairs: v2.panel6.top_pairs,
-      top_pairs_t60: v2.panel6.top_pairs_t60,
-      top_pairs_t120: v2.panel6.top_pairs_t120,
-      flags: v2.panel6.flags,
-    };
-
     return {
-      // Existing files — unchanged for backwards compat with stale sessions.
       'diagnose.json': JSON.stringify(diagnose, null, 2),
       'snapshot.json': JSON.stringify(snapshot, null, 2),
-      'best-combos.json': JSON.stringify(bestCombos, null, 2),
-      'trades.json': JSON.stringify(trades, null, 2),
-      'panel11.json': JSON.stringify(panel11, null, 2),
-      'panel3.json': JSON.stringify(panel3, null, 2),
-      'price-path-stats.json': JSON.stringify(pricePathStats, null, 2),
-      'peak-analysis.json': JSON.stringify(peakAnalysis, null, 2),
-      'exit-sim.json': JSON.stringify(exitSim, null, 2),
-      'exit-sim-matrix.json': JSON.stringify(exitSimMatrix, null, 2),
-      'entry-time-matrix.json': JSON.stringify(entryTimeMatrix, null, 2),
-      'wallet-rep-analysis.json': JSON.stringify(walletRepAnalysis, null, 2),
-      'sniper-panel.json': JSON.stringify(sniperPanel, null, 2),
-      'strategy-percentiles.json': JSON.stringify(strategyPercentiles, null, 2),
-      'journal.json': JSON.stringify(journal, null, 2),
-      'edge-decay.json': JSON.stringify(edgeDecay, null, 2),
-      'trends-time.json': JSON.stringify(trendsTime, null, 2),
-      'sl-precursor.json': JSON.stringify(slPrecursor, null, 2),
-      'portfolio-corr.json': JSON.stringify(portfolioCorr, null, 2),
-      'trends-market.json': JSON.stringify(trendsMarket, null, 2),
-      'counterfactual.json': JSON.stringify(counterfactual, null, 2),
-      'loss-postmortem.json': JSON.stringify(lossPostmortem, null, 2),
-      'leave-one-out-pnl.json': JSON.stringify(leaveOneOutPnl, null, 2),
-      'regime-analysis.json': JSON.stringify(regimeAnalysis, null, 2),
+      'copy-trades.json': JSON.stringify(copyTrades, null, 2),
       'wallet-leaderboard.json': JSON.stringify(walletLeaderboard, null, 2),
       'smart-money.json': JSON.stringify(smartMoney, null, 2),
       'copy-probe.json': JSON.stringify(copyProbe, null, 2),
-      'copy-trades.json': JSON.stringify(copyTrades, null, 2),
-      'report.json': JSON.stringify(dailyReport, null, 2),
-      'strategies.json': JSON.stringify({
-        generated_at: genAt,
-        count: strategies.length,
-        strategies,
-      }, null, 2),
-      'markov-matrix.json': JSON.stringify(markovMatrix, null, 2),
-      // Per-command outcomes from the last 20 strategy-commands.json batches
-      // the bot processed. Use to debug silently-rejected upserts (ID length
-      // violations, invalid params, missing fields). Fresh push wipes the
-      // file from main but leaves the entry here.
-      'command-results.json': JSON.stringify({
-        generated_at: genAt,
-        batch_count: this.recentCommandBatches.length,
-        batches: this.recentCommandBatches,
-      }, null, 2),
-
-      // New files (overhaul 2026-04-17): per-panel slices from /filter-analysis-v2
-      // + full price-path detail with raw overlay + full /trading dashboard data.
-      'panel1.json': JSON.stringify({
-        generated_at: genAt,
-        panel1: v2.panel1,
-        panel1_t60: v2.panel1_t60,
-        panel1_t120: v2.panel1_t120,
-      }, null, 2),
-      'panel2.json': JSON.stringify({
-        generated_at: genAt,
-        panel2: v2.panel2,
-      }, null, 2),
-      'panel4.json': JSON.stringify({
-        generated_at: genAt,
-        panel4: v2.panel4,
-        panel4_t60: v2.panel4_t60,
-        panel4_t120: v2.panel4_t120,
-      }, null, 2),
-      'panel5.json': JSON.stringify({
-        generated_at: genAt,
-        panel5: v2.panel5,
-      }, null, 2),
-      'panel6.json': JSON.stringify({
-        generated_at: genAt,
-        panel6: panel6Published,
-      }, null, 2),
-      'panel7.json': JSON.stringify({
-        generated_at: genAt,
-        panel7: v2.panel7,
-      }, null, 2),
-      'panel8.json': JSON.stringify({
-        generated_at: genAt,
-        panel8: v2.panel8,
-      }, null, 2),
-      'panel9.json': JSON.stringify({
-        generated_at: genAt,
-        panel9: v2.panel9,
-      }, null, 2),
-      'panel10.json': JSON.stringify({
-        generated_at: genAt,
-        panel10: v2.panel10,
-      }, null, 2),
-      // ── v3 panels ──
-      'panelv3_1.json': JSON.stringify({ generated_at: genAt, panelv3_1: v2.panelv3_1 }, null, 2),
-      'panelv3_2.json': JSON.stringify({ generated_at: genAt, panelv3_2: v2.panelv3_2 }, null, 2),
-      'panelv3_3.json': JSON.stringify({ generated_at: genAt, panelv3_3: v2.panelv3_3 }, null, 2),
-      'panelv3_4.json': JSON.stringify({ generated_at: genAt, panelv3_4: v2.panelv3_4 }, null, 2),
-      'panelv3_5.json': JSON.stringify({ generated_at: genAt, panelv3_5: v2.panelv3_5 }, null, 2),
-      'panelv3_6.json': JSON.stringify({ generated_at: genAt, panelv3_6: v2.panelv3_6 }, null, 2),
-      'panelv3_7.json': JSON.stringify({ generated_at: genAt, panelv3_7: v2.panelv3_7 }, null, 2),
-      'panelv3_8.json': JSON.stringify({ generated_at: genAt, panelv3_8: v2.panelv3_8 }, null, 2),
-      'price-path-detail.json': JSON.stringify(pricePathDetail, null, 2),
-      'price-path-v2.json': JSON.stringify(pricePathV2Detail, null, 2),
-      'trading.json': JSON.stringify(tradingData, null, 2),
-      'live-execution.json': JSON.stringify(liveExecutionStats, null, 2),
       'live-training.json': JSON.stringify(liveTrainingData, null, 2),
+      'live-execution.json': JSON.stringify(liveExecutionStats, null, 2),
 
-      // ── Log + error self-service (no more "logs are live-only on Railway") ──
-      // logs.json: recent log-buffer tail (all levels) + a retained warn/error
-      // slice so warnings survive even after info logs push them out of the tail.
+      // ── Log + error + DB self-service ──
       'logs.json': JSON.stringify({
         generated_at: genAt,
         buffer_size: this.logBuffer.size(),
@@ -1437,7 +473,6 @@ export class GistSync {
         last_error: getLastBotError(this.db),
         recent: getRecentBotErrors(this.db, 20),
       }, null, 2),
-      // db-query-results.json: outcome of the most recent db-query.json request.
       'db-query-results.json': JSON.stringify(
         this.lastDbQueryResults ?? {
           generated_at: genAt,
@@ -1454,12 +489,8 @@ export class GistSync {
   /**
    * fetch() with retry on transient network failures (TypeError "fetch failed",
    * ETIMEDOUT, etc.) AND on 5xx responses. Up to 3 attempts with exponential
-   * backoff (1s, 2s, 4s). 4xx responses are returned as-is — those are caller
-   * bugs, not transient.
-   *
-   * Without this, a single GitHub network blip aborted the whole 2-min sync
-   * cycle (dropping 25+ JSON files) and logged a full TypeError stack each
-   * time, flooding Railway logs.
+   * backoff (1s, 2s, 4s). 4xx responses are returned as-is — caller bugs, not
+   * transient.
    */
   private async fetchWithRetry(
     url: string,
@@ -1472,7 +503,6 @@ export class GistSync {
       try {
         const resp = await fetch(url, init);
         if (resp.status >= 500 && attempt < MAX_ATTEMPTS) {
-          // Transient server-side error — retry.
           lastErr = new Error(`${opName} got ${resp.status} ${resp.statusText}`);
           await this.sleep(1000 * Math.pow(2, attempt - 1));
           continue;
@@ -1494,12 +524,10 @@ export class GistSync {
   }
 
   /**
-   * Core sync: process inbound commands, build status payloads, push to bot-status.
+   * Core sync: process inbound DB queries, build status payloads, push to
+   * bot-status via the Git Tree API.
    */
   private async sync(): Promise<void> {
-    // Process any inbound strategy commands before building status
-    await this.processInboundCommands();
-
     // Process any inbound ad-hoc DB queries so their results ride out on this
     // same push cycle (db-query-results.json is built inside buildPayloads).
     await this.processDbQueries();
@@ -1591,7 +619,6 @@ export class GistSync {
         throw new Error(`Ref update failed: ${patchResp.status} ${await patchResp.text()}`);
       }
 
-      // Recovery from a previous outage — log once when we transition back.
       if (this.consecutiveFailures > 0) {
         logger.info(
           { recoveredAfterFailures: this.consecutiveFailures, branch: BRANCH },
@@ -1603,8 +630,6 @@ export class GistSync {
     } catch (err) {
       this.consecutiveFailures += 1;
       const message = err instanceof Error ? err.message : String(err);
-      // First failure logs at error (with stack) so the cause is visible. Repeat
-      // failures degrade to a single warn line so Railway logs stay readable.
       if (this.consecutiveFailures === 1) {
         logger.error({ err }, 'Status sync error');
       } else {

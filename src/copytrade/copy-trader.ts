@@ -207,8 +207,10 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    Confirms window-timing destroys edge; keep lead selection, drop regime stacking.
   // I2 lead × token — hotlead picks good WHO; consensus picks good WHAT (>=2 smart
   //    wallets buying the same token). Two orthogonal quality signals stacked.
-  { id: 'copy-hotlead-consensus', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, minConsensusRecent: 2 },
+  // ── KILLED 2026-06-27 (INVALID — borderline; RPC cleanup): copy-hotlead-consensus (lead×token,
+  //    >=2 smart wallets on a hot lead's pick). n=327 net +5.6 but drop3 -0.87 — the consensus
+  //    overlay does NOT add robustness over plain copy-hotlead (drop3 +7.9). Marginal sign-flip
+  //    (was WATCH 06-25); revivable if regime turns, but no edge over the kept base today.
   // I3 lead × runner-capture exit — the holds (hold30m/2h) have huge net but terrible
   //    drop3 (lottery: profit is 3 moonshots). Hypothesis: good leads pick the runners,
   //    so applying lead selection to a 30m hold should CONCENTRATE the winners and turn
@@ -216,13 +218,44 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    only on hot leads.
   { id: 'copy-hotlead-hold30m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // ── P (2026-06-27): copy-hotlead-hold30m is the best strategy on the board (net +35.9,
+  //    drop3 +11.9, ~89 SOL/mo). This cohort hill-climbs it by varying ONE lever each, all on
+  //    the IDENTICAL hot-lead entry (lastN10/>=3/net>0, lag5+drift10) so they share entry +
+  //    poll RPC with the parent (poll() dedupes by baseVault) — near-zero marginal budget.
+  //    Kill per id: n>=100 and drop3 < parent copy-hotlead-hold30m's drop3 (must beat the parent
+  //    on robustness, not just raw net). 5-day window. Exits/hold sweep — NOT trailing-TP/
+  //    scale-out/ratchet (cohort O already proved those cut drop3 on this base).
+  // Hold-duration sweep: is the 30m time-stop cutting runners short, or holding fades too long?
+  { id: 'copy-hotlead-hold45m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 2700,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-hotlead-hold60m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-hotlead-hold20m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1200,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // Stop-level sweep: the only price-based exit on this no-TP runner — tighter cuts losers
+  // faster (WR up, maybe drop3 down); wider gives runners room.
+  { id: 'copy-hotlead-hold30m-sl20', tpPct: null, slPct: 20, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-hotlead-hold30m-sl40', tpPct: null, slPct: 40, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // Breakeven de-risk: once +30%, raise the stop to entry+buffer — protects the pop-then-fade
+  // positions WITHOUT capping runners (distinct from the killed trailing-TP variants).
+  { id: 'copy-hotlead-hold30m-be30', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    breakevenAtPct: 30 },
+  // Best-entry × best-exit: the promotable -strict net floor (>=0.5) on the 30m runner exit.
+  // A SUBSET of hold30m's tokens → fully shares its polls (zero marginal RPC).
+  { id: 'copy-hotlead-hold30m-strict', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
   // I4 hotlead parameter sweep — copy-hotlead works at {last10, >=3, net>0}; bracket
   //    the calibration. -strict raises the net floor (lead must be clearly profitable
   //    recently, not marginally positive); -deep uses a longer, more stable lookback.
   { id: 'copy-hotlead-strict', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
-  { id: 'copy-hotlead-deep',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 20, minTrades: 5, minNetSol: 0 } },
+  // ── KILLED 2026-06-27 (INVALID; RPC cleanup): copy-hotlead-deep (lastN20 / >=5 trades — longer,
+  //    "more stable" lookback). n=550 net +5.2 but drop3 -1.37: the deeper lookback's net is
+  //    tail-driven. copy-hotlead (lastN10/>=3) and copy-hotlead-strict (net floor 0.5) are the
+  //    robust calibrations; a longer lookback adds nothing that survives drop_top3.
   // ── KILLED 2026-06-23 (operator request): copy-hotlead-deep-live-micro. It was the
   //    one live strategy paired to the ORIGINAL research strategy (copy-hotlead-deep)
   //    instead of a dedicated same-age twin — every other live strategy maps to a
@@ -249,12 +282,16 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   // J2 cumulative lead quality — only copy leads with all-time baseline net > 0 over
   //    >=10 copies. The data: best leads by cumulative net aren't flagged "hot" by
   //    recency, so a stable-reputation gate should beat hotlead.
-  { id: 'copy-elitelead',       tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, eliteLeadGate: { minTrades: 10, minNetSol: 0 } },
+  // ── KILLED 2026-06-27 (INVALID; RPC cleanup): copy-elitelead (J2 — cumulative-positive lead,
+  //    >=10 trades). n=285 net +1.6 drop3 -1.92: stable-reputation lead selection UNDERPERFORMS
+  //    recency (copy-hotlead). Cumulative lead quality is not the durable signal; recency + a
+  //    net floor is. The token-level signal (consensus2) remains the keeper, not lead reputation.
   // J3 stack the two proven-durable signals — good token (consensus) x proven lead
   //    (cumulative quality). Both are token/lead-intrinsic, not timing.
-  { id: 'copy-consensus2-elite', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 } },
+  // ── KILLED 2026-06-27 (INVALID — borderline; RPC cleanup): copy-consensus2-elite (J3 —
+  //    consensus2 × elite lead, the two "durable" intrinsic signals stacked). n=164 net +2.1 but
+  //    drop3 -0.75, sign-flipped from +1.06 on 06-25: doesn't hold robustness as n grows. Stacking
+  //    two weak-positive gates didn't compound into a robust edge. Borderline; revivable.
   // ── K (2026-06-19) → KILLED 2026-06-24 (cohort retired, findings ported forward, operator request):
   //    the c2rr ratchet/runner EXIT sweep on the realistic consensus2 entry (>=2 smart wallets,
   //    entryDelaySec:5 + drift5). 10 ids — control / breakeven / ratchet-tp / ratchet-run /
@@ -284,83 +321,39 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    lifts the monthly run-rate above the static TP100/SL30 these entries ship today.
   //    Kill criterion per id: n>=100 and drop3 < its static-exit twin's drop3 (the runner exit
   //    must beat the entry's current TP100/SL30 on robustness, not just on raw net).
-  // hotlead entry (lastN10 / >=3 trades / net>0, drift10) × 3 runner exits
-  { id: 'copy-hotlead-scaleout-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    scaleOut: { atPct: 50, fraction: 0.5 }, trailingTp: { atPct: 80, dropPct: 30 } },
-  { id: 'copy-hotlead-trailtp-wide', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    trailingTp: { atPct: 50, dropPct: 30 } },
-  { id: 'copy-hotlead-ratchet-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }], trailingTp: { atPct: 80, dropPct: 30 } },
-  // hotlead entry + 30m time-stop backstop (maxHoldSec:1800) × 3 runner exits
-  { id: 'copy-hotlead-hold30m-scaleout-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    scaleOut: { atPct: 50, fraction: 0.5 }, trailingTp: { atPct: 80, dropPct: 30 } },
-  { id: 'copy-hotlead-hold30m-trailtp-wide', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    trailingTp: { atPct: 50, dropPct: 30 } },
-  { id: 'copy-hotlead-hold30m-ratchet-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }], trailingTp: { atPct: 80, dropPct: 30 } },
-  // consensus2 × elite-lead entry (>=2 smart wallets + cumulative-positive lead >=10 trades, drift10) × 3 runner exits
-  { id: 'copy-cons2elite-scaleout-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 },
-    scaleOut: { atPct: 50, fraction: 0.5 }, trailingTp: { atPct: 80, dropPct: 30 } },
-  { id: 'copy-cons2elite-trailtp-wide', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 },
-    trailingTp: { atPct: 50, dropPct: 30 } },
-  { id: 'copy-cons2elite-ratchet-trailtp', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, minConsensusRecent: 2, eliteLeadGate: { minTrades: 10, minNetSol: 0 },
-    ratchet: [{ atPct: 25, stopPct: 5 }, { atPct: 60, stopPct: 35 }], trailingTp: { atPct: 80, dropPct: 30 } },
+  // ── KILLED 2026-06-27 (cohort O closed — INVALID; RPC-budget cleanup): the 9 EXIT×ENTRY
+  //    crosses (hotlead / hotlead-hold30m / cons2elite × scaleout-trailtp / trailtp-wide /
+  //    ratchet-trailtp). Kill criterion was drop3 >= the entry's static-exit twin; ALL FAILED.
+  //    Every variant landed drop3 < 0 (-1.8 to -5.7) vs the static twins copy-hotlead (drop3
+  //    +7.9) and copy-hotlead-hold30m (drop3 +11.9). CONCLUSION: trailing-TP / scale-out /
+  //    ratchet runner exits do NOT improve robustness over the static TP100/SL30 on the
+  //    promotable entries — they trade away drop3 for raw net. The cons2elite arm is net- AND
+  //    drop3-negative on every exit (the cons2×elite entry is too weak a base, confirming the
+  //    06-24 c2rr finding). Keep the static-exit promotables; the runner-exit search is closed.
   // ── KILLED 2026-06-23 (INVALID): copy-fatwallet-{tp100,follow,runner,hightp,scaleout} —
   //    the fat-tail-wallet allowlist cohort (9LxM/2o9U/5hYs, WR<60). After ~20 trades each
   //    ALL five variants fail the bar: drop_top3 negative (-1.0 to -2.0), WR 9-19%, no exit
   //    style recovered an edge. Their fat-tail winners live mostly in BONDING-CURVE entries
   //    we can't copy; the post-grad PumpSwap slice we CAN copy is just the drift. Lesson:
   //    rank copy targets by post-grad Swap% + drop3, not raw WR/net.
-  // ── M (2026-06-22): SINGLE-WALLET one-to-one copy of 3eG16XXd…pBde — the cleanest
-  //    copy target on the board: 99% PumpSwap (copyable), drop_top3 +126 ≈ total +135
-  //    (broad-based edge, NOT a lottery), WR 90%, 11.5-min avg hold, median RT +798%
-  //    (holds for big runners). A standard TP would chop that median — so follow its
-  //    sell / let it run. 3 variants share the SAME allowlist + realistic entry and
-  //    differ ONLY in exit. Promotable → in follow_list → already watched by the probe.
-  //    NB: last active ~7d ago — signal flow needs it to keep trading.
-  //  -follow = ONE-TO-ONE: enter on its buy, exit on its sell (mirror its exit timing);
-  //    loose SL only as rug protection.
-  { id: 'copy-3eg1-follow',  tpPct: null, slPct: 50, exitFollow: true, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
-  //  -runner = no TP, trail the peak — capture the runner without waiting for its sell.
-  { id: 'copy-3eg1-runner',  tpPct: null, slPct: 35, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10, trailingTp: { atPct: 100, dropPct: 30 },
-    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
-  //  -tp100 = CONTROL (standard exit — expected to cap this wallet's huge median run).
-  { id: 'copy-3eg1-tp100',   tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10,
-    walletAllowlist: ['3eG16XXd779xVsqZwhSS31L3bw7QBBRaixBAmEWEpBde'] },
-  // ── N (2026-06-23): DAILY-LOSS CIRCUIT BREAKER test. Backtest (regime-analysis ×
-  //    copy daily P&L) showed a regime/rug-rate pause CAN'T work — the +54 SOL day and
-  //    the -74 SOL day had identical regime, so pausing on rug-rate skips the winners
-  //    too and loses net. A REACTIVE daily-loss cap does work in the backtest: keep the
-  //    good days, cap the disasters. Test it on 3 base strategies, each as a -cap variant
-  //    (dailyLossCapSol=3: halt this strategy's new entries for the UTC day once its
-  //    realized net <= -3 SOL) vs an identical -ctrl twin (no cap). Matched pairs start
-  //    fresh together → clean one-to-one. Win = -cap has a higher floor (smaller worst
-  //    day) AND net >= its -ctrl twin (the cap shouldn't cost net). Run >= 7 days.
-  { id: 'copy-hotlead-cap',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, dailyLossCapSol: 3 },
-  { id: 'copy-hotlead-ctrl', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
-  { id: 'copy-elitelead-cap',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, eliteLeadGate: { minTrades: 10, minNetSol: 0 }, dailyLossCapSol: 3 },
-  { id: 'copy-elitelead-ctrl', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, eliteLeadGate: { minTrades: 10, minNetSol: 0 } },
-  { id: 'copy-hotlead-consensus-cap',  tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, minConsensusRecent: 2, dailyLossCapSol: 3 },
-  { id: 'copy-hotlead-consensus-ctrl', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 }, minConsensusRecent: 2 },
+  // ── M (2026-06-22) → KILLED 2026-06-27 (NO SIGNAL; RPC cleanup): copy-3eg1-{follow,runner,tp100}
+  //    — single-wallet one-to-one copy of 3eG16XXd…pBde. The wallet went dormant: after ~5 days the
+  //    allowlist produced ZERO copyable buys (n=0 on all three, "entered 0"). Same failure mode as
+  //    the 06-11 single-wallet group (igiybn/2snlnx/buwg6b) — one-wallet mirroring can't generate
+  //    evaluable signal frequency once the wallet pauses. Re-add only if 3eG1 resumes trading
+  //    (watch wallet-leaderboard); these were never the bottleneck on config, just on the wallet
+  //    being active. LESSON: don't keep allowlist-of-one strategies armed on dormant wallets — they
+  //    cost roster slots + reconnect overhead for no data.
+  // ── N (2026-06-23) → KILLED 2026-06-27 (cohort N closed — inconclusive/INVALID; RPC cleanup):
+  //    DAILY-LOSS CIRCUIT BREAKER test — 3 matched -cap (dailyLossCapSol=3: halt new entries for
+  //    the UTC day once realized net <= -3 SOL) vs -ctrl pairs on hotlead / elitelead /
+  //    hotlead-consensus. Win was: -cap higher floor AND net >= -ctrl. RESULT: all six arms
+  //    net-negative (cap -2.7 / -3.9 / -1.5, ctrl -1.3 / -3.8 / -2.1), drop3 deeply negative on
+  //    all. The cap can't be validated on bases that themselves lose, so the circuit-breaker
+  //    question is UNRESOLVED (not refuted). LESSON: the fresh same-age -ctrl twin of our best
+  //    strategy (copy-hotlead-ctrl, net -1.3) ran NEGATIVE while the older copy-hotlead booked
+  //    +14.5 on the identical gate — the hotlead edge is front-loaded / regime-sensitive; watch
+  //    copy-hotlead for decay. Re-run the cap test only once a base clears the bar fresh.
   // ── KILLED 2026-06-11 (no edge): copy-tp50-sl20, copy-tp200-sl40, copy-tp100-sl50-follow,
   //    copy-be10-plus3 (net ~0, drop3 deeply negative, WR 10%), copy-ratchet (-20),
   //    copy-scaleout50, copy-conviction-toplead (-4.9), copy-hold6h (-25.7).
@@ -2260,6 +2253,32 @@ export function computeCopyTrades(db: Database.Database): unknown {
     phase: 'phase2-shadow-copy',
     note: 'SHADOW copy trades — no real funds. Entry at pool price ~1.1s after the lead wallet; net_sol after the SIM round-trip cost (scale-out partials folded in). Coverage limited to tokens in our graduations table. OVERALL counts ACTIVE strategies only (killed strategies leave closed rows in the DB; retired_summary reports those separately). CAVEATS: strategies share entry signals — totals are not independent (see paired_vs_baseline); total_net_sol_exit_stress re-nets every closed remainder leg with the exit fill worsened by ' + EXIT_STRESS_PCT + '% (scale-out partials kept as recorded); open_unrealized_sol marks open positions to the last polled pool price (open_priced = how many have one); total_incl_open_sol = closed + unrealized. MEASURED-LAG (-lag) variants wait entry_delay_sec after detection and enter at the re-fetched price (entry_drift = measured detection→fill drift); follow_sell exits on those variants are re-fetched after follow_sell_delay_sec; -drift variants skip entries whose measured drift exceeds max_entry_drift_pct (drift_skips + skipped_drift report the gate).',
     size_sol: COPY_SIZE_SOL,
+    // End-to-end follower latency over the last 7d of probe events. transport =
+    // lead block_time → our WS notification; decision = notification → copy
+    // dispatch (our in-process parse, ~ms since we stopped blocking on a
+    // confirm-fetch); total = block_time → dispatch (the real disadvantage we'd
+    // carry into live execution, before the on-chain land gap).
+    latency: (() => {
+      let rows: Array<{ detection_lag_sec: number | null; decision_lag_ms: number | null; total_lag_sec: number | null }> = [];
+      try {
+        rows = db.prepare(`
+          SELECT detection_lag_sec, decision_lag_ms, total_lag_sec
+          FROM copy_probe_events WHERE detected_at > ?
+        `).all(Date.now() - 7 * 86400_000) as typeof rows;
+      } catch { return null; }
+      const sum = (vals: Array<number | null>) => {
+        const s = vals.filter((v): v is number => typeof v === 'number').sort((a, b) => a - b);
+        if (!s.length) return null;
+        const pc = (q: number) => +s[Math.min(s.length - 1, Math.floor(s.length * q))].toFixed(2);
+        return { n: s.length, mean: +(s.reduce((a, b) => a + b, 0) / s.length).toFixed(2), p50: pc(0.5), p95: pc(0.95), max: +s[s.length - 1].toFixed(2) };
+      };
+      return {
+        window_days: 7,
+        transport_lag_sec: sum(rows.map((r) => r.detection_lag_sec)),
+        decision_lag_ms: sum(rows.map((r) => r.decision_lag_ms)),
+        total_lag_sec: sum(rows.map((r) => r.total_lag_sec)),
+      };
+    })(),
     paired_baseline: PAIRED_BASELINE,
     // 1-10 window score + hourly series — "is NOW a good time to copy trade".
     // Baseline series = copy-tp100-sl30 (roster-stable).
