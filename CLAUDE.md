@@ -164,14 +164,27 @@ NOT screenshot dashboards, query the DB, or pull Railway logs.
 
 Files published every ~2 min: `diagnose.json`, `snapshot.json`, `copy-trades.json`,
 `wallet-leaderboard.json`, `smart-money.json`, `copy-probe.json`, `live-training.json`,
-`live-execution.json`.
+`live-execution.json`, plus the self-serve infra files `logs.json`, `bot-errors.json`, and
+`db-query-results.json` (below).
 
 **Do NOT WebFetch the Railway deployment URL — it returns 403.**
 
-### Live-only endpoints (NOT synced to bot-status)
-`GET /api/diagnose`, `/api/snapshot`, `/api/skips`, `/api/graduations`, `/api/logs`,
-`/api/bot-errors`, `/api/live-execution-stats`, `/api/verify-pumpswap`. These need direct Railway
-access (currently 403 from Claude sessions) — ask the operator if you need them.
+### Logs & errors are self-serve (no longer Railway-only)
+Recent logs and crashes ride out on the same 2-min sync:
+- `logs.json` — tail of the in-process log buffer (all levels) + a retained warn/error slice.
+- `bot-errors.json` — `last_error` + the 20 most recent `bot_errors` rows.
+
+### Ad-hoc read-only DB queries (`db-query.json` → `db-query-results.json`)
+To run a one-off SELECT against the live DB, push `db-query.json` to the **`main`** branch:
+```json
+{ "queries": [ { "id": "open-by-strategy", "sql": "SELECT strategy_id, COUNT(*) FROM copy_trades WHERE status='open' GROUP BY 1", "max_rows": 1000 } ] }
+```
+The bot runs each on a dedicated **read-only** connection (writes/DDL are rejected), deletes the
+request, and publishes results to `db-query-results.json` on `bot-status` within ~2 min. Use this
+instead of asking the operator to query the DB.
+
+The legacy `GET /api/*` endpoints still exist on the running service but are 403 from Claude
+sessions — prefer the `bot-status` files above.
 
 ---
 
