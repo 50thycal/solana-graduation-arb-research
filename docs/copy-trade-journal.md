@@ -11,6 +11,71 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-27 — Daily review
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-06-27",
+  "overall": {"n": 5396, "net": 59.75, "drop3": 35.76, "stress": 6.76, "open": 12},
+  "retired_summary": {"n": 19256, "net": -95.67},
+  "regime_score": 4, "regime_24h": 9, "macro_score": 4, "btc_7d_pct": -5.4,
+  "book_daily_today": 4.90,
+  "leads": {"n_leads": 153, "hot": 49, "cold": 64},
+  "n_promotable_realistic": 3,
+  "strategies": [
+    {"id": "copy-hotlead",                     "realistic": true,  "n": 745, "net": 15.854, "drop3":  9.273, "stress":  7.863, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-hold30m",             "realistic": true,  "n": 700, "net": 35.541, "drop3": 11.556, "stress": 27.620, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict",              "realistic": true,  "n": 432, "net": 13.146, "drop3":  6.563, "stress":  8.433, "promo_score": 100, "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-hold30m-pair-shadow", "realistic": true,  "n": 190, "net":  1.014, "drop3": -0.198, "stress":  0.798, "promo_score":  63, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-live-micro",  "realistic": true,  "n": 190, "net":  0.018, "drop3": -0.711, "stress":  0.086, "promo_score":  41, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold20m",             "realistic": true,  "n":   4, "net":  0.132, "drop3": -0.183, "stress":  0.088, "promo_score":  37, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-be30",        "realistic": true,  "n":   4, "net":  0.047, "drop3": -0.183, "stress":  0.004, "promo_score":  26, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-strict",      "realistic": true,  "n":   4, "net":  0.047, "drop3": -0.183, "stress":  0.004, "promo_score":  26, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold60m",             "realistic": true,  "n":   5, "net":  0.084, "drop3": -0.352, "stress":  0.030, "promo_score":  31, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-sl20",        "realistic": true,  "n":   5, "net": -0.016, "drop3": -0.295, "stress": -0.067, "promo_score":  21, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-sl40",        "realistic": true,  "n":   4, "net": -0.082, "drop3": -0.258, "stress": -0.121, "promo_score":  21, "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold45m",             "realistic": true,  "n":   5, "net": -0.255, "drop3": -0.352, "stress": -0.302, "promo_score":  21, "verdict": "WATCH"},
+    {"id": "copy-conviction-consensus2",       "realistic": false, "n": 973, "net": 17.971, "drop3":  5.185, "stress":  7.590, "promo_score":  80, "verdict": "WATCH"},
+    {"id": "copy-tp100-sl30",                  "realistic": false, "n": 2135, "net": -23.753, "drop3": -30.309, "stress": -45.269, "promo_score": 20, "verdict": "WATCH"}
+  ]
+}
+```
+
+**Headline:** Three realistic strategies all-gates-clear and reinforcing (hold30m now drop3 +11.6 / +82 SOL/mo projected) after a strong June 26 bounce; live-micro pilot trails paper twin by ~2000x (net +0.02 vs +35.54) and is the critical blocker before scaling real capital. T+30 graduation pipeline stalled (does not appear to affect copy-trading).
+
+**Day-over-day** (vs 2026-06-25 snapshot; 2026-06-26 was a roster-cut narrative entry, no snapshot):
+- **Roster cut enacted 2026-06-26:** 19 strategies removed (all drop3<0), Cohort P (7 hold30m hill-climb variants) launched today (n=4–5, too early for signal).
+- **Promotable core materially stronger:** hotlead Δdrop3 +3.10 (6.18→9.27); hotlead-hold30m Δdrop3 +6.99 (4.57→11.56); hotlead-strict Δdrop3 +4.86 (1.70→6.56). All three moved up significantly, driven by June 26's +26.71 book day.
+- **Regime recovered:** score 2→4 (still weak), yesterday 24h score=9; book daily −8.47→+26.71→+4.90 (partial today).
+- **Lead pool hotting up:** hot 41→49, cold 65→64. More active signals entering the pool.
+- **BTC macro headwind deepened:** 7d −1.74%→−5.4%; 1d bounce +1.05%. Despite worsening BTC, the copy book stayed positive — encouraging macro-independence signal.
+
+**Week-over-week** (last 6 snapshot dates: 06-21 through 06-27):
+- **Converging:** all three promotable strategies have been score-100 since at least 06-21 (6+ consecutive days). Drop3 on hotlead-hold30m: +2.89 (06-21) → +4.61 (06-22) → +7.16 (06-24) → +4.57 (06-25) → **+11.56** today. Strongly trending up despite the mid-week (06-23–25) regime trough.
+- **Regime pattern:** 06-21=3, 06-22=8 (rally), 06-24=1, 06-25=2 (trough), 06-27=4 (recovery). Volatile but book held up — hotlead edge appears regime-tolerant.
+- **BTC trend:** 7d pct went +0.58%→−3.63%→−2.39%→−1.74%→−5.4%. Sustained macro headwind; copy edge holding regardless.
+- **Lead pool:** hot leads 37→41→40→41→49. Trending up over the week — expanding signal pool is a positive structural sign.
+- **Live-micro gap persistent:** at n=108 on 06-25, pair-shadow was net +0.54 / live-micro net −0.30. At n=190 today: pair-shadow net +1.01 / live-micro net +0.02. The gap is not closing meaningfully with more trades, suggesting a structural issue (RPC entry misses, not sampling noise).
+
+**Verdicts (proposals — roster changes require operator approval + code edit):**
+
+- **PROMOTE — copy-hotlead** (n=745, net=+15.85, drop3=+9.27, stress=+7.86, monthly=+33.97 SOL): all gates clear, 6th consecutive day promotable. Recommend operator approve live-micro entry at 0.5 SOL/trade. This strategy does NOT have an active live-micro twin yet — launching one is the action.
+- **PROMOTE — copy-hotlead-hold30m** (n=700, net=+35.54, drop3=+11.56, stress=+27.62, monthly=+82.02 SOL): board's best strategy on every metric. Gate-clear for 6+ days. BUT: existing live-micro pilot (`copy-hotlead-hold30m-live-micro`) is severely underperforming (net +0.02 vs +35.54). Recommend investigating the entry-miss rate on the live side before scaling further. Do not increase live size until the gap is explained.
+- **PROMOTE — copy-hotlead-strict** (n=432, net=+13.15, drop3=+6.56, stress=+8.43, monthly=+32.86 SOL): hotlead subset with net≥0.5 floor per lead — highest-conviction entry. All gates clear. No live twin exists yet. Same investigation caveat applies.
+- **WATCH — copy-hotlead-hold30m-pair-shadow** (n=190, drop3=−0.198): live pipeline shadow component of hold30m. Drop3 improving (was −0.567 on 06-25). Monitor for sign flip — if drop3 turns positive at n≥100, it clears the bar for pair-shadow mode.
+- **WATCH — copy-hotlead-hold30m-live-micro** (n=190, net=+0.018, drop3=−0.711): real-money pilot. Technically n≥100 with negative drop3 → ordinarily KILL, but this is the live execution canary for hold30m. Recommend keeping alive to diagnose the paper/live gap rather than killing it. If a fix is deployed and net doesn't improve materially by n=300, recommend replacing with a fresh live-micro at fixed entry.
+- **WATCH — Cohort P (7 hold30m variants, n=4–5 each):** launched today, no actionable signal yet. Re-evaluate 2026-07-02.
+- **WATCH — copy-tp100-sl30** (n=2135, net=−23.75): load-bearing baseline reference. 8 open positions + highest poll cost on the roster. With only one active `paired_vs_baseline` comparison (copy-conviction-consensus2, n=504 shared events), the marginal value of keeping this running is declining. Recommend operator decision: keep as reference OR retire to reduce RPC/slot usage.
+
+**New strategies to try:** None this cycle. Cohort P just launched (7 variants targeting hold-duration and SL sensitivity). Let it run to n≥50 before proposing additions.
+
+**Critical open question — live-micro gap:** The paper hold30m prints +35.54 SOL cumulative; the live-micro twin prints +0.018 at the same n=190. A 5-second entry delay is already baked in (both are `realistic_execution`). Likely cause: the live execution layer is missing entries that paper captures — either Helius RPC throttling under load (`copy_poll` rate limit), or position capacity conflicts (live strategy hits `already_open` skips that the paper path ignores). Check `gate_skips.price_fail` and `gate_skips.rpc_drop` vs `entered` ratios on the live-micro strategy to diagnose.
+
+**Operator next step:** Before promoting any strategy to live capital, diagnose why `copy-hotlead-hold30m-live-micro` (net +0.018 at n=190) diverges so severely from its paper twin (net +35.54 at n=700). Check logs for entry-miss rate on the live side. If it's RPC throttling, the fix is in place already (roster was just cut in half) — wait for the next 50 live trades to see if fills improve. If it's capacity skips, lower `maxConcurrentPositions` on the live strategy.
+
+---
+
 ## 2026-06-27 — New experiment cohort P (hold30m hill-climb)
 
 > Spawned 7 variants of the board's best strategy, `copy-hotlead-hold30m` (parent: net +35.9,
