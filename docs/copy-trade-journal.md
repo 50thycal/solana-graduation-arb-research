@@ -11,6 +11,40 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-27 — New experiment cohort P (hold30m hill-climb)
+
+> Spawned 7 variants of the board's best strategy, `copy-hotlead-hold30m` (parent: net +35.9,
+> drop3 +11.9, ~89 SOL/mo, WR 34%). Each changes exactly ONE lever and shares the parent's
+> hot-lead entry (lastN10 / ≥3 / net>0, lag5 + drift10). Because `poll()` dedupes price fetches
+> by `baseVault`, every variant that enters the same lead-buys as the parent **shares its entry +
+> poll RPC** — near-zero marginal budget. Removed `copy-3eg1-*` (dormant single wallet, n=0) in the
+> same change to free roster slots.
+
+**Bar / kill criterion (per id):** `n >= 100 AND drop3 < parent copy-hotlead-hold30m's drop3` — a
+variant must beat the parent on *robustness* (drop_top3), not just raw net. **Window: 5 days**
+(re-evaluate ~2026-07-02; most will still be n<100 → WATCH unless they decisively bleed).
+
+| Strategy | Lever changed | Hypothesis |
+|---|---|---|
+| `copy-hotlead-hold45m` | `maxHoldSec` 1800→2700 | 30m time-stop cuts runners short; +15m captures more of the runner tail. |
+| `copy-hotlead-hold60m` | `maxHoldSec` 1800→3600 | Same, further out — finds where the hold curve turns. |
+| `copy-hotlead-hold20m` | `maxHoldSec` 1800→1200 | Opposite: positions not moving by 20m just fade; exit earlier lifts drop3. |
+| `copy-hotlead-hold30m-sl20` | `slPct` 30→20 | Tighter stop cuts losers faster (WR↑); test if drop3 survives. |
+| `copy-hotlead-hold30m-sl40` | `slPct` 30→40 | Wider stop gives runners room before the no-TP ride. |
+| `copy-hotlead-hold30m-be30` | +`breakevenAtPct:30` | Once +30%, raise stop to entry+buffer — de-risk pop-then-fade WITHOUT capping runners. |
+| `copy-hotlead-hold30m-strict` | `hotLeadGate.minNetSol` 0→0.5 | Best-entry × best-exit: the promotable `-strict` net floor on the 30m runner exit. Subset of parent's tokens (zero marginal RPC). |
+
+**Explicitly NOT tested:** trailing-TP / scale-out / ratchet exits on this base (cohort O already
+proved they cut drop3 here — INVALID), and the consensus overlay (`minConsensusRecent:2`) — deferred
+per operator (`copy-hotlead-consensus` already failed drop3 on the no-hold base).
+
+**Predictions (resolve at n≥100 or 5 days):** each variant `{target_drop3 > 0, target_n: 100,
+target_days: 5, kill: "n>=100 and drop3 < parent"}`. The hold-duration and breakeven arms are the
+highest-information (they move the exit the parent leaves on the table); `-strict` is the highest-
+conviction (proven entry floor × proven exit).
+
+---
+
 ## 2026-06-27 — Roster cut (RPC-budget + robustness)
 
 > Roster-change entry, not a daily snapshot (no machine `SNAPSHOT` block — `/copy-daily-report`

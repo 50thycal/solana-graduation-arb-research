@@ -218,6 +218,35 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    only on hot leads.
   { id: 'copy-hotlead-hold30m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // ── P (2026-06-27): copy-hotlead-hold30m is the best strategy on the board (net +35.9,
+  //    drop3 +11.9, ~89 SOL/mo). This cohort hill-climbs it by varying ONE lever each, all on
+  //    the IDENTICAL hot-lead entry (lastN10/>=3/net>0, lag5+drift10) so they share entry +
+  //    poll RPC with the parent (poll() dedupes by baseVault) — near-zero marginal budget.
+  //    Kill per id: n>=100 and drop3 < parent copy-hotlead-hold30m's drop3 (must beat the parent
+  //    on robustness, not just raw net). 5-day window. Exits/hold sweep — NOT trailing-TP/
+  //    scale-out/ratchet (cohort O already proved those cut drop3 on this base).
+  // Hold-duration sweep: is the 30m time-stop cutting runners short, or holding fades too long?
+  { id: 'copy-hotlead-hold45m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 2700,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-hotlead-hold60m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 3600,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-hotlead-hold20m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1200,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // Stop-level sweep: the only price-based exit on this no-TP runner — tighter cuts losers
+  // faster (WR up, maybe drop3 down); wider gives runners room.
+  { id: 'copy-hotlead-hold30m-sl20', tpPct: null, slPct: 20, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  { id: 'copy-hotlead-hold30m-sl40', tpPct: null, slPct: 40, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // Breakeven de-risk: once +30%, raise the stop to entry+buffer — protects the pop-then-fade
+  // positions WITHOUT capping runners (distinct from the killed trailing-TP variants).
+  { id: 'copy-hotlead-hold30m-be30', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    breakevenAtPct: 30 },
+  // Best-entry × best-exit: the promotable -strict net floor (>=0.5) on the 30m runner exit.
+  // A SUBSET of hold30m's tokens → fully shares its polls (zero marginal RPC).
+  { id: 'copy-hotlead-hold30m-strict', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
   // I4 hotlead parameter sweep — copy-hotlead works at {last10, >=3, net>0}; bracket
   //    the calibration. -strict raises the net floor (lead must be clearly profitable
   //    recently, not marginally positive); -deep uses a longer, more stable lookback.
