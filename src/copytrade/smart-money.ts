@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { PREDICTOR_WHITELIST } from '../api/price-path-v2-predictors';
+import { PREDICTOR_WHITELIST } from './predictors';
 import { getSmartSet, setSmartMoneyCache, getSmartMoneyCacheRaw, WalletScoreRow } from './queries';
 import { makeLogger } from '../utils/logger';
 
