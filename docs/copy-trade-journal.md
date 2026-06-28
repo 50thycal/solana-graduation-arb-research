@@ -11,6 +11,44 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-28 — Cohort R: two "buying too late" gates (first-mover + price-extension)
+
+> Two more `copy-hotlead-hold30m` variants attacking the same failure mode (entering as exit
+> liquidity). Both zero-RPC, share the parent's entries+polls. Kill per id: `n>=100 AND drop3 <
+> parent's drop3`. 5-day window.
+
+**`-early` (first-mover) — structural, not backtestable.** `maxConsensusRecent: 1` — only copy when
+the lead is the SOLE smart wallet to have bought the mint in the 10-min window (the lead is logged to
+`copy_probe_events` before `onLeadBuy`, so count==1 means just the lead). Tests the OPPOSITE of the
+killed consensus2 (which required ≥2 buyers and failed drop3): if more-confirmation isn't the edge,
+maybe being EARLY is. New generic field `maxConsensusRecent` + gate (skip reason `too_late`), reuses
+the cached `countRecentSmartBuyers`.
+
+**`-nochase` (price-extension) — backtested first (DB query C).** Entry/open-price ratio vs net on
+739 closed hold30m trades:
+
+| entry/open | n | WR | avg net |
+|---|---|---|---|
+| <1× (below open) | 170 | .335 | +0.085 |
+| **1–1.5× (0–50%)** | 70 | .386 | **+0.219** |
+| 1.5–2× | 78 | .231 | −0.034 |
+| 2–3× | 89 | .292 | −0.009 |
+| 3–5× | 94 | .372 | −0.002 |
+| ≥5× | 245 | .371 | +0.031 |
+
+**Non-monotonic** — a naive "skip if extended" cap fails (it'd cut the ≥5× bucket). But the real
+signal is clean: **entries at/below +50% of graduation open are the best** (a+b: n=240, +29.9 SOL,
++0.124 avg ≈ 2.5× parent), the 50–300% band bleeds, and the ≥5× bucket is positive only via outliers
+(`max_ratio` 321×). → `maxExtensionPct: 50` (buy within +50% of open, or below). New generic field +
+`mintOpenPrice()` helper (cached per-mint, null open => not blocked); skip reason `extension`. Gates
+on the detection snapshot price (≈ the −lag fill given ~0% median drift).
+
+> Note: the broad "don't chase the moon" framing was only PARTIALLY confirmed (U-shaped, not
+> monotonic). The gate is justified as "buy cheap" (keep the robust low-extension entries), not as a
+> blanket extension cap. The ≥5× runners we drop net only +0.031 avg and lean on a 321× outlier.
+
+---
+
 ## 2026-06-28 — Cohort Q: two data-backed gates (repeat-buy cap + lead exclusion)
 
 > Spawned 2 variants of `copy-hotlead-hold30m` from a DB analysis (run over the new `ops`-branch
