@@ -204,10 +204,14 @@ Never declare victory on n < 100, on the idealized mirror, or on outlier-driven 
 
 ## PULL REQUEST WORKFLOW (operator preference)
 
-After pushing code changes to the feature branch, **always open a GitHub PR into `main`** so the
-operator can review and merge. Use the GitHub MCP (`mcp__github__create_pull_request`) — `gh` is not
-available here. **One open PR per branch** (new pushes update it; check `list_pull_requests` first).
-Don't open a PR when there are no unmerged commits. Give it a clear title + body.
+**As soon as a change is complete and builds (`npm run build` green), proactively open a GitHub PR
+into `main` — do NOT wait to be asked.** The operator's deploy is gated on the PR existing (see
+Deployment Flow below), so a finished change with no PR is just blocking the deploy. Opening the PR
+is part of "done," not a follow-up step.
+
+Use the GitHub MCP (`mcp__github__create_pull_request`) — `gh` is not available here. **One open PR
+per branch** (new pushes update the existing PR; check `list_pull_requests` first). Don't open a PR
+when there are no unmerged commits. Give it a clear title + body.
 
 ---
 
