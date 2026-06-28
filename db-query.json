@@ -1,7 +1,0 @@
-{
-  "queries": [
-    { "id": "p-count", "sql": "SELECT COUNT(*) AS n FROM graduation_momentum", "max_rows": 10 },
-    { "id": "p-label-dist", "sql": "SELECT label, COUNT(*) AS n FROM graduation_momentum GROUP BY label ORDER BY n DESC", "max_rows": 20 },
-    { "id": "p-guard-write", "sql": "DELETE FROM graduation_momentum WHERE 1=0", "max_rows": 10 }
-  ]
-}
