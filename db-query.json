@@ -1,0 +1,8 @@
+{
+  "queries": [
+    { "id": "v480-count", "sql": "SELECT COUNT(*) AS n FROM graduation_momentum", "max_rows": 10 },
+    { "id": "v480-label-dist", "sql": "SELECT label, COUNT(*) AS n FROM graduation_momentum GROUP BY label ORDER BY n DESC", "max_rows": 20 },
+    { "id": "v480-recent", "sql": "SELECT graduation_id, label, pct_t300 FROM graduation_momentum ORDER BY graduation_id DESC LIMIT 5", "max_rows": 10 },
+    { "id": "v480-guard-write", "sql": "UPDATE graduation_momentum SET label='PUMP' WHERE 1=0", "max_rows": 10 }
+  ]
+}
