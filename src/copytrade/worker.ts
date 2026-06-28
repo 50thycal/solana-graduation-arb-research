@@ -4,15 +4,18 @@ import { seedCandidatesFromDb, recomputeCandidatePriorities } from './discovery'
 import {
   getCandidates,
   cacheWalletSwaps,
+  getCachedSwaps,
+  trimWalletCache,
   replaceRoundTrips,
   upsertWalletScore,
   getTopWalletScores,
+  getDeepRescanCandidates,
   upsertFollow,
   getFollowListAddresses,
   getSmartSetAddresses,
   getStaleAddresses,
 } from './queries';
-import { fetchWalletSwaps, scoreWallet, reconstructRoundTrips } from './wallet-pnl';
+import { fetchWalletSwaps, scoreWallet, reconstructRoundTrips, WalletSwap } from './wallet-pnl';
 import { rankWallets } from './ranker';
 import { computeAndCacheSmartMoney } from './smart-money';
 import { computeCotradeDiscovery } from './cotrade-discovery';
@@ -48,16 +51,18 @@ const DEFAULTS = {
   // of the ~250k/day copy budget for position polling. Tune via COPYTRADE_* envs.
   intervalMs: 4 * 60 * 60 * 1000, // 4h between scoring passes (was 6h)
   firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
-  scoreBatchLimit: 30,            // total wallets scored per tick (was 15)
-  maxSignaturesPerWallet: 300,    // history depth per wallet (was 250)
+  scoreBatchLimit: 30,            // backlog FIRST-scans per tick
+  maxSignaturesPerWallet: 300,    // shallow first-scan / triage depth
+  maxSignaturesDeep: 1500,        // DEEP-rescan depth for promising-but-n-capped wallets
+  cacheMaxSwaps: 1500,            // incremental-cache cap = deepest history we score on
+  deepBatchLimit: 3,             // deep rescans per tick (the new RPC cost; keep small)
   restaleSeconds: 24 * 3600,      // re-score a BACKLOG wallet at most once / 24h
   // Priority-refresh: keep the wallets we actually copy (follow_list ∪ smart set)
-  // fresh on a TIGHT cadence, ahead of the never-scored backlog. Without this the
-  // promotable set goes days-stale (the 24h activity column reads 0 for everyone and
-  // good wallets falsely age out of the active≤14d gate). RPC-neutral — the refresh
-  // batch is taken OUT of scoreBatchLimit, not added on top.
+  // fresh on a TIGHT cadence. Refreshes are now INCREMENTAL (fetch only sigs newer
+  // than the cache → ~10x cheaper than a full re-scan), so this is decoupled from
+  // scoreBatchLimit and the batch is bumped up — the backlog keeps its full budget.
   refreshSeconds: 6 * 3600,       // re-score a USED wallet at most once / 6h
-  refreshBatchLimit: 12,          // max used-wallets refreshed per tick (of scoreBatchLimit)
+  refreshBatchLimit: 30,          // used-wallets refreshed per tick (incremental, cheap)
 };
 
 function intEnv(name: string, fallback: number): number {
@@ -73,6 +78,9 @@ export class CopytradeWorker {
   private readonly intervalMs: number;
   private readonly scoreBatchLimit: number;
   private readonly maxSignatures: number;
+  private readonly maxSignaturesDeep: number;
+  private readonly cacheMaxSwaps: number;
+  private readonly deepBatchLimit: number;
   private readonly restaleSeconds: number;
   private readonly refreshSeconds: number;
   private readonly refreshBatchLimit: number;
@@ -86,6 +94,9 @@ export class CopytradeWorker {
     this.intervalMs = intEnv('COPYTRADE_INTERVAL_MS', DEFAULTS.intervalMs);
     this.scoreBatchLimit = intEnv('COPYTRADE_SCORE_BATCH', DEFAULTS.scoreBatchLimit);
     this.maxSignatures = intEnv('COPYTRADE_MAX_SIGS', DEFAULTS.maxSignaturesPerWallet);
+    this.maxSignaturesDeep = intEnv('COPYTRADE_MAX_SIGS_DEEP', DEFAULTS.maxSignaturesDeep);
+    this.cacheMaxSwaps = intEnv('COPYTRADE_CACHE_MAX_SWAPS', DEFAULTS.cacheMaxSwaps);
+    this.deepBatchLimit = intEnv('COPYTRADE_DEEP_BATCH', DEFAULTS.deepBatchLimit);
     this.restaleSeconds = intEnv('COPYTRADE_RESTALE_SEC', DEFAULTS.restaleSeconds);
     this.refreshSeconds = intEnv('COPYTRADE_REFRESH_SEC', DEFAULTS.refreshSeconds);
     this.refreshBatchLimit = intEnv('COPYTRADE_REFRESH_BATCH', DEFAULTS.refreshBatchLimit);
@@ -135,16 +146,45 @@ export class CopytradeWorker {
     if (this.interval) { clearInterval(this.interval); this.interval = null; }
   }
 
-  /** Score a single wallet: fetch swaps → cache → score → store round-trips →
-   *  upsert (which stamps wallet_candidates.last_refreshed). Returns true on success.
-   *  Shared by the priority-refresh and backlog passes. */
-  private async scoreOne(connection: Connection, address: string, now: number): Promise<boolean> {
+  /** Score a single wallet. INCREMENTAL by default: load the cached swaps, fetch
+   *  only signatures newer than the newest cached one, merge, and score the union —
+   *  a refresh costs ~(new sigs) calls instead of a full ~300-call re-scan, and the
+   *  cache deepens over time. `deep` forces a one-shot full backward scan to
+   *  maxSignaturesDeep (rescues promising wallets the 300-sig depth rejected on n).
+   *  A first scan (empty cache) is a shallow backward scan to maxSignatures.
+   *  Returns true on success. Shared by the refresh / backlog / deep passes. */
+  private async scoreOne(
+    connection: Connection, address: string, now: number, opts: { deep?: boolean } = {},
+  ): Promise<boolean> {
+    const deep = opts.deep ?? false;
     try {
-      const swaps = await fetchWalletSwaps(connection, address, { maxSignatures: this.maxSignatures });
-      cacheWalletSwaps(this.db, address, swaps);
-      const score = scoreWallet(address, swaps);
-      replaceRoundTrips(this.db, address, reconstructRoundTrips(swaps));
-      upsertWalletScore(this.db, score, now);
+      const cached = getCachedSwaps(this.db, address);
+      let fetched: WalletSwap[];
+      if (cached.length > 0 && !deep) {
+        // Incremental — only sigs newer than the newest cached swap.
+        const newestSig = cached[cached.length - 1].signature;
+        fetched = await fetchWalletSwaps(connection, address, { maxSignatures: this.maxSignaturesDeep, until: newestSig });
+      } else {
+        // First scan (shallow) or deep rescan (full backward to the deep depth).
+        const depth = deep ? this.maxSignaturesDeep : this.maxSignatures;
+        fetched = await fetchWalletSwaps(connection, address, { maxSignatures: depth });
+      }
+
+      // Merge cached + fetched, dedup by signature, keep the newest cacheMaxSwaps.
+      const bySig = new Map<string, WalletSwap>();
+      for (const s of cached) bySig.set(s.signature, s);
+      for (const s of fetched) bySig.set(s.signature, s);
+      let union = [...bySig.values()].sort((a, b) => a.blockTime - b.blockTime);
+      if (union.length > this.cacheMaxSwaps) union = union.slice(union.length - this.cacheMaxSwaps);
+
+      cacheWalletSwaps(this.db, address, fetched);      // OR IGNORE adds the new rows
+      trimWalletCache(this.db, address, this.cacheMaxSwaps);
+      const score = scoreWallet(address, union);
+      replaceRoundTrips(this.db, address, reconstructRoundTrips(union));
+      // Record scan depth only for backward scans (deep / first); an incremental
+      // refresh passes null so it never downgrades a prior deep depth.
+      const scanSigs = deep ? this.maxSignaturesDeep : (cached.length === 0 ? this.maxSignatures : null);
+      upsertWalletScore(this.db, score, now, scanSigs);
       return true;
     } catch (err) {
       logger.warn('Scoring %s failed: %s', address.slice(0, 8), err instanceof Error ? err.message : String(err));
@@ -174,10 +214,9 @@ export class CopytradeWorker {
       recomputeCandidatePriorities(this.db);
 
       // 1) PRIORITY REFRESH: re-score the wallets we actually copy (follow_list ∪
-      //    smart set) that have gone stale, BEFORE the backlog. getCandidates sorts
-      //    never-scored wallets first, so without this the promotable set never gets
-      //    refreshed and its activity/freshness data rots. Budget comes out of
-      //    scoreBatchLimit (RPC-neutral), so the backlog gets whatever's left.
+      //    smart set) that have gone stale, BEFORE the backlog. These are now
+      //    INCREMENTAL (cheap), so the batch is decoupled from the backlog budget —
+      //    the backlog keeps its full scoreBatchLimit.
       const used = Array.from(new Set([
         ...getFollowListAddresses(this.db),
         ...getSmartSetAddresses(this.db),
@@ -190,13 +229,23 @@ export class CopytradeWorker {
         if (await this.scoreOne(connection, addr, now)) refreshed++;
       }
 
-      // 2) BACKLOG DISCOVERY with the remaining budget (total ≈ scoreBatchLimit).
-      const backlogBudget = Math.max(0, this.scoreBatchLimit - refreshed);
+      // 2) DEEP RESCAN: rescue promising-but-n-capped wallets (positive realized,
+      //    40-99 round trips, only shallow-scanned) with a one-shot deep backward
+      //    scan, so the 300-sig depth artifact stops rejecting genuine elites. Small
+      //    batch — this is the new RPC cost.
+      const deepList = getDeepRescanCandidates(this.db, {
+        minTotalSol: 0.2, nLow: 40, nHigh: 100, deepSigs: this.maxSignaturesDeep, limit: this.deepBatchLimit,
+      });
+      let deepScored = 0;
+      for (const addr of deepList) {
+        if (await this.scoreOne(connection, addr, now, { deep: true })) deepScored++;
+      }
+
+      // 3) BACKLOG DISCOVERY — full scoreBatchLimit (refresh no longer eats it).
       const staleBefore = now - this.restaleSeconds;
-      const candidates = backlogBudget > 0
-        ? getCandidates(this.db, { staleBeforeTs: staleBefore, limit: backlogBudget })
-        : [];
-      logger.info('Refreshed %d used wallets; scoring %d backlog candidates', refreshed, candidates.length);
+      const candidates = getCandidates(this.db, { staleBeforeTs: staleBefore, limit: this.scoreBatchLimit });
+      logger.info('Refreshed %d used (incremental); deep-rescanned %d; scoring %d backlog candidates',
+        refreshed, deepScored, candidates.length);
 
       let scored = 0;
       for (const c of candidates) {
