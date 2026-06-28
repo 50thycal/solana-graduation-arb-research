@@ -1,23 +1,31 @@
 # ops request: type='db'
-# WITH base AS (SELECT ct.net_sol AS net, gm.liquidity_sol_t30 AS liq, gm.holder_count AS hc, gm.top5_wallet_pct AS t5, gm.dev_wallet_pct AS dev FROM copy_trades ct JOIN graduations g ON g.mint=ct.mint JOIN graduation_momentum gm ON gm.graduation_id=g.id WHERE ct.strategy_id='copy-hotlead-hold30m' AND ct.status='closed' AND ct.net_sol IS NOT NULL) SELECT '1_winloss' AS section, CASE WHEN net>0 THEN 'win' ELSE 'loss' END AS bucket, COUNT(*) AS n, ROUND(AVG(CASE WHEN net>0 THEN 1.0 ELSE 0 END),3) AS win_rate, ROUND(SUM(net),3) AS tot_net, ROUND(AVG(net),4) AS avg_net, ROUND(AVG(liq),1) AS f_liq, ROUND(AVG(hc),1) AS f_holders, ROUND(AVG(t5),1) AS f_top5, ROUND(AVG(dev),2) AS f_dev FROM base GROUP BY bucket UNION ALL SELECT '2_liq', CASE WHEN liq IS NULL THEN 'z_null' WHEN liq<40 THEN 'a_lt40' WHEN liq<70 THEN 'b_40_70' WHEN liq<120 THEN 'c_70_120' ELSE 'd_ge120' END, COUNT(*), ROUND(AVG(CASE WHEN net>0 THEN 1.0 ELSE 0 END),3), ROUND(SUM(net),3), ROUND(AVG(net),4), NULL, NULL, NULL, NULL FROM base GROUP BY 2 UNION ALL SELECT '3_holders', CASE WHEN hc IS NULL THEN 'z_null' WHEN hc<50 THEN 'a_lt50' WHEN hc<150 THEN 'b_50_150' WHEN hc<250 THEN 'c_150_250' ELSE 'd_ge250' END, COUNT(*), ROUND(AVG(CASE WHEN net>0 THEN 1.0 ELSE 0 END),3), ROUND(SUM(net),3), ROUND(AVG(net),4), NULL, NULL, NULL, NULL FROM base GROUP BY 2 UNION ALL SELECT '4_top5', CASE WHEN t5 IS NULL THEN 'z_null' WHEN t5<15 THEN 'a_lt15' WHEN t5<25 THEN 'b_15_25' WHEN t5<40 THEN 'c_25_40' ELSE 'd_ge40' END, COUNT(*), ROUND(AVG(CASE WHEN net>0 THEN 1.0 ELSE 0 END),3), ROUND(SUM(net),3), ROUND(AVG(net),4), NULL, NULL, NULL, NULL FROM base GROUP BY 2 UNION ALL SELECT '5_dev', CASE WHEN dev IS NULL THEN 'z_null' WHEN dev<1 THEN 'a_lt1' WHEN dev<3 THEN 'b_1_3' WHEN dev<5 THEN 'c_3_5' ELSE 'd_ge5' END, COUNT(*), ROUND(AVG(CASE WHEN net>0 THEN 1.0 ELSE 0 END),3), ROUND(SUM(net),3), ROUND(AVG(net),4), NULL, NULL, NULL, NULL FROM base GROUP BY 2 ORDER BY 1,2
-  section   | bucket    | n   | win_rate | tot_net | avg_net | f_liq | f_holders | f_top5 | f_dev
-  ----------+-----------+-----+----------+---------+---------+-------+-----------+--------+------
-  1_winloss | loss      | 487 | 0        | -76.303 | -0.1567 | 112.6 | 208.1     | 14     | 4.32 
-  1_winloss | win       | 252 | 1        | 109.642 | 0.4351  | 106.1 | 269.3     | 12.8   | 4.03 
-  2_liq     | b_40_70   | 5   | 0.4      | 0.292   | 0.0585  |       |           |        |      
-  2_liq     | c_70_120  | 53  | 0.358    | 0.696   | 0.0131  |       |           |        |      
-  2_liq     | d_ge120   | 21  | 0.333    | -1.344  | -0.064  |       |           |        |      
-  2_liq     | z_null    | 660 | 0.339    | 33.696  | 0.0511  |       |           |        |      
-  3_holders | a_lt50    | 192 | 0.396    | 22.26   | 0.1159  |       |           |        |      
-  3_holders | b_50_150  | 289 | 0.298    | 4.183   | 0.0145  |       |           |        |      
-  3_holders | c_150_250 | 174 | 0.328    | -4.886  | -0.0281 |       |           |        |      
-  3_holders | d_ge250   | 84  | 0.393    | 11.782  | 0.1403  |       |           |        |      
-  4_top5    | a_lt15    | 448 | 0.371    | 23.879  | 0.0533  |       |           |        |      
-  4_top5    | b_15_25   | 225 | 0.289    | 1.552   | 0.0069  |       |           |        |      
-  4_top5    | c_25_40   | 33  | 0.303    | 10.053  | 0.3046  |       |           |        |      
-  4_top5    | d_ge40    | 33  | 0.333    | -2.145  | -0.065  |       |           |        |      
-  5_dev     | a_lt1     | 161 | 0.379    | 11.567  | 0.0718  |       |           |        |      
-  5_dev     | b_1_3     | 108 | 0.398    | 13.728  | 0.1271  |       |           |        |      
-  5_dev     | c_3_5     | 279 | 0.315    | -5.155  | -0.0185 |       |           |        |      
-  5_dev     | d_ge5     | 191 | 0.314    | 13.2    | 0.0691  |       |           |        |      
-  [18 rows]
+# WITH ranked AS (SELECT net_sol AS net, ROW_NUMBER() OVER (PARTITION BY strategy_id, mint ORDER BY entry_ts) AS ord FROM copy_trades WHERE strategy_id='copy-hotlead-hold30m' AND status='closed' AND net_sol IS NOT NULL), pm AS (SELECT mint, COUNT(*) AS entries, SUM(net_sol) AS net FROM copy_trades WHERE strategy_id='copy-hotlead-hold30m' AND status='closed' AND net_sol IS NOT NULL GROUP BY mint), pmlm AS (SELECT mint, COUNT(*) AS entries, SUM(net_sol) AS net FROM copy_trades WHERE execution_mode='live_micro' AND status='closed' AND net_sol IS NOT NULL GROUP BY mint) SELECT '1_reentry_ord' AS section, CASE WHEN ord=1 THEN 'e1_first' WHEN ord=2 THEN 'e2_second' WHEN ord=3 THEN 'e3_third' ELSE 'e4_plus' END AS bucket, COUNT(*) AS n, ROUND(AVG(CASE WHEN net>0 THEN 1.0 ELSE 0 END),3) AS win_rate, ROUND(SUM(net),3) AS tot_net, ROUND(AVG(net),4) AS avg_net FROM ranked GROUP BY bucket UNION ALL SELECT '2_permint_h30m', CAST(entries AS TEXT), COUNT(*), NULL, ROUND(SUM(net),3), ROUND(AVG(net),4) FROM pm GROUP BY entries UNION ALL SELECT '3_permint_livemicro', CAST(entries AS TEXT), COUNT(*), NULL, ROUND(SUM(net),3), ROUND(AVG(net),4) FROM pmlm GROUP BY entries ORDER BY 1,2
+  section             | bucket    | n   | win_rate | tot_net | avg_net
+  --------------------+-----------+-----+----------+---------+--------
+  1_reentry_ord       | e1_first  | 436 | 0.346    | 14.831  | 0.034  
+  1_reentry_ord       | e2_second | 157 | 0.338    | 24.31   | 0.1548 
+  1_reentry_ord       | e3_third  | 71  | 0.338    | -2.119  | -0.0298
+  1_reentry_ord       | e4_plus   | 75  | 0.32     | -3.682  | -0.0491
+  2_permint_h30m      | 1         | 279 |          | -7.4    | -0.0265
+  2_permint_h30m      | 2         | 86  |          | 9.158   | 0.1065 
+  2_permint_h30m      | 21        | 1   |          | -0.731  | -0.7305
+  2_permint_h30m      | 3         | 44  |          | 5.8     | 0.1318 
+  2_permint_h30m      | 4         | 13  |          | 11.948  | 0.9191 
+  2_permint_h30m      | 5         | 4   |          | 4.55    | 1.1374 
+  2_permint_h30m      | 6         | 5   |          | -1.395  | -0.279 
+  2_permint_h30m      | 7         | 1   |          | 1.041   | 1.0415 
+  2_permint_h30m      | 8         | 1   |          | 7.28    | 7.2797 
+  2_permint_h30m      | 9         | 2   |          | 3.089   | 1.5445 
+  3_permint_livemicro | 1         | 202 |          | -1.286  | -0.0064
+  3_permint_livemicro | 11        | 1   |          | -0.014  | -0.0142
+  3_permint_livemicro | 14        | 1   |          | -0.012  | -0.0122
+  3_permint_livemicro | 15        | 1   |          | 0       | 0      
+  3_permint_livemicro | 2         | 46  |          | 0.179   | 0.0039 
+  3_permint_livemicro | 3         | 18  |          | -0.112  | -0.0062
+  3_permint_livemicro | 4         | 4   |          | 0.094   | 0.0234 
+  3_permint_livemicro | 5         | 5   |          | 0.403   | 0.0806 
+  3_permint_livemicro | 58        | 1   |          | 0       | 0      
+  3_permint_livemicro | 6         | 2   |          | -0.077  | -0.0386
+  3_permint_livemicro | 7         | 4   |          | -0.088  | -0.022 
+  3_permint_livemicro | 8         | 1   |          | 0.143   | 0.1426 
+  [26 rows]
