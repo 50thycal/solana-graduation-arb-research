@@ -67,6 +67,9 @@ export function computeWalletLeaderboard(db: Database.Database, limit = 50): unk
 
   const rows = scored.map((r) => {
     const ev = evaluateWallet(rowToScore(r), nowTs);
+    const venues = r.venues_json ? (JSON.parse(r.venues_json) as Record<string, number>) : {};
+    const venuesTotal = Object.values(venues).reduce((a, b) => a + b, 0);
+    const pumpswapShare = venuesTotal > 0 ? (venues['pumpswap'] ?? 0) / venuesTotal : 0;
     return {
       address: r.address,
       n_round_trips: r.n_round_trips,
@@ -79,7 +82,10 @@ export function computeWalletLeaderboard(db: Database.Database, limit = 50): unk
       last_active_days_ago: r.last_active != null ? +((nowTs - r.last_active) / 86_400).toFixed(1) : null,
       rt_24h: recentByAddr.get(r.address)?.rt_24h ?? 0,
       rt_7d: recentByAddr.get(r.address)?.rt_7d ?? 0,
-      venues: r.venues_json ? JSON.parse(r.venues_json) : {},
+      venues,
+      // copyability — whether we could actually mirror this wallet (see ranker).
+      pumpswap_share: +pumpswapShare.toFixed(3),
+      copyable: !ev.failedGates.some((g) => g.startsWith('copyable')),
       passed_gate: ev.passed,
       failed_gates: ev.failedGates,
     };
