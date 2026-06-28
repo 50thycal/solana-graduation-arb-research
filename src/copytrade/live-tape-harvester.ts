@@ -64,12 +64,18 @@ const MAX_WALLETS_PER_WINDOW = 100_000; // memory guard within a flush window
 const MAX_MINTS_PER_WALLET = 64;        // cap the per-wallet mint set
 const STATUS_KEY = 'live_tape_status';
 
-// Duty-cycle budget (the real cost guardrail). Defaults ≈ 100k messages once / 24h
-// ≈ ~100k credits/day ≈ ~3-6M credits/month (≈1-1.8 credits/msg). Bump
-// LIVE_TAPE_MAX_MSGS_PER_CYCLE / lower LIVE_TAPE_CYCLE_HOURS only with budget room.
-const DEFAULT_MAX_MSGS_PER_CYCLE = 100_000;
+// Duty-cycle budget — DETERMINISTIC monthly ceiling. The harvester samples at most
+// ONE window per cycle (restart-guarded via bot_settings), each capped at
+// MAX_MSGS_PER_CYCLE delivered messages. So the absolute monthly max is
+//   MAX_MSGS_PER_CYCLE × (30×24 / CYCLE_HOURS) messages.
+// At the defaults below: 80k × 30 = 2.4M msgs/mo. Helius bills ≈2-2.5 credits/msg
+// (observed ~1.8; we size conservatively at 2.5), so ≤ ~6M credits/month — the
+// operator's cap. Raise LIVE_TAPE_MAX_MSGS_PER_CYCLE only with budget headroom.
+const DEFAULT_MAX_MSGS_PER_CYCLE = 80_000;
 const DEFAULT_CYCLE_HOURS = 24;
 const DEFAULT_SAMPLE_MAX_MIN = 15;      // hard upper bound on a sample window
+const CREDITS_PER_MSG_EST = 2.5;        // conservative, for the monthly projection
+const LAST_CYCLE_KEY = 'live_tape_last_cycle_ts';
 
 // Promotion screen — ACTIVITY-based, not profit-based. Under ~9% tape sampling the
 // rough per-wallet net is dominated by unmatched sells, so it can't rank profit;
@@ -170,11 +176,42 @@ export class LiveTapeHarvester {
     this.closeWs();
   }
 
+  private readLastCycleTs(): number {
+    try {
+      const r = this.db.prepare(`SELECT value FROM bot_settings WHERE key = ?`).get(LAST_CYCLE_KEY) as { value: string } | undefined;
+      return r ? parseInt(r.value, 10) || 0 : 0;
+    } catch { return 0; }
+  }
+
+  private writeLastCycleTs(ts: number): void {
+    try {
+      this.db.prepare(`
+        INSERT INTO bot_settings (key, value, updated_at) VALUES (?, ?, unixepoch())
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(LAST_CYCLE_KEY, String(ts));
+    } catch { /* non-fatal */ }
+  }
+
   /** Open a bounded sampling window: connect, and arm a hard stop at the sample
-   *  window's max duration. The per-message budget (checked in handleNotification)
-   *  usually ends it sooner. */
+   *  window's max duration. The per-message budget (checked per message) usually
+   *  ends it sooner. RESTART-GUARDED: if < one cycle has elapsed since the last
+   *  sample (persisted), defer — so a restart loop can't re-open the firehose and
+   *  blow the deterministic monthly ceiling. */
   private beginCycle(): void {
     if (this.stopped) return;
+    const now = Date.now();
+    const last = this.readLastCycleTs();
+    const elapsed = now - last;
+    if (last > 0 && elapsed < this.cycleMs) {
+      const wait = this.cycleMs - elapsed;
+      logger.info('Live-tape: %dm since last sample (<%dh) — deferring',
+        Math.round(elapsed / 60000), this.cycleMs / 3600_000);
+      this.cycleTimer = setTimeout(() => this.beginCycle(), wait);
+      return;
+    }
+    // Stamp the cycle start BEFORE connecting so a crash mid-window still counts
+    // this cycle's quota (conservative — never double-samples a period).
+    this.writeLastCycleTs(now);
     this.cycleActive = true;
     this.cycleMsgs = 0;
     this.intentionalClose = false;
@@ -360,11 +397,15 @@ export class LiveTapeHarvester {
         connected: this.connected,
         sub_id: this.subId,
         cycle_active: this.cycleActive,
-        cycle_msgs: this.cycleMsgs,            // ≈ credits this sampling window
+        cycle_msgs: this.cycleMsgs,            // messages this sampling window
         max_msgs_per_cycle: this.maxMsgsPerCycle,
         cycles_run: this.cyclesRun,
-        total_billed_msgs: this.totalCycleMsgs, // ≈ lifetime credits spent
+        total_billed_msgs: this.totalCycleMsgs, // lifetime messages (≈ credits/2.5)
         cycle_hours: this.cycleMs / 3600_000,
+        // Deterministic ceiling: max one capped window per cycle → fixed monthly max.
+        est_monthly_credits_max: Math.round(
+          this.maxMsgsPerCycle * (30 * 24 / (this.cycleMs / 3600_000)) * CREDITS_PER_MSG_EST,
+        ),
         window_wallets: this.tally.size,
         total_notifications: this.totalNotifications,
         total_parsed: this.totalParsed,
