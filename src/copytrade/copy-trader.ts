@@ -8,6 +8,8 @@ import { computeMacroRegime, currentMacroScore } from './macro-regime';
 import { computeWalletLeaderboard } from './leaderboard';
 import { CopyLiveExecutor } from './copy-live-executor';
 import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
+import { getOgSmartSetAddresses, getCotradeSmartSetAddresses } from './queries';
+import { getCotradeDiscovery } from './cotrade-discovery';
 import {
   MAX_SELL_ATTEMPTS_BEFORE_TERMINAL,
   sellSlippageBpsForAttempt,
@@ -61,6 +63,12 @@ export interface CopyStrategy {
   minLeadRank?: number;        // only copy if lead wallet's follow_list rank <= this
   minConsensusRecent?: number; // only copy if >= N distinct smart wallets bought this mint in last 10min
   walletAllowlist?: string[];  // only copy if the lead wallet is in this set (copy-best-wallet)
+  leadCohort?: 'og_smart' | 'cotrade';
+                               // DISCOVERY-METHOD A/B (Idea 2): only copy when the lead wallet was found by
+                               // this discovery method. 'og_smart' = surfaced by the existing DB seed;
+                               // 'cotrade' = surfaced by co-trade graph snowball (cotrade-discovery.ts). The
+                               // two cohorts are disjoint by wallet_candidates.source, so a cotrade-only and an
+                               // og_smart-only strategy with identical params isolate the discovery method's edge.
   entryPenaltyPct?: number;    // worsen entry price by this % to model realistic copy lag (shadow enters at the
                                // optimistic ~1.1s pool snapshot; a real tx confirms seconds later, after the
                                // token has run further — so we fill higher). TP/SL/HWM all key off the penalized entry.
@@ -396,6 +404,18 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    a funded wallet. Emits copy-hotlead-hold30m-pair-shadow + -live-micro.
   ...makeLivePair({ id: 'copy-hotlead-hold30m', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } }),
+  // ── O (2026-06-26): DISCOVERY-METHOD A/B (Idea 2). Two strategies with IDENTICAL
+  //    params to the load-bearing baseline (copy-tp100-sl30) that differ ONLY by the
+  //    discovery method of the wallets they copy:
+  //      • copy-ogsmart-tp100-sl30  — wallets found by the existing DB seed (OG).
+  //      • copy-cotrade-tp100-sl30  — wallets found by co-trade graph snowball.
+  //    leadCohort gates each on its disjoint cohort (wallet_candidates.source), so
+  //    comparing their copy_trades P&L isolates "is the new discovery method better
+  //    at finding tradeable alpha than the OG method?" — same TP/SL/size/exit, only
+  //    the wallet source differs. The un-gated baseline above stays as the "all
+  //    smart wallets" benchmark.
+  { id: 'copy-ogsmart-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadCohort: 'og_smart' },
+  { id: 'copy-cotrade-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadCohort: 'cotrade' },
 ];
 
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
@@ -603,6 +623,11 @@ export class CopyTrader {
   private positions = new Map<number, OpenPos>();
   private poolCache = new Map<string, PoolVaults | null>();
   private leadRank = new Map<string, number>();
+  // Discovery-method cohorts (Idea 2 A/B), refreshed alongside leadRank. Disjoint
+  // by construction (wallet_candidates.source). A leadCohort-gated strategy only
+  // fires when the lead wallet is in its cohort.
+  private ogSmartSet = new Set<string>();
+  private cotradeSet = new Set<string>();
   // Delayed entries in flight, keyed `${strategyId}:${mint}` — blocks duplicate
   // opens while the entryDelaySec wait runs. In-memory only: a restart drops
   // pending entries (acceptable; the window is ~5s).
@@ -691,6 +716,10 @@ export class CopyTrader {
       const rows = this.db.prepare(`SELECT address, rank FROM follow_list`).all() as Array<{ address: string; rank: number | null }>;
       this.leadRank = new Map(rows.filter((r) => r.rank != null).map((r) => [r.address, r.rank as number]));
     } catch { /* table may be empty */ }
+    // Refresh the discovery-method cohorts for the A/B. Both apply the money-edge
+    // gate; they differ only by how the wallet was discovered.
+    try { this.ogSmartSet = new Set(getOgSmartSetAddresses(this.db)); } catch { /* empty */ }
+    try { this.cotradeSet = new Set(getCotradeSmartSetAddresses(this.db)); } catch { /* empty */ }
   }
 
   private recordSkip(strategyId: string, reason: string): void {
@@ -989,6 +1018,14 @@ export class CopyTrader {
       }
       // conviction gates — record the FIRST gate that rejects (funnel semantics)
       if (s.walletAllowlist && !s.walletAllowlist.includes(leadWallet)) { this.recordSkip(s.id, 'wallet_allowlist'); continue; }
+      // Discovery-method cohort gate (Idea 2 A/B): only fire on wallets this
+      // strategy's discovery method surfaced. Disjoint cohorts → clean comparison.
+      if (s.leadCohort) {
+        const inCohort = s.leadCohort === 'cotrade'
+          ? this.cotradeSet.has(leadWallet)
+          : this.ogSmartSet.has(leadWallet);
+        if (!inCohort) { this.recordSkip(s.id, 'cohort'); continue; }
+      }
       if (s.minLeadRank != null && leadRank > s.minLeadRank) { this.recordSkip(s.id, 'lead_rank'); continue; }
       if (s.minConsensusRecent != null) {
         if (consensusRecent == null) consensusRecent = this.countRecentSmartBuyers(mint);
@@ -2307,6 +2344,11 @@ export function computeCopyTrades(db: Database.Database): unknown {
         top_promotable: (wl.rows ?? []).filter((r) => r.passed_gate).slice(0, 8),
       };
     })(),
+    // Co-trade discovery (Idea 2) funnel — how many wallets the winner-graph
+    // snowball surfaced, how many are cotrade-EXCLUSIVE (OG never found them), and
+    // how many of those cleared the money-edge gate (the tradeable cotrade cohort
+    // that copy-cotrade-tp100-sl30 trades against copy-ogsmart-tp100-sl30).
+    cotrade_discovery: getCotradeDiscovery(db),
     // Per-strategy lead-wallet P&L attribution — who drives TP vs SL per strategy.
     lead_attribution: computeLeadAttribution(activeClosed),
     // Copy promotion bar (n>=100 · drop3>0 · stress>0 · monthly>=3.75) + readiness.

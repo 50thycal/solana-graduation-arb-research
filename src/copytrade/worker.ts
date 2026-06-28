@@ -15,6 +15,7 @@ import {
 import { fetchWalletSwaps, scoreWallet, reconstructRoundTrips } from './wallet-pnl';
 import { rankWallets } from './ranker';
 import { computeAndCacheSmartMoney } from './smart-money';
+import { computeCotradeDiscovery } from './cotrade-discovery';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copytrade-worker');
@@ -110,6 +111,12 @@ export class CopytradeWorker {
     // wallet_scores, rather than waiting for the first scoring tick.
     computeAndCacheSmartMoney(this.db);
 
+    // Co-trade discovery (Idea 2) — pure DB, no RPC. Populates cotrade_candidates
+    // from wallets that buy alongside proven smart wallets, so the cotrade A/B
+    // cohort is visible on deploy and the priority boost routes scoring to them.
+    try { computeCotradeDiscovery(this.db); }
+    catch (err) { logger.warn('Initial co-trade discovery failed: %s', err instanceof Error ? err.message : String(err)); }
+
     this.firstRunTimer = setTimeout(() => {
       this.runOnce().catch((err) => logger.error({ err }, 'CopytradeWorker first run failed'));
       this.interval = setInterval(() => {
@@ -160,6 +167,9 @@ export class CopytradeWorker {
     const now = Math.floor(Date.now() / 1000);
     try {
       seedCandidatesFromDb(this.db, now);
+      // Refresh co-trade discovery BEFORE priority recompute so cotrade candidates
+      // get their priority boost this tick (the scorer then reaches them fast).
+      computeCotradeDiscovery(this.db, now);
       // Rank candidates by in-DB signal so we score likely-alpha wallets first.
       recomputeCandidatePriorities(this.db);
 

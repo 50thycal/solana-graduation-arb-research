@@ -284,6 +284,36 @@ export function getSmartSetAddresses(db: Database.Database): string[] {
   return getSmartSet(db).map((r) => r.address);
 }
 
+/**
+ * Discovery-method cohorts for the A/B (Idea 2 vs OG). Both apply the SAME
+ * money-edge gate as getSmartSet — they differ ONLY by how the wallet was
+ * discovered, read from wallet_candidates.source. The two are DISJOINT by
+ * construction: source='cotrade_graph' sticks only when the OG seed never saw the
+ * wallet (OG seeding uses ON CONFLICT DO NOTHING), so a wallet is in exactly one
+ * cohort. This is what lets a cotrade-only strategy be compared cleanly against an
+ * og_smart-only strategy with identical params.
+ */
+const COHORT_GATE =
+  `ws.total_realized_sol_drop_top3 > 0 AND ws.monthly_run_rate_sol >= 3.75 AND ws.total_realized_sol >= 0.5`;
+
+export function getOgSmartSetAddresses(db: Database.Database): string[] {
+  return (db.prepare(`
+    SELECT ws.address FROM wallet_scores ws
+    JOIN wallet_candidates wc ON wc.address = ws.address
+    WHERE ${COHORT_GATE} AND COALESCE(wc.source, '') != 'cotrade_graph'
+    ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
+  `).all() as Array<{ address: string }>).map((r) => r.address);
+}
+
+export function getCotradeSmartSetAddresses(db: Database.Database): string[] {
+  return (db.prepare(`
+    SELECT ws.address FROM wallet_scores ws
+    JOIN wallet_candidates wc ON wc.address = ws.address
+    WHERE ${COHORT_GATE} AND wc.source = 'cotrade_graph'
+    ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
+  `).all() as Array<{ address: string }>).map((r) => r.address);
+}
+
 /** From a set of addresses (the wallets we actually copy: follow_list ∪ smart set),
  *  return those whose cached score is stale (last_refreshed < cutoff or never set),
  *  oldest first, capped at `limit`. Drives the worker's priority-refresh pass so the

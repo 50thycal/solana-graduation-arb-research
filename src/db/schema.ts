@@ -1048,6 +1048,26 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_copy_probe_detected ON copy_probe_events(detected_at);
   `);
 
+  // Co-trade discovery (Idea 2 — winner-graph snowball). Wallets surfaced by
+  // repeatedly buying the same graduated mints, early, ALONGSIDE proven smart
+  // wallets. This is a DISCOVERY-method tag only — a wallet listed here still has
+  // to pass the same money-edge scoring bar to be traded. The A/B division is by
+  // wallet_candidates.source: 'cotrade_graph' (this method found it, OG seed did
+  // not) vs anything else (OG seed). og_overlap=1 records wallets BOTH methods
+  // found (assigned to the OG cohort for a conservative marginal-value test).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS cotrade_candidates (
+      address TEXT PRIMARY KEY,
+      n_distinct_winners INTEGER NOT NULL,
+      n_cotrade_grads INTEGER NOT NULL,
+      cotrade_score REAL NOT NULL,
+      og_overlap INTEGER NOT NULL DEFAULT 0,
+      first_added INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_cotrade_score ON cotrade_candidates(cotrade_score DESC);
+  `);
+
   // Shadow copy-trader (Option B, Phase 2). One row per SHADOW copy position:
   // when a followed wallet buys a graduated token, each armed copy strategy
   // opens a modeled position here (no real funds). Tracked by CopyTrader until
