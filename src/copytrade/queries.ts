@@ -286,32 +286,41 @@ export function getSmartSetAddresses(db: Database.Database): string[] {
 
 /**
  * Discovery-method cohorts for the A/B (Idea 2 vs OG). Both apply the SAME
- * money-edge gate as getSmartSet — they differ ONLY by how the wallet was
- * discovered, read from wallet_candidates.source. The two are DISJOINT by
- * construction: source='cotrade_graph' sticks only when the OG seed never saw the
- * wallet (OG seeding uses ON CONFLICT DO NOTHING), so a wallet is in exactly one
- * cohort. This is what lets a cotrade-only strategy be compared cleanly against an
- * og_smart-only strategy with identical params.
+ * money-edge gate as getSmartSet — a wallet must be PROVEN smart to be in either
+ * cohort. They partition the smart set by the co-trade signal:
+ *   cotrade cohort = smart AND co-trades with >= COTRADE_COHORT_MIN_WINNERS
+ *                    distinct proven winners (cotrade_candidates.n_distinct_winners)
+ *   og cohort      = smart AND below that (incl. no co-trade row = 0)
+ * Disjoint by construction (>= vs <). This tests whether smart wallets that
+ * cluster with other proven winners outperform the smart wallets that don't —
+ * a real, immediately-populated comparison (the old source-based split was always
+ * empty because co-trade and the OG seed read the same competition_signals pool).
+ * Tune the split with COTRADE_COHORT_MIN_WINNERS (env override).
  */
 const COHORT_GATE =
   `ws.total_realized_sol_drop_top3 > 0 AND ws.monthly_run_rate_sol >= 3.75 AND ws.total_realized_sol >= 0.5`;
 
+export const COTRADE_COHORT_MIN_WINNERS = (() => {
+  const v = parseInt(process.env.COTRADE_COHORT_MIN_WINNERS || '', 10);
+  return Number.isFinite(v) && v > 0 ? v : 5;
+})();
+
 export function getOgSmartSetAddresses(db: Database.Database): string[] {
   return (db.prepare(`
     SELECT ws.address FROM wallet_scores ws
-    JOIN wallet_candidates wc ON wc.address = ws.address
-    WHERE ${COHORT_GATE} AND COALESCE(wc.source, '') != 'cotrade_graph'
+    LEFT JOIN cotrade_candidates cc ON cc.address = ws.address
+    WHERE ${COHORT_GATE} AND COALESCE(cc.n_distinct_winners, 0) < @thr
     ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
-  `).all() as Array<{ address: string }>).map((r) => r.address);
+  `).all({ thr: COTRADE_COHORT_MIN_WINNERS }) as Array<{ address: string }>).map((r) => r.address);
 }
 
 export function getCotradeSmartSetAddresses(db: Database.Database): string[] {
   return (db.prepare(`
     SELECT ws.address FROM wallet_scores ws
-    JOIN wallet_candidates wc ON wc.address = ws.address
-    WHERE ${COHORT_GATE} AND wc.source = 'cotrade_graph'
+    JOIN cotrade_candidates cc ON cc.address = ws.address
+    WHERE ${COHORT_GATE} AND cc.n_distinct_winners >= @thr
     ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
-  `).all() as Array<{ address: string }>).map((r) => r.address);
+  `).all({ thr: COTRADE_COHORT_MIN_WINNERS }) as Array<{ address: string }>).map((r) => r.address);
 }
 
 /** From a set of addresses (the wallets we actually copy: follow_list ∪ smart set),
