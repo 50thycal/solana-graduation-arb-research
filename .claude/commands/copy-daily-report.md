@@ -128,13 +128,45 @@ Prepend (newest-first) a dated entry to `docs/copy-trade-journal.md`. Two parts:
 
 Keep `strategies[]` in the SNAPSHOT to ~the active roster (one row each). `verdict` ∈ KEEP / KILL / PROMOTE / WATCH.
 
-## Step 8 — Commit the journal
+## Step 8 — Publish to the stable `copy-daily-reports` branch + auto-merge PR
 
-Commit `docs/copy-trade-journal.md` to the current working branch with a message like `copy-journal: 2026-06-17 daily review`. Do NOT push roster changes (code edits to COPY_STRATEGIES) in this run — those are a separate, approved step.
+Daily reports always land on **one** stable branch and **one** rolling PR. This avoids the
+N-conflicting-branches problem (each run rebases onto fresh main, then force-pushes; the open PR
+updates in place; auto-merge publishes when checks pass).
+
+The exact recipe:
+
+```bash
+# 1. Get fresh main so the new entry sits on top of any code/cohort entries that landed today.
+git fetch origin main
+git checkout -B copy-daily-reports origin/main
+
+# 2. Write today's entry into docs/copy-trade-journal.md (Step 7).
+# 3. Commit on this branch.
+git add docs/copy-trade-journal.md
+git commit -m "copy-journal: <YYYY-MM-DD> daily review"
+
+# 4. Force-push (the branch is rebased onto main every run, so history rewinds is expected).
+git push -u origin copy-daily-reports --force-with-lease
+```
+
+Then make sure there's exactly **one** open PR from `copy-daily-reports` into `main`:
+
+- `mcp__github__list_pull_requests` (`head=50thycal:copy-daily-reports`, `state=open`). If one
+  exists, the push above already updated it — do nothing. If none exists, open it with
+  `mcp__github__create_pull_request` titled `copy-journal: rolling daily reviews` and a body that
+  notes "this PR is reused each day — the branch is rebased onto main and force-pushed before
+  every new entry."
+- After the PR exists (or already existed), call `mcp__github__enable_pr_auto_merge` with
+  `merge_method: "squash"`. If branch protection has no required checks, GitHub merges
+  immediately; otherwise it merges as soon as checks pass.
+
+Do NOT push roster changes (code edits to `COPY_STRATEGIES`) in this run — those are a separate,
+approved step on their own branch.
 
 ## Step 9 — Surface the result
 
-Reply to the operator with: the headline, the realistic-execution promotion shortlist (who's closest / any promotable), the proposed verdicts (esp. any KILL or PROMOTE), the new-strategy ideas, and the single recommended next action. If any roster change is recommended, ask for approval to make the code edit.
+Reply to the operator with: the headline, the realistic-execution promotion shortlist (who's closest / any promotable), the proposed verdicts (esp. any KILL or PROMOTE), the new-strategy ideas, the single recommended next action, and the rolling-PR URL (so they can merge it manually if auto-merge didn't fire). If any roster change is recommended, ask for approval to make the code edit.
 
 ## Notes on autonomy
 
