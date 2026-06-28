@@ -1,5 +1,21 @@
 import Database from 'better-sqlite3';
 import type { WalletScore, WalletSwap, RoundTrip } from './wallet-pnl';
+import { COPYABILITY } from './ranker';
+
+/**
+ * Copyability filter as SQL (mirrors ranker.isCopyable). Applied to the COPY paths
+ * — the probe watchlist + trading cohorts — so we never copy wallets whose edge we
+ * can't mirror (bonding-curve scalpers, sub-5-min holds, ~99%-WR structural edge).
+ * Works off the existing venues_json / avg_hold_sec / win_rate, so it takes effect
+ * on already-scored wallets with no re-score. Null/unknown → excluded (conservative).
+ * Requires the table aliased `ws`. Numeric constants inlined (safe, no user input).
+ */
+const COPYABLE_SQL = `
+  COALESCE(ws.avg_hold_sec, 0) >= ${COPYABILITY.minHoldSec}
+  AND COALESCE(ws.win_rate, 1) <= ${COPYABILITY.maxWinRate}
+  AND COALESCE(json_extract(ws.venues_json, '$.pumpswap'), 0) * 1.0
+      / NULLIF((SELECT SUM(value) FROM json_each(ws.venues_json)), 0) >= ${COPYABILITY.minPumpswapShare}
+`;
 
 /**
  * DB helpers for the copy-trade wallet-intelligence tables. Kept in the
@@ -333,9 +349,18 @@ export function getFollowListAddresses(db: Database.Database): string[] {
     .map((r) => r.address);
 }
 
-/** Money-edge smart-set addresses (broader tier) — same filter as getSmartSet. */
+/** Money-edge smart-set addresses for the COPY WATCHLIST — same money gate as
+ *  getSmartSet PLUS the copyability filter (getSmartSet itself stays unfiltered for
+ *  the smart-money analysis). So we only subscribe to / copy wallets we can mirror. */
 export function getSmartSetAddresses(db: Database.Database): string[] {
-  return getSmartSet(db).map((r) => r.address);
+  return (db.prepare(`
+    SELECT ws.address FROM wallet_scores ws
+    WHERE ws.total_realized_sol_drop_top3 > 0
+      AND ws.monthly_run_rate_sol >= 3.75
+      AND ws.total_realized_sol >= 0.5
+      AND ${COPYABLE_SQL}
+    ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
+  `).all() as Array<{ address: string }>).map((r) => r.address);
 }
 
 /**
@@ -364,6 +389,7 @@ export function getOgSmartSetAddresses(db: Database.Database): string[] {
     SELECT ws.address FROM wallet_scores ws
     LEFT JOIN cotrade_candidates cc ON cc.address = ws.address
     WHERE ${COHORT_GATE} AND COALESCE(cc.n_distinct_winners, 0) < @thr
+      AND ${COPYABLE_SQL}
     ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
   `).all({ thr: COTRADE_COHORT_MIN_WINNERS }) as Array<{ address: string }>).map((r) => r.address);
 }
@@ -373,6 +399,7 @@ export function getCotradeSmartSetAddresses(db: Database.Database): string[] {
     SELECT ws.address FROM wallet_scores ws
     JOIN cotrade_candidates cc ON cc.address = ws.address
     WHERE ${COHORT_GATE} AND cc.n_distinct_winners >= @thr
+      AND ${COPYABLE_SQL}
     ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
   `).all({ thr: COTRADE_COHORT_MIN_WINNERS }) as Array<{ address: string }>).map((r) => r.address);
 }
