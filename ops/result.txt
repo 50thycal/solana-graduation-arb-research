@@ -1,31 +1,11 @@
 # ops request: type='db'
-# WITH ranked AS (SELECT net_sol AS net, ROW_NUMBER() OVER (PARTITION BY strategy_id, mint ORDER BY entry_ts) AS ord FROM copy_trades WHERE strategy_id='copy-hotlead-hold30m' AND status='closed' AND net_sol IS NOT NULL), pm AS (SELECT mint, COUNT(*) AS entries, SUM(net_sol) AS net FROM copy_trades WHERE strategy_id='copy-hotlead-hold30m' AND status='closed' AND net_sol IS NOT NULL GROUP BY mint), pmlm AS (SELECT mint, COUNT(*) AS entries, SUM(net_sol) AS net FROM copy_trades WHERE execution_mode='live_micro' AND status='closed' AND net_sol IS NOT NULL GROUP BY mint) SELECT '1_reentry_ord' AS section, CASE WHEN ord=1 THEN 'e1_first' WHEN ord=2 THEN 'e2_second' WHEN ord=3 THEN 'e3_third' ELSE 'e4_plus' END AS bucket, COUNT(*) AS n, ROUND(AVG(CASE WHEN net>0 THEN 1.0 ELSE 0 END),3) AS win_rate, ROUND(SUM(net),3) AS tot_net, ROUND(AVG(net),4) AS avg_net FROM ranked GROUP BY bucket UNION ALL SELECT '2_permint_h30m', CAST(entries AS TEXT), COUNT(*), NULL, ROUND(SUM(net),3), ROUND(AVG(net),4) FROM pm GROUP BY entries UNION ALL SELECT '3_permint_livemicro', CAST(entries AS TEXT), COUNT(*), NULL, ROUND(SUM(net),3), ROUND(AVG(net),4) FROM pmlm GROUP BY entries ORDER BY 1,2
-  section             | bucket    | n   | win_rate | tot_net | avg_net
-  --------------------+-----------+-----+----------+---------+--------
-  1_reentry_ord       | e1_first  | 436 | 0.346    | 14.831  | 0.034  
-  1_reentry_ord       | e2_second | 157 | 0.338    | 24.31   | 0.1548 
-  1_reentry_ord       | e3_third  | 71  | 0.338    | -2.119  | -0.0298
-  1_reentry_ord       | e4_plus   | 75  | 0.32     | -3.682  | -0.0491
-  2_permint_h30m      | 1         | 279 |          | -7.4    | -0.0265
-  2_permint_h30m      | 2         | 86  |          | 9.158   | 0.1065 
-  2_permint_h30m      | 21        | 1   |          | -0.731  | -0.7305
-  2_permint_h30m      | 3         | 44  |          | 5.8     | 0.1318 
-  2_permint_h30m      | 4         | 13  |          | 11.948  | 0.9191 
-  2_permint_h30m      | 5         | 4   |          | 4.55    | 1.1374 
-  2_permint_h30m      | 6         | 5   |          | -1.395  | -0.279 
-  2_permint_h30m      | 7         | 1   |          | 1.041   | 1.0415 
-  2_permint_h30m      | 8         | 1   |          | 7.28    | 7.2797 
-  2_permint_h30m      | 9         | 2   |          | 3.089   | 1.5445 
-  3_permint_livemicro | 1         | 202 |          | -1.286  | -0.0064
-  3_permint_livemicro | 11        | 1   |          | -0.014  | -0.0142
-  3_permint_livemicro | 14        | 1   |          | -0.012  | -0.0122
-  3_permint_livemicro | 15        | 1   |          | 0       | 0      
-  3_permint_livemicro | 2         | 46  |          | 0.179   | 0.0039 
-  3_permint_livemicro | 3         | 18  |          | -0.112  | -0.0062
-  3_permint_livemicro | 4         | 4   |          | 0.094   | 0.0234 
-  3_permint_livemicro | 5         | 5   |          | 0.403   | 0.0806 
-  3_permint_livemicro | 58        | 1   |          | 0       | 0      
-  3_permint_livemicro | 6         | 2   |          | -0.077  | -0.0386
-  3_permint_livemicro | 7         | 4   |          | -0.088  | -0.022 
-  3_permint_livemicro | 8         | 1   |          | 0.143   | 0.1426 
-  [26 rows]
+# WITH base AS (SELECT ct.net_sol AS net, ct.entry_price_sol AS ep, gm.open_price_sol AS op FROM copy_trades ct JOIN graduations g ON g.mint=ct.mint JOIN graduation_momentum gm ON gm.graduation_id=g.id WHERE ct.strategy_id='copy-hotlead-hold30m' AND ct.status='closed' AND ct.net_sol IS NOT NULL AND gm.open_price_sol>0 AND ct.entry_price_sol>0) SELECT CASE WHEN ep/op<1 THEN 'a_below_open' WHEN ep/op<1.5 THEN 'b_0_50pct' WHEN ep/op<2 THEN 'c_50_100' WHEN ep/op<3 THEN 'd_100_200' WHEN ep/op<5 THEN 'e_200_400' ELSE 'f_ge400' END AS ext_bucket, COUNT(*) AS n, ROUND(AVG(CASE WHEN net>0 THEN 1.0 ELSE 0 END),3) AS win_rate, ROUND(SUM(net),3) AS tot_net, ROUND(AVG(net),4) AS avg_net, ROUND(MIN(ep/op),3) AS min_ratio, ROUND(MAX(ep/op),2) AS max_ratio FROM base GROUP BY ext_bucket ORDER BY ext_bucket
+  ext_bucket   | n   | win_rate | tot_net | avg_net | min_ratio | max_ratio
+  -------------+-----+----------+---------+---------+-----------+----------
+  a_below_open | 170 | 0.335    | 14.51   | 0.0854  | 0.078     | 1        
+  b_0_50pct    | 70  | 0.386    | 15.347  | 0.2192  | 1.015     | 1.5      
+  c_50_100     | 78  | 0.231    | -2.644  | -0.0339 | 1.502     | 1.99     
+  d_100_200    | 89  | 0.292    | -0.773  | -0.0087 | 2.004     | 3        
+  e_200_400    | 94  | 0.372    | -0.215  | -0.0023 | 3.06      | 4.98     
+  f_ge400      | 245 | 0.371    | 7.54    | 0.0308  | 5.039     | 321.41   
+  [6 rows]
