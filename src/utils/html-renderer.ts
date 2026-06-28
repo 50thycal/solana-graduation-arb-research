@@ -1057,6 +1057,8 @@ export function renderLiveTrainingHtml(data: any): string {
     var rows=[ buildRow('no cap','baseline',null,function(){return true;}) ];
     rows=rows.concat(SLIP_CAP_LEVELS.map(function(cap){ return buildRow('≤'+cap+'%','slip_cap',cap,function(t){return (num(t.entry_slip_pct)||0)<=cap;}); }));
     rows.push(buildRow('≤'+MAX_ENTRIES_PER_TOKEN+' entries/token','max_entries',null,function(t){return !repeatRejected[t.id];}));
+    // Stacked row: BOTH the live 1% cap AND the repeat-token reject combined.
+    rows.push(buildRow('≤'+SLIP_CAP_LIVE_PCT+'% + ≤'+MAX_ENTRIES_PER_TOKEN+' entries/token','combined',SLIP_CAP_LIVE_PCT,function(t){return (num(t.entry_slip_pct)||0)<=SLIP_CAP_LIVE_PCT && !repeatRejected[t.id];}));
     return { window_start_ts:startTs, flip_on_ts:flipOnTs, n_eligible:elig.length,
       baseline_net_sol:jround(baseNet), avg_entry_slip_pct:jround(jmean(slips),3), rows:rows };
   }
@@ -1268,6 +1270,7 @@ export function renderLiveTrainingHtml(data: any): string {
         var lab=(r.label!==undefined&&r.label!==null)? r.label : ('≤'+r.cap_pct+'%');
         if(r.kind==='slip_cap'&&r.cap_pct===SLIP_CAP_LIVE_PCT) lab+=' <span class="green" title="enforced on live entries via COPY_ENTRY_MAX_SLIPPAGE_BPS">● live</span>';
         else if(r.kind==='max_entries') lab+=' <span style="color:#64748b" title="tracking only — not a live rule">track</span>';
+        else if(r.kind==='combined') lab+=' <span style="color:#a78bfa" title="the live 1% cap AND the repeat-token reject stacked together (tracking only)">stacked</span>';
         var rowStyle=(r.kind==='baseline')?' style="color:#94a3b8"':'';
         h+='<tr'+rowStyle+'><td>'+lab+'</td>'
           +'<td>'+r.kept_n+'/'+(r.kept_n+r.skipped_n)+'</td>'
@@ -1284,7 +1287,8 @@ export function renderLiveTrainingHtml(data: any): string {
     var hdr='<b>Slippage-cap counterfactual</b>. '
       +'The <b>≤1%</b> cap is now <span class="green">enforced on live entries</span> (COPY_ENTRY_MAX_SLIPPAGE_BPS) — a buy that would fill worse than 1% reverts (→ no position). '
       +'Rows: <i>no cap</i> = the live book as-is (what it would be WITHOUT the cap); <i>≤N%</i> = drop entries whose <i>realized</i> entry slip exceeded the cap; '
-      +'<i>≤2 entries/token</i> = drop the 3rd+ trade on the same mint (<b>tracking only</b>, not a live rule). '
+      +'<i>≤2 entries/token</i> = drop the 3rd+ trade on the same mint (<b>tracking only</b>, not a live rule); '
+      +'<i>≤1% + ≤2 entries/token</i> = both filters <b>stacked</b> (tracking only) to see if they compound. '
       +'A good cut shows a positive Δ, mostly losers dropped (high "dropped net" loss, low drop win%), and few winners lost. '
       +'<span style="color:#64748b">Ignores the freed-concurrency-slot substitution (a reverted entry frees a slot live might refill).</span>';
     return hdr
