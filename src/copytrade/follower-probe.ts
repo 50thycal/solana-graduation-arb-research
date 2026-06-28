@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { Connection, PublicKey, ParsedTransactionWithMeta } from '@solana/web3.js';
 import WebSocket from 'ws';
 import { getFollowListAddresses, getSmartSetAddresses, insertProbeEvent, updateProbeEventLag } from './queries';
-import { parseSwapForOwner } from './parse-swap';
+import { parseSwapForOwner, wsNotificationToTx } from './parse-swap';
 import type { CopyTrader } from './copy-trader';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
@@ -313,50 +313,13 @@ export class CopyFollowerProbe {
     }
   }
 
-  /** Normalize a transactionNotification push into a ParsedTransactionWithMeta
-   *  shape parseSwapForOwner/accountKeysOf can consume. jsonParsed account keys
-   *  arrive as base58 strings; we rebuild them as PublicKey objects so the parse
-   *  is identical whether the tx came from the WS push or getParsedTransaction.
-   *  Returns null (→ RPC fallback) if the push lacks meta/message. */
+  /** Normalize a transactionNotification push into a ParsedTransactionWithMeta.
+   *  Delegates to the shared wsNotificationToTx so the probe and the live-tape
+   *  harvester parse pushes identically. Returns null (→ RPC fallback) if the
+   *  push lacks meta/message. */
   private buildTxFromNotification(value: Record<string, unknown>):
     (ParsedTransactionWithMeta & { blockTime: number | null }) | null {
-    try {
-      const txWrap = (value as { transaction?: Record<string, unknown> }).transaction;
-      if (!txWrap) return null;
-      // EncodedTransactionWithStatusMeta ({transaction:{message}, meta}) or flat.
-      const inner = (txWrap as { transaction?: Record<string, unknown> }).transaction ?? txWrap;
-      const meta = ((txWrap as { meta?: Record<string, unknown> }).meta
-        ?? (value as { meta?: Record<string, unknown> }).meta) as ParsedTransactionWithMeta['meta'] | undefined;
-      const message = (inner as { message?: Record<string, unknown> }).message;
-      if (!meta || !message) return null;
-
-      const rawKeys = (message as { accountKeys?: unknown[] }).accountKeys ?? [];
-      const accountKeys = rawKeys.map((k) => {
-        const pk = typeof k === 'string' ? k : (k as { pubkey?: string }).pubkey;
-        const src = (k as { signer?: boolean; writable?: boolean });
-        return { pubkey: new PublicKey(pk as string), signer: !!src.signer, writable: !!src.writable };
-      });
-
-      const toPk = (arr?: unknown[]) =>
-        (arr ?? []).map((s) => (typeof s === 'string' ? new PublicKey(s) : s as PublicKey));
-      const la = (meta as { loadedAddresses?: { writable?: unknown[]; readonly?: unknown[] } }).loadedAddresses;
-      const normMeta = {
-        ...meta,
-        loadedAddresses: la ? { writable: toPk(la.writable), readonly: toPk(la.readonly) } : undefined,
-      } as ParsedTransactionWithMeta['meta'];
-
-      const blockTime = ((value as { blockTime?: number }).blockTime
-        ?? (txWrap as { blockTime?: number }).blockTime ?? null);
-
-      return {
-        slot: 0,
-        blockTime,
-        meta: normMeta,
-        transaction: { message: { ...(message as object), accountKeys } },
-      } as unknown as ParsedTransactionWithMeta & { blockTime: number | null };
-    } catch {
-      return null; // malformed push → fall back to RPC
-    }
+    return wsNotificationToTx(value);
   }
 
   /** Off-hot-path backfill of the transport lags once block_time is resolvable.

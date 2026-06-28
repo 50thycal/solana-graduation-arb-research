@@ -10,6 +10,7 @@ import { CopyLiveExecutor } from './copy-live-executor';
 import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
 import { getOgSmartSetAddresses, getCotradeSmartSetAddresses } from './queries';
 import { getCotradeDiscovery } from './cotrade-discovery';
+import { computeLiveTape } from './live-tape-harvester';
 import {
   MAX_SELL_ATTEMPTS_BEFORE_TERMINAL,
   sellSlippageBpsForAttempt,
@@ -2420,6 +2421,10 @@ export function computeCopyTrades(db: Database.Database): unknown {
     // how many of those cleared the money-edge gate (the tradeable cotrade cohort
     // that copy-cotrade-tp100-sl30 trades against copy-ogsmart-tp100-sl30).
     cotrade_discovery: getCotradeDiscovery(db),
+    // Live-tape harvester (Idea 1) — zero-RPC PumpSwap-tape discovery funnel:
+    // wallets tallied → promoted to the scorer → scored → passing the bar. These
+    // are genuinely-new wallets the 0-30s OG seed never sees.
+    live_tape: computeLiveTape(db),
     // Per-strategy lead-wallet P&L attribution — who drives TP vs SL per strategy.
     lead_attribution: computeLeadAttribution(activeClosed),
     // Copy promotion bar (n>=100 · drop3>0 · stress>0 · monthly>=3.75) + readiness.

@@ -15,6 +15,71 @@ import { ParsedTransactionWithMeta, PublicKey } from '@solana/web3.js';
 
 export const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 
+/**
+ * Normalize a Helius `transactionNotification` push (transactionDetails:'full',
+ * encoding:'jsonParsed') into a ParsedTransactionWithMeta that parseSwapForOwner /
+ * swapTradersOf can consume — identical shape to getParsedTransaction, so parsing
+ * is the same whether the tx came off the WS push or an RPC fetch. jsonParsed
+ * account keys arrive as base58 strings; we rebuild them as PublicKey objects.
+ * Returns null (caller falls back / drops) if the push lacks meta/message.
+ * `value` is `params.result.value ?? params.result`.
+ */
+export function wsNotificationToTx(
+  value: Record<string, unknown>,
+): (ParsedTransactionWithMeta & { blockTime: number | null }) | null {
+  try {
+    const txWrap = (value as { transaction?: Record<string, unknown> }).transaction;
+    if (!txWrap) return null;
+    // EncodedTransactionWithStatusMeta ({transaction:{message}, meta}) or flat.
+    const inner = (txWrap as { transaction?: Record<string, unknown> }).transaction ?? txWrap;
+    const meta = ((txWrap as { meta?: Record<string, unknown> }).meta
+      ?? (value as { meta?: Record<string, unknown> }).meta) as ParsedTransactionWithMeta['meta'] | undefined;
+    const message = (inner as { message?: Record<string, unknown> }).message;
+    if (!meta || !message) return null;
+
+    const rawKeys = (message as { accountKeys?: unknown[] }).accountKeys ?? [];
+    const accountKeys = rawKeys.map((k) => {
+      const pk = typeof k === 'string' ? k : (k as { pubkey?: string }).pubkey;
+      const src = (k as { signer?: boolean; writable?: boolean });
+      return { pubkey: new PublicKey(pk as string), signer: !!src.signer, writable: !!src.writable };
+    });
+
+    const toPk = (arr?: unknown[]) =>
+      (arr ?? []).map((s) => (typeof s === 'string' ? new PublicKey(s) : s as PublicKey));
+    const la = (meta as { loadedAddresses?: { writable?: unknown[]; readonly?: unknown[] } }).loadedAddresses;
+    const normMeta = {
+      ...meta,
+      loadedAddresses: la ? { writable: toPk(la.writable), readonly: toPk(la.readonly) } : undefined,
+    } as ParsedTransactionWithMeta['meta'];
+
+    const blockTime = ((value as { blockTime?: number }).blockTime
+      ?? (txWrap as { blockTime?: number }).blockTime ?? null);
+
+    return {
+      slot: 0,
+      blockTime,
+      meta: normMeta,
+      transaction: { message: { ...(message as object), accountKeys } },
+    } as unknown as ParsedTransactionWithMeta & { blockTime: number | null };
+  } catch {
+    return null; // malformed push
+  }
+}
+
+/**
+ * The distinct wallet addresses that traded a non-WSOL SPL token in this tx — the
+ * candidate "owners" to parse a swap for when we DON'T know the trader up front
+ * (program-tape discovery). Derived from the token-balance owners in meta, so it
+ * finds the actual trader regardless of who paid the fee.
+ */
+export function swapTradersOf(tx: ParsedTransactionWithMeta): string[] {
+  const owners = new Set<string>();
+  for (const b of [...(tx.meta?.preTokenBalances ?? []), ...(tx.meta?.postTokenBalances ?? [])]) {
+    if (b.owner && b.mint !== WSOL_MINT) owners.add(b.owner);
+  }
+  return [...owners];
+}
+
 // Best-effort venue attribution by program id present in the tx.
 const VENUE_PROGRAMS: Record<string, string> = {
   '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P': 'pumpfun_bc',   // bonding curve

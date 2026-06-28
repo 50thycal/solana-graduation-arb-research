@@ -17,6 +17,7 @@ import { GistSync } from './api/gist-sync';
 import { MarketDataFetcher } from './collector/market-data-fetcher';
 import { CopytradeWorker } from './copytrade/worker';
 import { CopyFollowerProbe } from './copytrade/follower-probe';
+import { LiveTapeHarvester } from './copytrade/live-tape-harvester';
 import { CopyTrader, computeCopyTrades } from './copytrade/copy-trader';
 import { getSmartMoneyAnalysis } from './copytrade/smart-money';
 
@@ -361,6 +362,12 @@ async function main() {
         copyTrader,
       });
       copyFollowerProbe.start();
+
+      // Live-tape harvester (Idea 1) — zero-RPC discovery off the PumpSwap program
+      // tape. Own WS, default-on (LIVE_TAPE_DISABLED=true to stop). Promotes
+      // screen-passing wallets into the scorer (source='live_tape').
+      const liveTapeHarvester = new LiveTapeHarvester({ db });
+      liveTapeHarvester.start();
     } catch (err) {
       logger.warn('CopyFollower/CopyTrader failed to start: %s', err instanceof Error ? err.message : String(err));
     }

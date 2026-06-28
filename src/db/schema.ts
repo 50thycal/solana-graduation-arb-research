@@ -1068,6 +1068,29 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_cotrade_score ON cotrade_candidates(cotrade_score DESC);
   `);
 
+  // Live-tape harvester (Idea 1). Rolling per-wallet activity tally built by
+  // parsing the PumpSwap program tape off the WS push at ZERO RPC. This is a cheap
+  // SCREEN, not a verdict — sol_in/sol_out are gross (no FIFO cost-basis matching).
+  // Wallets that pass a cheap activity+profitability screen are promoted into
+  // wallet_candidates (source='live_tape') so the existing scorer judges them on
+  // the real bar. Unlike the OG seed / co-trade, these ARE wallets the 0-30s
+  // window never saw — the genuine discovery-source A/B.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS live_wallet_tally (
+      address TEXT PRIMARY KEY,
+      buys INTEGER NOT NULL DEFAULT 0,
+      sells INTEGER NOT NULL DEFAULT 0,
+      sol_in REAL NOT NULL DEFAULT 0,
+      sol_out REAL NOT NULL DEFAULT 0,
+      distinct_mints INTEGER NOT NULL DEFAULT 0,
+      first_seen INTEGER NOT NULL,
+      last_seen INTEGER NOT NULL,
+      promoted INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_live_tally_seen ON live_wallet_tally(last_seen);
+  `);
+
   // Shadow copy-trader (Option B, Phase 2). One row per SHADOW copy position:
   // when a followed wallet buys a graduated token, each armed copy strategy
   // opens a modeled position here (no real funds). Tracked by CopyTrader until
