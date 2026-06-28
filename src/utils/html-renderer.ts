@@ -1025,27 +1025,38 @@ export function renderLiveTrainingHtml(data: any): string {
   // ── Slip-cap counterfactual (Tier 1) — mirrors computeSlipCapOverlay server-side ──
   var SLIP_CAP_FLIP_ON_TS = 1782408610; // 2026-06-25T17:30Z — keep in sync with live-training-data.ts
   var SLIP_CAP_LEVELS = [1,2,3];
+  var SLIP_CAP_LIVE_PCT = 1; // the cap now ENFORCED live (COPY_ENTRY_MAX_SLIPPAGE_BPS=100)
+  var MAX_ENTRIES_PER_TOKEN = 2; // repeat-token reject row (tracking only)
   function jsComputeSlipCapWindow(trades, flipOnTs){
     var elig=trades.filter(function(t){return t.status==='closed'&&num(t.entry_slip_pct)!==null&&num(t.net_profit_sol)!==null;});
     function sumNet(xs){ var s=0; for(var i=0;i<xs.length;i++) s+=num(xs[i].net_profit_sol)||0; return s; }
     var baseNet=sumNet(elig);
     var startTs=null; for(var i=0;i<elig.length;i++){ var t=num(elig[i].entry_ts); if(t!==null&&(startTs===null||t<startTs)) startTs=t; }
     var slips=notNull(elig.map(function(t){return num(t.entry_slip_pct);}));
-    var rows=SLIP_CAP_LEVELS.map(function(cap){
-      var kept=elig.filter(function(t){return (num(t.entry_slip_pct)||0)<=cap;});
-      var skipped=elig.filter(function(t){return (num(t.entry_slip_pct)||0)>cap;});
+    // Generic counterfactual row: keep where keep(t), drop the rest, report vs baseline.
+    function buildRow(label, kind, capPct, keep){
+      var kept=elig.filter(keep);
+      var skipped=elig.filter(function(t){return !keep(t);});
       var winners=skipped.filter(function(t){return (num(t.net_profit_sol)||0)>0;});
       var losers=skipped.filter(function(t){return (num(t.net_profit_sol)||0)<=0;});
       var keptWins=kept.filter(function(t){return (num(t.net_profit_sol)||0)>0;}).length;
       var keptNet=sumNet(kept);
-      return { cap_pct:cap, kept_n:kept.length, kept_winners_n:keptWins, kept_losers_n:kept.length-keptWins, skipped_n:skipped.length,
+      return { label:label, kind:kind, cap_pct:capPct, kept_n:kept.length, kept_winners_n:keptWins, kept_losers_n:kept.length-keptWins, skipped_n:skipped.length,
         kept_net_sol:jround(keptNet), skipped_net_sol:jround(sumNet(skipped)),
         improvement_sol:jround(keptNet-baseNet),
         winners_dropped_n:winners.length, winners_dropped_sol:jround(sumNet(winners)),
         losers_dropped_n:losers.length, losers_dropped_sol:jround(sumNet(losers)),
         kept_win_rate_pct:kept.length? jround(keptWins/kept.length*100,1): null,
         skipped_win_rate_pct:skipped.length? jround(winners.length/skipped.length*100,1): null };
-    });
+    }
+    // Repeat-token reject set: the 3rd+ eligible trade on the same mint (chronological
+    // within this window). Tracking only — NOT a live rule. No-mint trades are kept.
+    var repeatRejected={}, seenPerMint={};
+    var byTs=elig.slice().sort(function(a,b){return (num(a.entry_ts)||0)-(num(b.entry_ts)||0) || (num(a.id)||0)-(num(b.id)||0);});
+    for(var i=0;i<byTs.length;i++){ var rt2=byTs[i]; if(!rt2.mint) continue; var c=(seenPerMint[rt2.mint]||0)+1; seenPerMint[rt2.mint]=c; if(c>MAX_ENTRIES_PER_TOKEN) repeatRejected[rt2.id]=1; }
+    var rows=[ buildRow('no cap','baseline',null,function(){return true;}) ];
+    rows=rows.concat(SLIP_CAP_LEVELS.map(function(cap){ return buildRow('≤'+cap+'%','slip_cap',cap,function(t){return (num(t.entry_slip_pct)||0)<=cap;}); }));
+    rows.push(buildRow('≤'+MAX_ENTRIES_PER_TOKEN+' entries/token','max_entries',null,function(t){return !repeatRejected[t.id];}));
     return { window_start_ts:startTs, flip_on_ts:flipOnTs, n_eligible:elig.length,
       baseline_net_sol:jround(baseNet), avg_entry_slip_pct:jround(jmean(slips),3), rows:rows };
   }
@@ -1249,10 +1260,16 @@ export function renderLiveTrainingHtml(data: any): string {
         +'<br>baseline (no cap): '+cspan(w.baseline_net_sol,f4(w.baseline_net_sol)+' SOL')
         +' on n='+w.n_eligible+' fills · avg entry slip '+fpctp(w.avg_entry_slip_pct);
       h+='<table class="lt-cmp-tbl" style="margin-top:6px"><thead><tr>'
-        +'<th>cap</th><th>kept</th><th>kept W/L</th><th>book w/ cap</th><th>Δ vs base</th>'
+        +'<th>filter</th><th>kept</th><th>kept W/L</th><th>book</th><th>Δ vs base</th>'
         +'<th>dropped W/L</th><th>dropped net</th><th>drop win%</th></tr></thead><tbody>';
       for(var i=0;i<w.rows.length;i++){ var r=w.rows[i];
-        h+='<tr><td>≤'+r.cap_pct+'%</td>'
+        // Row label (cap_pct fallback for older payloads) + badges: ● live on the
+        // enforced cap, "track" on the repeat-token tracking-only row.
+        var lab=(r.label!==undefined&&r.label!==null)? r.label : ('≤'+r.cap_pct+'%');
+        if(r.kind==='slip_cap'&&r.cap_pct===SLIP_CAP_LIVE_PCT) lab+=' <span class="green" title="enforced on live entries via COPY_ENTRY_MAX_SLIPPAGE_BPS">● live</span>';
+        else if(r.kind==='max_entries') lab+=' <span style="color:#64748b" title="tracking only — not a live rule">track</span>';
+        var rowStyle=(r.kind==='baseline')?' style="color:#94a3b8"':'';
+        h+='<tr'+rowStyle+'><td>'+lab+'</td>'
           +'<td>'+r.kept_n+'/'+(r.kept_n+r.skipped_n)+'</td>'
           +'<td><span class="green">'+r.kept_winners_n+'W</span> / <span class="red">'+r.kept_losers_n+'L</span></td>'
           +'<td>'+cspan(r.kept_net_sol,f4(r.kept_net_sol))+'</td>'
@@ -1264,8 +1281,10 @@ export function renderLiveTrainingHtml(data: any): string {
       h+='</tbody></table>';
       return h;
     }
-    var hdr='<b>Slippage-cap counterfactual</b> <span style="color:#64748b">(Tier 1 — measurement only, no behavior change)</span>. '
-      +'Drops closed live entries whose <i>realized</i> entry slip exceeded the cap = the revert outcome of an on-chain max-slip cap. '
+    var hdr='<b>Slippage-cap counterfactual</b>. '
+      +'The <b>≤1%</b> cap is now <span class="green">enforced on live entries</span> (COPY_ENTRY_MAX_SLIPPAGE_BPS) — a buy that would fill worse than 1% reverts (→ no position). '
+      +'Rows: <i>no cap</i> = the live book as-is (what it would be WITHOUT the cap); <i>≤N%</i> = drop entries whose <i>realized</i> entry slip exceeded the cap; '
+      +'<i>≤2 entries/token</i> = drop the 3rd+ trade on the same mint (<b>tracking only</b>, not a live rule). '
       +'A good cut shows a positive Δ, mostly losers dropped (high "dropped net" loss, low drop win%), and few winners lost. '
       +'<span style="color:#64748b">Ignores the freed-concurrency-slot substitution (a reverted entry frees a slot live might refill).</span>';
     return hdr

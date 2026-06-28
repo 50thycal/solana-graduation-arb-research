@@ -3,7 +3,7 @@ import { Connection } from '@solana/web3.js';
 import { Executor, PoolContext, ExecutionResult } from '../trading/executor';
 import { Wallet, TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from '../trading/wallet';
 import { isKillswitchTripped } from '../trading/safety';
-import { MICRO_TRADE_SIZE_SOL, DAILY_MAX_LOSS_SOL, WALLET_SOL_BUFFER, COPY_JITO_TIP_SOL, DEFAULT_JITO_TIP_SOL } from '../trading/config';
+import { MICRO_TRADE_SIZE_SOL, DAILY_MAX_LOSS_SOL, WALLET_SOL_BUFFER, COPY_JITO_TIP_SOL, DEFAULT_JITO_TIP_SOL, COPY_ENTRY_MAX_SLIPPAGE_BPS } from '../trading/config';
 import { MAX_BUY_ATTEMPTS, buySlippageBpsForAttempt, buyTipMultiplierForAttempt } from '../trading/buy-retry';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
@@ -152,7 +152,14 @@ export class CopyLiveExecutor {
     let result: ExecutionResult | undefined;
     let lastErr = 'unknown';
     for (let attempt = 1; attempt <= MAX_BUY_ATTEMPTS; attempt++) {
-      const slippageBpsOverride = buySlippageBpsForAttempt(attempt);
+      // On-chain 1% entry slippage cap (COPY_ENTRY_MAX_SLIPPAGE_BPS): clamp the
+      // retry schedule's slippage so a buy that would fill worse than the cap
+      // reverts (→ no position) on EVERY attempt — the retry escalation (which
+      // widens to 10-20% on attempt 3) can never let a high-slip entry through.
+      // <=0 disables the cap. See the slip-cap counterfactual on /live-training.
+      const slippageBpsOverride = COPY_ENTRY_MAX_SLIPPAGE_BPS > 0
+        ? Math.min(buySlippageBpsForAttempt(attempt), COPY_ENTRY_MAX_SLIPPAGE_BPS)
+        : buySlippageBpsForAttempt(attempt);
       // Copy base tip (COPY_JITO_TIP_SOL) × the per-attempt retry escalation.
       const jitoTipMultiplier = buyTipMultiplierForAttempt(attempt) * COPY_TIP_BASE_MULT;
       try {
