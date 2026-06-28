@@ -175,19 +175,33 @@ Files published every ~2 min: `diagnose.json`, `snapshot.json`, `copy-trades.jso
 These are convenient but in-process only: they **cannot** capture native crashes, OOM `SIGKILL`s,
 or stderr (the process dies first). For those, use the Railway Logs workflow below.
 
-### On-demand Railway logs + DB queries (GitHub Actions → Railway)
-The real diagnostic path. Two `workflow_dispatch` workflows that a GitHub runner (open egress)
-executes, with results in the job log — trigger via `mcp__github__actions_run_trigger`, read via
-`mcp__github__get_job_logs`. Full setup in **`docs/REMOTE_ACCESS.md`**.
-- **`Railway Logs`** (`.github/workflows/railway-logs.yml`) — pulls the **actual platform logs**
-  (crashes, restarts, exit codes) via Railway's GraphQL API. Inputs: `limit`, `deployment_id`,
-  `filter`.
-- **`DB Query (read-only)`** (`.github/workflows/db-query.yml`) — POSTs a single read-only statement
-  to the bot's authenticated `POST /api/db-query` endpoint, which runs it in an **isolated child
-  process** on a read-only SQLite connection. Input: `sql`, `max_rows`.
+### On-demand Railway logs + DB queries — self-serve via the `ops` branch
+The real diagnostic path, and **fully self-serve (no operator click)**. Claude can READ GitHub
+Actions runs but **cannot dispatch** `workflow_dispatch` workflows — the Claude GitHub App has no
+`actions:write` scope by design, so `mcp__github__actions_run_trigger` (and a raw dispatch curl)
+return 403. Instead, **push a request to the `ops` branch** and the run fires automatically:
 
-Requires repo secrets (`RAILWAY_TOKEN`, `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID`,
-`RAILWAY_SERVICE_ID`, `DB_QUERY_URL`, `DB_QUERY_TOKEN`) + `DB_QUERY_TOKEN` set on the service.
+1. Overwrite **`ops/request.json`** on the **`ops`** branch and push it. **Do NOT put `[skip ci]` in
+   the commit message** — it suppresses the trigger. Shapes:
+   - `{"type": "logs", "limit": 200, "filter": "", "deployment_id": ""}`
+   - `{"type": "db", "sql": "SELECT ...", "max_rows": 200}`
+2. The push fires the **`Ops Runner`** workflow (`.github/workflows/ops-runner.yml`, which lives
+   ONLY on `ops` — it never touches `main` or redeploys Railway) and **commits the result to
+   `ops/result.txt`**.
+3. Read it back over plain git, ~60s later:
+   `git fetch origin ops && git show origin/ops:ops/result.txt`
+
+Under the hood (both reuse the read-only guards in their scripts):
+- **Logs** → `scripts/railway_logs.py` pulls the **actual platform logs** (crashes, restarts, exit
+  codes, stderr) via Railway's GraphQL API — what the in-process `logs.json` cannot capture.
+- **DB** → `scripts/db_query.py` POSTs to the bot's authenticated `POST /api/db-query`, which runs
+  the statement in an **isolated child process** on a read-only SQLite connection (writes rejected).
+
+The same two jobs also exist as **manually-triggerable** workflows on `main` (`Railway Logs`,
+`DB Query (read-only)`) for a human "Run workflow" click. Full setup + secrets in
+**`docs/REMOTE_ACCESS.md`** (`RAILWAY_TOKEN`, `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID`,
+`RAILWAY_SERVICE_ID`, `DB_QUERY_URL`, `DB_QUERY_TOKEN` as Actions secrets + `DB_QUERY_TOKEN` on the
+service).
 
 > The legacy `db-query.json` → `db-query-results.json` channel (queries over the `bot-status`
 > branch) is **retired** — it coupled ad-hoc queries to the trading-critical sync loop. Use the
