@@ -121,6 +121,13 @@ export interface CopyStrategy {
                                // (-5.8 SOL / 146 trades). cap=2 keeps the lead's double-down, drops the chase tail —
                                // and cuts the extra position-poll RPC. (already_open already blocks concurrent
                                // re-entry; this caps SEQUENTIAL re-entries after prior ones close.)
+  crowdSellExit?: { minSellers: number; windowSec: number };
+                               // CROWD-SELL EXIT (2026-06-28): close the position when >= minSellers DISTINCT smart
+                               // wallets have sold this mint within windowSec — independent of the entry lead.
+                               // Unlike exitFollow (mirror the ENTRY lead's sell), this reads the whole watched
+                               // crowd from copy_probe_events (action='sell'), so it bails when smart money turns
+                               // en masse — targeting the SL-driver tail. Event-driven off onLeadSell (zero RPC for
+                               // the signal; one vault re-fetch only when an exit actually fires).
   regimeGateMinScore?: number; // regime gate: only enter when the current 1-10 window score (computed from
                                // the roster-stable baseline; 10 best, 1 worst, 5 neutral) is >= this. Tests
                                // "skip the bad windows" — the copy book swings hard (-31/+44/-35 SOL days)
@@ -310,6 +317,13 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-hotlead-hold30m-nochase', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
     maxExtensionPct: 50 },
+  // ── S (2026-06-28): crowd-sell EXIT on copy-hotlead-hold30m. Keeps the SL30 + 30m backstop, but
+  //    ALSO bails when >= 2 distinct smart wallets sell the mint within 10min (independent of the
+  //    entry lead) — targets the SL-driver tail by following smart money OUT, not just the one lead.
+  //    Signal is zero-RPC (copy_probe_events sells, already captured). Kill: n>=100 and drop3 < parent.
+  { id: 'copy-hotlead-hold30m-crowdexit', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    crowdSellExit: { minSellers: 2, windowSec: 600 } },
   // I4 hotlead parameter sweep — copy-hotlead works at {last10, >=3, net>0}; bracket
   //    the calibration. -strict raises the net floor (lead must be clearly profitable
   //    recently, not marginally positive); -deep uses a longer, more stable lookback.
@@ -1507,6 +1521,32 @@ export class CopyTrader {
       const cutoff = Date.now() - 3600_000;
       for (const [m, ts] of this.lastLeadSellMs) if (ts < cutoff) this.lastLeadSellMs.delete(m);
     }
+
+    // CROWD-SELL EXIT: close positions whose strategy bails when >= N distinct smart wallets have
+    // sold this mint within the window (regardless of the entry lead). Re-checked on every lead-sell,
+    // so it fires the moment the Nth seller crosses the threshold. Disjoint from exitFollow positions.
+    const crowd = [...this.positions.values()].filter((p) => p.mint === mint && STRAT_BY_ID.get(p.strategyId)?.crowdSellExit);
+    if (crowd.length > 0) {
+      const countByWindow = new Map<number, number>();
+      let crowdExitPrice: number | null = null;
+      let priceFetched = false;
+      for (const p of crowd) {
+        const cfg = STRAT_BY_ID.get(p.strategyId)!.crowdSellExit!;
+        let c = countByWindow.get(cfg.windowSec);
+        if (c == null) { c = this.countRecentSmartSellers(mint, cfg.windowSec); countByWindow.set(cfg.windowSec, c); }
+        if (c < cfg.minSellers) continue;
+        if (!priceFetched) {
+          priceFetched = true;
+          const conn = this.getConnection();
+          if (conn && (await globalRpcLimiter.throttleOrDropPriority(20, 'copy_trade'))) {
+            const pr = await fetchVaultPrice(conn, p.baseVault, p.quoteVault);
+            crowdExitPrice = pr?.priceSol ?? null;
+          }
+        }
+        this.exitPosition(p, 'crowd_sell', crowdExitPrice ?? p.entryPrice);
+      }
+    }
+
     const toClose = [...this.positions.values()].filter((p) => p.mint === mint && p.exitFollow);
     if (toClose.length === 0) return;
     const immediate = toClose.filter((p) => !STRAT_BY_ID.get(p.strategyId)?.followSellDelaySec);
@@ -1554,6 +1594,17 @@ export class CopyTrader {
       const since = Date.now() - CONSENSUS_WINDOW_MS;
       const row = this.db.prepare(
         `SELECT COUNT(DISTINCT wallet_address) AS c FROM copy_probe_events WHERE mint = ? AND action = 'buy' AND detected_at >= ?`,
+      ).get(mint, since) as { c: number };
+      return row.c;
+    } catch { return 0; }
+  }
+
+  /** Distinct smart wallets that SOLD this mint in the last windowSec — the crowdSellExit signal. */
+  private countRecentSmartSellers(mint: string, windowSec: number): number {
+    try {
+      const since = Date.now() - windowSec * 1000;
+      const row = this.db.prepare(
+        `SELECT COUNT(DISTINCT wallet_address) AS c FROM copy_probe_events WHERE mint = ? AND action = 'sell' AND detected_at >= ?`,
       ).get(mint, since) as { c: number };
       return row.c;
     } catch { return 0; }

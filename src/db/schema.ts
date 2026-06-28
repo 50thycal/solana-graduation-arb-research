@@ -1105,6 +1105,29 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_copy_trades_status ON copy_trades(status);
     CREATE INDEX IF NOT EXISTS idx_copy_trades_strategy ON copy_trades(strategy_id);
   `);
+  // Token metadata (name/symbol/image/socials) for mints we COPY — fetched out-of-band
+  // (TokenMetadataFetcher) via Helius DAS getAssetBatch, cached per-mint (immutable). Seeds the
+  // "no picture / no socials = rug-ish" feature dataset; never read on the hot copy path. has_image
+  // / has_socials are precomputed flags so the rug analysis is a plain GROUP BY. ok=0 + error set
+  // when DAS/JSON resolution failed (still cached so we don't re-hammer dead mints).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS token_metadata (
+      mint TEXT PRIMARY KEY,
+      name TEXT,
+      symbol TEXT,
+      description TEXT,
+      image_uri TEXT,
+      json_uri TEXT,
+      twitter TEXT,
+      telegram TEXT,
+      website TEXT,
+      has_image INTEGER DEFAULT 0,
+      has_socials INTEGER DEFAULT 0,
+      ok INTEGER DEFAULT 1,
+      error TEXT,
+      fetched_at INTEGER DEFAULT (unixepoch())
+    );
+  `);
   // Additive: dynamic-exit state columns (high-water mark, scale-out) so the
   // CopyTrader resumes breakeven/ratchet/scale-out correctly across restarts.
   {
