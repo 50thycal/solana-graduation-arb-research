@@ -11,6 +11,30 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-28 — Cohort S (crowd-sell exit) + token-metadata capture infra
+
+**Cohort S — `copy-hotlead-hold30m-crowdexit`** (`crowdSellExit: {minSellers:2, windowSec:600}`).
+A new EXIT mechanic: close the position when ≥2 distinct smart wallets have sold the mint within
+10min — *independent of the entry lead*. Unlike `exitFollow` (mirror the one entry lead's sell), this
+follows the whole watched crowd OUT, targeting the SL-driver tail (smart money turning en masse). The
+signal is **zero-RPC** — sells are already in `copy_probe_events` (`action='sell'`); it's event-driven
+off `onLeadSell`, with one vault re-fetch only when an exit actually fires. New generic field
+`crowdSellExit` + `countRecentSmartSellers()` helper + a crowd branch in `onLeadSell`; exit reason
+`crowd_sell`. Kill: `n>=100 AND drop3 < parent`. 5-day window.
+
+**Token-metadata capture (infra, no strategy yet).** New `TokenMetadataFetcher` (default-ON,
+`COPYTRADE_META_DISABLED` to stop) + `token_metadata` table. For each distinct mint in `copy_trades`
+lacking metadata, it calls Helius DAS `getAssetBatch` (1 droppable RPC / ≤100 mints) for
+name/symbol/image/json_uri, then best-effort fetches the off-chain JSON for twitter/telegram/website
+(pump.fun puts socials there, not in DAS `content.metadata`), and upserts with precomputed
+`has_image` / `has_socials` flags. Out-of-band (10-min worker, `firstRunDelayMs` 120s), **never on the
+hot copy path**; metadata is immutable so it's cached per-mint forever (failures cached too). This
+seeds the "no picture / no socials = rug-ish" dataset the on-chain chart-features can't see — once it
+accrues, the rug analysis is a plain `GROUP BY has_socials` over `token_metadata ⨝ copy_trades`. RPC
+cost ≈ a few hundred credits/month (bounded by the copied-mint universe, one-time per mint).
+
+---
+
 ## 2026-06-28 — Cohort R: two "buying too late" gates (first-mover + price-extension)
 
 > Two more `copy-hotlead-hold30m` variants attacking the same failure mode (entering as exit

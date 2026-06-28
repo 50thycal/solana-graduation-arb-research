@@ -16,6 +16,7 @@ import { registerApiRoutes } from './api/routes';
 import { GistSync } from './api/gist-sync';
 import { MarketDataFetcher } from './collector/market-data-fetcher';
 import { CopytradeWorker } from './copytrade/worker';
+import { TokenMetadataFetcher } from './copytrade/metadata-fetcher';
 import { CopyFollowerProbe } from './copytrade/follower-probe';
 import { LiveTapeHarvester } from './copytrade/live-tape-harvester';
 import { CopyTrader, computeCopyTrades } from './copytrade/copy-trader';
@@ -344,6 +345,15 @@ async function main() {
       copytradeWorker.start();
     } catch (err) {
       logger.warn('CopytradeWorker failed to start: %s', err instanceof Error ? err.message : String(err));
+    }
+
+    // Out-of-band token metadata capture (name/symbol/image/socials) for copied mints — feeds the
+    // rug-signal dataset the on-chain chart-features miss. RPC-budgeted, never on the hot copy path.
+    try {
+      const metadataFetcher = new TokenMetadataFetcher({ db });
+      metadataFetcher.start();
+    } catch (err) {
+      logger.warn('TokenMetadataFetcher failed to start: %s', err instanceof Error ? err.message : String(err));
     }
 
     // Copy-follower (Phase 2). The probe subscribes to the smart watchlist via
