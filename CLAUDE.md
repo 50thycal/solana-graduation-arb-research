@@ -164,27 +164,35 @@ NOT screenshot dashboards, query the DB, or pull Railway logs.
 
 Files published every ~2 min: `diagnose.json`, `snapshot.json`, `copy-trades.json`,
 `wallet-leaderboard.json`, `smart-money.json`, `copy-probe.json`, `live-training.json`,
-`live-execution.json`, plus the self-serve infra files `logs.json`, `bot-errors.json`, and
-`db-query-results.json` (below).
+`live-execution.json`, plus the self-serve infra files `logs.json` and `bot-errors.json` (below).
 
 **Do NOT WebFetch the Railway deployment URL — it returns 403.**
 
-### Logs & errors are self-serve (no longer Railway-only)
-Recent logs and crashes ride out on the same 2-min sync:
-- `logs.json` — tail of the in-process log buffer (all levels) + a retained warn/error slice.
+### Quick logs & errors (snapshot, on the 2-min sync)
+- `logs.json` — tail of the **in-process** log buffer (all levels) + a retained warn/error slice.
 - `bot-errors.json` — `last_error` + the 20 most recent `bot_errors` rows.
 
-### Ad-hoc read-only DB queries (`db-query.json` → `db-query-results.json`)
-To run a one-off SELECT against the live DB, push `db-query.json` to the **`main`** branch:
-```json
-{ "queries": [ { "id": "open-by-strategy", "sql": "SELECT strategy_id, COUNT(*) FROM copy_trades WHERE status='open' GROUP BY 1", "max_rows": 1000 } ] }
-```
-The bot runs each on a dedicated **read-only** connection (writes/DDL are rejected), deletes the
-request, and publishes results to `db-query-results.json` on `bot-status` within ~2 min. Use this
-instead of asking the operator to query the DB.
+These are convenient but in-process only: they **cannot** capture native crashes, OOM `SIGKILL`s,
+or stderr (the process dies first). For those, use the Railway Logs workflow below.
 
-The legacy `GET /api/*` endpoints still exist on the running service but are 403 from Claude
-sessions — prefer the `bot-status` files above.
+### On-demand Railway logs + DB queries (GitHub Actions → Railway)
+The real diagnostic path. Two `workflow_dispatch` workflows that a GitHub runner (open egress)
+executes, with results in the job log — trigger via `mcp__github__actions_run_trigger`, read via
+`mcp__github__get_job_logs`. Full setup in **`docs/REMOTE_ACCESS.md`**.
+- **`Railway Logs`** (`.github/workflows/railway-logs.yml`) — pulls the **actual platform logs**
+  (crashes, restarts, exit codes) via Railway's GraphQL API. Inputs: `limit`, `deployment_id`,
+  `filter`.
+- **`DB Query (read-only)`** (`.github/workflows/db-query.yml`) — POSTs a single read-only statement
+  to the bot's authenticated `POST /api/db-query` endpoint, which runs it in an **isolated child
+  process** on a read-only SQLite connection. Input: `sql`, `max_rows`.
+
+Requires repo secrets (`RAILWAY_TOKEN`, `RAILWAY_PROJECT_ID`, `RAILWAY_ENVIRONMENT_ID`,
+`RAILWAY_SERVICE_ID`, `DB_QUERY_URL`, `DB_QUERY_TOKEN`) + `DB_QUERY_TOKEN` set on the service.
+
+> The legacy `db-query.json` → `db-query-results.json` channel (queries over the `bot-status`
+> branch) is **retired** — it coupled ad-hoc queries to the trading-critical sync loop. Use the
+> `DB Query` workflow instead. The legacy `GET /api/*` views remain on the service (403 from Claude
+> sessions; reachable from the workflows).
 
 ---
 

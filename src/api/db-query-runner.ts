@@ -1,9 +1,9 @@
 /**
  * src/api/db-query-runner.ts
  *
- * Child-process entry point for ad-hoc Claude DB queries (the db-query.json
- * self-serve channel). Spawned by gist-sync.ts via child_process for EACH
- * inbound query batch.
+ * Child-process entry point for ad-hoc read-only Claude DB queries. Spawned by
+ * db-query-exec.ts (the parent-side launcher) for each query batch that arrives
+ * via the authenticated POST /api/db-query endpoint — see docs/REMOTE_ACCESS.md.
  *
  * Why a child PROCESS (not a worker thread): an arbitrary read-only query can
  * trip a native better-sqlite3 abort or an OOM. A worker thread shares the

@@ -9,13 +9,13 @@
  *   - Copy:   copy-trades.json, wallet-leaderboard.json, smart-money.json,
  *             copy-probe.json
  *   - Live:   live-training.json, live-execution.json
- *   - Self-serve DB: db-query-results.json (results of an inbound db-query.json)
  *
  * The graduation-research panels and the inbound strategy-commands.json
  * apparatus were removed — copy strategies are code-defined (COPY_STRATEGIES in
  * copy-trader.ts) and the copy journals live in docs/copy-trade-journal.md +
- * docs/copy-strategy-lab.md. The ad-hoc read-only DB query channel
- * (db-query.json → db-query-results.json) is retained.
+ * docs/copy-strategy-lab.md. Ad-hoc read-only DB queries are no longer handled
+ * here — they run on-demand via the authenticated POST /api/db-query endpoint
+ * (called by the "DB Query" GitHub Actions workflow; see docs/REMOTE_ACCESS.md).
  *
  * Uses the low-level GitHub Git Tree API + force-push so the branch always has
  * exactly ONE commit — no history accumulates regardless of sync frequency.
@@ -26,8 +26,6 @@
  */
 
 import Database from 'better-sqlite3';
-import path from 'path';
-import { execFile } from 'child_process';
 import { runDiagnosis, type ChannelWinCounts } from './diagnose';
 import { getEventLoopLagStats } from '../utils/event-loop-lag-monitor';
 import { computeWalletLeaderboard } from '../copytrade/leaderboard';
@@ -49,67 +47,8 @@ const REPO = 'solana-graduation-arb-research';
 const BRANCH = 'bot-status';
 const DEFAULT_INTERVAL_MS = 2 * 60 * 1000;
 
-// Inbound ad-hoc DB query channel: Claude pushes db-query.json to the main
-// branch ({ queries: [{ id, sql, max_rows }] }); the bot runs each as a guarded
-// read-only SELECT and publishes the outcome to db-query-results.json.
-const DB_QUERY_FILE = 'db-query.json';
-
 // How many recent log-buffer entries to publish to logs.json each sync cycle.
 const LOG_SYNC_LIMIT = parseInt(process.env.LOG_SYNC_LIMIT ?? '1500', 10) || 1500;
-
-// Hard ceiling on rows returned by an ad-hoc DB query, regardless of the
-// per-query max_rows. Bounds memory + the size of db-query-results.json.
-const DB_QUERY_HARD_ROW_CAP = 50_000;
-const DB_QUERY_DEFAULT_ROW_CAP = 1000;
-
-function resolveDbPath(db: Database.Database): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const filename = (db as any).name as string | undefined;
-  if (!filename) throw new Error('Cannot resolve DB path from better-sqlite3 handle');
-  return filename;
-}
-
-/**
- * Resolve the compiled db-query-runner.js path. It only exists in the compiled
- * (dist) layout: dist/api/gist-sync.js -> __dirname = dist/api/. Under ts-node
- * (dev) __dirname is src/api/ and there's no compiled runner — return null so
- * processDbQueries falls back to running the query in-process (acceptable in
- * dev; production always has dist).
- */
-function resolveDbQueryRunnerPath(): string | null {
-  const here = __dirname;
-  const isCompiled = here.endsWith(`${path.sep}dist${path.sep}api`);
-  if (!isCompiled) return null;
-  return path.join(here, 'db-query-runner.js');
-}
-
-/** One read-only query request inside db-query.json (pushed to main by Claude). */
-interface DbQueryRequest {
-  id: string;
-  sql: string;
-  max_rows?: number;
-}
-interface DbQueryFile {
-  queries: DbQueryRequest[];
-}
-/** One query's outcome, published in db-query-results.json on bot-status. */
-interface DbQueryResult {
-  id: string;
-  sql: string;
-  ok: boolean;
-  error?: string;
-  columns?: string[];
-  rows?: unknown[];
-  row_count?: number;
-  truncated?: boolean;
-  elapsed_ms?: number;
-}
-interface DbQueryResultsFile {
-  generated_at: string;
-  processed_at: string | null;
-  query_count: number;
-  results: DbQueryResult[];
-}
 
 export interface StatusUrls {
   diagnose: string;
@@ -140,10 +79,6 @@ export class GistSync {
   // Track consecutive sync-cycle failures so transient GitHub network glitches
   // don't flood logs with identical error stacks.
   private consecutiveFailures = 0;
-
-  // Outcome of the most recent inbound db-query.json — published as
-  // db-query-results.json by buildPayloads on the same sync cycle.
-  private lastDbQueryResults: DbQueryResultsFile | null = null;
 
   constructor(opts: {
     db: Database.Database;
@@ -193,196 +128,6 @@ export class GistSync {
       live_execution: `${base}/live-execution.json`,
       branch_html: `https://github.com/${OWNER}/${REPO}/tree/${BRANCH}`,
     };
-  }
-
-  // ── Inbound ad-hoc DB queries ───────────────────────────────────
-  /**
-   * Check for db-query.json on the main branch. Each query is run as a guarded
-   * read-only SELECT on a dedicated short-lived readonly connection (never the
-   * shared read-write handle) and the outcome is stashed for db-query-results.json.
-   */
-  private async processDbQueries(): Promise<void> {
-    let fileInfo: { sha: string; content: string };
-    try {
-      const resp = await fetch(
-        `${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DB_QUERY_FILE}?ref=main`,
-        { headers: this.headers() },
-      );
-      if (resp.status === 404) return; // No query pending
-      if (!resp.ok) {
-        logger.debug('Inbound db-query check returned %d', resp.status);
-        return;
-      }
-      fileInfo = (await resp.json()) as { sha: string; content: string };
-    } catch (err) {
-      logger.warn({ err }, 'Inbound db-query check failed — will retry next cycle');
-      return;
-    }
-
-    const content = Buffer.from(fileInfo.content, 'base64').toString('utf-8');
-    let parsed: DbQueryFile;
-    try {
-      parsed = JSON.parse(content) as DbQueryFile;
-    } catch {
-      logger.error('Failed to parse db-query.json — deleting');
-      await this.deleteDbQueryFile(fileInfo.sha);
-      return;
-    }
-
-    const queries = Array.isArray(parsed.queries) ? parsed.queries : [];
-    // Run the batch in an isolated child process so a native crash / OOM in any
-    // query can NEVER take down the bot (see runQueriesInChild + db-query-runner).
-    const results = await this.runQueriesInChild(queries);
-
-    this.lastDbQueryResults = {
-      generated_at: new Date().toISOString(),
-      processed_at: new Date().toISOString(),
-      query_count: results.length,
-      results,
-    };
-    logger.info({ query_count: results.length }, 'Processed inbound DB queries');
-    await this.deleteDbQueryFile(fileInfo.sha);
-  }
-
-  /**
-   * Run a batch of ad-hoc queries in a SEPARATE child process (db-query-runner).
-   * A native better-sqlite3 abort or an OOM inside the runner kills only that
-   * child — the parent (the live bot) sees the failure and records error results
-   * for the batch, then carries on. This is the crash fix: doing the DB work
-   * in-process (even on a dedicated read-only connection) destabilized the same
-   * cycle's heavy work and SIGKILL'd the container ~14s after the query ran.
-   *
-   * Falls back to in-process execution only under ts-node/dev (no compiled
-   * runner). Production always has dist, so it always uses the child process.
-   */
-  private runQueriesInChild(queries: DbQueryRequest[]): Promise<DbQueryResult[]> {
-    const errResult = (q: DbQueryRequest | undefined, error: string): DbQueryResult => ({
-      id: (q && typeof q.id === 'string') ? q.id : '(missing id)',
-      sql: (q && typeof q.sql === 'string') ? q.sql : '',
-      ok: false,
-      error,
-    });
-
-    const runnerPath = resolveDbQueryRunnerPath();
-    if (!runnerPath) {
-      // Dev (ts-node): no compiled runner — run in-process on an isolated
-      // read-only connection. Acceptable in dev; never reached in production.
-      return Promise.resolve(queries.map((q) =>
-        (!q || typeof q.sql !== 'string' || typeof q.id !== 'string')
-          ? errResult(q, 'each query needs string id + sql')
-          : this.executeDbQuery(q.id, q.sql, q.max_rows)));
-    }
-
-    const payload = JSON.stringify({
-      dbPath: resolveDbPath(this.db),
-      defaultRowCap: DB_QUERY_DEFAULT_ROW_CAP,
-      hardRowCap: DB_QUERY_HARD_ROW_CAP,
-      queries,
-    });
-
-    return new Promise((resolve) => {
-      // process.execPath = the absolute path to THIS node binary (robust vs
-      // relying on `node` being on PATH inside the container).
-      const child = execFile(
-        process.execPath,
-        [runnerPath],
-        { timeout: 60_000, maxBuffer: 64 * 1024 * 1024 },
-        (err, stdout) => {
-          if (err) {
-            // Child crashed (signal/segfault), exited non-zero, or timed out.
-            // The bot is unaffected — report the whole batch as errored.
-            const reason = err.signal
-              ? `child killed by ${err.signal}`
-              : ((err as NodeJS.ErrnoException).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
-                ? 'result exceeded 64MB buffer'
-                : err.message);
-            logger.warn({ err: reason }, 'db-query child process failed — bot unaffected');
-            resolve(queries.map((q) => errResult(q, `query runner failed: ${reason}`)));
-            return;
-          }
-          try {
-            const out = JSON.parse(stdout) as { results?: DbQueryResult[] };
-            resolve(Array.isArray(out.results) ? out.results : []);
-          } catch (e) {
-            resolve(queries.map((q) => errResult(q, `runner output parse failed: ${e instanceof Error ? e.message : String(e)}`)));
-          }
-        },
-      );
-      child.stdin?.end(payload);
-    });
-  }
-
-  /** Run one guarded read-only query and shape it into a DbQueryResult. */
-  private executeDbQuery(id: string, sql: string, maxRows?: number): DbQueryResult {
-    const startedAt = Date.now();
-    const cap = Math.min(
-      Math.max(1, Number.isFinite(maxRows as number) ? (maxRows as number) : DB_QUERY_DEFAULT_ROW_CAP),
-      DB_QUERY_HARD_ROW_CAP,
-    );
-
-    // CRITICAL: run ad-hoc Claude queries on a DEDICATED, short-lived read-only
-    // connection — never the shared read-write `this.db` handle that the
-    // collector and buildPayloads use. Running .iterate()/.columns() on the
-    // shared handle hard-crashed the process (native better-sqlite3 abort, no
-    // catchable JS error). Opening our own readonly handle isolates the blast
-    // radius; we close it in `finally`. Columns are derived from the first row's
-    // keys rather than the native `.columns()` call (another crash vector).
-    let conn: Database.Database | null = null;
-    try {
-      conn = new Database(resolveDbPath(this.db), { readonly: true, fileMustExist: true });
-      conn.pragma('busy_timeout = 5000');
-
-      let stmt: Database.Statement;
-      try {
-        // better-sqlite3.prepare() compiles exactly one statement and throws on a
-        // multi-statement string, so "SELECT 1; DROP TABLE x" never reaches exec.
-        stmt = conn.prepare(sql);
-      } catch (err) {
-        return { id, sql, ok: false, error: `prepare failed: ${err instanceof Error ? err.message : String(err)}` };
-      }
-      if (!stmt.readonly) {
-        return { id, sql, ok: false, error: 'rejected: only read-only queries are allowed (statement writes or is DDL/PRAGMA-write)' };
-      }
-      if (!stmt.reader) {
-        return { id, sql, ok: false, error: 'rejected: query returns no rows (must be a SELECT or other row-returning read)' };
-      }
-      const rows: unknown[] = [];
-      let truncated = false;
-      try {
-        for (const row of stmt.iterate()) {
-          if (rows.length >= cap) { truncated = true; break; }
-          rows.push(row);
-        }
-      } catch (err) {
-        return { id, sql, ok: false, error: `execution failed: ${err instanceof Error ? err.message : String(err)}` };
-      }
-      const first = rows[0];
-      const columns = first && typeof first === 'object' && !Array.isArray(first)
-        ? Object.keys(first as Record<string, unknown>)
-        : [];
-      return {
-        id, sql, ok: true, columns, rows,
-        row_count: rows.length, truncated, elapsed_ms: Date.now() - startedAt,
-      };
-    } catch (err) {
-      return { id, sql, ok: false, error: `query connection failed: ${err instanceof Error ? err.message : String(err)}` };
-    } finally {
-      if (conn) {
-        try { conn.close(); } catch { /* ignore — best-effort cleanup */ }
-      }
-    }
-  }
-
-  private async deleteDbQueryFile(sha: string): Promise<void> {
-    try {
-      await fetch(`${GITHUB_API}/repos/${OWNER}/${REPO}/contents/${DB_QUERY_FILE}`, {
-        method: 'DELETE',
-        headers: this.headers(),
-        body: JSON.stringify({ message: 'bot: processed db query [skip ci]', sha }),
-      });
-    } catch (err) {
-      logger.error({ err }, 'Failed to delete db-query.json');
-    }
   }
 
   // ── private ──────────────────────────────────────────────────
@@ -473,16 +218,6 @@ export class GistSync {
         last_error: getLastBotError(this.db),
         recent: getRecentBotErrors(this.db, 20),
       }, null, 2),
-      'db-query-results.json': JSON.stringify(
-        this.lastDbQueryResults ?? {
-          generated_at: genAt,
-          processed_at: null,
-          query_count: 0,
-          results: [],
-          note: 'No DB query has run yet. Push db-query.json to the main branch ({ "queries": [{ "id", "sql", "max_rows" }] }) to run a read-only SELECT; results land here on the next sync (~2 min).',
-        },
-        null, 2,
-      ),
     };
   }
 
@@ -524,14 +259,11 @@ export class GistSync {
   }
 
   /**
-   * Core sync: process inbound DB queries, build status payloads, push to
-   * bot-status via the Git Tree API.
+   * Core sync: build status payloads, push to bot-status via the Git Tree API.
+   * (Ad-hoc DB queries are no longer handled here — they run on-demand via the
+   * authenticated POST /api/db-query endpoint; see docs/REMOTE_ACCESS.md.)
    */
   private async sync(): Promise<void> {
-    // Process any inbound ad-hoc DB queries so their results ride out on this
-    // same push cycle (db-query-results.json is built inside buildPayloads).
-    await this.processDbQueries();
-
     const payloads = await this.buildPayloads();
 
     try {

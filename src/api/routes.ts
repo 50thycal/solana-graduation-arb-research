@@ -28,6 +28,7 @@ import { computeLiveExecutionStats } from './live-execution-stats';
 import { verifyPumpswapSwap, findRecentPumpSwapCandidates } from '../trading/pumpswap-verify';
 import { Connection } from '@solana/web3.js';
 import type { LogBuffer } from '../utils/log-buffer';
+import { runDbQueriesIsolated, resolveDbPath, type DbQueryRequest } from './db-query-exec';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { vaultPriceCacheStats } from '../trading/executor';
 import {
@@ -360,6 +361,38 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
     });
   }));
 
+  // ── POST /api/db-query ── (authenticated, read-only, on-demand) ──
+  // Called by the "DB Query (read-only)" GitHub Actions workflow from a runner
+  // with open egress (Claude's own session can't reach this host). Runs each
+  // statement in an isolated child process (db-query-exec → db-query-runner) so
+  // a native crash / OOM in an arbitrary query can never take the bot down.
+  // Disabled unless DB_QUERY_TOKEN is set. See docs/REMOTE_ACCESS.md.
+  app.post('/api/db-query', wrap(async (req, res) => {
+    const expected = process.env.DB_QUERY_TOKEN;
+    if (!expected) {
+      res.status(503).json({ error: 'db-query endpoint disabled (DB_QUERY_TOKEN not set on the service)' });
+      return;
+    }
+    const auth = req.header('authorization') ?? '';
+    const provided = auth.startsWith('Bearer ') ? auth.slice(7).trim() : String(req.query.token ?? '');
+    if (provided !== expected) {
+      res.status(401).json({ error: 'unauthorized' });
+      return;
+    }
+    const body = (req.body ?? {}) as { sql?: string; id?: string; max_rows?: number; queries?: DbQueryRequest[] };
+    const queries: DbQueryRequest[] = Array.isArray(body.queries)
+      ? body.queries
+      : (typeof body.sql === 'string'
+        ? [{ id: typeof body.id === 'string' ? body.id : 'q', sql: body.sql, max_rows: body.max_rows }]
+        : []);
+    if (queries.length === 0) {
+      res.status(400).json({ error: 'provide { sql, max_rows? } or { queries: [{ id, sql, max_rows }] }' });
+      return;
+    }
+    const results = await runDbQueriesIsolated(resolveDbPath(db), queries);
+    res.json({ generated_at: new Date().toISOString(), query_count: results.length, results });
+  }));
+
   // ── /api ── (endpoint discovery)
   app.get('/api', (_req: Request, res: Response) => {
     res.json({
@@ -375,6 +408,7 @@ export function registerApiRoutes(opts: RegisterApiOptions): void {
         { path: '/api/graduations',          description: 'Recent detected graduations (query: limit, label, vel_min, vel_max)' },
         { path: '/api/logs',                 description: 'In-process log ring buffer (query: level, since, limit, grep)' },
         { path: '/api/bot-errors',           description: 'Recent uncaught errors' },
+        { path: 'POST /api/db-query',        description: 'Authenticated read-only SQL (Bearer DB_QUERY_TOKEN); used by the DB Query workflow' },
       ],
     });
   });
