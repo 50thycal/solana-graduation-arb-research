@@ -27,6 +27,10 @@ log via the API).
 {"type": "noop"}   // placeholder; do nothing
 ```
 
+**Gotcha:** do **not** put `[skip ci]` in a request commit message — it suppresses
+the workflow trigger. (The workflow's own `ops: result` commits use `[skip ci]`
+on purpose so they don't retrigger; the path filter already prevents that too.)
+
 DB requests are read-only several ways over (read-only SQLite connection +
 `readonly`/`reader` check + isolated child process + lexical guard in
 `scripts/db_query.py`). The manually-triggered `Railway Logs` and
