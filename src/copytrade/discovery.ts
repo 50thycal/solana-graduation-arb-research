@@ -120,6 +120,20 @@ export function recomputeCandidatePriorities(db: Database.Database): number {
     logger.warn('Priority firstbuyer-aggregate failed: %s', err instanceof Error ? err.message : String(err));
   }
 
+  // Co-trade discovery (Idea 2): wallets that buy alongside proven smart wallets
+  // get a strong priority boost so the scorer reaches them FAST instead of after
+  // the 75k OG backlog — the whole point of the method is to point scoring at
+  // high-prior wallets. Weighted heavily (×8 per distinct proven winner) because
+  // "co-trades with N proven winners" is a much stronger prior than raw activity.
+  try {
+    const ctRows = db.prepare(
+      `SELECT address AS w, n_distinct_winners AS nw FROM cotrade_candidates`
+    ).all() as Array<{ w: string; nw: number }>;
+    for (const r of ctRows) addPts(r.w, r.nw * 8);
+  } catch (err) {
+    logger.warn('Priority cotrade-aggregate failed: %s', err instanceof Error ? err.message : String(err));
+  }
+
   const stmt = db.prepare(`UPDATE wallet_candidates SET priority = @p WHERE address = @a`);
   const tx = db.transaction(() => {
     for (const [a, p] of priority) stmt.run({ a, p });

@@ -2380,6 +2380,33 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Wallet</th><th>RTs</th><th>Net SOL</th><th>Drop3</th><th>SOL/mo</th><th>WR</th><th>Swap%</th><th>Hold</th><th>24h/7d</th><th>Active</th></tr>${promoRows}</table>` : ''}
   </div>`;
 
+  // ── Co-trade discovery (Idea 2) A/B card ──────────────────────────────────
+  const ctd = d.cotrade_discovery ?? null;
+  const cts = ctd?.summary ?? {};
+  const ctRows = (ctd?.top ?? []).slice(0, 15).map((r: any) => `<tr>
+      <td style="font-family:monospace">${w(r.address)}</td>
+      <td>${r.n_distinct_winners}</td><td>${r.n_cotrade_grads}</td>
+      <td>${r.og_overlap ? '<span class="desc">OG-overlap</span>' : '<span class="green">exclusive</span>'}</td>
+      <td>${r.scored ? '✓' : '<span class="desc">queued</span>'}</td>
+      <td>${r.is_smart ? '<span class="green">smart ✓</span>' : '—'}</td></tr>`).join('');
+  const cotradeCard = ctd == null ? '' : `<div class="card" style="border-left:6px solid #0ea5e9">
+    <h2>Co-trade discovery <span class="desc" style="font-size:13px">— Idea 2: winner-graph snowball (A/B vs OG seed)</span></h2>
+    <div class="desc">New discovery method: wallets that buy the same graduated tokens, early, ALONGSIDE proven smart wallets
+    (≥${ctd.params?.min_distinct_winners ?? 2} distinct winners). A discovered wallet still must clear the SAME money-edge gate to be traded —
+    this only changes WHO we score. <b>Division is airtight</b>: <span class="green">cotrade-exclusive</span> = only this method found it
+    (<code>source='cotrade_graph'</code>); OG-overlap = both methods found it (counted in the OG cohort). Strategies
+    <code>copy-cotrade-tp100-sl30</code> vs <code>copy-ogsmart-tp100-sl30</code> (identical params) isolate the method's edge —
+    compare them in the per-strategy table below and in leave-one-out.</div>
+    <div class="grid">
+      <div class="stat"><span class="label">Co-trade candidates</span><span class="value">${(cts.total_cotrade_candidates ?? 0).toLocaleString()}</span></div>
+      <div class="stat"><span class="label">Cotrade-exclusive</span><span class="value">${(cts.cotrade_exclusive ?? 0).toLocaleString()} <span class="desc">(${(cts.og_overlap ?? 0).toLocaleString()} OG-overlap)</span></span></div>
+      <div class="stat"><span class="label">Scored (exclusive)</span><span class="value">${cts.cotrade_scored ?? 0}</span></div>
+      <div class="stat"><span class="label">Cotrade smart (tradeable)</span><span class="value green">${cts.cotrade_smart ?? 0}</span></div>
+    </div>
+    ${ctRows ? `<h3>Top co-trade candidates <span class="desc">(by # distinct proven winners co-traded with)</span></h3>
+    <table><tr><th>Wallet</th><th>Winners</th><th>Grads</th><th>Provenance</th><th>Scored</th><th>Smart?</th></tr>${ctRows}</table>` : ''}
+  </div>`;
+
   // ── Per-strategy lead attribution: which wallets drive TP vs SL per strategy ─
   const attribRows = (d.lead_attribution ?? []).map((s: any) => {
     const leads = (s.top_leads ?? []).map((l: any) => `<tr>
@@ -2412,5 +2439,5 @@ export function renderCopyTradesHtml(data: any): string {
     ${attribRows}
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + discoveryCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + discoveryCard + cotradeCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
 }
