@@ -1,0 +1,43 @@
+name: DB Query (read-only)
+
+# Manually-triggered, read-only SQL against the bot's SQLite DB.
+# Triggered from the Actions tab or the GitHub API (Claude triggers it on demand
+# and reads the result from the job log). The DB is a SQLite file on the Railway
+# volume, so this POSTs to the bot's authenticated /api/db-query endpoint (the
+# runner can reach the Railway public URL; Claude's session can't). The endpoint
+# runs each statement in an isolated child process on a read-only connection.
+#
+# Requires repo secrets: DB_QUERY_URL (full endpoint URL,
+# e.g. https://<service>.up.railway.app/api/db-query) and DB_QUERY_TOKEN
+# (matching the service's DB_QUERY_TOKEN env var). See docs/REMOTE_ACCESS.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      sql:
+        description: "Read-only SQL (single SELECT / WITH / EXPLAIN statement)"
+        required: true
+        type: string
+      max_rows:
+        description: "Max rows to print"
+        required: false
+        default: "200"
+        type: string
+
+jobs:
+  query:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run read-only query
+        env:
+          DB_QUERY_URL: ${{ secrets.DB_QUERY_URL }}
+          DB_QUERY_TOKEN: ${{ secrets.DB_QUERY_TOKEN }}
+          SQL: ${{ inputs.sql }}
+          MAX_ROWS: ${{ inputs.max_rows }}
+        run: python scripts/db_query.py
