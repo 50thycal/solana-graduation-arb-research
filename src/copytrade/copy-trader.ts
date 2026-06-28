@@ -97,6 +97,19 @@ export interface CopyStrategy {
                                // minNetSol over >= minTrades total copies. Unlike hotLeadGate (noisy last-10
                                // recency), this keys on stable lifetime reputation — the lead data shows the
                                // best leads by cumulative net aren't always "hot" by recency.
+  leadExclusionGate?: { minTrades: number; maxNetSol: number };
+                               // PER-STRATEGY dynamic lead pruning (2026-06-28, data-backed): unlike hotLeadGate/
+                               // eliteLeadGate (which read the shared COPY_REGIME_BASELINE series), this reads THIS
+                               // strategy's OWN closed copies of the lead. Once this strategy has >= minTrades
+                               // closed copies of a lead AND their summed net_sol <= maxNetSol, stop copying that
+                               // lead FOR THIS STRATEGY. Inverse of hotLeadGate: a lead with < minTrades history is
+                               // NOT excluded (benefit of the doubt) — it self-prunes the bottom leads as n grows.
+  maxEntriesPerMint?: number;  // REPEAT-BUY cap (2026-06-28, data-backed): skip a copy once this strategy already
+                               // has >= maxEntriesPerMint CLOSED entries on the mint. Re-entry analysis on
+                               // copy-hotlead-hold30m: 1st (+14.8) and 2nd (+24.3 SOL) entries profit, 3rd+ bleed
+                               // (-5.8 SOL / 146 trades). cap=2 keeps the lead's double-down, drops the chase tail —
+                               // and cuts the extra position-poll RPC. (already_open already blocks concurrent
+                               // re-entry; this caps SEQUENTIAL re-entries after prior ones close.)
   regimeGateMinScore?: number; // regime gate: only enter when the current 1-10 window score (computed from
                                // the roster-stable baseline; 10 best, 1 worst, 5 neutral) is >= this. Tests
                                // "skip the bad windows" — the copy book swings hard (-31/+44/-35 SOL days)
@@ -255,6 +268,22 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   // A SUBSET of hold30m's tokens → fully shares its polls (zero marginal RPC).
   { id: 'copy-hotlead-hold30m-strict', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
+  // ── Q (2026-06-28): two DATA-BACKED gates on the best base (copy-hotlead-hold30m), each
+  //    isolating one gate. Both are pure-SQL/cached (zero RPC) and share the parent's hot-lead
+  //    entries + position polls, so marginal RPC ≈ 0; cap2 also CUTS polling. Kill per id:
+  //    n>=100 and drop3 < parent copy-hotlead-hold30m's drop3. 5-day window.
+  // -cap2: repeat-buy cap. Re-entry analysis (DB query 2026-06-28): on the same mint the 1st
+  //    (+14.8) and 2nd (+24.3 SOL) entries profit, but the 3rd+ bleed (-5.8 SOL / 146 trades).
+  //    Cap at 2 closed entries/mint → keep the lead's double-down, drop the chase tail.
+  { id: 'copy-hotlead-hold30m-cap2', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    maxEntriesPerMint: 2 },
+  // -prune: per-strategy dynamic lead exclusion. Once THIS strategy has >=5 closed copies of a
+  //    lead that sum to net <= 0, stop copying that lead (self-prunes its own SL-driver tail —
+  //    the "Worst leads" cohort — without touching the shared hotlead baseline series).
+  { id: 'copy-hotlead-hold30m-prune', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    leadExclusionGate: { minTrades: 5, maxNetSol: 0 } },
   // I4 hotlead parameter sweep — copy-hotlead works at {last10, >=3, net>0}; bracket
   //    the calibration. -strict raises the net floor (lead must be clearly profitable
   //    recently, not marginally positive); -deep uses a longer, more stable lookback.
@@ -951,6 +980,44 @@ export class CopyTrader {
     return res;
   }
 
+  /** THIS strategy's own realized stats for a lead — the leadExclusionGate's signal.
+   *  Unlike leadRecentStats/leadLifetimeStats (which query COPY_REGIME_BASELINE), this
+   *  binds the strategy's own id, so the cache MUST be keyed by `${strategyId}:${leadWallet}`.
+   *  Cached 5min per (strategy, lead). */
+  private leadOwnCache = new Map<string, { ts: number; n: number; net: number }>();
+  private leadOwnStats(strategyId: string, leadWallet: string): { n: number; net: number } {
+    const now = Date.now();
+    const key = `${strategyId}:${leadWallet}`;
+    const hit = this.leadOwnCache.get(key);
+    if (hit && now - hit.ts < 300_000) return hit;
+    let res = { n: 0, net: 0 };
+    try {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) AS n, COALESCE(SUM(net_sol), 0) AS net FROM copy_trades
+        WHERE status = 'closed' AND strategy_id = ? AND lead_wallet = ? AND net_sol IS NOT NULL
+      `).get(strategyId, leadWallet) as { n: number; net: number };
+      res = { n: row.n, net: row.net };
+    } catch { /* table may be empty */ }
+    this.leadOwnCache.set(key, { ts: now, ...res });
+    if (this.leadOwnCache.size > 4000) {
+      for (const [k, v] of this.leadOwnCache) if (now - v.ts > 900_000) this.leadOwnCache.delete(k);
+    }
+    return res;
+  }
+
+  /** Count of THIS strategy's CLOSED entries on a mint — the maxEntriesPerMint signal.
+   *  already_open already blocks concurrent re-entry, so closed-count is the prior-entry
+   *  count: cap=2 skips the 3rd. Opt-in only (queried just for capped strategies). */
+  private mintEntryCount(strategyId: string, mint: string): number {
+    try {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) AS n FROM copy_trades
+        WHERE strategy_id = ? AND mint = ? AND status = 'closed' AND net_sol IS NOT NULL
+      `).get(strategyId, mint) as { n: number };
+      return row.n;
+    } catch { return 0; }
+  }
+
   /** This strategy's realized net for the current UTC day (sum of net_sol on closed
    *  copies that exited today). Drives the dailyLossCapSol breaker. Cached 60s per
    *  strategy; the day-start cutoff moves forward at 00:00 UTC so it resets daily. */
@@ -1005,6 +1072,10 @@ export class CopyTrader {
       if (open.some((p) => p.mint === mint)) { this.recordSkip(s.id, 'already_open'); continue; }
       if (this.pendingEntries.has(pendingKey)) { this.recordSkip(s.id, 'already_open'); continue; }
       if (open.length >= MAX_CONCURRENT_PER_STRATEGY) { this.recordSkip(s.id, 'at_capacity'); continue; }
+      // repeat-buy cap: stop re-entering a mint past maxEntriesPerMint closed entries (the 3rd+ bleeds)
+      if (s.maxEntriesPerMint != null && this.mintEntryCount(s.id, mint) >= s.maxEntriesPerMint) {
+        this.recordSkip(s.id, 'mint_entry_cap'); continue;
+      }
       // daily-loss circuit breaker: halt new entries once today's realized net <= -cap (reset at 00:00 UTC)
       if (s.dailyLossCapSol != null && this.strategyDailyRealizedNet(s.id) <= -s.dailyLossCapSol) {
         this.recordSkip(s.id, 'daily_loss_cap'); continue;
@@ -1035,6 +1106,11 @@ export class CopyTrader {
       if (s.eliteLeadGate) {
         const st = this.leadLifetimeStats(leadWallet);
         if (st.n < s.eliteLeadGate.minTrades || st.net <= s.eliteLeadGate.minNetSol) { this.recordSkip(s.id, 'elitelead'); continue; }
+      }
+      // per-strategy lead pruning: once THIS strategy has enough history on a lead AND it's net-bad, drop it
+      if (s.leadExclusionGate) {
+        const st = this.leadOwnStats(s.id, leadWallet);
+        if (st.n >= s.leadExclusionGate.minTrades && st.net <= s.leadExclusionGate.maxNetSol) { this.recordSkip(s.id, 'lead_excluded'); continue; }
       }
 
       // Measured-lag entry — wait, re-fetch the real price, enter at that.

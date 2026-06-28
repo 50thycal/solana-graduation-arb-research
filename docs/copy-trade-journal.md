@@ -11,6 +11,46 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-28 — Cohort Q: two data-backed gates (repeat-buy cap + lead exclusion)
+
+> Spawned 2 variants of `copy-hotlead-hold30m` from a DB analysis (run over the new `ops`-branch
+> query channel — the legacy `db-query.json` channel was retired). Both gates are pure-SQL/cached
+> (zero RPC) and share the parent's hot-lead entries + position polls, so marginal RPC ≈ 0; `-cap2`
+> also *cuts* polling. Kill per id: `n>=100 AND drop3 < parent copy-hotlead-hold30m's drop3`. 5-day window.
+
+**The analysis (copy-hotlead-hold30m, 739 closed trades):**
+- **Token chart-features are NOT a usable filter — negative result.** `liquidity_sol_t30` is null on
+  89% of copied tokens (copies fire independent of T+30 enrichment) → unusable. Holders / top5-conc /
+  dev% are all noisy + non-monotonic (no coherent threshold; the "bad" buckets — 150–250 holders,
+  3–5% dev — don't form a story). The hot-lead entry already extracts that signal. **Did NOT build
+  feature gates** (would be overfitting scattered buckets).
+- **Repeat-buying IS a clean signal.** Re-entry ordinal on the same mint: 1st `+0.034` avg (+14.8
+  tot), 2nd **`+0.155`** avg (**+24.3** tot — the best bucket, the lead doubling down on a winner),
+  3rd `−0.030`, 4th+ `−0.049` (3rd+ = **−5.8 SOL over 146 trades**, ~20% of all entries, plus pure
+  extra poll RPC). → cap at 2, NOT 1.
+
+**Built:**
+
+| Strategy | Gate | Hypothesis |
+|---|---|---|
+| `copy-hotlead-hold30m-cap2` | `maxEntriesPerMint: 2` | Drop the 3rd+ re-entry chase tail (−5.8 SOL) → higher drop3 + less poll RPC. |
+| `copy-hotlead-hold30m-prune` | `leadExclusionGate: {minTrades:5, maxNetSol:0}` | Self-prune the bottom leads: once this strategy has ≥5 closed copies of a lead summing ≤0 net, stop copying it. Drops the SL-driver tail (the dashboard "Worst leads"). |
+
+**Mechanics (new, generic — reusable by any strategy):**
+- `maxEntriesPerMint` — counts THIS strategy's closed entries on the mint (`already_open` already
+  blocks concurrent re-entry, so closed-count = prior-entry count; cap=2 skips the 3rd). Skip reason
+  `mint_entry_cap`.
+- `leadExclusionGate {minTrades, maxNetSol}` + `leadOwnStats(strategyId, leadWallet)` — reads THIS
+  strategy's own closed copies of the lead (NOT the shared `COPY_REGIME_BASELINE` series the hot/elite
+  gates use), cache keyed `${strategyId}:${leadWallet}`. Inverse of hotLeadGate: a lead with
+  `< minTrades` history is NOT excluded (benefit of the doubt), so it self-prunes as n grows. Skip
+  reason `lead_excluded`.
+
+**Deferred:** token metadata capture (image/socials via `getAssetBatch`, out-of-band + cached) — the
+behavioral rug signal the chart-features miss; separate build, next round.
+
+---
+
 ## 2026-06-27 — New experiment cohort P (hold30m hill-climb)
 
 > Spawned 7 variants of the board's best strategy, `copy-hotlead-hold30m` (parent: net +35.9,
