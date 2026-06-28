@@ -1,1 +1,1 @@
-{"type": "logs", "limit": 80}
+{"type": "db", "sql": "SELECT label, COUNT(*) AS n FROM graduation_momentum GROUP BY label ORDER BY n DESC", "max_rows": 20}
