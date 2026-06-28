@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { upsertCandidate } from './queries';
+import { upsertCandidate, COTRADE_COHORT_MIN_WINNERS } from './queries';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('cotrade-discovery');
@@ -21,16 +21,31 @@ const logger = makeLogger('cotrade-discovery');
  * money-edge scoring gate to ever be traded. Its only job is to change WHO we look
  * at, not WHAT counts as smart.
  *
- * A/B division (kept airtight): a discovered wallet is upserted into
- * wallet_candidates with source='cotrade_graph', which — because OG seeding uses
- * ON CONFLICT DO NOTHING — sticks ONLY when the OG seed never saw the wallet. So
- *   source = 'cotrade_graph'  ⟺  ONLY the co-trade method surfaced this address
- * and the trading cohorts (og_smart vs cotrade) are disjoint by construction.
+ * A/B division (corrected 2026-06-28). The original design split by "who
+ * DISCOVERED the wallet" (wallet_candidates.source). That was structurally empty:
+ * co-trade reads competition_signals — the SAME 0-30s window the OG seed reads —
+ * so every wallet it finds was already OG-seeded (cotrade_exclusive was always 0).
+ * Finding genuinely-unseen wallets needs a NEW data source (RPC fetch of co-buyers,
+ * or the live tape) — a separate build, not this.
+ *
+ * So co-trade is reframed as a wallet-QUALITY SELECTION signal applied to the
+ * proven smart set: cotrade_score = # distinct OTHER proven winners a wallet runs
+ * with in the early window. The disjoint A/B cohorts (queries.ts) partition the
+ * smart set by that score:
+ *   cotrade cohort = smart wallets with cotrade_score >= COTRADE_COHORT_MIN_WINNERS
+ *                    ("runs with the crowd of proven winners")
+ *   og cohort      = the rest of the smart set
+ * The hypothesis under test: do smart wallets that cluster with other winners
+ * outperform the smart wallets that don't? Both cohorts are real and non-empty.
+ *
+ * We still register discovered wallets as prioritized candidates (source tag +
+ * priority boost) so high-co-trade wallets get SCORED fast — that part was always
+ * sound; only the cohort definition changed.
  */
 
 const EARLY_WINDOW_SEC = 30;
-const MIN_DISTINCT_WINNERS = 2;   // must co-trade with >=2 distinct proven winners
-const MAX_CANDIDATES = 2000;      // cap the write set per run (priority routes scoring)
+const MIN_DISTINCT_WINNERS = 2;   // write floor: only record wallets co-trading with >=2 winners
+const MAX_CANDIDATES = 4000;      // cap the write set per run (priority routes scoring)
 
 // Same money-edge definition as getSmartSet() — keep in sync.
 const SMART_GATE =
@@ -71,12 +86,14 @@ export function computeCotradeDiscovery(
              COUNT(DISTINCT wg.sw)  AS n_winners,
              COUNT(DISTINCT cs2.graduation_id) AS n_grads
       FROM competition_signals cs2
-      JOIN winner_grads wg ON wg.gid = cs2.graduation_id
+      -- self-exclude (wg.sw != cand) so a smart wallet isn't counted as
+      -- co-trading with itself; smart wallets ARE included as candidates so the
+      -- signal is defined across the whole smart set, not just non-smart wallets.
+      JOIN winner_grads wg ON wg.gid = cs2.graduation_id AND wg.sw != cs2.wallet_address
       WHERE cs2.action = 'buy'
         AND cs2.seconds_since_graduation >= 0
         AND cs2.seconds_since_graduation <= ${EARLY_WINDOW_SEC}
         AND cs2.wallet_address IS NOT NULL
-        AND cs2.wallet_address NOT IN (SELECT address FROM smart)
       GROUP BY cs2.wallet_address
       HAVING n_winners >= ${MIN_DISTINCT_WINNERS}
       ORDER BY n_winners DESC, n_grads DESC
@@ -129,71 +146,72 @@ export function computeCotradeDiscovery(
 export interface CotradeDiscoveryData {
   generated_at: string;
   method: 'cotrade-graph-snowball';
-  params: { early_window_sec: number; min_distinct_winners: number };
+  params: { early_window_sec: number; cohort_min_winners: number };
   summary: {
-    total_cotrade_candidates: number;
-    cotrade_exclusive: number;       // source='cotrade_graph' (OG never found them)
-    og_overlap: number;              // both methods found them
-    cotrade_scored: number;          // cotrade-exclusive wallets that have been scored
-    cotrade_smart: number;           // cotrade-exclusive wallets passing the money-edge gate (the tradeable set)
+    total_cotrade_candidates: number; // all wallets with a co-trade signal (any tier)
+    smart_total: number;              // proven smart wallets (the A/B universe)
+    cotrade_cohort: number;           // smart wallets with cotrade_score >= threshold (Idea 2 picks)
+    og_cohort: number;                // smart wallets below threshold (the rest of OG's smart set)
   };
+  // The cotrade cohort = the actual wallets copy-cotrade-tp100-sl30 trades.
   top: Array<{
     address: string; n_distinct_winners: number; n_cotrade_grads: number;
-    og_overlap: number; scored: boolean; is_smart: boolean;
+    scored: boolean; is_smart: boolean; cohort: 'cotrade' | 'og' | null;
   }>;
 }
 
-/** Read-only summary for cotrade-discovery.json + the /copy-trades page. Cheap SQL. */
+/** Read-only summary for the /copy-trades page. Cheap SQL. Reports the smart-set
+ *  split that defines the A/B, plus the top smart wallets by co-trade signal. */
 export function getCotradeDiscovery(db: Database.Database): CotradeDiscoveryData {
   const generated_at = new Date().toISOString();
+  const thr = COTRADE_COHORT_MIN_WINNERS;
+  const GATE = `ws.total_realized_sol_drop_top3 > 0 AND ws.monthly_run_rate_sol >= 3.75 AND ws.total_realized_sol >= 0.5`;
   const base: CotradeDiscoveryData = {
     generated_at,
     method: 'cotrade-graph-snowball',
-    params: { early_window_sec: EARLY_WINDOW_SEC, min_distinct_winners: MIN_DISTINCT_WINNERS },
-    summary: { total_cotrade_candidates: 0, cotrade_exclusive: 0, og_overlap: 0, cotrade_scored: 0, cotrade_smart: 0 },
+    params: { early_window_sec: EARLY_WINDOW_SEC, cohort_min_winners: thr },
+    summary: { total_cotrade_candidates: 0, smart_total: 0, cotrade_cohort: 0, og_cohort: 0 },
     top: [],
   };
   try {
-    const counts = db.prepare(`
-      SELECT
-        COUNT(*) AS total,
-        SUM(CASE WHEN og_overlap = 0 THEN 1 ELSE 0 END) AS exclusive,
-        SUM(CASE WHEN og_overlap = 1 THEN 1 ELSE 0 END) AS overlap
-      FROM cotrade_candidates
-    `).get() as { total: number; exclusive: number | null; overlap: number | null };
-    base.summary.total_cotrade_candidates = counts.total ?? 0;
-    base.summary.cotrade_exclusive = counts.exclusive ?? 0;
-    base.summary.og_overlap = counts.overlap ?? 0;
+    base.summary.total_cotrade_candidates =
+      (db.prepare(`SELECT COUNT(*) AS c FROM cotrade_candidates`).get() as { c: number }).c ?? 0;
 
-    // Of the cotrade-EXCLUSIVE wallets (source='cotrade_graph'): how many scored,
-    // and how many cleared the money-edge gate (the actually-tradeable cohort).
-    const scored = db.prepare(`
+    // The A/B universe: the proven smart set, partitioned by the co-trade signal.
+    const split = db.prepare(`
       SELECT
-        COUNT(*) AS scored,
-        SUM(CASE WHEN ws.total_realized_sol_drop_top3 > 0 AND ws.monthly_run_rate_sol >= 3.75 AND ws.total_realized_sol >= 0.5 THEN 1 ELSE 0 END) AS smart
-      FROM cotrade_candidates cc
-      JOIN wallet_candidates wc ON wc.address = cc.address AND wc.source = 'cotrade_graph'
-      JOIN wallet_scores ws ON ws.address = cc.address
-    `).get() as { scored: number | null; smart: number | null };
-    base.summary.cotrade_scored = scored.scored ?? 0;
-    base.summary.cotrade_smart = scored.smart ?? 0;
+        COUNT(*) AS smart_total,
+        SUM(CASE WHEN COALESCE(cc.n_distinct_winners,0) >= @thr THEN 1 ELSE 0 END) AS cotrade_cohort,
+        SUM(CASE WHEN COALESCE(cc.n_distinct_winners,0) <  @thr THEN 1 ELSE 0 END) AS og_cohort
+      FROM wallet_scores ws
+      LEFT JOIN cotrade_candidates cc ON cc.address = ws.address
+      WHERE ${GATE}
+    `).get({ thr }) as { smart_total: number; cotrade_cohort: number | null; og_cohort: number | null };
+    base.summary.smart_total = split.smart_total ?? 0;
+    base.summary.cotrade_cohort = split.cotrade_cohort ?? 0;
+    base.summary.og_cohort = split.og_cohort ?? 0;
 
+    // Top SMART wallets by co-trade signal — the head of the cotrade cohort.
     base.top = (db.prepare(`
-      SELECT cc.address, cc.n_distinct_winners, cc.n_cotrade_grads, cc.og_overlap,
+      SELECT cc.address, cc.n_distinct_winners, cc.n_cotrade_grads,
              ws.address IS NOT NULL AS scored,
-             (ws.total_realized_sol_drop_top3 > 0 AND ws.monthly_run_rate_sol >= 3.75 AND ws.total_realized_sol >= 0.5) AS is_smart
+             (${GATE}) AS is_smart
       FROM cotrade_candidates cc
       LEFT JOIN wallet_scores ws ON ws.address = cc.address
-      ORDER BY cc.cotrade_score DESC, cc.n_cotrade_grads DESC
+      ORDER BY cc.n_distinct_winners DESC, cc.n_cotrade_grads DESC
       LIMIT 50
-    `).all() as Array<Record<string, number | string>>).map((r) => ({
-      address: r.address as string,
-      n_distinct_winners: r.n_distinct_winners as number,
-      n_cotrade_grads: r.n_cotrade_grads as number,
-      og_overlap: r.og_overlap as number,
-      scored: !!r.scored,
-      is_smart: !!r.is_smart,
-    }));
+    `).all() as Array<Record<string, number | string>>).map((r) => {
+      const isSmart = !!r.is_smart;
+      const inCotrade = (r.n_distinct_winners as number) >= thr;
+      return {
+        address: r.address as string,
+        n_distinct_winners: r.n_distinct_winners as number,
+        n_cotrade_grads: r.n_cotrade_grads as number,
+        scored: !!r.scored,
+        is_smart: isSmart,
+        cohort: isSmart ? (inCotrade ? 'cotrade' as const : 'og' as const) : null,
+      };
+    });
   } catch (err) {
     logger.warn('getCotradeDiscovery failed: %s', err instanceof Error ? err.message : String(err));
   }

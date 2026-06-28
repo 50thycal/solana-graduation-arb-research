@@ -397,16 +397,18 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    a funded wallet. Emits copy-hotlead-hold30m-pair-shadow + -live-micro.
   ...makeLivePair({ id: 'copy-hotlead-hold30m', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } }),
-  // ── O (2026-06-26): DISCOVERY-METHOD A/B (Idea 2). Two strategies with IDENTICAL
-  //    params to the load-bearing baseline (copy-tp100-sl30) that differ ONLY by the
-  //    discovery method of the wallets they copy:
-  //      • copy-ogsmart-tp100-sl30  — wallets found by the existing DB seed (OG).
-  //      • copy-cotrade-tp100-sl30  — wallets found by co-trade graph snowball.
-  //    leadCohort gates each on its disjoint cohort (wallet_candidates.source), so
-  //    comparing their copy_trades P&L isolates "is the new discovery method better
-  //    at finding tradeable alpha than the OG method?" — same TP/SL/size/exit, only
-  //    the wallet source differs. The un-gated baseline above stays as the "all
-  //    smart wallets" benchmark.
+  // ── O (2026-06-26, corrected 2026-06-28): CO-TRADE SIGNAL A/B (Idea 2). Two
+  //    strategies with IDENTICAL params to the load-bearing baseline (copy-tp100-sl30)
+  //    that split the PROVEN smart set by the co-trade signal:
+  //      • copy-cotrade-tp100-sl30 — smart wallets that co-trade with >=N distinct
+  //        proven winners ("run with the winner-crowd").
+  //      • copy-ogsmart-tp100-sl30 — the rest of the smart set.
+  //    leadCohort gates each on its disjoint cohort (cotrade_candidates score split,
+  //    see queries.ts), so comparing their copy_trades P&L isolates "do smart wallets
+  //    that cluster with other winners outperform the ones that don't?" — same
+  //    TP/SL/size/exit, only the wallet selection differs. (The original source-based
+  //    split was always empty: co-trade reads the same 0-30s pool as the OG seed.)
+  //    The un-gated baseline above stays as the "all smart wallets" benchmark.
   { id: 'copy-ogsmart-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadCohort: 'og_smart' },
   { id: 'copy-cotrade-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadCohort: 'cotrade' },
 ];

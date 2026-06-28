@@ -2383,28 +2383,27 @@ export function renderCopyTradesHtml(data: any): string {
   // ── Co-trade discovery (Idea 2) A/B card ──────────────────────────────────
   const ctd = d.cotrade_discovery ?? null;
   const cts = ctd?.summary ?? {};
-  const ctRows = (ctd?.top ?? []).slice(0, 15).map((r: any) => `<tr>
+  const ctThr = ctd?.params?.cohort_min_winners ?? 5;
+  const ctRows = (ctd?.top ?? []).filter((r: any) => r.is_smart).slice(0, 15).map((r: any) => `<tr>
       <td style="font-family:monospace">${w(r.address)}</td>
       <td>${r.n_distinct_winners}</td><td>${r.n_cotrade_grads}</td>
-      <td>${r.og_overlap ? '<span class="desc">OG-overlap</span>' : '<span class="green">exclusive</span>'}</td>
-      <td>${r.scored ? '✓' : '<span class="desc">queued</span>'}</td>
-      <td>${r.is_smart ? '<span class="green">smart ✓</span>' : '—'}</td></tr>`).join('');
+      <td>${r.cohort === 'cotrade' ? '<span class="green">cotrade</span>' : '<span class="desc">og</span>'}</td></tr>`).join('');
   const cotradeCard = ctd == null ? '' : `<div class="card" style="border-left:6px solid #0ea5e9">
-    <h2>Co-trade discovery <span class="desc" style="font-size:13px">— Idea 2: winner-graph snowball (A/B vs OG seed)</span></h2>
-    <div class="desc">New discovery method: wallets that buy the same graduated tokens, early, ALONGSIDE proven smart wallets
-    (≥${ctd.params?.min_distinct_winners ?? 2} distinct winners). A discovered wallet still must clear the SAME money-edge gate to be traded —
-    this only changes WHO we score. <b>Division is airtight</b>: <span class="green">cotrade-exclusive</span> = only this method found it
-    (<code>source='cotrade_graph'</code>); OG-overlap = both methods found it (counted in the OG cohort). Strategies
-    <code>copy-cotrade-tp100-sl30</code> vs <code>copy-ogsmart-tp100-sl30</code> (identical params) isolate the method's edge —
-    compare them in the per-strategy table below and in leave-one-out.</div>
+    <h2>Co-trade signal A/B <span class="desc" style="font-size:13px">— Idea 2: does running with the winner-crowd pick better wallets?</span></h2>
+    <div class="desc">The original "wallets only this method discovers" framing was structurally empty — co-trade reads the same
+    0-30s window as the OG seed, so it never finds an unseen wallet. Reframed: co-trade is a wallet-QUALITY signal that
+    splits the PROVEN smart set. <b>cotrade cohort</b> = smart wallets that co-trade with ≥${ctThr} distinct proven winners
+    ("run with the crowd"); <b>og cohort</b> = the rest of the smart set. Disjoint by construction. Strategies
+    <code>copy-cotrade-tp100-sl30</code> vs <code>copy-ogsmart-tp100-sl30</code> (identical params) test whether the
+    cotrade-flagged smart wallets outperform — compare them in the per-strategy table + leave-one-out.</div>
     <div class="grid">
-      <div class="stat"><span class="label">Co-trade candidates</span><span class="value">${(cts.total_cotrade_candidates ?? 0).toLocaleString()}</span></div>
-      <div class="stat"><span class="label">Cotrade-exclusive</span><span class="value">${(cts.cotrade_exclusive ?? 0).toLocaleString()} <span class="desc">(${(cts.og_overlap ?? 0).toLocaleString()} OG-overlap)</span></span></div>
-      <div class="stat"><span class="label">Scored (exclusive)</span><span class="value">${cts.cotrade_scored ?? 0}</span></div>
-      <div class="stat"><span class="label">Cotrade smart (tradeable)</span><span class="value green">${cts.cotrade_smart ?? 0}</span></div>
+      <div class="stat"><span class="label">Smart set (A/B universe)</span><span class="value">${(cts.smart_total ?? 0).toLocaleString()}</span></div>
+      <div class="stat"><span class="label">Cotrade cohort</span><span class="value green">${cts.cotrade_cohort ?? 0}</span></div>
+      <div class="stat"><span class="label">OG cohort</span><span class="value">${cts.og_cohort ?? 0}</span></div>
+      <div class="stat"><span class="label">Signal threshold</span><span class="value">≥${ctThr} winners</span></div>
     </div>
-    ${ctRows ? `<h3>Top co-trade candidates <span class="desc">(by # distinct proven winners co-traded with)</span></h3>
-    <table><tr><th>Wallet</th><th>Winners</th><th>Grads</th><th>Provenance</th><th>Scored</th><th>Smart?</th></tr>${ctRows}</table>` : ''}
+    ${ctRows ? `<h3>Top smart wallets by co-trade signal</h3>
+    <table><tr><th>Wallet</th><th>Winners co-traded</th><th>Grads</th><th>Cohort</th></tr>${ctRows}</table>` : ''}
   </div>`;
 
   // ── Per-strategy lead attribution: which wallets drive TP vs SL per strategy ─
