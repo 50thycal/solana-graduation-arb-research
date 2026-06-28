@@ -104,6 +104,17 @@ export interface CopyStrategy {
                                // closed copies of a lead AND their summed net_sol <= maxNetSol, stop copying that
                                // lead FOR THIS STRATEGY. Inverse of hotLeadGate: a lead with < minTrades history is
                                // NOT excluded (benefit of the doubt) — it self-prunes the bottom leads as n grows.
+  maxConsensusRecent?: number; // FIRST-MOVER / earliness gate (2026-06-28): only enter when AT MOST this many
+                               // distinct smart wallets have bought the mint in the last 10min (countRecentSmartBuyers,
+                               // same source as minConsensusRecent). The triggering lead is already logged before
+                               // onLeadBuy, so =1 means "the lead is the SOLE smart buyer" = we're early. The inverse
+                               // of minConsensusRecent: consensus2 (require MORE buyers) failed drop3; this tests
+                               // whether being EARLY (few prior buyers, not exit liquidity) is the real edge. Zero RPC.
+  maxExtensionPct?: number;    // PRICE-EXTENSION gate (2026-06-28): skip if, at the lead's buy, the pool price is
+                               // already more than this % above the token's GRADUATION OPEN (open_price_sol). Don't
+                               // chase a token that has already run since launch — being late = buying exit liquidity.
+                               // Distinct from maxEntryDriftPct (which only measures the 5s detection->fill drift).
+                               // Null open price (uncaptured) => not blocked (benefit of the doubt). Zero RPC (cached).
   maxEntriesPerMint?: number;  // REPEAT-BUY cap (2026-06-28, data-backed): skip a copy once this strategy already
                                // has >= maxEntriesPerMint CLOSED entries on the mint. Re-entry analysis on
                                // copy-hotlead-hold30m: 1st (+14.8) and 2nd (+24.3 SOL) entries profit, 3rd+ bleed
@@ -284,6 +295,21 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-hotlead-hold30m-prune', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
     leadExclusionGate: { minTrades: 5, maxNetSol: 0 } },
+  // ── R (2026-06-28): two "we're buying too late" gates on copy-hotlead-hold30m. Zero RPC, share
+  //    the parent's entries+polls. Kill per id: n>=100 and drop3 < parent's drop3. 5-day window.
+  // -early: first-mover gate. consensus2 (require MORE smart buyers) failed drop3; this tests the
+  //    OPPOSITE — only enter when the lead is the SOLE smart buyer of the mint in the 10min window
+  //    (maxConsensusRecent:1), i.e. we're early, not buying after the crowd already piled in.
+  { id: 'copy-hotlead-hold30m-early', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    maxConsensusRecent: 1 },
+  // -nochase: price-extension gate. DB analysis (2026-06-28) of entry/open-price ratio: entries
+  //    at/below +50% of graduation open are the best buckets (n=240, +29.9 SOL, +0.124 avg ≈ 2.5x
+  //    parent), the 50-300% band bleeds, and the >=400% bucket is positive but outlier-driven
+  //    (max ratio 321x). So cap at +50% above open — buy cheap, don't chase the run-up.
+  { id: 'copy-hotlead-hold30m-nochase', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    maxExtensionPct: 50 },
   // I4 hotlead parameter sweep — copy-hotlead works at {last10, >=3, net>0}; bracket
   //    the calibration. -strict raises the net floor (lead must be clearly profitable
   //    recently, not marginally positive); -deep uses a longer, more stable lookback.
@@ -1018,6 +1044,23 @@ export class CopyTrader {
     } catch { return 0; }
   }
 
+  /** A mint's graduation OPEN price (SOL/token) — the maxExtensionPct reference. Immutable,
+   *  so cached per-mint forever (null = uncaptured → gate won't block). */
+  private openPriceCache = new Map<string, number | null>();
+  private mintOpenPrice(mint: string): number | null {
+    if (this.openPriceCache.has(mint)) return this.openPriceCache.get(mint) ?? null;
+    let v: number | null = null;
+    try {
+      const row = this.db.prepare(`
+        SELECT gm.open_price_sol AS op FROM graduations g
+        JOIN graduation_momentum gm ON gm.graduation_id = g.id WHERE g.mint = ?
+      `).get(mint) as { op: number | null } | undefined;
+      v = row?.op ?? null;
+    } catch { v = null; }
+    this.openPriceCache.set(mint, v);
+    return v;
+  }
+
   /** This strategy's realized net for the current UTC day (sum of net_sol on closed
    *  copies that exited today). Drives the dailyLossCapSol breaker. Cached 60s per
    *  strategy; the day-start cutoff moves forward at 00:00 UTC so it resets daily. */
@@ -1094,6 +1137,19 @@ export class CopyTrader {
       if (s.minConsensusRecent != null) {
         if (consensusRecent == null) consensusRecent = this.countRecentSmartBuyers(mint);
         if (consensusRecent < s.minConsensusRecent) { this.recordSkip(s.id, 'consensus'); continue; }
+      }
+      // first-mover gate: skip if too many smart wallets already bought (we'd be late / exit liquidity)
+      if (s.maxConsensusRecent != null) {
+        if (consensusRecent == null) consensusRecent = this.countRecentSmartBuyers(mint);
+        if (consensusRecent > s.maxConsensusRecent) { this.recordSkip(s.id, 'too_late'); continue; }
+      }
+      // price-extension gate: skip if the token already ran > maxExtensionPct% above its graduation
+      // open at the detection snapshot (don't chase). Null open price => not blocked.
+      if (s.maxExtensionPct != null) {
+        const op = this.mintOpenPrice(mint);
+        if (op != null && op > 0 && (price.priceSol / op - 1) * 100 > s.maxExtensionPct) {
+          this.recordSkip(s.id, 'extension'); continue;
+        }
       }
       // smart-wallet-data gates (H cohort) — all pure SQL/cached, no RPC
       if (s.minLeadBuySol != null && (leadBuySol == null || leadBuySol < s.minLeadBuySol)) { this.recordSkip(s.id, 'lead_buy_size'); continue; }
