@@ -351,48 +351,54 @@ export interface LiveTallyDelta {
   address: string;
   buys: number; sells: number;
   solIn: number; solOut: number;
-  distinctMints: number;   // distinct non-WSOL mints seen this flush window
+  mints: string[];   // distinct non-WSOL mints seen this flush window (for cumulative tracking)
   firstSeen: number; lastSeen: number;
 }
 
 /** Batch-merge a flush window of in-memory tallies into live_wallet_tally,
- *  accumulating counts. distinct_mints keeps the running max of per-window counts
- *  (a lower bound on true cumulative distinct mints — fine for a screen). */
+ *  accumulating counts, and record each window's mints into live_wallet_mints so
+ *  the distinct-mint count is CUMULATIVE across windows (read in the summary).
+ *  Call per chunk — the harvester yields between chunks so a big flush can't block
+ *  the event loop. */
 export function mergeLiveTallies(db: Database.Database, deltas: LiveTallyDelta[], now: number): void {
-  const stmt = db.prepare(`
+  const tallyStmt = db.prepare(`
     INSERT INTO live_wallet_tally (address, buys, sells, sol_in, sol_out, distinct_mints, first_seen, last_seen, updated_at)
-    VALUES (@address, @buys, @sells, @solIn, @solOut, @distinctMints, @firstSeen, @lastSeen, @now)
+    VALUES (@address, @buys, @sells, @solIn, @solOut, 0, @firstSeen, @lastSeen, @now)
     ON CONFLICT(address) DO UPDATE SET
       buys = buys + excluded.buys,
       sells = sells + excluded.sells,
       sol_in = sol_in + excluded.sol_in,
       sol_out = sol_out + excluded.sol_out,
-      distinct_mints = MAX(distinct_mints, excluded.distinct_mints),
       last_seen = excluded.last_seen,
       updated_at = excluded.updated_at
   `);
+  const mintStmt = db.prepare(`INSERT OR IGNORE INTO live_wallet_mints (address, mint) VALUES (?, ?)`);
   const tx = db.transaction((rows: LiveTallyDelta[]) => {
-    for (const d of rows) stmt.run({ ...d, now });
+    for (const d of rows) {
+      tallyStmt.run({ ...d, now });
+      for (const m of d.mints) mintStmt.run(d.address, m);
+    }
   });
   tx(deltas);
 }
 
 /** Screen the tally for wallets worth the expensive scorer and promote them into
- *  wallet_candidates(source='live_tape') with the promoted flag set. The screen is
- *  cheap and deliberately loose — the real bar is the FIFO scorer downstream.
- *  Returns the number newly promoted. */
+ *  wallet_candidates(source='live_tape'). The screen is ACTIVITY-based, not
+ *  profit-based: under ~9% tape sampling the per-wallet rough net is dominated by
+ *  unmatched sells (we catch a wallet's sells but not its buys), so it ranks "who
+ *  we caught selling", not who's profitable. The screen's only job is "is this
+ *  wallet active enough to be worth 301 RPC calls to FIFO-score?" — profitability
+ *  is the scorer's job. Returns the number newly promoted. */
 export function promoteLiveTapeWallets(
   db: Database.Database,
-  opts: { minBuys: number; minSells: number; minDistinctMints: number; minNetSol: number; cap: number },
+  opts: { minBuys: number; minSells: number; cap: number },
   now: number,
 ): number {
   const rows = db.prepare(`
     SELECT address FROM live_wallet_tally
     WHERE promoted = 0
       AND buys >= @minBuys AND sells >= @minSells
-      AND distinct_mints >= @minDistinctMints
-      AND (sol_out - sol_in) > @minNetSol
-    ORDER BY (sol_out - sol_in) DESC
+    ORDER BY (buys + sells) DESC
     LIMIT @cap
   `).all({ ...opts }) as Array<{ address: string }>;
   if (rows.length === 0) return 0;
@@ -407,16 +413,24 @@ export function promoteLiveTapeWallets(
   return rows.length;
 }
 
-/** Bound the tally table: drop un-promoted, low-activity, stale rows. */
+/** Bound both tables: drop un-promoted, low-activity, stale rows + their mints. */
 export function evictStaleLiveTallies(
   db: Database.Database,
   opts: { staleBefore: number; minActivity: number },
 ): number {
-  const res = db.prepare(`
-    DELETE FROM live_wallet_tally
-    WHERE promoted = 0 AND last_seen < @staleBefore AND (buys + sells) < @minActivity
-  `).run({ ...opts });
-  return res.changes;
+  const tx = db.transaction(() => {
+    db.prepare(`
+      DELETE FROM live_wallet_mints WHERE address IN (
+        SELECT address FROM live_wallet_tally
+        WHERE promoted = 0 AND last_seen < @staleBefore AND (buys + sells) < @minActivity
+      )
+    `).run({ ...opts });
+    return db.prepare(`
+      DELETE FROM live_wallet_tally
+      WHERE promoted = 0 AND last_seen < @staleBefore AND (buys + sells) < @minActivity
+    `).run({ ...opts }).changes;
+  });
+  return tx() as number;
 }
 
 export interface LiveTapeSummary {
@@ -424,6 +438,9 @@ export interface LiveTapeSummary {
   promoted: number;
   scored: number;       // promoted wallets that have a wallet_scores row
   live_tape_smart: number; // promoted wallets passing the money-edge gate (genuinely-new tradeable alpha)
+  // Most ACTIVE two-sided wallets (buys>0 AND sells>0 so unmatched-sell artifacts
+  // are excluded). net_sol is a ROUGH gross figure under sampling — informational
+  // only; the FIFO scorer is the real bar. distinct_mints is cumulative.
   top: Array<{ address: string; buys: number; sells: number; net_sol: number; distinct_mints: number; promoted: boolean }>;
 }
 
@@ -447,10 +464,14 @@ export function getLiveTapeSummary(db: Database.Database): LiveTapeSummary {
     empty.scored = s.scored ?? 0;
     empty.live_tape_smart = s.smart ?? 0;
 
+    // Two-sided wallets only (buys>0 AND sells>0), ranked by activity. distinct
+    // mints from the cumulative side table.
     empty.top = (db.prepare(`
-      SELECT address, buys, sells, (sol_out - sol_in) AS net_sol, distinct_mints, promoted
-      FROM live_wallet_tally
-      ORDER BY (sol_out - sol_in) DESC
+      SELECT t.address, t.buys, t.sells, (t.sol_out - t.sol_in) AS net_sol, t.promoted,
+             (SELECT COUNT(*) FROM live_wallet_mints m WHERE m.address = t.address) AS distinct_mints
+      FROM live_wallet_tally t
+      WHERE t.buys > 0 AND t.sells > 0
+      ORDER BY (t.buys + t.sells) DESC
       LIMIT 20
     `).all() as Array<Record<string, number>>).map((r) => ({
       address: r.address as unknown as string,

@@ -11600,7 +11600,7 @@ export function renderCopyTradesHtml(data: any): string {
       <div class="stat"><span class="label">Scored</span><span class="value">${lts.scored ?? 0}</span></div>
       <div class="stat"><span class="label">New tradeable smart</span><span class="value green">${lts.live_tape_smart ?? 0}</span></div>
     </div>
-    ${ltRows ? `<h3>Top wallets by rough net SOL <span class="desc">(gross screen — FIFO scorer is the real bar)</span></h3>
+    ${ltRows ? `<h3>Most active two-sided wallets <span class="desc">(buys &amp; sells both seen; net SOL is a rough gross figure under sampling — the FIFO scorer is the real bar)</span></h3>
     <table><tr><th>Wallet</th><th>Buys</th><th>Sells</th><th>Net SOL (rough)</th><th>Mints</th><th>Status</th></tr>${ltRows}</table>` : ''}
   </div>`;
 

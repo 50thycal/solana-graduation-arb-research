@@ -40,14 +40,20 @@ const logger = makeLogger('live-tape-harvester');
 const PUMPSWAP_PROGRAM = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
 
 const FLUSH_MS = 3 * 60 * 1000;        // merge tally → DB + promote + evict
+const FLUSH_CHUNK = 500;               // wallets per DB transaction — keep each
+                                       // synchronous flush chunk short (better-sqlite3
+                                       // blocks the loop) and yield between chunks
 const MAX_RECONNECT_MS = 60_000;
 const SEEN_MAX = 8192;
 const MAX_WALLETS_PER_WINDOW = 100_000; // memory guard within a flush window
 const MAX_MINTS_PER_WALLET = 64;        // cap the per-wallet mint set
 const STATUS_KEY = 'live_tape_status';
 
-// Promotion screen (loose — the FIFO scorer is the real bar).
-const PROMOTE = { minBuys: 3, minSells: 2, minDistinctMints: 3, minNetSol: 0, cap: 200 };
+// Promotion screen — ACTIVITY-based, not profit-based. Under ~9% tape sampling the
+// rough per-wallet net is dominated by unmatched sells, so it can't rank profit;
+// the screen just surfaces wallets active enough to be worth FIFO-scoring, and the
+// scorer judges profitability. The FIFO scorer is the real bar.
+const PROMOTE = { minBuys: 5, minSells: 3, cap: 200 };
 // Evict un-promoted, low-activity, stale rows older than this.
 const EVICT_STALE_SEC = 24 * 3600;
 const EVICT_MIN_ACTIVITY = 3;
@@ -106,7 +112,9 @@ export class LiveTapeHarvester {
       return;
     }
     this.connect();
-    this.flushTimer = setInterval(() => this.flush(), FLUSH_MS);
+    this.flushTimer = setInterval(() => {
+      this.flush().catch((err) => logger.warn('flush error: %s', err instanceof Error ? err.message : String(err)));
+    }, FLUSH_MS);
     logger.info('LiveTapeHarvester started (maxParse/s=%d, flush=%ds)', this.maxParsePerSec, FLUSH_MS / 1000);
   }
 
@@ -114,7 +122,7 @@ export class LiveTapeHarvester {
     this.stopped = true;
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (this.flushTimer) { clearInterval(this.flushTimer); this.flushTimer = null; }
-    this.flush();
+    this.flush().catch(() => { /* best-effort on shutdown */ });
     this.closeWs();
   }
 
@@ -226,9 +234,11 @@ export class LiveTapeHarvester {
     a.lastSeen = nowSec;
   }
 
-  /** Merge the window's tally → DB, promote screen-passers to the scorer, evict
-   *  stale rows, then clear the in-memory window (cumulative state lives in DB). */
-  private flush(): void {
+  /** Merge the window's tally → DB in CHUNKS (yielding to the event loop between
+   *  each so the synchronous SQLite writes can't stall graduation/copy latency),
+   *  promote screen-passers to the scorer, evict stale rows, then clear the
+   *  in-memory window (cumulative state lives in DB). */
+  private async flush(): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
     try {
       if (this.tally.size > 0) {
@@ -236,11 +246,14 @@ export class LiveTapeHarvester {
         for (const [address, a] of this.tally) {
           deltas.push({
             address, buys: a.buys, sells: a.sells, solIn: a.solIn, solOut: a.solOut,
-            distinctMints: a.mints.size, firstSeen: a.firstSeen, lastSeen: a.lastSeen,
+            mints: [...a.mints], firstSeen: a.firstSeen, lastSeen: a.lastSeen,
           });
         }
-        mergeLiveTallies(this.db, deltas, now);
         this.tally.clear();
+        for (let i = 0; i < deltas.length; i += FLUSH_CHUNK) {
+          mergeLiveTallies(this.db, deltas.slice(i, i + FLUSH_CHUNK), now);
+          if (i + FLUSH_CHUNK < deltas.length) await new Promise((r) => setTimeout(r, 0));
+        }
       }
       this.lastPromoted = promoteLiveTapeWallets(this.db, PROMOTE, now);
       evictStaleLiveTallies(this.db, { staleBefore: now - EVICT_STALE_SEC, minActivity: EVICT_MIN_ACTIVITY });

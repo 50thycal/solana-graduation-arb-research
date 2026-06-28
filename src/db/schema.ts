@@ -1091,6 +1091,18 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_live_tally_seen ON live_wallet_tally(last_seen);
   `);
 
+  // Per-(wallet,mint) seen-set for the live tape, so distinct-mint count is
+  // CUMULATIVE across flush windows (the tally's own distinct_mints column only
+  // ever held a single window's count — undercounted). Bounded by the same
+  // eviction that prunes live_wallet_tally.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS live_wallet_mints (
+      address TEXT NOT NULL,
+      mint TEXT NOT NULL,
+      PRIMARY KEY (address, mint)
+    );
+  `);
+
   // Shadow copy-trader (Option B, Phase 2). One row per SHADOW copy position:
   // when a followed wallet buys a graduated token, each armed copy strategy
   // opens a modeled position here (no real funds). Tracked by CopyTrader until
