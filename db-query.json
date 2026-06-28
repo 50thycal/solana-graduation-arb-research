@@ -1,0 +1,13 @@
+{
+  "queries": [
+    {
+      "id": "cotrade-dist-smart",
+      "sql": "WITH smart AS (SELECT address FROM wallet_scores WHERE total_realized_sol_drop_top3>0 AND monthly_run_rate_sol>=3.75 AND total_realized_sol>=0.5), wg AS (SELECT cs.graduation_id gid, cs.wallet_address sw FROM competition_signals cs JOIN smart s ON s.address=cs.wallet_address WHERE cs.action='buy' AND cs.seconds_since_graduation>=0 AND cs.seconds_since_graduation<=30 GROUP BY cs.graduation_id, cs.wallet_address), ct AS (SELECT s2.address w, (SELECT COUNT(DISTINCT wg.sw) FROM competition_signals cs2 JOIN wg ON wg.gid=cs2.graduation_id WHERE cs2.wallet_address=s2.address AND cs2.action='buy' AND cs2.seconds_since_graduation>=0 AND cs2.seconds_since_graduation<=30 AND wg.sw != s2.address) nw FROM smart s2) SELECT CASE WHEN nw IS NULL OR nw=0 THEN '0_none' WHEN nw=1 THEN '1' WHEN nw<=3 THEN '2to3' WHEN nw<=10 THEN '4to10' WHEN nw<=30 THEN '11to30' ELSE '30plus' END bucket, COUNT(*) n FROM ct GROUP BY bucket ORDER BY MIN(nw)",
+      "max_rows": 50
+    },
+    {
+      "id": "smart-total",
+      "sql": "SELECT COUNT(*) n_smart FROM wallet_scores WHERE total_realized_sol_drop_top3>0 AND monthly_run_rate_sol>=3.75 AND total_realized_sol>=0.5"
+    }
+  ]
+}
