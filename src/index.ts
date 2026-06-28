@@ -898,10 +898,12 @@ ${ICON_HEAD_TAGS}
   });
 
   // App icon for browsers + iOS "Add to Home Screen". Linked from every page
-  // head via ICON_HEAD_TAGS. Cached aggressively — the icon is immutable.
+  // head via ICON_HEAD_TAGS (which cache-busts via ?v=N). Cache for a day but
+  // allow revalidation — NOT `immutable`: an earlier deploy pinned a corrupt
+  // PNG on devices for days because immutable is never revalidated.
   app.get(['/apple-touch-icon.png', '/apple-touch-icon-precomposed.png', '/favicon.png', '/favicon.ico'], (_req, res) => {
     res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+    res.setHeader('Cache-Control', 'public, max-age=86400, must-revalidate');
     res.send(APP_ICON_PNG_BUFFER);
   });
 
