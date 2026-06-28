@@ -34,7 +34,16 @@ const APP_ICON_PNG_BASE64 =
 /** Raw PNG bytes, ready to send as the body of an image/png response. */
 export const APP_ICON_PNG_BUFFER = Buffer.from(APP_ICON_PNG_BASE64, 'base64');
 
+// Bump this when the icon bytes change. iOS caches the apple-touch-icon hard
+// (an earlier deploy served a corrupt PNG with `immutable`, which iOS pinned
+// for days). The version query forces iOS/Safari to fetch a fresh URL instead
+// of serving the stale cached copy.
+export const ICON_VERSION = 'v=2';
+
 /** `<head>` tags that point browsers + iOS at the app icon. Inject into every page head. */
 export const ICON_HEAD_TAGS =
-  '<link rel="apple-touch-icon" href="/apple-touch-icon.png">' +
-  '<link rel="icon" type="image/png" href="/apple-touch-icon.png">';
+  `<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?${ICON_VERSION}">` +
+  `<link rel="apple-touch-icon-precomposed" sizes="180x180" href="/apple-touch-icon.png?${ICON_VERSION}">` +
+  `<link rel="icon" type="image/png" sizes="180x180" href="/apple-touch-icon.png?${ICON_VERSION}">` +
+  '<meta name="apple-mobile-web-app-capable" content="yes">' +
+  '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">';
