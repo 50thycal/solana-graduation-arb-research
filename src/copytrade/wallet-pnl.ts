@@ -6,6 +6,10 @@ import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('wallet-pnl');
 
+// Minimum visible-history span (days) before we annualize into a monthly run
+// rate. Short windows annualize into nonsense; below this, monthly = null.
+export const MIN_SPAN_DAYS_FOR_MONTHLY = 7;
+
 /**
  * Wallet P&L engine (copy-trade Option B, Phase 1).
  *
@@ -148,7 +152,12 @@ export function scoreWallet(
   const wins = realized.filter((r) => r > 0).length;
   const holds = rts.map((r) => r.holdSec);
 
-  // monthly run rate — total realized normalized over the active span.
+  // monthly run rate — total realized normalized over the active span. Require a
+  // MINIMUM span before annualizing: a wallet whose visible history spans ~2 days
+  // would otherwise project that window ×15 (the old 0.5-day floor gave a +133 SOL
+  // wallet a fantasy 2,154 SOL/mo). Below the floor, monthly is null (insufficient
+  // data) and the wallet can't clear the monthly gate until enough history
+  // accumulates — which the incremental cache now does over time.
   let monthly: number | null = null;
   let lastActive: number | null = null;
   if (n > 0) {
@@ -156,7 +165,7 @@ export function scoreWallet(
     const lastClose = Math.max(...rts.map((r) => r.closeTs));
     lastActive = lastClose;
     const spanDays = (lastClose - firstOpen) / 86_400;
-    if (spanDays > 0.5) monthly = (total / spanDays) * 30;
+    if (spanDays >= MIN_SPAN_DAYS_FOR_MONTHLY) monthly = (total / spanDays) * 30;
   }
 
   const venues: Record<string, number> = {};
@@ -187,10 +196,14 @@ export function scoreWallet(
 export async function fetchWalletSwaps(
   connection: Connection,
   address: string,
-  opts: { maxSignatures?: number; maxParse?: number } = {},
+  opts: { maxSignatures?: number; maxParse?: number; until?: string } = {},
 ): Promise<WalletSwap[]> {
   const maxSignatures = opts.maxSignatures ?? 1000;
   const maxParse = opts.maxParse ?? maxSignatures;
+  // `until` (a signature) makes the fetch INCREMENTAL: getSignaturesForAddress
+  // returns only sigs NEWER than it, so a refresh costs ~(new sigs) calls instead
+  // of a full re-scan. Caller passes the newest already-cached signature.
+  const until = opts.until;
   let owner: PublicKey;
   try {
     owner = new PublicKey(address);
@@ -205,7 +218,7 @@ export async function fetchWalletSwaps(
     if (!(await globalRpcLimiter.throttleOrDrop(30, 'wallet_pnl'))) break;
     let page;
     try {
-      page = await connection.getSignaturesForAddress(owner, { limit: 1000, before });
+      page = await connection.getSignaturesForAddress(owner, { limit: 1000, before, until });
     } catch (err) {
       logger.warn('getSignaturesForAddress failed for %s: %s', address.slice(0, 8),
         err instanceof Error ? err.message : String(err));

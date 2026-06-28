@@ -94,6 +94,37 @@ export function cacheWalletSwaps(
   tx(swaps);
 }
 
+/** Load a wallet's cached parsed swaps (oldest-first) — the base for an
+ *  INCREMENTAL re-score: merge these with only the newer on-chain swaps instead of
+ *  re-fetching the whole history. */
+export function getCachedSwaps(db: Database.Database, address: string): WalletSwap[] {
+  return (db.prepare(`
+    SELECT signature, block_time, mint, action, sol_delta, token_delta, venue
+    FROM wallet_tx_cache WHERE address = ? ORDER BY block_time ASC
+  `).all(address) as Array<{ signature: string; block_time: number; mint: string; action: string; sol_delta: number; token_delta: number; venue: string }>)
+    .map((r) => ({
+      signature: r.signature,
+      blockTime: r.block_time,
+      mint: r.mint,
+      action: r.action as 'buy' | 'sell',
+      solDelta: r.sol_delta,
+      tokenDelta: r.token_delta,
+      venue: r.venue,
+    }));
+}
+
+/** Keep only the newest `max` cached swaps for a wallet (bounds the incrementally
+ *  growing cache; the kept window is also the deepest history we score on). */
+export function trimWalletCache(db: Database.Database, address: string, max: number): void {
+  db.prepare(`
+    DELETE FROM wallet_tx_cache
+    WHERE address = @address AND signature NOT IN (
+      SELECT signature FROM wallet_tx_cache WHERE address = @address
+      ORDER BY block_time DESC LIMIT @max
+    )
+  `).run({ address, max });
+}
+
 export function replaceRoundTrips(
   db: Database.Database,
   address: string,
@@ -126,15 +157,16 @@ export function upsertWalletScore(
   db: Database.Database,
   score: WalletScore,
   scoredAt: number,
+  scanSigs: number | null = null,
 ): void {
   db.prepare(`
     INSERT INTO wallet_scores (
       address, n_round_trips, total_realized_sol, total_realized_sol_drop_top3,
       median_rt_pct, monthly_run_rate_sol, win_rate, avg_hold_sec, last_active,
-      venues_json, scored_at
+      venues_json, scored_at, last_scan_sigs
     ) VALUES (
       @address, @n, @total, @drop3, @median, @monthly, @win, @hold, @last_active,
-      @venues, @scored_at
+      @venues, @scored_at, @scan_sigs
     )
     ON CONFLICT(address) DO UPDATE SET
       n_round_trips = excluded.n_round_trips,
@@ -146,7 +178,10 @@ export function upsertWalletScore(
       avg_hold_sec = excluded.avg_hold_sec,
       last_active = excluded.last_active,
       venues_json = excluded.venues_json,
-      scored_at = excluded.scored_at
+      scored_at = excluded.scored_at,
+      -- keep the deepest scan depth we've ever done (a later shallow incremental
+      -- refresh shouldn't downgrade the recorded depth).
+      last_scan_sigs = MAX(COALESCE(last_scan_sigs, 0), COALESCE(excluded.last_scan_sigs, 0))
   `).run({
     address: score.address,
     n: score.nRoundTrips,
@@ -159,9 +194,28 @@ export function upsertWalletScore(
     last_active: score.lastActive,
     venues: JSON.stringify(score.venues),
     scored_at: scoredAt,
+    scan_sigs: scanSigs,
   });
   db.prepare(`UPDATE wallet_candidates SET last_refreshed = ? WHERE address = ?`)
     .run(scoredAt, score.address);
+}
+
+/** Promising-but-n-capped wallets worth a one-shot DEEP rescan: positive realized,
+ *  enough round trips to look real but short of the n>=100 bar, and not yet
+ *  deep-scanned. These are wallets we likely rejected on the 300-sig depth artifact
+ *  (e.g. the +133 SOL / 73-RT wallet). Ordered best-first. */
+export function getDeepRescanCandidates(
+  db: Database.Database,
+  opts: { minTotalSol: number; nLow: number; nHigh: number; deepSigs: number; limit: number },
+): string[] {
+  return (db.prepare(`
+    SELECT address FROM wallet_scores
+    WHERE n_round_trips >= @nLow AND n_round_trips < @nHigh
+      AND total_realized_sol >= @minTotalSol
+      AND COALESCE(last_scan_sigs, 0) < @deepSigs
+    ORDER BY total_realized_sol DESC
+    LIMIT @limit
+  `).all({ ...opts }) as Array<{ address: string }>).map((r) => r.address);
 }
 
 export interface WalletScoreRow {

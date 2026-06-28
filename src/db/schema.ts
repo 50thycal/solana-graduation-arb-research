@@ -991,7 +991,8 @@ function runMigrations(db: Database.Database): void {
       avg_hold_sec REAL,
       last_active INTEGER,
       venues_json TEXT,
-      scored_at INTEGER NOT NULL
+      scored_at INTEGER NOT NULL,
+      last_scan_sigs INTEGER
     );
     CREATE INDEX IF NOT EXISTS idx_wallet_scores_runrate ON wallet_scores(monthly_run_rate_sol);
 
@@ -1220,6 +1221,14 @@ function runMigrations(db: Database.Database): void {
     const pc = db.prepare("PRAGMA table_info(copy_probe_events)").all() as Array<{ name: string }>;
     if (!pc.some((c) => c.name === 'tier')) {
       db.exec(`ALTER TABLE copy_probe_events ADD COLUMN tier TEXT`);
+    }
+  }
+  // Additive: last_scan_sigs on wallet_scores — the signature-scan depth of the
+  // last score, so the deep-rescan pass knows which wallets were only shallow-scanned.
+  {
+    const wc = db.prepare("PRAGMA table_info(wallet_scores)").all() as Array<{ name: string }>;
+    if (!wc.some((c) => c.name === 'last_scan_sigs')) {
+      db.exec(`ALTER TABLE wallet_scores ADD COLUMN last_scan_sigs INTEGER`);
     }
   }
   // Additive: pipeline-latency columns. decision_lag_ms = our processing time
