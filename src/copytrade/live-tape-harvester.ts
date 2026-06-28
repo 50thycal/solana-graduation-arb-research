@@ -33,8 +33,23 @@ const logger = makeLogger('live-tape-harvester');
  *     can't peg the event loop and starve graduation/copy latency;
  *   - the in-memory tally is per-flush-window and wallet-capped, then merged to DB
  *     and cleared, so memory is bounded;
- *   - own WS connection (independent of the graduation listener + follower probe);
- *   - kill switch: LIVE_TAPE_DISABLED=true.
+ *   - own WS connection (independent of the graduation listener + follower probe).
+ *
+ * COST (learned the hard way 2026-... — a usage spike): Helius bills Enhanced /
+ * "LaserStream" WebSocket credits PER DELIVERED MESSAGE. The PumpSwap program tape
+ * is ~550 msg/s, so a CONTINUOUS subscription is ~1.4 BILLION credits/month —
+ * wildly over the 10-20M plan. The parse-rate cap only bounds CPU, NOT credits
+ * (Helius bills every message it pushes, parsed or not). So this is now:
+ *   - OPT-IN: runs only if LIVE_TAPE_ENABLED=true (default OFF). LIVE_TAPE_DISABLED
+ *     remains a hard kill that overrides everything.
+ *   - DUTY-CYCLED with a HARD per-cycle MESSAGE BUDGET: connect, sample until
+ *     LIVE_TAPE_MAX_MSGS_PER_CYCLE messages (≈ that many credits) OR the sample
+ *     window elapses, then DISCONNECT (no messages delivered = no billing) and
+ *     idle for LIVE_TAPE_CYCLE_HOURS before sampling again. The message budget is
+ *     the real guardrail; the time window is just an upper bound. Defaults below
+ *     keep the harvester ≈6M credits/mo (a thin daily sample), env-tunable up if
+ *     you move to the 20M budget. Program-tape discovery on a per-message-billed
+ *     plan is fundamentally a SAMPLE, not continuous coverage.
  */
 
 const PUMPSWAP_PROGRAM = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
@@ -48,6 +63,13 @@ const SEEN_MAX = 8192;
 const MAX_WALLETS_PER_WINDOW = 100_000; // memory guard within a flush window
 const MAX_MINTS_PER_WALLET = 64;        // cap the per-wallet mint set
 const STATUS_KEY = 'live_tape_status';
+
+// Duty-cycle budget (the real cost guardrail). Defaults ≈ 100k messages once / 24h
+// ≈ ~100k credits/day ≈ ~3-6M credits/month (≈1-1.8 credits/msg). Bump
+// LIVE_TAPE_MAX_MSGS_PER_CYCLE / lower LIVE_TAPE_CYCLE_HOURS only with budget room.
+const DEFAULT_MAX_MSGS_PER_CYCLE = 100_000;
+const DEFAULT_CYCLE_HOURS = 24;
+const DEFAULT_SAMPLE_MAX_MIN = 15;      // hard upper bound on a sample window
 
 // Promotion screen — ACTIVITY-based, not profit-based. Under ~9% tape sampling the
 // rough per-wallet net is dominated by unmatched sells, so it can't rank profit;
@@ -81,6 +103,18 @@ export class LiveTapeHarvester {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private connected = false;
 
+  // duty-cycle state
+  private cycleActive = false;          // currently in a sampling window
+  private intentionalClose = false;     // closeWs() we triggered (don't reconnect)
+  private cycleMsgs = 0;                 // messages received this cycle (≈ credits)
+  private cycleTimer: ReturnType<typeof setTimeout> | null = null;
+  private sampleStopTimer: ReturnType<typeof setTimeout> | null = null;
+  private cyclesRun = 0;
+  private totalCycleMsgs = 0;            // lifetime billed messages (≈ credits)
+  private readonly maxMsgsPerCycle: number;
+  private readonly cycleMs: number;
+  private readonly sampleMaxMs: number;
+
   private tally = new Map<string, WalletAgg>();
   private seen = new Map<string, number>();
   private readonly maxParsePerSec: number;
@@ -100,30 +134,70 @@ export class LiveTapeHarvester {
   constructor(opts: { db: Database.Database }) {
     this.db = opts.db;
     this.maxParsePerSec = intEnv('LIVE_TAPE_MAX_PARSE_PER_SEC', 50);
+    this.maxMsgsPerCycle = intEnv('LIVE_TAPE_MAX_MSGS_PER_CYCLE', DEFAULT_MAX_MSGS_PER_CYCLE);
+    this.cycleMs = intEnv('LIVE_TAPE_CYCLE_HOURS', DEFAULT_CYCLE_HOURS) * 3600_000;
+    this.sampleMaxMs = intEnv('LIVE_TAPE_SAMPLE_MAX_MIN', DEFAULT_SAMPLE_MAX_MIN) * 60_000;
   }
 
   start(): void {
-    if (process.env.LIVE_TAPE_DISABLED === 'true') {
-      logger.info('LiveTapeHarvester disabled via LIVE_TAPE_DISABLED=true');
+    // OPT-IN: Helius bills LaserStream WS per delivered message, and the program
+    // tape is a firehose, so this stays off unless explicitly enabled. The DISABLED
+    // flag is a hard override that wins even if ENABLED is set.
+    if (process.env.LIVE_TAPE_DISABLED === 'true' || process.env.LIVE_TAPE_ENABLED !== 'true') {
+      logger.info('LiveTapeHarvester off (set LIVE_TAPE_ENABLED=true to opt in; LIVE_TAPE_DISABLED overrides)');
       return;
     }
     if (!process.env.HELIUS_WS_URL) {
       logger.warn('HELIUS_WS_URL not set — live-tape harvester cannot subscribe');
       return;
     }
-    this.connect();
     this.flushTimer = setInterval(() => {
       this.flush().catch((err) => logger.warn('flush error: %s', err instanceof Error ? err.message : String(err)));
     }, FLUSH_MS);
-    logger.info('LiveTapeHarvester started (maxParse/s=%d, flush=%ds)', this.maxParsePerSec, FLUSH_MS / 1000);
+    logger.info('LiveTapeHarvester started (budget=%d msgs/cycle, cycle=%dh, sampleMax=%dm)',
+      this.maxMsgsPerCycle, this.cycleMs / 3600_000, this.sampleMaxMs / 60_000);
+    this.beginCycle();
   }
 
   stop(): void {
     this.stopped = true;
     if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
     if (this.flushTimer) { clearInterval(this.flushTimer); this.flushTimer = null; }
+    if (this.cycleTimer) { clearTimeout(this.cycleTimer); this.cycleTimer = null; }
+    if (this.sampleStopTimer) { clearTimeout(this.sampleStopTimer); this.sampleStopTimer = null; }
     this.flush().catch(() => { /* best-effort on shutdown */ });
+    this.intentionalClose = true;
     this.closeWs();
+  }
+
+  /** Open a bounded sampling window: connect, and arm a hard stop at the sample
+   *  window's max duration. The per-message budget (checked in handleNotification)
+   *  usually ends it sooner. */
+  private beginCycle(): void {
+    if (this.stopped) return;
+    this.cycleActive = true;
+    this.cycleMsgs = 0;
+    this.intentionalClose = false;
+    this.connect();
+    this.sampleStopTimer = setTimeout(() => this.endCycle('window'), this.sampleMaxMs);
+  }
+
+  /** Close the WS (stops billing), persist, and schedule the next sample window. */
+  private endCycle(reason: 'budget' | 'window'): void {
+    if (!this.cycleActive) return;
+    this.cycleActive = false;
+    if (this.sampleStopTimer) { clearTimeout(this.sampleStopTimer); this.sampleStopTimer = null; }
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    this.intentionalClose = true;
+    this.closeWs();
+    this.cyclesRun++;
+    this.totalCycleMsgs += this.cycleMsgs;
+    logger.info('Live-tape cycle ended (%s): %d msgs this cycle, next in %dh',
+      reason, this.cycleMsgs, this.cycleMs / 3600_000);
+    this.flush().catch(() => { /* best-effort */ });
+    if (!this.stopped) {
+      this.cycleTimer = setTimeout(() => this.beginCycle(), this.cycleMs);
+    }
   }
 
   private connect(): void {
@@ -158,13 +232,17 @@ export class LiveTapeHarvester {
       try { msg = JSON.parse(data.toString()) as Record<string, unknown>; } catch { return; }
       if (typeof (msg as { result?: unknown }).result === 'number') { this.subId = (msg as { result: number }).result; return; }
       if ((msg as { method?: string }).method === 'transactionNotification') {
-        this.totalNotifications++;
-        this.handleNotification((msg as { params?: unknown }).params);
+        this.onTapeNotification((msg as { params?: unknown }).params);
       }
     });
 
     ws.on('error', () => { /* 'close' drives reconnect */ });
-    ws.on('close', () => { this.connected = false; if (!this.stopped) this.scheduleReconnect(); });
+    ws.on('close', () => {
+      this.connected = false;
+      // Only reconnect if the window is still active AND we didn't close on purpose
+      // (budget/window end). Otherwise a reconnect would re-open the firehose.
+      if (!this.stopped && this.cycleActive && !this.intentionalClose) this.scheduleReconnect();
+    });
   }
 
   private closeWs(): void {
@@ -196,6 +274,17 @@ export class LiveTapeHarvester {
       if (oldest !== undefined) this.seen.delete(oldest);
     }
     return false;
+  }
+
+  /** One delivered (billed) tape message: enforce the per-cycle message budget
+   *  BEFORE doing any work, then parse. The budget — not the parse-rate cap — is
+   *  what bounds Helius credits, since every delivered message is billed. */
+  private onTapeNotification(params: unknown): void {
+    if (!this.cycleActive) return; // window closed; ignore stragglers
+    this.totalNotifications++;
+    this.cycleMsgs++;
+    if (this.cycleMsgs >= this.maxMsgsPerCycle) { this.endCycle('budget'); return; }
+    this.handleNotification(params);
   }
 
   private handleNotification(params: unknown): void {
@@ -270,6 +359,12 @@ export class LiveTapeHarvester {
       const status = {
         connected: this.connected,
         sub_id: this.subId,
+        cycle_active: this.cycleActive,
+        cycle_msgs: this.cycleMsgs,            // ≈ credits this sampling window
+        max_msgs_per_cycle: this.maxMsgsPerCycle,
+        cycles_run: this.cyclesRun,
+        total_billed_msgs: this.totalCycleMsgs, // ≈ lifetime credits spent
+        cycle_hours: this.cycleMs / 3600_000,
         window_wallets: this.tally.size,
         total_notifications: this.totalNotifications,
         total_parsed: this.totalParsed,

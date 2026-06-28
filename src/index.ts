@@ -3331,9 +3331,11 @@ ${rows.map(r => {
       });
       copyFollowerProbe.start();
 
-      // Live-tape harvester (Idea 1) — zero-RPC discovery off the PumpSwap program
-      // tape. Own WS, default-on (LIVE_TAPE_DISABLED=true to stop). Promotes
-      // screen-passing wallets into the scorer (source='live_tape').
+      // Live-tape harvester (Idea 1) — discovery off the PumpSwap program tape.
+      // OPT-IN (LIVE_TAPE_ENABLED=true): Helius bills LaserStream WS per delivered
+      // message and the tape is a firehose, so it's off by default and, when on,
+      // duty-cycles under a hard per-cycle message budget. Promotes screen-passing
+      // wallets into the scorer (source='live_tape').
       const liveTapeHarvester = new LiveTapeHarvester({ db });
       liveTapeHarvester.start();
     } catch (err) {

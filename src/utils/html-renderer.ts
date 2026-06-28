@@ -11593,7 +11593,7 @@ export function renderCopyTradesHtml(data: any): string {
     <div class="desc">Parses the FULL PumpSwap post-grad tape off the WS push (zero RPC) and tallies per-wallet activity.
     Unlike the OG seed / co-trade (both bound to the 0-30s window), this finds <b>wallets we otherwise never record</b>.
     The tally is a SCREEN; screen-passers are promoted (<code>source='live_tape'</code>) into the same FIFO scorer + money-edge
-    bar as every other wallet. <span class="desc">Status: ${ltst ? `${ltst.connected ? '<span class="green">connected</span>' : '<span class="red">disconnected</span>'} · ${(ltst.total_swaps ?? 0).toLocaleString()} swaps parsed · ${(ltst.dropped_rate ?? 0).toLocaleString()} rate-sampled (cap ${ltst.max_parse_per_sec}/s)` : 'starting…'}</span></div>
+    bar as every other wallet. <span class="desc">Status: ${ltst ? `${ltst.cycle_active ? '<span class="green">sampling</span>' : 'idle'} · cycle ${(ltst.cycle_msgs ?? 0).toLocaleString()}/${(ltst.max_msgs_per_cycle ?? 0).toLocaleString()} msgs (≈credits) every ${ltst.cycle_hours}h · ${(ltst.total_billed_msgs ?? 0).toLocaleString()} billed lifetime · ${(ltst.total_swaps ?? 0).toLocaleString()} swaps · ${ltst.cycles_run ?? 0} cycles` : '<span class="desc">off — set LIVE_TAPE_ENABLED=true to opt in</span>'}</span></div>
     <div class="grid">
       <div class="stat"><span class="label">Wallets tallied</span><span class="value">${(lts.total_wallets ?? 0).toLocaleString()}</span></div>
       <div class="stat"><span class="label">Promoted to scorer</span><span class="value">${(lts.promoted ?? 0).toLocaleString()}</span></div>
