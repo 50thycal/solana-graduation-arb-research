@@ -158,8 +158,10 @@ Then make sure there's exactly **one** open PR from `copy-daily-reports` into `m
   notes "this PR is reused each day — the branch is rebased onto main and force-pushed before
   every new entry."
 - After the PR exists (or already existed), call `mcp__github__enable_pr_auto_merge` with
-  `merge_method: "squash"`. If branch protection has no required checks, GitHub merges
-  immediately; otherwise it merges as soon as checks pass.
+  `merge_method: "squash"`. The rolling PR auto-merges as soon as the required `ok` status check
+  passes (~10s — see `.github/workflows/pr-ok.yml`, the no-op check that satisfies branch
+  protection on `main`). If branch protection is later disabled, auto-merge becomes a no-op and the
+  operator merges the rolling PR manually.
 
 Do NOT push roster changes (code edits to `COPY_STRATEGIES`) in this run — those are a separate,
 approved step on their own branch.
