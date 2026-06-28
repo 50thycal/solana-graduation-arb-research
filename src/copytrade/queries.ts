@@ -345,6 +345,122 @@ export function getStaleAddresses(
   `).all(...addresses, cutoffTs, limit) as Array<{ address: string }>).map((r) => r.address);
 }
 
+// ── Live-tape harvester (Idea 1) ──────────────────────────────────────────────
+
+export interface LiveTallyDelta {
+  address: string;
+  buys: number; sells: number;
+  solIn: number; solOut: number;
+  distinctMints: number;   // distinct non-WSOL mints seen this flush window
+  firstSeen: number; lastSeen: number;
+}
+
+/** Batch-merge a flush window of in-memory tallies into live_wallet_tally,
+ *  accumulating counts. distinct_mints keeps the running max of per-window counts
+ *  (a lower bound on true cumulative distinct mints — fine for a screen). */
+export function mergeLiveTallies(db: Database.Database, deltas: LiveTallyDelta[], now: number): void {
+  const stmt = db.prepare(`
+    INSERT INTO live_wallet_tally (address, buys, sells, sol_in, sol_out, distinct_mints, first_seen, last_seen, updated_at)
+    VALUES (@address, @buys, @sells, @solIn, @solOut, @distinctMints, @firstSeen, @lastSeen, @now)
+    ON CONFLICT(address) DO UPDATE SET
+      buys = buys + excluded.buys,
+      sells = sells + excluded.sells,
+      sol_in = sol_in + excluded.sol_in,
+      sol_out = sol_out + excluded.sol_out,
+      distinct_mints = MAX(distinct_mints, excluded.distinct_mints),
+      last_seen = excluded.last_seen,
+      updated_at = excluded.updated_at
+  `);
+  const tx = db.transaction((rows: LiveTallyDelta[]) => {
+    for (const d of rows) stmt.run({ ...d, now });
+  });
+  tx(deltas);
+}
+
+/** Screen the tally for wallets worth the expensive scorer and promote them into
+ *  wallet_candidates(source='live_tape') with the promoted flag set. The screen is
+ *  cheap and deliberately loose — the real bar is the FIFO scorer downstream.
+ *  Returns the number newly promoted. */
+export function promoteLiveTapeWallets(
+  db: Database.Database,
+  opts: { minBuys: number; minSells: number; minDistinctMints: number; minNetSol: number; cap: number },
+  now: number,
+): number {
+  const rows = db.prepare(`
+    SELECT address FROM live_wallet_tally
+    WHERE promoted = 0
+      AND buys >= @minBuys AND sells >= @minSells
+      AND distinct_mints >= @minDistinctMints
+      AND (sol_out - sol_in) > @minNetSol
+    ORDER BY (sol_out - sol_in) DESC
+    LIMIT @cap
+  `).all({ ...opts }) as Array<{ address: string }>;
+  if (rows.length === 0) return 0;
+  const mark = db.prepare(`UPDATE live_wallet_tally SET promoted = 1 WHERE address = ?`);
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      upsertCandidate(db, r.address, 'live_tape', now);
+      mark.run(r.address);
+    }
+  });
+  tx();
+  return rows.length;
+}
+
+/** Bound the tally table: drop un-promoted, low-activity, stale rows. */
+export function evictStaleLiveTallies(
+  db: Database.Database,
+  opts: { staleBefore: number; minActivity: number },
+): number {
+  const res = db.prepare(`
+    DELETE FROM live_wallet_tally
+    WHERE promoted = 0 AND last_seen < @staleBefore AND (buys + sells) < @minActivity
+  `).run({ ...opts });
+  return res.changes;
+}
+
+export interface LiveTapeSummary {
+  total_wallets: number;
+  promoted: number;
+  scored: number;       // promoted wallets that have a wallet_scores row
+  live_tape_smart: number; // promoted wallets passing the money-edge gate (genuinely-new tradeable alpha)
+  top: Array<{ address: string; buys: number; sells: number; net_sol: number; distinct_mints: number; promoted: boolean }>;
+}
+
+export function getLiveTapeSummary(db: Database.Database): LiveTapeSummary {
+  const empty: LiveTapeSummary = { total_wallets: 0, promoted: 0, scored: 0, live_tape_smart: 0, top: [] };
+  try {
+    const c = db.prepare(`
+      SELECT COUNT(*) AS total, SUM(CASE WHEN promoted=1 THEN 1 ELSE 0 END) AS promoted
+      FROM live_wallet_tally
+    `).get() as { total: number; promoted: number | null };
+    empty.total_wallets = c.total ?? 0;
+    empty.promoted = c.promoted ?? 0;
+
+    const s = db.prepare(`
+      SELECT COUNT(*) AS scored,
+        SUM(CASE WHEN ws.total_realized_sol_drop_top3 > 0 AND ws.monthly_run_rate_sol >= 3.75 AND ws.total_realized_sol >= 0.5 THEN 1 ELSE 0 END) AS smart
+      FROM wallet_candidates wc
+      JOIN wallet_scores ws ON ws.address = wc.address
+      WHERE wc.source = 'live_tape'
+    `).get() as { scored: number | null; smart: number | null };
+    empty.scored = s.scored ?? 0;
+    empty.live_tape_smart = s.smart ?? 0;
+
+    empty.top = (db.prepare(`
+      SELECT address, buys, sells, (sol_out - sol_in) AS net_sol, distinct_mints, promoted
+      FROM live_wallet_tally
+      ORDER BY (sol_out - sol_in) DESC
+      LIMIT 20
+    `).all() as Array<Record<string, number>>).map((r) => ({
+      address: r.address as unknown as string,
+      buys: r.buys, sells: r.sells, net_sol: +(+r.net_sol).toFixed(3),
+      distinct_mints: r.distinct_mints, promoted: !!r.promoted,
+    }));
+  } catch { /* table may not exist yet */ }
+  return empty;
+}
+
 export interface ProbeEventInsert {
   wallet_address: string;
   signature: string;

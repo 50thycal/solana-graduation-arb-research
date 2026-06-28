@@ -134,6 +134,18 @@ export function recomputeCandidatePriorities(db: Database.Database): number {
     logger.warn('Priority cotrade-aggregate failed: %s', err instanceof Error ? err.message : String(err));
   }
 
+  // Live-tape (Idea 1): wallets promoted off the PumpSwap tape are genuinely-new
+  // (OG never saw them) and already passed an activity+profit screen — give them a
+  // strong, flat boost so the scorer evaluates them promptly.
+  try {
+    const ltRows = db.prepare(
+      `SELECT address AS w FROM wallet_candidates WHERE source = 'live_tape'`
+    ).all() as Array<{ w: string }>;
+    for (const r of ltRows) addPts(r.w, 20);
+  } catch (err) {
+    logger.warn('Priority live-tape-aggregate failed: %s', err instanceof Error ? err.message : String(err));
+  }
+
   const stmt = db.prepare(`UPDATE wallet_candidates SET priority = @p WHERE address = @a`);
   const tx = db.transaction(() => {
     for (const [a, p] of priority) stmt.run({ a, p });

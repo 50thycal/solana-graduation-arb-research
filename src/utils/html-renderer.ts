@@ -11580,6 +11580,30 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Wallet</th><th>Winners co-traded</th><th>Grads</th><th>Cohort</th></tr>${ctRows}</table>` : ''}
   </div>`;
 
+  // ── Live-tape harvester (Idea 1) card ─────────────────────────────────────
+  const lt = d.live_tape ?? null;
+  const lts = lt?.summary ?? {};
+  const ltst = lt?.status ?? null;
+  const ltRows = (lts.top ?? []).slice(0, 12).map((r: any) => `<tr>
+      <td style="font-family:monospace">${w(r.address)}</td>
+      <td>${r.buys}</td><td>${r.sells}</td><td>${sol(r.net_sol)}</td><td>${r.distinct_mints}</td>
+      <td>${r.promoted ? '<span class="green">promoted</span>' : '<span class="desc">screening</span>'}</td></tr>`).join('');
+  const liveTapeCard = lt == null ? '' : `<div class="card" style="border-left:6px solid #16a34a">
+    <h2>Live-tape harvester <span class="desc" style="font-size:13px">— Idea 1: zero-RPC discovery off the PumpSwap tape</span></h2>
+    <div class="desc">Parses the FULL PumpSwap post-grad tape off the WS push (zero RPC) and tallies per-wallet activity.
+    Unlike the OG seed / co-trade (both bound to the 0-30s window), this finds <b>wallets we otherwise never record</b>.
+    The tally is a SCREEN; screen-passers are promoted (<code>source='live_tape'</code>) into the same FIFO scorer + money-edge
+    bar as every other wallet. <span class="desc">Status: ${ltst ? `${ltst.connected ? '<span class="green">connected</span>' : '<span class="red">disconnected</span>'} · ${(ltst.total_swaps ?? 0).toLocaleString()} swaps parsed · ${(ltst.dropped_rate ?? 0).toLocaleString()} rate-sampled (cap ${ltst.max_parse_per_sec}/s)` : 'starting…'}</span></div>
+    <div class="grid">
+      <div class="stat"><span class="label">Wallets tallied</span><span class="value">${(lts.total_wallets ?? 0).toLocaleString()}</span></div>
+      <div class="stat"><span class="label">Promoted to scorer</span><span class="value">${(lts.promoted ?? 0).toLocaleString()}</span></div>
+      <div class="stat"><span class="label">Scored</span><span class="value">${lts.scored ?? 0}</span></div>
+      <div class="stat"><span class="label">New tradeable smart</span><span class="value green">${lts.live_tape_smart ?? 0}</span></div>
+    </div>
+    ${ltRows ? `<h3>Top wallets by rough net SOL <span class="desc">(gross screen — FIFO scorer is the real bar)</span></h3>
+    <table><tr><th>Wallet</th><th>Buys</th><th>Sells</th><th>Net SOL (rough)</th><th>Mints</th><th>Status</th></tr>${ltRows}</table>` : ''}
+  </div>`;
+
   // ── Per-strategy lead attribution: which wallets drive TP vs SL per strategy ─
   const attribRows = (d.lead_attribution ?? []).map((s: any) => {
     const leads = (s.top_leads ?? []).map((l: any) => `<tr>
@@ -11612,5 +11636,5 @@ export function renderCopyTradesHtml(data: any): string {
     ${attribRows}
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + discoveryCard + cotradeCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + discoveryCard + cotradeCard + liveTapeCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
 }
