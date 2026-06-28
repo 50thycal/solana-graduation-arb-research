@@ -211,6 +211,26 @@ Don't open a PR when there are no unmerged commits. Give it a clear title + body
 
 ---
 
+## DEPLOYMENT FLOW (how changes go live — read this before saying "you need to merge")
+
+Railway auto-deploys this service **from the `main` branch** ("Branch connected to production" =
+`main`, "Auto deploys when pushed to GitHub" = ON). The operator's loop is:
+
+1. Claude does the work on the feature branch and opens **one** PR into `main`.
+2. **The operator reviews and merges the PR.** This is their deliberate gate — *Claude never merges.*
+3. **The merge to `main` IS the deploy trigger.** There is no separate deploy step; pushing `main`
+   auto-builds and ships.
+4. The operator watches the deploy and verifies the bot is healthy.
+
+**Implication for Claude — do NOT nag about merging:** Once you've pushed the branch and opened/
+updated the PR, your job is done. Hand off once ("PR is up, ready for you to merge — merging
+auto-deploys `main`") and stop. A *running deploy means the PR is already merged*, so never tell the
+operator "you still need to merge" after they've deployed. If you genuinely must report merge state,
+**re-fetch first** (`git fetch origin main` + `git merge-base --is-ancestor <branch> origin/main`) so
+the claim is fresh, never from earlier-in-conversation memory.
+
+---
+
 ## BUG TRIAGE
 
 When `diagnose.json` is not healthy, fix detection first (Level 1: is the bot running and detecting
