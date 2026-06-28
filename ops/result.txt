@@ -1,2 +1,83 @@
-# ops request: type='noop'
-(noop — nothing to do)
+# latest deployment e17d4b75-b688-493e-b236-656e782b0148 (status=SUCCESS, created=2026-06-28T01:08:24.018Z)
+# ops request: type='logs'
+2026-06-28T01:37:12.711284976Z INFO  Probe: 911pQN sell pumpswap 9cRCn9 lag=?s dec=0ms
+2026-06-28T01:37:42.467428410Z INFO  Probe: 9LxMdv buy pumpfun_bc H9aaR4 lag=?s dec=1ms
+2026-06-28T01:38:02.464916759Z INFO  Probe: 7bTsRg buy pumpswap EYx9Kc lag=?s dec=0ms
+2026-06-28T01:38:02.464922378Z INFO  Probe: 9LxMdv sell pumpfun_bc H9aaR4 lag=?s dec=1ms
+2026-06-28T01:38:02.464927486Z INFO  Probe: 5KcqJ7 buy pumpswap CQQdwA lag=?s dec=0ms
+2026-06-28T01:38:02.921164023Z INFO  Copy LIVE buy OK copy-hotlead-hold30m-live-micro EYx9Kc tokens=103804.895265 tip=0 sig=RTC37R9Rgrfj
+2026-06-28T01:38:02.921167001Z INFO  Live buy filled
+2026-06-28T01:38:42.694885501Z INFO  Probe: 5KcqJ7 buy pumpswap CQQdwA lag=?s dec=1ms
+2026-06-28T01:38:42.694891352Z INFO  Probe: 5KcqJ7 buy pumpswap CQQdwA lag=?s dec=1ms
+2026-06-28T01:39:12.702556351Z INFO  Copy LIVE reconcile: 10 orphan token balance(s) — live-traded mints held in wallet but not tracked as open (manual review)
+2026-06-28T01:39:12.702560628Z INFO  Probe: 5KcqJ7 buy pumpswap CQQdwA lag=?s dec=1ms
+2026-06-28T01:39:22.446122353Z INFO  Probe: 5KcqJ7 sell pumpswap CQQdwA lag=?s dec=0ms
+2026-06-28T01:39:42.196937918Z INFO  Graduation tx timing
+2026-06-28T01:39:42.196944477Z INFO  Graduation verified and recorded
+2026-06-28T01:39:42.196950792Z INFO  Starting price observation
+2026-06-28T01:39:42.196957057Z INFO  Direct pool observation started with pre-extracted vaults
+2026-06-28T01:39:42.196963340Z INFO  getTokenLargestAccounts failed
+2026-06-28T01:39:42.196970647Z INFO  True holder count + distribution from DAS getTokenAccounts
+2026-06-28T01:39:42.197627192Z INFO  Token age resolved from bonding curve history
+2026-06-28T01:39:42.197634127Z INFO  Creator wallet resolved
+2026-06-28T01:39:42.197642993Z INFO  RPC poller found new migration sigs
+2026-06-28T01:39:43.243747630Z INFO  Competition detection complete
+2026-06-28T01:40:23.290199388Z INFO  Buy pressure detection complete
+2026-06-28T01:40:24.807008448Z INFO  Probe: 5KcqJ7 buy pumpfun_bc 8ZPAtH lag=?s dec=1ms
+2026-06-28T01:40:54.610289617Z INFO  Probe: 5KcqJ7 buy pumpfun_bc 8ZPAtH lag=?s dec=1ms
+2026-06-28T01:40:54.610298477Z INFO  Probe: 5KcqJ7 buy pumpfun_bc 8ZPAtH lag=?s dec=0ms
+2026-06-28T01:41:02.492185551Z INFO  Probe: 5KcqJ7 buy pumpfun_bc 8ZPAtH lag=?s dec=1ms
+2026-06-28T01:41:22.490305634Z INFO  Probe: 2HJMgs buy pumpfun_bc 7KLjrY lag=?s dec=1ms
+2026-06-28T01:41:25.117042875Z INFO  Probe: 2HJMgs buy pumpfun_bc 7KLjrY lag=?s dec=1ms
+2026-06-28T01:41:45.137016481Z INFO  Probe: 5KcqJ7 buy pumpfun_bc 8ZPAtH lag=?s dec=1ms
+2026-06-28T01:42:25.015667098Z INFO  Probe: 5KcqJ7 buy pumpfun_bc 8ZPAtH lag=?s dec=0ms
+2026-06-28T01:42:55.002232471Z INFO  Probe: 2HJMgs sell pumpfun_bc 7KLjrY lag=?s dec=0ms
+2026-06-28T01:42:55.002240020Z INFO  Probe: 5KcqJ7 buy pumpswap CQQdwA lag=?s dec=0ms
+2026-06-28T01:43:25.006619265Z INFO  Probe: 7gdo83 buy pumpfun_bc 4kLQdF lag=?s dec=0ms
+2026-06-28T01:43:26.920999956Z INFO  Probe: DVhwSE buy pumpswap CQQdwA lag=?s dec=0ms
+2026-06-28T01:43:27.129001875Z INFO  Probe: DVhwSE buy pumpswap CQQdwA lag=?s dec=1ms
+2026-06-28T01:43:47.127969392Z INFO  Probe: 5KcqJ7 sell pumpfun_bc 8ZPAtH lag=?s dec=0ms
+2026-06-28T01:44:07.122297457Z INFO  Copy LIVE reconcile: 9 orphan token balance(s) — live-traded mints held in wallet but not tracked as open (manual review)
+2026-06-28T01:44:09.497279346Z INFO  Probe: 2HJMgs buy pumpfun_bc A54kyo lag=?s dec=0ms
+2026-06-28T01:44:39.505931307Z INFO  Probe: 2HJMgs sell pumpfun_bc A54kyo lag=?s dec=1ms
+2026-06-28T01:44:43.122862610Z INFO  Probe: 5KcqJ7 buy pumpswap CQQdwA lag=?s dec=1ms
+2026-06-28T01:44:43.425561522Z INFO  Probe: 5KcqJ7 buy pumpswap CQQdwA lag=?s dec=1ms
+2026-06-28T01:44:46.678450077Z INFO  Probe: 7gdo83 buy pumpfun_bc 4kLQdF lag=?s dec=0ms
+2026-06-28T01:44:54.098639716Z INFO  Copy close copy-hotlead-hold30m EYx9Kc timeout net=0.20904 SOL hold=1801s
+2026-06-28T01:45:44.142364676Z INFO  Probe: 7gdo83 sell pumpfun_bc 4kLQdF lag=?s dec=0ms
+2026-06-28T01:46:04.142412392Z INFO  Graduation tx timing
+2026-06-28T01:46:04.142418994Z INFO  Graduation verified and recorded
+2026-06-28T01:46:04.142423555Z INFO  Starting price observation
+2026-06-28T01:46:04.142428192Z INFO  Direct pool observation started with pre-extracted vaults
+2026-06-28T01:46:04.142432679Z INFO  True holder count + distribution from DAS getTokenAccounts
+2026-06-28T01:46:04.142437590Z INFO  Token age resolved from bonding curve history
+2026-06-28T01:46:04.142443654Z INFO  Creator wallet resolved
+2026-06-28T01:46:04.142448177Z INFO  RPC poller found new migration sigs
+2026-06-28T01:46:23.966733157Z INFO  Probe: FVbbUK buy pumpswap 3q4mGx lag=?s dec=1ms
+2026-06-28T01:46:23.966742349Z INFO  Probe: 7gdo83 buy pumpswap 3q4mGx lag=?s dec=1ms
+2026-06-28T01:46:53.979800267Z INFO  Probe: 7gdo83 buy pumpswap 3q4mGx lag=?s dec=0ms
+2026-06-28T01:46:53.979807732Z INFO  Probe: 7gdo83 buy pumpswap 3q4mGx lag=?s dec=1ms
+2026-06-28T01:46:54.693112567Z INFO  Probe: 7gdo83 sell pumpswap 3q4mGx lag=?s dec=0ms
+2026-06-28T01:47:14.695384214Z INFO  RPC poller found new migration sigs
+2026-06-28T01:47:21.957161239Z INFO  RPC poller found new migration sigs
+2026-06-28T01:47:51.958060054Z INFO  RPC poller found new migration sigs
+2026-06-28T01:48:11.962715965Z INFO  Probe: DVhwSE sell pumpswap CQQdwA lag=?s dec=1ms
+2026-06-28T01:48:31.995741572Z INFO  RPC poller found new migration sigs
+2026-06-28T01:48:39.454957743Z INFO  Probe: 5KcqJ7 buy pumpswap CQQdwA lag=?s dec=1ms
+2026-06-28T01:48:39.794878295Z INFO  Probe: 5KcqJ7 buy pumpswap CQQdwA lag=?s dec=1ms
+2026-06-28T01:48:41.917269781Z INFO  RPC poller found new migration sigs
+2026-06-28T01:49:01.923099020Z INFO  RPC poller found new migration sigs
+2026-06-28T01:49:01.949264807Z INFO  RPC poller found new migration sigs
+2026-06-28T01:49:03.592617789Z INFO  Copy LIVE reconcile: 9 orphan token balance(s) — live-traded mints held in wallet but not tracked as open (manual review)
+2026-06-28T01:49:11.911244727Z INFO  RPC poller found new migration sigs
+2026-06-28T01:49:41.919116984Z INFO  RPC poller found new migration sigs
+2026-06-28T01:49:41.978554741Z INFO  RPC poller found new migration sigs
+2026-06-28T01:49:51.949353199Z INFO  RPC poller found new migration sigs
+2026-06-28T01:49:55.289212085Z INFO  Graduation tx timing
+2026-06-28T01:49:55.296093532Z INFO  Graduation verified and recorded
+2026-06-28T01:49:55.296107088Z INFO  Starting price observation
+2026-06-28T01:49:55.296115194Z INFO  Direct pool observation started with pre-extracted vaults
+2026-06-28T01:49:55.859864159Z INFO  getTokenLargestAccounts failed
+2026-06-28T01:49:56.695805755Z INFO  True holder count + distribution from DAS getTokenAccounts
+2026-06-28T01:49:56.695809463Z INFO  Token age resolved from bonding curve history
+2026-06-28T01:49:56.695812980Z INFO  Creator wallet resolved
