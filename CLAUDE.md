@@ -204,10 +204,34 @@ Never declare victory on n < 100, on the idealized mirror, or on outlier-driven 
 
 ## PULL REQUEST WORKFLOW (operator preference)
 
-After pushing code changes to the feature branch, **always open a GitHub PR into `main`** so the
-operator can review and merge. Use the GitHub MCP (`mcp__github__create_pull_request`) — `gh` is not
-available here. **One open PR per branch** (new pushes update it; check `list_pull_requests` first).
-Don't open a PR when there are no unmerged commits. Give it a clear title + body.
+**As soon as a change is complete and builds (`npm run build` green), proactively open a GitHub PR
+into `main` — do NOT wait to be asked.** The operator's deploy is gated on the PR existing (see
+Deployment Flow below), so a finished change with no PR is just blocking the deploy. Opening the PR
+is part of "done," not a follow-up step.
+
+Use the GitHub MCP (`mcp__github__create_pull_request`) — `gh` is not available here. **One open PR
+per branch** (new pushes update the existing PR; check `list_pull_requests` first). Don't open a PR
+when there are no unmerged commits. Give it a clear title + body.
+
+---
+
+## DEPLOYMENT FLOW (how changes go live — read this before saying "you need to merge")
+
+Railway auto-deploys this service **from the `main` branch** ("Branch connected to production" =
+`main`, "Auto deploys when pushed to GitHub" = ON). The operator's loop is:
+
+1. Claude does the work on the feature branch and opens **one** PR into `main`.
+2. **The operator reviews and merges the PR.** This is their deliberate gate — *Claude never merges.*
+3. **The merge to `main` IS the deploy trigger.** There is no separate deploy step; pushing `main`
+   auto-builds and ships.
+4. The operator watches the deploy and verifies the bot is healthy.
+
+**Implication for Claude — do NOT nag about merging:** Once you've pushed the branch and opened/
+updated the PR, your job is done. Hand off once ("PR is up, ready for you to merge — merging
+auto-deploys `main`") and stop. A *running deploy means the PR is already merged*, so never tell the
+operator "you still need to merge" after they've deployed. If you genuinely must report merge state,
+**re-fetch first** (`git fetch origin main` + `git merge-base --is-ancestor <branch> origin/main`) so
+the claim is fresh, never from earlier-in-conversation memory.
 
 ---
 
