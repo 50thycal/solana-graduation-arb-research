@@ -84,6 +84,10 @@ export const SLIP_CAP_LEVELS = [1, 2, 3];
 // mint — i.e. at most MAX_ENTRIES_PER_TOKEN entries per token. Surfaced in both
 // windows so we can see what difference it makes since inception and since flip-on.
 export const MAX_ENTRIES_PER_TOKEN = 2;
+// The slip cap actually ENFORCED on live entries (= COPY_ENTRY_MAX_SLIPPAGE_BPS/100).
+// Used for the "stacked" row that combines the live cap with the repeat-token reject
+// so we can see whether the two filters compound. Keep in sync with the live cap.
+export const SLIP_CAP_LIVE_PCT = 1;
 
 /** Normalized per-trade row shared by live + shadow series. */
 export interface LtTrade {
@@ -163,8 +167,9 @@ export interface LtSlipCapRow {
   // Human label for the row ('no cap' | '≤1%' | '≤2 entries/token').
   label: string;
   // 'baseline' (no filter) | 'slip_cap' (drop entry slip > cap_pct) | 'max_entries'
-  // (drop the 3rd+ trade on the same mint). Lets a JSON reader tell rows apart.
-  kind: 'baseline' | 'slip_cap' | 'max_entries';
+  // (drop the 3rd+ trade on the same mint) | 'combined' (the live 1% cap AND the
+  // ≤2-entries/token reject stacked together). Lets a JSON reader tell rows apart.
+  kind: 'baseline' | 'slip_cap' | 'max_entries' | 'combined';
   cap_pct: number | null; // the cap for slip_cap rows; null for baseline/max_entries
   kept_n: number;
   kept_winners_n: number;
@@ -440,6 +445,11 @@ function computeSlipCapWindow(trades: LtTrade[], flipOnTs: number | null): LtSli
     ...SLIP_CAP_LEVELS.map(cap => buildRow(`≤${cap}%`, 'slip_cap', cap, t => (t.entry_slip_pct ?? 0) <= cap)),
     // Repeat-token reject row (tracking only): drop the 3rd+ trade on the same mint.
     buildRow(`≤${MAX_ENTRIES_PER_TOKEN} entries/token`, 'max_entries', null, t => !repeatRejected.has(t.id)),
+    // Stacked row (tracking only): BOTH the live 1% cap AND the repeat-token reject —
+    // keeps a trade only if its entry slip ≤ the live cap AND it isn't a 3rd+ same-mint
+    // entry. Shows whether the two filters compound vs either alone.
+    buildRow(`≤${SLIP_CAP_LIVE_PCT}% + ≤${MAX_ENTRIES_PER_TOKEN} entries/token`, 'combined', SLIP_CAP_LIVE_PCT,
+      t => (t.entry_slip_pct ?? 0) <= SLIP_CAP_LIVE_PCT && !repeatRejected.has(t.id)),
   ];
   return {
     window_start_ts: startTs,
@@ -458,7 +468,7 @@ export function computeSlipCapOverlay(liveTrades: LtTrade[], flipOnTs: number): 
     flip_on_ts: flipOnTs,
     flip_on_iso: new Date(flipOnTs * 1000).toISOString(),
     caps_pct: SLIP_CAP_LEVELS,
-    note: 'Counterfactual rows: "no cap" = the live book as-is (baseline); "≤N%" = drop closed live entries whose REALIZED entry_slip_pct exceeded the cap (the revert outcome of an on-chain max-slippage cap — the ≤1% cap is now ENFORCED live via COPY_ENTRY_MAX_SLIPPAGE_BPS); "≤2 entries/token" = drop the 3rd+ trade on the same mint (tracking only, NOT a live rule). Repeat-token counting is per-window. Ignores the 2nd-order freed-concurrency-slot substitution.',
+    note: 'Counterfactual rows: "no cap" = the live book as-is (baseline); "≤N%" = drop closed live entries whose REALIZED entry_slip_pct exceeded the cap (the revert outcome of an on-chain max-slippage cap — the ≤1% cap is now ENFORCED live via COPY_ENTRY_MAX_SLIPPAGE_BPS); "≤2 entries/token" = drop the 3rd+ trade on the same mint (tracking only, NOT a live rule); "≤1% + ≤2 entries/token" = both stacked (tracking only) to see if they compound. Repeat-token counting is per-window. Ignores the 2nd-order freed-concurrency-slot substitution.',
     since_conception: computeSlipCapWindow(closed, null),
     since_flip_on: computeSlipCapWindow(closed.filter(t => (t.entry_ts ?? 0) >= flipOnTs), flipOnTs),
   };
