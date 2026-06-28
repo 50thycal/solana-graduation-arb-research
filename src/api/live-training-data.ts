@@ -79,6 +79,11 @@ export const LIVE_ORIGINAL_MAP: Record<string, string> = {
 // Flip-on = 2026-06-25T17:30Z. Bump only when re-baselining the forward test.
 export const SLIP_CAP_FLIP_ON_TS = 1782408610;
 export const SLIP_CAP_LEVELS = [1, 2, 3];
+// Repeat-token reject counterfactual (tracking only, NOT a live rule): the table
+// also reports what the book would be if we rejected the 3rd+ trade on the same
+// mint — i.e. at most MAX_ENTRIES_PER_TOKEN entries per token. Surfaced in both
+// windows so we can see what difference it makes since inception and since flip-on.
+export const MAX_ENTRIES_PER_TOKEN = 2;
 
 /** Normalized per-trade row shared by live + shadow series. */
 export interface LtTrade {
@@ -152,9 +157,15 @@ export interface LtMetrics {
   exit_reason_counts: Record<string, number>;
 }
 
-/** One cap level's counterfactual book over a window of live trades. */
+/** One filter's counterfactual book over a window of live trades. Covers the
+ *  no-cap baseline, each slippage cap level, and the repeat-token reject. */
 export interface LtSlipCapRow {
-  cap_pct: number;
+  // Human label for the row ('no cap' | '≤1%' | '≤2 entries/token').
+  label: string;
+  // 'baseline' (no filter) | 'slip_cap' (drop entry slip > cap_pct) | 'max_entries'
+  // (drop the 3rd+ trade on the same mint). Lets a JSON reader tell rows apart.
+  kind: 'baseline' | 'slip_cap' | 'max_entries';
+  cap_pct: number | null; // the cap for slip_cap rows; null for baseline/max_entries
   kept_n: number;
   kept_winners_n: number;
   kept_losers_n: number;
@@ -379,15 +390,20 @@ function computeSlipCapWindow(trades: LtTrade[], flipOnTs: number | null): LtSli
   const entryTss = elig.map(t => t.entry_ts).filter((x): x is number => x != null && isFinite(x));
   const startTs = entryTss.length ? Math.min(...entryTss) : null;
   const slips = elig.map(t => t.entry_slip_pct).filter((x): x is number => x !== null);
-  const rows: LtSlipCapRow[] = SLIP_CAP_LEVELS.map(cap => {
-    const kept = elig.filter(t => (t.entry_slip_pct ?? 0) <= cap);
-    const skipped = elig.filter(t => (t.entry_slip_pct ?? 0) > cap);
+
+  // Generic counterfactual row: keep the trades where keep(t) is true, drop the
+  // rest, and report the book vs the no-cap baseline. Used for every filter row.
+  const buildRow = (
+    label: string, kind: LtSlipCapRow['kind'], capPct: number | null, keep: (t: LtTrade) => boolean,
+  ): LtSlipCapRow => {
+    const kept = elig.filter(keep);
+    const skipped = elig.filter(t => !keep(t));
     const keptNet = sumNet(kept);
     const winners = skipped.filter(t => (t.net_profit_sol ?? 0) > 0);
     const losers = skipped.filter(t => (t.net_profit_sol ?? 0) <= 0);
     const keptWins = kept.filter(t => (t.net_profit_sol ?? 0) > 0).length;
     return {
-      cap_pct: cap,
+      label, kind, cap_pct: capPct,
       kept_n: kept.length,
       kept_winners_n: keptWins,
       kept_losers_n: kept.length - keptWins,
@@ -402,7 +418,29 @@ function computeSlipCapWindow(trades: LtTrade[], flipOnTs: number | null): LtSli
       kept_win_rate_pct: kept.length ? round((keptWins / kept.length) * 100, 1) : null,
       skipped_win_rate_pct: skipped.length ? round((winners.length / skipped.length) * 100, 1) : null,
     };
-  });
+  };
+
+  // "Max 2 entries per token" reject set: the 3rd+ eligible trade on the same
+  // mint (chronological within THIS window, so since-conception and since-flip-on
+  // each evaluate their own trade set self-consistently, like the slip-cap rows).
+  // Tracking only — NOT a live rule. Trades with no mint are always kept.
+  const repeatRejected = new Set<number>();
+  const seenPerMint = new Map<string, number>();
+  for (const t of [...elig].sort((a, b) => (a.entry_ts ?? 0) - (b.entry_ts ?? 0) || a.id - b.id)) {
+    if (!t.mint) continue;
+    const c = (seenPerMint.get(t.mint) ?? 0) + 1;
+    seenPerMint.set(t.mint, c);
+    if (c > MAX_ENTRIES_PER_TOKEN) repeatRejected.add(t.id);
+  }
+
+  const rows: LtSlipCapRow[] = [
+    // No-cap baseline reference line (keeps everything; Δ vs base = 0).
+    buildRow('no cap', 'baseline', null, () => true),
+    // Slippage-cap rows: drop entries whose realized entry slip exceeded the cap.
+    ...SLIP_CAP_LEVELS.map(cap => buildRow(`≤${cap}%`, 'slip_cap', cap, t => (t.entry_slip_pct ?? 0) <= cap)),
+    // Repeat-token reject row (tracking only): drop the 3rd+ trade on the same mint.
+    buildRow(`≤${MAX_ENTRIES_PER_TOKEN} entries/token`, 'max_entries', null, t => !repeatRejected.has(t.id)),
+  ];
   return {
     window_start_ts: startTs,
     flip_on_ts: flipOnTs,
@@ -420,7 +458,7 @@ export function computeSlipCapOverlay(liveTrades: LtTrade[], flipOnTs: number): 
     flip_on_ts: flipOnTs,
     flip_on_iso: new Date(flipOnTs * 1000).toISOString(),
     caps_pct: SLIP_CAP_LEVELS,
-    note: 'Tier-1 counterfactual: drops closed live entries whose REALIZED entry_slip_pct exceeded the cap — exactly the revert outcome of an on-chain max-slippage cap. Measurement only, no behavior change. Ignores the 2nd-order freed-concurrency-slot substitution.',
+    note: 'Counterfactual rows: "no cap" = the live book as-is (baseline); "≤N%" = drop closed live entries whose REALIZED entry_slip_pct exceeded the cap (the revert outcome of an on-chain max-slippage cap — the ≤1% cap is now ENFORCED live via COPY_ENTRY_MAX_SLIPPAGE_BPS); "≤2 entries/token" = drop the 3rd+ trade on the same mint (tracking only, NOT a live rule). Repeat-token counting is per-window. Ignores the 2nd-order freed-concurrency-slot substitution.',
     since_conception: computeSlipCapWindow(closed, null),
     since_flip_on: computeSlipCapWindow(closed.filter(t => (t.entry_ts ?? 0) >= flipOnTs), flipOnTs),
   };

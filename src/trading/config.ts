@@ -51,6 +51,23 @@ export const DEFAULT_MAX_SLIPPAGE_BPS = parseInt(process.env.DEFAULT_MAX_SLIPPAG
  * restored, 5% buffer is the right default again.
  */
 export const SWAP_SLIPPAGE_BPS = parseInt(process.env.SWAP_SLIPPAGE_BPS || '500', 10);
+/**
+ * Max entry slippage (bps) for LIVE-MICRO COPY buys — the on-chain max-slippage
+ * cap. A copy buy that would fill worse than this reverts on-chain (→ no
+ * position), which is exactly the outcome modeled by the /live-training
+ * slippage-cap counterfactual. 100 = 1%.
+ *
+ * 2026-06-28: turned ON at 1%. The Tier-1 counterfactual (slip_cap_overlay on
+ * /live-training) showed the ≤1% cap dropping mostly losers with a positive Δ vs
+ * the no-cap baseline both since conception and over the forward test from
+ * SLIP_CAP_FLIP_ON_TS, so we now enforce it on real entries. Clamps EVERY buy
+ * attempt (the buy-retry schedule may otherwise widen slippage to 10-20% on
+ * attempt 3) so a high-slip entry can never sneak in via a retry. Env-overridable;
+ * set COPY_ENTRY_MAX_SLIPPAGE_BPS<=0 to disable the cap and revert to the plain
+ * retry-schedule slippage. ONLY affects the copy live-micro path — the main
+ * trading path's slippage is untouched.
+ */
+export const COPY_ENTRY_MAX_SLIPPAGE_BPS = parseInt(process.env.COPY_ENTRY_MAX_SLIPPAGE_BPS || '100', 10);
 /** SOL kept as buffer above tradeSize for tx fees + ATA rent. */
 export const WALLET_SOL_BUFFER = parseFloat(process.env.WALLET_SOL_BUFFER || '0.02');
 /** Jito block engine endpoint. PINNED to a single region (ny — closest to the US East
