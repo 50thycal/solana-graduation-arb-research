@@ -1,1 +1,10 @@
-Invalid JSON in ops/request.json: Expecting value: line 1 column 1 (char 0)
+# ops request: type='db'
+# SELECT 'follow_list' AS t, COUNT(*) AS n, SUM(enabled) AS enabled_n FROM follow_list UNION ALL SELECT 'wallet_scores_total', COUNT(*), NULL FROM wallet_scores UNION ALL SELECT 'wallet_candidates', COUNT(*), NULL FROM wallet_candidates UNION ALL SELECT 'copy_probe_7d_events', COUNT(*), COUNT(DISTINCT wallet_address) FROM copy_probe_events WHERE detected_at>=unixepoch()-7*86400 UNION ALL SELECT 'live_trades_closed', COUNT(*), COUNT(DISTINCT lead_wallet) FROM copy_trades WHERE strategy_id LIKE '%live-micro%' AND status='closed'
+  t                    | n      | enabled_n
+  ---------------------+--------+----------
+  follow_list          | 137    | 0        
+  wallet_scores_total  | 4929   |          
+  wallet_candidates    | 79247  |          
+  copy_probe_7d_events | 341598 | 257      
+  live_trades_closed   | 639    | 94       
+  [5 rows]
