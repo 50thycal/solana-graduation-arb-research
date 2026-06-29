@@ -51,7 +51,7 @@ const DEFAULTS = {
   // of the ~250k/day copy budget for position polling. Tune via COPYTRADE_* envs.
   intervalMs: 4 * 60 * 60 * 1000, // 4h between scoring passes (was 6h)
   firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
-  scoreBatchLimit: 30,            // backlog FIRST-scans per tick
+  scoreBatchLimit: 50,            // backlog FIRST-scans per tick (scoring RPC is tiny — headroom)
   maxSignaturesPerWallet: 300,    // shallow first-scan / triage depth
   maxSignaturesDeep: 1500,        // DEEP-rescan depth for promising-but-n-capped wallets
   cacheMaxSwaps: 1500,            // incremental-cache cap = deepest history we score on
@@ -229,10 +229,22 @@ export class CopytradeWorker {
         if (await this.scoreOne(connection, addr, now)) refreshed++;
       }
 
-      // 2) DEEP RESCAN: rescue promising-but-n-capped wallets (positive realized,
-      //    40-99 round trips, only shallow-scanned) with a one-shot deep backward
-      //    scan, so the 300-sig depth artifact stops rejecting genuine elites. Small
-      //    batch — this is the new RPC cost.
+      // 2) BACKLOG DISCOVERY — full scoreBatchLimit. getCandidates sorts by priority,
+      //    and screened promoted wallets (live_tape +1000, cotrade) now outrank the
+      //    random OG backlog, so they get scored FIRST. Runs BEFORE the deep rescan
+      //    so deep scans (1500 sigs each) can't starve the wallets we want scored.
+      const staleBefore = now - this.restaleSeconds;
+      const candidates = getCandidates(this.db, { staleBeforeTs: staleBefore, limit: this.scoreBatchLimit });
+      let scored = 0;
+      for (const c of candidates) {
+        if (await this.scoreOne(connection, c.address, now)) scored++;
+      }
+
+      // 3) DEEP RESCAN (last): rescue promising-but-n-capped wallets (positive
+      //    realized, 40-99 round trips, only shallow-scanned) with a one-shot deep
+      //    backward scan, so the 300-sig depth artifact stops rejecting genuine
+      //    elites. Runs LAST so its 1500-sig scans take leftover budget, not the
+      //    budget that should score the promoted backlog.
       const deepList = getDeepRescanCandidates(this.db, {
         minTotalSol: 0.2, nLow: 40, nHigh: 100, deepSigs: this.maxSignaturesDeep, limit: this.deepBatchLimit,
       });
@@ -240,17 +252,8 @@ export class CopytradeWorker {
       for (const addr of deepList) {
         if (await this.scoreOne(connection, addr, now, { deep: true })) deepScored++;
       }
-
-      // 3) BACKLOG DISCOVERY — full scoreBatchLimit (refresh no longer eats it).
-      const staleBefore = now - this.restaleSeconds;
-      const candidates = getCandidates(this.db, { staleBeforeTs: staleBefore, limit: this.scoreBatchLimit });
-      logger.info('Refreshed %d used (incremental); deep-rescanned %d; scoring %d backlog candidates',
-        refreshed, deepScored, candidates.length);
-
-      let scored = 0;
-      for (const c of candidates) {
-        if (await this.scoreOne(connection, c.address, now)) scored++;
-      }
+      logger.info('Refreshed %d used (incremental); scored %d backlog; deep-rescanned %d',
+        refreshed, candidates.length, deepScored);
 
       // Re-rank the full scored set and record promotable wallets to follow_list
       // (DISABLED — Phase 2 shadow validation is what flips enabled=1).

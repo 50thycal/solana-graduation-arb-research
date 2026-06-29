@@ -135,13 +135,16 @@ export function recomputeCandidatePriorities(db: Database.Database): number {
   }
 
   // Live-tape (Idea 1): wallets promoted off the PumpSwap tape are genuinely-new
-  // (OG never saw them) and already passed an activity+profit screen — give them a
-  // strong, flat boost so the scorer evaluates them promptly.
+  // (OG never saw them) and already passed an activity+profit screen — they are the
+  // wallets MOST likely to be tradeable, so they must be scored BEFORE the 74k
+  // random OG backlog. The old +20 boost left them buried behind high-signal OG
+  // candidates (which reach ~64), so they never got scored. A large flat boost puts
+  // every screened live-tape wallet at the front of the never-scored queue.
   try {
     const ltRows = db.prepare(
       `SELECT address AS w FROM wallet_candidates WHERE source = 'live_tape'`
     ).all() as Array<{ w: string }>;
-    for (const r of ltRows) addPts(r.w, 20);
+    for (const r of ltRows) addPts(r.w, 1000);
   } catch (err) {
     logger.warn('Priority live-tape-aggregate failed: %s', err instanceof Error ? err.message : String(err));
   }
