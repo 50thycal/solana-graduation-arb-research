@@ -1,9 +1,23 @@
 # ops request: type='db'
-# SELECT 'cover' AS k, CAST(COUNT(*) AS TEXT) AS bucket, SUM(ok) AS n_ok, SUM(has_socials) AS socials, SUM(has_image) AS img, NULL AS tot_net, NULL AS avg_net FROM token_metadata UNION ALL SELECT 'rug', (tm.has_socials || '/' || tm.has_image) AS bucket, COUNT(*) AS n, NULL, NULL, ROUND(SUM(ct.net_sol),3), ROUND(AVG(ct.net_sol),4) FROM copy_trades ct JOIN token_metadata tm ON tm.mint=ct.mint WHERE ct.strategy_id='copy-hotlead-hold30m' AND ct.status='closed' AND ct.net_sol IS NOT NULL AND tm.ok=1 GROUP BY tm.has_socials, tm.has_image ORDER BY 1,2
-  k     | bucket | n_ok | socials | img  | tot_net | avg_net
-  ------+--------+------+---------+------+---------+--------
-  cover | 1276   | 1276 | 970     | 1274 |         |        
-  rug   | 0/0    | 2    |         |      | -0.389  | -0.1945
-  rug   | 0/1    | 229  |         |      | 9.667   | 0.0422 
-  rug   | 1/1    | 627  |         |      | 31.74   | 0.0506 
-  [4 rows]
+# SELECT strategy_id, COUNT(*) AS n, ROUND(AVG(CASE WHEN net_sol>0 THEN 1.0 ELSE 0 END),3) AS wr, ROUND(SUM(net_sol),3) AS tot_net, ROUND(AVG(net_sol),4) AS avg_net FROM copy_trades WHERE strategy_id LIKE 'copy-hotlead-hold%' AND status='closed' AND net_sol IS NOT NULL AND entry_ts >= (unixepoch()-4*86400) GROUP BY strategy_id ORDER BY tot_net DESC
+  strategy_id                           | n   | wr    | tot_net | avg_net
+  --------------------------------------+-----+-------+---------+--------
+  copy-hotlead-hold45m                  | 150 | 0.247 | 12.922  | 0.0861 
+  copy-hotlead-hold30m                  | 239 | 0.318 | 11.74   | 0.0491 
+  copy-hotlead-hold30m-trailtp-wide     | 66  | 0.424 | 2.715   | 0.0411 
+  copy-hotlead-hold30m-ratchet-trailtp  | 68  | 0.397 | 2.358   | 0.0347 
+  copy-hotlead-hold30m-scaleout-trailtp | 67  | 0.463 | 1.737   | 0.0259 
+  copy-hotlead-hold30m-crowdexit        | 55  | 0.436 | -0.063  | -0.0011
+  copy-hotlead-hold30m-pair-shadow      | 197 | 0.32  | -0.401  | -0.002 
+  copy-hotlead-hold30m-live-micro       | 196 | 0.291 | -0.5    | -0.0026
+  copy-hotlead-hold30m-nochase          | 20  | 0.15  | -2.485  | -0.1242
+  copy-hotlead-hold30m-strict           | 91  | 0.297 | -2.95   | -0.0324
+  copy-hotlead-hold20m                  | 147 | 0.299 | -3.3    | -0.0225
+  copy-hotlead-hold30m-early            | 32  | 0.219 | -3.444  | -0.1076
+  copy-hotlead-hold30m-prune            | 86  | 0.267 | -3.7    | -0.043 
+  copy-hotlead-hold30m-cap2             | 82  | 0.268 | -4.05   | -0.0494
+  copy-hotlead-hold30m-be30             | 136 | 0.272 | -5.986  | -0.044 
+  copy-hotlead-hold30m-sl40             | 127 | 0.291 | -7.023  | -0.0553
+  copy-hotlead-hold30m-sl20             | 140 | 0.25  | -7.234  | -0.0517
+  copy-hotlead-hold60m                  | 131 | 0.252 | -9.916  | -0.0757
+  [18 rows]
