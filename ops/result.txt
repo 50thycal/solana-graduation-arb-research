@@ -1,23 +1,86 @@
 # ops request: type='db'
-# SELECT strategy_id, COUNT(*) AS n, ROUND(AVG(CASE WHEN net_sol>0 THEN 1.0 ELSE 0 END),3) AS wr, ROUND(SUM(net_sol),3) AS tot_net, ROUND(AVG(net_sol),4) AS avg_net FROM copy_trades WHERE strategy_id LIKE 'copy-hotlead-hold%' AND status='closed' AND net_sol IS NOT NULL AND entry_ts >= (unixepoch()-4*86400) GROUP BY strategy_id ORDER BY tot_net DESC
-  strategy_id                           | n   | wr    | tot_net | avg_net
-  --------------------------------------+-----+-------+---------+--------
-  copy-hotlead-hold45m                  | 150 | 0.247 | 12.922  | 0.0861 
-  copy-hotlead-hold30m                  | 239 | 0.318 | 11.74   | 0.0491 
-  copy-hotlead-hold30m-trailtp-wide     | 66  | 0.424 | 2.715   | 0.0411 
-  copy-hotlead-hold30m-ratchet-trailtp  | 68  | 0.397 | 2.358   | 0.0347 
-  copy-hotlead-hold30m-scaleout-trailtp | 67  | 0.463 | 1.737   | 0.0259 
-  copy-hotlead-hold30m-crowdexit        | 55  | 0.436 | -0.063  | -0.0011
-  copy-hotlead-hold30m-pair-shadow      | 197 | 0.32  | -0.401  | -0.002 
-  copy-hotlead-hold30m-live-micro       | 196 | 0.291 | -0.5    | -0.0026
-  copy-hotlead-hold30m-nochase          | 20  | 0.15  | -2.485  | -0.1242
-  copy-hotlead-hold30m-strict           | 91  | 0.297 | -2.95   | -0.0324
-  copy-hotlead-hold20m                  | 147 | 0.299 | -3.3    | -0.0225
-  copy-hotlead-hold30m-early            | 32  | 0.219 | -3.444  | -0.1076
-  copy-hotlead-hold30m-prune            | 86  | 0.267 | -3.7    | -0.043 
-  copy-hotlead-hold30m-cap2             | 82  | 0.268 | -4.05   | -0.0494
-  copy-hotlead-hold30m-be30             | 136 | 0.272 | -5.986  | -0.044 
-  copy-hotlead-hold30m-sl40             | 127 | 0.291 | -7.023  | -0.0553
-  copy-hotlead-hold30m-sl20             | 140 | 0.25  | -7.234  | -0.0517
-  copy-hotlead-hold60m                  | 131 | 0.252 | -9.916  | -0.0757
-  [18 rows]
+# SELECT c.lead_wallet AS w, MAX(c.lead_tier) AS tier, COUNT(*) AS n, ROUND(AVG(CASE WHEN c.net_sol>0 THEN 1.0 ELSE 0 END),3) AS wr, ROUND(SUM(c.net_sol),3) AS net, ROUND(SUM(CASE WHEN c.entry_ts>=unixepoch()-7*86400 THEN c.net_sol ELSE 0 END),3) AS net7d, ROUND(AVG(c.detection_lag_sec),2) AS lag, s.n_round_trips AS s_rt, ROUND(s.monthly_run_rate_sol,1) AS s_mrr, ROUND(s.win_rate,3) AS s_wr, ROUND(s.median_rt_pct,1) AS s_medrt, ROUND((unixepoch()-s.last_active)/86400.0,1) AS s_age_d FROM copy_trades c LEFT JOIN wallet_scores s ON s.address=c.lead_wallet WHERE c.strategy_id='copy-tp100-sl30' AND c.status='closed' AND c.net_sol IS NOT NULL GROUP BY c.lead_wallet HAVING n>=8 ORDER BY net DESC
+  w                                            | tier       | n   | wr    | net    | net7d  | lag  | s_rt | s_mrr  | s_wr  | s_medrt | s_age_d
+  ---------------------------------------------+------------+-----+-------+--------+--------+------+------+--------+-------+---------+--------
+  5q8osC4CZRMfVG9j6A7LrpkF1cGdEu4GjyeyC1gJCELs | promotable | 115 | 0.348 | 5.366  | 0.082  | 1.23 | 51   | 1.4    | 0.451 | -1.3    | 4.6    
+  B6yHBbrfZVxwxCPzArPAMHD5c9KvJfYateuMEqYsMorZ | smart      | 21  | 0.429 | 3.51   | 0.179  | 1.13 | 63   | -519.3 | 0.349 | -13.3   | 5.5    
+  HntvSoXq7CxH928Gszf9FENY6BbmLLnr7VDERWvtpYa1 | promotable | 16  | 0.563 | 3.498  | 1.321  | 1.07 | 91   | -10.7  | 0.374 | -10.2   | 1.3    
+  CHvWpTWTZXUMvWfX7jmy8vhHbAqn6YvLc8wBxXYi4KiW | promotable | 26  | 0.423 | 2.997  | 2.755  | 1.16 | 748  | 75.2   | 0.461 | -5      | 1.1    
+  D1ec7DTwvH1YPmSE5CB3S8DRNPjc6e3f18dNoYZiRCZs | smart      | 15  | 0.533 | 2.988  | 0      | 1.22 | 43   | 3.8    | 0.581 | 21.1    | 11.4   
+  AE7neeVw9NFwKUbPCZwJiZ4FRkgJPj8cTC34PamxgYKk | promotable | 10  | 0.6   | 2.901  | -0.358 | 1.1  | 96   | -1.2   | 0.417 | -10.1   | 1.2    
+  Ex3BcKVGbNVQjCqFySCXsfyj22oi2yL2qjEdrFeAsh45 | promotable | 19  | 0.474 | 2.731  | 0.543  | 1.14 | 53   | 6.3    | 0.623 | 31.9    | 2.9    
+  5aXbFCpg5f142baZfGgkRs7s75h7yuSrq4Mw4NtD8c91 | smart      | 18  | 0.556 | 2.647  | 0.177  | 1.23 | 220  | 14.7   | 0.482 | -1      | 1.4    
+  4sRjm252FQfrnfwZkzVc3JFn8PtLH6dNWxngKWnCyQHZ | smart      | 9   | 0.556 | 2.513  | 1.523  | 1.08 | 97   | -57.6  | 0.412 | -7.5    | 5.4    
+  C4eNLxxC7XLUivghMi35YUeSfvACgnvKB18115uPUqjg | promotable | 33  | 0.333 | 2.445  | 2.821  | 1.38 | 78   |        | 0.359 | -6.3    | 1.1    
+  EYDjJhT8tEQ2cgzNsLRp37EuMbr3iN9GUVn7475ZbCvw | promotable | 15  | 0.533 | 2.247  | 1.732  | 0.81 | 516  | 21.1   | 0.479 | -1.3    | 0.7    
+  572gijC9dnNiSFgeSDaLMEmPzyZH9MqT7SCVMwKkeTqF | promotable | 9   | 0.333 | 2.222  | -0.103 | 1.24 | 483  | -14.2  | 0.393 | -7.7    | 1.3    
+  HsJQ1n5o6fEjzzU59j8zt6Uk6uRHQzNrLNmWiZreMSyV | smart      | 23  | 0.391 | 2.053  | 0      | 1.17 | 136  | 21.2   | 0.515 | 2.2     | 18     
+  9pDr8if5s4JQw4Pi92GtCE7cXP7WwFc6JK3upX4vy1bc | promotable | 11  | 0.455 | 1.724  | -0.177 | 1.32 | 400  | 4.3    | 0.427 | -7.1    | 1.1    
+  DVhwSE98dHBtEGnQcYyAiEzE2XFjGnGwwuv9n1Ypnre9 | promotable | 63  | 0.27  | 1.586  | -1.145 | 1.21 | 929  | -0.3   | 0.419 | -4.7    | 0.1    
+  BdQjY2iBXu14eYUwieTWWzCA5n57SeUNiu8atKP7LK7J | promotable | 48  | 0.333 | 1.476  | 0.211  | 1.13 | 583  | 3.4    | 0.566 | 2.2     | 1.8    
+  GqEVzdHH4RGq1EMbBCYDU23ABukgzkmYYjhTfZ6r8U1p | promotable | 18  | 0.444 | 1.386  | 1.11   | 1.16 | 387  | 4.6    | 0.47  | -2      | 1.1    
+  7bTsRggGmDjDUnT8j2WRjm8oLPCfH4BhLjfES1quRfG3 | promotable | 41  | 0.317 | 1.36   | 1.96   | 1.16 | 359  | -14.4  | 0.331 | -12.2   | 0.7    
+  911pQNYGvQ6tN6C5Kovsj5P1mbtVFQU9RKpWtTzND3Vc | promotable | 18  | 0.389 | 1.322  | 1.322  |      | 771  |        | 0.537 | 4.2     | 1.1    
+  4RDNo5BBAjQhmd1FcSPnzuA6UtUM4PLWuhirRczhLJCa | promotable | 12  | 0.417 | 1.295  | 0.768  | 1.08 | 343  | 10.9   | 0.484 | -1.3    | 1.2    
+  2f4e7c2f6hXyYw69pTiKKRBwdoeNkJjsxKSixnpkpLFD | promotable | 14  | 0.429 | 1.288  | 0.714  | 1.12 | 288  | 22.4   | 0.594 | 7.8     | 2.3    
+  DSKEyfEeTymHBErcktvyS1ZgHGs1svgA2MJvLA7oEp1G | promotable | 8   | 0.375 | 1.257  | 0.3    | 1.13 | 600  | 7.1    | 0.5   | 0       | 1.3    
+  BtHnhjh8Ta2vGZkrL76AmXMur1ADo3tpRo2kQMe2BCSU | promotable | 25  | 0.28  | 1.246  | 1.34   | 1.09 | 73   |        | 0.342 | -6.8    | 1.1    
+  HDeRTCPU5Fr2NgCrsQNEJtcZgAVhZXXcRhX1UvJ62T2Y | smart      | 16  | 0.438 | 1.12   | 0.588  | 1.15 | 21   | 36.9   | 0.571 | 3.9     | 2.6    
+  2bVqHKY1EDgcvxx92ukK4n92G1zj7MEFbhHvFqDmR44D | promotable | 13  | 0.385 | 1.092  | 0.469  | 1.08 | 659  | 1.7    | 0.436 | -4.8    | 0.3    
+  7TiAUgZdLMN4f6z4NbRvQLZvqht9j8RHtxHKP4QnCP55 | promotable | 9   | 0.444 | 1.071  | 0.011  | 1.01 | 103  | 15.4   | 0.602 | 7.1     | 1.2    
+  5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG | promotable | 13  | 0.308 | 0.867  | -0.656 | 1.01 | 690  | -10.3  | 0.462 | -6.5    | 1.1    
+  9SHHN4YyEW6EJVmqt26FAdWFpMQnaoTXuo95L9QA3f6C | promotable | 14  | 0.357 | 0.852  | 0.795  | 1.32 | 323  | 53.6   | 0.489 | -1.7    | 1.2    
+  5wTqTAZSGWu9ra1a2kDUXfozUw4RHDsrQyTPquqwErkZ | smart      | 8   | 0.375 | 0.753  | -0.225 | 1.17 | 169  | 24.5   | 0.391 | -55.4   | 0.5    
+  FVbbUKqsWXKD8DdAKD6oMAop4sunN63DgzgCTJUGyu6C | smart      | 24  | 0.375 | 0.589  | 0.589  |      | 123  |        | 0.358 | -22.2   | 0.7    
+  D75Mdf6bAmNqi5FHiWJbvygYNuXcJCtpkaQcHXVPbc8N | promotable | 8   | 0.375 | 0.408  | 0.791  | 1.11 | 397  | 18.7   | 0.31  | -73.3   | 1.5    
+  6bGiX9mX1szFDGyEUU39hjGTteSRtQR4Py97z7ZYJVN2 | promotable | 8   | 0.375 | 0.323  | -0.312 | 1    | 549  | 5.4    | 0.488 | -0.6    | 0      
+  8QwYYkzuDwh3o77hRmNXcmBXhvha5NXQxVXdwhL4CGXZ | promotable | 50  | 0.28  | 0.249  | -0.033 | 1.24 | 588  | -1     | 0.311 | -6.1    | 1.1    
+  DNio5ketGczp2dsB3jJCm3XNsRETaAM87q3YVMPA5F9z | promotable | 31  | 0.29  | 0.181  | 2.01   | 1.15 | 73   |        | 0.315 | -7.5    | 1.1    
+  DcQKToPywy64ygVPaACq1dbshAnfG3Zs3DEXZBXbAxqF | smart      | 18  | 0.278 | 0.172  | -0.341 | 1.13 | 80   | -60.9  | 0.275 | -19.4   | 5.1    
+  3iZG5TLva2N8RKrSD5rT81BH1PtdF8M262v2Pu8x8exi | promotable | 22  | 0.364 | 0.165  | -0.775 | 1.14 | 68   | 51     | 0.765 | 275.5   | 1.5    
+  9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm | promotable | 48  | 0.333 | 0.143  | -0.236 | 1.18 | 901  | 609.1  | 0.336 | -11.3   | 0.5    
+  ByHUUDmUiAkkapEUpFQUfm8YT2rABoZ1SBMb7CfSAhQE | smart      | 13  | 0.385 | 0.12   | 0.199  | 1.17 | 21   | -39    | 0.381 | -83.1   | 2.5    
+  5pJ2icRDUhmNYPcxvs6zgU6Ykhnw2phfx87odTFwbGD3 | promotable | 9   | 0.333 | 0.051  | -0.393 | 1.1  | 551  | 4.6    | 0.468 | -2.7    | 0      
+  3Fh8BhzPXvaN9WT1xorZPSGHCkf2djGr1PLySc5GwtVJ | smart      | 15  | 0.4   | 0.036  | 0.036  | 1.12 | 41   | 2.1    | 0.585 | 62.2    | 3      
+  8eEnpRvWM1VvrAH6h7vDZxJE5sSjc4WGdnmHnTFqcEmM | smart      | 9   | 0.222 | -0.012 | -0.178 | 0.99 | 65   | 2.1    | 0.354 | -7.4    | 5.8    
+  CTuMDfnkJ9jYDdaDknhxuQsXZ9Bt57TrXvHiRSvKgvRU | smart      | 17  | 0.235 | -0.155 | 0.303  | 1.18 | 153  | -8.6   | 0.17  | -28     | 5      
+  57YFGs6GXT3X4Unb62uGBFmZs4ZzKjFShvSNh73j5z7q | smart      | 42  | 0.333 | -0.174 | 0.412  | 1.12 | 134  | -24.1  | 0.604 | 6.6     | 4.9    
+  44kdzNHg3XTFz4syy5SDVmu4Gy2DDaXZErqqNieMbBFH | promotable | 14  | 0.214 | -0.192 | -0.003 | 1.18 | 620  | 10.5   | 0.576 | 8.2     | 0.8    
+  3eSWPw7xqEYH2DNNypGJKNX6bt3QHmyVCh52Qd5VCcnW | promotable | 10  | 0.4   | -0.268 | -0.096 | 1.23 | 94   | 6.7    | 0.543 | 3.2     | 1.2    
+  3ricXXziD22sZFyecy12L3dbYLH5Dep6scaHVdL8JdFz | promotable | 24  | 0.25  | -0.328 | 0.6    | 1.1  | 328  | -2     | 0.39  | -7.5    | 1      
+  CQTc3FxSukLQQUseN4RqxRCLRNWxuQXUyCNFH9GQsfKo | promotable | 9   | 0.222 | -0.389 | 0.976  | 1.38 | 852  | 12.8   | 0.595 | 15.7    | 0      
+  D5aVEvANr2uj2RwmU49WNR7KUHgRMmLSnt1wi8rJLE3Q | smart      | 11  | 0.273 | -0.471 | -0.533 | 1.22 | 104  | -60.1  | 0.385 | -6.1    | 4.8    
+  8NVkytV1CtoNBXGFtwXwh4KQdbgVcA6hFmym1gMuRHru | promotable | 10  | 0.2   | -0.512 | -0.512 | 1.18 | 349  | -45.9  | 0.564 | 11.2    | 0.7    
+  6utMS2SBujdv3jcZ4uVu679bjN6NgHBi4AL8rVeaktSd | smart      | 13  | 0.231 | -0.575 | -0.991 | 1.15 | 129  |        | 0.465 | -1.3    | 4.7    
+  5KcqJ7NFA9RoLe5LYuvgvhpcKvRMxdJUY4uJB9HYkyp3 | promotable | 19  | 0.211 | -0.58  | -0.973 | 1.16 | 998  | 71.9   | 0.47  | -3.2    | 1.4    
+  EmMBPbJNeEeD85WvfTCyPE9Cv241YkFRe6sCWgR6FEsL | smart      | 8   | 0.125 | -0.689 | -0.689 | 1.28 | 85   | -70.6  | 0.271 | -11.7   | 4.1    
+  8U7ZYeLqArvxz4U99K2pLHrZmCD1ASPfeQKBMAycP2v  | smart      | 8   | 0.25  | -0.707 | -0.707 |      | 124  |        | 0.742 | 210.6   | 1.1    
+  SMACxb87aVzXRf66VkzdrQpYrR2zB1dy1U8HauFKd3W  | promotable | 25  | 0.24  | -0.822 | -0.319 | 0.98 | 328  | -11.2  | 0.369 | -9.4    | 1      
+  CVLyQA7BxhBagsmBtnK4CLkhsW83VbKqV3RDSyYAem5v | promotable | 14  | 0.214 | -0.834 | 0      | 1.33 | 345  | 10.7   | 0.571 | 5.8     | 8.7    
+  9bDapeftyEuAWTzfDBbHWiHambAFKx8zLNFLxtWDCv6n | promotable | 8   | 0.125 | -0.841 | 0      | 1.04 | 156  | 3.2    | 0.487 | -3.1    | 0.8    
+  HV4cjkteGZ5g9HywDrM1HPC9f95PS9upzvH3MmgPfs53 | promotable | 9   | 0.222 | -0.884 | 1.171  | 1.15 | 860  | 13.1   | 0.592 | 15.2    | 0      
+  E8B7Edi7khrojzqFgW4iJJ2Lii2jvv9B9kivkwpPfHeq | promotable | 26  | 0.231 | -0.895 | -0.478 | 1.09 | 878  | -10.3  | 0.352 | -6.6    | 1.1    
+  GemryuWS7qwesKbgJCK8dvsVtNQ1RNY6iUNtn4csv2Ds | smart      | 19  | 0.211 | -0.93  | 0      | 1.18 | 160  | 2.8    | 0.425 | -5.4    | 7.1    
+  2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks | promotable | 17  | 0.118 | -0.932 | 0.336  | 1.17 | 320  | 251    | 0.588 | 13.8    | 0.9    
+  AaZgZEmaUUnwHRnerkzmRmELuMx7YASzjxXFrCE27Gmb | promotable | 12  | 0.167 | -1.024 | -0.052 | 1.11 | 72   | 20.1   | 0.153 | -58.3   | 1.1    
+  2zBWFYhhi28vSbhPpSjJpQYaceTKxiCL2j6zLq8ockTn | promotable | 12  | 0.083 | -1.181 | -0.571 | 1.04 | 470  | 91.9   | 0.521 | 3.1     | 2.9    
+  42YtP9yQveq3NJcLzhQjzSB4pWnS3cbJvyo1EmGtgF9d | promotable | 9   | 0.111 | -1.279 | -0.578 | 1.11 | 370  | 1.8    | 0.441 | -10.8   | 1.1    
+  Ay1pyfhZX7SVrHdgF2ExC5JgPqLoG5maDd5azrfwDvbh | promotable | 55  | 0.236 | -1.289 | 2.21   | 1.12 | 1199 | 18.5   | 0.553 | 4       | 1.3    
+  3wrx9AZjygVg4NdTSMdDJ49uEEhYPnC43wvm9xJysuEk | promotable | 14  | 0.214 | -1.307 | -1.183 | 1.06 | 595  | 3.2    | 0.437 | -6      | 0      
+  6thKzh1NhiPMNWXvqLUem3GAjUgkxBCyLToxZ28z4nVi | smart      | 38  | 0.316 | -1.486 | -0.405 | 1.16 | 82   | -213.9 | 0.5   | -0.9    | 4      
+  BMm9JjdsudgVMFvvs8gR6J2N3sj3u4CKYjgyxP9iPCqB | promotable | 28  | 0.286 | -1.527 | 0      | 1.1  | 89   | -91    | 0.416 | -2.7    | 18.3   
+  5NtbUJgmvXibYg99GHLdezpCr4kMu3z8bUhwauR4UhTa | promotable | 11  | 0.091 | -1.592 | -1.252 | 1.06 | 115  | -281.6 | 0.13  | -71     | 1.5    
+  CXVJewdc79TYR55sz4SGLSWUPz3r4LBJ9Mn93bZ8ZyAz | promotable | 29  | 0.172 | -1.614 | -0.38  | 1.19 | 627  | -53.4  | 0.47  | -3.5    | 1.5    
+  CvTPH1CxTU2AnfKnPtpQwTQ8KhfuKWUYKAHCAXkAuy7n | promotable | 38  | 0.289 | -1.71  | -0.623 | 1.19 | 283  | 34.7   | 0.396 | -10.5   | 2.5    
+  Gx6ASCBmUg5iqSt2VhvXs21bkxF3AP2pqQ1rtkBxSy2u | smart      | 29  | 0.138 | -1.967 | -1.217 | 1.32 | 63   | -5     | 0.429 | -27.7   | 1.7    
+  5dU3trzb5uvZBs1JykNUhCQDSpXNriW4P1aVh14eVRrV | promotable | 15  | 0.133 | -2.15  | -2.839 | 1.11 | 650  | 3.4    | 0.454 | -3      | 0      
+  HdEdRF4kucfvd5TDK4NxoHtim3LFGnNnFght4qD9MmEx | smart      | 20  | 0.15  | -2.29  | 0.344  | 1.17 | 116  | -169.4 | 0.155 | -51     | 6.4    
+  CXATA5Zx2hB351S6mGcEsDo6KRGRV6EaJmGs7NBWbMuA | promotable | 24  | 0.125 | -2.518 | 0.347  | 1.12 | 188  | 4.7    | 0.388 | -14.5   | 1.4    
+  2mRn8wtkcxZcEdNSeurDbqdJ8FJQfYh5M5pT1gpSficX | promotable | 40  | 0.2   | -2.835 | -0.334 | 1.25 | 524  | -2.5   | 0.59  | 4.7     | 2      
+  5H5upChfAGSWsSqDq2qKLUnWDtU5yNdeKKXjRT7aiZKY | promotable | 40  | 0.225 | -3.095 | -2.738 | 1.07 | 1020 | 5.4    | 0.548 | 3.9     | 1.1    
+  785cAWNP2Y4Bhj442UHZYMHSdfK8ksiAzDA2NXi8DqUy | smart      | 20  | 0.15  | -4.07  | -1.556 | 1.22 | 15   | 45.1   | 0.4   | -19.1   | 2.2    
+  6FYgn2apNXSqNVyXHTV8CFHiRQhw5TPdDUEHrBMyR8og | smart      | 215 | 0.302 | -5.497 | -3.09  | 1.13 | 52   |        | 0.635 | 13.1    | 3.9    
+  6svp2aaiJ7DmzNa66nbzvWDEPYciSgxfD8kxR7B2YwYR | promotable | 154 | 0.266 | -5.84  | -0.041 | 1.19 | 279  | 3.6    | 0.509 | 2       | 0.2    
+  2fHT9wBhywYonsanbhBz3drj7eizbTDNUVh71X5o13JD | promotable | 148 | 0.216 | -7.36  | -1.976 | 1.12 | 561  | -0.4   | 0.622 | 2.6     | 0      
+  2HJMgsEqKrcRNDqo1P9g9pCFEXSdi2VtKqDKg9qhikco | promotable | 80  | 0.138 | -7.73  | -3.603 | 1.23 | 1075 | 110.2  | 0.413 | -7.9    | 1.3    
+  [81 rows]
