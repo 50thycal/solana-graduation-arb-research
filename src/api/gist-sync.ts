@@ -6,8 +6,8 @@
  *
  * Copy-trading-only posture (post-refactor). Files published:
  *   - Infra:  diagnose.json, snapshot.json, logs.json, bot-errors.json
- *   - Copy:   copy-trades.json, wallet-leaderboard.json, smart-money.json,
- *             copy-probe.json
+ *   - Copy:   copy-trades.json, wallet-leaderboard.json, copy-v2.json,
+ *             smart-money.json, copy-probe.json
  *   - Live:   live-training.json, live-execution.json
  *
  * The graduation-research panels and the inbound strategy-commands.json
@@ -29,6 +29,7 @@ import Database from 'better-sqlite3';
 import { runDiagnosis, type ChannelWinCounts } from './diagnose';
 import { getEventLoopLagStats } from '../utils/event-loop-lag-monitor';
 import { computeWalletLeaderboard } from '../copytrade/leaderboard';
+import { computeWalletLeaderboardV2 } from '../copytrade/leaderboard-v2';
 import { getSmartMoneyAnalysis } from '../copytrade/smart-money';
 import { computeCopyProbe } from '../copytrade/follower-probe';
 import { computeCopyTrades } from '../copytrade/copy-trader';
@@ -55,10 +56,12 @@ export interface StatusUrls {
   snapshot: string;
   /** Shadow copy-trader P&L (the primary scoreboard). */
   copy_trades: string;
-  /** Copy-trade wallet P&L leaderboard. */
+  /** Copy-trade wallet P&L leaderboard (V1: ranks leads by their OWN on-chain P&L). */
   wallet_leaderboard: string;
   /** Copy-trade smart-money token-selection analysis. */
   smart_money: string;
+  /** V2 wallet leaderboard: ranks leads by REALIZED COPY NET + V1-vs-V2 comparison. */
+  copy_v2: string;
   /** Copy-follower latency probe. */
   copy_probe: string;
   live_training: string;
@@ -123,6 +126,7 @@ export class GistSync {
       copy_trades: `${base}/copy-trades.json`,
       wallet_leaderboard: `${base}/wallet-leaderboard.json`,
       smart_money: `${base}/smart-money.json`,
+      copy_v2: `${base}/copy-v2.json`,
       copy_probe: `${base}/copy-probe.json`,
       live_training: `${base}/live-training.json`,
       live_execution: `${base}/live-execution.json`,
@@ -189,6 +193,7 @@ export class GistSync {
 
     // ── Copy-trade + live views (all cheap SQL / cache reads; no RPC) ──
     const walletLeaderboard = computeWalletLeaderboard(this.db);
+    const walletLeaderboardV2 = computeWalletLeaderboardV2(this.db);
     const smartMoney = getSmartMoneyAnalysis(this.db);
     const copyProbe = computeCopyProbe(this.db);
     const copyTrades = computeCopyTrades(this.db);
@@ -200,6 +205,7 @@ export class GistSync {
       'snapshot.json': JSON.stringify(snapshot, null, 2),
       'copy-trades.json': JSON.stringify(copyTrades, null, 2),
       'wallet-leaderboard.json': JSON.stringify(walletLeaderboard, null, 2),
+      'copy-v2.json': JSON.stringify(walletLeaderboardV2, null, 2),
       'smart-money.json': JSON.stringify(smartMoney, null, 2),
       'copy-probe.json': JSON.stringify(copyProbe, null, 2),
       'live-training.json': JSON.stringify(liveTrainingData, null, 2),
