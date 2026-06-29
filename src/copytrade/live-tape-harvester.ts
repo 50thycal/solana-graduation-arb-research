@@ -47,9 +47,9 @@ const logger = makeLogger('live-tape-harvester');
  *     window elapses, then DISCONNECT (no messages delivered = no billing) and
  *     idle for LIVE_TAPE_CYCLE_HOURS before sampling again. The message budget is
  *     the real guardrail; the time window is just an upper bound. Defaults below
- *     keep the harvester ≈6M credits/mo (a thin daily sample), env-tunable up if
- *     you move to the 20M budget. Program-tape discovery on a per-message-billed
- *     plan is fundamentally a SAMPLE, not continuous coverage.
+ *     keep the harvester ≈3M credits/mo (a thin daily sample), env-tunable up once
+ *     scoring has caught up with discovery. Program-tape discovery on a
+ *     per-message-billed plan is fundamentally a SAMPLE, not continuous coverage.
  */
 
 const PUMPSWAP_PROGRAM = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
@@ -68,10 +68,12 @@ const STATUS_KEY = 'live_tape_status';
 // ONE window per cycle (restart-guarded via bot_settings), each capped at
 // MAX_MSGS_PER_CYCLE delivered messages. So the absolute monthly max is
 //   MAX_MSGS_PER_CYCLE × (30×24 / CYCLE_HOURS) messages.
-// At the defaults below: 80k × 30 = 2.4M msgs/mo. Helius bills ≈2-2.5 credits/msg
-// (observed ~1.8; we size conservatively at 2.5), so ≤ ~6M credits/month — the
-// operator's cap. Raise LIVE_TAPE_MAX_MSGS_PER_CYCLE only with budget headroom.
-const DEFAULT_MAX_MSGS_PER_CYCLE = 80_000;
+// At the defaults below: 40k × 30 = 1.2M msgs/mo. Helius bills ≈2-2.5 credits/msg
+// (observed ~1.8; we size conservatively at 2.5), so ≤ ~3M credits/month. Trimmed
+// from 6M (2026-06-29): discovery was out-running scoring — 1,724 wallets promoted,
+// 0 scored — so budget shifted from discovery to scoring. Raise
+// LIVE_TAPE_MAX_MSGS_PER_CYCLE only once scoring has caught up.
+const DEFAULT_MAX_MSGS_PER_CYCLE = 40_000;
 const DEFAULT_CYCLE_HOURS = 24;
 const DEFAULT_SAMPLE_MAX_MIN = 15;      // hard upper bound on a sample window
 const CREDITS_PER_MSG_EST = 2.5;        // conservative, for the monthly projection
