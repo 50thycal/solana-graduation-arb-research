@@ -465,8 +465,23 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    strategy, above, kept as the trend benchmark). The pair shadow always runs
   //    (modeled); the live submits REAL 0.05 swaps ONLY when COPY_LIVE_ENABLED=true +
   //    a funded wallet. Emits copy-hotlead-hold30m-pair-shadow + -live-micro.
-  ...makeLivePair({ id: 'copy-hotlead-hold30m', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } }),
+  // ── KILLED 2026-06-29 (operator request): copy-hotlead-hold30m-live-micro — the ONLY
+  //    live_micro strategy in the roster. Dropped the live twin from the makeLivePair
+  //    spread, keeping the pair shadow (copy-hotlead-hold30m-pair-shadow) as the modeled
+  //    research arm. Consequences on next redeploy:
+  //      • Any open live_micro position reloaded from copy_trades has no matching strategy,
+  //        so the poll loop's `strategy_removed` branch winds it down via a REAL sell
+  //        (exitPosition → closeLivePosition) — provided COPY_LIVE_ENABLED is still true +
+  //        a funded wallet is present at that point. Leave the env ON until the open bag
+  //        liquidates, THEN flip COPY_LIVE_ENABLED=false.
+  //      • For an IMMEDIATE stop before deploy, the operator can set COPY_LIVE_ENABLED=false
+  //        now (no new live entries arm regardless of the flag once this is shipped).
+  //    To resume live-micro, restore the makeLivePair spread below after a reviewed go-live:
+  //    ...makeLivePair({ id: 'copy-hotlead-hold30m', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+  //      entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } }),
+  { id: 'copy-hotlead-hold30m-pair-shadow', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
+    tradeSizeSol: MICRO_TRADE_SIZE_SOL },
   // ── O (2026-06-26, corrected 2026-06-28): CO-TRADE SIGNAL A/B (Idea 2). Two
   //    strategies with IDENTICAL params to the load-bearing baseline (copy-tp100-sl30)
   //    that split the PROVEN smart set by the co-trade signal:
