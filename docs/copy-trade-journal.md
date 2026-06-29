@@ -11,6 +11,40 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-29 — Interim checks (RPC budget, rug signal, cohort P/Q/R/S)
+
+Ran the three handoff checks early (data came in faster than expected — metadata fetcher live, all
+cohorts deployed). Verdicts below; the gate variants are still too young (1–2 days, n<100) for
+keep/kill calls.
+
+**1. RPC budget — PASS.** rps cap now 5; actual burn projects **2.0M/mo** (5-min rate) to **4.0M/mo**
+(lifetime avg) vs the 10M cap — down from the ~15M trajectory that opened the session. Top labels:
+exec / copy_poll / wallet_pnl. `metadata` added only 50 calls (negligible, as designed).
+
+**2. Rug signal — WEAK, did NOT build a gate.** Metadata capture healthy: 1276 mints, 100% ok,
+99.8% have an image, 76% have socials. Rug analysis (hold30m): has-socials avg +0.051 vs no-socials
++0.042 — and no-socials tokens are still net-positive (+9.67 / 229). A "require socials" gate would
+*cut* profitable volume for a tiny per-trade edge; image is a non-signal (99.8% present). The hot-lead
+entry already screens real rugs. Another negative result — logged, dataset kept for deeper future cuts.
+
+**3. Cohorts — parent healthy, one structural signal, gates too young.**
+- Parent `copy-hotlead-hold30m` recent (4d): n=239, +11.74, avg +0.049 — **no decay** (the cohort-N
+  decay worry doesn't show here). All-time still +41 / drop3 +9.9.
+- **HOLD-TIME is an inverted-U, peak ≈45min** (avg net, 4d window): 20m −0.023 · 30m +0.049 · **45m
+  +0.086** · 60m −0.076. `hold45m` beats the parent on avg — the 30m cap looks slightly short. BUT
+  hold45m WR=0.25 + all-time drop3 −13 → tail-driven, robustness unproven. Trust the *peak-at-45m*
+  shape more than "promote hold45m". Watch its drop3 as n grows.
+- Gate variants (cap2/prune/early/nochase/strict/sl20/sl40/be30): n=20–91, modestly negative, each on
+  a different short post-deploy window → INCONCLUSIVE. Keep running to n≥100.
+- `crowdexit`: ~flat net but WR 0.44 (vs parent 0.32) — trading net for hit-rate. Watch.
+- NB: `*-trailtp-*` positive rows in the 4d query are already-killed cohort-O ghosts (pre-kill
+  residual trades inside the window), not live.
+
+**Next (unchanged, ~July 2–3):** re-evaluate the gate variants at n≥100 with a same-window drop3;
+decide whether the 45m sweet spot warrants making 45m (or a 40m) the new hold30m default.
+
+---
+
 ## 2026-06-28 — Cohort S (crowd-sell exit) + token-metadata capture infra
 
 **Cohort S — `copy-hotlead-hold30m-crowdexit`** (`crowdSellExit: {minSellers:2, windowSec:600}`).

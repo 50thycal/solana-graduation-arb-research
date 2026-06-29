@@ -1,4 +1,11 @@
-# Session Handoff — 2026-06-28
+# Session Handoff — 2026-06-28 (updated 2026-06-29: interim checks run)
+
+> **2026-06-29 update:** PR #488 is MERGED & deployed (all cohorts live, metadata fetcher running).
+> Ran the 3 checks early — see `docs/copy-trade-journal.md` (2026-06-29 entry). Headlines: RPC budget
+> PASS (~2–4M/mo vs 10M cap); rug signal WEAK (no gate built); parent healthy (no decay); hold-time
+> peaks at ~45min (hold45m best avg but tail-driven); gate variants still too young (n<100) — let them
+> mature to ~July 2–3, then re-check with a same-window drop3 and decide if 45m becomes the new default.
+
 
 Quick "where are we / what's next" so you can pick up in a few days. Full detail in
 `docs/copy-trade-journal.md` (cohorts P/Q/R/S). Live numbers always in `copy-trades.json` on
