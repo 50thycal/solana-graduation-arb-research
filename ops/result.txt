@@ -1,3 +1,65 @@
 # ops request: type='db'
-# SELECT lead_wallet, entry_ts, net_sol FROM copy_trades WHERE strategy_id='copy-tp100-sl30' AND status='closed' AND net_sol IS NOT NULL AND lead_wallet IS NOT NULL ORDER BY lead_wallet, entry_ts
-  ERROR: runner output parse failed: Unterminated string in JSON at position 219264
+# WITH t AS (SELECT lead_wallet AS w, net_sol AS net, ROW_NUMBER() OVER (PARTITION BY lead_wallet ORDER BY entry_ts) AS rn, COUNT(*) OVER (PARTITION BY lead_wallet) AS c FROM copy_trades WHERE strategy_id='copy-tp100-sl30' AND status='closed' AND net_sol IS NOT NULL AND lead_wallet IS NOT NULL) SELECT w, c AS n, ROUND(SUM(CASE WHEN rn<=c/2 THEN net ELSE 0 END),3) AS first_net, ROUND(SUM(CASE WHEN rn>c/2 THEN net ELSE 0 END),3) AS second_net FROM t GROUP BY w HAVING c>=12 ORDER BY first_net DESC
+  w                                            | n   | first_net | second_net
+  ---------------------------------------------+-----+-----------+-----------
+  5q8osC4CZRMfVG9j6A7LrpkF1cGdEu4GjyeyC1gJCELs | 115 | 3.33      | 2.036     
+  D1ec7DTwvH1YPmSE5CB3S8DRNPjc6e3f18dNoYZiRCZs | 15  | 2.267     | 0.721     
+  HntvSoXq7CxH928Gszf9FENY6BbmLLnr7VDERWvtpYa1 | 16  | 1.973     | 1.524     
+  DVhwSE98dHBtEGnQcYyAiEzE2XFjGnGwwuv9n1Ypnre9 | 63  | 1.891     | -0.305    
+  B6yHBbrfZVxwxCPzArPAMHD5c9KvJfYateuMEqYsMorZ | 21  | 1.765     | 1.746     
+  5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG | 13  | 1.709     | -0.842    
+  EYDjJhT8tEQ2cgzNsLRp37EuMbr3iN9GUVn7475ZbCvw | 15  | 1.542     | 0.705     
+  Ex3BcKVGbNVQjCqFySCXsfyj22oi2yL2qjEdrFeAsh45 | 19  | 1.361     | 1.37      
+  3iZG5TLva2N8RKrSD5rT81BH1PtdF8M262v2Pu8x8exi | 22  | 1.129     | -0.964    
+  9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm | 48  | 1.057     | -0.914    
+  4RDNo5BBAjQhmd1FcSPnzuA6UtUM4PLWuhirRczhLJCa | 12  | 1.042     | 0.254     
+  HDeRTCPU5Fr2NgCrsQNEJtcZgAVhZXXcRhX1UvJ62T2Y | 16  | 1.034     | 0.086     
+  CHvWpTWTZXUMvWfX7jmy8vhHbAqn6YvLc8wBxXYi4KiW | 26  | 0.885     | 2.112     
+  BdQjY2iBXu14eYUwieTWWzCA5n57SeUNiu8atKP7LK7J | 48  | 0.77      | 0.706     
+  5dU3trzb5uvZBs1JykNUhCQDSpXNriW4P1aVh14eVRrV | 15  | 0.689     | -2.839    
+  5KcqJ7NFA9RoLe5LYuvgvhpcKvRMxdJUY4uJB9HYkyp3 | 19  | 0.683     | -1.263    
+  5aXbFCpg5f142baZfGgkRs7s75h7yuSrq4Mw4NtD8c91 | 18  | 0.6       | 2.048     
+  FVbbUKqsWXKD8DdAKD6oMAop4sunN63DgzgCTJUGyu6C | 24  | 0.478     | 0.111     
+  6utMS2SBujdv3jcZ4uVu679bjN6NgHBi4AL8rVeaktSd | 13  | 0.417     | -0.991    
+  HsJQ1n5o6fEjzzU59j8zt6Uk6uRHQzNrLNmWiZreMSyV | 23  | 0.397     | 1.655     
+  2bVqHKY1EDgcvxx92ukK4n92G1zj7MEFbhHvFqDmR44D | 13  | 0.325     | 0.767     
+  8QwYYkzuDwh3o77hRmNXcmBXhvha5NXQxVXdwhL4CGXZ | 50  | 0.206     | 0.042     
+  DcQKToPywy64ygVPaACq1dbshAnfG3Zs3DEXZBXbAxqF | 18  | 0.174     | -0.002    
+  E8B7Edi7khrojzqFgW4iJJ2Lii2jvv9B9kivkwpPfHeq | 26  | 0.103     | -0.999    
+  3wrx9AZjygVg4NdTSMdDJ49uEEhYPnC43wvm9xJysuEk | 14  | 0.042     | -1.349    
+  911pQNYGvQ6tN6C5Kovsj5P1mbtVFQU9RKpWtTzND3Vc | 18  | -0.155    | 1.478     
+  GqEVzdHH4RGq1EMbBCYDU23ABukgzkmYYjhTfZ6r8U1p | 18  | -0.179    | 1.565     
+  44kdzNHg3XTFz4syy5SDVmu4Gy2DDaXZErqqNieMbBFH | 14  | -0.189    | -0.003    
+  BtHnhjh8Ta2vGZkrL76AmXMur1ADo3tpRo2kQMe2BCSU | 25  | -0.197    | 1.443     
+  9SHHN4YyEW6EJVmqt26FAdWFpMQnaoTXuo95L9QA3f6C | 14  | -0.229    | 1.081     
+  7bTsRggGmDjDUnT8j2WRjm8oLPCfH4BhLjfES1quRfG3 | 41  | -0.271    | 1.63      
+  GemryuWS7qwesKbgJCK8dvsVtNQ1RNY6iUNtn4csv2Ds | 19  | -0.288    | -0.642    
+  2zBWFYhhi28vSbhPpSjJpQYaceTKxiCL2j6zLq8ockTn | 12  | -0.435    | -0.747    
+  3Fh8BhzPXvaN9WT1xorZPSGHCkf2djGr1PLySc5GwtVJ | 15  | -0.448    | 0.484     
+  C4eNLxxC7XLUivghMi35YUeSfvACgnvKB18115uPUqjg | 33  | -0.45     | 2.895     
+  Gx6ASCBmUg5iqSt2VhvXs21bkxF3AP2pqQ1rtkBxSy2u | 29  | -0.539    | -1.428    
+  BMm9JjdsudgVMFvvs8gR6J2N3sj3u4CKYjgyxP9iPCqB | 28  | -0.562    | -0.965    
+  ByHUUDmUiAkkapEUpFQUfm8YT2rABoZ1SBMb7CfSAhQE | 13  | -0.575    | 0.695     
+  CTuMDfnkJ9jYDdaDknhxuQsXZ9Bt57TrXvHiRSvKgvRU | 17  | -0.638    | 0.483     
+  2f4e7c2f6hXyYw69pTiKKRBwdoeNkJjsxKSixnpkpLFD | 14  | -0.649    | 1.937     
+  57YFGs6GXT3X4Unb62uGBFmZs4ZzKjFShvSNh73j5z7q | 42  | -0.767    | 0.594     
+  AaZgZEmaUUnwHRnerkzmRmELuMx7YASzjxXFrCE27Gmb | 12  | -0.771    | -0.253    
+  CVLyQA7BxhBagsmBtnK4CLkhsW83VbKqV3RDSyYAem5v | 14  | -0.85     | 0.016     
+  SMACxb87aVzXRf66VkzdrQpYrR2zB1dy1U8HauFKd3W  | 25  | -0.899    | 0.078     
+  3ricXXziD22sZFyecy12L3dbYLH5Dep6scaHVdL8JdFz | 24  | -0.929    | 0.6       
+  2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks | 17  | -1.036    | 0.105     
+  6thKzh1NhiPMNWXvqLUem3GAjUgkxBCyLToxZ28z4nVi | 38  | -1.045    | -0.441    
+  CvTPH1CxTU2AnfKnPtpQwTQ8KhfuKWUYKAHCAXkAuy7n | 38  | -1.105    | -0.604    
+  5H5upChfAGSWsSqDq2qKLUnWDtU5yNdeKKXjRT7aiZKY | 40  | -1.245    | -1.85     
+  2mRn8wtkcxZcEdNSeurDbqdJ8FJQfYh5M5pT1gpSficX | 40  | -1.268    | -1.567    
+  DNio5ketGczp2dsB3jJCm3XNsRETaAM87q3YVMPA5F9z | 31  | -1.568    | 1.749     
+  CXATA5Zx2hB351S6mGcEsDo6KRGRV6EaJmGs7NBWbMuA | 24  | -1.618    | -0.9      
+  CXVJewdc79TYR55sz4SGLSWUPz3r4LBJ9Mn93bZ8ZyAz | 29  | -1.732    | 0.118     
+  785cAWNP2Y4Bhj442UHZYMHSdfK8ksiAzDA2NXi8DqUy | 20  | -1.854    | -2.217    
+  HdEdRF4kucfvd5TDK4NxoHtim3LFGnNnFght4qD9MmEx | 20  | -1.94     | -0.35     
+  2fHT9wBhywYonsanbhBz3drj7eizbTDNUVh71X5o13JD | 148 | -2.25     | -5.11     
+  Ay1pyfhZX7SVrHdgF2ExC5JgPqLoG5maDd5azrfwDvbh | 55  | -3.116    | 1.827     
+  6svp2aaiJ7DmzNa66nbzvWDEPYciSgxfD8kxR7B2YwYR | 154 | -3.157    | -2.683    
+  6FYgn2apNXSqNVyXHTV8CFHiRQhw5TPdDUEHrBMyR8og | 215 | -3.177    | -2.321    
+  2HJMgsEqKrcRNDqo1P9g9pCFEXSdi2VtKqDKg9qhikco | 80  | -3.179    | -4.551    
+  [60 rows]
