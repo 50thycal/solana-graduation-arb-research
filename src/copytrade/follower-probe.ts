@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { Connection, PublicKey, ParsedTransactionWithMeta } from '@solana/web3.js';
 import WebSocket from 'ws';
 import { getFollowListAddresses, getSmartSetAddresses, insertProbeEvent, updateProbeEventLag } from './queries';
+import { getCopyNetSelectedAddresses } from './leaderboard-v2';
 import { parseSwapForOwner, wsNotificationToTx } from './parse-swap';
 import type { CopyTrader } from './copy-trader';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -89,19 +90,23 @@ export class CopyFollowerProbe {
   }
 
   private refreshWatchlist(connectIfChanged: boolean): void {
-    // Watch BOTH tiers: the strict follow_list (promotable) and the broader
-    // money-edge smart set. Their union is the subscription; tier is tagged per
-    // event so we can compare strict vs broad copy methods from one dataset.
+    // Watch the follow_list (promotable), the broader money-edge smart set (V1), AND
+    // the copy-net selection set (V2). The union is the subscription; tier is tagged
+    // per event. V2 is added so leads the copy-net method selects (but own-P&L doesn't)
+    // still generate lead events for the copy-select-v2 A/B strategy — otherwise the V2
+    // arm could never enter a V2-only lead.
     let promotable: string[] = [];
     let smart: string[] = [];
+    let copyNet: string[] = [];
     try { promotable = getFollowListAddresses(this.db); } catch { /* may be empty */ }
     try { smart = getSmartSetAddresses(this.db); } catch { /* may be empty */ }
+    try { copyNet = getCopyNetSelectedAddresses(this.db); } catch { /* may be empty */ }
     this.promotableSet = new Set(promotable);
-    const wl = [...new Set([...promotable, ...smart])].sort();
+    const wl = [...new Set([...promotable, ...smart, ...copyNet])].sort();
     const changed = wl.length !== this.watchlist.length || wl.some((a, i) => a !== this.watchlist[i]);
     if (!changed) return;
     this.watchlist = wl;
-    logger.info('Watchlist updated: %d wallets (%d promotable, %d smart-set)', wl.length, promotable.length, smart.length);
+    logger.info('Watchlist updated: %d wallets (%d promotable, %d smart-set, %d copy-net)', wl.length, promotable.length, smart.length, copyNet.length);
     this.writeStatus();
     if (connectIfChanged) {
       // Reconnect to re-subscribe with the new accountInclude set.
