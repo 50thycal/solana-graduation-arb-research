@@ -20,6 +20,7 @@ import { TokenMetadataFetcher } from './copytrade/metadata-fetcher';
 import { CopyFollowerProbe } from './copytrade/follower-probe';
 import { LiveTapeHarvester } from './copytrade/live-tape-harvester';
 import { CopyTrader, computeCopyTrades } from './copytrade/copy-trader';
+import { computeWalletLeaderboardV2 } from './copytrade/leaderboard-v2';
 import { getSmartMoneyAnalysis } from './copytrade/smart-money';
 
 const logger = makeLogger('main');
@@ -30,6 +31,7 @@ const logger = makeLogger('main');
 // docs/research-archive/.
 const NAV_LINKS = [
   { path: '/copy-trades', label: 'Copy Trades' },
+  { path: '/copy-v2', label: 'Copy V2' },
   { path: '/live-training', label: 'Live Training' },
   { path: '/smart-money', label: 'Smart Money' },
   { path: '/health', label: 'Health' },
@@ -198,6 +200,18 @@ async function main() {
       } else {
         res.json(data);
       }
+    } catch (err) {
+      res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  // ── /copy-v2 ── wallet leaderboard V2: ranks leads by REALIZED COPY NET
+  // (copy_trades) instead of their own on-chain P&L, with a V1-vs-V2 head-to-head
+  // (Option A from the 2026-06-29 audit). Read-only; V1 stays the live selector.
+  // sendJsonOrHtml → browsers get the nav page, JSON pollers get raw data.
+  app.get('/copy-v2', (req, res) => {
+    try {
+      sendJsonOrHtml(req, res, computeWalletLeaderboardV2(db) as object);
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
