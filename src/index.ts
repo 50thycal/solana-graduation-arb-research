@@ -6,6 +6,7 @@ import {
   renderLiveTrainingHtml,
   renderSmartMoneyHtml,
   renderCopyTradesHtml,
+  renderCopyV2Html,
 } from './utils/html-renderer';
 import { computeLiveTrainingData } from './api/live-training-data';
 import { APP_ICON_PNG_BUFFER, ICON_HEAD_TAGS } from './utils/app-icon';
@@ -211,7 +212,14 @@ async function main() {
   // sendJsonOrHtml → browsers get the nav page, JSON pollers get raw data.
   app.get('/copy-v2', (req, res) => {
     try {
-      sendJsonOrHtml(req, res, computeWalletLeaderboardV2(db) as object);
+      const wantHtml = (req.headers.accept || '').includes('text/html');
+      const data = computeWalletLeaderboardV2(db);
+      if (wantHtml) {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(renderCopyV2Html(data));
+      } else {
+        res.json(data);
+      }
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : String(err) });
     }
