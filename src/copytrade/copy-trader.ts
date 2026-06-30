@@ -8,7 +8,8 @@ import { computeMacroRegime, currentMacroScore } from './macro-regime';
 import { computeWalletLeaderboard } from './leaderboard';
 import { CopyLiveExecutor } from './copy-live-executor';
 import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
-import { getOgSmartSetAddresses, getCotradeSmartSetAddresses, getLiveTapeSmartSetAddresses } from './queries';
+import { getOgSmartSetAddresses, getCotradeSmartSetAddresses, getLiveTapeSmartSetAddresses, getSmartSetAddresses } from './queries';
+import { getCopyNetSelectedAddresses } from './leaderboard-v2';
 import { getCotradeDiscovery } from './cotrade-discovery';
 import { computeLiveTape } from './live-tape-harvester';
 import {
@@ -71,6 +72,15 @@ export interface CopyStrategy {
                                // 'og') trades OG-discovered wallets ONLY. So the existing strategies keep
                                // trading OG wallets and the new live-tape wallets show up only on the
                                // dedicated copy-livetape-* strategies — a clean OG-vs-Idea1 PnL comparison.
+  leadSelection?: 'v1' | 'v2'; // SELECTION-METHOD A/B (Option B): only copy when the lead is in this
+                               // selection set. 'v1' = the live own-P&L smart set (getSmartSetAddresses);
+                               // 'v2' = the copy-net set (getCopyNetSelectedAddresses, gated on realized
+                               // copy profit per the 2026-06-29 audit). Both sets refresh on the poll
+                               // cadence. Identical-ruleset twins differing ONLY in this field give an
+                               // even split to compare which DISCOVERY method picks more profitable leads.
+                               // Orthogonal to leadSource: these twins leave leadSource undefined, so they
+                               // operate within the OG-discovered universe (same as the copy-tp100-sl30
+                               // baseline the V2 set is derived from).
   leadCohort?: 'og_smart' | 'cotrade';
                                // DISCOVERY-METHOD A/B (Idea 2): only copy when the lead wallet was found by
                                // this discovery method. 'og_smart' = surfaced by the existing DB seed;
@@ -512,6 +522,23 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    discovery pipeline differs. Lead-momentum-gated variant deferred (live-tape
   //    wallets have no copy history yet, so a hotlead twin would sit empty).
   { id: 'copy-livetape-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadSource: 'live_tape' },
+
+  // ── B (2026-06-30): SELECTION-METHOD A/B (audit Option B). The matched pair below is
+  //    IDENTICAL in every way (realistic lag5+drift10, TP100/SL30, no hold cap, shadow size)
+  //    EXCEPT which leads it is allowed to copy: -v1 copies the live own-P&L smart set
+  //    (getSmartSetAddresses — what drives selection today); -v2 copies the copy-net set
+  //    (getCopyNetSelectedAddresses — leads whose realized copy net clears V2_GATE). The
+  //    2026-06-29 audit showed own-P&L is ~uncorrelated with copy profit (r=-0.08) while copy
+  //    net persists (autocorr +0.43); the copy-v2 page already shows V2-selected leads carry
+  //    more copy net retrospectively. This puts the two selection methods head-to-head LIVE on
+  //    equal footing so by_strategy P&L is an apples-to-apples test. V1 selection is otherwise
+  //    UNTOUCHED (the existing watchlist + every other strategy still run as before) — this is
+  //    purely additive and reversible by removing these two rows. Pure-SQL/cached gates, near-zero
+  //    marginal RPC. Resolve at n>=100 each: keep whichever selection nets more (drop3 > 0).
+  { id: 'copy-select-v1', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v1' },
+  { id: 'copy-select-v2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v2' },
 ];
 
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
@@ -728,6 +755,12 @@ export class CopyTrader {
   // surfaced. A wallet in this set fires ONLY leadSource:'live_tape' strategies;
   // OG strategies skip it. Refreshed alongside the cohorts.
   private liveTapeSet = new Set<string>();
+  // Selection-method A/B (Option B), refreshed alongside leadRank. v1 = own-P&L
+  // smart set (the live V1 selector); v2 = copy-net selection. A leadSelection-gated
+  // strategy only fires when the lead is in its set. These OVERLAP (a lead can be in
+  // both) — that's intended: each method gets its full selected set for a fair A/B.
+  private v1SelectSet = new Set<string>();
+  private v2SelectSet = new Set<string>();
   // Delayed entries in flight, keyed `${strategyId}:${mint}` — blocks duplicate
   // opens while the entryDelaySec wait runs. In-memory only: a restart drops
   // pending entries (acceptable; the window is ~5s).
@@ -821,6 +854,9 @@ export class CopyTrader {
     try { this.ogSmartSet = new Set(getOgSmartSetAddresses(this.db)); } catch { /* empty */ }
     try { this.cotradeSet = new Set(getCotradeSmartSetAddresses(this.db)); } catch { /* empty */ }
     try { this.liveTapeSet = new Set(getLiveTapeSmartSetAddresses(this.db)); } catch { /* empty */ }
+    // Selection-method A/B sets (Option B). v1 = live own-P&L selector; v2 = copy-net.
+    try { this.v1SelectSet = new Set(getSmartSetAddresses(this.db)); } catch { /* empty */ }
+    try { this.v2SelectSet = new Set(getCopyNetSelectedAddresses(this.db)); } catch { /* empty */ }
   }
 
   private recordSkip(strategyId: string, reason: string): void {
@@ -1194,6 +1230,13 @@ export class CopyTrader {
           ? this.cotradeSet.has(leadWallet)
           : this.ogSmartSet.has(leadWallet);
         if (!inCohort) { this.recordSkip(s.id, 'cohort'); continue; }
+      }
+      // Selection-method A/B (Option B): only fire on leads this method selects.
+      if (s.leadSelection) {
+        const inSel = s.leadSelection === 'v2'
+          ? this.v2SelectSet.has(leadWallet)
+          : this.v1SelectSet.has(leadWallet);
+        if (!inSel) { this.recordSkip(s.id, 'lead_selection'); continue; }
       }
       if (s.minLeadRank != null && leadRank > s.minLeadRank) { this.recordSkip(s.id, 'lead_rank'); continue; }
       if (s.minConsensusRecent != null) {

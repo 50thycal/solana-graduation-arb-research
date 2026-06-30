@@ -53,6 +53,45 @@ function numEnv(name: string, fallback: number): number {
   return Number.isFinite(v) ? v : fallback;
 }
 
+/**
+ * The V2-selected lead set — addresses whose COPIED trades clear V2_GATE. This is
+ * the live equivalent of V1's `getSmartSetAddresses` (queries.ts), but gated on
+ * realized copy net instead of the wallet's own on-chain P&L. Single source of
+ * truth for both the copy-v2 page (`selected_v2`) and the live `leadSelection:'v2'`
+ * strategies, so the page and the A/B always agree on who V2 picks. Pure SQL,
+ * cheap (no RPC) — safe to call on the copy-trader refresh cadence.
+ */
+export function getCopyNetSelectedAddresses(db: Database.Database): string[] {
+  const nowTs = Math.floor(Date.now() / 1000);
+  try {
+    const rows = db.prepare(`
+      WITH ranked AS (
+        SELECT lead_wallet AS w, net_sol AS net, entry_ts,
+               ROW_NUMBER() OVER (PARTITION BY lead_wallet ORDER BY net_sol DESC) AS rnk
+        FROM copy_trades
+        WHERE strategy_id = @strat AND status = 'closed'
+          AND net_sol IS NOT NULL AND lead_wallet IS NOT NULL
+      )
+      SELECT w FROM ranked
+      GROUP BY w
+      HAVING COUNT(*) >= @minCopies
+         AND SUM(net) > @minNet
+         AND SUM(CASE WHEN rnk > 3 THEN net ELSE 0 END) > @minDrop
+         AND (@now - MAX(entry_ts)) / 86400.0 <= @maxDays
+    `).all({
+      strat: V2_MEASURE_STRATEGY,
+      minCopies: V2_GATE.minCopies,
+      minNet: V2_GATE.minNetSol,
+      minDrop: V2_GATE.minNetDropTop3Sol,
+      maxDays: V2_GATE.maxDaysSinceActive,
+      now: nowTs,
+    }) as Array<{ w: string }>;
+    return rows.map((r) => r.w);
+  } catch {
+    return [];
+  }
+}
+
 interface CopyTradeRow {
   lead_wallet: string;
   lead_tier: string | null;
