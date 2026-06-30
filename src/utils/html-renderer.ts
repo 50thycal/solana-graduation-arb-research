@@ -2488,3 +2488,153 @@ export function renderCopyTradesHtml(data: any): string {
 
   return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + discoveryCard + cotradeCard + liveTapeCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
 }
+
+// ── COPY V2 PAGE ─────────────────────────────────────────────────────
+// Wallet leaderboard V2: ranks/gates leads by REALIZED COPY NET (copy_trades)
+// instead of their own on-chain P&L (V1). Renders the V1-vs-V2 head-to-head so
+// the operator can judge whether copy-net selection captures more profit before
+// repointing live selection (Option B). Read-only.
+
+/** Signed SOL value, 2dp, green/red. */
+function solV2(v: number | null | undefined, dp = 2): string {
+  if (v === null || v === undefined) return '<span class="n-insuf">—</span>';
+  const cls = v > 0 ? 'green' : v < 0 ? 'red' : '';
+  return `<span class="${cls}">${v > 0 ? '+' : ''}${v.toFixed(dp)}</span>`;
+}
+
+/** Selected ✓ / · marker. */
+function selV2(b: boolean): string {
+  return b ? '<span class="green" title="selected">✓</span>' : '<span style="color:#4b5563" title="not selected">·</span>';
+}
+
+/** Short clickable wallet address → solscan. */
+function addrV2(a: string): string {
+  const short = a.length > 10 ? `${a.slice(0, 4)}…${a.slice(-4)}` : a;
+  return `<a href="https://solscan.io/account/${escHtml(a)}" target="_blank" rel="noopener" style="color:#a78bfa;text-decoration:none;font-family:monospace" title="${escHtml(a)}">${short}</a>`;
+}
+
+export function renderCopyV2Html(data: any): string {
+  // Defensive: the compute may return an early "tables not present" shape.
+  const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
+  const summary = data?.summary ?? {};
+  const mc = data?.method_comparison ?? {};
+  const ag = mc?.agreement ?? {};
+  const persist = data?.persistence ?? {};
+  const gate = data?.gate ?? {};
+  const generated = (data?.generated_at || '').replace('T', ' ').replace(/\..*$/, ' UTC');
+
+  // ── Card 1: what this page is ──────────────────────────────────────
+  const headerCard = `<div class="card">
+    <h2>Copy V2 — copy-net ranking</h2>
+    <div class="desc">
+      Ranks &amp; gates leads by <b>realized copy net</b> (our <code>copy_trades</code> on the
+      <code>${escHtml(data?.measure_strategy || 'copy-tp100-sl30')}</code> baseline), <b>not</b> by the
+      wallet's own on-chain P&amp;L (that's V1 / Copy Trades · wallet-leaderboard). Per the 2026-06-29 audit:
+      own-P&amp;L is ~uncorrelated with copy profit (r=−0.08); prior copy net persists (autocorr +0.43).
+      <b>Read-only</b> — V1 is still the live selector; repointing it onto copy-net is Option B (not done yet).
+      <br>Gate: ≥${gate.minCopies ?? '—'} copies · net &gt; ${gate.minNetSol ?? 0} · drop-top3 &gt; ${gate.minNetDropTop3Sol ?? 0} · active ≤ ${gate.maxDaysSinceActive ?? '—'}d.
+      ${generated ? `<br>Generated ${escHtml(generated)}.` : ''}
+    </div>
+    <div class="grid">
+      <div class="stat"><span class="label">Measurable leads</span><span class="value">${summary.measurable_leads ?? 0}</span></div>
+      <div class="stat"><span class="label">V2 selected</span><span class="value green">${summary.v2_selected ?? 0}</span></div>
+      <div class="stat"><span class="label">V1 selected (same universe)</span><span class="value blue">${summary.v1_selected_measurable ?? 0}</span></div>
+    </div>
+  </div>`;
+
+  // ── Card 2: the headline comparison + agreement matrix ─────────────
+  const cell = (c: any) => `${c?.n_leads ?? 0} leads · ${solV2(c?.copy_net_sol)} SOL`;
+  const comparisonCard = `<div class="card">
+    <h2>V1 vs V2 — which selection captures more copy profit?</h2>
+    <div class="desc">${escHtml(mc?.note || 'Over the measurable universe (leads with enough copies to judge). Cell = realized copy net of the leads in it.')}</div>
+    <div class="grid">
+      <div class="stat"><span class="label">Copy net of <b>V2-selected</b> leads</span><span class="value">${solV2(mc?.v2_selected_total_copy_net_sol)} SOL</span></div>
+      <div class="stat"><span class="label">Copy net of <b>V1-selected</b> leads</span><span class="value">${solV2(mc?.v1_selected_total_copy_net_sol)} SOL</span></div>
+    </div>
+    <h3>Agreement matrix</h3>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+    <table>
+      <thead><tr><th></th><th>V1 selects</th><th>V1 skips</th></tr></thead>
+      <tbody>
+        <tr><th>V2 selects</th>
+          <td title="both methods agree to follow">${cell(ag.both)}</td>
+          <td class="row-strong-n" title="copy-net finds edge V1 misses"><b>V2-only</b><br>${cell(ag.v2_only)}</td></tr>
+        <tr><th>V2 skips</th>
+          <td title="own-P&amp;L follows but copy-net says no — slots that don't pay"><b>V1-only</b><br>${cell(ag.v1_only)}</td>
+          <td title="both methods agree to skip">${cell(ag.neither)}</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="desc" style="margin-top:8px;margin-bottom:0">
+      <b>V2-only</b> = edge copy-net finds that own-P&amp;L misses. <b>V1-only</b> = leads own-P&amp;L follows that don't pay when copied
+      (ideally near-zero / negative net here). If V2 is the right direction, V2-selected net &gt; V1-selected net and V1-only is weak.
+    </div>
+  </div>`;
+
+  // ── Card 3: persistence (the +0.43 signal, live) ───────────────────
+  const persistCard = `<div class="card">
+    <h2>Lead persistence</h2>
+    <div class="desc">${escHtml(persist?.note || 'Split-half: does a lead\'s first-half copy profit predict its second half?')} (${persist?.n_leads ?? 0} leads)</div>
+    <div class="grid">
+      <div class="stat"><span class="label">1st-half <b>winners</b> → 2nd-half net</span><span class="value">${solV2(persist?.first_half_winners_second_half_net_sol)} SOL</span></div>
+      <div class="stat"><span class="label">1st-half <b>losers</b> → 2nd-half net</span><span class="value">${solV2(persist?.first_half_losers_second_half_net_sol)} SOL</span></div>
+    </div>
+  </div>`;
+
+  // ── Card 4: per-lead leaderboard (V2 metrics | V1 side-by-side) ─────
+  const rowHtml = rows.map((r, i) => {
+    // Highlight method disagreements: V2-only = found edge (strong tint); V1-only = wasted slot.
+    let rowCls = '';
+    if (r.selected_v2 && !r.selected_v1) rowCls = 'row-strong-n';
+    else if (r.selected_v1 && !r.selected_v2) rowCls = 'row-low-n';
+    const persistCell = (r.first_half_net_sol === null || r.first_half_net_sol === undefined)
+      ? '<span class="n-insuf">—</span>'
+      : `${solV2(r.first_half_net_sol)} → ${solV2(r.second_half_net_sol)}`;
+    const wrPct = typeof r.win_rate === 'number' ? Math.round(r.win_rate * 100) : null;
+    const v1wrPct = typeof r.v1_win_rate === 'number' ? Math.round(r.v1_win_rate * 100) : null;
+    return `<tr class="${rowCls}">
+      <td>${i + 1}</td>
+      <td>${addrV2(r.address || '')}</td>
+      <td style="color:#94a3b8">${escHtml(r.tier || '—')}</td>
+      <td style="text-align:center">${selV2(!!r.selected_v2)}</td>
+      <td style="text-align:right">${r.n_copies ?? 0}</td>
+      <td style="text-align:right">${wrPct === null ? '—' : wr(wrPct)}</td>
+      <td style="text-align:right">${solV2(r.copy_net_sol)}</td>
+      <td style="text-align:right">${solV2(r.copy_net_drop_top3_sol)}</td>
+      <td style="text-align:right">${solV2(r.copy_net_7d_sol)}</td>
+      <td style="text-align:right">${solV2(r.copy_monthly_run_rate_sol)}</td>
+      <td style="text-align:right;color:#94a3b8">${r.last_copy_days_ago ?? '—'}d</td>
+      <td style="text-align:center">${persistCell}</td>
+      <td style="text-align:center;border-left:2px solid #334155">${selV2(!!r.selected_v1)}</td>
+      <td style="text-align:right">${solV2(r.v1_monthly_run_rate_sol, 1)}</td>
+      <td style="text-align:right">${v1wrPct === null ? '—' : wr(v1wrPct)}</td>
+      <td style="text-align:right">${solV2(r.v1_drop_top3_sol)}</td>
+    </tr>`;
+  }).join('');
+
+  const tableCard = `<div class="card">
+    <h2>Leads — ranked by copy net <span style="color:#64748b;font-weight:400;font-size:12px">(V2 metrics · V1 side-by-side)</span></h2>
+    <div class="desc">
+      <span class="green">green row</span> = V2-only (copy-net found edge V1 misses) ·
+      <span class="yellow">dimmed row</span> = V1-only (own-P&amp;L follows, copy-net skips). Tap a wallet for Solscan.
+      All SOL values are net of the SIM round-trip cost, at the shadow size.
+    </div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+    <table>
+      <thead><tr>
+        <th>#</th><th>Lead</th><th>Tier</th><th title="passes the V2 copy-net gate">V2</th>
+        <th style="text-align:right">n</th><th style="text-align:right">WR</th>
+        <th style="text-align:right">copy net</th><th style="text-align:right" title="net minus its 3 best copies">drop3</th>
+        <th style="text-align:right">7d</th><th style="text-align:right" title="copy net annualized to 30d">mo-rate</th>
+        <th style="text-align:right">last</th><th title="first-half net → second-half net">persist</th>
+        <th style="border-left:2px solid #334155" title="passes the V1 own-P&amp;L gate (current live selector)">V1</th>
+        <th style="text-align:right" title="their own on-chain monthly run-rate">V1 mo</th>
+        <th style="text-align:right">V1 WR</th><th style="text-align:right">V1 drop3</th>
+      </tr></thead>
+      <tbody>${rowHtml || '<tr><td colspan="16" style="color:#64748b">No measurable leads yet — the baseline needs to accumulate copies first.</td></tr>'}</tbody>
+    </table>
+    </div>
+  </div>`;
+
+  return shell('Copy V2 — Graduation Arb Research', '/copy-v2', headerCard + comparisonCard + persistCard + tableCard, data as object);
+}
