@@ -11,6 +11,105 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-06-30 — Daily review: June 29 worst book day ever (−71.9 SOL); live-micro kill enacted; 12 strategies hit kill criteria; 3 promotables intact but copy-hotlead fragile
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-06-30",
+  "overall": {"n": 8461, "net": -5.063, "drop3": -49.938, "stress": -88.690, "open": 24},
+  "retired_summary": {"n": 19580, "net": -96.417},
+  "regime_score": 1, "regime_24h": 1, "macro_score": 3, "btc_7d_pct": -4.62,
+  "book_daily_today": 0.68,
+  "leads": {"n_leads": 158, "hot": 46, "cold": 75},
+  "n_promotable_realistic": 3,
+  "strategies": [
+    {"id": "copy-hotlead-hold30m",           "realistic": true,  "n": 916, "net":  38.261, "drop3":  7.133, "stress": 28.061, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict",            "realistic": true,  "n": 562, "net":  14.502, "drop3":  7.919, "stress":  8.423, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead",                   "realistic": true,  "n": 965, "net":  10.402, "drop3":  3.381, "stress":  0.254, "promo_score":  82.5,"verdict": "PROMOTE"},
+    {"id": "copy-hotlead-hold30m-pair-shadow","realistic": true,  "n": 369, "net":   0.283, "drop3": -1.227, "stress": -0.103, "promo_score":  44.2,"verdict": "WATCH"},
+    {"id": "copy-hotlead-hold45m",           "realistic": true,  "n": 204, "net":  10.201, "drop3":-16.930, "stress":  7.896, "promo_score":  75,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold20m",           "realistic": true,  "n": 201, "net":  -3.802, "drop3":-11.024, "stress": -5.796, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-sl20",      "realistic": true,  "n": 193, "net":  -7.008, "drop3":-14.798, "stress": -8.855, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-be30",      "realistic": true,  "n": 188, "net": -10.436, "drop3":-14.524, "stress":-12.164, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-sl40",      "realistic": true,  "n": 178, "net":  -8.254, "drop3":-16.044, "stress": -9.922, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold60m",           "realistic": true,  "n": 182, "net": -14.375, "drop3":-21.512, "stress":-15.962, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-cap2",      "realistic": true,  "n": 128, "net":  -4.037, "drop3":-11.828, "stress": -5.275, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-prune",     "realistic": true,  "n": 123, "net":  -1.664, "drop3": -9.455, "stress": -2.897, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-strict",    "realistic": true,  "n": 124, "net":  -5.319, "drop3": -9.935, "stress": -6.490, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-crowdexit", "realistic": true,  "n": 115, "net":   0.714, "drop3": -5.861, "stress": -0.485, "promo_score":  55,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-early",     "realistic": true,  "n":  57, "net":  -7.314, "drop3": -8.036, "stress": -7.755, "promo_score":  31.4,"verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-nochase",   "realistic": true,  "n":  43, "net":  -5.497, "drop3": -6.578, "stress": -5.830, "promo_score":  28.6,"verdict": "KILL"},
+    {"id": "copy-conviction-consensus2",     "realistic": false, "n":1183, "net":  15.278, "drop3":  2.492, "stress":  2.787, "promo_score":  80,  "verdict": "KEEP"},
+    {"id": "copy-tp100-sl30",               "realistic": false, "n":2595, "net": -23.798, "drop3":-30.355, "stress":-50.051, "promo_score":  20,  "verdict": "KEEP"}
+  ]
+}
+```
+
+**Headline:** June 29 delivered the worst single day in book history (−71.9 SOL; book net collapsed from +49.4 to −5.1 overnight); the live-micro kill was enacted between sessions; all 12 strategies in the kill backlog hit their trigger criteria; the 3 promotables survive but copy-hotlead is now fragile (stress near zero).
+
+**Day-over-day (vs 2026-06-29 SNAPSHOT, taken ~10:00 UTC):**
+- Δn: 7618 → 8461 (+843 trades). **Δnet: +49.36 → −5.06 (−54.4 SOL)** — the rest of June 29 after the morning snapshot erased the book. Δdrop3: +4.48 → −49.94 (−54.4); top-3 unchanged, pure June 29 losses.
+- **copy-hotlead-hold30m-live-micro: KILLED** (enacted between sessions — not in today's by_strategy; retired_summary +324 trades). This is the kill proposed daily since Jun 25 and finally actioned. Real-money bleed stopped.
+- Regime: 7 → 1 (crashed). Yesterday's snapshot was taken at peak regime=7; the afternoon of June 29 collapsed to 1 and has not recovered. regime_24h=1 (24h outlook also poor). book_net_6h today=−10.21 SOL.
+- Macro: 4 → 3 (−1). BTC 7d improved slightly (−6.92% → −4.62%); absolute level $59.4K unchanged. Fear/greed=15 (extreme fear). Headwind persists.
+- Lead pool: 157 → 158 total (+1), hot 50 → 46 (−4), cold 69 → 75 (+6). First weekly hot-lead decline. Not alarming but watch.
+- **Per-strategy movers vs yesterday's SNAPSHOT:**
+  - copy-hotlead-hold30m: Δn=+71, Δnet=−4.63, Δdrop3=−4.63. Jun 29: −6.53 SOL (50 trades). Still the board leader (drop3=+7.13, stress=+28.06, score=100).
+  - copy-hotlead-strict: Δn=+45, Δnet=+0.47, Δdrop3=+0.47. Jun 29: −0.31 SOL (34 trades) — nearly flat on the book's worst day. The only realistic strategy to end June 29 net-positive.
+  - copy-hotlead: Δn=+73, Δnet=−3.76, Δdrop3=−3.76. Jun 29: −3.30 SOL (52 trades). Score dropped 100→82.5; stress collapsed 4.69→0.25. Still promotable but fragile.
+  - copy-hotlead-hold60m: Δn=+64, Δnet=−6.87 → total −14.38 (n=182). Catastrophic, 5th consecutive kill recommendation ignored.
+  - Cohort P/Q/S collectively: hold30m-strict/cap2/prune/crowdexit all crossed n=100 today; early/nochase crossed the catastrophic (net<−3 at n≥40) threshold. Full batch resolution: all fail.
+
+**Week-over-week (Jun 24 → Jun 30):**
+- **Converging (durable edge):**
+  - copy-hotlead-hold30m: score=100 for 6 consecutive days through the worst regime stretch in this journal. Drop3 trajectory: +4.57 → +7.16 → +9.82 → +11.76 → +7.13. Fell on June 29 but remained positive through $59K BTC and regime=1.
+  - copy-hotlead-strict: score=100 for ≥4 consecutive days. Jun 29 net=−0.31 vs hotlead Jun 29=−3.30 and hold30m Jun 29=−6.53. The strict gate (minNetSol=0.5 in last 10) is the best macro/tape screen in the roster. Drop3 +7.92 growing weekly.
+  - copy-hotlead: score drifted from 100 to 82.5. Jun 29 gave it its worst daily (−3.30 SOL, −3.08% of all-time net in one day). Stress at 0.254 — one more bad day flips it non-promotable. Weekly trend is weakening relative to strict.
+- **Lead pool:** hot 41 (Jun 22) → 51 (Jun 28) → 46 (today). First reversal after consistent weekly growth. 6 cold reclassifications on the June 29 bloodbath. Watch for sustained decay.
+- **Regime pattern:** Volatile all week. Trough at 1-2 (Jun 23-24), recovered to 5-7 (Jun 27-29 morning), then crashed back to 1 (Jun 29 afternoon). The promotable trio accumulated positive drop3 through both troughs — this is the core evidence of genuine edge vs tape-driven luck.
+- **Macro/BTC:** $59.2K (Jun 25) → $60.4K (Jun 29) → $59.4K (today). Flat at $59-60K. Two-week slide from $66K has fully unwound into a consolidation range. Fear/greed=15. No tailwind yet.
+- **Cohort P fully resolved (all fail):** All 7 hold-time variants (hold20m, hold30m-sl20/sl40/be30/strict, hold45m, hold60m) resolved negative. The baseline hold30m exit (TP/SL with 30min cap) cannot be improved by changing hold duration or SL placement in this regime. Lesson: the entry filter (hot-lead strictness) is what differentiates, not the exit timing.
+- **Cohort Q fully resolved (all fail):** cap2 (n=128, net=−4.04) and prune (n=123, net=−1.66) both crossed n=100 today. Capping per-mint entries and pruning cold leads from the watchlist both fail to recover the lost robustness.
+- **Cohort S resolved (KILL):** crowdexit (n=115, net=+0.71, drop3=−5.86) crossed n=100 today. Drop3 < parent (7.13) by >12 SOL — stated kill criterion met.
+
+**Verdicts (proposals — roster changes require operator approval + code edit to `COPY_STRATEGIES`):**
+
+- **PROMOTE (3):**
+  - `copy-hotlead-hold30m`: n=916, net=+38.26, drop3=+7.13, stress=+28.06, monthly=82 SOL/mo. Score 100. Best absolute metrics. Primary live candidate.
+  - `copy-hotlead-strict`: n=562, net=+14.50, drop3=+7.92, stress=+8.42, monthly=31 SOL/mo. Score 100. Most macro-resilient strategy — near-zero loss on book's worst day. Preferred over base hotlead on current tape.
+  - `copy-hotlead`: n=965, net=+10.40, drop3=+3.38, stress=+0.25, monthly=22 SOL/mo. Score 82.5. All gates pass but stress barely above zero; one more bad day makes it non-promotable. Flag as fragile.
+
+- **KILL (12 — full roster cleanup):**
+  - `copy-hotlead-hold60m`: n=182, net=−14.375, drop3=−21.512 — catastrophic; 5th consecutive kill recommendation unenacted.
+  - `copy-hotlead-hold30m-be30`: n=188, net=−10.436, drop3=−14.524 — catastrophic.
+  - `copy-hotlead-hold30m-sl40`: n=178, net=−8.254, drop3=−16.044 — catastrophic.
+  - `copy-hotlead-hold30m-sl20`: n=193, net=−7.008, drop3=−14.798 — catastrophic.
+  - `copy-hotlead-hold30m-strict`: n=124, net=−5.319, drop3=−9.935 — crossed n=100 today; all gates fail.
+  - `copy-hotlead-hold30m-cap2`: n=128, net=−4.037, drop3=−11.828 — crossed n=100 today; all gates fail.
+  - `copy-hotlead-hold30m-prune`: n=123, net=−1.664, drop3=−9.455 — crossed n=100 today; all gates fail.
+  - `copy-hotlead-hold20m`: n=201, net=−3.802, drop3=−11.024 — n≥100, all gates fail.
+  - `copy-hotlead-hold30m-crowdexit`: n=115, net=+0.714, drop3=−5.861 — n≥100, drop3 < parent +7.13 (Cohort S rule met).
+  - `copy-hotlead-hold45m`: n=204, net=+10.201, drop3=−16.930 — window nominally closes Jul 2 but drop3 deteriorating daily (−11.66 yesterday → −16.93 today); criterion met early; lottery pattern confirmed.
+  - `copy-hotlead-hold30m-early`: n=57, net=−7.314 — catastrophic (net < −3 at n=57 ≥ 40).
+  - `copy-hotlead-hold30m-nochase`: n=43, net=−5.497 — catastrophic (net < −3 at n=43 ≥ 40).
+
+- **WATCH:**
+  - `copy-hotlead-hold30m-pair-shadow`: n=369, net=+0.283, drop3=−1.227, monthly=1.06. Not catastrophic, net barely positive. Monthly fails. Keep as hold30m shadow reference; check again at n=450.
+  - `copy-cotrade-tp100-sl30` (new, n=72, realistic=false, net=−2.836): idealized cohort testing co-trade wallet sourcing. Too small; idealized mirror only.
+  - `copy-ogsmart-tp100-sl30` (new, n=63, realistic=false, net=−0.365): idealized mirror testing OG-smart wallet sourcing. Too small; idealized only.
+  - `copy-livetape-tp100-sl30` (new, n=0): not yet launched.
+
+- **Idealized references (not live candidates):**
+  - `copy-conviction-consensus2`: n=1183, net=+15.278, realistic=false, score=80. Upper-bound reference only.
+  - `copy-tp100-sl30`: n=2595, net=−23.798. Negative baseline reference.
+
+**New strategies to try:** None this cycle. 12 strategies pending kill, 3 proven promotables waiting for live capital. Clearing the kill backlog is the precondition for further ideation — adding experiments while 5 catastrophics still run wastes shadow budget and muddies regime tracking.
+
+**Operator next step:** One code edit removes all 12 kill candidates from `COPY_STRATEGIES` (hold60m, be30, sl40, sl20, hold30m-strict, cap2, prune, hold20m, crowdexit, hold45m, early, nochase) and adds `copy-hotlead-hold30m` as the new live-micro strategy. This clears the entire pending backlog in one PR and puts real capital behind the 82 SOL/mo champion.
+
+---
+
 ## 2026-06-29 — Daily review: 6 KILL triggers hit (4 catastrophic), 3 promotables unchanged, June 28 outlier day collapses overall drop3
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
