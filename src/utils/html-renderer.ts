@@ -10,6 +10,7 @@ import { ICON_HEAD_TAGS } from './app-icon';
 
 const NAV_LINKS = [
   { path: '/copy-trades', label: 'Copy Trades' },
+  { path: '/copy-v2', label: 'Copy V2' },
   { path: '/live-training', label: 'Live Training' },
   { path: '/smart-money', label: 'Smart Money' },
   { path: '/health', label: 'Health' },
