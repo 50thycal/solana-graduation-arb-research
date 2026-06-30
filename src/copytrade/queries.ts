@@ -404,6 +404,23 @@ export function getCotradeSmartSetAddresses(db: Database.Database): string[] {
   `).all({ thr: COTRADE_COHORT_MIN_WINNERS }) as Array<{ address: string }>).map((r) => r.address);
 }
 
+/**
+ * DISCOVERY-SOURCE cohort for the OG-vs-Idea1 A/B: copyable smart wallets the
+ * live-tape harvester surfaced (source='live_tape') — wallets the OG seed never
+ * saw. The trader quarantines these to leadSource:'live_tape' strategies, so the
+ * existing strategies keep trading OG-discovered wallets ONLY and the live-tape
+ * wallets only show up on the dedicated new strategies. Clean PnL comparison.
+ */
+export function getLiveTapeSmartSetAddresses(db: Database.Database): string[] {
+  return (db.prepare(`
+    SELECT ws.address FROM wallet_scores ws
+    JOIN wallet_candidates wc ON wc.address = ws.address
+    WHERE ${COHORT_GATE} AND wc.source = 'live_tape'
+      AND ${COPYABLE_SQL}
+    ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
+  `).all() as Array<{ address: string }>).map((r) => r.address);
+}
+
 /** From a set of addresses (the wallets we actually copy: follow_list ∪ smart set),
  *  return those whose cached score is stale (last_refreshed < cutoff or never set),
  *  oldest first, capped at `limit`. Drives the worker's priority-refresh pass so the

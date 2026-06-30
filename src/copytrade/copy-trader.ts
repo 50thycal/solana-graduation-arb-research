@@ -8,7 +8,7 @@ import { computeMacroRegime, currentMacroScore } from './macro-regime';
 import { computeWalletLeaderboard } from './leaderboard';
 import { CopyLiveExecutor } from './copy-live-executor';
 import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
-import { getOgSmartSetAddresses, getCotradeSmartSetAddresses } from './queries';
+import { getOgSmartSetAddresses, getCotradeSmartSetAddresses, getLiveTapeSmartSetAddresses } from './queries';
 import { getCotradeDiscovery } from './cotrade-discovery';
 import { computeLiveTape } from './live-tape-harvester';
 import {
@@ -64,6 +64,13 @@ export interface CopyStrategy {
   minLeadRank?: number;        // only copy if lead wallet's follow_list rank <= this
   minConsensusRecent?: number; // only copy if >= N distinct smart wallets bought this mint in last 10min
   walletAllowlist?: string[];  // only copy if the lead wallet is in this set (copy-best-wallet)
+  leadSource?: 'og' | 'live_tape';
+                               // DISCOVERY-SOURCE A/B (Idea 1): which discovery pipeline surfaced the lead
+                               // wallet. Quarantine semantics: a live_tape-discovered wallet ONLY fires
+                               // strategies with leadSource:'live_tape'; every other strategy (undefined or
+                               // 'og') trades OG-discovered wallets ONLY. So the existing strategies keep
+                               // trading OG wallets and the new live-tape wallets show up only on the
+                               // dedicated copy-livetape-* strategies — a clean OG-vs-Idea1 PnL comparison.
   leadCohort?: 'og_smart' | 'cotrade';
                                // DISCOVERY-METHOD A/B (Idea 2): only copy when the lead wallet was found by
                                // this discovery method. 'og_smart' = surfaced by the existing DB seed;
@@ -496,6 +503,15 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    The un-gated baseline above stays as the "all smart wallets" benchmark.
   { id: 'copy-ogsmart-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadCohort: 'og_smart' },
   { id: 'copy-cotrade-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadCohort: 'cotrade' },
+  // ── P (2026-06-29): DISCOVERY-SOURCE A/B (Idea 1). Identical params to the
+  //    load-bearing baseline (copy-tp100-sl30), but trades ONLY live-tape-discovered
+  //    wallets (leadSource:'live_tape'). Every OTHER strategy now trades OG-discovered
+  //    wallets ONLY (the source quarantine in onLeadBuy), so this vs copy-tp100-sl30
+  //    is a clean "do the wallets the live-tape harvester finds copy-trade better
+  //    than the OG-seed wallets?" comparison — same TP/SL/size/exit, only the
+  //    discovery pipeline differs. Lead-momentum-gated variant deferred (live-tape
+  //    wallets have no copy history yet, so a hotlead twin would sit empty).
+  { id: 'copy-livetape-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadSource: 'live_tape' },
 ];
 
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
@@ -708,6 +724,10 @@ export class CopyTrader {
   // fires when the lead wallet is in its cohort.
   private ogSmartSet = new Set<string>();
   private cotradeSet = new Set<string>();
+  // Discovery-source quarantine (Idea 1 A/B): wallets the live-tape harvester
+  // surfaced. A wallet in this set fires ONLY leadSource:'live_tape' strategies;
+  // OG strategies skip it. Refreshed alongside the cohorts.
+  private liveTapeSet = new Set<string>();
   // Delayed entries in flight, keyed `${strategyId}:${mint}` — blocks duplicate
   // opens while the entryDelaySec wait runs. In-memory only: a restart drops
   // pending entries (acceptable; the window is ~5s).
@@ -800,6 +820,7 @@ export class CopyTrader {
     // gate; they differ only by how the wallet was discovered.
     try { this.ogSmartSet = new Set(getOgSmartSetAddresses(this.db)); } catch { /* empty */ }
     try { this.cotradeSet = new Set(getCotradeSmartSetAddresses(this.db)); } catch { /* empty */ }
+    try { this.liveTapeSet = new Set(getLiveTapeSmartSetAddresses(this.db)); } catch { /* empty */ }
   }
 
   private recordSkip(strategyId: string, reason: string): void {
@@ -1136,11 +1157,20 @@ export class CopyTrader {
     // matcher falls back to mint+time and under-matches re-entries / offset fills.
     const copyEventId = `${detectMs}-${mint.slice(0, 10)}-${leadWallet.slice(0, 8)}`;
 
+    // Discovery-source quarantine (Idea 1 A/B): is THIS lead wallet a live-tape
+    // wallet? live-tape wallets fire only leadSource:'live_tape' strategies; OG
+    // wallets fire every other strategy. Computed once per lead-buy.
+    const leadIsLiveTape = this.liveTapeSet.has(leadWallet);
+
     for (const s of COPY_STRATEGIES) {
       // Pair-shadow-driven live strategies do NOT self-gate: their entries are spawned
       // 1:1 by their pair shadow when it opens (see openDelayed). Skip them here so live
       // can never independently enter a lead-buy the pair shadow didn't take.
       if (s.drivenBy) continue;
+      // Discovery-source gate: live-tape wallets only feed live-tape strategies;
+      // OG wallets only feed non-live-tape strategies. Keeps the existing strategies
+      // trading OG-discovered wallets ONLY (clean OG-vs-Idea1 comparison).
+      if ((s.leadSource === 'live_tape') !== leadIsLiveTape) { this.recordSkip(s.id, 'source_cohort'); continue; }
       const pendingKey = `${s.id}:${mint}`;
       const open = [...this.positions.values()].filter((p) => p.strategyId === s.id);
       // already-positioned / in-flight / at-capacity: not an interesting "gate" skip
