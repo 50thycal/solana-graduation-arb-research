@@ -43,6 +43,14 @@ nochase, crowdexit). All hit their kill criterion (n≥100 or catastrophic; drop
 the 30m time-stop + SL30 on the hot-lead entry is the local optimum for this exit family; exit search
 on this base is retired. Closed rows remain in the DB → `retired_summary`.
 
+**New hypothesis spawned (T, shadow):** `copy-hotlead-strict-hi` — net-floor hill-climb on the
+incumbent. `copy-hotlead-strict` (the sole promotable) is `copy-hotlead` with the lead net floor
+raised 0 → 0.5; this pushes that one defining lever further (0.5 → 1.0). Tests whether a stricter
+"clearly profitable lately" floor concentrates a cleaner lead set (higher drop3/monthly) or
+over-filters until n collapses. Same entry/exit; shares strict's polls. **Kill:** n≥100 and drop3 <
+strict's drop3, OR can't reach n=100 in ~2 weeks (over-filtered). 2-week window. This is the one
+autonomous lab spawn this cycle; recency-gate calibration waits on the `gate_grid` data post-deploy.
+
 **Discipline note (multiple comparisons):** ~24 strategies have been scored against the same gates;
 one score-100 survivor (`copy-hotlead-strict`) is partly what selection pressure alone produces. Its
 real evidence is holding positive drop3 through both June 29–30 record drawdown days, not the point-in-
