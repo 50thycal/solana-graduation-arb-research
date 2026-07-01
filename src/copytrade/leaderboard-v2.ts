@@ -36,6 +36,16 @@ import { getTopWalletScores, getSmartSetAddresses, WalletScoreRow } from './quer
 const V2_MEASURE_STRATEGY = 'copy-tp100-sl30';
 
 /**
+ * The live A/B twins (Option B): identical realistic ruleset, differ ONLY in lead
+ * selection. -v1 copies the own-P&L smart set, -v2 the copy-net set. Their by-strategy
+ * copy P&L is the forward test of which selection method picks more profitable leads.
+ */
+const AB_V1_STRATEGY = 'copy-select-v1';
+const AB_V2_STRATEGY = 'copy-select-v2';
+/** n_trades per arm at which the live A/B is worth calling. */
+const AB_TARGET_N = 100;
+
+/**
  * V2 gate — the copy-net analog of V1's DEFAULT_WALLET_GATE. A lead is
  * "selected" (would enter the watchlist/follow_list under Option B) when its
  * COPIED trades clear all of these. Env-tunable so the bar can be calibrated
@@ -127,6 +137,49 @@ interface LeadV2Row {
 function round(x: number, dp = 4): number {
   const f = 10 ** dp;
   return Math.round(x * f) / f;
+}
+
+interface AbArmStats {
+  strategy: string;
+  n: number;               // closed trades
+  open: number;            // currently-open positions
+  net_sol: number;
+  net_drop_top3_sol: number;
+  net_7d_sol: number;
+  win_rate: number | null;
+  progress_pct: number;    // n / AB_TARGET_N, capped at 100
+}
+
+/** Live by-strategy stats for one A/B arm, straight from copy_trades. */
+function abArmStats(db: Database.Database, strategyId: string, nowTs: number): AbArmStats {
+  let closed: Array<{ net_sol: number; entry_ts: number }> = [];
+  let open = 0;
+  try {
+    closed = db.prepare(
+      `SELECT net_sol, entry_ts FROM copy_trades
+        WHERE strategy_id = ? AND status = 'closed' AND net_sol IS NOT NULL`,
+    ).all(strategyId) as Array<{ net_sol: number; entry_ts: number }>;
+    open = (db.prepare(
+      `SELECT COUNT(*) AS c FROM copy_trades WHERE strategy_id = ? AND status = 'open'`,
+    ).get(strategyId) as { c: number }).c;
+  } catch { /* table absent */ }
+  const nets = closed.map((r) => r.net_sol);
+  const n = nets.length;
+  const total = nets.reduce((a, b) => a + b, 0);
+  const wins = nets.filter((x) => x > 0).length;
+  const dropTop3 = [...nets].sort((a, b) => b - a).slice(3).reduce((a, b) => a + b, 0);
+  const cut7d = nowTs - 7 * 86_400;
+  const net7d = closed.filter((r) => r.entry_ts >= cut7d).reduce((a, b) => a + b.net_sol, 0);
+  return {
+    strategy: strategyId,
+    n,
+    open,
+    net_sol: round(total),
+    net_drop_top3_sol: round(dropTop3),
+    net_7d_sol: round(net7d),
+    win_rate: n ? round(wins / n, 3) : null,
+    progress_pct: Math.min(100, Math.round((n / AB_TARGET_N) * 100)),
+  };
 }
 
 export function computeWalletLeaderboardV2(db: Database.Database, limit = 50): unknown {
@@ -251,6 +304,12 @@ export function computeWalletLeaderboardV2(db: Database.Database, limit = 50): u
   const v2SelectedNet = round(measurable.filter((r) => r.selected_v2).reduce((a, b) => a + b.copy_net_sol, 0));
   const v1SelectedNet = round(measurable.filter((r) => r.selected_v1).reduce((a, b) => a + b.copy_net_sol, 0));
 
+  // ── Live A/B: the forward test. copy-select-v1 vs copy-select-v2 are identical
+  //    realistic strategies differing ONLY in lead selection; their by-strategy copy
+  //    P&L is the real proof (the comparison above is retrospective on the baseline).
+  const abV1 = abArmStats(db, AB_V1_STRATEGY, nowTs);
+  const abV2 = abArmStats(db, AB_V2_STRATEGY, nowTs);
+
   // Persistence read-out across measurable leads with split-half data.
   const persisters = measurable.filter((r) => r.first_half_net_sol != null);
   const hotThenNet = round(
@@ -289,6 +348,17 @@ export function computeWalletLeaderboardV2(db: Database.Database, limit = 50): u
       v2_selected_total_copy_net_sol: v2SelectedNet,
       v1_selected_total_copy_net_sol: v1SelectedNet,
       agreement: { both, v1_only: v1Only, v2_only: v2Only, neither },
+    },
+    // Live forward test — the two arms' actual by-strategy copy P&L.
+    ab_live: {
+      note:
+        'copy-select-v1 (own-P&L selection) vs copy-select-v2 (copy-net selection): identical ' +
+        'realistic strategies differing ONLY in which leads they may copy. This is the forward ' +
+        'proof; the method_comparison above is retrospective on the baseline. Resolve at n >= ' +
+        `${AB_TARGET_N} per arm — keep whichever nets more with drop3 > 0.`,
+      target_n: AB_TARGET_N,
+      v1: abV1,
+      v2: abV2,
     },
     persistence: {
       note: 'Split-half (leads with >=12 copies): does first-half copy profit predict second-half?',
