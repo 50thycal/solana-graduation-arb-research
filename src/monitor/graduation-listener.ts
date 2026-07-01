@@ -29,6 +29,26 @@ if (GRADUATION_COLLECTION_DISABLED) {
   logger.warn('GRADUATION_COLLECTION_DISABLED=true — detect-only mode: graduations are detected + pool addresses recorded for copy coverage, but price collection / enrichment are OFF.');
 }
 
+// WS COST CONTROL (default ON). Helius bills every WebSocket ("LaserStream WS")
+// at 20 credits / 1 MB of DELIVERED DATA — not per call. Subscribing to the WHOLE
+// pump.fun program firehose (`onLogs(PUMP_FUN_PROGRAM_ID)`) delivers ~139 msg/s of
+// creates/buys/sells (~278 GB / billing cycle) when only the ~30-150 migrate txs/day
+// are needed for graduation detection. Migrations-only mode narrows the subscription
+// to `mentions:[withdraw_authority]` (only migrate txs touch that account), cutting
+// delivered bytes ~99.99% with identical sub-second detection. The RPC migration
+// poller (getSignaturesForAddress, every 10s) remains the safety net, so a missed WS
+// push costs at most ~10s of latency, never a dropped graduation.
+//
+// Trade-off: the create-instruction firehose (LaunchCounter → token_launches, the
+// launch_rate signal) is no longer delivered. That signal is only consumed by the
+// retired T+30 regime-analysis (docs/research-archive/) — no active copy code reads
+// it — so it is dead weight today. Set PUMPFUN_WS_FULL_FIREHOSE=true to restore the
+// whole-program subscription (and launch counting) at full WS cost.
+const PUMPFUN_WS_MIGRATIONS_ONLY = process.env.PUMPFUN_WS_FULL_FIREHOSE !== 'true';
+if (PUMPFUN_WS_MIGRATIONS_ONLY) {
+  logger.info('pump.fun WS in migrations-only mode (mentions:[withdraw_authority]) — ~99.99%% less WS data vs the full program firehose. Set PUMPFUN_WS_FULL_FIREHOSE=true to restore the firehose + launch counting.');
+}
+
 // Rejects after `ms` if `p` hasn't settled. Note: the underlying promise keeps
 // running — there's no way to cancel an in-flight await in JS. That's fine
 // here: the old subscription/connection is about to be replaced anyway, so a
@@ -560,7 +580,15 @@ export class GraduationListener {
         'WS health check'
       );
 
-      if (silentMs > WS_SILENCE_TIMEOUT_MS) {
+      // The 2-min total-silence check keys off lastEventTime, which bumps on
+      // EVERY delivered log. That only makes sense on the full-program firehose
+      // (constant chatter → any 2-min gap means a dead socket). In migrations-
+      // only mode the stream is naturally sparse (~30-150 migrate txs/day, i.e.
+      // minutes to tens of minutes between events), so this check would force a
+      // reconnect on essentially every health tick. There, WS liveness is
+      // governed by the no-candidate watchdog below (25 min) and, crucially, the
+      // RPC migration poller keeps detecting graduations regardless of WS state.
+      if (!PUMPFUN_WS_MIGRATIONS_ONLY && silentMs > WS_SILENCE_TIMEOUT_MS) {
         logger.warn(
           { silentSeconds: silentSec },
           'WS appears dead (no events received), forcing reconnect'
@@ -650,8 +678,17 @@ export class GraduationListener {
       // lifecycle on whichever sub we have, and the processed sub IS the
       // primary now. RPC-poll remains the safety net for the rare case
       // where even processed lags (3% of wins historically).
+      //
+      // WS COST CONTROL: in migrations-only mode (default) the filter is the
+      // withdraw_authority account, so Helius delivers ONLY migrate txs (the
+      // migrate instruction is the only writer of that account). The migrate
+      // tx's full program logs — including "Instruction: Migrate" — still ride
+      // along, so handleLogs works unchanged; we just stop paying to receive
+      // the entire create/buy/sell firehose. PUMPFUN_WS_FULL_FIREHOSE=true
+      // restores the whole-program subscription.
+      const subTarget = PUMPFUN_WS_MIGRATIONS_ONLY ? PUMP_WITHDRAW_AUTHORITY : PUMP_FUN_PROGRAM_ID;
       this.subscriptionIdProcessed = this.connection.onLogs(
-        PUMP_FUN_PROGRAM_ID,
+        subTarget,
         async (logs: Logs, ctx: Context) => {
           this.lastEventTime = Date.now();
           this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
@@ -686,8 +723,10 @@ export class GraduationListener {
 
       this.lastEventTime = Date.now();
       logger.info(
-        { subscriptionIdProcessed: this.subscriptionIdProcessed },
-        'Subscribed to pump.fun logs (processed only)'
+        { subscriptionIdProcessed: this.subscriptionIdProcessed, migrationsOnly: PUMPFUN_WS_MIGRATIONS_ONLY },
+        PUMPFUN_WS_MIGRATIONS_ONLY
+          ? 'Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])'
+          : 'Subscribed to pump.fun logs (processed, full program firehose)'
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
