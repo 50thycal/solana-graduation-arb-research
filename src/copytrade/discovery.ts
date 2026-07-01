@@ -149,6 +149,18 @@ export function recomputeCandidatePriorities(db: Database.Database): number {
     logger.warn('Priority live-tape-aggregate failed: %s', err instanceof Error ? err.message : String(err));
   }
 
+  // External seed (Idea 3): a small, curated top-trader list — the highest-prior
+  // candidates (most likely to be tradeable), so score them even ahead of the
+  // live-tape backlog.
+  try {
+    const exRows = db.prepare(
+      `SELECT address AS w FROM wallet_candidates WHERE source = 'external'`
+    ).all() as Array<{ w: string }>;
+    for (const r of exRows) addPts(r.w, 1500);
+  } catch (err) {
+    logger.warn('Priority external-aggregate failed: %s', err instanceof Error ? err.message : String(err));
+  }
+
   const stmt = db.prepare(`UPDATE wallet_candidates SET priority = @p WHERE address = @a`);
   const tx = db.transaction(() => {
     for (const [a, p] of priority) stmt.run({ a, p });

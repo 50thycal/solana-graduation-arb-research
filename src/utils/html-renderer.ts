@@ -2454,6 +2454,28 @@ export function renderCopyTradesHtml(data: any): string {
     <table><tr><th>Wallet</th><th>Buys</th><th>Sells</th><th>Net SOL (rough)</th><th>Mints</th><th>Status</th></tr>${ltRows}</table>` : ''}
   </div>`;
 
+  // ── External seed (Idea 3) card ───────────────────────────────────────────
+  const ex = d.external_seed ?? null;
+  const exRows = (ex?.top ?? []).slice(0, 12).map((r: any) => `<tr>
+      <td style="font-family:monospace">${w(r.address)}</td>
+      <td>${r.n_round_trips}</td><td>${sol(r.total_realized_sol)}</td>
+      <td>${r.is_smart ? '<span class="green">smart ✓</span>' : '<span class="desc">—</span>'}</td></tr>`).join('');
+  const externalCard = ex == null ? '' : `<div class="card" style="border-left:6px solid #d97706">
+    <h2>External seed <span class="desc" style="font-size:13px">— Idea 3: Solana Tracker top-trader leaderboard</span></h2>
+    <div class="desc">Pulls hot wallet addresses from Solana Tracker's PnL leaderboard as a CANDIDATE FEED only — we re-verify
+    every wallet's PnL ourselves (FIFO), so their numbers aren't trusted. Tagged <code>source='external'</code>, scored,
+    gated + copyability-filtered like everyone else, and quarantined to <code>copy-external-tp100-sl30</code>.
+    <b>Crowding caveat:</b> public leaderboard wallets are the most-copied → most alpha-decayed, so the honest prior is
+    they may copy WORSE than live-tape (which sees wallets before they're indexed). <span class="desc">Status: ${ex.configured ? `<span class="green">configured</span> · last fetch ${(ex.last_fetched ?? 0).toLocaleString()} addrs` : '<span class="red">not configured</span> — set SOLANATRACKER_API_KEY'}</span></div>
+    <div class="grid">
+      <div class="stat"><span class="label">External candidates</span><span class="value">${(ex.total_candidates ?? 0).toLocaleString()}</span></div>
+      <div class="stat"><span class="label">Scored</span><span class="value">${ex.scored ?? 0}</span></div>
+      <div class="stat"><span class="label">Tradeable smart</span><span class="value green">${ex.external_smart ?? 0}</span></div>
+    </div>
+    ${exRows ? `<h3>Top external wallets by our re-verified net SOL</h3>
+    <table><tr><th>Wallet</th><th>RTs</th><th>Net SOL</th><th>Smart?</th></tr>${exRows}</table>` : ''}
+  </div>`;
+
   // ── Per-strategy lead attribution: which wallets drive TP vs SL per strategy ─
   const attribRows = (d.lead_attribution ?? []).map((s: any) => {
     const leads = (s.top_leads ?? []).map((l: any) => `<tr>
@@ -2486,7 +2508,7 @@ export function renderCopyTradesHtml(data: any): string {
     ${attribRows}
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + discoveryCard + cotradeCard + liveTapeCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + discoveryCard + cotradeCard + liveTapeCard + externalCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
 }
 
 // ── COPY V2 PAGE ─────────────────────────────────────────────────────
