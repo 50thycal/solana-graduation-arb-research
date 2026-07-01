@@ -10,6 +10,46 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-01 — Copy-v2 methodology overhaul + roster changes (operator-directed)
+
+Operator-directed batch off a copy-v2 evaluation (branch `claude/copy-bot-strategy-review-96su67`).
+Two parts: fix how the copy-v2 page measures the V2 (copy-net) lead-selection experiment, and act
+on the standing roster proposals. Everything env-gated so default live behaviour is unchanged.
+
+**copy-v2 page (`leaderboard-v2.ts` + `/copy-v2` renderer) — 5 methodology fixes:**
+1. **Latency match.** V2 selects on `copy-tp100-sl30` (~1.1s fills) but the live copy-select arms
+   execute at 5s+drift10 (copy-select-v2 already skips ~32% of candidates on drift vs ~4% for v1).
+   Added latency-matched measurement baseline `copy-tp100-sl30-lag`; page now publishes
+   `measurement.lag_vs_fast` (per-lead net at both latencies + sign-flips). Live selection stays on
+   the fast baseline until the lag twin matures (env `COPYV2_USE_LAG_MEASURE`), so the A/B isn't disturbed.
+2. **Walk-forward comparison.** The old headline scored leads on the same trades used to select them
+   (circular). Added out-of-sample `method_comparison.walk_forward` (gate on pre-cutoff copies, score
+   on post-cutoff); old block retained but relabelled `in_sample` (circular — do not cite).
+3. **A/B shared/exclusive split + verdict.** Arm stats now split shared vs exclusive leads (only the
+   exclusive subset distinguishes the methods); explicit `ab_verdict` incl. the both-fail→keep-V1 case
+   and a min-edge noise floor the old "keep whichever nets more" rule ignored.
+4. **Re-aim at the incumbent.** The select A/B runs on static TP100/SL30 (a ruleset the lab already
+   killed). Added `copy-hotlead-strict-v2` (copy-net gate layered on the only promotable strategy) vs
+   its control `copy-hotlead-strict` → does V2 add anything on top of what would actually deploy?
+5. **Recency gate + calibration grid.** V2_GATE is cumulative reputation (≈ the killed `copy-elitelead`
+   shape; #1 selected lead is 7d-negative yet still picked). Added an env-tunable recency clause
+   (`COPYV2_MIN_NET_RECENT`, default disabled → no live change) and a walk-forward `gate_grid`
+   (minCopies × recency) so the operator calibrates from data before flipping it on.
+   Also: `paired_vs_baseline` now pairs on `copy_event_id` so the delayed-entry arms get paired.
+
+**Roster kills (enacted from the 2026-06-30/07-01 backlog):** removed the 12 P/Q/R/S hold/exit-sweep
+arms on `copy-hotlead-hold30m` (hold45m/60m/20m, sl20/sl40, be30, hold30m-strict, cap2, prune, early,
+nochase, crowdexit). All hit their kill criterion (n≥100 or catastrophic; drop3 < parent). Finding:
+the 30m time-stop + SL30 on the hot-lead entry is the local optimum for this exit family; exit search
+on this base is retired. Closed rows remain in the DB → `retired_summary`.
+
+**Discipline note (multiple comparisons):** ~24 strategies have been scored against the same gates;
+one score-100 survivor (`copy-hotlead-strict`) is partly what selection pressure alone produces. Its
+real evidence is holding positive drop3 through both June 29–30 record drawdown days, not the point-in-
+time score. Judge the V2 experiment the same way — persistence through bad tape, not a single net read.
+
+---
+
 ## Incumbent
 
 **`copy-consensus2-lag-drift5`** — promo score 75, n=137, net +4.32, stress +2.82, monthly +18.5 SOL.

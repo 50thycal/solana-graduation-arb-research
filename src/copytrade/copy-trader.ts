@@ -197,6 +197,18 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   // ── KILLED 2026-06-23 (INVALID): copy-followsell — n=2210, drop_top3 -25, exit_stress
   //    -36 (idealized 1:1 follow baseline; net is tail-driven, no robust edge). Operator kill.
   { id: 'copy-tp100-sl30',        tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null }, // PAIRED_BASELINE / COPY_REGIME_BASELINE — load-bearing, keep
+  // ── V2 MEASUREMENT BASELINE (2026-07-01): latency-matched twin of copy-tp100-sl30.
+  //    The copy-v2 page selects leads by realized copy net measured on copy-tp100-sl30,
+  //    which fills at the idealized ~1.1s snapshot — but the live copy-select arms enter
+  //    at entryDelaySec=5 with a drift-10% skip. Selecting on 1.1s net can favour leads
+  //    whose edge lives in the first seconds (the live copy-select-v2 arm already skips
+  //    ~32% of its candidates on drift vs ~4% for v1). This baseline copies EVERY watched
+  //    lead at the SAME 5s+drift10 execution the arms pay, so once it has history the copy-v2
+  //    page can re-measure lead quality at the latency we actually trade (see leaderboard-v2
+  //    `measurement.lag_*`). Live V2 selection stays on the fast baseline until this matures
+  //    (env COPYV2_USE_LAG_MEASURE flips it) so the running A/B is not disturbed.
+  { id: 'copy-tp100-sl30-lag',    tpPct: 100,  slPct: 30,   exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10 },
   { id: 'copy-conviction-consensus2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, minConsensusRecent: 2 },
   // ── KILLED 2026-06-23 (INVALID): copy-hold30m (n=1919, drop_top3 -14), copy-hold2h —
   //    fat-tail hold variants; strong raw net but drop_top3 deeply negative (lottery, not
@@ -276,73 +288,21 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    only on hot leads.
   { id: 'copy-hotlead-hold30m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
-  // ── P (2026-06-27): copy-hotlead-hold30m is the best strategy on the board (net +35.9,
-  //    drop3 +11.9, ~89 SOL/mo). This cohort hill-climbs it by varying ONE lever each, all on
-  //    the IDENTICAL hot-lead entry (lastN10/>=3/net>0, lag5+drift10) so they share entry +
-  //    poll RPC with the parent (poll() dedupes by baseVault) — near-zero marginal budget.
-  //    Kill per id: n>=100 and drop3 < parent copy-hotlead-hold30m's drop3 (must beat the parent
-  //    on robustness, not just raw net). 5-day window. Exits/hold sweep — NOT trailing-TP/
-  //    scale-out/ratchet (cohort O already proved those cut drop3 on this base).
-  // Hold-duration sweep: is the 30m time-stop cutting runners short, or holding fades too long?
-  { id: 'copy-hotlead-hold45m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 2700,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
-  { id: 'copy-hotlead-hold60m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 3600,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
-  { id: 'copy-hotlead-hold20m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1200,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
-  // Stop-level sweep: the only price-based exit on this no-TP runner — tighter cuts losers
-  // faster (WR up, maybe drop3 down); wider gives runners room.
-  { id: 'copy-hotlead-hold30m-sl20', tpPct: null, slPct: 20, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
-  { id: 'copy-hotlead-hold30m-sl40', tpPct: null, slPct: 40, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
-  // Breakeven de-risk: once +30%, raise the stop to entry+buffer — protects the pop-then-fade
-  // positions WITHOUT capping runners (distinct from the killed trailing-TP variants).
-  { id: 'copy-hotlead-hold30m-be30', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    breakevenAtPct: 30 },
-  // Best-entry × best-exit: the promotable -strict net floor (>=0.5) on the 30m runner exit.
-  // A SUBSET of hold30m's tokens → fully shares its polls (zero marginal RPC).
-  { id: 'copy-hotlead-hold30m-strict', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
-  // ── Q (2026-06-28): two DATA-BACKED gates on the best base (copy-hotlead-hold30m), each
-  //    isolating one gate. Both are pure-SQL/cached (zero RPC) and share the parent's hot-lead
-  //    entries + position polls, so marginal RPC ≈ 0; cap2 also CUTS polling. Kill per id:
-  //    n>=100 and drop3 < parent copy-hotlead-hold30m's drop3. 5-day window.
-  // -cap2: repeat-buy cap. Re-entry analysis (DB query 2026-06-28): on the same mint the 1st
-  //    (+14.8) and 2nd (+24.3 SOL) entries profit, but the 3rd+ bleed (-5.8 SOL / 146 trades).
-  //    Cap at 2 closed entries/mint → keep the lead's double-down, drop the chase tail.
-  { id: 'copy-hotlead-hold30m-cap2', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    maxEntriesPerMint: 2 },
-  // -prune: per-strategy dynamic lead exclusion. Once THIS strategy has >=5 closed copies of a
-  //    lead that sum to net <= 0, stop copying that lead (self-prunes its own SL-driver tail —
-  //    the "Worst leads" cohort — without touching the shared hotlead baseline series).
-  { id: 'copy-hotlead-hold30m-prune', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    leadExclusionGate: { minTrades: 5, maxNetSol: 0 } },
-  // ── R (2026-06-28): two "we're buying too late" gates on copy-hotlead-hold30m. Zero RPC, share
-  //    the parent's entries+polls. Kill per id: n>=100 and drop3 < parent's drop3. 5-day window.
-  // -early: first-mover gate. consensus2 (require MORE smart buyers) failed drop3; this tests the
-  //    OPPOSITE — only enter when the lead is the SOLE smart buyer of the mint in the 10min window
-  //    (maxConsensusRecent:1), i.e. we're early, not buying after the crowd already piled in.
-  { id: 'copy-hotlead-hold30m-early', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    maxConsensusRecent: 1 },
-  // -nochase: price-extension gate. DB analysis (2026-06-28) of entry/open-price ratio: entries
-  //    at/below +50% of graduation open are the best buckets (n=240, +29.9 SOL, +0.124 avg ≈ 2.5x
-  //    parent), the 50-300% band bleeds, and the >=400% bucket is positive but outlier-driven
-  //    (max ratio 321x). So cap at +50% above open — buy cheap, don't chase the run-up.
-  { id: 'copy-hotlead-hold30m-nochase', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    maxExtensionPct: 50 },
-  // ── S (2026-06-28): crowd-sell EXIT on copy-hotlead-hold30m. Keeps the SL30 + 30m backstop, but
-  //    ALSO bails when >= 2 distinct smart wallets sell the mint within 10min (independent of the
-  //    entry lead) — targets the SL-driver tail by following smart money OUT, not just the one lead.
-  //    Signal is zero-RPC (copy_probe_events sells, already captured). Kill: n>=100 and drop3 < parent.
-  { id: 'copy-hotlead-hold30m-crowdexit', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    crowdSellExit: { minSellers: 2, windowSec: 600 } },
+  // ── KILLED 2026-07-01 (INVALID — kill-backlog enacted; proposed daily 2026-06-30 → 07-01):
+  //    the P/Q/R/S hold/exit sweep on copy-hotlead-hold30m (12 arms). Every arm reached its kill
+  //    criterion — n>=100 (or catastrophic net<−3 at n>=40) AND drop3 < the parent's — and all
+  //    bled further through the June 29–30 record drawdown while pending. The parent
+  //    copy-hotlead-hold30m (kept above, WATCH) and the promotable copy-hotlead-strict already
+  //    cover the best hot-lead entry × exit; none of these variants beat them on robustness.
+  //    Removed (closed rows remain in the DB → retired_summary):
+  //      hold45m (net +1.5, drop3 −25.6) · hold60m (−22.5, −29.6) · hold20m (−10.4, −17.6) ·
+  //      hold30m-sl20 (−13.5, −21.3) · hold30m-sl40 (−16.8, −24.6) · hold30m-be30 (−18.1, −22.2) ·
+  //      hold30m-strict (−10.7, −15.3) · hold30m-cap2 (−11.1, −18.9) · hold30m-prune (−3.8, −11.6) ·
+  //      hold30m-early (−12.1, −13.0) · hold30m-nochase (−7.2, −8.3) · hold30m-crowdexit (−3.0, −9.6).
+  //    Findings retained: hold-duration (20/45/60m) never beat 30m; tighter/wider SL, breakeven,
+  //    repeat-cap, self-prune, first-mover, no-chase and crowd-exit overlays all cut drop3 vs the
+  //    parent. The 30m time-stop + SL30 on the hot-lead entry is the local optimum for this exit
+  //    family; further exit search on this base is retired (revive only with a new mechanic).
   // I4 hotlead parameter sweep — copy-hotlead works at {last10, >=3, net>0}; bracket
   //    the calibration. -strict raises the net floor (lead must be clearly profitable
   //    recently, not marginally positive); -deep uses a longer, more stable lookback.
@@ -540,6 +500,18 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
     entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v1' },
   { id: 'copy-select-v2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v2' },
+  // ── B2 (2026-07-01): SELECTION A/B ON THE INCUMBENT. The -v1/-v2 pair above runs on the
+  //    static TP100/SL30 ruleset the lab already proved can't survive realistic execution
+  //    (KILLED 2026-06-17), so it can only answer "which selection loses less on a dead
+  //    ruleset" — not the deployment question. This twin layers the copy-net (V2) selection
+  //    on the ONLY promotable strategy (copy-hotlead-strict): its hot-lead gate is the live
+  //    control, and requiring the lead to ALSO clear V2_GATE tests whether copy-net selection
+  //    adds anything ON TOP of what would actually go live. Resolve vs copy-hotlead-strict
+  //    (its control) at n>=100: V2 earns its keep only if it lifts net AND drop3 over the
+  //    plain incumbent. Shares the strict entry + polls → ~zero marginal RPC.
+  { id: 'copy-hotlead-strict-v2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v2',
+    hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
   // ── Q (2026-06-30): EXTERNAL-SEED A/B (Idea 3). Trades ONLY wallets seeded from
   //    the Solana Tracker top-trader leaderboard (leadSource:'external'), identical
   //    params to the baseline. vs copy-tp100-sl30 (OG) and copy-livetape (Idea 1)
@@ -2426,11 +2398,18 @@ export function computeCopyTrades(db: Database.Database): unknown {
   // events (keyed mint+entry_ts), so totals across strategies are NOT independent.
   // delta_net_sol on common events is the honest exit-variant comparison.
   const PAIRED_BASELINE = 'copy-tp100-sl30';
-  const baseByEvent = new Map<string, number>();
+  // Preferred join is copy_event_id (one id per onLeadBuy(), written to every strategy
+  // that fired on that lead-buy) so DELAYED-entry arms (the -lag / copy-select* twins,
+  // whose fill entry_ts differs from the 1.1s baseline) still pair to the baseline on the
+  // SAME event. Fall back to mint:entry_ts for pre-copy_event_id rows.
+  const baseByEventId = new Map<string, number>();
+  const baseByMintTs = new Map<string, number>();
   for (const r of closed) {
     if (r.strategy_id !== PAIRED_BASELINE) continue;
     if (typeof r.net_sol !== 'number') continue;
-    baseByEvent.set(`${r.mint}:${r.entry_ts}`, r.net_sol as number);
+    const evId = r.copy_event_id as string | null;
+    if (evId) baseByEventId.set(evId, r.net_sol as number);
+    baseByMintTs.set(`${r.mint}:${r.entry_ts}`, r.net_sol as number);
   }
   const pairedVsBaseline: Record<string, unknown> = {};
   for (const s of COPY_STRATEGIES) {
@@ -2439,7 +2418,9 @@ export function computeCopyTrades(db: Database.Database): unknown {
     let delta = 0;
     for (const r of closed) {
       if (r.strategy_id !== s.id || typeof r.net_sol !== 'number') continue;
-      const base = baseByEvent.get(`${r.mint}:${r.entry_ts}`);
+      const evId = r.copy_event_id as string | null;
+      const base = (evId != null ? baseByEventId.get(evId) : undefined)
+        ?? baseByMintTs.get(`${r.mint}:${r.entry_ts}`);
       if (base == null) continue;
       nCommon += 1;
       delta += (r.net_sol as number) - base;

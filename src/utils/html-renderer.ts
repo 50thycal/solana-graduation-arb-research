@@ -2540,11 +2540,19 @@ export function renderCopyV2Html(data: any): string {
   const rows: any[] = Array.isArray(data?.rows) ? data.rows : [];
   const summary = data?.summary ?? {};
   const mc = data?.method_comparison ?? {};
-  const ag = mc?.agreement ?? {};
+  const inSample = mc?.in_sample ?? mc; // fall back to the pre-2026-07-01 flat shape
+  const wf = mc?.walk_forward ?? {};
+  const ag = inSample?.agreement ?? {};
   const persist = data?.persistence ?? {};
   const ab = data?.ab_live ?? {};
   const abV1 = ab?.v1 ?? {};
   const abV2 = ab?.v2 ?? {};
+  const abVerdict = ab?.verdict ?? {};
+  const onInc = ab?.on_incumbent ?? {};
+  const meas = data?.measurement ?? {};
+  const lagVf = meas?.lag_vs_fast ?? null;
+  const grid = data?.gate_grid ?? {};
+  const caveats: any[] = Array.isArray(data?.caveats) ? data.caveats : [];
   const gate = data?.gate ?? {};
   const generated = (data?.generated_at || '').replace('T', ' ').replace(/\..*$/, ' UTC');
 
@@ -2567,34 +2575,80 @@ export function renderCopyV2Html(data: any): string {
     </div>
   </div>`;
 
-  // ── Card 2: the headline comparison + agreement matrix ─────────────
-  const cell = (c: any) => `${c?.n_leads ?? 0} leads · ${solV2(c?.copy_net_sol)} SOL`;
+  // ── Caveats banner — read before any headline number ───────────────
+  const caveatsCard = caveats.length ? `<div class="card" style="border-left:3px solid #b45309">
+    <h2>⚠ Read first</h2>
+    <ul class="desc" style="margin:0;padding-left:18px">${caveats.map((c) => `<li>${escHtml(String(c))}</li>`).join('')}</ul>
+  </div>` : '';
+
+  // ── Card 2: walk-forward (out-of-sample) headline + in-sample (circular) ─────
+  const cellWf = (c: any) => `${c?.n_leads ?? 0} leads · ${solV2(c?.post_cut_copy_net_sol)} SOL`;
   const comparisonCard = `<div class="card">
     <h2>V1 vs V2 — which selection captures more copy profit?</h2>
-    <div class="desc">${escHtml(mc?.note || 'Over the measurable universe (leads with enough copies to judge). Cell = realized copy net of the leads in it.')}</div>
+    <h3>Walk-forward (out-of-sample) — the honest read</h3>
+    <div class="desc">${escHtml(wf?.note || 'V2 gated on copies BEFORE the cutoff, scored on copies AFTER. V1 uses its current set scored OOS.')}</div>
     <div class="grid">
-      <div class="stat"><span class="label">Copy net of <b>V2-selected</b> leads</span><span class="value">${solV2(mc?.v2_selected_total_copy_net_sol)} SOL</span></div>
-      <div class="stat"><span class="label">Copy net of <b>V1-selected</b> leads</span><span class="value">${solV2(mc?.v1_selected_total_copy_net_sol)} SOL</span></div>
+      <div class="stat"><span class="label"><b>V2-only</b> leads → post-cutoff net</span><span class="value green">${solV2(wf?.v2_only?.post_cut_copy_net_sol)} SOL</span></div>
+      <div class="stat"><span class="label"><b>V1-only</b> leads → post-cutoff net</span><span class="value">${solV2(wf?.v1_only?.post_cut_copy_net_sol)} SOL</span></div>
+      <div class="stat"><span class="label"><b>Both</b> → post-cutoff net</span><span class="value blue">${solV2(wf?.both?.post_cut_copy_net_sol)} SOL</span></div>
     </div>
-    <h3>Agreement matrix</h3>
-    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+    <div class="desc" style="margin-top:6px">
+      <b>V2-only</b> ${cellWf(wf?.v2_only)} = forward edge copy-net finds that own-P&amp;L misses ·
+      <b>V1-only</b> ${cellWf(wf?.v1_only)} = own-P&amp;L follows, copy-net skips (ideally weak/negative).
+      Positive V2-only + weak V1-only ⇒ copy-net selection is the right direction.
+    </div>
+    <h3 style="margin-top:14px;color:#94a3b8">In-sample (circular — do not cite)</h3>
+    <div class="desc">${escHtml(inSample?.note || 'Scores leads on the same trades used to select them — structurally flatters V2.')}</div>
+    <div class="grid">
+      <div class="stat"><span class="label">V2-selected leads (in-sample)</span><span class="value" style="color:#94a3b8">${solV2(inSample?.v2_selected_total_copy_net_sol)} SOL</span></div>
+      <div class="stat"><span class="label">V1-selected leads (in-sample)</span><span class="value" style="color:#94a3b8">${solV2(inSample?.v1_selected_total_copy_net_sol)} SOL</span></div>
+    </div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%;margin-top:6px">
     <table>
       <thead><tr><th></th><th>V1 selects</th><th>V1 skips</th></tr></thead>
       <tbody>
         <tr><th>V2 selects</th>
-          <td title="both methods agree to follow">${cell(ag.both)}</td>
-          <td class="row-strong-n" title="copy-net finds edge V1 misses"><b>V2-only</b><br>${cell(ag.v2_only)}</td></tr>
+          <td title="both methods agree to follow">${(ag.both?.n_leads ?? 0)} leads · ${solV2(ag.both?.copy_net_sol)} SOL</td>
+          <td title="copy-net finds edge V1 misses"><b>V2-only</b><br>${(ag.v2_only?.n_leads ?? 0)} leads · ${solV2(ag.v2_only?.copy_net_sol)} SOL</td></tr>
         <tr><th>V2 skips</th>
-          <td title="own-P&amp;L follows but copy-net says no — slots that don't pay"><b>V1-only</b><br>${cell(ag.v1_only)}</td>
-          <td title="both methods agree to skip">${cell(ag.neither)}</td></tr>
+          <td title="own-P&amp;L follows but copy-net says no"><b>V1-only</b><br>${(ag.v1_only?.n_leads ?? 0)} leads · ${solV2(ag.v1_only?.copy_net_sol)} SOL</td>
+          <td title="both methods agree to skip">${(ag.neither?.n_leads ?? 0)} leads · ${solV2(ag.neither?.copy_net_sol)} SOL</td></tr>
       </tbody>
     </table>
     </div>
-    <div class="desc" style="margin-top:8px;margin-bottom:0">
-      <b>V2-only</b> = edge copy-net finds that own-P&amp;L misses. <b>V1-only</b> = leads own-P&amp;L follows that don't pay when copied
-      (ideally near-zero / negative net here). If V2 is the right direction, V2-selected net &gt; V1-selected net and V1-only is weak.
-    </div>
   </div>`;
+
+  // ── Card: latency check (is selection measured where we execute?) ──
+  const measurementCard = `<div class="card">
+    <h2>Latency check — selection vs execution</h2>
+    <div class="desc">${escHtml(meas?.note || 'Live V2 selection is measured on the fast baseline until the lag baseline matures.')}</div>
+    <div class="grid">
+      <div class="stat"><span class="label">Live selection source</span><span class="value">${escHtml(meas?.live_source || '—')}</span></div>
+      <div class="stat"><span class="label">Execution latency</span><span class="value">${meas?.execution_latency_sec ?? '—'}s</span></div>
+      <div class="stat"><span class="label">Lag-baseline leads</span><span class="value">${meas?.lag_measurable_leads ?? 0} / ${meas?.lag_measure_min_leads ?? '—'}</span></div>
+      <div class="stat"><span class="label">Recency gate</span><span class="value">${meas?.recency_gate_enabled ? 'on' : 'off'}</span></div>
+    </div>
+    ${lagVf ? `<div class="desc" style="margin-top:8px">${escHtml(lagVf.note || '')}<br>
+      Over ${lagVf.shared_leads ?? 0} shared leads: fast net <b>${solV2(lagVf.fast_net_sol)} SOL</b> vs lag net <b>${solV2(lagVf.lag_net_sol)} SOL</b> ·
+      <b>${lagVf.sign_flips ?? 0}</b> leads flip profitable⇄unprofitable once the 5s latency is paid.</div>`
+      : `<div class="desc" style="margin-top:8px;color:#94a3b8">Lag baseline still warming up — per-lead fast-vs-lag comparison appears once it has copies.</div>`}
+  </div>`;
+
+  // ── Card: gate calibration grid (walk-forward) ──
+  const gridRows: any[] = Array.isArray(grid?.rows) ? grid.rows : [];
+  const gridCard = gridRows.length ? `<div class="card">
+    <h2>Gate calibration <span style="color:#64748b;font-weight:400;font-size:12px">(walk-forward)</span></h2>
+    <div class="desc">${escHtml(grid?.note || 'Candidate gate settings scored out-of-sample. Pick the highest net-per-lead, then set COPYV2_*.')}</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+    <table>
+      <thead><tr><th>Config</th><th style="text-align:right">selected</th><th style="text-align:right">post-cut net</th><th style="text-align:right">net / lead</th></tr></thead>
+      <tbody>${gridRows.map((g) => `<tr><td>${escHtml(g.config || '—')}</td>
+        <td style="text-align:right">${g.n_selected ?? 0}</td>
+        <td style="text-align:right">${solV2(g.post_cut_copy_net_sol)}</td>
+        <td style="text-align:right">${solV2(g.post_cut_net_per_lead, 3)}</td></tr>`).join('')}</tbody>
+    </table>
+    </div>
+  </div>` : '';
 
   // ── Card 3: LIVE A/B — copy-select-v1 vs copy-select-v2 (the forward proof) ──
   const abTarget = ab?.target_n ?? 100;
@@ -2633,13 +2687,40 @@ export function renderCopyV2Html(data: any): string {
         <tr><td>Net drop-top3</td>${abCol(abV1, 'net_drop_top3_sol', false)}${abCol(abV2, 'net_drop_top3_sol', false)}</tr>
         <tr><td>Net 7d</td>${abCol(abV1, 'net_7d_sol', false)}${abCol(abV2, 'net_7d_sol', false)}</tr>
         <tr><td>Win rate</td>${abCol(abV1, 'win_rate', false)}${abCol(abV2, 'win_rate', false)}</tr>
+        <tr><td colspan="3" style="color:#64748b;font-size:12px;padding-top:8px">Exclusive-lead split (what actually distinguishes the methods)</td></tr>
+        <tr><td>Shared leads — net (n)</td>
+          <td style="text-align:right">${solV2(abV1.shared?.net_sol)} <span style="color:#64748b">(${abV1.shared?.n ?? 0})</span></td>
+          <td style="text-align:right">${solV2(abV2.shared?.net_sol)} <span style="color:#64748b">(${abV2.shared?.n ?? 0})</span></td></tr>
+        <tr><td><b>Exclusive</b> leads — net (n)</td>
+          <td style="text-align:right">${solV2(abV1.exclusive?.net_sol)} <span style="color:#64748b">(${abV1.exclusive?.n ?? 0})</span></td>
+          <td style="text-align:right">${solV2(abV2.exclusive?.net_sol)} <span style="color:#64748b">(${abV2.exclusive?.n ?? 0})</span></td></tr>
       </tbody>
     </table>
     <div class="desc" style="margin-top:8px;margin-bottom:0">
-      Leader by net so far: <b>${abLeader === 'tie' ? '—' : abLeader === 'v2' ? 'copy-select-v2 (copy-net)' : 'copy-select-v1 (own-P&amp;L)'}</b>.
-      Resolve at n≥${abTarget} per arm — keep whichever nets more with drop-top3 &gt; 0.
+      <b>Verdict:</b> ${escHtml(abVerdict?.status || '—')}${abVerdict?.decision ? ` → <b>${escHtml(abVerdict.decision)}</b>` : ''}.
+      ${escHtml(abVerdict?.detail || '')}
     </div>
   </div>`;
+
+  // ── Card: selection on the incumbent (does V2 add anything to what goes live?) ──
+  const incV2 = onInc?.v2 ?? {};
+  const incCtl = onInc?.control ?? {};
+  const incCard = (incV2.n || incCtl.n) ? `<div class="card">
+    <h2>V2 on the incumbent <span style="color:#64748b;font-weight:400;font-size:12px">(copy-hotlead-strict-v2 vs control)</span></h2>
+    <div class="desc">${escHtml(onInc?.note || 'Does copy-net selection add anything on top of the only promotable strategy?')}</div>
+    <table>
+      <thead><tr><th>Metric</th>
+        <th style="text-align:right">strict-v2 <span style="color:#64748b;font-weight:400">+copy-net</span></th>
+        <th style="text-align:right">strict <span style="color:#64748b;font-weight:400">control</span></th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Trades</td><td style="text-align:right">${incV2.n ?? 0}</td><td style="text-align:right">${incCtl.n ?? 0}</td></tr>
+        <tr><td>Net SOL</td><td style="text-align:right">${solV2(incV2.net_sol)}</td><td style="text-align:right">${solV2(incCtl.net_sol)}</td></tr>
+        <tr><td>Net drop-top3</td><td style="text-align:right">${solV2(incV2.net_drop_top3_sol)}</td><td style="text-align:right">${solV2(incCtl.net_drop_top3_sol)}</td></tr>
+        <tr><td>Win rate</td><td style="text-align:right">${incV2.win_rate == null ? '—' : wr(Math.round(incV2.win_rate * 100))}</td><td style="text-align:right">${incCtl.win_rate == null ? '—' : wr(Math.round(incCtl.win_rate * 100))}</td></tr>
+      </tbody>
+    </table>
+  </div>` : '';
 
   // ── Card 4: persistence (the +0.43 signal, live) ───────────────────
   const persistCard = `<div class="card">
@@ -2706,5 +2787,5 @@ export function renderCopyV2Html(data: any): string {
     </div>
   </div>`;
 
-  return shell('Copy V2 — Graduation Arb Research', '/copy-v2', headerCard + abCard + comparisonCard + persistCard + tableCard, data as object);
+  return shell('Copy V2 — Graduation Arb Research', '/copy-v2', headerCard + caveatsCard + abCard + incCard + comparisonCard + measurementCard + gridCard + persistCard + tableCard, data as object);
 }
