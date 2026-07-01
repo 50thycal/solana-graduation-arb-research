@@ -11,6 +11,86 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-07-01 — Daily review: June 30 breaks the record set the day before (−77.5 SOL); promotable count drops 3 → 1 as hold30m and hotlead both fall off the bar
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-07-01",
+  "overall": {"n": 9297, "net": -92.663, "drop3": -137.538, "stress": -182.788, "open": 13},
+  "retired_summary": {"n": 19580, "net": -96.417},
+  "regime_score": 5, "regime_24h": 1, "macro_score": 4, "btc_7d_pct": -1.94,
+  "book_daily_today": -9.47,
+  "leads": {"n_leads": 160, "hot": 49, "cold": 75},
+  "n_promotable_realistic": 1,
+  "strategies": [
+    {"id": "copy-hotlead-strict",            "realistic": true,  "n": 589, "net":  13.497, "drop3":  6.915, "stress":  7.160, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-hold30m",           "realistic": true,  "n": 964, "net":  31.052, "drop3": -0.076, "stress": 20.502, "promo_score":  75,  "verdict": "WATCH"},
+    {"id": "copy-hotlead",                   "realistic": true,  "n":1013, "net":   7.387, "drop3":  0.367, "stress": -3.195, "promo_score":  59.6,"verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-pair-shadow","realistic": true,  "n": 408, "net":  -0.351, "drop3": -1.861, "stress": -0.764, "promo_score":  40,  "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold45m",           "realistic": true,  "n": 251, "net":   3.081, "drop3":-24.049, "stress":  0.434, "promo_score":  59.3,"verdict": "KILL"},
+    {"id": "copy-hotlead-hold20m",           "realistic": true,  "n": 246, "net":  -9.934, "drop3":-17.156, "stress":-12.269, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-sl20",      "realistic": true,  "n": 233, "net": -12.386, "drop3":-20.177, "stress":-14.538, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-be30",      "realistic": true,  "n": 229, "net": -16.939, "drop3":-21.028, "stress":-18.959, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-sl40",      "realistic": true,  "n": 217, "net": -15.512, "drop3":-23.303, "stress":-17.437, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold60m",           "realistic": true,  "n": 225, "net": -21.242, "drop3":-28.378, "stress":-23.134, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-cap2",      "realistic": true,  "n": 164, "net": -10.199, "drop3":-17.990, "stress":-11.684, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-prune",     "realistic": true,  "n": 143, "net":  -3.791, "drop3":-11.581, "stress": -5.188, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-strict",    "realistic": true,  "n": 150, "net":  -9.799, "drop3":-14.415, "stress":-11.148, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-crowdexit", "realistic": true,  "n": 160, "net":  -2.454, "drop3": -9.030, "stress": -4.053, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-early",     "realistic": true,  "n":  84, "net": -10.596, "drop3":-11.514, "stress":-11.249, "promo_score":  36.8,"verdict": "KILL"},
+    {"id": "copy-hotlead-hold30m-nochase",   "realistic": true,  "n":  53, "net":  -7.094, "drop3": -8.176, "stress": -7.498, "promo_score":  30.6,"verdict": "KILL"},
+    {"id": "copy-select-v1",                 "realistic": true,  "n":  19, "net":  -1.634, "drop3": -3.216, "stress": -1.797, "promo_score":  23.8,"verdict": "WATCH"},
+    {"id": "copy-select-v2",                 "realistic": true,  "n":   9, "net":  -2.495, "drop3": -2.029, "stress": -2.538, "promo_score":  21.8,"verdict": "WATCH"},
+    {"id": "copy-conviction-consensus2",     "realistic": false, "n":1241, "net":  11.515, "drop3": -1.271, "stress": -1.498, "promo_score":  35,  "verdict": "KEEP"},
+    {"id": "copy-tp100-sl30",               "realistic": false, "n":2734, "net": -27.924, "drop3":-34.480, "stress":-55.526, "promo_score":  20,  "verdict": "KEEP"}
+  ]
+}
+```
+
+**Headline:** June 30 broke the record set the day before for worst book day ever (−77.45 SOL, vs June 29's −71.85 SOL) — two consecutive historic drawdowns have knocked two of the three previously-promotable strategies (`copy-hotlead-hold30m`, `copy-hotlead`) below the promotion bar; only `copy-hotlead-strict` still clears all gates.
+
+**Day-over-day (vs 2026-06-30 SNAPSHOT):**
+- **The June 30 book crash was much worse than it looked at report time.** Yesterday's snapshot, taken ~10:00 UTC on the 30th, showed `book_daily_today: 0.68` (a flat-to-good partial day). The day then collapsed to −77.45 SOL by close — the worst single day in book history, beating June 29's −71.85 by more SOL than the prior record itself. Δoverall net: −5.06 → −92.66 (−87.6 SOL). Δdrop3: −49.94 → −137.54 (−87.6). Open positions 24 → 13.
+- **Promotable count: 3 → 1.** `copy-hotlead-hold30m` drop3 flipped +7.13 → **−0.076** (marginal, essentially breakeven, but a strict fail of the drop-top3 gate) — demoted PROMOTE → WATCH. `copy-hotlead` exit_stress flipped +0.254 → **−3.195** (a decisive fail, not marginal) — demoted PROMOTE → WATCH, closer to an outright KILL than hold30m. Both retain strongly positive net (+31.05, +7.39) and hold30m's stress is still robust (+20.50) — this reads as outlier-driven damage from the two worst days on record, not yet a confirmed multi-day decay pattern like the Cohort P kills. Given it's a single-day flip off a historic tail event, calling WATCH rather than an immediate KILL; if drop3/stress don't recover within ~3-5 days this becomes a KILL case.
+- `copy-hotlead-strict` (the survivor): net 14.50 → 13.50 (−1.00), drop3 7.92 → 6.92 (−1.00), stress 8.42 → 7.16 (−1.26), n 562 → 589 (+27). Smallest hit of the trio by far — confirms it remains the most macro-resilient screen in the roster, exactly as flagged in the prior 4 entries.
+- **New in roster since yesterday (not proposed by this skill):** `copy-select-v1` (n=19) and `copy-select-v2` (n=9) — a live V1-vs-V2 lead-selection A/B added by a code change (commit `938bf2a`, "Option B — live V1-vs-V2 selection A/B"). Both idealized-config realistic-flagged, too small to score. WATCH.
+- **The 12 kill-backlog strategies from the 2026-06-30 entry are all still live and continued to bleed**, unenacted: hold60m −14.38→−21.24, be30 −10.44→−16.94, sl40 −8.25→−15.51, sl20 −7.01→−12.39, hold30m-strict −5.32→−9.80, cap2 −4.04→−10.20, hold20m −3.80→−9.93, prune −1.66→−3.79, crowdexit +0.71→−2.45 (flipped negative). `hold30m-early` grew 57→84 (still <100, still catastrophic at n≥40). `hold45m` deteriorated further (drop3 −16.93→−24.05).
+- `copy-conviction-consensus2` (idealized reference): drop3 flipped +2.49 → **−1.27**. Never a live candidate, but a signal that even the idealized-mirror ceiling took damage from this stretch — the whole book, not just the realistic twins, got hit.
+- Regime: 1 → 5 (recovered to neutral intraday) but `score_24h` still 1 — the 24h outlook has not confirmed the recovery. Macro: 3 → 4, BTC 7d −4.62% → −1.94% (slight improvement), still headwind band. Fear/greed remains extreme.
+- Lead pool: 158 → 160 leads, hot 46 → 49 (partial recovery from yesterday's first weekly decline), cold flat at 75.
+
+**Week-over-week (Jun 25 → Jul 1):**
+- **The "durable edge" thesis just took its first real hit.** For the prior 6 days, `copy-hotlead-hold30m` and `copy-hotlead-strict` held positive drop3 through every regime trough, which was the core evidence cited for genuine edge vs tape-driven luck. Today `hold30m`'s drop3 went negative for the first time in its 15-day life. `copy-hotlead-strict` is now the only strategy that has *never* had a negative drop3 day — raising it from "preferred" to "the only one still standing."
+- Regime pattern: this is now the worst 3-day stretch on record (score 7→1→1→5, with book P&L +19.76→−72.19→−77.45→−9.47 partial). Two back-to-back all-time-worst days is a materially different event than the single bad day (June 23-24 trough) seen earlier in the month.
+- Macro/BTC: still consolidating in the $58-60K range, no tailwind. Fear/greed pinned at extreme-fear (11) — third straight day.
+- Lead pool: hot count troughed at 46 (Jun 30) and is recovering (49 today) — read as noise, not a trend reversal yet.
+- Operational note: the 2026-06-30 kill-backlog cleanup (12 strategies) has not been enacted after one full day — those strategies added another ~40 SOL of shadow losses since being flagged. Not real money (live-micro was killed on Jun 29), but it's wasting shadow budget exactly as the prior entry warned.
+
+**Verdicts (proposals — roster changes require operator approval + code edit to `COPY_STRATEGIES`):**
+
+- **PROMOTE (1):**
+  - `copy-hotlead-strict`: n=589, net=+13.50, drop3=+6.92, stress=+7.16, monthly=28.92 SOL/mo. Score 100. The only strategy that survived the two-day historic drawdown with all gates intact. Primary (now sole) live candidate.
+
+- **WATCH — demoted from PROMOTE, need 3-5 more days to confirm outlier vs. decay:**
+  - `copy-hotlead-hold30m`: n=964, net=+31.05, drop3=**−0.08** (marginal fail), stress=+20.50 (still strong), monthly=66.54. Best absolute economics in the roster; only the outlier-robustness gate failed, by a hair.
+  - `copy-hotlead`: n=1013, net=+7.39, drop3=+0.37 (still positive), stress=**−3.20** (decisive fail), monthly=15.83. This is the fragility the prior entry predicted ("one more bad day flips it") — it flipped. Closer to a KILL than hold30m if the next few days don't recover.
+  - `copy-hotlead-hold30m-pair-shadow`: n=408, net=−0.35 (flipped negative), drop3=−1.86, monthly=−1.17. Shadow reference for hold30m; tracking its parent's damage.
+  - `copy-select-v1` / `copy-select-v2`: n=19 / n=9. New V1-vs-V2 selection A/B, added outside this skill's recommendations. Far too small to score; re-check at n≥50.
+
+- **KILL (12 — unchanged from 2026-06-30, still pending operator action, still bleeding):**
+  - `copy-hotlead-hold60m` (n=225, net=−21.24, drop3=−28.38), `copy-hotlead-hold30m-be30` (n=229, net=−16.94, drop3=−21.03), `copy-hotlead-hold30m-sl40` (n=217, net=−15.51, drop3=−23.30), `copy-hotlead-hold30m-sl20` (n=233, net=−12.39, drop3=−20.18), `copy-hotlead-hold30m-strict` (n=150, net=−9.80, drop3=−14.42), `copy-hotlead-hold30m-cap2` (n=164, net=−10.20, drop3=−17.99), `copy-hotlead-hold20m` (n=246, net=−9.93, drop3=−17.16), `copy-hotlead-hold30m-prune` (n=143, net=−3.79, drop3=−11.58), `copy-hotlead-hold30m-crowdexit` (n=160, net=−2.45, drop3=−9.03), `copy-hotlead-hold45m` (n=251, net=+3.08, drop3=−24.05, deteriorating daily), `copy-hotlead-hold30m-early` (n=84, net=−10.60, catastrophic), `copy-hotlead-hold30m-nochase` (n=53, net=−7.09, catastrophic).
+
+- **Idealized references (not live candidates):**
+  - `copy-conviction-consensus2`: n=1241, net=+11.52, drop3 flipped negative (−1.27) — even the idealized ceiling took damage this stretch.
+  - `copy-tp100-sl30`: n=2734, net=−27.92. Negative baseline reference, deteriorating with the book.
+
+**New strategies to try:** None this cycle. With the promotable count cut to 1 and two former promotables now needing multi-day confirmation, the priority is watching the existing roster recover (or not) — not adding new experiments. The 12-strategy kill backlog is now a full day overdue; enacting it remains the single highest-leverage code edit available.
+
+**Operator next step:** Enact the 2026-06-30 kill-backlog cleanup (12 strategies, unchanged list above) — it's now been pending a full day and cost ~40 more SOL in shadow losses. Do not add `copy-hotlead-hold30m` as live-micro yet as previously suggested — it fell off the promotion bar today; `copy-hotlead-strict` is now the only defensible promotion candidate if live capital is to be deployed. Also worth 5 minutes: sanity-check whether the copy-select-v1/v2 A/B (added outside this loop) is intentional and what hypothesis it's testing, since it wasn't proposed here.
+
+---
+
 ## 2026-06-30 — Daily review: June 29 worst book day ever (−71.9 SOL); live-micro kill enacted; 12 strategies hit kill criteria; 3 promotables intact but copy-hotlead fragile
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
