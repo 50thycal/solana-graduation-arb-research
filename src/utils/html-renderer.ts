@@ -2520,6 +2520,9 @@ export function renderCopyV2Html(data: any): string {
   const mc = data?.method_comparison ?? {};
   const ag = mc?.agreement ?? {};
   const persist = data?.persistence ?? {};
+  const ab = data?.ab_live ?? {};
+  const abV1 = ab?.v1 ?? {};
+  const abV2 = ab?.v2 ?? {};
   const gate = data?.gate ?? {};
   const generated = (data?.generated_at || '').replace('T', ' ').replace(/\..*$/, ' UTC');
 
@@ -2571,7 +2574,52 @@ export function renderCopyV2Html(data: any): string {
     </div>
   </div>`;
 
-  // ── Card 3: persistence (the +0.43 signal, live) ───────────────────
+  // ── Card 3: LIVE A/B — copy-select-v1 vs copy-select-v2 (the forward proof) ──
+  const abTarget = ab?.target_n ?? 100;
+  const abReady = (abV1.n ?? 0) >= abTarget && (abV2.n ?? 0) >= abTarget;
+  // Leader by net once both arms have some data (informational until n>=target).
+  const abLeader = (abV1.n || abV2.n)
+    ? ((abV2.net_sol ?? 0) > (abV1.net_sol ?? 0) ? 'v2' : (abV1.net_sol ?? 0) > (abV2.net_sol ?? 0) ? 'v1' : 'tie')
+    : 'tie';
+  const abProg = (a: any) => {
+    const p = a.progress_pct ?? 0;
+    return `${a.n ?? 0} / ${abTarget} <span style="color:#64748b">(${p}%)</span>`;
+  };
+  const abCol = (a: any, key: string, isLeader: boolean) => {
+    const v = a[key];
+    const cell = key === 'win_rate'
+      ? (v == null ? '—' : wr(Math.round(v * 100)))
+      : (key === 'n_row' ? abProg(a) : solV2(v));
+    return `<td style="text-align:right${isLeader ? ';background:#162033;font-weight:600' : ''}">${cell}</td>`;
+  };
+  const abCard = `<div class="card">
+    <h2>Live A/B — copy-select-v1 vs copy-select-v2 <span style="color:#64748b;font-weight:400;font-size:12px">(forward proof)</span></h2>
+    <div class="desc">${escHtml(ab?.note || 'Identical realistic strategies differing only in lead selection.')}
+      ${abReady
+        ? `<span class="green">Both arms have reached n≥${abTarget} — ready to call.</span>`
+        : `<span class="yellow">Still accumulating — read as noise until both arms reach n≥${abTarget}.</span>`}
+    </div>
+    <table>
+      <thead><tr><th>Metric</th>
+        <th style="text-align:right">copy-select-v1 <span style="color:#64748b;font-weight:400">own-P&amp;L</span></th>
+        <th style="text-align:right">copy-select-v2 <span style="color:#64748b;font-weight:400">copy-net</span></th>
+      </tr></thead>
+      <tbody>
+        <tr><td>Trades (progress)</td>${abCol(abV1, 'n_row', false)}${abCol(abV2, 'n_row', false)}</tr>
+        <tr><td>Open now</td><td style="text-align:right">${abV1.open ?? 0}</td><td style="text-align:right">${abV2.open ?? 0}</td></tr>
+        <tr><td>Net SOL</td>${abCol(abV1, 'net_sol', abLeader === 'v1')}${abCol(abV2, 'net_sol', abLeader === 'v2')}</tr>
+        <tr><td>Net drop-top3</td>${abCol(abV1, 'net_drop_top3_sol', false)}${abCol(abV2, 'net_drop_top3_sol', false)}</tr>
+        <tr><td>Net 7d</td>${abCol(abV1, 'net_7d_sol', false)}${abCol(abV2, 'net_7d_sol', false)}</tr>
+        <tr><td>Win rate</td>${abCol(abV1, 'win_rate', false)}${abCol(abV2, 'win_rate', false)}</tr>
+      </tbody>
+    </table>
+    <div class="desc" style="margin-top:8px;margin-bottom:0">
+      Leader by net so far: <b>${abLeader === 'tie' ? '—' : abLeader === 'v2' ? 'copy-select-v2 (copy-net)' : 'copy-select-v1 (own-P&amp;L)'}</b>.
+      Resolve at n≥${abTarget} per arm — keep whichever nets more with drop-top3 &gt; 0.
+    </div>
+  </div>`;
+
+  // ── Card 4: persistence (the +0.43 signal, live) ───────────────────
   const persistCard = `<div class="card">
     <h2>Lead persistence</h2>
     <div class="desc">${escHtml(persist?.note || 'Split-half: does a lead\'s first-half copy profit predict its second half?')} (${persist?.n_leads ?? 0} leads)</div>
@@ -2636,5 +2684,5 @@ export function renderCopyV2Html(data: any): string {
     </div>
   </div>`;
 
-  return shell('Copy V2 — Graduation Arb Research', '/copy-v2', headerCard + comparisonCard + persistCard + tableCard, data as object);
+  return shell('Copy V2 — Graduation Arb Research', '/copy-v2', headerCard + abCard + comparisonCard + persistCard + tableCard, data as object);
 }
