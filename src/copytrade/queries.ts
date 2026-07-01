@@ -421,6 +421,19 @@ export function getLiveTapeSmartSetAddresses(db: Database.Database): string[] {
   `).all() as Array<{ address: string }>).map((r) => r.address);
 }
 
+/** Discovery-source cohort for the OG-vs-external A/B (Idea 3): copyable smart
+ *  wallets seeded from the external top-trader leaderboard (source='external').
+ *  Quarantined to leadSource:'external' strategies, same as live-tape. */
+export function getExternalSmartSetAddresses(db: Database.Database): string[] {
+  return (db.prepare(`
+    SELECT ws.address FROM wallet_scores ws
+    JOIN wallet_candidates wc ON wc.address = ws.address
+    WHERE ${COHORT_GATE} AND wc.source = 'external'
+      AND ${COPYABLE_SQL}
+    ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
+  `).all() as Array<{ address: string }>).map((r) => r.address);
+}
+
 /** From a set of addresses (the wallets we actually copy: follow_list ∪ smart set),
  *  return those whose cached score is stale (last_refreshed < cutoff or never set),
  *  oldest first, capped at `limit`. Drives the worker's priority-refresh pass so the

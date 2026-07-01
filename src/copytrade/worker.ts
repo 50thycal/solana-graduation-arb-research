@@ -19,6 +19,7 @@ import { fetchWalletSwaps, scoreWallet, reconstructRoundTrips, WalletSwap } from
 import { rankWallets } from './ranker';
 import { computeAndCacheSmartMoney } from './smart-money';
 import { computeCotradeDiscovery } from './cotrade-discovery';
+import { seedExternalCandidates } from './external-seed';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copytrade-worker');
@@ -210,6 +211,11 @@ export class CopytradeWorker {
       // Refresh co-trade discovery BEFORE priority recompute so cotrade candidates
       // get their priority boost this tick (the scorer then reaches them fast).
       computeCotradeDiscovery(this.db, now);
+      // External top-trader seed (Idea 3) — plain HTTPS to Solana Tracker, no RPC
+      // cost. No-ops without SOLANATRACKER_API_KEY. Before priority recompute so
+      // the fetched wallets get their boost and are scored this tick.
+      try { await seedExternalCandidates(this.db, now); }
+      catch (err) { logger.warn('External seed failed: %s', err instanceof Error ? err.message : String(err)); }
       // Rank candidates by in-DB signal so we score likely-alpha wallets first.
       recomputeCandidatePriorities(this.db);
 

@@ -8,10 +8,11 @@ import { computeMacroRegime, currentMacroScore } from './macro-regime';
 import { computeWalletLeaderboard } from './leaderboard';
 import { CopyLiveExecutor } from './copy-live-executor';
 import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
-import { getOgSmartSetAddresses, getCotradeSmartSetAddresses, getLiveTapeSmartSetAddresses, getSmartSetAddresses } from './queries';
+import { getOgSmartSetAddresses, getCotradeSmartSetAddresses, getLiveTapeSmartSetAddresses, getSmartSetAddresses, getExternalSmartSetAddresses } from './queries';
 import { getCopyNetSelectedAddresses } from './leaderboard-v2';
 import { getCotradeDiscovery } from './cotrade-discovery';
 import { computeLiveTape } from './live-tape-harvester';
+import { getExternalSeedSummary } from './external-seed';
 import {
   MAX_SELL_ATTEMPTS_BEFORE_TERMINAL,
   sellSlippageBpsForAttempt,
@@ -65,13 +66,13 @@ export interface CopyStrategy {
   minLeadRank?: number;        // only copy if lead wallet's follow_list rank <= this
   minConsensusRecent?: number; // only copy if >= N distinct smart wallets bought this mint in last 10min
   walletAllowlist?: string[];  // only copy if the lead wallet is in this set (copy-best-wallet)
-  leadSource?: 'og' | 'live_tape';
-                               // DISCOVERY-SOURCE A/B (Idea 1): which discovery pipeline surfaced the lead
-                               // wallet. Quarantine semantics: a live_tape-discovered wallet ONLY fires
-                               // strategies with leadSource:'live_tape'; every other strategy (undefined or
-                               // 'og') trades OG-discovered wallets ONLY. So the existing strategies keep
-                               // trading OG wallets and the new live-tape wallets show up only on the
-                               // dedicated copy-livetape-* strategies — a clean OG-vs-Idea1 PnL comparison.
+  leadSource?: 'og' | 'live_tape' | 'external';
+                               // DISCOVERY-SOURCE A/B (Idea 1 + Idea 3): which discovery pipeline surfaced the
+                               // lead wallet. Quarantine semantics: a wallet fires ONLY strategies whose
+                               // leadSource matches its discovery source — live_tape wallets → leadSource:
+                               // 'live_tape'; external (Solana Tracker) wallets → leadSource:'external'; every
+                               // other strategy (undefined or 'og') trades OG-discovered wallets ONLY. So each
+                               // discovery pipeline gets its own isolated copy-PnL read.
   leadSelection?: 'v1' | 'v2'; // SELECTION-METHOD A/B (Option B): only copy when the lead is in this
                                // selection set. 'v1' = the live own-P&L smart set (getSmartSetAddresses);
                                // 'v2' = the copy-net set (getCopyNetSelectedAddresses, gated on realized
@@ -539,6 +540,12 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
     entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v1' },
   { id: 'copy-select-v2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v2' },
+  // ── Q (2026-06-30): EXTERNAL-SEED A/B (Idea 3). Trades ONLY wallets seeded from
+  //    the Solana Tracker top-trader leaderboard (leadSource:'external'), identical
+  //    params to the baseline. vs copy-tp100-sl30 (OG) and copy-livetape (Idea 1)
+  //    this isolates "do externally-sourced hot wallets copy-trade better?" — with
+  //    the honest prior that public leaderboard wallets are crowded/alpha-decayed.
+  { id: 'copy-external-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadSource: 'external' },
 ];
 
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
@@ -751,10 +758,11 @@ export class CopyTrader {
   // fires when the lead wallet is in its cohort.
   private ogSmartSet = new Set<string>();
   private cotradeSet = new Set<string>();
-  // Discovery-source quarantine (Idea 1 A/B): wallets the live-tape harvester
-  // surfaced. A wallet in this set fires ONLY leadSource:'live_tape' strategies;
-  // OG strategies skip it. Refreshed alongside the cohorts.
+  // Discovery-source quarantine (Idea 1 + Idea 3 A/Bs): wallets surfaced by each
+  // non-OG pipeline. A wallet in one of these fires ONLY the matching-leadSource
+  // strategies; OG strategies skip it. Refreshed alongside the cohorts.
   private liveTapeSet = new Set<string>();
+  private externalSet = new Set<string>();
   // Selection-method A/B (Option B), refreshed alongside leadRank. v1 = own-P&L
   // smart set (the live V1 selector); v2 = copy-net selection. A leadSelection-gated
   // strategy only fires when the lead is in its set. These OVERLAP (a lead can be in
@@ -854,6 +862,7 @@ export class CopyTrader {
     try { this.ogSmartSet = new Set(getOgSmartSetAddresses(this.db)); } catch { /* empty */ }
     try { this.cotradeSet = new Set(getCotradeSmartSetAddresses(this.db)); } catch { /* empty */ }
     try { this.liveTapeSet = new Set(getLiveTapeSmartSetAddresses(this.db)); } catch { /* empty */ }
+    try { this.externalSet = new Set(getExternalSmartSetAddresses(this.db)); } catch { /* empty */ }
     // Selection-method A/B sets (Option B). v1 = live own-P&L selector; v2 = copy-net.
     try { this.v1SelectSet = new Set(getSmartSetAddresses(this.db)); } catch { /* empty */ }
     try { this.v2SelectSet = new Set(getCopyNetSelectedAddresses(this.db)); } catch { /* empty */ }
@@ -1193,20 +1202,23 @@ export class CopyTrader {
     // matcher falls back to mint+time and under-matches re-entries / offset fills.
     const copyEventId = `${detectMs}-${mint.slice(0, 10)}-${leadWallet.slice(0, 8)}`;
 
-    // Discovery-source quarantine (Idea 1 A/B): is THIS lead wallet a live-tape
-    // wallet? live-tape wallets fire only leadSource:'live_tape' strategies; OG
-    // wallets fire every other strategy. Computed once per lead-buy.
-    const leadIsLiveTape = this.liveTapeSet.has(leadWallet);
+    // Discovery-source quarantine (Idea 1 + Idea 3 A/Bs): categorize THIS lead
+    // wallet by which pipeline surfaced it. Sources are disjoint (one wallet_
+    // candidates.source each), so a wallet is in exactly one category. A wallet
+    // fires ONLY strategies whose leadSource matches — so the existing strategies
+    // keep trading OG wallets and each new pipeline gets its own isolated A/B.
+    const leadCat: 'og' | 'live_tape' | 'external' =
+      this.liveTapeSet.has(leadWallet) ? 'live_tape'
+        : this.externalSet.has(leadWallet) ? 'external'
+          : 'og';
 
     for (const s of COPY_STRATEGIES) {
       // Pair-shadow-driven live strategies do NOT self-gate: their entries are spawned
       // 1:1 by their pair shadow when it opens (see openDelayed). Skip them here so live
       // can never independently enter a lead-buy the pair shadow didn't take.
       if (s.drivenBy) continue;
-      // Discovery-source gate: live-tape wallets only feed live-tape strategies;
-      // OG wallets only feed non-live-tape strategies. Keeps the existing strategies
-      // trading OG-discovered wallets ONLY (clean OG-vs-Idea1 comparison).
-      if ((s.leadSource === 'live_tape') !== leadIsLiveTape) { this.recordSkip(s.id, 'source_cohort'); continue; }
+      // Discovery-source gate: a wallet only fires strategies matching its source.
+      if ((s.leadSource ?? 'og') !== leadCat) { this.recordSkip(s.id, 'source_cohort'); continue; }
       const pendingKey = `${s.id}:${mint}`;
       const open = [...this.positions.values()].filter((p) => p.strategyId === s.id);
       // already-positioned / in-flight / at-capacity: not an interesting "gate" skip
@@ -2620,6 +2632,9 @@ export function computeCopyTrades(db: Database.Database): unknown {
     // wallets tallied → promoted to the scorer → scored → passing the bar. These
     // are genuinely-new wallets the 0-30s OG seed never sees.
     live_tape: computeLiveTape(db),
+    // External seed (Idea 3) — Solana Tracker top-trader leaderboard funnel:
+    // fetched → scored → passing the bar. Candidate feed only; we re-verify PnL.
+    external_seed: getExternalSeedSummary(db),
     // Per-strategy lead-wallet P&L attribution — who drives TP vs SL per strategy.
     lead_attribution: computeLeadAttribution(activeClosed),
     // Copy promotion bar (n>=100 · drop3>0 · stress>0 · monthly>=3.75) + readiness.
