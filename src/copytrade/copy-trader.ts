@@ -308,6 +308,15 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    recently, not marginally positive); -deep uses a longer, more stable lookback.
   { id: 'copy-hotlead-strict', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
+  // ── T (2026-07-01): net-floor hill-climb on the incumbent. copy-hotlead-strict is the ONLY
+  //    promotable strategy (n≈596, drop3 +5.05, ~25 SOL/mo) and its defining lever vs plain
+  //    copy-hotlead is the lead net floor (0 → 0.5). This challenger pushes that ONE lever
+  //    further (0.5 → 1.0): does a stricter "clearly profitable lately" floor concentrate an even
+  //    cleaner lead set (higher drop3 / monthly), or over-filter until n collapses? Same entry/exit
+  //    otherwise, shares strict's polls (~zero marginal RPC). Kill: n>=100 and drop3 < strict's
+  //    drop3, OR n so low it can't reach 100 in ~2 weeks (over-filtered). 2-week window.
+  { id: 'copy-hotlead-strict-hi', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 1.0 } },
   // ── KILLED 2026-06-27 (INVALID; RPC cleanup): copy-hotlead-deep (lastN20 / >=5 trades — longer,
   //    "more stable" lookback). n=550 net +5.2 but drop3 -1.37: the deeper lookback's net is
   //    tail-driven. copy-hotlead (lastN10/>=3) and copy-hotlead-strict (net floor 0.5) are the
