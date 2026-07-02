@@ -144,6 +144,39 @@ export function getCopyNetSelectedAddresses(db: Database.Database): string[] {
   }
 }
 
+/**
+ * PROVEN-BAD exclusion set (2026-07-02) — the pivot from the OOS refutation of positive
+ * selection. The one copy-net signal that held up out-of-sample is DOWNSIDE persistence
+ * (first-half losing leads → −17.8 SOL second half, vs winners → only +2.5). So instead of
+ * selecting winners, VETO proven losers: leads with >= COPYXBAD_MIN_COPIES closed copies on
+ * the fast baseline (max sample; latency bias is acceptable for a downside screen) whose
+ * all-time copy net is <= COPYXBAD_MAX_NET. Consumed by excludeProvenBadLeads strategies
+ * (copy-hotlead-strict-xbad) and reported on the copy-v2 page.
+ */
+export const XBAD_GATE = {
+  minCopies: numEnv('COPYXBAD_MIN_COPIES', 10),
+  maxNetSol: numEnv('COPYXBAD_MAX_NET', 0),
+};
+
+export function getCopyNetExcludedAddresses(db: Database.Database): string[] {
+  try {
+    const rows = db.prepare(`
+      SELECT lead_wallet AS w FROM copy_trades
+      WHERE strategy_id = @strat AND status = 'closed'
+        AND net_sol IS NOT NULL AND lead_wallet IS NOT NULL
+      GROUP BY lead_wallet
+      HAVING COUNT(*) >= @minCopies AND SUM(net_sol) <= @maxNet
+    `).all({
+      strat: V2_MEASURE_STRATEGY,
+      minCopies: XBAD_GATE.minCopies,
+      maxNet: XBAD_GATE.maxNetSol,
+    }) as Array<{ w: string }>;
+    return rows.map((r) => r.w);
+  } catch {
+    return [];
+  }
+}
+
 /** Distinct leads with >= minCopies closed copies on a measurement strategy. */
 function countMeasurableLeads(db: Database.Database, strat: string): number {
   try {
@@ -529,11 +562,29 @@ export function computeWalletLeaderboardV2(db: Database.Database, limit = 50): u
   const sharedLiveSet = new Set([...v2LiveSet].filter((a) => v1Selected.has(a)));
   const abV1 = abArmStats(db, AB_V1_STRATEGY, nowTs, sharedLiveSet);
   const abV2 = abArmStats(db, AB_V2_STRATEGY, nowTs, sharedLiveSet);
-  const ab_verdict = abVerdict(abV1, abV2);
+  // 2026-07-02: A/B RESOLVED EARLY by the walk-forward evidence, not by arm n. OOS, V2's
+  // unique picks lost (−2.43 SOL / 4 leads) while V1-only leads gained (+1.60 / 34); every
+  // gate_grid config was OOS-negative; the arms' exclusive splits agreed. Positive copy-net
+  // selection refuted; arms killed. Stats below are the frozen final series (closed rows).
+  const ab_verdict = {
+    status: 'resolved_refuted',
+    decision: 'keep V1 live selection; V2 positive selection killed 2026-07-02',
+    detail:
+      'Refuted by walk-forward (OOS) evidence rather than arm-n: v2-only leads −2.43 SOL post-cutoff vs ' +
+      'v1-only +1.60; all gate_grid configs OOS-negative; exclusive splits concurred (v2 −3.55 vs v1 −1.10). ' +
+      'Surviving signal = downside persistence → proven-bad EXCLUSION (see exclusion block / copy-hotlead-strict-xbad).',
+    resolved_at: '2026-07-02',
+    superseded_by: abVerdict(abV1, abV2), // what the n-gated rule would still say (context only)
+  };
   // The incumbent-based twin (copy-hotlead-strict-v2) vs its live control (copy-hotlead-strict):
   // does copy-net selection add anything ON TOP of what would actually go live?
   const abStrictV2 = abArmStats(db, 'copy-hotlead-strict-v2', nowTs, sharedLiveSet);
   const abStrictControl = abArmStats(db, 'copy-hotlead-strict', nowTs, sharedLiveSet);
+
+  // Proven-bad exclusion set (the pivot) — size + how much those leads have cost, for the page.
+  const excludedSet = getCopyNetExcludedAddresses(db);
+  const excludedNet = round(excludedSet.reduce(
+    (a, addr) => a + (byLead.get(addr) ?? []).reduce((x, t) => x + t.net_sol, 0), 0));
 
   // Persistence read-out across measurable leads with split-half data.
   const persisters = measurable.filter((r) => r.first_half_net_sol != null);
@@ -617,13 +668,25 @@ export function computeWalletLeaderboardV2(db: Database.Database, limit = 50): u
       v1: abV1,
       v2: abV2,
       verdict: ab_verdict,
-      // Selection layered on the ONLY promotable strategy: does V2 add anything on top of what
-      // would actually go live? Resolve copy-hotlead-strict-v2 vs its control at n>=target_n.
+      // Selection layered on the ONLY promotable strategy — RESOLVED 2026-07-02 with the A/B:
+      // strict-v2 killed at n=3 alongside the refuted positive-selection thesis. Frozen series.
       on_incumbent: {
-        note: 'copy-hotlead-strict-v2 (hot-lead + V2 gate) vs copy-hotlead-strict (control). V2 earns deployment only if it lifts net AND drop3 over the plain incumbent.',
+        note: 'RESOLVED 2026-07-02 (killed with the A/B — positive selection refuted OOS before this twin accumulated n). Successor experiment: copy-hotlead-strict-xbad (proven-bad EXCLUSION on the same incumbent, see exclusion block).',
         v2: abStrictV2,
         control: abStrictControl,
       },
+    },
+    // The PIVOT: the surviving copy-net signal, deployed as a veto. Leads with a proven-
+    // negative all-time baseline copy record; excludeProvenBadLeads strategies skip them.
+    exclusion: {
+      note:
+        `Proven-bad veto set (copy-net as EXCLUSION, not selection): >= ${XBAD_GATE.minCopies} baseline copies ` +
+        `with all-time net <= ${XBAD_GATE.maxNetSol} SOL. Motivation: downside persistence is the one OOS-robust ` +
+        'copy-net signal (losers → −17.8 second-half vs winners +2.5). Live consumer: copy-hotlead-strict-xbad ' +
+        '(resolve vs copy-hotlead-strict at n>=100 on drop3 AND net/trade). Tune via COPYXBAD_MIN_COPIES / COPYXBAD_MAX_NET.',
+      gate: XBAD_GATE,
+      n_excluded: excludedSet.length,
+      excluded_total_copy_net_sol: excludedNet,
     },
     persistence: {
       note: 'Split-half (leads with >=12 copies): does first-half copy profit predict second-half?',

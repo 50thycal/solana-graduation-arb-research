@@ -10,6 +10,50 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-02 — V2 positive selection REFUTED out-of-sample; pivot to proven-bad exclusion; discovery-source framework (operator-directed)
+
+The 2026-07-01 methodology fixes paid off immediately: the walk-forward comparison **flipped the
+V2 story on day one**. Branch `claude/copy-bot-strategy-review-96su67` (fresh from main).
+
+**The refutation (why the select A/B died early):** in-sample, V2-selected leads showed +27.0 SOL
+(vs V1 +10.3) — the old headline. Out-of-sample (gate on pre-cutoff copies, score on the 7d after):
+**V2's unique picks LOST −2.43 SOL (4 leads) while the leads V2 rejects made +1.60 (34 leads)**.
+Every gate_grid config was OOS-negative (−0.20…−0.55 net/lead; adding recency made it WORSE).
+The live A/B's exclusive splits agreed (v2-excl −3.55/20 trades vs v1-excl −1.10/37). Three
+independent lenses, one answer: cumulative copy-net POSITIVE selection is a mirage — the same
+lesson as the killed `copy-elitelead`, now with the circularity mechanism identified.
+**KILLED:** `copy-select-v1` (n=39), `copy-select-v2` (n=23, 0 wins), `copy-hotlead-strict-v2`
+(n=3). The copy-v2 page marks the A/B `resolved_refuted` with the frozen final series.
+
+**What survives — the pivot (cohort V):** persistence is one-sided. First-half LOSERS keep losing
+(−17.8 SOL second-half) while winners barely persist (+2.5). Copy-net is a **veto, not a
+selector** → spawned **`copy-hotlead-strict-xbad`**: identical to the incumbent
+`copy-hotlead-strict`, but skips leads whose all-time baseline copy net is proven negative
+(≥10 copies summing ≤0; `getCopyNetExcludedAddresses`, env `COPYXBAD_*`). Population-based, so the
+screen is live from day one; subset of strict → ~zero marginal RPC. **Resolve vs strict at n≥100:
+keep only if it beats strict on drop3 AND net/trade.**
+
+**Also resolved:** cotrade discovery **FAILS** (n=108, net −4.5, drop3 −6.5 vs OG-smart control
+−0.9/−3.0) — killed `copy-cotrade-tp100-sl30` + its control `copy-ogsmart-tp100-sl30`. And the
+idealized source probes (`copy-livetape-tp100-sl30` n=0, `copy-external-tp100-sl30` n=1) were
+superseded (below).
+
+**Discovery-source framework (operator request — "make it easy to iterate discovery theses"):**
+new `src/copytrade/discovery-sources.ts`. A discovery thesis is now **one registry row + a
+harvester** that tags `wallet_candidates.source`; everything else derives: the quarantined smart
+set (generic SQL), a standardized REALISTIC probe (`copy-src-<id>`, lag5+drift10 TP100/SL30, no
+lead gate — auto-emitted into `COPY_STRATEGIES`), and a `discovery_scorecard` row in
+copy-trades.json (funnel + P&L vs the shared OG control `copy-tp100-sl30-lag` + auto-verdict at
+n≥100: must beat control on net/trade AND drop3/trade). Playbook: `docs/discovery-playbook.md`.
+Live-tape + external migrated to registry probes (`copy-src-live-tape`, `copy-src-external`).
+
+**In-flight after this change (4 slots, at cap):** `copy-hotlead-strict-hi` (n=12),
+`copy-hotlead-strict-xbad` (new), `copy-src-live-tape` + `copy-src-external` (funnel-blocked,
+counted as one source-probe slot pair). Incumbent unchanged: `copy-hotlead-strict` (n=628, drop3
++5.41, score 100, sole promotable).
+
+---
+
 ## 2026-07-01 — Copy-v2 methodology overhaul + roster changes (operator-directed)
 
 Operator-directed batch off a copy-v2 evaluation (branch `claude/copy-bot-strategy-review-96su67`).
