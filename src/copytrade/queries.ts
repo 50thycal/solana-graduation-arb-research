@@ -10,7 +10,7 @@ import { COPYABILITY } from './ranker';
  * on already-scored wallets with no re-score. Null/unknown → excluded (conservative).
  * Requires the table aliased `ws`. Numeric constants inlined (safe, no user input).
  */
-const COPYABLE_SQL = `
+export const COPYABLE_SQL = `
   COALESCE(ws.avg_hold_sec, 0) >= ${COPYABILITY.minHoldSec}
   AND COALESCE(ws.win_rate, 1) <= ${COPYABILITY.maxWinRate}
   AND COALESCE(json_extract(ws.venues_json, '$.pumpswap'), 0) * 1.0
@@ -404,35 +404,9 @@ export function getCotradeSmartSetAddresses(db: Database.Database): string[] {
   `).all({ thr: COTRADE_COHORT_MIN_WINNERS }) as Array<{ address: string }>).map((r) => r.address);
 }
 
-/**
- * DISCOVERY-SOURCE cohort for the OG-vs-Idea1 A/B: copyable smart wallets the
- * live-tape harvester surfaced (source='live_tape') — wallets the OG seed never
- * saw. The trader quarantines these to leadSource:'live_tape' strategies, so the
- * existing strategies keep trading OG-discovered wallets ONLY and the live-tape
- * wallets only show up on the dedicated new strategies. Clean PnL comparison.
- */
-export function getLiveTapeSmartSetAddresses(db: Database.Database): string[] {
-  return (db.prepare(`
-    SELECT ws.address FROM wallet_scores ws
-    JOIN wallet_candidates wc ON wc.address = ws.address
-    WHERE ${COHORT_GATE} AND wc.source = 'live_tape'
-      AND ${COPYABLE_SQL}
-    ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
-  `).all() as Array<{ address: string }>).map((r) => r.address);
-}
-
-/** Discovery-source cohort for the OG-vs-external A/B (Idea 3): copyable smart
- *  wallets seeded from the external top-trader leaderboard (source='external').
- *  Quarantined to leadSource:'external' strategies, same as live-tape. */
-export function getExternalSmartSetAddresses(db: Database.Database): string[] {
-  return (db.prepare(`
-    SELECT ws.address FROM wallet_scores ws
-    JOIN wallet_candidates wc ON wc.address = ws.address
-    WHERE ${COHORT_GATE} AND wc.source = 'external'
-      AND ${COPYABLE_SQL}
-    ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
-  `).all() as Array<{ address: string }>).map((r) => r.address);
-}
+// Per-source smart-set getters (live_tape, external, …) moved to the generic
+// getSourceSmartSetAddresses(db, sourceId) in discovery-sources.ts (2026-07-02) —
+// discovery sources are registry-driven now; see docs/discovery-playbook.md.
 
 /** From a set of addresses (the wallets we actually copy: follow_list ∪ smart set),
  *  return those whose cached score is stale (last_refreshed < cutoff or never set),

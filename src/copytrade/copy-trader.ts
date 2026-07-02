@@ -8,8 +8,9 @@ import { computeMacroRegime, currentMacroScore } from './macro-regime';
 import { computeWalletLeaderboard } from './leaderboard';
 import { CopyLiveExecutor } from './copy-live-executor';
 import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
-import { getOgSmartSetAddresses, getCotradeSmartSetAddresses, getLiveTapeSmartSetAddresses, getSmartSetAddresses, getExternalSmartSetAddresses } from './queries';
-import { getCopyNetSelectedAddresses } from './leaderboard-v2';
+import { getOgSmartSetAddresses, getCotradeSmartSetAddresses, getSmartSetAddresses } from './queries';
+import { getCopyNetSelectedAddresses, getCopyNetExcludedAddresses } from './leaderboard-v2';
+import { DISCOVERY_SOURCES, sourceProbeId, refreshSourceSets, computeDiscoveryScorecard } from './discovery-sources';
 import { getCotradeDiscovery } from './cotrade-discovery';
 import { computeLiveTape } from './live-tape-harvester';
 import { getExternalSeedSummary } from './external-seed';
@@ -66,13 +67,12 @@ export interface CopyStrategy {
   minLeadRank?: number;        // only copy if lead wallet's follow_list rank <= this
   minConsensusRecent?: number; // only copy if >= N distinct smart wallets bought this mint in last 10min
   walletAllowlist?: string[];  // only copy if the lead wallet is in this set (copy-best-wallet)
-  leadSource?: 'og' | 'live_tape' | 'external';
-                               // DISCOVERY-SOURCE A/B (Idea 1 + Idea 3): which discovery pipeline surfaced the
-                               // lead wallet. Quarantine semantics: a wallet fires ONLY strategies whose
-                               // leadSource matches its discovery source — live_tape wallets → leadSource:
-                               // 'live_tape'; external (Solana Tracker) wallets → leadSource:'external'; every
-                               // other strategy (undefined or 'og') trades OG-discovered wallets ONLY. So each
-                               // discovery pipeline gets its own isolated copy-PnL read.
+  leadSource?: string;         // DISCOVERY-SOURCE quarantine, registry-driven (discovery-sources.ts): which
+                               // discovery pipeline surfaced the lead wallet. A wallet fires ONLY strategies
+                               // whose leadSource matches its wallet_candidates.source tag; every other
+                               // strategy (undefined or 'og') trades OG-discovered wallets ONLY. Source probes
+                               // are auto-emitted from DISCOVERY_SOURCES (makeSourceProbes), so each pipeline
+                               // gets its own isolated copy-PnL read with zero hand wiring.
   leadSelection?: 'v1' | 'v2'; // SELECTION-METHOD A/B (Option B): only copy when the lead is in this
                                // selection set. 'v1' = the live own-P&L smart set (getSmartSetAddresses);
                                // 'v2' = the copy-net set (getCopyNetSelectedAddresses, gated on realized
@@ -82,6 +82,15 @@ export interface CopyStrategy {
                                // Orthogonal to leadSource: these twins leave leadSource undefined, so they
                                // operate within the OG-discovered universe (same as the copy-tp100-sl30
                                // baseline the V2 set is derived from).
+                               // 2026-07-02: positive selection REFUTED out-of-sample (see the kill note in
+                               // the roster). Mechanic retained; superseded by excludeProvenBadLeads below.
+  excludeProvenBadLeads?: boolean;
+                               // PROVEN-BAD VETO (the surviving half of the copy-net signal): skip the copy
+                               // when the lead's all-time baseline copy net is proven negative (>=10 closed
+                               // copies on copy-tp100-sl30 summing <=0 — getCopyNetExcludedAddresses,
+                               // leaderboard-v2.ts; env COPYXBAD_*). Downside persistence is the one robust
+                               // copy-net finding (past losers → −17.8 SOL second-half); use it as a veto,
+                               // never as a selector. Set refreshes with the other selection sets.
   leadCohort?: 'og_smart' | 'cotrade';
                                // DISCOVERY-METHOD A/B (Idea 2): only copy when the lead wallet was found by
                                // this discovery method. 'og_smart' = surfaced by the existing DB seed;
@@ -317,6 +326,21 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    drop3, OR n so low it can't reach 100 in ~2 weeks (over-filtered). 2-week window.
   { id: 'copy-hotlead-strict-hi', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 1.0 } },
+  // ── V (2026-07-02): PROVEN-BAD EXCLUSION on the incumbent — the pivot from the V2 OOS
+  //    refutation. Copy-net POSITIVE selection failed out-of-sample, but the persistence
+  //    asymmetry is real and one-sided: first-half LOSING leads keep losing (−17.8 SOL second
+  //    half) while winners barely persist (+2.5). So use copy-net as a VETO, not a selector:
+  //    identical to copy-hotlead-strict, but skip any lead whose all-time baseline copy net is
+  //    proven negative (>=10 closed copies on copy-tp100-sl30 summing <= 0 — population stats,
+  //    not this strategy's own history, so the screen is live from day one). The hot-lead gate
+  //    is recency-based (last 10); this adds "and never a proven long-run loser" on top —
+  //    catches hot-streaking wallets with deeply negative cumulative records. Subset of
+  //    strict's entries → shares its polls, ~zero marginal RPC. Resolve vs copy-hotlead-strict
+  //    at n>=100: keep only if it beats strict on drop3 AND net/trade. Gate env-tunable
+  //    (COPYXBAD_MIN_COPIES / COPYXBAD_MAX_NET, leaderboard-v2.ts).
+  { id: 'copy-hotlead-strict-xbad', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
+    excludeProvenBadLeads: true },
   // ── KILLED 2026-06-27 (INVALID; RPC cleanup): copy-hotlead-deep (lastN20 / >=5 trades — longer,
   //    "more stable" lookback). n=550 net +5.2 but drop3 -1.37: the deeper lookback's net is
   //    tail-driven. copy-hotlead (lastN10/>=3) and copy-hotlead-strict (net floor 0.5) are the
@@ -481,53 +505,43 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    TP/SL/size/exit, only the wallet selection differs. (The original source-based
   //    split was always empty: co-trade reads the same 0-30s pool as the OG seed.)
   //    The un-gated baseline above stays as the "all smart wallets" benchmark.
-  { id: 'copy-ogsmart-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadCohort: 'og_smart' },
-  { id: 'copy-cotrade-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadCohort: 'cotrade' },
-  // ── P (2026-06-29): DISCOVERY-SOURCE A/B (Idea 1). Identical params to the
-  //    load-bearing baseline (copy-tp100-sl30), but trades ONLY live-tape-discovered
-  //    wallets (leadSource:'live_tape'). Every OTHER strategy now trades OG-discovered
-  //    wallets ONLY (the source quarantine in onLeadBuy), so this vs copy-tp100-sl30
-  //    is a clean "do the wallets the live-tape harvester finds copy-trade better
-  //    than the OG-seed wallets?" comparison — same TP/SL/size/exit, only the
-  //    discovery pipeline differs. Lead-momentum-gated variant deferred (live-tape
-  //    wallets have no copy history yet, so a hotlead twin would sit empty).
-  { id: 'copy-livetape-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadSource: 'live_tape' },
+  // ── KILLED 2026-07-02 (RESOLVED — cotrade FAILS): copy-cotrade-tp100-sl30 (n=108, net −4.51,
+  //    drop3 −6.46) vs its control copy-ogsmart-tp100-sl30 (n=78, net −0.87, drop3 −2.97). The
+  //    co-trade cohort matured past n=100 clearly WORSE than the OG-smart control on both net and
+  //    drop3: clustering with proven winners does not select better copy leads. Control retired
+  //    with the arm. The leadCohort mechanic stays for future cohort A/Bs.
+  // ── KILLED 2026-07-02 (SUPERSEDED): copy-livetape-tp100-sl30 (n=0), copy-external-tp100-sl30
+  //    (n=1) — the idealized (1.1s) discovery-source probes. Replaced by the registry-driven
+  //    REALISTIC probes below (makeSourceProbes → copy-src-live-tape / copy-src-external): a
+  //    source that only works at 1.1s is not a real source, and idealized probes can never feed
+  //    a promotable strategy. Near-zero data lost (n<=1).
+  // ── KILLED 2026-07-02 (INVALID — OOS refutation of V2 positive selection): copy-select-v1
+  //    (n=39, net −1.23), copy-select-v2 (n=23, net −4.17, 0 wins), copy-hotlead-strict-v2 (n=3).
+  //    The walk-forward comparison shipped 2026-07-01 flipped the story: out-of-sample, V2's
+  //    unique picks LOST (−2.43 SOL / 4 leads) while the leads V2 rejects MADE money (+1.60 / 34);
+  //    every gate_grid config was OOS-negative; the live A/B exclusive splits agreed (v2 excl
+  //    −3.55 vs v1 excl −1.10). The old in-sample headline (+27 vs +10) was circular. Cumulative
+  //    copy-net POSITIVE selection is refuted — same lesson as copy-elitelead. What survives is
+  //    the DOWNSIDE persistence (past losers → −17.8 second-half): copy-net works as an
+  //    EXCLUSION screen, not a selector → copy-hotlead-strict-xbad below. The leadSelection
+  //    mechanic + copy-v2 page stay (the page now reports the exclusion set + resolved A/B).
 
-  // ── B (2026-06-30): SELECTION-METHOD A/B (audit Option B). The matched pair below is
-  //    IDENTICAL in every way (realistic lag5+drift10, TP100/SL30, no hold cap, shadow size)
-  //    EXCEPT which leads it is allowed to copy: -v1 copies the live own-P&L smart set
-  //    (getSmartSetAddresses — what drives selection today); -v2 copies the copy-net set
-  //    (getCopyNetSelectedAddresses — leads whose realized copy net clears V2_GATE). The
-  //    2026-06-29 audit showed own-P&L is ~uncorrelated with copy profit (r=-0.08) while copy
-  //    net persists (autocorr +0.43); the copy-v2 page already shows V2-selected leads carry
-  //    more copy net retrospectively. This puts the two selection methods head-to-head LIVE on
-  //    equal footing so by_strategy P&L is an apples-to-apples test. V1 selection is otherwise
-  //    UNTOUCHED (the existing watchlist + every other strategy still run as before) — this is
-  //    purely additive and reversible by removing these two rows. Pure-SQL/cached gates, near-zero
-  //    marginal RPC. Resolve at n>=100 each: keep whichever selection nets more (drop3 > 0).
-  { id: 'copy-select-v1', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v1' },
-  { id: 'copy-select-v2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v2' },
-  // ── B2 (2026-07-01): SELECTION A/B ON THE INCUMBENT. The -v1/-v2 pair above runs on the
-  //    static TP100/SL30 ruleset the lab already proved can't survive realistic execution
-  //    (KILLED 2026-06-17), so it can only answer "which selection loses less on a dead
-  //    ruleset" — not the deployment question. This twin layers the copy-net (V2) selection
-  //    on the ONLY promotable strategy (copy-hotlead-strict): its hot-lead gate is the live
-  //    control, and requiring the lead to ALSO clear V2_GATE tests whether copy-net selection
-  //    adds anything ON TOP of what would actually go live. Resolve vs copy-hotlead-strict
-  //    (its control) at n>=100: V2 earns its keep only if it lifts net AND drop3 over the
-  //    plain incumbent. Shares the strict entry + polls → ~zero marginal RPC.
-  { id: 'copy-hotlead-strict-v2', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, leadSelection: 'v2',
-    hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
-  // ── Q (2026-06-30): EXTERNAL-SEED A/B (Idea 3). Trades ONLY wallets seeded from
-  //    the Solana Tracker top-trader leaderboard (leadSource:'external'), identical
-  //    params to the baseline. vs copy-tp100-sl30 (OG) and copy-livetape (Idea 1)
-  //    this isolates "do externally-sourced hot wallets copy-trade better?" — with
-  //    the honest prior that public leaderboard wallets are crowded/alpha-decayed.
-  { id: 'copy-external-tp100-sl30', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null, leadSource: 'external' },
+  // ── U (2026-07-02): DISCOVERY-SOURCE PROBES — registry-driven (discovery-sources.ts). One
+  //    standardized REALISTIC probe per registered source (lag5+drift10, TP100/SL30, no lead
+  //    gate), quarantined to its source's wallets. Control = copy-tp100-sl30-lag (same ruleset,
+  //    OG wallets). Scorecard + verdicts publish in copy-trades.json → discovery_scorecard.
+  //    Adding a new discovery thesis = 1 registry row + a harvester (docs/discovery-playbook.md).
+  ...makeSourceProbes(),
 ];
+
+/** One standardized realistic probe per registered discovery source (see cohort U above). */
+function makeSourceProbes(): CopyStrategy[] {
+  return DISCOVERY_SOURCES.map((src) => ({
+    id: sourceProbeId(src.id),
+    tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, leadSource: src.id,
+  }));
+}
 
 function sleep(ms: number): Promise<void> { return new Promise((r) => setTimeout(r, ms)); }
 
@@ -739,17 +753,20 @@ export class CopyTrader {
   // fires when the lead wallet is in its cohort.
   private ogSmartSet = new Set<string>();
   private cotradeSet = new Set<string>();
-  // Discovery-source quarantine (Idea 1 + Idea 3 A/Bs): wallets surfaced by each
-  // non-OG pipeline. A wallet in one of these fires ONLY the matching-leadSource
-  // strategies; OG strategies skip it. Refreshed alongside the cohorts.
-  private liveTapeSet = new Set<string>();
-  private externalSet = new Set<string>();
+  // Discovery-source quarantine, registry-driven (discovery-sources.ts): source id →
+  // wallets that pipeline surfaced. A wallet in one of these fires ONLY the matching-
+  // leadSource strategies; OG strategies skip it. Refreshed alongside the cohorts.
+  private sourceSets = new Map<string, Set<string>>();
   // Selection-method A/B (Option B), refreshed alongside leadRank. v1 = own-P&L
   // smart set (the live V1 selector); v2 = copy-net selection. A leadSelection-gated
   // strategy only fires when the lead is in its set. These OVERLAP (a lead can be in
   // both) — that's intended: each method gets its full selected set for a fair A/B.
   private v1SelectSet = new Set<string>();
   private v2SelectSet = new Set<string>();
+  // Proven-bad veto set (excludeProvenBadLeads): leads whose all-time baseline copy
+  // net is proven negative. The one copy-net signal that survived OOS (downside
+  // persistence). Refreshed alongside the selection sets.
+  private provenBadSet = new Set<string>();
   // Delayed entries in flight, keyed `${strategyId}:${mint}` — blocks duplicate
   // opens while the entryDelaySec wait runs. In-memory only: a restart drops
   // pending entries (acceptable; the window is ~5s).
@@ -842,8 +859,10 @@ export class CopyTrader {
     // gate; they differ only by how the wallet was discovered.
     try { this.ogSmartSet = new Set(getOgSmartSetAddresses(this.db)); } catch { /* empty */ }
     try { this.cotradeSet = new Set(getCotradeSmartSetAddresses(this.db)); } catch { /* empty */ }
-    try { this.liveTapeSet = new Set(getLiveTapeSmartSetAddresses(this.db)); } catch { /* empty */ }
-    try { this.externalSet = new Set(getExternalSmartSetAddresses(this.db)); } catch { /* empty */ }
+    // Registry-driven source quarantine sets (discovery-sources.ts).
+    try { this.sourceSets = refreshSourceSets(this.db); } catch { /* empty */ }
+    // Proven-bad veto set (excludeProvenBadLeads).
+    try { this.provenBadSet = new Set(getCopyNetExcludedAddresses(this.db)); } catch { /* empty */ }
     // Selection-method A/B sets (Option B). v1 = live own-P&L selector; v2 = copy-net.
     try { this.v1SelectSet = new Set(getSmartSetAddresses(this.db)); } catch { /* empty */ }
     try { this.v2SelectSet = new Set(getCopyNetSelectedAddresses(this.db)); } catch { /* empty */ }
@@ -1183,15 +1202,15 @@ export class CopyTrader {
     // matcher falls back to mint+time and under-matches re-entries / offset fills.
     const copyEventId = `${detectMs}-${mint.slice(0, 10)}-${leadWallet.slice(0, 8)}`;
 
-    // Discovery-source quarantine (Idea 1 + Idea 3 A/Bs): categorize THIS lead
-    // wallet by which pipeline surfaced it. Sources are disjoint (one wallet_
-    // candidates.source each), so a wallet is in exactly one category. A wallet
-    // fires ONLY strategies whose leadSource matches — so the existing strategies
-    // keep trading OG wallets and each new pipeline gets its own isolated A/B.
-    const leadCat: 'og' | 'live_tape' | 'external' =
-      this.liveTapeSet.has(leadWallet) ? 'live_tape'
-        : this.externalSet.has(leadWallet) ? 'external'
-          : 'og';
+    // Discovery-source quarantine, registry-driven: categorize THIS lead wallet by
+    // which pipeline surfaced it (wallet_candidates.source is one value per wallet,
+    // so a wallet is in exactly one category; not in any registered source = 'og').
+    // A wallet fires ONLY strategies whose leadSource matches — each pipeline gets
+    // its own isolated copy-PnL series.
+    let leadCat = 'og';
+    for (const [srcId, set] of this.sourceSets) {
+      if (set.has(leadWallet)) { leadCat = srcId; break; }
+    }
 
     for (const s of COPY_STRATEGIES) {
       // Pair-shadow-driven live strategies do NOT self-gate: their entries are spawned
@@ -1230,6 +1249,10 @@ export class CopyTrader {
           ? this.v2SelectSet.has(leadWallet)
           : this.v1SelectSet.has(leadWallet);
         if (!inSel) { this.recordSkip(s.id, 'lead_selection'); continue; }
+      }
+      // Proven-bad veto: skip leads whose all-time baseline copy net is proven negative.
+      if (s.excludeProvenBadLeads && this.provenBadSet.has(leadWallet)) {
+        this.recordSkip(s.id, 'proven_bad_lead'); continue;
       }
       if (s.minLeadRank != null && leadRank > s.minLeadRank) { this.recordSkip(s.id, 'lead_rank'); continue; }
       if (s.minConsensusRecent != null) {
@@ -2625,6 +2648,11 @@ export function computeCopyTrades(db: Database.Database): unknown {
     // External seed (Idea 3) — Solana Tracker top-trader leaderboard funnel:
     // fetched → scored → passing the bar. Candidate feed only; we re-verify PnL.
     external_seed: getExternalSeedSummary(db),
+    // THE generic discovery-thesis panel (registry-driven, discovery-sources.ts):
+    // one row per registered source — funnel + standardized-probe P&L vs the OG
+    // control + verdict. Read THIS to compare discovery methods; the bespoke
+    // panels above are per-pipeline detail. Adding a source needs no report code.
+    discovery_scorecard: computeDiscoveryScorecard(db),
     // Per-strategy lead-wallet P&L attribution — who drives TP vs SL per strategy.
     lead_attribution: computeLeadAttribution(activeClosed),
     // Copy promotion bar (n>=100 · drop3>0 · stress>0 · monthly>=3.75) + readiness.

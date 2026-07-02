@@ -2464,7 +2464,7 @@ export function renderCopyTradesHtml(data: any): string {
     <h2>External seed <span class="desc" style="font-size:13px">— Idea 3: Solana Tracker top-trader leaderboard</span></h2>
     <div class="desc">Pulls hot wallet addresses from Solana Tracker's PnL leaderboard as a CANDIDATE FEED only — we re-verify
     every wallet's PnL ourselves (FIFO), so their numbers aren't trusted. Tagged <code>source='external'</code>, scored,
-    gated + copyability-filtered like everyone else, and quarantined to <code>copy-external-tp100-sl30</code>.
+    gated + copyability-filtered like everyone else, and quarantined to its probe <code>copy-src-external</code>.
     <b>Crowding caveat:</b> public leaderboard wallets are the most-copied → most alpha-decayed, so the honest prior is
     they may copy WORSE than live-tape (which sees wallets before they're indexed). <span class="desc">Status: ${ex.configured ? `<span class="green">configured</span> · last fetch ${(ex.last_fetched ?? 0).toLocaleString()} addrs` : '<span class="red">not configured</span> — set SOLANATRACKER_API_KEY'}</span></div>
     <div class="grid">
@@ -2500,6 +2500,41 @@ export function renderCopyTradesHtml(data: any): string {
       </div>
     </details>`;
   }).join('');
+  // Generic discovery-thesis scorecard (registry-driven) — one row per source.
+  const sc = d.discovery_scorecard ?? null;
+  const scRows: any[] = Array.isArray(sc?.rows) ? sc.rows : [];
+  const scVerdict = (v: string) => v === 'BEATS_OG' ? `<span class="green">${v}</span>`
+    : v === 'FAILS' ? `<span class="red">${v}</span>`
+      : `<span style="color:#94a3b8">${v}</span>`;
+  const scorecardCard = sc == null ? '' : `<div class="card" style="border-left:6px solid #0ea5e9">
+    <h2>Discovery scorecard <span class="desc" style="font-size:13px">— which way of finding wallets works?</span></h2>
+    <div class="desc">${escHtml(sc.note || '')}</div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+    <table>
+      <thead><tr><th>Source</th><th>Hypothesis</th><th style="text-align:right">cands</th><th style="text-align:right">scored</th>
+        <th style="text-align:right">smart</th><th style="text-align:right">n</th><th style="text-align:right">net</th>
+        <th style="text-align:right">net/trade</th><th style="text-align:right">drop3/trade</th><th>Verdict</th></tr></thead>
+      <tbody>
+        <tr style="color:#94a3b8"><td>og (control)</td><td>graduation-seeded baseline — the bar to beat</td>
+          <td style="text-align:right">—</td><td style="text-align:right">—</td><td style="text-align:right">—</td>
+          <td style="text-align:right">${sc.control?.n ?? 0}</td><td style="text-align:right">${sol(sc.control?.net_sol)}</td>
+          <td style="text-align:right">${sc.control?.net_per_trade ?? '—'}</td><td style="text-align:right">${sc.control?.drop3_per_trade ?? '—'}</td>
+          <td>CONTROL</td></tr>
+        ${scRows.map((r: any) => `<tr><td><b>${escHtml(r.source)}</b><br><span class="desc" style="font-size:11px">${escHtml(r.label || '')}</span></td>
+          <td class="desc" style="font-size:12px;max-width:260px">${escHtml(r.hypothesis || '')}</td>
+          <td style="text-align:right">${r.funnel?.candidates ?? 0}</td>
+          <td style="text-align:right">${r.funnel?.scored ?? 0}</td>
+          <td style="text-align:right">${r.funnel?.smart_copyable ?? 0}</td>
+          <td style="text-align:right">${r.probe?.n ?? 0}</td>
+          <td style="text-align:right">${sol(r.probe?.net_sol)}</td>
+          <td style="text-align:right">${r.probe?.net_per_trade ?? '—'}</td>
+          <td style="text-align:right">${r.probe?.drop3_per_trade ?? '—'}</td>
+          <td>${scVerdict(r.verdict)}<br><span class="desc" style="font-size:11px">${escHtml(r.verdict_detail || '')}</span></td></tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+
   const attribCard = (d.lead_attribution ?? []).length === 0 ? '' : `<div class="card" style="border-left:6px solid #16a34a">
     <h2>Per-strategy lead attribution <span class="desc" style="font-size:13px">— who drives TP vs SL</span></h2>
     <div class="desc">For each strategy (≥20 closed trades), lead wallets ranked by net SOL contributed. A high
@@ -2508,7 +2543,7 @@ export function renderCopyTradesHtml(data: any): string {
     ${attribRows}
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + discoveryCard + cotradeCard + liveTapeCard + externalCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + scorecardCard + discoveryCard + cotradeCard + liveTapeCard + externalCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
 }
 
 // ── COPY V2 PAGE ─────────────────────────────────────────────────────

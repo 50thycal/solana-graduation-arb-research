@@ -119,6 +119,10 @@ bugs exist until `diagnose.json` says healthy.
 - **`smart-money.ts`**, **`leaderboard.ts`**, **`ranker.ts`**, **`wallet-pnl.ts`**,
   **`discovery.ts`**, **`parse-swap.ts`**, **`predictors.ts`**, **`queries.ts`** — discovery,
   scoring, ranking, and analysis helpers.
+- **`discovery-sources.ts`** — registry-driven discovery-thesis framework: testing a new "how do
+  we find wallets" idea = one registry row + a harvester tagging `wallet_candidates.source`; the
+  probe strategy, quarantine routing, and `discovery_scorecard` panel all derive from the
+  registry. **Read `docs/discovery-playbook.md` before hand-wiring any new discovery pipeline.**
 
 The shared low-level execution core stays in `src/trading/` (`executor`, `wallet`, `jito`,
 `pumpswap-swap`, `safety`, `buy-retry`, `sell-retry`, `config`, `pool-resolver`, `token-2022`).
