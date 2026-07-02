@@ -1,0 +1,257 @@
+{
+  "generated_at": "2026-07-02T23:00:21.672Z",
+  "uptime_sec": 46349,
+  "counts": {
+    "graduations": 18911
+  },
+  "listener": {
+    "totalLogsReceived": 3061,
+    "totalCandidatesDetected": 378,
+    "totalCandidatesFromPumpFun": 0,
+    "totalCandidatesFromPumpFunProcessed": 353,
+    "totalCandidatesFromPumpSwap": 0,
+    "totalCandidatesFromPoll": 25,
+    "channel_wins": {
+      "pump_fun_ws_confirmed": 0,
+      "pump_fun_ws_processed": 353,
+      "pumpswap_ws_confirmed": 0,
+      "rpc_poll": 25
+    },
+    "totalPollDupes": 348,
+    "totalPollSigsFound": 1942,
+    "totalPollTicks": 4631,
+    "totalPollFailures": 0,
+    "pollConsecutiveFailures": 0,
+    "lastPollFailureSecondsAgo": null,
+    "totalCandidateSilenceReconnects": 0,
+    "totalDuplicateLogs": 348,
+    "totalVerifiedGraduations": 221,
+    "totalGraduationsRecorded": 221,
+    "totalFalsePositives": 157,
+    "totalBundlerFalsePositives": 157,
+    "totalMintExtractionFails": 0,
+    "totalStrategy3Extractions": 0,
+    "totalVaultExtractions": 221,
+    "totalVaultExtractionFails": 0,
+    "totalTxFetchFails": 0,
+    "totalTxFetchExceptions": 0,
+    "lastVaultFailReasons": [],
+    "lastMintFailReasons": [],
+    "lastEventSecondsAgo": 237,
+    "lastCandidateSecondsAgo": 237,
+    "wsConnected": true,
+    "reconnecting": false,
+    "totalReconnects": 0,
+    "deliveryLatencySec": {
+      "pumpFun": null,
+      "pumpFunProcessed": {
+        "n": 100,
+        "p50": 1.2,
+        "p95": 2.1,
+        "max": 3,
+        "mean": 1.2,
+        "pctOver25s": 0
+      },
+      "pumpSwap": null,
+      "rpcPoll": null
+    },
+    "rpcFetchMs": {
+      "n": 100,
+      "p50": 1117,
+      "p95": 1491,
+      "max": 1655,
+      "mean": 1135.7,
+      "pctOver25s": 100
+    },
+    "poolTracker": {
+      "pending": 0,
+      "speculative": 0,
+      "preFound": 0,
+      "totalPoolsFound": 0,
+      "totalExpired": 0,
+      "totalSkipped": 0,
+      "totalPumpSwapEvents": 0,
+      "totalPoolCreationEvents": 0,
+      "totalMigrationCandidatesFired": 0,
+      "totalMatched": 0,
+      "totalSpeculativeHits": 0,
+      "pumpSwapSubscribed": false,
+      "priceCollector": {
+        "activeObservations": 0,
+        "totalStarted": 0,
+        "totalCompleted": 0,
+        "totalSnapshots": 0,
+        "totalSnapshotFailures": 0,
+        "totalT30Timeouts": 0,
+        "t30AttemptsStarted": 0,
+        "t30CallbacksFired": 0,
+        "lastT30Timeouts": [],
+        "totalSlotsRejected": 0,
+        "totalStaleGraduations": 0,
+        "lastStaleGraduations": [],
+        "lastSnapshotFailures": []
+      }
+    },
+    "directPriceCollector": {
+      "activeObservations": 0,
+      "totalStarted": 221,
+      "totalCompleted": 0,
+      "totalSnapshots": 0,
+      "totalSnapshotFailures": 0,
+      "totalT30Timeouts": 0,
+      "t30AttemptsStarted": 0,
+      "t30CallbacksFired": 0,
+      "lastT30Timeouts": [],
+      "totalSlotsRejected": 0,
+      "totalStaleGraduations": 0,
+      "lastStaleGraduations": [],
+      "lastSnapshotFailures": []
+    },
+    "launch_debug": {
+      "uptimeSec": 46328,
+      "firehoseEventsTotal": 3061,
+      "createMatches": 0,
+      "initMintTxCount": 233,
+      "counter": {
+        "totalRecorded": 0,
+        "seenSize": 0,
+        "bufferedBuckets": 0,
+        "bufferedCount": 0
+      },
+      "topInstructions": [
+        {
+          "name": "InitializeAccount3",
+          "count": 774
+        },
+        {
+          "name": "GetAccountDataSize",
+          "count": 746
+        },
+        {
+          "name": "InitializeImmutableOwner",
+          "count": 741
+        },
+        {
+          "name": "TransferChecked",
+          "count": 539
+        },
+        {
+          "name": "CloseAccount",
+          "count": 434
+        },
+        {
+          "name": "CreatePool",
+          "count": 233
+        },
+        {
+          "name": "InitializeMint2",
+          "count": 233
+        },
+        {
+          "name": "MigrateV2",
+          "count": 232
+        },
+        {
+          "name": "MintTo",
+          "count": 227
+        },
+        {
+          "name": "Burn",
+          "count": 222
+        },
+        {
+          "name": "Migrate",
+          "count": 121
+        },
+        {
+          "name": "GetFees",
+          "count": 106
+        },
+        {
+          "name": "BuyExactQuoteIn",
+          "count": 80
+        },
+        {
+          "name": "Buy",
+          "count": 42
+        },
+        {
+          "name": "LaunchMigrate0",
+          "count": 15
+        },
+        {
+          "name": "Sell",
+          "count": 9
+        }
+      ]
+    }
+  },
+  "listener_dedupe": {
+    "verified": 221,
+    "recorded": 221,
+    "dupe_pct": 0
+  },
+  "rpc_limiter": {
+    "tokensAvailable": 4,
+    "queued": 0,
+    "maxTokens": 5,
+    "totalThrottled": 67711,
+    "totalDropped": 29,
+    "totalServed": 84334,
+    "servedByTier": {
+      "wait": 0,
+      "priority": 693,
+      "droppable": 48326,
+      "copyHot": 35315
+    },
+    "servedByLabel": {
+      "exec": 26652,
+      "copy_poll": 26386,
+      "wallet_pnl": 18344,
+      "probe_blocktime": 8173,
+      "competition": 2624,
+      "copy_trade": 756,
+      "grad_listener": 693,
+      "holder_enrich": 666,
+      "metadata": 40
+    },
+    "droppedByLabel": {
+      "exec": 29
+    },
+    "callsPerSec1m": 1.233,
+    "callsPerSec5m": 1.503,
+    "projCallsPerDay": 129859,
+    "uptimeSec": 46350
+  },
+  "pipeline_health": {
+    "ws_connected": true,
+    "last_graduation_sec_ago": 238,
+    "last_t30_callback_sec_ago": null,
+    "last_paper_trade_sec_ago": 1983617,
+    "last_shadow_trade_sec_ago": 1377011,
+    "last_candidate_sec_ago": 237,
+    "enabled_strategies": 0,
+    "channel_win_distribution": {
+      "pump_fun_ws_confirmed_pct": 0,
+      "pump_fun_ws_processed_pct": 93.4,
+      "pumpswap_ws_confirmed_pct": 0,
+      "rpc_poll_pct": 6.6,
+      "total_wins": 378
+    },
+    "verdict": "NO_STRATEGIES",
+    "notes": "No enabled strategies — trade pipeline intentionally idle."
+  },
+  "event_loop_lag": {
+    "n_samples": 600,
+    "window_minutes": 10,
+    "p50_ms": 0,
+    "p95_ms": 1,
+    "p99_ms": 308,
+    "max_ms_in_window": 954,
+    "mean_ms": 8,
+    "pct_over_100ms": 1,
+    "pct_over_1000ms": 0,
+    "all_time_max_lag_ms": 19853
+  },
+  "last_error": null
+}

@@ -1,0 +1,1354 @@
+{
+  "generated_at": "2026-07-02T23:00:21.819Z",
+  "phase": "phase1-offline-pnl",
+  "gate": {
+    "min_round_trips": 100,
+    "min_total_sol": 0.5,
+    "min_drop_top3_sol": 0,
+    "min_monthly_run_rate_sol": 3.75,
+    "max_days_since_active": 14
+  },
+  "summary": {
+    "total_candidates": 81433,
+    "scored": 5193,
+    "promotable": 6,
+    "watch": 3
+  },
+  "queue_preview": [
+    {
+      "address": "6C24hcFFLTSf1f6h6j5mVJBFXMWwPVNxYo7CSbPGyhL9",
+      "priority": 1500
+    },
+    {
+      "address": "BCXgzW22Jow2xDwmCLLZJunz6LbGd8XYnov5FEjMEGW8",
+      "priority": 1500
+    },
+    {
+      "address": "Bwrf3wRWibpNcoV9aFTQVrC85WZWVBqW9mRwB7w6JHgF",
+      "priority": 1500
+    },
+    {
+      "address": "2W8gXg1eN3HLdL5iJbd3fhKBMsmk22zXJDrCycjwac1X",
+      "priority": 1500
+    },
+    {
+      "address": "7Frq1DiCU7ypzPEGnZLgB8M2G9er7k5wDZnf8VUohBd1",
+      "priority": 1500
+    },
+    {
+      "address": "5nC9NTRXUwhv1WEXfVUa3tNN7sjgLqrzKFSavZydaFkL",
+      "priority": 1500
+    },
+    {
+      "address": "uycjP7sBGuCK8Ftwu2AAiT9s4fnvf9N1CoD4Lz29pMy",
+      "priority": 1500
+    },
+    {
+      "address": "A5ptjqiLeV2jTYoSk7W6owY3tjSt7z78ZvbP5Ldd4hkp",
+      "priority": 1500
+    },
+    {
+      "address": "87MQbh6ta75YqsyZHyNQY4MkB5YwNzhrxnchjoQ5X1Mj",
+      "priority": 1500
+    },
+    {
+      "address": "GceTLbiS9s6yc7XEuK8ZLNYRyDNg9mR6DHCZcRhafmkf",
+      "priority": 1500
+    }
+  ],
+  "watch": [
+    {
+      "address": "GncEyG3ok9pXk6ee5gtMzSWU6d3pUpvx2wJsAGnbH47f",
+      "n_round_trips": 275,
+      "total_realized_sol": 227.2363,
+      "total_realized_sol_drop_top3": 215.2683,
+      "median_rt_pct": 204.26925576639013,
+      "monthly_run_rate_sol": 455.856,
+      "win_rate": 0.851,
+      "avg_hold_sec": 1686,
+      "last_active_days_ago": 77.6,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 474,
+        "jupiter": 1,
+        "pumpfun_bc": 6,
+        "unknown": 1
+      },
+      "pumpswap_share": 0.983,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "last_active"
+      ]
+    },
+    {
+      "address": "6bZet9XwC5uiSNrrwPUv9D2i2y1Q3ge1zmHCn35qpcrL",
+      "n_round_trips": 120,
+      "total_realized_sol": 26.0863,
+      "total_realized_sol_drop_top3": 15.7647,
+      "median_rt_pct": -18.571109641997737,
+      "monthly_run_rate_sol": 89.806,
+      "win_rate": 0.458,
+      "avg_hold_sec": 1184,
+      "last_active_days_ago": 65.4,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 229
+      },
+      "pumpswap_share": 1,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "last_active"
+      ]
+    },
+    {
+      "address": "ELHGAuF9kopkhTe5ARuNpG8eCNjsy7X5NvoxkQnqNVDt",
+      "n_round_trips": 173,
+      "total_realized_sol": 41.823,
+      "total_realized_sol_drop_top3": 29.4475,
+      "median_rt_pct": 45.96160513208636,
+      "monthly_run_rate_sol": 80.686,
+      "win_rate": 0.763,
+      "avg_hold_sec": 949,
+      "last_active_days_ago": 67.6,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 197
+      },
+      "pumpswap_share": 1,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "last_active"
+      ]
+    }
+  ],
+  "rows": [
+    {
+      "address": "6U1itcXrSjEHVFiE6S5cbc6zCAoeFDhVVHar2WWC2kGh",
+      "n_round_trips": 883,
+      "total_realized_sol": 3508.3188,
+      "total_realized_sol_drop_top3": 3312.1351,
+      "median_rt_pct": -102.99789662193241,
+      "monthly_run_rate_sol": 7275.839,
+      "win_rate": 0.101,
+      "avg_hold_sec": 454,
+      "last_active_days_ago": 1.1,
+      "rt_24h": 0,
+      "rt_7d": 859,
+      "venues": {
+        "pumpswap": 32,
+        "unknown": 948
+      },
+      "pumpswap_share": 0.033,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "2ym9CjxP5YW9UqF1SegF4KAPFFS81bqMPTxAS5m2aNaF",
+      "n_round_trips": 948,
+      "total_realized_sol": 1647.2603,
+      "total_realized_sol_drop_top3": 1563.7075,
+      "median_rt_pct": 259.05194357501085,
+      "monthly_run_rate_sol": 1870.337,
+      "win_rate": 0.978,
+      "avg_hold_sec": 70,
+      "last_active_days_ago": 11.3,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 1086,
+        "pumpswap": 1
+      },
+      "pumpswap_share": 0.001,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue",
+        "copyable_hold",
+        "copyable_winrate"
+      ]
+    },
+    {
+      "address": "JBV41vYBL2b8HuBmNcCnpRoBfrLDJrUFViQFPJ2vZrWd",
+      "n_round_trips": 745,
+      "total_realized_sol": 629.5967,
+      "total_realized_sol_drop_top3": 606.0617,
+      "median_rt_pct": 110.44938099938739,
+      "monthly_run_rate_sol": 714.283,
+      "win_rate": 0.981,
+      "avg_hold_sec": 185,
+      "last_active_days_ago": 1.1,
+      "rt_24h": 0,
+      "rt_7d": 17,
+      "venues": {
+        "pumpfun_bc": 881,
+        "pumpswap": 27
+      },
+      "pumpswap_share": 0.03,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue",
+        "copyable_hold",
+        "copyable_winrate"
+      ]
+    },
+    {
+      "address": "3UPYFxJBvDYWSjrDY5r7BT4JJv9rtnoijRKcVn6ycVaj",
+      "n_round_trips": 159,
+      "total_realized_sol": 99.7678,
+      "total_realized_sol_drop_top3": -26.1375,
+      "median_rt_pct": -41.32480292736784,
+      "monthly_run_rate_sol": 570.917,
+      "win_rate": 0.384,
+      "avg_hold_sec": 4319,
+      "last_active_days_ago": 25.4,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 278,
+        "pumpfun_bc": 16
+      },
+      "pumpswap_share": 0.946,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active"
+      ]
+    },
+    {
+      "address": "GncEyG3ok9pXk6ee5gtMzSWU6d3pUpvx2wJsAGnbH47f",
+      "n_round_trips": 275,
+      "total_realized_sol": 227.2363,
+      "total_realized_sol_drop_top3": 215.2683,
+      "median_rt_pct": 204.26925576639013,
+      "monthly_run_rate_sol": 455.856,
+      "win_rate": 0.851,
+      "avg_hold_sec": 1686,
+      "last_active_days_ago": 77.6,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 474,
+        "jupiter": 1,
+        "pumpfun_bc": 6,
+        "unknown": 1
+      },
+      "pumpswap_share": 0.983,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "last_active"
+      ]
+    },
+    {
+      "address": "CZMvsfuFkCLQV6cgXkyMDvDAQ5sL3B7r6Jy69CRuBYyF",
+      "n_round_trips": 294,
+      "total_realized_sol": 343.2593,
+      "total_realized_sol_drop_top3": 318.8186,
+      "median_rt_pct": 281.339930647948,
+      "monthly_run_rate_sol": 389.083,
+      "win_rate": 0.969,
+      "avg_hold_sec": 297,
+      "last_active_days_ago": 1.1,
+      "rt_24h": 0,
+      "rt_7d": 20,
+      "venues": {
+        "pumpfun_bc": 356,
+        "pumpswap": 25
+      },
+      "pumpswap_share": 0.066,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue",
+        "copyable_hold",
+        "copyable_winrate"
+      ]
+    },
+    {
+      "address": "iGiyBNJ9eKcPfBLaoVCEMx3WCyrnUT1SfKZL2DYifcL",
+      "n_round_trips": 289,
+      "total_realized_sol": 322.5084,
+      "total_realized_sol_drop_top3": 299.462,
+      "median_rt_pct": 184.19080954258595,
+      "monthly_run_rate_sol": 365.511,
+      "win_rate": 0.965,
+      "avg_hold_sec": 332,
+      "last_active_days_ago": 1.1,
+      "rt_24h": 0,
+      "rt_7d": 20,
+      "venues": {
+        "pumpfun_bc": 351,
+        "pumpswap": 27
+      },
+      "pumpswap_share": 0.071,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue",
+        "copyable_winrate"
+      ]
+    },
+    {
+      "address": "F1u8GWjfDLAh2vqLWdcoWHypHM1jDgLiUewNjQQZuzsz",
+      "n_round_trips": 212,
+      "total_realized_sol": 58.6686,
+      "total_realized_sol_drop_top3": -8.4498,
+      "median_rt_pct": -19.583395767100946,
+      "monthly_run_rate_sol": 355.241,
+      "win_rate": 0.349,
+      "avg_hold_sec": 2593,
+      "last_active_days_ago": 25.6,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 291,
+        "pumpfun_bc": 19
+      },
+      "pumpswap_share": 0.939,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active"
+      ]
+    },
+    {
+      "address": "2o9UsXTRWZTfPt2mgTpUM5NcTCMKHsgox4nFdwTVdfks",
+      "n_round_trips": 479,
+      "total_realized_sol": 161.9628,
+      "total_realized_sol_drop_top3": 99.5756,
+      "median_rt_pct": 6.586407542503041,
+      "monthly_run_rate_sol": 340.664,
+      "win_rate": 0.539,
+      "avg_hold_sec": 9841,
+      "last_active_days_ago": 0.9,
+      "rt_24h": 6,
+      "rt_7d": 258,
+      "venues": {
+        "pumpfun_bc": 482,
+        "pumpswap": 240,
+        "raydium_amm": 10,
+        "unknown": 14,
+        "raydium_clmm": 2
+      },
+      "pumpswap_share": 0.321,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "CaisERf36rW5abT9ZotN82D3W7N8CETkfjiVo1joTE4j",
+      "n_round_trips": 11,
+      "total_realized_sol": 12.9513,
+      "total_realized_sol_drop_top3": -2.3969,
+      "median_rt_pct": 40.40828871045106,
+      "monthly_run_rate_sol": 335.112,
+      "win_rate": 0.636,
+      "avg_hold_sec": 517,
+      "last_active_days_ago": 5.1,
+      "rt_24h": 0,
+      "rt_7d": 11,
+      "venues": {
+        "pumpfun_bc": 37,
+        "pumpswap": 2
+      },
+      "pumpswap_share": 0.051,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "drop_top3",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "DGXengUJiFaTVRcpavPJK7vcRVUoSSvhhuuxstLprDBt",
+      "n_round_trips": 249,
+      "total_realized_sol": 185.9409,
+      "total_realized_sol_drop_top3": 164.8447,
+      "median_rt_pct": 2442.035405781127,
+      "monthly_run_rate_sol": 304.954,
+      "win_rate": 0.743,
+      "avg_hold_sec": 23120,
+      "last_active_days_ago": 0.7,
+      "rt_24h": 3,
+      "rt_7d": 33,
+      "venues": {
+        "pumpswap": 220,
+        "pumpfun_bc": 86,
+        "unknown": 5
+      },
+      "pumpswap_share": 0.707,
+      "copyable": true,
+      "passed_gate": true,
+      "failed_gates": []
+    },
+    {
+      "address": "3xJ8i2bGkQ3oVwWic5aufiZtodA5MEWdZKcXUPZT8kwj",
+      "n_round_trips": 180,
+      "total_realized_sol": 166.4891,
+      "total_realized_sol_drop_top3": 148.8341,
+      "median_rt_pct": 47.329192221678305,
+      "monthly_run_rate_sol": 302.066,
+      "win_rate": 0.844,
+      "avg_hold_sec": 389,
+      "last_active_days_ago": 13.9,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 210,
+        "pumpswap": 79
+      },
+      "pumpswap_share": 0.273,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "H7Npr74ULAhJnQmqY58Eyk8cnz8yLpNNQ2pXR9twczn8",
+      "n_round_trips": 22,
+      "total_realized_sol": 16.6526,
+      "total_realized_sol_drop_top3": 8.8958,
+      "median_rt_pct": 35.11783219849786,
+      "monthly_run_rate_sol": 294.531,
+      "win_rate": 0.773,
+      "avg_hold_sec": 681,
+      "last_active_days_ago": 5.6,
+      "rt_24h": 0,
+      "rt_7d": 18,
+      "venues": {
+        "pumpswap": 10,
+        "pumpfun_bc": 40
+      },
+      "pumpswap_share": 0.2,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "3MXThqrK3rcu8o329EVjRiqHdxa9VP39HJGKFcdgRPWC",
+      "n_round_trips": 136,
+      "total_realized_sol": 27.5952,
+      "total_realized_sol_drop_top3": -5.715,
+      "median_rt_pct": -48.16721426672527,
+      "monthly_run_rate_sol": 227.509,
+      "win_rate": 0.368,
+      "avg_hold_sec": 2013,
+      "last_active_days_ago": 75.1,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 247
+      },
+      "pumpswap_share": 1,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active"
+      ]
+    },
+    {
+      "address": "3MJWniyrHzfiU3wv4yHzys7GHwfSjBjxeFjvAh9cPW43",
+      "n_round_trips": 236,
+      "total_realized_sol": 7.0817,
+      "total_realized_sol_drop_top3": -2.8517,
+      "median_rt_pct": -8.645640131666479,
+      "monthly_run_rate_sol": 203.402,
+      "win_rate": 0.352,
+      "avg_hold_sec": 230,
+      "last_active_days_ago": 23.9,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 217,
+        "pumpswap": 106,
+        "unknown": 18
+      },
+      "pumpswap_share": 0.311,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active",
+        "copyable_venue",
+        "copyable_hold"
+      ]
+    },
+    {
+      "address": "38chUPkHEWrvUDqtxLjVuvmUMmn8xCindcJoxKoHTrdx",
+      "n_round_trips": 187,
+      "total_realized_sol": 7.077,
+      "total_realized_sol_drop_top3": -2.6794,
+      "median_rt_pct": -11.34521511796756,
+      "monthly_run_rate_sol": 200.338,
+      "win_rate": 0.455,
+      "avg_hold_sec": 497,
+      "last_active_days_ago": 50.1,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 103,
+        "pumpswap": 124,
+        "unknown": 17
+      },
+      "pumpswap_share": 0.508,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active"
+      ]
+    },
+    {
+      "address": "98WYKGuEM36RsM67nrVkH2mKgJKEQMRT4N9BA4SUGzFq",
+      "n_round_trips": 173,
+      "total_realized_sol": 82.89,
+      "total_realized_sol_drop_top3": 77.5285,
+      "median_rt_pct": 133.70862147605237,
+      "monthly_run_rate_sol": 188.73,
+      "win_rate": 0.798,
+      "avg_hold_sec": 3701,
+      "last_active_days_ago": 5.9,
+      "rt_24h": 0,
+      "rt_7d": 81,
+      "venues": {
+        "pumpswap": 192
+      },
+      "pumpswap_share": 1,
+      "copyable": true,
+      "passed_gate": true,
+      "failed_gates": []
+    },
+    {
+      "address": "Bdbq3LHqh7xHHAoAcw7LmFZr7C4DhvfUvbHkpLDGcMHS",
+      "n_round_trips": 498,
+      "total_realized_sol": 169.8148,
+      "total_realized_sol_drop_top3": -52.1614,
+      "median_rt_pct": -77.79990954425364,
+      "monthly_run_rate_sol": 187.754,
+      "win_rate": 0.259,
+      "avg_hold_sec": 6837,
+      "last_active_days_ago": 1.7,
+      "rt_24h": 0,
+      "rt_7d": 165,
+      "venues": {
+        "pumpfun_bc": 7,
+        "pumpswap": 778
+      },
+      "pumpswap_share": 0.991,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3"
+      ]
+    },
+    {
+      "address": "5B52w1ZW9tuwUduueP5J7HXz5AcGfruGoX6YoAudvyxG",
+      "n_round_trips": 115,
+      "total_realized_sol": 15.4914,
+      "total_realized_sol_drop_top3": -16.2244,
+      "median_rt_pct": -54.871987561476956,
+      "monthly_run_rate_sol": 184.482,
+      "win_rate": 0.139,
+      "avg_hold_sec": 5692,
+      "last_active_days_ago": 24.2,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 59,
+        "unknown": 3,
+        "pumpswap": 105
+      },
+      "pumpswap_share": 0.629,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active"
+      ]
+    },
+    {
+      "address": "UbTTzTPqs3ieZZP8118Qc4DzNbV8HxB3hW9C7PANHzM",
+      "n_round_trips": 272,
+      "total_realized_sol": 171.2839,
+      "total_realized_sol_drop_top3": 159.8902,
+      "median_rt_pct": 103.47144777615256,
+      "monthly_run_rate_sol": 181.113,
+      "win_rate": 0.875,
+      "avg_hold_sec": 142,
+      "last_active_days_ago": 11.3,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 333,
+        "pumpswap": 27
+      },
+      "pumpswap_share": 0.075,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue",
+        "copyable_hold"
+      ]
+    },
+    {
+      "address": "ETU3GyrUsv6UztQJxHgsBX2UoJFmq79WJe3JyDpAqGMz",
+      "n_round_trips": 107,
+      "total_realized_sol": 8.7366,
+      "total_realized_sol_drop_top3": -1.3139,
+      "median_rt_pct": -8.104958526071004,
+      "monthly_run_rate_sol": 177.417,
+      "win_rate": 0.355,
+      "avg_hold_sec": 926,
+      "last_active_days_ago": 14,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 134,
+        "pumpswap": 42,
+        "unknown": 10
+      },
+      "pumpswap_share": 0.226,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "6N6sNVYwdDZEh7XEdoixjWovrCVuozhSsLUXZN8QwoaU",
+      "n_round_trips": 264,
+      "total_realized_sol": 163.8402,
+      "total_realized_sol_drop_top3": 148.9307,
+      "median_rt_pct": 73.8176131620306,
+      "monthly_run_rate_sol": 173.335,
+      "win_rate": 0.871,
+      "avg_hold_sec": 152,
+      "last_active_days_ago": 11.3,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 322,
+        "pumpswap": 26
+      },
+      "pumpswap_share": 0.075,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue",
+        "copyable_hold"
+      ]
+    },
+    {
+      "address": "3VU5YvTwU9GJX7uPtPyMPNSajiB3WzznVAd6zm2EFh6Q",
+      "n_round_trips": 2,
+      "total_realized_sol": 19.9994,
+      "total_realized_sol_drop_top3": 0,
+      "median_rt_pct": 10213.91812191291,
+      "monthly_run_rate_sol": 165.681,
+      "win_rate": 1,
+      "avg_hold_sec": 156615,
+      "last_active_days_ago": 7.2,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "unknown": 1,
+        "jupiter": 1,
+        "pumpfun_bc": 2,
+        "meteora_dlmm": 1,
+        "raydium_clmm": 1
+      },
+      "pumpswap_share": 0,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "drop_top3",
+        "copyable_venue",
+        "copyable_winrate"
+      ]
+    },
+    {
+      "address": "8vThqJYZ4KdB6nrjTLjG9omw76q17SKr4KCUWSXip5u9",
+      "n_round_trips": 139,
+      "total_realized_sol": 149.7728,
+      "total_realized_sol_drop_top3": 104.605,
+      "median_rt_pct": 10.798925769763176,
+      "monthly_run_rate_sol": 162.679,
+      "win_rate": 0.604,
+      "avg_hold_sec": 1637,
+      "last_active_days_ago": 0.7,
+      "rt_24h": 6,
+      "rt_7d": 48,
+      "venues": {
+        "pumpswap": 140,
+        "pumpfun_bc": 108
+      },
+      "pumpswap_share": 0.565,
+      "copyable": true,
+      "passed_gate": true,
+      "failed_gates": []
+    },
+    {
+      "address": "BuWG6b9AeK1KuyG88Y7FsdLagCJtNcNwxmbQTDqPeNFr",
+      "n_round_trips": 647,
+      "total_realized_sol": 151.0419,
+      "total_realized_sol_drop_top3": 63.4452,
+      "median_rt_pct": -63.878016174418725,
+      "monthly_run_rate_sol": 161.483,
+      "win_rate": 0.331,
+      "avg_hold_sec": 6651,
+      "last_active_days_ago": 1.7,
+      "rt_24h": 0,
+      "rt_7d": 183,
+      "venues": {
+        "pumpfun_bc": 27,
+        "pumpswap": 814
+      },
+      "pumpswap_share": 0.968,
+      "copyable": true,
+      "passed_gate": true,
+      "failed_gates": []
+    },
+    {
+      "address": "7qrXtBWKgN48An2tj9XyRBv7TRaR4DLsy2z2BFhFCVx8",
+      "n_round_trips": 61,
+      "total_realized_sol": 6.6757,
+      "total_realized_sol_drop_top3": 1.931,
+      "median_rt_pct": -26.16828650633101,
+      "monthly_run_rate_sol": 160.145,
+      "win_rate": 0.361,
+      "avg_hold_sec": 346,
+      "last_active_days_ago": 36,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 75,
+        "pumpswap": 40
+      },
+      "pumpswap_share": 0.348,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "last_active",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "888QxrfwLFGxtygjNjbsMCYgtFy7mCybxPMYYdCu5888",
+      "n_round_trips": 175,
+      "total_realized_sol": 9.7019,
+      "total_realized_sol_drop_top3": -4.736,
+      "median_rt_pct": -73.37579929882261,
+      "monthly_run_rate_sol": 153.847,
+      "win_rate": 0.309,
+      "avg_hold_sec": 2277,
+      "last_active_days_ago": 26.3,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 297,
+        "pumpswap": 72
+      },
+      "pumpswap_share": 0.195,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "2rGrt1xDYwWyrGSNhy2AXEaUp3tzibM6PYaHeSnTkEY3",
+      "n_round_trips": 563,
+      "total_realized_sol": 136.6305,
+      "total_realized_sol_drop_top3": -2.1475,
+      "median_rt_pct": -81.50682984950564,
+      "monthly_run_rate_sol": 146.32,
+      "win_rate": 0.236,
+      "avg_hold_sec": 7426,
+      "last_active_days_ago": 1.7,
+      "rt_24h": 0,
+      "rt_7d": 158,
+      "venues": {
+        "pumpfun_bc": 14,
+        "pumpswap": 795
+      },
+      "pumpswap_share": 0.983,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3"
+      ]
+    },
+    {
+      "address": "7EdtVGg547L4GSqvuTTbjahYkfP6NmTa5nB2q5HjqLnR",
+      "n_round_trips": 478,
+      "total_realized_sol": 131.982,
+      "total_realized_sol_drop_top3": -33.1071,
+      "median_rt_pct": -75.6399630149865,
+      "monthly_run_rate_sol": 145.926,
+      "win_rate": 0.253,
+      "avg_hold_sec": 6693,
+      "last_active_days_ago": 1.7,
+      "rt_24h": 0,
+      "rt_7d": 147,
+      "venues": {
+        "pumpfun_bc": 6,
+        "pumpswap": 710
+      },
+      "pumpswap_share": 0.992,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3"
+      ]
+    },
+    {
+      "address": "2MdWPZohxTJvqLZM4ycHq999gcL5j6j1VkNPBzuhmCeP",
+      "n_round_trips": 115,
+      "total_realized_sol": 8.5881,
+      "total_realized_sol_drop_top3": -4.8394,
+      "median_rt_pct": -4.177287981801618,
+      "monthly_run_rate_sol": 119.885,
+      "win_rate": 0.426,
+      "avg_hold_sec": 896,
+      "last_active_days_ago": 46.7,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 152,
+        "pumpswap": 31,
+        "unknown": 11,
+        "raydium_amm": 4,
+        "raydium_clmm": 2,
+        "meteora_dlmm": 1
+      },
+      "pumpswap_share": 0.154,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "3CkrBd2cN4oN4VanUR7tE1EMHngeVVKz5GUQi9zHExPw",
+      "n_round_trips": 339,
+      "total_realized_sol": 28.1713,
+      "total_realized_sol_drop_top3": 20.472,
+      "median_rt_pct": -6.649312961143796,
+      "monthly_run_rate_sol": 118.232,
+      "win_rate": 0.44,
+      "avg_hold_sec": 1402,
+      "last_active_days_ago": 4.4,
+      "rt_24h": 0,
+      "rt_7d": 175,
+      "venues": {
+        "pumpswap": 167,
+        "pumpfun_bc": 241,
+        "unknown": 24
+      },
+      "pumpswap_share": 0.387,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "BZzh72r62xtGWoLtLwD6iLJ6pwhfXZh8Gz1xnCHs2pzu",
+      "n_round_trips": 32,
+      "total_realized_sol": 11.6335,
+      "total_realized_sol_drop_top3": 6.0041,
+      "median_rt_pct": 31.11195934178885,
+      "monthly_run_rate_sol": 116.565,
+      "win_rate": 0.844,
+      "avg_hold_sec": 322,
+      "last_active_days_ago": 22.5,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 56,
+        "pumpswap": 10
+      },
+      "pumpswap_share": 0.152,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "last_active",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "2zBWFYhhi28vSbhPpSjJpQYaceTKxiCL2j6zLq8ockTn",
+      "n_round_trips": 689,
+      "total_realized_sol": 102.3944,
+      "total_realized_sol_drop_top3": 86.3938,
+      "median_rt_pct": 3.4646080839983155,
+      "monthly_run_rate_sol": 113.919,
+      "win_rate": 0.521,
+      "avg_hold_sec": 1674,
+      "last_active_days_ago": 1,
+      "rt_24h": 1,
+      "rt_7d": 225,
+      "venues": {
+        "unknown": 51,
+        "pumpfun_bc": 444,
+        "pumpswap": 439,
+        "raydium_amm": 2
+      },
+      "pumpswap_share": 0.469,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "8rZZWtEF7zrSDY2SwVqTa2FLNborV4XetrRpdgmRm1mY",
+      "n_round_trips": 140,
+      "total_realized_sol": 84.5328,
+      "total_realized_sol_drop_top3": 49.532,
+      "median_rt_pct": 56.62691571705537,
+      "monthly_run_rate_sol": 109.742,
+      "win_rate": 0.807,
+      "avg_hold_sec": 2741,
+      "last_active_days_ago": 2.5,
+      "rt_24h": 0,
+      "rt_7d": 24,
+      "venues": {
+        "pumpfun_bc": 78,
+        "pumpswap": 129
+      },
+      "pumpswap_share": 0.623,
+      "copyable": true,
+      "passed_gate": true,
+      "failed_gates": []
+    },
+    {
+      "address": "9uV8bNNtYyLqpV23Hkjsf8EB5fDByBnsBSHc4XoB5zBQ",
+      "n_round_trips": 62,
+      "total_realized_sol": 4.166,
+      "total_realized_sol_drop_top3": 0.374,
+      "median_rt_pct": 10.00811343935126,
+      "monthly_run_rate_sol": 108.509,
+      "win_rate": 0.645,
+      "avg_hold_sec": 219,
+      "last_active_days_ago": 73.1,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 78,
+        "pumpfun_bc": 13
+      },
+      "pumpswap_share": 0.857,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "last_active",
+        "copyable_hold"
+      ]
+    },
+    {
+      "address": "DZYrPpCLcM99Vz6SN1LQgVAK6Av9evjn7m96cBrkGvzN",
+      "n_round_trips": 126,
+      "total_realized_sol": 5.8463,
+      "total_realized_sol_drop_top3": -4.325,
+      "median_rt_pct": -56.67651293236361,
+      "monthly_run_rate_sol": 106.784,
+      "win_rate": 0.167,
+      "avg_hold_sec": 5225,
+      "last_active_days_ago": 19.5,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 107,
+        "pumpswap": 72
+      },
+      "pumpswap_share": 0.402,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "Ar1igx6rNcU7gZ3rP5yKB3PjSVP1Pq5F3PB7MqtxL5Jw",
+      "n_round_trips": 131,
+      "total_realized_sol": 65.7935,
+      "total_realized_sol_drop_top3": 53.8745,
+      "median_rt_pct": 27.621190427983073,
+      "monthly_run_rate_sol": 102.204,
+      "win_rate": 0.679,
+      "avg_hold_sec": 728,
+      "last_active_days_ago": 4.5,
+      "rt_24h": 0,
+      "rt_7d": 22,
+      "venues": {
+        "pumpfun_bc": 145,
+        "pumpswap": 88
+      },
+      "pumpswap_share": 0.378,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "9sWV3hbngUA8LZ5zJjFcAKSYmYyMSdJT925RuCckrzKT",
+      "n_round_trips": 279,
+      "total_realized_sol": 118.8116,
+      "total_realized_sol_drop_top3": 102.6221,
+      "median_rt_pct": 14.170572971580336,
+      "monthly_run_rate_sol": 100.602,
+      "win_rate": 0.731,
+      "avg_hold_sec": 96131,
+      "last_active_days_ago": 2,
+      "rt_24h": 0,
+      "rt_7d": 17,
+      "venues": {
+        "pumpswap": 286,
+        "raydium_amm": 17,
+        "unknown": 21
+      },
+      "pumpswap_share": 0.883,
+      "copyable": true,
+      "passed_gate": true,
+      "failed_gates": []
+    },
+    {
+      "address": "6bZet9XwC5uiSNrrwPUv9D2i2y1Q3ge1zmHCn35qpcrL",
+      "n_round_trips": 120,
+      "total_realized_sol": 26.0863,
+      "total_realized_sol_drop_top3": 15.7647,
+      "median_rt_pct": -18.571109641997737,
+      "monthly_run_rate_sol": 89.806,
+      "win_rate": 0.458,
+      "avg_hold_sec": 1184,
+      "last_active_days_ago": 65.4,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 229
+      },
+      "pumpswap_share": 1,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "last_active"
+      ]
+    },
+    {
+      "address": "FhTiFZs2YEHZHzkfCjg7XdPFSjH2bMoEGEqDLHJGoWwQ",
+      "n_round_trips": 83,
+      "total_realized_sol": 2.7374,
+      "total_realized_sol_drop_top3": 1.732,
+      "median_rt_pct": 23.25591778367421,
+      "monthly_run_rate_sol": 85.226,
+      "win_rate": 0.554,
+      "avg_hold_sec": 280,
+      "last_active_days_ago": 34.3,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 61,
+        "pumpswap": 76
+      },
+      "pumpswap_share": 0.555,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "last_active",
+        "copyable_hold"
+      ]
+    },
+    {
+      "address": "8wQvYq6nU1mTguJkMERrzqyrgtzApRQiUjUDkpuN5Mzm",
+      "n_round_trips": 1,
+      "total_realized_sol": 1.9855,
+      "total_realized_sol_drop_top3": 0,
+      "median_rt_pct": 171.08785519416324,
+      "monthly_run_rate_sol": 82.125,
+      "win_rate": 1,
+      "avg_hold_sec": 62665,
+      "last_active_days_ago": 13.3,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 54,
+        "pumpfun_bc": 30,
+        "unknown": 2
+      },
+      "pumpswap_share": 0.628,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "drop_top3",
+        "copyable_winrate"
+      ]
+    },
+    {
+      "address": "335aK8KeLjPWL37b3hs46A2t72bRTVExhRZVHDMhbGdm",
+      "n_round_trips": 219,
+      "total_realized_sol": 2.2536,
+      "total_realized_sol_drop_top3": -1.5415,
+      "median_rt_pct": -8.368521767098217,
+      "monthly_run_rate_sol": 81.812,
+      "win_rate": 0.406,
+      "avg_hold_sec": 72,
+      "last_active_days_ago": 22.3,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "unknown": 16,
+        "pumpfun_bc": 259,
+        "pumpswap": 49,
+        "raydium_clmm": 2
+      },
+      "pumpswap_share": 0.15,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active",
+        "copyable_venue",
+        "copyable_hold"
+      ]
+    },
+    {
+      "address": "4RQTSkkQW4VJLjghSvr53ZJhPo4dJDBL3T4UgDqCAKev",
+      "n_round_trips": 30,
+      "total_realized_sol": 5.2195,
+      "total_realized_sol_drop_top3": 1.3258,
+      "median_rt_pct": 21.410506918950315,
+      "monthly_run_rate_sol": 81.063,
+      "win_rate": 0.7,
+      "avg_hold_sec": 450,
+      "last_active_days_ago": 64.4,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 29,
+        "pumpswap": 23
+      },
+      "pumpswap_share": 0.442,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "last_active",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "BtHnhjh8Ta2vGZkrL76AmXMur1ADo3tpRo2kQMe2BCSU",
+      "n_round_trips": 932,
+      "total_realized_sol": 21.6563,
+      "total_realized_sol_drop_top3": 16.9761,
+      "median_rt_pct": -3.829954810860163,
+      "monthly_run_rate_sol": 80.791,
+      "win_rate": 0.452,
+      "avg_hold_sec": 99,
+      "last_active_days_ago": 1.6,
+      "rt_24h": 0,
+      "rt_7d": 802,
+      "venues": {
+        "pumpfun_bc": 939,
+        "unknown": 83,
+        "pumpswap": 440,
+        "raydium_clmm": 2,
+        "raydium_amm": 36
+      },
+      "pumpswap_share": 0.293,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue",
+        "copyable_hold"
+      ]
+    },
+    {
+      "address": "ELHGAuF9kopkhTe5ARuNpG8eCNjsy7X5NvoxkQnqNVDt",
+      "n_round_trips": 173,
+      "total_realized_sol": 41.823,
+      "total_realized_sol_drop_top3": 29.4475,
+      "median_rt_pct": 45.96160513208636,
+      "monthly_run_rate_sol": 80.686,
+      "win_rate": 0.763,
+      "avg_hold_sec": 949,
+      "last_active_days_ago": 67.6,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 197
+      },
+      "pumpswap_share": 1,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "last_active"
+      ]
+    },
+    {
+      "address": "5KcqJ7NFA9RoLe5LYuvgvhpcKvRMxdJUY4uJB9HYkyp3",
+      "n_round_trips": 1173,
+      "total_realized_sol": 61.4384,
+      "total_realized_sol_drop_top3": 56.8402,
+      "median_rt_pct": 1.1022523643743651,
+      "monthly_run_rate_sol": 80.302,
+      "win_rate": 0.514,
+      "avg_hold_sec": 600,
+      "last_active_days_ago": 2,
+      "rt_24h": 0,
+      "rt_7d": 906,
+      "venues": {
+        "pumpfun_bc": 870,
+        "pumpswap": 598,
+        "unknown": 32
+      },
+      "pumpswap_share": 0.399,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "9AYbjTT2UUjazuqa6g8vpE9mfYLFVNoRGrRpjnsohjWC",
+      "n_round_trips": 39,
+      "total_realized_sol": 5.3467,
+      "total_realized_sol_drop_top3": -0.908,
+      "median_rt_pct": 11.00837488218452,
+      "monthly_run_rate_sol": 78.626,
+      "win_rate": 0.692,
+      "avg_hold_sec": 1132,
+      "last_active_days_ago": 5.6,
+      "rt_24h": 0,
+      "rt_7d": 28,
+      "venues": {
+        "pumpfun_bc": 53,
+        "pumpswap": 27
+      },
+      "pumpswap_share": 0.338,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "drop_top3",
+        "copyable_venue"
+      ]
+    },
+    {
+      "address": "BBkXWCp5mKcS91pKx3bRTJJstm3xopuGcA9SSWY92cJT",
+      "n_round_trips": 205,
+      "total_realized_sol": 3.1398,
+      "total_realized_sol_drop_top3": -7.3148,
+      "median_rt_pct": -8.05041623245764,
+      "monthly_run_rate_sol": 77.803,
+      "win_rate": 0.356,
+      "avg_hold_sec": 90,
+      "last_active_days_ago": 41.1,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 199,
+        "unknown": 40,
+        "pumpswap": 73,
+        "raydium_amm": 4
+      },
+      "pumpswap_share": 0.231,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "drop_top3",
+        "last_active",
+        "copyable_venue",
+        "copyable_hold"
+      ]
+    },
+    {
+      "address": "DtMxxffFgkkNJpg8zqfML5hVhjkkYwsJhwhtKZtEsmVN",
+      "n_round_trips": 84,
+      "total_realized_sol": 2.0498,
+      "total_realized_sol_drop_top3": -0.7594,
+      "median_rt_pct": 0.48873523505119804,
+      "monthly_run_rate_sol": 76.46,
+      "win_rate": 0.548,
+      "avg_hold_sec": 116,
+      "last_active_days_ago": 77.3,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpfun_bc": 26,
+        "pumpswap": 83,
+        "jupiter": 1
+      },
+      "pumpswap_share": 0.755,
+      "copyable": false,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "drop_top3",
+        "last_active",
+        "copyable_hold"
+      ]
+    },
+    {
+      "address": "534WH6pihQWgowEM4kb9SYuXH5RZrBJHQjL4ufEkZUqR",
+      "n_round_trips": 9,
+      "total_realized_sol": 5.714,
+      "total_realized_sol_drop_top3": -5.6482,
+      "median_rt_pct": -20.180549165205328,
+      "monthly_run_rate_sol": 76.065,
+      "win_rate": 0.444,
+      "avg_hold_sec": 27612,
+      "last_active_days_ago": 44,
+      "rt_24h": 0,
+      "rt_7d": 0,
+      "venues": {
+        "pumpswap": 15,
+        "pumpfun_bc": 11,
+        "raydium_amm": 1
+      },
+      "pumpswap_share": 0.556,
+      "copyable": true,
+      "passed_gate": false,
+      "failed_gates": [
+        "n_round_trips",
+        "drop_top3",
+        "last_active"
+      ]
+    }
+  ]
+}
