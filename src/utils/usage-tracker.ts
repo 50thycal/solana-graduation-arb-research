@@ -46,6 +46,10 @@ class RateCounter {
 
 class UsageTracker {
   private ws = new Map<string, RateCounter>();
+  private bootMs = Date.now();
+
+  /** Seconds since the tracker (≈ the process) started. */
+  uptimeSec(): number { return Math.max(1, Math.floor((Date.now() - this.bootMs) / 1000)); }
 
   /** Call once per delivered WebSocket message, tagged by its subscription source. */
   recordWs(source: string): void {
@@ -54,11 +58,10 @@ class UsageTracker {
     c.add();
   }
 
-  wsRates(): Record<string, { per_sec: number; per_day: number; cumulative: number }> {
-    const out: Record<string, { per_sec: number; per_day: number; cumulative: number }> = {};
+  wsRates(): Record<string, { per_sec_recent: number; cumulative: number }> {
+    const out: Record<string, { per_sec_recent: number; cumulative: number }> = {};
     for (const [src, c] of this.ws) {
-      const ps = c.perSec();
-      out[src] = { per_sec: +ps.toFixed(3), per_day: Math.round(ps * 86_400), cumulative: c.cumulative };
+      out[src] = { per_sec_recent: +c.perSec().toFixed(3), cumulative: c.cumulative };
     }
     return out;
   }
@@ -92,7 +95,12 @@ interface RpcStats {
   servedByLabel?: Record<string, number>;
   projCallsPerDay?: number;
   totalServed?: number;
+  uptimeSec?: number;
 }
+
+// One full wallet-scoring cycle (COPYTRADE_INTERVAL_MS) ~ 8h; below this the daily estimate
+// under-represents scoring because its periodic burst may not have fired yet.
+const SCORING_CYCLE_SEC = 8 * 3600;
 
 /**
  * Combined per-category + per-source credit attribution across WS + RPC. `rpcStats` =
@@ -101,25 +109,28 @@ interface RpcStats {
  */
 export function computeUsageBreakdown(rpcStats: RpcStats): unknown {
   const wsRates = usageTracker.wsRates();
+  // Average over uptime, NOT a 5-min window. Scoring (wallet_pnl) fires in bursts every ~8h, so a
+  // short window misses it and undercounts the biggest RPC line; cumulative/uptime captures periodic
+  // bursts correctly (converges once the process has been up past one scoring cycle).
+  const uptime = Math.max(rpcStats.uptimeSec ?? 0, usageTracker.uptimeSec());
+  const perDayFromCumulative = (cumulative: number) => Math.round((cumulative / uptime) * 86_400);
 
   interface Driver { source: string; transport: 'ws' | 'rpc'; category: string; per_day: number; est_credits_day: number; }
   const drivers: Driver[] = [];
 
-  // WS: messages/day × WS credit.
+  // WS: cumulative messages / uptime → messages/day × WS credit.
   for (const [src, r] of Object.entries(wsRates)) {
+    const perDay = perDayFromCumulative(r.cumulative);
     drivers.push({
       source: src, transport: 'ws', category: WS_CATEGORY[src] ?? 'other',
-      per_day: r.per_day, est_credits_day: Math.round(r.per_day * WS_CREDIT),
+      per_day: perDay, est_credits_day: Math.round(perDay * WS_CREDIT),
     });
   }
 
-  // RPC: attribute projCallsPerDay across labels by their cumulative share.
+  // RPC: cumulative calls per label / uptime → calls/day × RPC credit.
   const byLabel = rpcStats.servedByLabel ?? {};
-  const totalServed = rpcStats.totalServed ?? Object.values(byLabel).reduce((a, b) => a + b, 0);
-  const projCallsPerDay = rpcStats.projCallsPerDay ?? 0;
   for (const [label, count] of Object.entries(byLabel)) {
-    const share = totalServed > 0 ? count / totalServed : 0;
-    const callsDay = Math.round(share * projCallsPerDay);
+    const callsDay = perDayFromCumulative(count);
     drivers.push({
       source: label, transport: 'rpc', category: RPC_CATEGORY[label] ?? 'other',
       per_day: callsDay, est_credits_day: Math.round(callsDay * RPC_CREDIT),
@@ -152,8 +163,14 @@ export function computeUsageBreakdown(rpcStats: RpcStats): unknown {
       'category/source SHARES hold regardless of absolute weights. WS is the dominant lever — a bigger ' +
       'watchlist means more copy_follower_ws messages.',
     weights: { ws_credit: WS_CREDIT, rpc_credit: RPC_CREDIT },
-    reference_cycle_from_console: { laserstream_ws_pct: 78, rpc_pct: 21, das_pct: 1, note: 'operator CSV 2026-07-03 — calibrate weights to match' },
+    uptime_sec: uptime,
+    warming_up: uptime < SCORING_CYCLE_SEC,
+    warmup_note: uptime < SCORING_CYCLE_SEC
+      ? `process up ${Math.round(uptime / 3600 * 10) / 10}h — under one ${SCORING_CYCLE_SEC / 3600}h scoring cycle, so wallet_pnl (scoring) is UNDER-counted until the first scoring pass completes.`
+      : 'past one scoring cycle — daily estimate is representative.',
+    reference_cycle_from_console: { laserstream_ws_pct: 78, rpc_pct: 21, das_pct: 1, note: 'operator CSV 2026-07-03 — historical; WS was the firehose before the migrations-only narrowing. Calibrate weights to match the console daily total.' },
     est_credits_per_day: totalCredits,
+    est_credits_per_30d: totalCredits * 30,
     by_transport: {
       ws: { est_credits_day: wsCredits, share_pct: pct(wsCredits) },
       rpc: { est_credits_day: rpcCredits, share_pct: pct(rpcCredits) },
