@@ -13,11 +13,13 @@ const logger = makeLogger('winner-sniper');
  * then hands them to the existing FIFO scorer.
  *
  * THE THESIS: "top tokens first": watch each graduation's price for its first ~20 minutes,
- * label it WIN/LOSS from the OBSERVED PATH (not a single endpoint), credit the wallets that
- * bought it in the 0-30s window (competition_signals — already recorded free at detection),
- * and rank wallets by winner-hit PRECISION with a fast time decay. A wallet that keeps
- * early-buying winners has an entry edge with runway — the kind of edge that survives our 5s
- * copy lag (unlike exit-timing scalp edges, which the drift data shows die within seconds).
+ * label it WIN/LOSS from the OBSERVED PATH (not a single endpoint), credit EVERY wallet that
+ * bought it ANYWHERE in that window (operator 2026-07-03 — not just the 0-30s snipers: a wallet
+ * that dips in at minute 9 of a winner is exactly as interesting), and rank wallets by winner-hit
+ * PRECISION with a fast time decay. Buyers = the free 0-30s competition_signals UNION a capped
+ * sample of pool-vault swap signers across the whole window. Profit itself is NOT judged here —
+ * the FIFO scorer verifies real PnL on the shortlist; this source just POINTS scoring at wallets
+ * that keep showing up on winners.
  *
  * OBSERVATION (operator-specified): one price check per minute for OBS_CHECKS minutes
  * (default 20 checks over T+1m..T+20m). A single T+30m snapshot misses the shape — a token
@@ -36,14 +38,13 @@ const logger = makeLogger('winner-sniper');
  * wallets rotate fast. Score decays exponentially; a wallet that stops hitting falls off the
  * promotion bar within ~2 days.
  *
- * RPC COST: ~1 vault-resolve + OBS_CHECKS price reads per graduation ≈ 21 reads, droppable
- * limiter tier ≈ 3-5k calls/day at current graduation rates (~1% of the daily budget). Only
- * ~3-6 tokens are inside their observation window at any moment. Crediting is pure SQL.
- * This stays the cheap reformulation of "which wallets made money on pumping tokens": profit
- * verification remains with the FIFO scorer (the expensive step), which this source merely
- * POINTS at better wallets (priority boost in discovery.ts). NOTE: this is a bounded LABEL
- * path, not a revival of the retired research price-path (which snapshotted every grad at
- * dense cadence for feature mining).
+ * RPC COST: per graduation ≈ 1 vault-resolve + OBS_CHECKS price reads (~21) + full-window buyer
+ * capture (≤ windowSigMaxPages signature pages + ≤ windowFetchCap parsed-tx reads, once at
+ * finalize) ≈ ~60 reads, all on the DROPPABLE limiter tier ≈ 8-10k calls/day at current
+ * graduation rates (~2% of the daily budget). Capture runs for BOTH winners and losers (the
+ * precision denominator needs loser appearances too), capped so a firehose token can't blow the
+ * budget. Profit verification remains with the FIFO scorer (the expensive step). NOTE: still a
+ * bounded LABEL+CAPTURE path, not a revival of the retired dense research price-path.
  *
  * The probe strategy (copy-src-winner-sniper), quarantine routing, and scorecard verdict all
  * derive from the DISCOVERY_SOURCES registry row — see docs/discovery-playbook.md.
@@ -68,8 +69,12 @@ export const WINNER_SNIPER_CFG = {
   obsChecks: numEnv('WINNER_OBS_CHECKS', 20),
   /** Max new graduations enrolled per tick (bounds restart backfill bursts). */
   enrollBatch: numEnv('WINNER_ENROLL_BATCH', 10),
-  /** Max early buyers credited per graduation (biggest buys first — bounds tally writes). */
-  creditCap: numEnv('WINNER_CREDIT_CAP', 40),
+  /** Max distinct buyers credited per graduation (bounds tally writes). */
+  creditCap: numEnv('WINNER_CREDIT_CAP', 60),
+  /** Full-window buyer capture: max getParsedTransaction fetches per graduation (RPC bound). */
+  windowFetchCap: numEnv('WINNER_WINDOW_FETCH_CAP', 40),
+  /** Max getSignaturesForAddress pages (1000 sigs each) to page back through the window. */
+  windowSigMaxPages: numEnv('WINNER_WINDOW_SIG_PAGES', 3),
   /** Decay half-life for the sniper score, hours. */
   halfLifeHours: numEnv('WINNER_SNIPER_HALFLIFE_H', 36),
   /** Promotion bar: >= minHits winner-hits AND precision >= minPrecision AND decayed score >= minScore. */
@@ -175,8 +180,7 @@ export class WinnerSniperHarvester {
     const now = Math.floor(Date.now() / 1000);
     await this.enroll(now);
     await this.observe(now);
-    const finalized = this.finalize(now);
-    if (finalized.length) this.credit(finalized, now);
+    await this.finalizeAndCredit(now);
     this.promote(now);
     this.evict(now);
   }
@@ -256,8 +260,17 @@ export class WinnerSniperHarvester {
     }
   }
 
-  /** Fold completed observations into winner_labels; returns finalized graduation ids. */
-  private finalize(now: number): number[] {
+  /**
+   * Fold completed observations into winner_labels and credit their buyers. For each finalizing
+   * graduation we gather the buyer set from the FULL observation window (operator 2026-07-03 —
+   * ANY wallet that bought during the ~20min, not just the 0-30s snipers): the free 0-30s
+   * competition_signals rows UNION a capped, strided sample of the pool-vault swap signatures
+   * across the whole window. Both WINNERS and LOSERS credit their buyers (losers only bump the
+   * appearances denominator — that's what makes precision = winner_hits/appearances meaningful).
+   * The RPC (signature + parsed-tx reads) happens OUTSIDE the DB transaction; the write is one
+   * sync tx. async because of the buyer capture.
+   */
+  private async finalizeAndCredit(now: number): Promise<void> {
     let rows: ObsRow[] = [];
     try {
       rows = this.db.prepare(`
@@ -265,57 +278,34 @@ export class WinnerSniperHarvester {
         FROM winner_obs
         WHERE n_checks >= @maxChecks OR (@now - grad_ts) > @end
       `).all({ now, maxChecks: WINNER_SNIPER_CFG.obsChecks, end: obsWindowEndSec() }) as ObsRow[];
-    } catch { return []; }
-    if (!rows.length) return [];
-    const insert = this.db.prepare(`
+    } catch { return; }
+    if (!rows.length) return;
+
+    // Phase 1 (async, no DB tx held): compute each label + gather its full-window buyer set.
+    const prepared: Array<{
+      row: ObsRow; peak: number; ttp: number; sustained: number; final: number; win: number; buyers: string[];
+    }> = [];
+    for (const r of rows) {
+      let path: Array<{ s: number; r: number }> = [];
+      try { path = JSON.parse(r.path_json); } catch { path = []; }
+      // Restart-gapped / zero-check paths still finalize honestly (checks_done reflects it).
+      let peak = -Infinity; let ttp = 0;
+      for (const p of path) { if (p.r > peak) { peak = p.r; ttp = p.s; } }
+      if (!Number.isFinite(peak)) { peak = 0; ttp = 0; }
+      const sustained = path.filter((p) => p.r >= WINNER_SNIPER_CFG.minRetPct).length;
+      const final = path.length ? path[path.length - 1].r : 0;
+      const win = peak >= WINNER_SNIPER_CFG.minRetPct && sustained >= WINNER_SNIPER_CFG.minSustainChecks ? 1 : 0;
+      const buyers = await this.gatherWindowBuyers(r, now);
+      prepared.push({ row: r, peak, ttp, sustained, final, win, buyers });
+    }
+
+    // Phase 2 (sync tx): write labels, credit distinct buyers, drop the obs rows.
+    const insertLabel = this.db.prepare(`
       INSERT OR IGNORE INTO winner_labels
         (graduation_id, mint, checked_at, open_price_sol, peak_ret_pct, final_ret_pct,
          time_to_peak_sec, sustained_checks, checks_done, path_json, is_winner)
       VALUES (@id, @mint, @now, @open, @peak, @final, @ttp, @sustained, @checks, @path, @win)
     `);
-    const del = this.db.prepare(`DELETE FROM winner_obs WHERE graduation_id = ?`);
-    const done: number[] = [];
-    const tx = this.db.transaction(() => {
-      for (const r of rows) {
-        let path: Array<{ s: number; r: number }> = [];
-        try { path = JSON.parse(r.path_json); } catch { path = []; }
-        // A restart-gapped or zero-check path still finalizes — with an honest checks_done
-        // count; zero-check rows get is_winner=0 and are visible via checks_done=0.
-        let peak = -Infinity; let ttp = 0;
-        for (const p of path) { if (p.r > peak) { peak = p.r; ttp = p.s; } }
-        if (!Number.isFinite(peak)) { peak = 0; ttp = 0; }
-        const sustained = path.filter((p) => p.r >= WINNER_SNIPER_CFG.minRetPct).length;
-        const final = path.length ? path[path.length - 1].r : 0;
-        const win = peak >= WINNER_SNIPER_CFG.minRetPct && sustained >= WINNER_SNIPER_CFG.minSustainChecks ? 1 : 0;
-        insert.run({
-          id: r.graduation_id, mint: r.mint, now, open: r.open_price_sol,
-          peak: +peak.toFixed(2), final, ttp, sustained, checks: path.length,
-          path: JSON.stringify(path), win,
-        });
-        del.run(r.graduation_id);
-        done.push(r.graduation_id);
-      }
-    });
-    try { tx(); } catch (err) {
-      logger.warn('finalize failed: %s', err instanceof Error ? err.message : String(err));
-      return [];
-    }
-    if (done.length) logger.info('labeled %d graduations from observed paths', done.length);
-    return done;
-  }
-
-  /** Credit the 0-30s buyers of each newly labeled graduation (pure SQL, zero RPC). */
-  private credit(gradIds: number[], now: number): void {
-    const buyersStmt = this.db.prepare(`
-      SELECT wallet_address AS w, SUM(amount_sol) AS sol
-      FROM competition_signals
-      WHERE graduation_id = ? AND action = 'buy' AND wallet_address IS NOT NULL
-        AND COALESCE(is_likely_bot, 0) = 0
-      GROUP BY wallet_address
-      ORDER BY sol DESC
-      LIMIT ${WINNER_SNIPER_CFG.creditCap}
-    `);
-    const labelStmt = this.db.prepare(`SELECT is_winner FROM winner_labels WHERE graduation_id = ?`);
     const upsert = this.db.prepare(`
       INSERT INTO winner_sniper_tally (address, appearances, winner_hits, score, last_update, last_hit_ts)
       VALUES (@a, 1, @hit, @hit, @now, CASE WHEN @hit = 1 THEN @now ELSE NULL END)
@@ -326,19 +316,91 @@ export class WinnerSniperHarvester {
         last_update = @now,
         last_hit_ts = CASE WHEN @hit = 1 THEN @now ELSE last_hit_ts END
     `);
+    const del = this.db.prepare(`DELETE FROM winner_obs WHERE graduation_id = ?`);
+    let labeled = 0; let winners = 0;
     const tx = this.db.transaction(() => {
-      for (const id of gradIds) {
-        const lab = labelStmt.get(id) as { is_winner: number } | undefined;
-        if (!lab) continue;
-        const buyers = buyersStmt.all(id) as Array<{ w: string; sol: number }>;
-        for (const b of buyers) {
-          upsert.run({ a: b.w, hit: lab.is_winner ? 1 : 0, now, hl: WINNER_SNIPER_CFG.halfLifeHours });
+      for (const p of prepared) {
+        insertLabel.run({
+          id: p.row.graduation_id, mint: p.row.mint, now, open: p.row.open_price_sol,
+          peak: +p.peak.toFixed(2), final: p.final, ttp: p.ttp, sustained: p.sustained,
+          checks: (() => { try { return JSON.parse(p.row.path_json).length; } catch { return 0; } })(),
+          path: p.row.path_json, win: p.win,
+        });
+        for (const w of p.buyers) {
+          upsert.run({ a: w, hit: p.win, now, hl: WINNER_SNIPER_CFG.halfLifeHours });
         }
+        del.run(p.row.graduation_id);
+        labeled += 1; winners += p.win;
       }
     });
     try { tx(); } catch (err) {
-      logger.warn('credit failed: %s', err instanceof Error ? err.message : String(err));
+      logger.warn('finalize/credit failed: %s', err instanceof Error ? err.message : String(err));
+      return;
     }
+    if (labeled) logger.info('labeled %d graduations (%d winners) from observed paths', labeled, winners);
+  }
+
+  /**
+   * Distinct buyers of a graduation across its FULL observation window: the free 0-30s
+   * competition_signals rows UNION a capped, strided sample of pool-vault swap signers. Capped
+   * at creditCap distinct wallets and windowFetchCap parsed-tx reads (droppable tier).
+   */
+  private async gatherWindowBuyers(r: ObsRow, now: number): Promise<string[]> {
+    const buyers = new Set<string>();
+    // Free: the 0-30s early buyers already captured at detection (non-bot).
+    try {
+      const early = this.db.prepare(`
+        SELECT DISTINCT wallet_address AS w FROM competition_signals
+        WHERE graduation_id = ? AND action = 'buy' AND wallet_address IS NOT NULL
+          AND COALESCE(is_likely_bot, 0) = 0
+      `).all(r.graduation_id) as Array<{ w: string }>;
+      for (const e of early) buyers.add(e.w);
+    } catch { /* competition_signals may be empty */ }
+
+    // Paid: sample swap signers across the full window off the base-vault signatures.
+    const conn = this.getConnection();
+    if (conn) {
+      const windowEnd = r.grad_ts + obsWindowEndSec();
+      let sigs: Array<{ signature: string; blockTime: number | null | undefined }> = [];
+      try {
+        let before: string | undefined;
+        for (let page = 0; page < WINNER_SNIPER_CFG.windowSigMaxPages; page++) {
+          if (!(await globalRpcLimiter.throttleOrDrop(8, 'winner_buyers'))) break;
+          const pg = await conn.getSignaturesForAddress(new PublicKey(r.base_vault), { limit: 1000, before });
+          if (!pg.length) break;
+          sigs.push(...pg.map((s) => ({ signature: s.signature, blockTime: s.blockTime })));
+          const oldest = pg[pg.length - 1];
+          before = oldest.signature;
+          if ((oldest.blockTime ?? 0) < r.grad_ts) break; // paged past the window start
+        }
+      } catch { /* sig fetch failed — early buyers still credited */ }
+
+      const inWindow = sigs.filter((s) => {
+        const t = s.blockTime ?? 0;
+        return t >= r.grad_ts && t <= windowEnd;
+      });
+      if (inWindow.length) {
+        const stride = Math.max(1, Math.floor(inWindow.length / WINNER_SNIPER_CFG.windowFetchCap));
+        let fetched = 0;
+        for (let i = 0; i < inWindow.length && fetched < WINNER_SNIPER_CFG.windowFetchCap && buyers.size < WINNER_SNIPER_CFG.creditCap; i += stride) {
+          if (!(await globalRpcLimiter.throttleOrDrop(8, 'winner_buyers'))) break;
+          fetched += 1;
+          try {
+            const tx = await conn.getParsedTransaction(inWindow[i].signature, {
+              commitment: 'confirmed', maxSupportedTransactionVersion: 0,
+            });
+            if (!tx || !tx.meta || tx.meta.err) continue;
+            const keys = tx.transaction.message.accountKeys;
+            const signer = typeof keys[0] === 'string' ? keys[0] : (keys[0] as { pubkey: PublicKey }).pubkey.toBase58();
+            const solChange = (tx.meta.postBalances[0] - tx.meta.preBalances[0]) / 1_000_000_000;
+            if (solChange < -0.01) buyers.add(signer); // net SOL out = a buy
+          } catch { /* skip unparseable tx */ }
+        }
+      }
+    }
+
+    // Cap distinct buyers written per graduation.
+    return [...buyers].slice(0, WINNER_SNIPER_CFG.creditCap);
   }
 
   /** Promote wallets clearing the precision + decayed-score bar into the scorer's queue. */
@@ -420,7 +482,7 @@ export function getWinnerSniperSummary(db: Database.Database): unknown {
         'Winner-sniper discovery (operator thesis 2026-07-02, path observation 2026-07-03): watch each ' +
         `graduation ${WINNER_SNIPER_CFG.obsChecks}x @ ${WINNER_SNIPER_CFG.obsIntervalSec}s from T+${WINNER_SNIPER_CFG.obsStartSec}s; ` +
         `WIN = peak >= +${WINNER_SNIPER_CFG.minRetPct}% AND >= ${WINNER_SNIPER_CFG.minSustainChecks} checks above the bar. ` +
-        'Credit 0-30s buyers (competition_signals, free), rank by winner-hit precision with a ' +
+        'Credit EVERY buyer across the full window (0-30s competition_signals UNION sampled pool-vault swap signers), rank by winner-hit precision with a ' +
         `${WINNER_SNIPER_CFG.halfLifeHours}h half-life. Promotion bar: hits>=${WINNER_SNIPER_CFG.minHits}, ` +
         `precision>=${WINNER_SNIPER_CFG.minPrecision}, decayed score>=${WINNER_SNIPER_CFG.minScore}. ` +
         'Probe P&L + verdict live in discovery_scorecard (source=winner_sniper).',

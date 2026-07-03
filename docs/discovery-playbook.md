@@ -64,4 +64,6 @@ stay in the DB → `retired_summary`) and stop the harvester. Record the outcome
 | 2026-07-02 | copy-net positive selection (V2, not a source but a selector) | REFUTED OOS | in-sample +27 was circular; OOS its unique picks lost. Survives only as the proven-bad **veto** |
 | — | live_tape (Idea 1) | COLLECTING | funnel slow — zero smart+copyable so far |
 | — | external / Solana Tracker (Idea 3) | COLLECTING | funnel slow; crowding prior |
-| — | winner_sniper (operator thesis, S2+S3) | COLLECTING | added 2026-07-02: minute-cadence path labels (20×60s, WIN = peak ≥ +50% AND ≥3 checks above) × 0-30s buyer credit × precision × 36h-half-life decay (`winner-sniper.ts`); ~3-5k RPC/day |
+| — | winner_sniper (operator thesis, S2+S3) | COLLECTING | added 2026-07-02: minute-cadence path labels (20×60s, WIN = peak ≥ +50% AND ≥3 checks above) × **full-window** buyer credit (0-30s ∪ sampled pool-vault swap signers — any wallet in the ~20min, not just snipers) × precision × 36h-half-life decay (`winner-sniper.ts`); ~8-10k RPC/day |
+
+**Discovery-source gate (relaxed 2026-07-03):** source watchlists use PROFITABLE (`drop3 > 0`, no 3.75/mo bar — the monthly target is the AGGREGATE goal across all copied wallets) + hold ≥ 30s + the ~95% win-rate bot filter + PumpSwap-share. Env: `COPYSRC_MIN_DROP3`, `COPYSRC_MIN_HOLD_SEC`. The global core-book gate (`getSmartSetAddresses`) is UNCHANGED.

@@ -58,8 +58,12 @@ free) the graduations that go on to WIN. Winner label = observed minute-cadence 
 spec 2026-07-03): 20 checks @ 60s from T+1m; WIN requires peak ≥ +50% AND ≥3 checks at/above the
 bar (a real exit window, not a one-tick wick; a spike-then-fade token correctly counts as a WIN
 that a single T+30m snapshot would miss). Full path stored (`path_json`) for post-hoc bar
-recalibration. ~21 droppable reads/grad ≈ 3-5k calls/day. Ranked by winner-hit **precision**
-(hits ÷ appearances — the spray-bot guard)
+recalibration. **Buyer capture spans the FULL window** (operator 2026-07-03): every wallet that
+bought anywhere in the ~20min — the free 0-30s `competition_signals` UNION a capped sample of
+pool-vault swap signers — not just the 0-30s snipers (a minute-9 dip into a winner counts).
+Winners AND losers credit their buyers (losers only bump the appearance denominator). ~60
+droppable reads/grad ≈ 8-10k calls/day. Ranked by winner-hit **precision** (hits ÷ appearances —
+the spray-bot guard)
 with a **36h half-life decay** + eviction (the operator's "good wallets rotate fast" observation,
 consistent with recency>cumulative). Rejected alternatives: literal per-token profit attribution
 (needs the tape — the June credit-blowout lesson) and same-day fast-track (spray-bot noise at
