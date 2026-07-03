@@ -10,6 +10,47 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-03 (later) — FD: `copy-fable-freshdip` spawned (own-thesis line; offline-backtested entry-context gates)
+
+Operator directive: "treat this as your own build — any copy strategy you see fit." Rather than
+perturb the incumbent's lead gate again, this line asks WHERE the incumbent's edge actually lives.
+Method: offline replay of every closed copy row over the `ops` DB channel (5 aggregate queries),
+conditioning recorded outcomes on entry context, with split-half (time) OOS checks and per-cell
+drop-top3 (`xt3`) — the first strategy here designed from a backtest rather than deployed-and-waited.
+
+**Findings (all on recorded rows, 0.5 SOL, net of 3% cost):**
+1. **Replaying the hot gate on the idealized baseline is NOT drop3-positive** (hot05 replica:
+   n=676, net −1.1, xt3 −5.8). The incumbent's realistic twin IS (+12.4/+5.9) → a large share of
+   its robustness comes from the *execution layer* (5s delay + drift-skip: avg entry drift −2.2%),
+   not lead selection alone. The don't-chase mechanics deserved direct study:
+2. **Dip fills carry the edge on hot leads.** strict by measured `entry_drift_pct`: dips ≤0 earn
+   +0.05..+0.10/trade; the 0..5% chase zone bleeds (−0.03..−0.04). On UNGATED leads (lag baseline)
+   deep dips are falling knives (−0.12/trade) — the dip signal is conditional on lead quality.
+3. **Token freshness concentrates it further.** strict on dip fills by age-since-graduation:
+   <15m = the entire robust edge (h1 +13.2/xt3 +9.0; h2 +5.8/xt3 +2.7 — the only age bucket
+   positive on both metrics in both halves); 15-60m mixed; 1-4h negative both halves.
+4. **The exit chassis must stay TP100/SL30**: the same gates on the hold30m chassis die in half 2
+   (whole family decayed — matches its KILL). In the fresh-dip subset the TP-hit rate roughly
+   doubles (36/81 h1, 30/80 h2 hit +100% vs 27% book-wide), spread over 54 distinct leads.
+5. Tested and NOT adopted: per-lead consistency screens (win-count floor, per-lead drop1) — the
+   drop1 screen actively hurts (−4.2 on the replica; moonshot leads ARE the edge); extension<50%
+   stacked on age+dip over-filters (n≈27/half, xt3 flips negative in h2).
+
+**Spawned (one challenger, 3/4 slots now used):**
+`copy-fable-freshdip` — incumbent entry+exit unchanged (hotLeadGate {10,3,0.5}, lag5, TP100/SL30)
+with two zero-RPC context gates: `maxEntryDriftPct: 0` (enter only at-or-below the detection
+snapshot after the 5s wait) and NEW config `maxTokenAgeSec: 900` (only tokens graduated <15min ago,
+via cached `graduations` ts; new `token_age` skip reason). Subset economics: n=161/17.1d (~9-10
+fires/day → n≈100 in ~11d), net +19.0, xt3 +11.7, both halves positive on both.
+**Resolve at n≥100 vs `copy-hotlead-strict` per arena rules** (PRUNE if beaten on net/trade AND
+drop3/trade); kill early if fire rate can't reach n=100 in ~2.5 weeks. Honest caveats: gates were
+selected on the same 17-day window the incumbent survived (multiple-comparisons risk mitigated but
+not eliminated by the half-splits); fresh-dip fills may be adversely selected in ways the shadow
+model can't see (thin just-migrated pools) — the -lag execution model plus the arena comparison is
+exactly the test for that.
+
+---
+
 ## 2026-07-03 — Roster audit + iteration protocol (operator-directed)
 
 Operator asked to audit everything running, prune losers, and formalize a "compare all
