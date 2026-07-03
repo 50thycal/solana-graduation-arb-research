@@ -2124,6 +2124,39 @@ export function renderCopyTradesHtml(data: any): string {
   const realRows = allRows.filter((r: any) => r.realistic_execution).slice(0, 14);
   const idealRows = allRows.filter((r: any) => !r.realistic_execution).slice(0, 10);
   const thead = `<tr><th>Strategy</th><th>Score</th><th>n</th><th title="time since this strategy's first trade — proxy for how long it's been running; — = no trades yet">Age</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th title="longest consecutive wins / losses, in time order">Streak W/L</th><th title="deepest peak-to-trough decline in cumulative net SOL">Max DD</th><th>Gates</th></tr>`;
+  // ── Experiment arena — the prune-and-iterate board ──
+  const arena = d.experiment_arena ?? {};
+  const arenaRows: any[] = Array.isArray(arena?.rows) ? arena.rows : [];
+  const vColor = (v: string) => v === 'LIVE_CANDIDATE' || v === 'PROMOTE_REVIEW' || v === 'SOURCE_BEATS_OG' ? 'green'
+    : v === 'PRUNE' || v === 'SOURCE_FAILS' ? 'red'
+      : v.startsWith('KEEP') ? 'blue' : 'yellow';
+  const roleTag = (r: string) => `<span style="color:#94a3b8;font-size:11px">${escHtml(r)}</span>`;
+  const arenaCard = !arenaRows.length ? '' : `<div class="card" style="border-left:6px solid #8b5cf6">
+    <h2>Experiment arena <span class="desc" style="font-size:13px">— compare all · prune losers · iterate to live-micro</span></h2>
+    <div class="desc">${escHtml(arena.note || '')}
+      <br>Live-micro candidate: <b class="green">${escHtml(arena.live_micro_candidate || '— none yet')}</b>
+      ${(arena.prune_candidates || []).length ? ` · <span class="red">prune: ${(arena.prune_candidates || []).map((x: string) => escHtml(x)).join(', ')}</span>` : ''}
+      ${(arena.promote_review || []).length ? ` · <span class="green">review: ${(arena.promote_review || []).map((x: string) => escHtml(x)).join(', ')}</span>` : ''}
+    </div>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+    <table>
+      <thead><tr><th>Strategy</th><th>Role</th><th style="text-align:right">n</th><th style="text-align:right">net</th>
+        <th style="text-align:right" title="net SOL per trade">net/trade</th><th style="text-align:right" title="drop-top3 SOL per trade">drop3/trade</th>
+        <th>Verdict</th><th>Why</th></tr></thead>
+      <tbody>${arenaRows.map((r: any) => `<tr>
+        <td>${escHtml(r.id)}${r.benchmark ? `<br><span style="color:#64748b;font-size:11px">vs ${escHtml(r.benchmark)}</span>` : ''}</td>
+        <td>${roleTag(r.role)}</td>
+        <td style="text-align:right">${r.n ?? 0}</td>
+        <td style="text-align:right">${sol(r.net_sol)}</td>
+        <td style="text-align:right">${r.net_per_trade ?? '—'}</td>
+        <td style="text-align:right">${r.drop3_per_trade ?? '—'}</td>
+        <td><span class="${vColor(String(r.verdict))}">${escHtml(String(r.verdict))}</span></td>
+        <td class="desc" style="font-size:12px">${escHtml(r.reason || '')}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+
   const promoCard = !promo.rows ? '' : `<div class="card">
     <h2>Promotion readiness <span class="desc" style="font-size:13px">— ${promo.n_promotable ?? 0} promotable</span></h2>
     <div class="desc">PROMOTABLE (★, green) requires ALL: <b>realistic execution (5s entry delay)</b> · n≥100 ·
@@ -2543,7 +2576,7 @@ export function renderCopyTradesHtml(data: any): string {
     ${attribRows}
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + scorecardCard + discoveryCard + cotradeCard + liveTapeCard + externalCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + arenaCard + scorecardCard + discoveryCard + cotradeCard + liveTapeCard + externalCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
 }
 
 // ── COPY V2 PAGE ─────────────────────────────────────────────────────
