@@ -1,12 +1,23 @@
 # ops request: type='db'
-# WITH base AS ( SELECT id, lead_wallet, entry_ts, exit_ts, net_sol FROM copy_trades WHERE strategy_id='copy-tp100-sl30' AND status='closed' AND net_sol IS NOT NULL AND lead_wallet IS NOT NULL ), feat AS ( SELECT b.id, b.net_sol, (SELECT COUNT(*) FROM (SELECT p.net_sol pn FROM base p WHERE p.lead_wallet=b.lead_wallet AND p.exit_ts<=b.entry_ts ORDER BY p.exit_ts DESC LIMIT 10)) prior_n, COALESCE((SELECT SUM(pn) FROM (SELECT p.net_sol pn FROM base p WHERE p.lead_wallet=b.lead_wallet AND p.exit_ts<=b.entry_ts ORDER BY p.exit_ts DESC LIMIT 10)),0) prior_net, COALESCE((SELECT SUM(pn>0) FROM (SELECT p.net_sol pn FROM base p WHERE p.lead_wallet=b.lead_wallet AND p.exit_ts<=b.entry_ts ORDER BY p.exit_ts DESC LIMIT 10)),0) prior_wins, (SELECT MAX(pn) FROM (SELECT p.net_sol pn FROM base p WHERE p.lead_wallet=b.lead_wallet AND p.exit_ts<=b.entry_ts ORDER BY p.exit_ts DESC LIMIT 10)) prior_best FROM base b ), u AS ( SELECT 'a_all' g, net_sol FROM feat UNION ALL SELECT 'b_hot05', net_sol FROM feat WHERE prior_n>=3 AND prior_net>=0.5 UNION ALL SELECT 'c_hot10', net_sol FROM feat WHERE prior_n>=3 AND prior_net>=1.0 UNION ALL SELECT 'd_hot05_w3', net_sol FROM feat WHERE prior_n>=3 AND prior_net>=0.5 AND prior_wins>=3 UNION ALL SELECT 'e_hot05_w4', net_sol FROM feat WHERE prior_n>=3 AND prior_net>=0.5 AND prior_wins>=4 UNION ALL SELECT 'f_hot05_d1', net_sol FROM feat WHERE prior_n>=3 AND prior_net>=0.5 AND (prior_net-prior_best)>0 UNION ALL SELECT 'g_d1only', net_sol FROM feat WHERE prior_n>=3 AND (prior_net-prior_best)>0 ), r AS (SELECT g, net_sol, ROW_NUMBER() OVER (PARTITION BY g ORDER BY net_sol DESC) rk FROM u) SELECT g, COUNT(*) n, ROUND(SUM(net_sol),2) net, ROUND(AVG(net_sol),4) avg_net, ROUND(AVG(CASE WHEN net_sol>0 THEN 1.0 ELSE 0.0 END),3) wr, ROUND(SUM(CASE WHEN rk>3 THEN net_sol ELSE 0 END),2) xt3 FROM r GROUP BY g ORDER BY g
-  g          | n    | net   | avg_net | wr    | xt3   
-  -----------+------+-------+---------+-------+-------
-  a_all      | 2977 | -30.2 | -0.0101 | 0.281 | -36.75
-  b_hot05    | 676  | -1.08 | -0.0016 | 0.29  | -5.82 
-  c_hot10    | 341  | 2.3   | 0.0067  | 0.305 | -2.41 
-  d_hot05_w3 | 598  | -0.3  | -0.0005 | 0.291 | -5.04 
-  e_hot05_w4 | 453  | 1.97  | 0.0043  | 0.3   | -2.74 
-  f_hot05_d1 | 554  | -4.19 | -0.0076 | 0.287 | -8.9  
-  g_d1only   | 554  | -4.19 | -0.0076 | 0.287 | -8.9  
-  [7 rows]
+# WITH t AS ( SELECT strategy_id s, entry_drift_pct d, net_sol FROM copy_trades WHERE status='closed' AND net_sol IS NOT NULL AND entry_drift_pct IS NOT NULL AND strategy_id IN ('copy-tp100-sl30-lag','copy-hotlead-strict','copy-hotlead-hold30m') ) SELECT s, CASE WHEN d < -5 THEN 'a_lt-5' WHEN d < -2 THEN 'b_-5..-2' WHEN d < 0 THEN 'c_-2..0' WHEN d < 2 THEN 'd_0..2' WHEN d < 5 THEN 'e_2..5' ELSE 'f_5..10' END bkt, COUNT(*) n, ROUND(SUM(net_sol),2) net, ROUND(AVG(net_sol),4) avg_net, ROUND(AVG(CASE WHEN net_sol>0 THEN 1.0 ELSE 0.0 END),3) wr FROM t GROUP BY s, bkt ORDER BY s, bkt
+  s                    | bkt      | n   | net   | avg_net | wr   
+  ---------------------+----------+-----+-------+---------+------
+  copy-hotlead-hold30m | a_lt-5   | 175 | 14.49 | 0.0828  | 0.263
+  copy-hotlead-hold30m | b_-5..-2 | 95  | -4.08 | -0.0429 | 0.326
+  copy-hotlead-hold30m | c_-2..0  | 107 | 5.13  | 0.0479  | 0.374
+  copy-hotlead-hold30m | d_0..2   | 430 | 3.61  | 0.0084  | 0.34 
+  copy-hotlead-hold30m | e_2..5   | 139 | -3.34 | -0.024  | 0.288
+  copy-hotlead-hold30m | f_5..10  | 121 | 13.6  | 0.1124  | 0.306
+  copy-hotlead-strict  | a_lt-5   | 118 | 10.03 | 0.085   | 0.331
+  copy-hotlead-strict  | b_-5..-2 | 69  | -0.36 | -0.0053 | 0.319
+  copy-hotlead-strict  | c_-2..0  | 72  | 7.06  | 0.0981  | 0.389
+  copy-hotlead-strict  | d_0..2   | 224 | -6.44 | -0.0288 | 0.277
+  copy-hotlead-strict  | e_2..5   | 86  | -3.71 | -0.0431 | 0.256
+  copy-hotlead-strict  | f_5..10  | 85  | 5.86  | 0.069   | 0.376
+  copy-tp100-sl30-lag  | a_lt-5   | 79  | -9.74 | -0.1233 | 0.139
+  copy-tp100-sl30-lag  | b_-5..-2 | 67  | -1.06 | -0.0159 | 0.239
+  copy-tp100-sl30-lag  | c_-2..0  | 76  | 0.42  | 0.0055  | 0.289
+  copy-tp100-sl30-lag  | d_0..2   | 172 | -5.1  | -0.0297 | 0.262
+  copy-tp100-sl30-lag  | e_2..5   | 82  | -0.86 | -0.0104 | 0.305
+  copy-tp100-sl30-lag  | f_5..10  | 78  | -0.2  | -0.0026 | 0.321
+  [18 rows]
