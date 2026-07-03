@@ -1,15 +1,13 @@
 # ops request: type='db'
-# WITH t AS ( SELECT ct.net_sol, ct.entry_ts, ct.entry_drift_pct drift, ct.exit_reason, ct.entry_ts - COALESCE(g.migration_timestamp, g.timestamp) age_sec FROM copy_trades ct JOIN graduations g ON g.id = (SELECT MAX(g2.id) FROM graduations g2 WHERE g2.mint = ct.mint) WHERE ct.status='closed' AND ct.net_sol IS NOT NULL AND ct.strategy_id='copy-hotlead-strict' ), b AS (SELECT (MIN(entry_ts)+MAX(entry_ts))/2 mid FROM t), f AS (SELECT t.*, CASE WHEN entry_ts < (SELECT mid FROM b) THEN 1 ELSE 2 END half FROM t WHERE drift <= 0), r AS (SELECT half, CASE WHEN age_sec<900 THEN 'a_lt15m' WHEN age_sec<1800 THEN 'b_15-30m' WHEN age_sec<3600 THEN 'c_30-60m' WHEN age_sec<14400 THEN 'd_1-4h' ELSE 'e_gt4h' END bkt, net_sol, ROW_NUMBER() OVER (PARTITION BY half, CASE WHEN age_sec<900 THEN 'a_lt15m' WHEN age_sec<1800 THEN 'b_15-30m' WHEN age_sec<3600 THEN 'c_30-60m' WHEN age_sec<14400 THEN 'd_1-4h' ELSE 'e_gt4h' END ORDER BY net_sol DESC) rk FROM f) SELECT bkt, half, COUNT(*) n, ROUND(SUM(net_sol),2) net, ROUND(AVG(net_sol),4) avg_net, ROUND(SUM(CASE WHEN rk>3 THEN net_sol ELSE 0 END),2) xt3 FROM r GROUP BY bkt, half ORDER BY bkt, half
-  bkt      | half | n  | net   | avg_net | xt3  
-  ---------+------+----+-------+---------+------
-  a_lt15m  | 1    | 80 | 13.2  | 0.165   | 9.02 
-  a_lt15m  | 2    | 81 | 5.77  | 0.0712  | 2.65 
-  b_15-30m | 1    | 16 | 4.38  | 0.274   | -0.3 
-  b_15-30m | 2    | 16 | -0.87 | -0.0542 | -2.46
-  c_30-60m | 1    | 10 | 0.44  | 0.044   | -1.23
-  c_30-60m | 2    | 7  | 1.5   | 0.2136  | -0.14
-  d_1-4h   | 1    | 15 | -1.77 | -0.1177 | -2.26
-  d_1-4h   | 2    | 8  | -0.82 | -0.1026 | -1.66
-  e_gt4h   | 1    | 66 | 1.09  | 0.0165  | -1.11
-  e_gt4h   | 2    | 38 | 0.56  | 0.0147  | -1.53
-  [10 rows]
+# WITH t AS ( SELECT ct.net_sol, ct.entry_ts, ct.exit_reason, ct.lead_wallet, ct.hold_sec, CASE WHEN ct.entry_price_sol>0 AND ct.high_price_sol IS NOT NULL THEN 100.0*(ct.high_price_sol/ct.entry_price_sol-1.0) END mfe FROM copy_trades ct JOIN graduations g ON g.id = (SELECT MAX(g2.id) FROM graduations g2 WHERE g2.mint = ct.mint) WHERE ct.status='closed' AND ct.net_sol IS NOT NULL AND ct.strategy_id='copy-hotlead-strict' AND ct.entry_drift_pct <= 0 AND ct.entry_ts - COALESCE(g.migration_timestamp, g.timestamp) < 900 ), b AS (SELECT (MIN(entry_ts)+MAX(entry_ts))/2 mid FROM t), f AS (SELECT t.*, CASE WHEN entry_ts < (SELECT mid FROM b) THEN 1 ELSE 2 END half FROM t) SELECT 'exit_'||exit_reason k, half, COUNT(*) n, ROUND(SUM(net_sol),2) net, ROUND(AVG(net_sol),4) avg_net, ROUND(AVG(mfe),1) avg_mfe, SUM(mfe>=50) mfe50, SUM(mfe>=100) mfe100, ROUND(AVG(hold_sec),0) avg_hold FROM f GROUP BY exit_reason, half UNION ALL SELECT 'leads', half, COUNT(DISTINCT lead_wallet), NULL, NULL, NULL, NULL, NULL, NULL FROM f GROUP BY half ORDER BY k, half
+  k                 | half | n  | net    | avg_net | avg_mfe | mfe50 | mfe100 | avg_hold
+  ------------------+------+----+--------+---------+---------+-------+--------+---------
+  exit_max_hold_cap | 1    | 4  | -0.2   | -0.0503 | 10.3    | 0     | 0      | 58012   
+  exit_max_hold_cap | 2    | 2  | -0.16  | -0.0776 | 33.3    | 1     | 0      | 28815   
+  exit_stop_loss    | 1    | 41 | -9.94  | -0.2424 | 30.1    | 11    | 0      | 4099    
+  exit_stop_loss    | 2    | 48 | -12.98 | -0.2703 | 21.5    | 8     | 0      | 749     
+  exit_take_profit  | 1    | 36 | 23.85  | 0.6625  | 135.5   | 36    | 36     | 823     
+  exit_take_profit  | 2    | 30 | 18.39  | 0.6131  | 125.6   | 30    | 30     | 2918    
+  leads             | 1    | 25 |        |         |         |       |        |         
+  leads             | 2    | 29 |        |         |         |       |        |         
+  [8 rows]
