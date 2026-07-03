@@ -10,6 +10,48 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-03 — Roster audit + iteration protocol (operator-directed)
+
+Operator asked to audit everything running, prune losers, and formalize a "compare all
+experiments → prune → iterate to a live-micro candidate" loop.
+
+**Pruned (roster edit to `COPY_STRATEGIES`):**
+- `copy-hotlead` (n=1102, net +3.6, drop3 −3.5, stress −7.9) — DOMINATED: `copy-hotlead-strict`
+  (same signal, net floor ≥0.5 vs >0) beats it on every robustness axis and is the promotable one.
+- `copy-hotlead-hold30m-pair-shadow` (n=501, net −0.5) — ORPHAN: a 0.05-SOL twin whose live_micro
+  counterpart was killed long ago; no live comparison left to feed.
+- Left as a judgment call for the operator: `copy-hotlead-hold30m` (n=1060, net **+28.4** but drop3
+  −2.7 for weeks — highest net, never promotable, a lottery). Kept as the "what a lottery looks
+  like" reference pending an explicit kill.
+
+> RPC note: pruning hot-lead **variants** frees ~0 RPC — they share one deduped poll loop. The real
+> sinks are `wallet_pnl` scoring (candidate volume) and the every-lead controls' distinct positions.
+> Prune for CLARITY/discipline, not cost. (At audit time the bot ran ~19% of the RPC ceiling.)
+
+**The iteration protocol (encoded as `experiment_arena` in copy-trades.json + a card on /copy-trades):**
+Every active experiment is tagged with a ROLE and a VERDICT vs its benchmark, so the loop is self-serve:
+- **incumbent** — the sole promotable; the bar everything is measured against (today: `copy-hotlead-strict`).
+- **challenger** — a realistic, not-yet-promotable variant; judged PER-TRADE vs the incumbent on
+  net/trade AND drop3/trade. `PRUNE` when matured (n≥100) and beaten on BOTH; `PROMOTE_REVIEW` when it
+  beats the incumbent on both; else `WATCH`/`COLLECTING`.
+- **discovery_probe** (`copy-src-*`) — defers to `discovery_scorecard` (probe vs the OG control
+  `copy-tp100-sl30-lag`); `SOURCE_BEATS_OG` / `SOURCE_FAILS` / `NO_WALLETS` / `COLLECTING`.
+- **control** / **reference** — load-bearing baselines and idealized upper-bounds; never pruned.
+- `live_micro_candidate` = the current promotable leader. **Nothing goes live without operator sign-off.**
+
+The loop each cycle: read `experiment_arena` → enact `prune_candidates` (code edit) → keep the
+incumbent + spawn ONE new challenger perturbing its strongest lever (or a new discovery source) →
+`PROMOTE_REVIEW` graduates a challenger to the incumbent → repeat until a challenger clears the full
+promotion bar and the operator green-lights live-micro. Discovery sources sit outside the MAX_INFLIGHT=4
+challenger cap (they're funnels, not variants).
+
+Post-prune roster: incumbent `copy-hotlead-strict`; challengers `copy-hotlead-strict-hi`,
+`copy-hotlead-strict-xbad`; discovery probes `copy-src-winner-sniper` / `-live-tape` / `-external`;
+controls `copy-tp100-sl30`, `copy-tp100-sl30-lag`; reference `copy-conviction-consensus2`; (pending)
+`copy-hotlead-hold30m`.
+
+---
+
 ## 2026-07-02 — V2 positive selection REFUTED out-of-sample; pivot to proven-bad exclusion; discovery-source framework (operator-directed)
 
 The 2026-07-01 methodology fixes paid off immediately: the walk-forward comparison **flipped the

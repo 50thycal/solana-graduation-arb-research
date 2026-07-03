@@ -264,11 +264,11 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   // ── KILLED 2026-06-20 (INVALID): copy-macro, copy-macro-regime — net-negative
   //    (-2.4 / -2.2), all robustness metrics negative. Macro-market gating (BTC/SOL
   //    trend + F&G) adds no edge; stacking it with regime ("both green") only sat out more.
-  // H2 hot-lead gate — only copy leads whose last <=10 baseline copies made us
-  //    money (>=3 trades of history). Benches cold hands; tests whether lead-level
-  //    performance persists short-term.
-  { id: 'copy-hotlead',       tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // H2 hot-lead gate — only copy leads whose last <=10 baseline copies made us money.
+  // ── KILLED 2026-07-03 (roster prune — DOMINATED): copy-hotlead (net floor > 0). n=1102,
+  //    net +3.6 but drop3 −3.5 and stress −7.9. copy-hotlead-strict (same signal, net floor
+  //    ≥0.5) beats it on every robustness axis and is the promotable one; the strict-hi/-xbad
+  //    challengers are measured against strict, not this base. Kept nothing by keeping it.
   // H3 conviction-size gate — only copy lead buys >= 2 SOL. Small buys are
   //    spam/probing; size = conviction. lead_buy_sol is stored on every row, so
   //    the threshold is tunable from data after a week.
@@ -491,9 +491,10 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    To resume live-micro, restore the makeLivePair spread below after a reviewed go-live:
   //    ...makeLivePair({ id: 'copy-hotlead-hold30m', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
   //      entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } }),
-  { id: 'copy-hotlead-hold30m-pair-shadow', tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 },
-    tradeSizeSol: MICRO_TRADE_SIZE_SOL },
+  // ── KILLED 2026-07-03 (roster prune — ORPHAN): copy-hotlead-hold30m-pair-shadow. A 0.05-SOL
+  //    shadow twin that only existed to drive a live_micro counterpart, which was killed long ago
+  //    — so it was a redundant micro-size shadow of copy-hotlead-hold30m (n=501, net −0.5) with no
+  //    live comparison to feed. Re-add via makeLivePair only alongside a real go-live.
   // ── O (2026-06-26, corrected 2026-06-28): CO-TRADE SIGNAL A/B (Idea 2). Two
   //    strategies with IDENTICAL params to the load-bearing baseline (copy-tp100-sl30)
   //    that split the PROVEN smart set by the co-trade signal:
@@ -2145,6 +2146,81 @@ function computeCopyPromotion(summaries: Record<string, any>): unknown {
   };
 }
 
+// ── EXPERIMENT ARENA (2026-07-03, operator-directed iteration loop) ──────────────────────
+// One board for "compare every active experiment, prune the losers, iterate to a live-micro
+// candidate". Each active strategy is tagged with a ROLE and a VERDICT against its benchmark:
+//   • incumbent      → the sole promotable; the bar challengers must beat (LIVE_CANDIDATE)
+//   • challenger     → a realistic, not-yet-promotable variant; judged PER-TRADE vs the incumbent
+//   • discovery_probe→ copy-src-*; defers to discovery_scorecard (probe vs the OG control)
+//   • control        → load-bearing baselines (paired / regime / OG control); never pruned
+//   • reference      → idealized (no lag) upper-bounds; never live, never pruned
+// PRUNE fires only for a MATURED challenger (n>=ARENA_MATURE_N) beaten on net/trade AND drop3/trade.
+const ARENA_CONTROLS = new Set(['copy-tp100-sl30', 'copy-tp100-sl30-lag']);
+const ARENA_BENCHMARK = 'copy-hotlead-strict';
+const ARENA_MATURE_N = 100;
+
+function computeExperimentArena(byStrategy: Record<string, any>, db: Database.Database): unknown {
+  const promo = computeCopyPromotion(byStrategy) as { rows: Array<Record<string, any>> };
+  const scorecard = computeDiscoveryScorecard(db) as { rows?: Array<Record<string, any>> };
+  const rows = promo.rows ?? [];
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const bench = byId.get(ARENA_BENCHMARK);
+  const benchNpt = bench && bench.n ? bench.net_sol / bench.n : null;
+  const benchD3pt = bench && bench.n ? bench.drop_top3 / bench.n : null;
+  const scByProbe = new Map<string, Record<string, any>>();
+  for (const s of scorecard.rows ?? []) scByProbe.set(s.probe_strategy, s);
+
+  const role = (r: Record<string, any>): string => {
+    if (String(r.id).startsWith('copy-src-')) return 'discovery_probe';
+    if (ARENA_CONTROLS.has(r.id)) return 'control';
+    if (r.promotable) return 'incumbent';
+    if (!r.realistic_execution) return 'reference';
+    return 'challenger';
+  };
+
+  const arena = rows.map((r) => {
+    const rl = role(r);
+    const npt = r.n ? +(r.net_sol / r.n).toFixed(5) : null;
+    const d3pt = r.n ? +(r.drop_top3 / r.n).toFixed(5) : null;
+    let verdict = 'KEEP'; let reason = '';
+    if (rl === 'incumbent') { verdict = 'LIVE_CANDIDATE'; reason = 'sole promotable — the bar challengers must beat'; }
+    else if (rl === 'control') { verdict = 'KEEP_INFRA'; reason = 'load-bearing baseline (paired / regime / OG control)'; }
+    else if (rl === 'reference') { verdict = 'KEEP_REF'; reason = 'idealized (no lag) — upper bound only, never live'; }
+    else if (rl === 'discovery_probe') {
+      const sc = scByProbe.get(r.id);
+      verdict = sc ? `SOURCE_${sc.verdict}` : 'COLLECTING';
+      reason = sc ? String(sc.verdict_detail ?? '') : 'no scorecard row yet';
+    } else { // challenger
+      if (r.n < ARENA_MATURE_N) { verdict = 'COLLECTING'; reason = `n=${r.n}/${ARENA_MATURE_N}`; }
+      else if (benchNpt != null && npt != null && d3pt != null && benchD3pt != null) {
+        const beatsNet = npt > benchNpt; const beatsD3 = d3pt > benchD3pt;
+        if (!beatsNet && !beatsD3) { verdict = 'PRUNE'; reason = `matured & beaten by ${ARENA_BENCHMARK} on net/trade AND drop3/trade`; }
+        else if (beatsNet && beatsD3) { verdict = 'PROMOTE_REVIEW'; reason = `beats ${ARENA_BENCHMARK} on both — review for promotion`; }
+        else { verdict = 'WATCH'; reason = `mixed vs ${ARENA_BENCHMARK} (net ${beatsNet ? '+' : '-'}, drop3 ${beatsD3 ? '+' : '-'})`; }
+      }
+    }
+    return {
+      id: r.id, role: rl, n: r.n, net_sol: r.net_sol,
+      net_per_trade: npt, drop3_per_trade: d3pt,
+      benchmark: rl === 'challenger' ? ARENA_BENCHMARK : (rl === 'discovery_probe' ? 'copy-tp100-sl30-lag' : null),
+      score: r.score, verdict, reason,
+    };
+  });
+
+  const roleOrder: Record<string, number> = { incumbent: 0, challenger: 1, discovery_probe: 2, reference: 3, control: 4 };
+  arena.sort((a, b) => (roleOrder[a.role] - roleOrder[b.role]) || ((b.net_per_trade ?? -99) - (a.net_per_trade ?? -99)));
+
+  return {
+    note: 'Iteration board: every active experiment vs its benchmark. Challengers judged PER-TRADE vs the incumbent (' + ARENA_BENCHMARK + '); discovery probes vs the OG control (copy-tp100-sl30-lag, see discovery_scorecard). PRUNE = matured (n>=' + ARENA_MATURE_N + ') and beaten on net/trade AND drop3/trade. PROMOTE_REVIEW = beats the incumbent on both. live_micro_candidate = the current promotable leader — nothing goes live without operator sign-off.',
+    benchmark: ARENA_BENCHMARK,
+    mature_n: ARENA_MATURE_N,
+    live_micro_candidate: rows.find((r) => r.promotable)?.id ?? null,
+    prune_candidates: arena.filter((r) => r.verdict === 'PRUNE').map((r) => r.id),
+    promote_review: arena.filter((r) => r.verdict === 'PROMOTE_REVIEW').map((r) => r.id),
+    rows: arena,
+  };
+}
+
 
 /** Uniform exit-fill stress: re-net the remainder leg with the exit price worsened
  *  by `penPct`%. Scale-out partials are kept as recorded (their exit prices aren't
@@ -2661,6 +2737,10 @@ export function computeCopyTrades(db: Database.Database): unknown {
     lead_attribution: computeLeadAttribution(activeClosed),
     // Copy promotion bar (n>=100 · drop3>0 · stress>0 · monthly>=3.75) + readiness.
     promotion: computeCopyPromotion(byStrategy),
+    // Iteration board — every active experiment (strategies + discovery probes) ranked vs its
+    // benchmark with an explicit KEEP/PRUNE/PROMOTE verdict + the live-micro candidate. Read
+    // THIS to run the prune-and-iterate loop.
+    experiment_arena: computeExperimentArena(byStrategy, db),
     overall: {
       ...overallOpen,
       total_incl_open_sol: +(overallClosed.total_net_sol + overallOpen.open_unrealized_sol).toFixed(4),
