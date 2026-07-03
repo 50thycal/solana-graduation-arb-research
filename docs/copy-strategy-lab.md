@@ -54,8 +54,12 @@ counted as one source-probe slot pair). Incumbent unchanged: `copy-hotlead-stric
 
 **Addendum (same day) — new discovery source `winner_sniper` (operator thesis, picked from a
 4-way comparison):** wallets that repeatedly EARLY-BUY (0-30s window, `competition_signals` —
-free) the graduations that go on to WIN (+50% at ~T+30m, one-shot label ≈2 droppable reads/grad ≈
-300-400 calls/day), ranked by winner-hit **precision** (hits ÷ appearances — the spray-bot guard)
+free) the graduations that go on to WIN. Winner label = observed minute-cadence PATH (operator
+spec 2026-07-03): 20 checks @ 60s from T+1m; WIN requires peak ≥ +50% AND ≥3 checks at/above the
+bar (a real exit window, not a one-tick wick; a spike-then-fade token correctly counts as a WIN
+that a single T+30m snapshot would miss). Full path stored (`path_json`) for post-hoc bar
+recalibration. ~21 droppable reads/grad ≈ 3-5k calls/day. Ranked by winner-hit **precision**
+(hits ÷ appearances — the spray-bot guard)
 with a **36h half-life decay** + eviction (the operator's "good wallets rotate fast" observation,
 consistent with recency>cumulative). Rejected alternatives: literal per-token profit attribution
 (needs the tape — the June credit-blowout lesson) and same-day fast-track (spray-bot noise at

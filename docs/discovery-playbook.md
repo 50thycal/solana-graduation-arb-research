@@ -64,4 +64,4 @@ stay in the DB → `retired_summary`) and stop the harvester. Record the outcome
 | 2026-07-02 | copy-net positive selection (V2, not a source but a selector) | REFUTED OOS | in-sample +27 was circular; OOS its unique picks lost. Survives only as the proven-bad **veto** |
 | — | live_tape (Idea 1) | COLLECTING | funnel slow — zero smart+copyable so far |
 | — | external / Solana Tracker (Idea 3) | COLLECTING | funnel slow; crowding prior |
-| — | winner_sniper (operator thesis, S2+S3) | COLLECTING | added 2026-07-02: T+30m winner labels × 0-30s buyer credit × precision × 36h-half-life decay (`winner-sniper.ts`); ~300-400 RPC/day |
+| — | winner_sniper (operator thesis, S2+S3) | COLLECTING | added 2026-07-02: minute-cadence path labels (20×60s, WIN = peak ≥ +50% AND ≥3 checks above) × 0-30s buyer credit × precision × 36h-half-life decay (`winner-sniper.ts`); ~3-5k RPC/day |

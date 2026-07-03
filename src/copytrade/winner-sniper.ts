@@ -8,33 +8,45 @@ const logger = makeLogger('winner-sniper');
 
 /**
  * Winner-sniper harvester (discovery source 'winner_sniper', 2026-07-02 — operator thesis,
- * S2+S3 fused). Finds wallets that repeatedly buy INTO the graduations that go on to win,
- * before they win — then hands them to the existing FIFO scorer.
+ * S2+S3 fused; observation upgraded to a minute-cadence path 2026-07-03 on operator request).
+ * Finds wallets that repeatedly buy INTO the graduations that go on to win, before they win —
+ * then hands them to the existing FIFO scorer.
  *
- * THE THESIS: "top tokens first": label each graduation WIN/LOSS by its return at ~T+30m,
- * credit the wallets that bought it in the 0-30s window (competition_signals — already
- * recorded for free at detection), and rank wallets by winner-hit PRECISION with a fast
- * time decay. A wallet that keeps early-buying winners has an entry edge with runway —
- * exactly the kind of edge that survives our 5s copy lag (unlike exit-timing scalp edges,
- * which the drift data shows die within seconds).
+ * THE THESIS: "top tokens first": watch each graduation's price for its first ~20 minutes,
+ * label it WIN/LOSS from the OBSERVED PATH (not a single endpoint), credit the wallets that
+ * bought it in the 0-30s window (competition_signals — already recorded free at detection),
+ * and rank wallets by winner-hit PRECISION with a fast time decay. A wallet that keeps
+ * early-buying winners has an entry edge with runway — the kind of edge that survives our 5s
+ * copy lag (unlike exit-timing scalp edges, which the drift data shows die within seconds).
  *
- * WHY PRECISION (hits ÷ appearances), NOT RAW HITS: spray-bots buy EVERY graduation, so
- * they "hit" every winner too. The denominator is the whole signal.
+ * OBSERVATION (operator-specified): one price check per minute for OBS_CHECKS minutes
+ * (default 20 checks over T+1m..T+20m). A single T+30m snapshot misses the shape — a token
+ * that spikes +80% at minute 8 and dies by minute 30 was a real, bankable winner; one that
+ * limps to +50% at minute 30 on no path is a weaker signal. WIN requires BOTH:
+ *   peak_ret >= minRetPct  AND  >= minSustainChecks checks at/above minRetPct
+ * (3 minutes above the bar = a real exit window a copier could have used, not a one-tick
+ * wick). The full minute path is stored (path_json) so the bar can be recalibrated from data
+ * later without re-collecting.
+ *
+ * WHY PRECISION (hits ÷ appearances), NOT RAW HITS: spray-bots buy EVERY graduation, so they
+ * "hit" every winner too. The denominator is the whole signal.
  *
  * WHY FAST DECAY (half-life ~36h + eviction): the operator's observation, confirmed by the
  * book's own data (recency-gated hotlead beats every cumulative-reputation variant): good
- * wallets rotate fast — bots swap wallets constantly. Score decays exponentially; a wallet
- * that stops hitting falls off the promotion bar within ~2 days.
+ * wallets rotate fast. Score decays exponentially; a wallet that stops hitting falls off the
+ * promotion bar within ~2 days.
  *
- * RPC COST: ~2 reads per graduation, once (pool account → vaults, then vault balances),
- * on the DROPPABLE limiter tier — ~300-400 calls/day at current graduation rates, and a
- * missed label just retries next tick inside the window. Crediting is pure SQL. This is
- * intentionally the cheap reformulation of "which wallets made money on pumping tokens":
- * profit verification stays with the FIFO scorer (the expensive step), which this source
- * merely POINTS at better wallets (priority boost in discovery.ts).
+ * RPC COST: ~1 vault-resolve + OBS_CHECKS price reads per graduation ≈ 21 reads, droppable
+ * limiter tier ≈ 3-5k calls/day at current graduation rates (~1% of the daily budget). Only
+ * ~3-6 tokens are inside their observation window at any moment. Crediting is pure SQL.
+ * This stays the cheap reformulation of "which wallets made money on pumping tokens": profit
+ * verification remains with the FIFO scorer (the expensive step), which this source merely
+ * POINTS at better wallets (priority boost in discovery.ts). NOTE: this is a bounded LABEL
+ * path, not a revival of the retired research price-path (which snapshotted every grad at
+ * dense cadence for feature mining).
  *
- * The probe strategy (copy-src-winner-sniper), quarantine routing, and scorecard verdict
- * all derive from the DISCOVERY_SOURCES registry row — see docs/discovery-playbook.md.
+ * The probe strategy (copy-src-winner-sniper), quarantine routing, and scorecard verdict all
+ * derive from the DISCOVERY_SOURCES registry row — see docs/discovery-playbook.md.
  */
 
 const POOL_BASE_VAULT_OFFSET = 139; // matches PriceCollector / copy-trader
@@ -46,13 +58,16 @@ function numEnv(name: string, fallback: number): number {
 }
 
 export const WINNER_SNIPER_CFG = {
-  /** A graduation is a WINNER when pool price at label time >= open * (1 + minRetPct/100). */
+  /** A graduation is a WINNER when the path clears BOTH peak and sustain bars below. */
   minRetPct: numEnv('WINNER_MIN_RET_PCT', 50),
-  /** Label window: earliest/latest seconds after graduation to take the one-shot read. */
-  labelAfterSec: numEnv('WINNER_LABEL_AFTER_SEC', 1800),
-  labelUntilSec: numEnv('WINNER_LABEL_UNTIL_SEC', 7200),
-  /** Max labels attempted per tick (RPC bound per tick = 2×this). */
-  labelBatch: numEnv('WINNER_LABEL_BATCH', 25),
+  /** Checks at/above minRetPct required (1-min cadence → minutes above the bar). */
+  minSustainChecks: numEnv('WINNER_MIN_SUSTAIN_CHECKS', 3),
+  /** First check at T+obsStartSec, then one per obsIntervalSec, obsChecks times. */
+  obsStartSec: numEnv('WINNER_OBS_START_SEC', 60),
+  obsIntervalSec: numEnv('WINNER_OBS_INTERVAL_SEC', 60),
+  obsChecks: numEnv('WINNER_OBS_CHECKS', 20),
+  /** Max new graduations enrolled per tick (bounds restart backfill bursts). */
+  enrollBatch: numEnv('WINNER_ENROLL_BATCH', 10),
   /** Max early buyers credited per graduation (biggest buys first — bounds tally writes). */
   creditCap: numEnv('WINNER_CREDIT_CAP', 40),
   /** Decay half-life for the sniper score, hours. */
@@ -61,13 +76,30 @@ export const WINNER_SNIPER_CFG = {
   minHits: numEnv('WINNER_SNIPER_MIN_HITS', 2),
   minPrecision: numEnv('WINNER_SNIPER_MIN_PRECISION', 0.25),
   minScore: numEnv('WINNER_SNIPER_MIN_SCORE', 0.5),
-  tickMs: numEnv('WINNER_SNIPER_TICK_MS', 5 * 60 * 1000),
+  /** Tick must match the check cadence (one observation pass per interval). */
+  tickMs: numEnv('WINNER_SNIPER_TICK_MS', 60 * 1000),
 };
+
+/** End of a graduation's observation window, seconds after graduation. */
+function obsWindowEndSec(): number {
+  return WINNER_SNIPER_CFG.obsStartSec + WINNER_SNIPER_CFG.obsIntervalSec * WINNER_SNIPER_CFG.obsChecks;
+}
 
 /** Apply exponential decay to a stored score across (now - lastUpdate). */
 function decayed(score: number, lastUpdate: number, now: number): number {
   const dtH = Math.max(0, now - lastUpdate) / 3600;
   return score * Math.pow(2, -dtH / WINNER_SNIPER_CFG.halfLifeHours);
+}
+
+interface ObsRow {
+  graduation_id: number;
+  mint: string;
+  base_vault: string;
+  quote_vault: string;
+  open_price_sol: number;
+  grad_ts: number;
+  n_checks: number;
+  path_json: string;
 }
 
 export class WinnerSniperHarvester {
@@ -90,8 +122,9 @@ export class WinnerSniperHarvester {
       this.tick().catch((err) => logger.warn('tick failed: %s', err instanceof Error ? err.message : String(err)));
     }, WINNER_SNIPER_CFG.tickMs);
     logger.info(
-      'WinnerSniperHarvester started: label T+%d..%ds, winner >= +%d%%, half-life %dh, promote at hits>=%d & precision>=%s',
-      WINNER_SNIPER_CFG.labelAfterSec, WINNER_SNIPER_CFG.labelUntilSec, WINNER_SNIPER_CFG.minRetPct,
+      'WinnerSniperHarvester started: %d checks @ %ds from T+%ds, WIN = peak>=+%d%% & >=%d checks above, half-life %dh, promote at hits>=%d & precision>=%s',
+      WINNER_SNIPER_CFG.obsChecks, WINNER_SNIPER_CFG.obsIntervalSec, WINNER_SNIPER_CFG.obsStartSec,
+      WINNER_SNIPER_CFG.minRetPct, WINNER_SNIPER_CFG.minSustainChecks,
       WINNER_SNIPER_CFG.halfLifeHours, WINNER_SNIPER_CFG.minHits, WINNER_SNIPER_CFG.minPrecision,
     );
   }
@@ -102,14 +135,27 @@ export class WinnerSniperHarvester {
 
   private ensureTables(): void {
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS winner_obs (
+        graduation_id INTEGER PRIMARY KEY REFERENCES graduations(id),
+        mint TEXT,
+        base_vault TEXT NOT NULL,
+        quote_vault TEXT NOT NULL,
+        open_price_sol REAL NOT NULL,
+        grad_ts INTEGER NOT NULL,
+        n_checks INTEGER NOT NULL DEFAULT 0,
+        path_json TEXT NOT NULL DEFAULT '[]'   -- [{s: secondsAfterGrad, r: retPct}, ...]
+      );
       CREATE TABLE IF NOT EXISTS winner_labels (
         graduation_id INTEGER PRIMARY KEY REFERENCES graduations(id),
         mint TEXT,
         checked_at INTEGER NOT NULL,
-        seconds_after_grad INTEGER,
         open_price_sol REAL,
-        label_price_sol REAL,
-        ret_pct REAL,
+        peak_ret_pct REAL,
+        final_ret_pct REAL,
+        time_to_peak_sec INTEGER,
+        sustained_checks INTEGER,              -- checks at/above minRetPct
+        checks_done INTEGER,
+        path_json TEXT,                        -- full minute path, for post-hoc recalibration
         is_winner INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_winner_labels_winner ON winner_labels(is_winner);
@@ -127,69 +173,134 @@ export class WinnerSniperHarvester {
 
   private async tick(): Promise<void> {
     const now = Math.floor(Date.now() / 1000);
-    const labeledIds = await this.labelPending(now);
-    if (labeledIds.length) this.credit(labeledIds, now);
+    await this.enroll(now);
+    await this.observe(now);
+    const finalized = this.finalize(now);
+    if (finalized.length) this.credit(finalized, now);
     this.promote(now);
     this.evict(now);
   }
 
-  /** One-shot WIN/LOSS label for graduations inside the label window. ~2 RPC reads each. */
-  private async labelPending(now: number): Promise<number[]> {
+  /** Enroll graduations entering their observation window: resolve pool vaults once (1 read). */
+  private async enroll(now: number): Promise<void> {
     let rows: Array<{ id: number; mint: string; pool: string; open_price: number; ts: number }> = [];
     try {
       rows = this.db.prepare(`
         SELECT g.id, g.mint, g.new_pool_address AS pool, gm.open_price_sol AS open_price, g.timestamp AS ts
         FROM graduations g
         JOIN graduation_momentum gm ON gm.graduation_id = g.id
+        LEFT JOIN winner_obs wo ON wo.graduation_id = g.id
         LEFT JOIN winner_labels wl ON wl.graduation_id = g.id
-        WHERE wl.graduation_id IS NULL
+        WHERE wo.graduation_id IS NULL AND wl.graduation_id IS NULL
           AND g.new_pool_address IS NOT NULL
           AND gm.open_price_sol > 0
-          AND (@now - g.timestamp) BETWEEN @after AND @until
+          AND (@now - g.timestamp) BETWEEN @start AND @end
         ORDER BY g.timestamp ASC
         LIMIT @batch
       `).all({
-        now, after: WINNER_SNIPER_CFG.labelAfterSec, until: WINNER_SNIPER_CFG.labelUntilSec,
-        batch: WINNER_SNIPER_CFG.labelBatch,
+        now, start: WINNER_SNIPER_CFG.obsStartSec, end: obsWindowEndSec(),
+        batch: WINNER_SNIPER_CFG.enrollBatch,
       }) as typeof rows;
     } catch (err) {
-      logger.warn('label query failed: %s', err instanceof Error ? err.message : String(err));
-      return [];
+      logger.warn('enroll query failed: %s', err instanceof Error ? err.message : String(err));
+      return;
     }
-    if (!rows.length) return [];
+    if (!rows.length) return;
     const conn = this.getConnection();
-    if (!conn) return [];
-
+    if (!conn) return;
     const insert = this.db.prepare(`
-      INSERT OR IGNORE INTO winner_labels
-        (graduation_id, mint, checked_at, seconds_after_grad, open_price_sol, label_price_sol, ret_pct, is_winner)
-      VALUES (@id, @mint, @now, @sec, @open, @price, @ret, @win)
+      INSERT OR IGNORE INTO winner_obs
+        (graduation_id, mint, base_vault, quote_vault, open_price_sol, grad_ts, n_checks, path_json)
+      VALUES (@id, @mint, @bv, @qv, @open, @ts, 0, '[]')
     `);
-    const done: number[] = [];
     for (const r of rows) {
-      // Droppable tier: if the limiter is busy, skip — the window gives hours of retries.
       if (!(await globalRpcLimiter.throttleOrDrop(8, 'winner_label'))) break;
       let pk: PublicKey;
       try { pk = new PublicKey(r.pool); } catch { continue; }
       let info;
       try { info = await conn.getAccountInfo(pk); } catch { continue; }
       if (!info || info.data.length < POOL_QUOTE_VAULT_OFFSET + 32) continue;
-      const baseVault = new PublicKey(info.data.subarray(POOL_BASE_VAULT_OFFSET, POOL_BASE_VAULT_OFFSET + 32)).toBase58();
-      const quoteVault = new PublicKey(info.data.subarray(POOL_QUOTE_VAULT_OFFSET, POOL_QUOTE_VAULT_OFFSET + 32)).toBase58();
-      if (!(await globalRpcLimiter.throttleOrDrop(8, 'winner_label'))) break;
-      const price = await fetchVaultPrice(conn, baseVault, quoteVault);
-      if (!price || price.priceSol <= 0) continue;
-      const retPct = (price.priceSol / r.open_price - 1) * 100;
-      try {
-        insert.run({
-          id: r.id, mint: r.mint, now, sec: now - r.ts, open: r.open_price,
-          price: price.priceSol, ret: +retPct.toFixed(2),
-          win: retPct >= WINNER_SNIPER_CFG.minRetPct ? 1 : 0,
-        });
-        done.push(r.id);
-      } catch { /* raced */ }
+      const bv = new PublicKey(info.data.subarray(POOL_BASE_VAULT_OFFSET, POOL_BASE_VAULT_OFFSET + 32)).toBase58();
+      const qv = new PublicKey(info.data.subarray(POOL_QUOTE_VAULT_OFFSET, POOL_QUOTE_VAULT_OFFSET + 32)).toBase58();
+      try { insert.run({ id: r.id, mint: r.mint, bv, qv, open: r.open_price, ts: r.ts }); } catch { /* raced */ }
     }
-    if (done.length) logger.info('labeled %d graduations', done.length);
+  }
+
+  /** One price check per enrolled graduation per tick (1 read each, droppable tier). */
+  private async observe(now: number): Promise<void> {
+    let rows: ObsRow[] = [];
+    try {
+      rows = this.db.prepare(`
+        SELECT graduation_id, mint, base_vault, quote_vault, open_price_sol, grad_ts, n_checks, path_json
+        FROM winner_obs
+        WHERE n_checks < @maxChecks AND (@now - grad_ts) <= @end
+      `).all({ now, maxChecks: WINNER_SNIPER_CFG.obsChecks, end: obsWindowEndSec() }) as ObsRow[];
+    } catch { return; }
+    if (!rows.length) return;
+    const conn = this.getConnection();
+    if (!conn) return;
+    const update = this.db.prepare(
+      `UPDATE winner_obs SET n_checks = @n, path_json = @path WHERE graduation_id = @id`,
+    );
+    for (const r of rows) {
+      if (!(await globalRpcLimiter.throttleOrDrop(8, 'winner_label'))) break;
+      const price = await fetchVaultPrice(conn, r.base_vault, r.quote_vault);
+      if (!price || price.priceSol <= 0) continue;
+      const retPct = +((price.priceSol / r.open_price_sol - 1) * 100).toFixed(2);
+      let path: Array<{ s: number; r: number }> = [];
+      try { path = JSON.parse(r.path_json); } catch { path = []; }
+      path.push({ s: now - r.grad_ts, r: retPct });
+      try {
+        update.run({ id: r.graduation_id, n: r.n_checks + 1, path: JSON.stringify(path) });
+      } catch { /* best-effort */ }
+    }
+  }
+
+  /** Fold completed observations into winner_labels; returns finalized graduation ids. */
+  private finalize(now: number): number[] {
+    let rows: ObsRow[] = [];
+    try {
+      rows = this.db.prepare(`
+        SELECT graduation_id, mint, base_vault, quote_vault, open_price_sol, grad_ts, n_checks, path_json
+        FROM winner_obs
+        WHERE n_checks >= @maxChecks OR (@now - grad_ts) > @end
+      `).all({ now, maxChecks: WINNER_SNIPER_CFG.obsChecks, end: obsWindowEndSec() }) as ObsRow[];
+    } catch { return []; }
+    if (!rows.length) return [];
+    const insert = this.db.prepare(`
+      INSERT OR IGNORE INTO winner_labels
+        (graduation_id, mint, checked_at, open_price_sol, peak_ret_pct, final_ret_pct,
+         time_to_peak_sec, sustained_checks, checks_done, path_json, is_winner)
+      VALUES (@id, @mint, @now, @open, @peak, @final, @ttp, @sustained, @checks, @path, @win)
+    `);
+    const del = this.db.prepare(`DELETE FROM winner_obs WHERE graduation_id = ?`);
+    const done: number[] = [];
+    const tx = this.db.transaction(() => {
+      for (const r of rows) {
+        let path: Array<{ s: number; r: number }> = [];
+        try { path = JSON.parse(r.path_json); } catch { path = []; }
+        // A restart-gapped or zero-check path still finalizes — with an honest checks_done
+        // count; zero-check rows get is_winner=0 and are visible via checks_done=0.
+        let peak = -Infinity; let ttp = 0;
+        for (const p of path) { if (p.r > peak) { peak = p.r; ttp = p.s; } }
+        if (!Number.isFinite(peak)) { peak = 0; ttp = 0; }
+        const sustained = path.filter((p) => p.r >= WINNER_SNIPER_CFG.minRetPct).length;
+        const final = path.length ? path[path.length - 1].r : 0;
+        const win = peak >= WINNER_SNIPER_CFG.minRetPct && sustained >= WINNER_SNIPER_CFG.minSustainChecks ? 1 : 0;
+        insert.run({
+          id: r.graduation_id, mint: r.mint, now, open: r.open_price_sol,
+          peak: +peak.toFixed(2), final, ttp, sustained, checks: path.length,
+          path: JSON.stringify(path), win,
+        });
+        del.run(r.graduation_id);
+        done.push(r.graduation_id);
+      }
+    });
+    try { tx(); } catch (err) {
+      logger.warn('finalize failed: %s', err instanceof Error ? err.message : String(err));
+      return [];
+    }
+    if (done.length) logger.info('labeled %d graduations from observed paths', done.length);
     return done;
   }
 
@@ -271,13 +382,19 @@ export class WinnerSniperHarvester {
   }
 }
 
-/** Funnel summary for copy-trades.json — labels, winners, tally, promotion state. */
+/** Funnel summary for copy-trades.json — observation, labels, tally, promotion state. */
 export function getWinnerSniperSummary(db: Database.Database): unknown {
   const now = Math.floor(Date.now() / 1000);
   try {
-    const labels = db.prepare(
-      `SELECT COUNT(*) AS n, COALESCE(SUM(is_winner), 0) AS winners FROM winner_labels`,
-    ).get() as { n: number; winners: number };
+    const obs = db.prepare(
+      `SELECT COUNT(*) AS n, COALESCE(AVG(n_checks), 0) AS avg_checks FROM winner_obs`,
+    ).get() as { n: number; avg_checks: number };
+    const labels = db.prepare(`
+      SELECT COUNT(*) AS n, COALESCE(SUM(is_winner), 0) AS winners,
+             COALESCE(AVG(checks_done), 0) AS avg_checks,
+             COALESCE(AVG(peak_ret_pct), 0) AS avg_peak
+      FROM winner_labels
+    `).get() as { n: number; winners: number; avg_checks: number; avg_peak: number };
     const tally = db.prepare(
       `SELECT COUNT(*) AS n, COALESCE(SUM(CASE WHEN winner_hits >= ${WINNER_SNIPER_CFG.minHits} THEN 1 ELSE 0 END), 0) AS multi_hit
        FROM winner_sniper_tally`,
@@ -300,14 +417,20 @@ export function getWinnerSniperSummary(db: Database.Database): unknown {
       }));
     return {
       note:
-        'Winner-sniper discovery (operator thesis 2026-07-02): label grads WIN/LOSS at ~T+30m (2 cheap reads each), ' +
-        'credit 0-30s buyers from competition_signals (free), rank by winner-hit precision with a ' +
+        'Winner-sniper discovery (operator thesis 2026-07-02, path observation 2026-07-03): watch each ' +
+        `graduation ${WINNER_SNIPER_CFG.obsChecks}x @ ${WINNER_SNIPER_CFG.obsIntervalSec}s from T+${WINNER_SNIPER_CFG.obsStartSec}s; ` +
+        `WIN = peak >= +${WINNER_SNIPER_CFG.minRetPct}% AND >= ${WINNER_SNIPER_CFG.minSustainChecks} checks above the bar. ` +
+        'Credit 0-30s buyers (competition_signals, free), rank by winner-hit precision with a ' +
         `${WINNER_SNIPER_CFG.halfLifeHours}h half-life. Promotion bar: hits>=${WINNER_SNIPER_CFG.minHits}, ` +
         `precision>=${WINNER_SNIPER_CFG.minPrecision}, decayed score>=${WINNER_SNIPER_CFG.minScore}. ` +
         'Probe P&L + verdict live in discovery_scorecard (source=winner_sniper).',
       config: WINNER_SNIPER_CFG,
+      observing_now: obs.n,
+      observing_avg_checks: +obs.avg_checks.toFixed(1),
       graduations_labeled: labels.n,
       winners: labels.winners,
+      label_avg_checks: +labels.avg_checks.toFixed(1),
+      label_avg_peak_ret_pct: +labels.avg_peak.toFixed(1),
       wallets_tallied: tally.n,
       wallets_multi_hit: tally.multi_hit,
       promoted_candidates: promotedRow.n,
