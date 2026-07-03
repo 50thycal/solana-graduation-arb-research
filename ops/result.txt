@@ -1,23 +1,35 @@
 # ops request: type='db'
-# WITH t AS ( SELECT strategy_id s, entry_drift_pct d, net_sol FROM copy_trades WHERE status='closed' AND net_sol IS NOT NULL AND entry_drift_pct IS NOT NULL AND strategy_id IN ('copy-tp100-sl30-lag','copy-hotlead-strict','copy-hotlead-hold30m') ) SELECT s, CASE WHEN d < -5 THEN 'a_lt-5' WHEN d < -2 THEN 'b_-5..-2' WHEN d < 0 THEN 'c_-2..0' WHEN d < 2 THEN 'd_0..2' WHEN d < 5 THEN 'e_2..5' ELSE 'f_5..10' END bkt, COUNT(*) n, ROUND(SUM(net_sol),2) net, ROUND(AVG(net_sol),4) avg_net, ROUND(AVG(CASE WHEN net_sol>0 THEN 1.0 ELSE 0.0 END),3) wr FROM t GROUP BY s, bkt ORDER BY s, bkt
-  s                    | bkt      | n   | net   | avg_net | wr   
-  ---------------------+----------+-----+-------+---------+------
-  copy-hotlead-hold30m | a_lt-5   | 175 | 14.49 | 0.0828  | 0.263
-  copy-hotlead-hold30m | b_-5..-2 | 95  | -4.08 | -0.0429 | 0.326
-  copy-hotlead-hold30m | c_-2..0  | 107 | 5.13  | 0.0479  | 0.374
-  copy-hotlead-hold30m | d_0..2   | 430 | 3.61  | 0.0084  | 0.34 
-  copy-hotlead-hold30m | e_2..5   | 139 | -3.34 | -0.024  | 0.288
-  copy-hotlead-hold30m | f_5..10  | 121 | 13.6  | 0.1124  | 0.306
-  copy-hotlead-strict  | a_lt-5   | 118 | 10.03 | 0.085   | 0.331
-  copy-hotlead-strict  | b_-5..-2 | 69  | -0.36 | -0.0053 | 0.319
-  copy-hotlead-strict  | c_-2..0  | 72  | 7.06  | 0.0981  | 0.389
-  copy-hotlead-strict  | d_0..2   | 224 | -6.44 | -0.0288 | 0.277
-  copy-hotlead-strict  | e_2..5   | 86  | -3.71 | -0.0431 | 0.256
-  copy-hotlead-strict  | f_5..10  | 85  | 5.86  | 0.069   | 0.376
-  copy-tp100-sl30-lag  | a_lt-5   | 79  | -9.74 | -0.1233 | 0.139
-  copy-tp100-sl30-lag  | b_-5..-2 | 67  | -1.06 | -0.0159 | 0.239
-  copy-tp100-sl30-lag  | c_-2..0  | 76  | 0.42  | 0.0055  | 0.289
-  copy-tp100-sl30-lag  | d_0..2   | 172 | -5.1  | -0.0297 | 0.262
-  copy-tp100-sl30-lag  | e_2..5   | 82  | -0.86 | -0.0104 | 0.305
-  copy-tp100-sl30-lag  | f_5..10  | 78  | -0.2  | -0.0026 | 0.321
-  [18 rows]
+# WITH t AS ( SELECT ct.strategy_id s, ct.net_sol, ct.entry_ts - COALESCE(g.migration_timestamp, g.timestamp) age_sec, CASE WHEN gm.open_price_sol > 0 THEN 100.0*(ct.entry_price_sol/gm.open_price_sol - 1.0) END ext_pct FROM copy_trades ct JOIN graduations g ON g.id = (SELECT MAX(g2.id) FROM graduations g2 WHERE g2.mint = ct.mint) LEFT JOIN graduation_momentum gm ON gm.graduation_id = g.id WHERE ct.status='closed' AND ct.net_sol IS NOT NULL AND ct.strategy_id IN ('copy-tp100-sl30','copy-hotlead-strict','copy-hotlead-hold30m') ) SELECT s, 'age' dim, CASE WHEN age_sec<900 THEN 'a_lt15m' WHEN age_sec<3600 THEN 'b_15-60m' WHEN age_sec<14400 THEN 'c_1-4h' WHEN age_sec<86400 THEN 'd_4-24h' ELSE 'e_gt24h' END bkt, COUNT(*) n, ROUND(SUM(net_sol),2) net, ROUND(AVG(net_sol),4) avg_net, ROUND(AVG(CASE WHEN net_sol>0 THEN 1.0 ELSE 0.0 END),3) wr FROM t GROUP BY s, bkt UNION ALL SELECT s, 'ext', CASE WHEN ext_pct IS NULL THEN 'z_null' WHEN ext_pct<0 THEN 'a_below_open' WHEN ext_pct<50 THEN 'b_0-50' WHEN ext_pct<150 THEN 'c_50-150' WHEN ext_pct<400 THEN 'd_150-400' ELSE 'e_gt400' END, COUNT(*), ROUND(SUM(net_sol),2), ROUND(AVG(net_sol),4), ROUND(AVG(CASE WHEN net_sol>0 THEN 1.0 ELSE 0.0 END),3) FROM t GROUP BY s, 3 ORDER BY s, dim, bkt
+  s                    | dim | bkt          | n    | net    | avg_net | wr   
+  ---------------------+-----+--------------+------+--------+---------+------
+  copy-hotlead-hold30m | age | a_lt15m      | 428  | 36.7   | 0.0857  | 0.287
+  copy-hotlead-hold30m | age | b_15-60m     | 125  | 4.8    | 0.0384  | 0.336
+  copy-hotlead-hold30m | age | c_1-4h       | 106  | -5.22  | -0.0493 | 0.349
+  copy-hotlead-hold30m | age | d_4-24h      | 156  | -1.42  | -0.0091 | 0.391
+  copy-hotlead-hold30m | age | e_gt24h      | 264  | -4.82  | -0.0182 | 0.314
+  copy-hotlead-hold30m | ext | a_below_open | 258  | 8.61   | 0.0334  | 0.295
+  copy-hotlead-hold30m | ext | b_0-50       | 104  | 11.99  | 0.1153  | 0.337
+  copy-hotlead-hold30m | ext | c_50-150     | 200  | 5.74   | 0.0287  | 0.25 
+  copy-hotlead-hold30m | ext | d_150-400    | 187  | 1.03   | 0.0055  | 0.358
+  copy-hotlead-hold30m | ext | e_gt400      | 330  | 2.66   | 0.0081  | 0.358
+  copy-hotlead-strict  | age | a_lt15m      | 310  | 15.71  | 0.0507  | 0.361
+  copy-hotlead-strict  | age | b_15-60m     | 107  | 3.21   | 0.03    | 0.299
+  copy-hotlead-strict  | age | c_1-4h       | 52   | -5.18  | -0.0996 | 0.192
+  copy-hotlead-strict  | age | d_4-24h      | 63   | 0.77   | 0.0122  | 0.317
+  copy-hotlead-strict  | age | e_gt24h      | 133  | -1.67  | -0.0126 | 0.263
+  copy-hotlead-strict  | ext | a_below_open | 138  | 5.85   | 0.0424  | 0.283
+  copy-hotlead-strict  | ext | b_0-50       | 58   | 5.38   | 0.0927  | 0.431
+  copy-hotlead-strict  | ext | c_50-150     | 124  | -2.37  | -0.0192 | 0.282
+  copy-hotlead-strict  | ext | d_150-400    | 124  | 0.28   | 0.0023  | 0.315
+  copy-hotlead-strict  | ext | e_gt400      | 221  | 3.7    | 0.0167  | 0.321
+  copy-tp100-sl30      | age | a_lt15m      | 1249 | -21.4  | -0.0171 | 0.283
+  copy-tp100-sl30      | age | b_15-60m     | 391  | 8.18   | 0.0209  | 0.325
+  copy-tp100-sl30      | age | c_1-4h       | 234  | -0.71  | -0.003  | 0.286
+  copy-tp100-sl30      | age | d_4-24h      | 353  | 0.79   | 0.0022  | 0.275
+  copy-tp100-sl30      | age | e_gt24h      | 774  | -17.18 | -0.0222 | 0.258
+  copy-tp100-sl30      | ext | a_below_open | 686  | -2.68  | -0.0039 | 0.261
+  copy-tp100-sl30      | ext | b_0-50       | 274  | -4.57  | -0.0167 | 0.281
+  copy-tp100-sl30      | ext | c_50-150     | 566  | 0.1    | 0.0002  | 0.304
+  copy-tp100-sl30      | ext | d_150-400    | 462  | 0.85   | 0.0018  | 0.31 
+  copy-tp100-sl30      | ext | e_gt400      | 1013 | -24.02 | -0.0237 | 0.27 
+  [30 rows]
