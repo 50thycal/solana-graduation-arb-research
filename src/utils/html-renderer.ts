@@ -2124,6 +2124,49 @@ export function renderCopyTradesHtml(data: any): string {
   const realRows = allRows.filter((r: any) => r.realistic_execution).slice(0, 14);
   const idealRows = allRows.filter((r: any) => !r.realistic_execution).slice(0, 10);
   const thead = `<tr><th>Strategy</th><th>Score</th><th>n</th><th title="time since this strategy's first trade — proxy for how long it's been running; — = no trades yet">Age</th><th>Net</th><th>Drop3</th><th>Stress</th><th>SOL/mo</th><th title="longest consecutive wins / losses, in time order">Streak W/L</th><th title="deepest peak-to-trough decline in cumulative net SOL">Max DD</th><th>Gates</th></tr>`;
+  // ── Helius credit attribution — where the budget goes ──
+  const usage = d.rpc_usage ?? {};
+  const usageCats: any[] = Array.isArray(usage?.by_category) ? usage.by_category : [];
+  const usageDrivers: any[] = Array.isArray(usage?.top_drivers) ? usage.top_drivers : [];
+  const catColor = (c: string) => ({ copy_trading: 'green', scoring: 'yellow', discovery: 'blue', detection: 'blue' } as any)[c] || '';
+  const usageCard = !usageCats.length ? '' : `<div class="card" style="border-left:6px solid #ea580c">
+    <h2>Helius credit usage <span class="desc" style="font-size:13px">— where the budget goes, by category</span></h2>
+    <div class="desc">${escHtml(usage.note || '')}</div>
+    <div class="grid">
+      <div class="stat"><span class="label">Est. credits/day</span><span class="value">${(usage.est_credits_per_day ?? 0).toLocaleString()}</span></div>
+      <div class="stat"><span class="label">LaserStream WS</span><span class="value">${usage.by_transport?.ws?.share_pct ?? 0}%</span></div>
+      <div class="stat"><span class="label">RPC</span><span class="value">${usage.by_transport?.rpc?.share_pct ?? 0}%</span></div>
+      <div class="stat"><span class="label">Console ref (WS/RPC/DAS)</span><span class="value" style="font-size:14px">${usage.reference_cycle_from_console?.laserstream_ws_pct ?? '—'}/${usage.reference_cycle_from_console?.rpc_pct ?? '—'}/${usage.reference_cycle_from_console?.das_pct ?? '—'}</span></div>
+    </div>
+    <h3>By category</h3>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+    <table>
+      <thead><tr><th>Category</th><th style="text-align:right">est credits/day</th><th style="text-align:right">share</th><th style="text-align:right">WS msgs/day</th><th style="text-align:right">RPC calls/day</th></tr></thead>
+      <tbody>${usageCats.map((c: any) => `<tr>
+        <td><span class="${catColor(c.category)}">${escHtml(c.category)}</span></td>
+        <td style="text-align:right">${(c.est_credits_day ?? 0).toLocaleString()}</td>
+        <td style="text-align:right">${c.share_pct ?? 0}%</td>
+        <td style="text-align:right">${(c.ws_msgs_day ?? 0).toLocaleString()}</td>
+        <td style="text-align:right">${(c.rpc_calls_day ?? 0).toLocaleString()}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+    <h3>Top drivers</h3>
+    <div style="overflow-x:auto;-webkit-overflow-scrolling:touch;max-width:100%">
+    <table>
+      <thead><tr><th>Source</th><th>Transport</th><th>Category</th><th style="text-align:right">units/day</th><th style="text-align:right">est credits/day</th><th style="text-align:right">share</th></tr></thead>
+      <tbody>${usageDrivers.map((r: any) => `<tr>
+        <td>${escHtml(r.source)}</td>
+        <td><span class="desc">${escHtml(r.transport)}</span></td>
+        <td><span class="desc">${escHtml(r.category)}</span></td>
+        <td style="text-align:right">${(r.per_day ?? 0).toLocaleString()}</td>
+        <td style="text-align:right">${(r.est_credits_day ?? 0).toLocaleString()}</td>
+        <td style="text-align:right">${r.share_pct ?? 0}%</td></tr>`).join('')}
+      </tbody>
+    </table>
+    </div>
+  </div>`;
+
   // ── Experiment arena — the prune-and-iterate board ──
   const arena = d.experiment_arena ?? {};
   const arenaRows: any[] = Array.isArray(arena?.rows) ? arena.rows : [];
@@ -2576,7 +2619,7 @@ export function renderCopyTradesHtml(data: any): string {
     ${attribRows}
   </div>`;
 
-  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + arenaCard + scorecardCard + discoveryCard + cotradeCard + liveTapeCard + externalCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
+  return shell('Copy Trades — Graduation Arb Research', '/copy-trades', leCard + regimeCard + macroCard + usageCard + arenaCard + scorecardCard + discoveryCard + cotradeCard + liveTapeCard + externalCard + attribCard + promoCard + lvsCard + dailyCard + leadCard + headerCard + stratCard + holdCard + recentCard, data as object);
 }
 
 // ── COPY V2 PAGE ─────────────────────────────────────────────────────

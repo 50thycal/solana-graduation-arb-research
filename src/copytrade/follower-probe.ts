@@ -6,6 +6,7 @@ import { getCopyNetSelectedAddresses } from './leaderboard-v2';
 import { parseSwapForOwner, wsNotificationToTx } from './parse-swap';
 import type { CopyTrader } from './copy-trader';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { usageTracker } from '../utils/usage-tracker';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copy-follower-probe');
@@ -155,6 +156,7 @@ export class CopyFollowerProbe {
       }
       if ((msg as { method?: string }).method === 'transactionNotification') {
         this.totalNotifications++;
+        usageTracker.recordWs('copy_follower_ws'); // LaserStream billing attribution
         this.handleNotification((msg as { params?: unknown }).params).catch((err) =>
           logger.debug('probe notification error: %s', err instanceof Error ? err.message : String(err)));
       }

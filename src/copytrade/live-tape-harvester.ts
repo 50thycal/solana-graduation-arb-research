@@ -5,6 +5,7 @@ import {
   LiveTallyDelta,
 } from './queries';
 import { parseSwapForOwner, wsNotificationToTx, swapTradersOf } from './parse-swap';
+import { usageTracker } from '../utils/usage-tracker';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('live-tape-harvester');
@@ -271,6 +272,7 @@ export class LiveTapeHarvester {
       try { msg = JSON.parse(data.toString()) as Record<string, unknown>; } catch { return; }
       if (typeof (msg as { result?: unknown }).result === 'number') { this.subId = (msg as { result: number }).result; return; }
       if ((msg as { method?: string }).method === 'transactionNotification') {
+        usageTracker.recordWs('discovery_livetape_ws'); // LaserStream billing attribution
         this.onTapeNotification((msg as { params?: unknown }).params);
       }
     });

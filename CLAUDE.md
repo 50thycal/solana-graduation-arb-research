@@ -139,6 +139,17 @@ because copy discovery seeds from them. To revive full price-path research colle
 `GRADUATION_COLLECTION_DISABLED=true` (detect-only). Copy work and detection share
 `globalRpcLimiter` (copy has its own priority tier).
 
+**Credits are billed on TWO surfaces, and WS dominates.** The `globalRpcLimiter` only counts
+**RPC calls** (~21% of the Helius bill per the 2026-07-03 console). The other **~78% is LaserStream /
+Enhanced WebSocket**, billed **per delivered message** — the standing subscriptions: the copy
+follower-probe (`transactionSubscribe` on the watchlist — **grows with watchlist size**), the
+graduation listener (`onLogs`, migrations-only by default), and the opt-in live-tape harvester. The
+`copy-trades.json → rpc_usage` panel (`src/utils/usage-tracker.ts`) joins both surfaces and buckets
+credits by category (scoring / copy_trading / discovery / detection). **Read it before assuming RPC
+headroom** — pruning copy strategies frees ~0 (shared deduped polls); the real levers are watchlist
+size (WS) and scoring volume (`wallet_pnl` RPC). Calibrate `HELIUS_WS_CREDIT` / `HELIUS_RPC_CREDIT`
+to make the estimate match the console.
+
 ---
 
 ## OPERATIONAL CONSTANTS (rare changes)

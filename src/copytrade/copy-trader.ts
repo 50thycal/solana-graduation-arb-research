@@ -3,6 +3,7 @@ import { Connection, PublicKey } from '@solana/web3.js';
 import { fetchVaultPrice } from '../trading/executor';
 import { SIM_DEFAULT_COST_PCT } from '../api/sim-constants';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { computeUsageBreakdown } from '../utils/usage-tracker';
 import { computeCopyRegime, currentRegimeScore, COPY_REGIME_BASELINE } from './copy-regime';
 import { computeMacroRegime, currentMacroScore } from './macro-regime';
 import { computeWalletLeaderboard } from './leaderboard';
@@ -2741,6 +2742,10 @@ export function computeCopyTrades(db: Database.Database): unknown {
     // benchmark with an explicit KEEP/PRUNE/PROMOTE verdict + the live-micro candidate. Read
     // THIS to run the prune-and-iterate loop.
     experiment_arena: computeExperimentArena(byStrategy, db),
+    // Helius credit attribution — WS (LaserStream, per-message, ~78% of the bill) + RPC (per
+    // call) joined and bucketed by category (scoring / copy_trading / discovery / detection).
+    // "Where are my credits going?" — WS is the dominant lever (watchlist size).
+    rpc_usage: computeUsageBreakdown(globalRpcLimiter.getStats()),
     overall: {
       ...overallOpen,
       total_incl_open_sol: +(overallClosed.total_net_sol + overallOpen.open_unrealized_sol).toFixed(4),

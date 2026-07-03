@@ -11,6 +11,7 @@ import { insertGraduation, insertMomentum, updateMomentumEnrichment, updateGradu
 import { PoolTracker } from './pool-tracker';
 import { HolderEnrichment } from '../collector/holder-enrichment';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
+import { usageTracker } from '../utils/usage-tracker';
 import { PriceCollector } from '../collector/price-collector';
 import { LaunchCounter } from '../collector/launch-counter';
 import { makeLogger } from '../utils/logger';
@@ -693,6 +694,7 @@ export class GraduationListener {
           this.lastEventTime = Date.now();
           this.reconnectDelay = INITIAL_RECONNECT_DELAY_MS;
           this.totalLogsReceived++;
+          usageTracker.recordWs('detection_grad_ws'); // LaserStream billing attribution
 
           // Log first 10 events and then every 200th
           if (this.totalLogsReceived <= 10 || this.totalLogsReceived % 200 === 0) {
