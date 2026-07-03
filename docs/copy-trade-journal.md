@@ -11,6 +11,80 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-07-03 — Daily review: overnight roster overhaul (V2 selection refuted, xbad veto pivot added) while copy-hotlead-strict's cushion grows for the first time in 4 days; copy-hotlead-hold30m's 3rd straight negative drop3 day converts its grace-period WATCH to KILL
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-07-03",
+  "overall": {"n": 8131, "net": 17.7424, "drop3": -13.3858, "stress": -61.7275, "open": 33},
+  "retired_summary": {"n": 21811, "net": -227.9222},
+  "regime_score": 8, "regime_24h": 3, "macro_score": 6, "btc_7d_pct": 3.2,
+  "book_daily_today": 7.908,
+  "leads": {"n_leads": 161, "hot": 50, "cold": 78},
+  "n_promotable_realistic": 1,
+  "strategies": [
+    {"id": "copy-hotlead-strict",              "realistic": true,  "n": 647, "net": 12.063, "drop3":  5.480, "stress":  5.157, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-hold30m",             "realistic": true,  "n":1059, "net": 28.467, "drop3": -2.661, "stress": 16.990, "promo_score":  75,  "verdict": "KILL"},
+    {"id": "copy-hotlead",                     "realistic": true,  "n":1099, "net":  3.881, "drop3": -3.139, "stress": -7.517, "promo_score":  55,  "verdict": "KILL"},
+    {"id": "copy-hotlead-strict-xbad",         "realistic": true,  "n":   6, "net":  2.102, "drop3":  0.106, "stress":  1.998, "promo_score":  57.5,"verdict": "WATCH"},
+    {"id": "copy-hotlead-strict-hi",           "realistic": true,  "n":  21, "net":  1.906, "drop3":  0.025, "stress":  1.652, "promo_score":  56,  "verdict": "WATCH"},
+    {"id": "copy-hotlead-hold30m-pair-shadow", "realistic": true,  "n": 500, "net": -0.506, "drop3": -2.015, "stress": -1.011, "promo_score":  40,  "verdict": "WATCH"},
+    {"id": "copy-tp100-sl30-lag",              "realistic": true,  "n": 529, "net":-14.969, "drop3":-19.517, "stress":-20.119, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-src-live-tape",               "realistic": true,  "n":   0, "net":  0,     "drop3":  0,     "stress":  0,     "promo_score":  20,  "verdict": "WATCH"},
+    {"id": "copy-src-external",                "realistic": true,  "n":   0, "net":  0,     "drop3":  0,     "stress":  0,     "promo_score":  20,  "verdict": "WATCH"},
+    {"id": "copy-conviction-consensus2",       "realistic": false, "n":1317, "net": 14.179, "drop3":  1.393, "stress":  0.331, "promo_score":  55.7,"verdict": "KEEP"},
+    {"id": "copy-tp100-sl30",                 "realistic": false, "n":2953, "net":-29.381, "drop3":-35.937, "stress":-59.209, "promo_score":  20,  "verdict": "KEEP"}
+  ]
+}
+```
+
+**Headline:** Another operator-approved roster overhaul landed overnight (commit `37fe405`: V2 positive-selection A/B refuted out-of-sample and killed, replaced by a "proven-bad exclusion" veto pivot, plus a new discovery-source registry) — meanwhile `copy-hotlead-strict`'s promotion cushion grew for the first time in 4 days (+0.70 SOL) even as `copy-hotlead-hold30m`'s drop3 posted its 3rd consecutive negative day, closing out the 07-01 grace window and converting it to KILL.
+
+**Day-over-day (vs 2026-07-02 SNAPSHOT):**
+- **Roster overhaul enacted (commit `37fe405`, unprompted by this skill).** `copy-select-v1`, `copy-select-v2`, and `copy-hotlead-strict-v2` are gone from today's `by_strategy` entirely — the operator's own 07-01 walk-forward check flipped the V2 "positive copy-net selection" story on day one (OOS: V2's unique picks lost −2.43 SOL/4 leads, the leads it rejected gained +1.60/34), so all three were killed. `copy-cotrade-tp100-sl30` and its `copy-ogsmart-tp100-sl30` control are also gone (cotrade failed its own resolution rule at n=108). In their place: **`copy-hotlead-strict-xbad`** (n=6) — the pivot — vetoes leads whose last-10-trade copy-net is persistently ≤0 (the one OOS-robust signal found: downside persistence, not upside selection) layered on top of the incumbent `copy-hotlead-strict` gate. Also new: `copy-src-live-tape` / `copy-src-external` (n=0 each), standardized realistic probes replacing the old ad-hoc `copy-livetape`/`copy-external` mirrors under a new discovery-source registry (`discovery_scorecard` in the JSON — live-tape source has 0 smart+copyable wallets so far, verdict `NO_WALLETS`).
+- **`copy-hotlead-strict` cushion grew for the first time in 4 days.** drop3 4.78 → **5.48** (+0.70), stress 4.83 → 5.16 (+0.33), net 11.37 → 12.06 (+0.70) on 34 new trades. This breaks the 3-day erosion streak (7.92→6.92→4.78) flagged in the last two entries — the erosion tracked the historic 06-29/06-30 drawdown working through the trailing window, and now that regime has fully rolled off, the cushion is recovering. **7th consecutive promotable day**, monthly run-rate 25.85 SOL/mo.
+- **`copy-hotlead-hold30m` — grace window closed, converting WATCH → KILL.** drop3 has now been negative 3 straight days: 07-01 −0.076 (marginal) → 07-02 −2.006 → 07-03 **−2.661** (today), each day worse, not recovering. Yesterday's entry set the explicit trigger: "one more day of negative drop3 and this should convert to KILL too." It did. Net (+28.47) and stress (+16.99) remain strongly positive — this is a drop-top3-only failure, not a collapse — but the mechanical gate rule (n≥100, drop3 negative, no sign of recovery across the full grace window) is met.
+- **`copy-hotlead`** continues its confirmed decay: net 4.38→3.88, drop3 −2.64→−3.14, stress −6.51→−7.52. Both robustness gates still failing decisively. KILL proposal carries over, still unenacted in today's roster.
+- **`copy-tp100-sl30-lag`** (realistic twin of the idealized baseline) also continues to deteriorate: net −11.27→−14.97, drop3 −15.82→−19.52, stress −15.46→−20.12 on 101 new trades. KILL proposal carries over, still unenacted.
+- **`copy-hotlead-strict-hi`** (n=21, up from n=3) and the brand-new **`copy-hotlead-strict-xbad`** (n=6) are both too small to score but both directionally clean — positive net/drop3/stress. Both are variants of the "tighten/refine the strict gate" hypothesis this journal has been recommending; xbad in particular is the most promising fresh idea in weeks (see New strategies below).
+- **Regime jumped 5→8 (strong band)** intraday, but `score_24h` fell 5→3 — the instantaneous tape looks strong while the 24h outlook is more cautious; a divergence worth watching, not yet acting on. Macro held flat at 6 (tailwind), BTC 7d% continued improving (1.43%→3.2%).
+- **Lead pool essentially flat:** 160→161 leads, hot flat at 50, cold 77→78.
+- **Book P&L:** today's partial day (+7.91 SOL, per `regime.swing.daily`) extends the recovery streak — 06-30: −78.13, 07-01: −32.68, 07-02: −5.80, 07-03: **+7.91** — four consecutive days of improvement since the historic drawdown, now solidly positive.
+
+**Week-over-week (Jun 29 → Jul 03, 5 entries):**
+- **`copy-hotlead-strict` remains the only strategy that has never had a negative drop3 day**, now 7+ consecutive promotable days including the worst drawdown stretch on record — and today is the first day its cushion grew rather than shrank since the drawdown began working through its trailing window. This is the strongest evidence yet for a live-micro promotion, and the case has only strengthened this week, not weakened.
+- **`copy-hotlead-hold30m`** flipped from "converging" (score=100, drop3 growing through 06-28) to fully decaying: 3 consecutive negative drop3 days, each worse than the last, closing out this week with its first KILL call. Its parent (`copy-hotlead`) decayed even faster and was already called KILL two days ago.
+- **Regime/book recovery is now a confirmed 4-day trend**, not a one-day bounce: −78→−33→−6→+8 SOL/day since the 06-29/06-30 record crash. Macro flipped to tailwind on 07-02 and has held for 2 days; BTC 7d% has now improved for 4 straight readings (−6.92%→−4.62%→−1.94%→1.43%→3.2%).
+- **Lead pool** recovered from the 06-30 trough (46 hot) to a stable plateau (49-50 hot) for the last 4 days — no further growth, but no further decay either.
+- **Operational pattern this week:** two major roster overhauls landed outside this skill's proposal cycle in 3 days (07-02's 12-strategy kill backlog + 07-03's V2-refutation pivot) — the operator/other sessions are actively iterating on the data faster than this daily cadence proposes changes. Good sign for velocity; means this skill's job increasingly shifts from "propose the next hill-climb step" to "confirm/audit what's already been changed."
+
+**Verdicts (proposals — roster changes require operator approval + code edit to `COPY_STRATEGIES`):**
+
+- **PROMOTE (1, unchanged):**
+  - `copy-hotlead-strict`: n=647, net=+12.06, drop3=+5.48, stress=+5.16, monthly=25.85 SOL/mo. Score 100, all gates clear, 7th consecutive promotable day, cushion now recovering rather than eroding. Still no live capital deployed anywhere in the roster (prior pilot killed 06-29) — this remains the strongest and now-longest-standing case for a live-micro test.
+
+- **KILL (1 new, 2 carried over):**
+  - `copy-hotlead-hold30m` (**new**): n=1059, net=+28.47, drop3=−2.66 (3rd straight negative day, worsening each day), stress=+16.99 (still strong). The 3-5 day grace window set 07-01 has closed with no recovery — converting per the skill's own multi-day-decay rule. Net/stress remain the best absolute economics in the roster, so this is a robustness-gate failure, not a P&L collapse; worth noting if the operator wants to keep it running as a shadow reference rather than fully retire it.
+  - `copy-hotlead` (carried over): n=1099, net=+3.88, drop3=−3.14, stress=−7.52. Both robustness gates still decisively failing; decay continuing since the 07-02 KILL call.
+  - `copy-tp100-sl30-lag` (carried over): n=529, net=−14.97, drop3=−19.52, stress=−20.12. Long-running realistic strategy, continuing to deteriorate every day since flagged.
+
+- **WATCH:**
+  - `copy-hotlead-strict-xbad`: n=6, net=+2.10, drop3=+0.11, stress=+2.00. The pivot strategy from last night's roster change (copy-net veto for downside-persistent leads) — too small to score but directionally clean. This is the most promising new idea in the roster; give it time to reach n≥50 before any verdict.
+  - `copy-hotlead-strict-hi`: n=21 (up from 3), net=+1.91, drop3=+0.03, stress=+1.65. Growing cleanly, promo score climbing (36.7→56).
+  - `copy-hotlead-hold30m-pair-shadow`: n=500, net=−0.51, drop3=−2.02. Shadow reference tracking hold30m's now-confirmed decay; no independent action needed.
+  - `copy-src-live-tape` / `copy-src-external`: n=0 each, brand new under the discovery-source registry. `live_tape` funnel reports `NO_WALLETS` (0 smart+copyable wallets found yet) — a discovery-pipeline issue, not a P&L one; check the funnel again in a few days before reading anything into the eventual probe P&L.
+
+- **Idealized references (not live candidates):**
+  - `copy-conviction-consensus2`: n=1317, net=+14.18, drop3 and stress both improved and stress crossed positive for the first time (−0.34→+0.33). Promo score jumped 35→55.7 (+20.7, a >10pt mover) — the idealized ceiling is recovering in step with the book.
+  - `copy-tp100-sl30`: n=2953, net=−29.38. Negative baseline reference, roughly flat day-over-day.
+
+**New strategies to try:** None this cycle. `copy-hotlead-strict-xbad` (copy-net veto pivot) already covers the freshest and most promising hypothesis in the data — per the redundancy guardrail, the right move is to let it mature toward n≥50 before proposing variants or combinations (e.g. applying the same veto to the hold30m exit shape) on top of it.
+
+**Operator next step:** Two actions, in order of leverage: (1) fund a live-micro test on `copy-hotlead-strict` — 7 consecutive promotable days now, cushion recovering, still the only strategy with zero negative-drop3 days ever, and there is no live capital deployed anywhere; (2) enact the two carried-over kills (`copy-hotlead`, `copy-tp100-sl30-lag`) plus today's new one (`copy-hotlead-hold30m`) in the same code edit — consider whether `hold30m` should be fully retired or kept as a shadow reference given its net/stress are still the best in the roster.
+
+---
+
 ## 2026-07-02 — Daily review: 12-strategy kill backlog finally enacted; copy-hotlead-strict holds score=100 for a 6th day as macro flips to tailwind, but copy-hotlead's decay is now decisive enough to call KILL
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
