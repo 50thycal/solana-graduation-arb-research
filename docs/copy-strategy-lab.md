@@ -52,6 +52,28 @@ Live-tape + external migrated to registry probes (`copy-src-live-tape`, `copy-sr
 counted as one source-probe slot pair). Incumbent unchanged: `copy-hotlead-strict` (n=628, drop3
 +5.41, score 100, sole promotable).
 
+**Addendum (same day) — new discovery source `winner_sniper` (operator thesis, picked from a
+4-way comparison):** wallets that repeatedly EARLY-BUY (0-30s window, `competition_signals` —
+free) the graduations that go on to WIN. Winner label = observed minute-cadence PATH (operator
+spec 2026-07-03): 20 checks @ 60s from T+1m; WIN requires peak ≥ +50% AND ≥3 checks at/above the
+bar (a real exit window, not a one-tick wick; a spike-then-fade token correctly counts as a WIN
+that a single T+30m snapshot would miss). Full path stored (`path_json`) for post-hoc bar
+recalibration. **Buyer capture spans the FULL window** (operator 2026-07-03): every wallet that
+bought anywhere in the ~20min — the free 0-30s `competition_signals` UNION a capped sample of
+pool-vault swap signers — not just the 0-30s snipers (a minute-9 dip into a winner counts).
+Winners AND losers credit their buyers (losers only bump the appearance denominator). ~60
+droppable reads/grad ≈ 8-10k calls/day. Ranked by winner-hit **precision** (hits ÷ appearances —
+the spray-bot guard)
+with a **36h half-life decay** + eviction (the operator's "good wallets rotate fast" observation,
+consistent with recency>cumulative). Rejected alternatives: literal per-token profit attribution
+(needs the tape — the June credit-blowout lesson) and same-day fast-track (spray-bot noise at
+n=1-2). Harvester `winner-sniper.ts`; registry row auto-emits probe `copy-src-winner-sniper` +
+scorecard verdict vs the OG control. Promoted wallets jump the scoring queue (priority 1200 +
+decayed score). Env: `WINNER_SNIPER_DISABLED`, `WINNER_MIN_RET_PCT`, `WINNER_SNIPER_HALFLIFE_H`,
+`WINNER_SNIPER_MIN_HITS/PRECISION/SCORE`. Funnel panel: `copy-trades.json → winner_sniper`.
+Discovery sources sit outside the 4-slot lab cap (they're funnels, not strategy variants), but
+this makes 3 sources collecting — hold new sources until one resolves.
+
 ---
 
 ## 2026-07-01 — Copy-v2 methodology overhaul + roster changes (operator-directed)

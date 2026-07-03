@@ -1,5 +1,10 @@
 import Database from 'better-sqlite3';
-import { COPYABLE_SQL } from './queries';
+import { COPYABILITY } from './ranker';
+
+function numEnv(name: string, fallback: number): number {
+  const v = parseFloat(process.env[name] || '');
+  return Number.isFinite(v) ? v : fallback;
+}
 
 /**
  * Discovery-source framework (2026-07-02) — makes "test a new way of finding wallets to
@@ -50,6 +55,12 @@ export const DISCOVERY_SOURCES: DiscoverySource[] = [
     hypothesis: 'Public top-trader leaderboard wallets copy better than OG — honest prior: crowded/alpha-decayed.',
     added: '2026-06-30',
   },
+  {
+    id: 'winner_sniper',
+    label: 'Winner-sniper precision (operator thesis, S2+S3)',
+    hypothesis: 'Wallets that repeatedly early-buy (0-30s) the graduations that go on to win at T+30m — ranked by winner-hit precision with a 36h-half-life decay — copy better than OG. Entry edge with runway should survive the 5s lag.',
+    added: '2026-07-02',
+  },
   // ── To test a new discovery thesis ──
   // 1. Write the harvester: INSERT INTO wallet_candidates (address, source, …) VALUES (?, '<id>', …)
   //    (see worker.ts / live-tape for examples). The shared scorer picks candidates up automatically.
@@ -57,24 +68,41 @@ export const DISCOVERY_SOURCES: DiscoverySource[] = [
   //    all derive from the registry. See docs/discovery-playbook.md.
 ];
 
-/** Same money-edge + copyability gate the OG smart set uses (mirrors queries.ts COHORT_GATE). */
-const SMART_GATE = `
-  ws.total_realized_sol_drop_top3 > 0
-  AND ws.monthly_run_rate_sol >= 3.75
-  AND ws.total_realized_sol >= 0.5`;
+/**
+ * RELAXED money-edge gate for DISCOVERY sources (operator 2026-07-03). Just outlier-robust
+ * PROFITABLE — NO monthly run-rate bar. Rationale: the 3.75 SOL/mo target is the AGGREGATE goal
+ * across the whole set of copied wallets (a strategy trading many small-but-profitable wallets
+ * sums to the bar), not a per-wallet filter that would exclude good leads for being small.
+ * The global getSmartSetAddresses / cohort gates (the CORE book's universe) are UNCHANGED — this
+ * relaxation is scoped to the quarantined discovery-source watchlists only. Env-tunable.
+ */
+const SOURCE_MIN_DROP3 = numEnv('COPYSRC_MIN_DROP3', 0);
+const SOURCE_MIN_HOLD_SEC = numEnv('COPYSRC_MIN_HOLD_SEC', 30);
+const SOURCE_GATE = `ws.total_realized_sol_drop_top3 > ${SOURCE_MIN_DROP3}`;
+/**
+ * RELAXED copyability for sources: hold >= 30s (was 300s — we don't want to drop fast-but-
+ * mirrorable wallets) while KEEPING the ~95% win-rate cap (the bot filter — a wallet that
+ * "never loses" has a structural edge we can't copy) and the PumpSwap-venue share. Global
+ * COPYABLE_SQL is unchanged.
+ */
+const SOURCE_COPYABLE_SQL = `
+  COALESCE(ws.avg_hold_sec, 0) >= ${SOURCE_MIN_HOLD_SEC}
+  AND COALESCE(ws.win_rate, 1) <= ${COPYABILITY.maxWinRate}
+  AND COALESCE(json_extract(ws.venues_json, '$.pumpswap'), 0) * 1.0
+      / NULLIF((SELECT SUM(value) FROM json_each(ws.venues_json)), 0) >= ${COPYABILITY.minPumpswapShare}`;
 
 /**
- * Generic quarantined smart set for one discovery source: proven-smart, copyable wallets
- * whose candidate row carries this source tag. Replaces the per-source hand-written getters.
+ * Generic quarantined smart set for one discovery source: PROFITABLE + copyable wallets whose
+ * candidate row carries this source tag (relaxed gate above). Replaces the per-source getters.
  */
 export function getSourceSmartSetAddresses(db: Database.Database, sourceId: string): string[] {
   try {
     return (db.prepare(`
       SELECT ws.address FROM wallet_scores ws
       JOIN wallet_candidates wc ON wc.address = ws.address
-      WHERE ${SMART_GATE} AND wc.source = @src
-        AND ${COPYABLE_SQL}
-      ORDER BY ws.monthly_run_rate_sol DESC NULLS LAST
+      WHERE ${SOURCE_GATE} AND wc.source = @src
+        AND ${SOURCE_COPYABLE_SQL}
+      ORDER BY ws.total_realized_sol_drop_top3 DESC NULLS LAST
     `).all({ src: sourceId }) as Array<{ address: string }>).map((r) => r.address);
   } catch {
     return [];

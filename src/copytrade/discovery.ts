@@ -149,6 +149,21 @@ export function recomputeCandidatePriorities(db: Database.Database): number {
     logger.warn('Priority live-tape-aggregate failed: %s', err instanceof Error ? err.message : String(err));
   }
 
+  // Winner-sniper (operator thesis 2026-07-02): wallets that repeatedly early-buy
+  // graduations that WIN at T+30m, precision + fast-decay screened by the harvester
+  // (winner-sniper.ts). Strongest copyability prior of any source (entry edge with
+  // runway) and the list decays in ~2 days — score ahead of live-tape, weighted by
+  // decayed sniper score so the hottest wallets jump first.
+  try {
+    const wsRows = db.prepare(`
+      SELECT wc.address AS w, COALESCE(t.score, 0) AS s
+      FROM wallet_candidates wc
+      LEFT JOIN winner_sniper_tally t ON t.address = wc.address
+      WHERE wc.source = 'winner_sniper'
+    `).all() as Array<{ w: string; s: number }>;
+    for (const r of wsRows) addPts(r.w, 1200 + Math.min(300, Math.round(r.s * 100)));
+  } catch { /* tables absent until the harvester first runs */ }
+
   // External seed (Idea 3): a small, curated top-trader list — the highest-prior
   // candidates (most likely to be tradeable), so score them even ahead of the
   // live-tape backlog.

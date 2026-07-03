@@ -20,6 +20,7 @@ import { CopytradeWorker } from './copytrade/worker';
 import { TokenMetadataFetcher } from './copytrade/metadata-fetcher';
 import { CopyFollowerProbe } from './copytrade/follower-probe';
 import { LiveTapeHarvester } from './copytrade/live-tape-harvester';
+import { WinnerSniperHarvester } from './copytrade/winner-sniper';
 import { CopyTrader, computeCopyTrades } from './copytrade/copy-trader';
 import { computeWalletLeaderboardV2 } from './copytrade/leaderboard-v2';
 import { getSmartMoneyAnalysis } from './copytrade/smart-money';
@@ -402,6 +403,17 @@ async function main() {
       // wallets into the scorer (source='live_tape').
       const liveTapeHarvester = new LiveTapeHarvester({ db });
       liveTapeHarvester.start();
+
+      // Winner-sniper harvester (operator thesis 2026-07-02, source='winner_sniper'):
+      // labels graduations WIN/LOSS at ~T+30m (~2 droppable-tier reads each, ~300-400
+      // calls/day), credits 0-30s buyers from competition_signals (free), and promotes
+      // precision-ranked, fast-decaying sniper wallets into the scorer. Default ON
+      // (WINNER_SNIPER_DISABLED=true to stop).
+      const winnerSniper = new WinnerSniperHarvester({
+        db,
+        getConnection: () => listener?.getConnection() ?? null,
+      });
+      winnerSniper.start();
     } catch (err) {
       logger.warn('CopyFollower/CopyTrader failed to start: %s', err instanceof Error ? err.message : String(err));
     }
