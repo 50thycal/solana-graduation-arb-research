@@ -68,11 +68,11 @@ export const WINNER_SNIPER_CFG = {
   obsIntervalSec: numEnv('WINNER_OBS_INTERVAL_SEC', 60),
   obsChecks: numEnv('WINNER_OBS_CHECKS', 20),
   /** Max new graduations enrolled per tick (bounds restart backfill bursts). */
-  enrollBatch: numEnv('WINNER_ENROLL_BATCH', 10),
+  enrollBatch: numEnv('WINNER_ENROLL_BATCH', 20),
   /** Max distinct buyers credited per graduation (bounds tally writes). */
   creditCap: numEnv('WINNER_CREDIT_CAP', 60),
   /** Full-window buyer capture: max getParsedTransaction fetches per graduation (RPC bound). */
-  windowFetchCap: numEnv('WINNER_WINDOW_FETCH_CAP', 40),
+  windowFetchCap: numEnv('WINNER_WINDOW_FETCH_CAP', 80),
   /** Max getSignaturesForAddress pages (1000 sigs each) to page back through the window. */
   windowSigMaxPages: numEnv('WINNER_WINDOW_SIG_PAGES', 3),
   /** Decay half-life for the sniper score, hours. */

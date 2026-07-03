@@ -275,9 +275,12 @@ export class RpcLimiter {
 }
 
 // Singleton — shared across all components hitting the same Helius endpoint.
-// Default 5 rps ≈ 432k req/day hard ceiling — sized to the remaining Helius
-// plan budget (2026-06-11: ~6M credits / 11 days ≈ 545k/day). Raise via
-// RPC_REQUESTS_PER_SECOND once the plan resets.
+// Default 10 rps ≈ 864k req/day hard ceiling (raised from 5 on 2026-07-03 to spend the
+// added ~5M-credit budget on clearing the wallet-scoring backlog — only ~2.5k of ~71k
+// candidates scored; scoring throughput was the bottleneck, and 5 rps capped it). Scoring
+// runs on the droppable tier so copy entries/exits/polls (copyHot tier) still preempt it.
+// Verify the Helius plan's own rps cap supports this; lower via RPC_REQUESTS_PER_SECOND if
+// the plan resets to a tighter budget.
 export const globalRpcLimiter = new RpcLimiter(
-  parseInt(process.env.RPC_REQUESTS_PER_SECOND || '5', 10)
+  parseInt(process.env.RPC_REQUESTS_PER_SECOND || '10', 10)
 );

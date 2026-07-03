@@ -47,16 +47,19 @@ const DEFAULTS = {
   // copy's alone. Wallet discovery is now THE limiter on "not missing a smart
   // wallet" — only 2.5k of ~71k seeded candidates have been scored, and a wallet
   // can't enter the probe watchlist until it's scored + passes the smart-set gate.
-  // Raised throughput 3x vs the 2026-06-11 budget cut (15/6h/250 → 30/4h/300):
-  // ~30 wallets × ~300 parsed txs × 6 ticks/day ≈ 54k req/day, leaving the rest
-  // of the ~250k/day copy budget for position polling. Tune via COPYTRADE_* envs.
-  intervalMs: 4 * 60 * 60 * 1000, // 4h between scoring passes (was 6h)
+  // 2026-07-03: CRANKED to spend the added ~5M-credit budget on the scoring backlog (scoring
+  // throughput is THE limiter on "not missing a smart wallet"). batch 50 → 200 first-scans/tick:
+  // up to ~200 wallets × ~300 parsed txs × 6 ticks/day ≈ up to ~360k req/day (self-limits — most
+  // wallets have far fewer txs), clearing the ~71k backlog in ~2 months. Requires the raised 10 rps
+  // limiter ceiling (rpc-limiter.ts); scoring is droppable-tier so copy polls still preempt.
+  // deepBatchLimit also bumped 3 → 8 to verify promising wallets faster. Tune via COPYTRADE_* envs.
+  intervalMs: 4 * 60 * 60 * 1000, // 4h between scoring passes
   firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
-  scoreBatchLimit: 50,            // backlog FIRST-scans per tick (scoring RPC is tiny — headroom)
+  scoreBatchLimit: 200,           // backlog FIRST-scans per tick (cranked 2026-07-03 for the +5M budget)
   maxSignaturesPerWallet: 300,    // shallow first-scan / triage depth
   maxSignaturesDeep: 1500,        // DEEP-rescan depth for promising-but-n-capped wallets
   cacheMaxSwaps: 1500,            // incremental-cache cap = deepest history we score on
-  deepBatchLimit: 3,             // deep rescans per tick (the new RPC cost; keep small)
+  deepBatchLimit: 8,             // deep rescans per tick (bumped 2026-07-03 with the batch crank)
   restaleSeconds: 24 * 3600,      // re-score a BACKLOG wallet at most once / 24h
   // Priority-refresh: keep the wallets we actually copy (follow_list ∪ smart set)
   // fresh on a TIGHT cadence. Refreshes are now INCREMENTAL (fetch only sigs newer
