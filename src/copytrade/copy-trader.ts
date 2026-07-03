@@ -145,6 +145,14 @@ export interface CopyStrategy {
                                // chase a token that has already run since launch — being late = buying exit liquidity.
                                // Distinct from maxEntryDriftPct (which only measures the 5s detection->fill drift).
                                // Null open price (uncaptured) => not blocked (benefit of the doubt). Zero RPC (cached).
+  maxTokenAgeSec?: number;     // TOKEN-FRESHNESS gate (2026-07-03, data-backed): skip if the token graduated more
+                               // than this many seconds ago at the lead's buy. Offline replay of copy-hotlead-strict
+                               // (n=654, split-half OOS): on dip fills, tokens <15min post-graduation carried the
+                               // entire robust edge (h1 +13.2/xt3 +9.0, h2 +5.8/xt3 +2.7) while every older bucket
+                               // was xt3-negative in 3+ of 4 half-cells; 1-4h decisively negative. Fresh grads are
+                               // where our detection infra has an information edge and the token's fate is unresolved.
+                               // Reads graduations.migration_timestamp (cached per mint, zero RPC); missing ts => not
+                               // blocked (benefit of the doubt), same convention as maxExtensionPct.
   maxEntriesPerMint?: number;  // REPEAT-BUY cap (2026-06-28, data-backed): skip a copy once this strategy already
                                // has >= maxEntriesPerMint CLOSED entries on the mint. Re-entry analysis on
                                // copy-hotlead-hold30m: 1st (+14.8) and 2nd (+24.3 SOL) entries profit, 3rd+ bleed
@@ -343,6 +351,26 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-hotlead-strict-xbad', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
     excludeProvenBadLeads: true },
+  // ── FD (2026-07-03, Fable line): FRESH-DIP — hot lead × fresh graduation × dip fill.
+  //    Own-thesis strategy from an offline replay of every closed copy row (ops DB backtests,
+  //    2026-07-03): the incumbent's edge is NOT uniform across its entries — it concentrates
+  //    where (a) the token graduated <15min ago and (b) the 5s-delayed re-fetched fill is AT OR
+  //    BELOW the detection snapshot (drift <= 0). Split-half OOS on copy-hotlead-strict rows:
+  //      • dip fills (drift<=0):        h1 +17.4 (xt3 +10.8) | h2 +6.5 (xt3 +3.4)   [n=336]
+  //      • + age<15m (this strategy):   h1 +13.2 (xt3 +9.0)  | h2 +5.8 (xt3 +2.7)   [n=161]
+  //      • chase zone (0<drift<5):      NEGATIVE on strict (−0.03..−0.04/trade)
+  //      • age 1-4h:                    NEGATIVE both halves; >4h xt3-negative both halves
+  //    The same cuts on UNGATED leads (copy-tp100-sl30-lag) lose money — dip+fresh is
+  //    conditional on lead quality, so the hot-lead gate stays. Both levers are pure
+  //    execution-context (zero RPC: drift is already measured; graduation ts is a cached DB
+  //    read). Exit chassis inherited untouched from the incumbent (TP100/SL30; the same gates
+  //    on the hold30m chassis die in half 2 — exit search stays closed). ~9-10 fires/day
+  //    expected (161 subset trades / 17.1d) → n=100 in ~10-11 days.
+  //    Resolve vs copy-hotlead-strict at n>=100 (arena rules): PRUNE if beaten on net/trade
+  //    AND drop3/trade; kill early if it can't reach n=100 in ~2.5 weeks (over-filtered).
+  { id: 'copy-fable-freshdip', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 0, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
+    maxTokenAgeSec: 900 },
   // ── KILLED 2026-06-27 (INVALID; RPC cleanup): copy-hotlead-deep (lastN20 / >=5 trades — longer,
   //    "more stable" lookback). n=550 net +5.2 but drop3 -1.37: the deeper lookback's net is
   //    tail-driven. copy-hotlead (lastN10/>=3) and copy-hotlead-strict (net floor 0.5) are the
@@ -1162,6 +1190,25 @@ export class CopyTrader {
     return v;
   }
 
+  /** A mint's graduation time (unix sec) — the maxTokenAgeSec reference. Prefers the
+   *  PumpSwap migration timestamp (when the pool went live) over the bonding-curve
+   *  completion timestamp. Immutable, so cached per-mint forever (null = unknown →
+   *  gate won't block). */
+  private gradTsCache = new Map<string, number | null>();
+  private mintGraduationTs(mint: string): number | null {
+    if (this.gradTsCache.has(mint)) return this.gradTsCache.get(mint) ?? null;
+    let v: number | null = null;
+    try {
+      const row = this.db.prepare(`
+        SELECT COALESCE(migration_timestamp, timestamp) AS ts FROM graduations
+        WHERE mint = ? ORDER BY id DESC LIMIT 1
+      `).get(mint) as { ts: number | null } | undefined;
+      v = row?.ts ?? null;
+    } catch { v = null; }
+    this.gradTsCache.set(mint, v);
+    return v;
+  }
+
   /** This strategy's realized net for the current UTC day (sum of net_sol on closed
    *  copies that exited today). Drives the dailyLossCapSol breaker. Cached 60s per
    *  strategy; the day-start cutoff moves forward at 00:00 UTC so it resets daily. */
@@ -1274,6 +1321,11 @@ export class CopyTrader {
         if (op != null && op > 0 && (price.priceSol / op - 1) * 100 > s.maxExtensionPct) {
           this.recordSkip(s.id, 'extension'); continue;
         }
+      }
+      // token-freshness gate: only copy while the graduation is fresh (unknown ts => not blocked)
+      if (s.maxTokenAgeSec != null) {
+        const gts = this.mintGraduationTs(mint);
+        if (gts != null && nowSec - gts > s.maxTokenAgeSec) { this.recordSkip(s.id, 'token_age'); continue; }
       }
       // smart-wallet-data gates (H cohort) — all pure SQL/cached, no RPC
       if (s.minLeadBuySol != null && (leadBuySol == null || leadBuySol < s.minLeadBuySol)) { this.recordSkip(s.id, 'lead_buy_size'); continue; }
@@ -2633,6 +2685,14 @@ export function computeCopyTrades(db: Database.Database): unknown {
         elite_lead_gate: s.eliteLeadGate ?? null,
         regime_gate_min_score: s.regimeGateMinScore ?? null,
         macro_gate_min_score: s.macroGateMinScore ?? null,
+        max_token_age_sec: s.maxTokenAgeSec ?? null,
+        max_extension_pct: s.maxExtensionPct ?? null,
+        max_entries_per_mint: s.maxEntriesPerMint ?? null,
+        trailing_tp: s.trailingTp ?? null,
+        exclude_proven_bad_leads: s.excludeProvenBadLeads ?? null,
+        lead_source: s.leadSource ?? null,
+        trade_size_sol: s.tradeSizeSol ?? null,
+        execution_mode: s.executionMode ?? 'shadow',
       },
       ...openSummary,
       total_incl_open_sol: +(closedSummary.total_net_sol + openSummary.open_unrealized_sol).toFixed(4),
