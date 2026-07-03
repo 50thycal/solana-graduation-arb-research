@@ -11,6 +11,7 @@ import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
 import { getOgSmartSetAddresses, getCotradeSmartSetAddresses, getSmartSetAddresses } from './queries';
 import { getCopyNetSelectedAddresses, getCopyNetExcludedAddresses } from './leaderboard-v2';
 import { DISCOVERY_SOURCES, sourceProbeId, refreshSourceSets, computeDiscoveryScorecard } from './discovery-sources';
+import { getWinnerSniperSummary } from './winner-sniper';
 import { getCotradeDiscovery } from './cotrade-discovery';
 import { computeLiveTape } from './live-tape-harvester';
 import { getExternalSeedSummary } from './external-seed';
@@ -2653,6 +2654,9 @@ export function computeCopyTrades(db: Database.Database): unknown {
     // control + verdict. Read THIS to compare discovery methods; the bespoke
     // panels above are per-pipeline detail. Adding a source needs no report code.
     discovery_scorecard: computeDiscoveryScorecard(db),
+    // Winner-sniper harvester funnel (operator thesis 2026-07-02) — labels, tally,
+    // top snipers by precision + decayed score. Probe verdict is in the scorecard.
+    winner_sniper: getWinnerSniperSummary(db),
     // Per-strategy lead-wallet P&L attribution — who drives TP vs SL per strategy.
     lead_attribution: computeLeadAttribution(activeClosed),
     // Copy promotion bar (n>=100 · drop3>0 · stress>0 · monthly>=3.75) + readiness.

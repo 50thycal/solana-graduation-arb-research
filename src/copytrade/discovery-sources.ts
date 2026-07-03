@@ -50,6 +50,12 @@ export const DISCOVERY_SOURCES: DiscoverySource[] = [
     hypothesis: 'Public top-trader leaderboard wallets copy better than OG — honest prior: crowded/alpha-decayed.',
     added: '2026-06-30',
   },
+  {
+    id: 'winner_sniper',
+    label: 'Winner-sniper precision (operator thesis, S2+S3)',
+    hypothesis: 'Wallets that repeatedly early-buy (0-30s) the graduations that go on to win at T+30m — ranked by winner-hit precision with a 36h-half-life decay — copy better than OG. Entry edge with runway should survive the 5s lag.',
+    added: '2026-07-02',
+  },
   // ── To test a new discovery thesis ──
   // 1. Write the harvester: INSERT INTO wallet_candidates (address, source, …) VALUES (?, '<id>', …)
   //    (see worker.ts / live-tape for examples). The shared scorer picks candidates up automatically.

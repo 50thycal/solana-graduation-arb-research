@@ -52,6 +52,20 @@ Live-tape + external migrated to registry probes (`copy-src-live-tape`, `copy-sr
 counted as one source-probe slot pair). Incumbent unchanged: `copy-hotlead-strict` (n=628, drop3
 +5.41, score 100, sole promotable).
 
+**Addendum (same day) — new discovery source `winner_sniper` (operator thesis, picked from a
+4-way comparison):** wallets that repeatedly EARLY-BUY (0-30s window, `competition_signals` —
+free) the graduations that go on to WIN (+50% at ~T+30m, one-shot label ≈2 droppable reads/grad ≈
+300-400 calls/day), ranked by winner-hit **precision** (hits ÷ appearances — the spray-bot guard)
+with a **36h half-life decay** + eviction (the operator's "good wallets rotate fast" observation,
+consistent with recency>cumulative). Rejected alternatives: literal per-token profit attribution
+(needs the tape — the June credit-blowout lesson) and same-day fast-track (spray-bot noise at
+n=1-2). Harvester `winner-sniper.ts`; registry row auto-emits probe `copy-src-winner-sniper` +
+scorecard verdict vs the OG control. Promoted wallets jump the scoring queue (priority 1200 +
+decayed score). Env: `WINNER_SNIPER_DISABLED`, `WINNER_MIN_RET_PCT`, `WINNER_SNIPER_HALFLIFE_H`,
+`WINNER_SNIPER_MIN_HITS/PRECISION/SCORE`. Funnel panel: `copy-trades.json → winner_sniper`.
+Discovery sources sit outside the 4-slot lab cap (they're funnels, not strategy variants), but
+this makes 3 sources collecting — hold new sources until one resolves.
+
 ---
 
 ## 2026-07-01 — Copy-v2 methodology overhaul + roster changes (operator-directed)
