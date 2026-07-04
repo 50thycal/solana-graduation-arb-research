@@ -2187,7 +2187,7 @@ export function renderCopyTradesHtml(data: any): string {
         <th style="text-align:right" title="net SOL per trade">net/trade</th><th style="text-align:right" title="drop-top3 SOL per trade">drop3/trade</th>
         <th>Verdict</th><th>Why</th></tr></thead>
       <tbody>${arenaRows.map((r: any) => `<tr>
-        <td>${escHtml(r.id)}${r.benchmark ? `<br><span style="color:#64748b;font-size:11px">vs ${escHtml(r.benchmark)}</span>` : ''}</td>
+        <td style="min-width:220px;max-width:340px">${escHtml(r.id)}${r.benchmark ? `<br><span style="color:#64748b;font-size:11px">vs ${escHtml(r.benchmark)}</span>` : ''}${r.thesis ? `<br><span class="desc" style="font-size:11.5px;line-height:1.35;display:block;margin-top:3px">${escHtml(r.thesis)}</span>` : ''}</td>
         <td>${roleTag(r.role)}</td>
         <td style="text-align:right">${r.n ?? 0}</td>
         <td style="text-align:right">${sol(r.net_sol)}</td>

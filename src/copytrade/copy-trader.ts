@@ -2220,6 +2220,21 @@ const ARENA_CONTROLS = new Set(['copy-tp100-sl30', 'copy-tp100-sl30-lag']);
 const ARENA_BENCHMARK = 'copy-hotlead-strict';
 const ARENA_MATURE_N = 100;
 
+// Plain-language thesis per strategy — "what is this one actually doing?" — surfaced under each
+// arena row so the board reads without cross-referencing the code. Discovery probes (copy-src-*)
+// fall back to their registry hypothesis, so only the hand-defined strategies live here. Keep each
+// to one scannable sentence; add a line when a strategy is added to the roster.
+const STRATEGY_THESIS: Record<string, string> = {
+  'copy-hotlead-strict': 'Copy a lead only while it is HOT — its last ~10 copies netted us ≥ +0.5 SOL. Recency-gated lead quality; the incumbent everything is measured against.',
+  'copy-hotlead-strict-hi': 'Same hot-lead gate, HIGHER recent-net floor — does a stricter lead-quality bar select better leads than the incumbent?',
+  'copy-hotlead-hold30m': 'Hot-lead entry, but hold up to 30 min (SL −30%, no take-profit) — let winners run past +100% instead of capping.',
+  'copy-hotlead-strict-xbad': 'Incumbent gate PLUS a veto: skip leads whose all-time copy net is proven negative (downside-persistence exclusion).',
+  'copy-fable-freshdip': 'Incumbent gate + only DIP fills (price at/below the detection snapshot) on tokens graduated < 15 min ago — fresh-token dip entries.',
+  'copy-conviction-consensus2': 'Buy when ≥ 2 smart wallets bought the SAME token (token-level consensus). Idealized ~1.1s fill — upper-bound reference, never live.',
+  'copy-tp100-sl30': 'Copy EVERY watched lead, +100% TP / −30% SL, idealized ~1.1s fill. The load-bearing baseline with no lead selection.',
+  'copy-tp100-sl30-lag': 'Same TP100/SL30 at a realistic 5s-delay fill — the OG control every discovery source is measured against.',
+};
+
 function computeExperimentArena(byStrategy: Record<string, any>, db: Database.Database): unknown {
   const promo = computeCopyPromotion(byStrategy) as { rows: Array<Record<string, any>> };
   const scorecard = computeDiscoveryScorecard(db) as { rows?: Array<Record<string, any>> };
@@ -2260,11 +2275,16 @@ function computeExperimentArena(byStrategy: Record<string, any>, db: Database.Da
         else { verdict = 'WATCH'; reason = `mixed vs ${ARENA_BENCHMARK} (net ${beatsNet ? '+' : '-'}, drop3 ${beatsD3 ? '+' : '-'})`; }
       }
     }
+    // Plain-language "what is this doing?" — discovery probes use their registry hypothesis,
+    // everything else the STRATEGY_THESIS map.
+    const thesis = rl === 'discovery_probe'
+      ? String(scByProbe.get(r.id)?.hypothesis ?? STRATEGY_THESIS[r.id] ?? '')
+      : (STRATEGY_THESIS[r.id] ?? '');
     return {
       id: r.id, role: rl, n: r.n, net_sol: r.net_sol,
       net_per_trade: npt, drop3_per_trade: d3pt,
       benchmark: rl === 'challenger' ? ARENA_BENCHMARK : (rl === 'discovery_probe' ? 'copy-tp100-sl30-lag' : null),
-      score: r.score, verdict, reason,
+      score: r.score, thesis, verdict, reason,
     };
   });
 
