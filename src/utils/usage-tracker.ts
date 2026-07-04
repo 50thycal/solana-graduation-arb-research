@@ -83,6 +83,7 @@ const WS_CATEGORY: Record<string, string> = {
   copy_follower_ws: 'copy_trading',      // transactionSubscribe on the smart watchlist (grows with the watchlist)
   detection_grad_ws: 'detection',        // graduation onLogs (migrations-only by default)
   discovery_livetape_ws: 'discovery',    // live-tape harvester (opt-in, duty-cycled)
+  discovery_prefilter_ws: 'discovery',   // winner-sniper stage-2 pre-filter watch (capped at PREFILTER_MAX_WALLETS)
 };
 const RPC_CATEGORY: Record<string, string> = {
   wallet_pnl: 'scoring',

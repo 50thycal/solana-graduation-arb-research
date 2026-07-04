@@ -21,6 +21,7 @@ import { TokenMetadataFetcher } from './copytrade/metadata-fetcher';
 import { CopyFollowerProbe } from './copytrade/follower-probe';
 import { LiveTapeHarvester } from './copytrade/live-tape-harvester';
 import { WinnerSniperHarvester } from './copytrade/winner-sniper';
+import { WinnerPrefilterWatcher } from './copytrade/winner-prefilter';
 import { CopyTrader, computeCopyTrades } from './copytrade/copy-trader';
 import { computeWalletLeaderboardV2 } from './copytrade/leaderboard-v2';
 import { getSmartMoneyAnalysis } from './copytrade/smart-money';
@@ -414,6 +415,14 @@ async function main() {
         getConnection: () => listener?.getConnection() ?? null,
       });
       winnerSniper.start();
+
+      // Winner-sniper stage-2 PRE-FILTER (operator pipeline 2026-07-04): wallets that
+      // took profit on an observed winner are WATCHED forward (own transactionSubscribe,
+      // zero RPC) across all of PumpSwap; only wallets that keep profiting on OTHER
+      // tokens are promoted to the scorer. Hard-capped (PREFILTER_MAX_WALLETS);
+      // PREFILTER_DISABLED=true to stop.
+      const winnerPrefilter = new WinnerPrefilterWatcher({ db });
+      winnerPrefilter.start();
     } catch (err) {
       logger.warn('CopyFollower/CopyTrader failed to start: %s', err instanceof Error ? err.message : String(err));
     }
