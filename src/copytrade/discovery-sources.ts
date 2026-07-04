@@ -1,5 +1,8 @@
 import Database from 'better-sqlite3';
 import { COPYABILITY } from './ranker';
+import { getFollowListAddresses, getSmartSetAddresses } from './queries';
+import { getCopyNetSelectedAddresses } from './leaderboard-v2';
+import { getWinnerSniperSignalWallets } from './winner-sniper';
 
 function numEnv(name: string, fallback: number): number {
   const v = parseFloat(process.env[name] || '');
@@ -40,6 +43,18 @@ export interface DiscoverySource {
   /** The thesis this source tests — shows up verbatim in the scorecard. */
   hypothesis: string;
   added: string; // YYYY-MM-DD, for age/maturity context in the scorecard
+  /**
+   * OPTIONAL signal-set override (2026-07-04): when set, the source's smart set is DEFINED
+   * BY THE HARVESTER'S OWN SIGNAL BAR instead of the own-PnL FIFO gate below. For an
+   * ENTRY-timing thesis (winner_sniper) the own-PnL gate tested the wrong hypothesis — the
+   * probe exits on its own TP100/SL30, so the lead's realized PnL (their exits included) is
+   * off-thesis, and the audit showed it kept the funnel structurally empty (every scored
+   * multi-hit sniper was own-PnL-negative). Signal-set wallets are NOT provenance-quarantined
+   * by wallet_candidates.source, so refreshSourceSets subtracts the OG universe
+   * (follow_list ∪ global smart set ∪ copy-net) and earlier sources' sets — a signal set can
+   * never steal a wallet another book is already trading.
+   */
+  signalSet?: (db: Database.Database) => string[];
 }
 
 export const DISCOVERY_SOURCES: DiscoverySource[] = [
@@ -60,6 +75,9 @@ export const DISCOVERY_SOURCES: DiscoverySource[] = [
     label: 'Winner-sniper precision (operator thesis, S2+S3)',
     hypothesis: 'Wallets that repeatedly early-buy (0-30s) the graduations that go on to win at T+30m — ranked by winner-hit precision with a 36h-half-life decay — copy better than OG. Entry edge with runway should survive the 5s lag.',
     added: '2026-07-02',
+    // Entry-timing thesis → the probe universe is the sniper bar itself, not own-PnL
+    // (2026-07-04; see getWinnerSniperSignalWallets for the audit rationale).
+    signalSet: (db) => getWinnerSniperSignalWallets(db),
   },
   // ── To test a new discovery thesis ──
   // 1. Write the harvester: INSERT INTO wallet_candidates (address, source, …) VALUES (?, '<id>', …)
@@ -78,6 +96,9 @@ export const DISCOVERY_SOURCES: DiscoverySource[] = [
  */
 const SOURCE_MIN_DROP3 = numEnv('COPYSRC_MIN_DROP3', 0);
 const SOURCE_MIN_HOLD_SEC = numEnv('COPYSRC_MIN_HOLD_SEC', 30);
+/** Max wallets per source set — the sets now feed the follower WATCHLIST (2026-07-04), and
+ *  Helius bills WS per delivered message, so each set is capped (best-first) to bound spend. */
+const SOURCE_WATCH_CAP = numEnv('COPYSRC_WATCH_CAP', 25);
 const SOURCE_GATE = `ws.total_realized_sol_drop_top3 > ${SOURCE_MIN_DROP3}`;
 /**
  * RELAXED copyability for sources: hold >= 30s (was 300s — we don't want to drop fast-but-
@@ -94,8 +115,13 @@ const SOURCE_COPYABLE_SQL = `
 /**
  * Generic quarantined smart set for one discovery source: PROFITABLE + copyable wallets whose
  * candidate row carries this source tag (relaxed gate above). Replaces the per-source getters.
+ * Sources with a `signalSet` override (entry-timing theses) use their own bar instead.
  */
 export function getSourceSmartSetAddresses(db: Database.Database, sourceId: string): string[] {
+  const src = DISCOVERY_SOURCES.find((s) => s.id === sourceId);
+  if (src?.signalSet) {
+    try { return src.signalSet(db); } catch { return []; }
+  }
   try {
     return (db.prepare(`
       SELECT ws.address FROM wallet_scores ws
@@ -103,6 +129,7 @@ export function getSourceSmartSetAddresses(db: Database.Database, sourceId: stri
       WHERE ${SOURCE_GATE} AND wc.source = @src
         AND ${SOURCE_COPYABLE_SQL}
       ORDER BY ws.total_realized_sol_drop_top3 DESC NULLS LAST
+      LIMIT ${SOURCE_WATCH_CAP}
     `).all({ src: sourceId }) as Array<{ address: string }>).map((r) => r.address);
   } catch {
     return [];
@@ -120,13 +147,44 @@ export const SOURCE_PROBE_CONTROL = 'copy-tp100-sl30-lag';
 export const SOURCE_PROBE_MIN_N = 100;
 
 /**
- * Refresh all source sets in one call — copy-trader holds the result and routes each
- * lead-buy to the matching source's strategies (undefined/og = OG-only, as before).
+ * Refresh all source sets in one call. Two consumers, same sets by construction:
+ *   - copy-trader routes each lead-buy to the matching source's strategies
+ *     (undefined/og = OG-only, as before);
+ *   - the follower probe SUBSCRIBES these wallets (2026-07-04 fix: the relaxed source gate
+ *     admits wallets the global smart set doesn't, and un-subscribed wallets can never fire
+ *     a lead event — the copy-src-* probes sat at n=0 for exactly this reason).
+ *
+ * Tag-gated sources are disjoint by construction (one source tag per wallet) and their
+ * global-smart overlap is the INTENDED provenance quarantine. Signal-set sources are not
+ * tag-scoped, so they subtract the OG universe (follow_list ∪ global smart ∪ copy-net) and
+ * earlier sources' sets — they may only claim wallets no other book is trading.
  */
 export function refreshSourceSets(db: Database.Database): Map<string, Set<string>> {
   const m = new Map<string, Set<string>>();
+  let ogUniverse: Set<string> | null = null; // computed lazily, only if a signalSet source exists
+  const ogSet = (): Set<string> => {
+    if (!ogUniverse) {
+      ogUniverse = new Set<string>();
+      try { for (const a of getFollowListAddresses(db)) ogUniverse.add(a); } catch { /* empty */ }
+      try { for (const a of getSmartSetAddresses(db)) ogUniverse.add(a); } catch { /* empty */ }
+      try { for (const a of getCopyNetSelectedAddresses(db)) ogUniverse.add(a); } catch { /* empty */ }
+    }
+    return ogUniverse;
+  };
   for (const src of DISCOVERY_SOURCES) {
-    m.set(src.id, new Set(getSourceSmartSetAddresses(db, src.id)));
+    const wallets = getSourceSmartSetAddresses(db, src.id);
+    if (!src.signalSet) {
+      m.set(src.id, new Set(wallets));
+      continue;
+    }
+    const set = new Set<string>();
+    for (const w of wallets) {
+      if (ogSet().has(w)) continue;
+      let taken = false;
+      for (const other of m.values()) { if (other.has(w)) { taken = true; break; } }
+      if (!taken) set.add(w);
+    }
+    m.set(src.id, set);
   }
   return m;
 }
@@ -181,9 +239,12 @@ export function computeDiscoveryScorecard(db: Database.Database): unknown {
     }
   };
 
+  // Same sets the copy-trader routes on and the follower probe subscribes — so
+  // smart_copyable is exactly "wallets whose lead-buys can reach this probe".
+  const sourceSets = refreshSourceSets(db);
   const rows = DISCOVERY_SOURCES.map((src) => {
     const probe = probeStats(db, sourceProbeId(src.id));
-    const smart = getSourceSmartSetAddresses(db, src.id).length;
+    const smart = sourceSets.get(src.id)?.size ?? 0;
     let verdict = 'COLLECTING';
     let verdict_detail = `n=${probe.n}/${SOURCE_PROBE_MIN_N}`;
     if (smart === 0 && probe.n === 0) {

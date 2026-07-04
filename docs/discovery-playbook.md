@@ -19,7 +19,18 @@ Every discovery source gets the **identical standardized probe** so sources are 
   finds make money when copied, as a population?"
 - **Quarantine**: a wallet fires only the strategies matching its `wallet_candidates.source` tag,
   so each source's P&L series is isolated (a wallet is in exactly one source).
+- **Watchlist (2026-07-04, load-bearing)**: the follower probe subscribes the source smart sets
+  too (`refreshSourceSets` union in `follower-probe.ts`). A wallet that is routed but not
+  subscribed can never fire a lead event — this exact gap kept every `copy-src-*` probe at n=0
+  for 4 days after the 07-03 gate relaxation (25 smart+copyable wallets, 0 watched). If a probe
+  sits at n=0 with a non-empty funnel, check watchlist membership FIRST. Source-only wallets are
+  tier-tagged `src_<id>` in `copy_probe_events`, and the consensus/crowd counts
+  (`countRecentSmartBuyers/Sellers`) exclude those tiers so widening the watchlist never perturbs
+  existing strategies' series. Each set is capped best-first (`COPYSRC_WATCH_CAP`, default 25;
+  winner-sniper: `WINNER_SNIPER_WATCH_CAP`) because Helius bills WS per delivered message.
 - **Control** `copy-tp100-sl30-lag`: the same ruleset on OG (graduation-seeded) wallets.
+  ⚠ This strategy has a standing KILL proposal in the daily journal for its own P&L — it must
+  survive as the scorecard control (or the scorecard needs a replacement control first).
 - **Verdict** (auto-computed, at n≥100 per side): the probe must beat the control on **both**
   net/trade **and** drop3/trade → `BEATS_OG`, else `FAILS`. Before that: `COLLECTING`, or
   `NO_WALLETS` if the funnel never produced a smart+copyable wallet (a funnel problem, not a
@@ -62,8 +73,21 @@ stay in the DB → `retired_summary`) and stop the harvester. Record the outcome
 |---|---|---|---|
 | 2026-07-02 | cotrade (winner-graph cohort split) | FAILS | n=108, net −4.5, drop3 −6.5 vs OG-smart control −0.9/−3.0 — clustering with winners doesn't select better copy leads |
 | 2026-07-02 | copy-net positive selection (V2, not a source but a selector) | REFUTED OOS | in-sample +27 was circular; OOS its unique picks lost. Survives only as the proven-bad **veto** |
-| — | live_tape (Idea 1) | COLLECTING | funnel slow — zero smart+copyable so far |
-| — | external / Solana Tracker (Idea 3) | COLLECTING | funnel slow; crowding prior |
-| — | winner_sniper (operator thesis, S2+S3) | COLLECTING | added 2026-07-02: minute-cadence path labels (20×60s, WIN = peak ≥ +50% AND ≥3 checks above) × **full-window** buyer credit (0-30s ∪ sampled pool-vault swap signers — any wallet in the ~20min, not just snipers) × precision × 36h-half-life decay (`winner-sniper.ts`); ~8-10k RPC/day |
+| — | live_tape (Idea 1) | COLLECTING | funnel healthy (13 smart+copyable of 409 scored, ~3%); probe sat n=0 until the 07-04 watchlist fix. Harvester itself is OPT-IN and currently off (`LIVE_TAPE_ENABLED` unset since ~07-01) — deliberate while the 1,100-wallet scoring backlog drains; the probe test runs on the already-scored set |
+| — | external / Solana Tracker (Idea 3) | COLLECTING | funnel done (172/172 scored, 12 smart+copyable); probe sat n=0 until the 07-04 watchlist fix. Crowding prior stands; several of the 12 are days-dormant, so expect slow n |
+| — | winner_sniper (operator thesis, S2+S3) | COLLECTING | added 2026-07-02: minute-cadence path labels (20×60s, WIN = peak ≥ +50% AND ≥3 checks above) × **full-window** buyer credit (0-30s ∪ sampled pool-vault swap signers — any wallet in the ~20min, not just snipers) × precision × 36h-half-life decay (`winner-sniper.ts`); ~8-10k RPC/day. 07-04: probe universe re-based on the SIGNAL SET (own-PnL gate was off-thesis and kept it at NO_WALLETS — see signal-set override above). Watch-item: 47/73 labels are winners (64% base rate) in this regime, so `minPrecision` 0.25 is currently non-selective — tighten only once probe P&L exists |
 
 **Discovery-source gate (relaxed 2026-07-03):** source watchlists use PROFITABLE (`drop3 > 0`, no 3.75/mo bar — the monthly target is the AGGREGATE goal across all copied wallets) + hold ≥ 30s + the ~95% win-rate bot filter + PumpSwap-share. Env: `COPYSRC_MIN_DROP3`, `COPYSRC_MIN_HOLD_SEC`. The global core-book gate (`getSmartSetAddresses`) is UNCHANGED.
+
+**Signal-set override (2026-07-04):** a registry row may set `signalSet: (db) => string[]` to define
+its smart set by the harvester's OWN bar instead of the own-PnL gate above. Use it for ENTRY-timing
+theses: the probe exits on its own TP100/SL30, so gating the lead set on the lead's realized PnL
+(their exits included) tests a different hypothesis. First user: `winner_sniper` — the 07-04 audit
+found every scored multi-hit sniper was own-PnL-negative (the 6/6-precision top sniper sat at
+drop3 −5.4), so under the own-PnL gate that funnel was structurally empty, and 14 of 21 multi-hit
+snipers were additionally invisible to the source because `competition_signal` had already claimed
+their candidate row (the OG seed reads the same 0-30s pool). Signal sets are therefore built from
+the harvester's tally (not `wallet_candidates.source`) and subtract the OG universe (follow_list ∪
+global smart set ∪ copy-net) plus earlier sources' sets — a signal set can never steal a wallet
+another book is already trading. Scoring still runs on these wallets (multi-hit snipers get the
+priority boost regardless of which source tagged them first) — it reports, it just doesn't gate.

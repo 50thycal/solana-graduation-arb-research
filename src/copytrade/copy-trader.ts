@@ -1754,19 +1754,25 @@ export class CopyTrader {
   private countRecentSmartBuyers(mint: string): number {
     try {
       const since = Date.now() - CONSENSUS_WINDOW_MS;
+      // tier filter: discovery-source-only wallets (tier 'src_*', watched since 2026-07-04)
+      // are quarantined out of the consensus signal so widening the watchlist can't perturb
+      // the consensus-gated strategies' existing series.
       const row = this.db.prepare(
-        `SELECT COUNT(DISTINCT wallet_address) AS c FROM copy_probe_events WHERE mint = ? AND action = 'buy' AND detected_at >= ?`,
+        `SELECT COUNT(DISTINCT wallet_address) AS c FROM copy_probe_events
+         WHERE mint = ? AND action = 'buy' AND detected_at >= ? AND tier IN ('promotable', 'smart')`,
       ).get(mint, since) as { c: number };
       return row.c;
     } catch { return 0; }
   }
 
-  /** Distinct smart wallets that SOLD this mint in the last windowSec — the crowdSellExit signal. */
+  /** Distinct smart wallets that SOLD this mint in the last windowSec — the crowdSellExit signal.
+   *  Same 'src_*' tier quarantine as countRecentSmartBuyers. */
   private countRecentSmartSellers(mint: string, windowSec: number): number {
     try {
       const since = Date.now() - windowSec * 1000;
       const row = this.db.prepare(
-        `SELECT COUNT(DISTINCT wallet_address) AS c FROM copy_probe_events WHERE mint = ? AND action = 'sell' AND detected_at >= ?`,
+        `SELECT COUNT(DISTINCT wallet_address) AS c FROM copy_probe_events
+         WHERE mint = ? AND action = 'sell' AND detected_at >= ? AND tier IN ('promotable', 'smart')`,
       ).get(mint, since) as { c: number };
       return row.c;
     } catch { return 0; }

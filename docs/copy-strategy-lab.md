@@ -10,6 +10,80 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-04 — Discovery-probe funnel audit: why every `copy-src-*` sat at n=0 (watchlist gap + off-thesis gate); fixes shipped
+
+Operator asked why the discovery probes aren't collecting (`copy-src-live-tape`/`-external`
+"funnels filling", `copy-src-winner-sniper` NO_WALLETS) and whether the filters are too strict.
+Audit ran over `copy-trades.json`, `copy-probe.json`, `logs.json` and two `ops`-channel DB pulls.
+
+**Diagnosis — a codebase gap, not filter strictness:**
+1. **Watchlist gap (the blocker for ALL three probes).** The 07-03 relaxed source gate produced
+   13 live_tape + 12 external smart+copyable wallets — routed by `sourceSets`, counted by the
+   scorecard, but **never subscribed**: the follower-probe watchlist was still only
+   follow_list ∪ global smart set ∪ copy-net. Proof: 0/25 source wallets on the watchlist (only
+   J9xeW…, which independently clears the full global bar, could sneak in), 0/30 recent probe
+   events from source wallets. Un-watched wallets fire no lead events → probes stuck at n=0 by
+   construction. The relaxation silently broke the invariant "source-smart ⊆ watchlist" that held
+   when source gates equaled the global gate.
+2. **Winner-sniper: the own-PnL gate is off-thesis and kept the set structurally empty.** The
+   harvester itself is healthy (73 grads labeled, 47 winners, 656 wallets tallied, promotions
+   flowing). But ALL 9 FIFO-scored multi-hit snipers have own-PnL drop3 ≤ +0.05 — the 6/6-precision
+   top sniper (NULLio…) sits at −5.4 SOL. The thesis is an ENTRY-timing signal and the probe exits
+   on its own TP100/SL30; gating the lead set on the lead's own realized PnL (their exits included)
+   tested a different hypothesis, and under it `smart_copyable` would stay ~0 indefinitely.
+3. **Winner-sniper collision:** 14 of 21 multi-hit snipers were already `wallet_candidates` rows
+   under `competition_signal` (the OG seed reads the same 0-30s pool), so `promote()`'s
+   new-wallets-only insert could never tag them — the signal's strongest wallets were invisible
+   to their own source. (The remaining 6/7 tagged candidates were simply <6h old, behind the 4h
+   scoring tick — cadence, not a bug.)
+4. **Live-tape harvester is OFF** (`LIVE_TAPE_ENABLED` unset since ~07-01; status row 3 days
+   stale, cycles_run=0 in the current deploy). Its 1,518 candidates are historical. This is
+   consistent with the 06-29 lesson (discovery out-ran scoring; 1,109 live_tape candidates still
+   unscored at priority 1000) — recommend leaving it off until the backlog drains; the probe test
+   runs fine on the 13 already-scored wallets, refilling as the backlog scores (~3% pass rate).
+
+**Thesis audit (existing data):** the shared premise — good buyers carry token-selection signal —
+holds at population level: smart-wallet presence lifts PUMP rate 35.6% → 46.8% (+11pp, p≈0,
+`smart-money.json → outcome_lift`). The freshdip backtest (07-03, below) independently found the
+edge concentrated in fresh tokens + disciplined entries, which is exactly the winner-sniper shape
+(entry edge with runway). External keeps its honest "crowded/alpha-decayed" prior (several of its
+12 are days-dormant — expect slow n). None of this proves any source BEATS_OG — that remains the
+scorecard's question; the fixes below only make the test actually runnable.
+
+**Shipped (this branch):**
+- `follower-probe.ts` — watchlist now unions the discovery-source sets; source-only wallets are
+  tier-tagged `src_<id>`; `watchlist_source_wallets` added to status. (~196 → ~240 subs, ≈+20%
+  on `copy_follower_ws` ≈ +3k msgs/day — trivial vs the 653k/day estimate.)
+- `copy-trader.ts` — consensus/crowd counts (`countRecentSmartBuyers/Sellers`) now filter
+  `tier IN ('promotable','smart')`, so the wider watchlist cannot perturb consensus-gated series
+  (`copy-conviction-consensus2`).
+- `discovery-sources.ts` — optional per-source `signalSet` override: winner_sniper's smart set is
+  now its own bar (hits ≥ 2, precision ≥ 0.25, decayed score ≥ 0.5, top-25 by decayed score),
+  not own-PnL. Signal sets subtract the OG universe + earlier sources' sets (can't steal a wallet
+  another book trades). Tag-gated sets (live_tape/external) unchanged, now capped best-first
+  (`COPYSRC_WATCH_CAP`=25). Scorecard `smart_copyable` now reports the exact routed/watched sets.
+- `winner-sniper.ts` — `getWinnerSniperSignalWallets()` + `WINNER_SNIPER_WATCH_CAP` (25) +
+  `signal_set_size` in the summary panel.
+- `discovery.ts` — scoring-priority boost keys on TALLY membership (hits ≥ 2), not
+  `wc.source='winner_sniper'`, so collided snipers get FIFO-scored fast too (reporting only).
+- `docs/discovery-playbook.md` — contract updated (watchlist bullet, signal-set override, caps,
+  control-kill hazard note).
+
+**Expected observables (~24-48h):** `copy-probe.json → status.watchlist_size` ≈ 240 with
+`watchlist_source_wallets` ≈ 40; `discovery_scorecard → winner_sniper.funnel.smart_copyable` > 0
+(NO_WALLETS clears); first `copy-src-*` closed trades. If probes STILL sit at n=0 with watched
+wallets, next suspect is lead activity itself (dormant wallets), visible via `src_*`-tier probe
+events.
+
+**Watch-items:** (1) 47/73 labels are winners — a 64% base rate makes `minPrecision` 0.25
+non-selective in this regime; tighten only once probe P&L exists (label bar is env-tunable, path
+stored for recalibration). (2) `copy-tp100-sl30-lag` carries a KILL proposal in the daily journal
+but is the scorecard's OG control — keep it (or swap the control) before enacting that kill.
+(3) Re-enabling `LIVE_TAPE_ENABLED` is an operator env decision — defer until scoring backlog
+drains.
+
+---
+
 ## 2026-07-03 (later) — FD: `copy-fable-freshdip` spawned (own-thesis line; offline-backtested entry-context gates)
 
 Operator directive: "treat this as your own build — any copy strategy you see fit." Rather than
