@@ -147,15 +147,44 @@ export class WinnerSniperHarvester {
       return;
     }
     this.ensureTables();
+    this.resetStaleTallyForProfitCredit();
     this.timer = setInterval(() => {
       this.tick().catch((err) => logger.warn('tick failed: %s', err instanceof Error ? err.message : String(err)));
     }, WINNER_SNIPER_CFG.tickMs);
     logger.info(
-      'WinnerSniperHarvester started: %d checks @ %ds from T+%ds, WIN = peak>=+%d%% & >=%d checks above, half-life %dh, promote at hits>=%d & precision>=%s',
+      'WinnerSniperHarvester started: %d checks @ %ds from T+%ds, WIN = peak>=+%d%% & >=%d checks above, half-life %dh, pre-filter at hits>=%d & precision>=%s',
       WINNER_SNIPER_CFG.obsChecks, WINNER_SNIPER_CFG.obsIntervalSec, WINNER_SNIPER_CFG.obsStartSec,
       WINNER_SNIPER_CFG.minRetPct, WINNER_SNIPER_CFG.minSustainChecks,
       WINNER_SNIPER_CFG.halfLifeHours, WINNER_SNIPER_CFG.minHits, WINNER_SNIPER_CFG.minPrecision,
     );
+  }
+
+  /**
+   * One-time tally reset (operator 2026-07-04). The pre-2026-07-04 tally credited a winner_hit
+   * for merely BUYING a winner (no profit check), so its counts/scores predate the profit-credit
+   * logic and would let a stale wallet enter the pre-filter on its next hit — diluting the fresh
+   * measurement. Clear the TALLY once (version-guarded so it runs exactly once, never on normal
+   * redeploys) so enrollment is driven purely by new profit-verified hits. Token labels + price
+   * paths (winner_labels) are KEPT for bar recalibration; in-flight winner_obs finalize cleanly
+   * under the new logic. Bounded, idempotent, best-effort.
+   */
+  private resetStaleTallyForProfitCredit(): void {
+    const VERSION = 'profit-credit-2026-07-04';
+    try {
+      const row = this.db.prepare(
+        `SELECT value FROM bot_settings WHERE key = 'winner_sniper_data_version'`,
+      ).get() as { value: string } | undefined;
+      if (row?.value === VERSION) return;
+      const n = (this.db.prepare(`SELECT COUNT(*) AS c FROM winner_sniper_tally`).get() as { c: number }).c;
+      this.db.exec(`DELETE FROM winner_sniper_tally`);
+      this.db.prepare(`
+        INSERT INTO bot_settings (key, value, updated_at) VALUES ('winner_sniper_data_version', ?, unixepoch())
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(VERSION);
+      if (n > 0) logger.info('reset %d stale tally rows for profit-credit logic (v%s) — fresh measurement start', n, VERSION);
+    } catch (err) {
+      logger.warn('tally reset failed (non-fatal): %s', err instanceof Error ? err.message : String(err));
+    }
   }
 
   stop(): void {

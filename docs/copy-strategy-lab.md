@@ -42,9 +42,23 @@ one lucky profitable window straight into the probe). Shipped on the same branch
   capped, OG-universe-subtracted (`getPrefilterGatedWallets` in discovery-sources.ts). The morning's
   watchlist fix already subscribes whatever this set produces.
 
-**Verification:** build green + an in-memory SQLite smoke test of the full chain (enroll state
-machine incl. cap, closed-position accounting excl. trigger mints, pass → gated set, and the
-OG-quarantine subtraction when a graduate also clears the global bar).
+**Clean-start reset (operator 2026-07-04):** operator flagged that stale collection shouldn't
+dilute the new measurement. The probe `copy-src-winner-sniper` needs no reset — it's n=0 /
+NO_WALLETS (never traded; the "always negative" figure is the OG control `copy-tp100-sl30-lag`
+−19.4, which we KEEP as the benchmark). The stale data that WOULD dilute is the ~656-row
+`winner_sniper_tally`, credited under the pre-profit-credit rule — a stale wallet could enter the
+pre-filter on its next hit. So `winner-sniper.ts` now does a **one-time, version-guarded tally
+reset** on start (`winner_sniper_data_version = profit-credit-2026-07-04`): clears the tally once,
+keeps `winner_labels` (paths, for bar recalibration), lets in-flight `winner_obs` finalize under
+the new logic. Runs exactly once, never on normal redeploys. (The 7 stale
+`wallet_candidates(source='winner_sniper')` rows are left — the tradable gate requires a pre-filter
+PASS, so they can't reach the probe; they're an inert scoring-priority residual, not dilution.)
+
+**Verification:** build green + two in-memory SQLite smoke tests — (1) the full chain (enroll state
+machine incl. cap, closed-position accounting excl. trigger mints, pass → gated set, OG-quarantine
+subtraction when a graduate also clears the global bar); (2) the reset is idempotent (clears stale
+tally + sets the version on first start; a fresh row survives a second start, no re-clear; labels
+preserved).
 
 **Expected timeline:** NO_WALLETS persists a few more days by design — a wallet now needs a
 profitable winner-window, then 2+ profitable closed trades under forward watch, then a score.
