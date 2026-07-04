@@ -35,6 +35,23 @@ const WATCHLIST_REFRESH_MS = 10 * 60 * 1000;
 const MAX_RECONNECT_MS = 60_000;
 const SEEN_MAX = 4096;
 
+// ── Helius credit governors (2026-07-04, budget cap Jul 4→22) ──
+// WS is billed per delivered message and scales ~linearly with watchlist size, so we
+// bound the subscription. Tier priority when trimming: follow_list > smart set > copy-net >
+// discovery-source (quarantined) — we keep the wallets we actually copy and drop the tail.
+// 0 = uncapped (pre-2026-07-04 behaviour). Env-tunable so it can be dialed back after Jul 22.
+const WATCHLIST_MAX = (() => {
+  const v = parseInt(process.env.COPY_WATCHLIST_MAX || '140', 10);
+  return Number.isFinite(v) && v >= 0 ? v : 140;
+})();
+// scheduleLagFill fires a getBlockTime RPC purely for the detection-lag TELEMETRY (post-dispatch,
+// zero trading impact). At full rate it was ~8.8% of the entire Helius bill. Sample 1-in-N eligible
+// events — a few thousand samples/day still yields valid lag percentiles. 0 disables it entirely.
+const LAGFILL_SAMPLE = (() => {
+  const v = parseInt(process.env.COPY_LAGFILL_SAMPLE || '20', 10);
+  return Number.isFinite(v) && v >= 0 ? v : 20;
+})();
+
 export class CopyFollowerProbe {
   private readonly db: Database.Database;
   private readonly getConnection: () => Connection | null;
@@ -51,6 +68,7 @@ export class CopyFollowerProbe {
   private reconnectDelay = 1000;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private watchlistTimer: ReturnType<typeof setInterval> | null = null;
+  private lagFillCounter = 0;             // 1-in-LAGFILL_SAMPLE governor for scheduleLagFill
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private seen = new Map<string, number>();
   private totalNotifications = 0;
@@ -121,12 +139,28 @@ export class CopyFollowerProbe {
         this.sourceTier.set(a, `src_${srcId}`);
       }
     }
-    const wl = [...new Set([...ogUnion, ...this.sourceTier.keys()])].sort();
+    // Tier-priority union (highest edge first): follow_list → smart set → copy-net →
+    // discovery-source. WATCHLIST_MAX bounds Helius WS spend by truncating the LOW-priority
+    // tail — the discovery-source (quarantined) wallets drop before any wallet we copy.
+    const ordered: string[] = [];
+    const pushUnique = (addrs: Iterable<string>) => { for (const a of addrs) if (!ordered.includes(a)) ordered.push(a); };
+    pushUnique(promotable);
+    pushUnique(smart);
+    pushUnique(copyNet);
+    pushUnique(this.sourceTier.keys());
+    const capped = WATCHLIST_MAX > 0 ? ordered.slice(0, WATCHLIST_MAX) : ordered;
+    const dropped = ordered.length - capped.length;
+    // Keep the sourceTier tags consistent with what we actually subscribe to.
+    if (dropped > 0) {
+      const kept = new Set(capped);
+      for (const a of [...this.sourceTier.keys()]) if (!kept.has(a)) this.sourceTier.delete(a);
+    }
+    const wl = [...capped].sort();
     const changed = wl.length !== this.watchlist.length || wl.some((a, i) => a !== this.watchlist[i]);
     if (!changed) return;
     this.watchlist = wl;
-    logger.info('Watchlist updated: %d wallets (%d promotable, %d smart-set, %d copy-net, %d discovery-source)',
-      wl.length, promotable.length, smart.length, copyNet.length, this.sourceTier.size);
+    logger.info('Watchlist updated: %d wallets (%d promotable, %d smart-set, %d copy-net, %d discovery-source; %d dropped by cap=%d)',
+      wl.length, promotable.length, smart.length, copyNet.length, this.sourceTier.size, dropped, WATCHLIST_MAX);
     this.writeStatus();
     if (connectIfChanged) {
       // Reconnect to re-subscribe with the new accountInclude set.
@@ -248,7 +282,10 @@ export class CopyFollowerProbe {
       this.parsedWs++;
       // processed push has no block_time → transport lags filled async below.
       this.processTx(built, signature, slot, built.blockTime ?? null, detectedAtMs);
-      if (built.blockTime == null && slot != null) this.scheduleLagFill(signature, slot, detectedAtMs);
+      if (built.blockTime == null && slot != null &&
+          LAGFILL_SAMPLE > 0 && (this.lagFillCounter++ % LAGFILL_SAMPLE) === 0) {
+        this.scheduleLagFill(signature, slot, detectedAtMs);
+      }
       this.writeStatus();
       return;
     }

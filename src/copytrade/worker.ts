@@ -47,19 +47,19 @@ const DEFAULTS = {
   // copy's alone. Wallet discovery is now THE limiter on "not missing a smart
   // wallet" — only 2.5k of ~71k seeded candidates have been scored, and a wallet
   // can't enter the probe watchlist until it's scored + passes the smart-set gate.
-  // 2026-07-03: CRANKED to spend the added ~5M-credit budget on the scoring backlog (scoring
-  // throughput is THE limiter on "not missing a smart wallet"). batch 50 → 200 first-scans/tick:
-  // up to ~200 wallets × ~300 parsed txs × 6 ticks/day ≈ up to ~360k req/day (self-limits — most
-  // wallets have far fewer txs), clearing the ~71k backlog in ~2 months. Requires the raised 10 rps
-  // limiter ceiling (rpc-limiter.ts); scoring is droppable-tier so copy polls still preempt.
-  // deepBatchLimit also bumped 3 → 8 to verify promising wallets faster. Tune via COPYTRADE_* envs.
+  // 2026-07-03: CRANKED batch 50 → 200 to spend an added ~5M-credit budget on the scoring backlog.
+  // 2026-07-04: REVERTED (200 → 75, deep 8 → 3) under the Jul 4→22 15M-credit cap. wallet_pnl was
+  // ~19%+ of the Helius bill and the +5M budget that justified the crank is gone; backlog-clearing
+  // is research, not live-critical, so it yields the budget first. ~75 wallets × ~300 parsed txs ×
+  // 6 ticks/day ≈ up to ~135k req/day (self-limits — most wallets have far fewer txs). Scoring is
+  // droppable-tier so copy polls still preempt. Tune via COPYTRADE_* envs (raise after Jul 22).
   intervalMs: 4 * 60 * 60 * 1000, // 4h between scoring passes
   firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
-  scoreBatchLimit: 200,           // backlog FIRST-scans per tick (cranked 2026-07-03 for the +5M budget)
+  scoreBatchLimit: 75,            // backlog FIRST-scans per tick (reverted 2026-07-04 for the 15M cap)
   maxSignaturesPerWallet: 300,    // shallow first-scan / triage depth
   maxSignaturesDeep: 1500,        // DEEP-rescan depth for promising-but-n-capped wallets
   cacheMaxSwaps: 1500,            // incremental-cache cap = deepest history we score on
-  deepBatchLimit: 8,             // deep rescans per tick (bumped 2026-07-03 with the batch crank)
+  deepBatchLimit: 3,             // deep rescans per tick (reverted 2026-07-04 with the batch revert)
   restaleSeconds: 24 * 3600,      // re-score a BACKLOG wallet at most once / 24h
   // Priority-refresh: keep the wallets we actually copy (follow_list ∪ smart set)
   // fresh on a TIGHT cadence. Refreshes are now INCREMENTAL (fetch only sigs newer
