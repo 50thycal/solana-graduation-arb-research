@@ -81,6 +81,8 @@ export const WINNER_SNIPER_CFG = {
   minHits: numEnv('WINNER_SNIPER_MIN_HITS', 2),
   minPrecision: numEnv('WINNER_SNIPER_MIN_PRECISION', 0.25),
   minScore: numEnv('WINNER_SNIPER_MIN_SCORE', 0.5),
+  /** Max wallets in the SIGNAL SET (probe universe + follower watchlist) — bounds WS spend. */
+  watchCap: numEnv('WINNER_SNIPER_WATCH_CAP', 25),
   /** Tick must match the check cadence (one observation pass per interval). */
   tickMs: numEnv('WINNER_SNIPER_TICK_MS', 60 * 1000),
 };
@@ -94,6 +96,38 @@ function obsWindowEndSec(): number {
 function decayed(score: number, lastUpdate: number, now: number): number {
   const dtH = Math.max(0, now - lastUpdate) / 3600;
   return score * Math.pow(2, -dtH / WINNER_SNIPER_CFG.halfLifeHours);
+}
+
+/**
+ * The SIGNAL SET: wallets currently clearing the sniper bar (hits ≥ minHits, precision ≥
+ * minPrecision, decayed score ≥ minScore), ranked by decayed score, capped at watchCap.
+ *
+ * This — not own-PnL FIFO profit — defines the winner_sniper probe universe (see the
+ * `signalSet` registry override in discovery-sources.ts). The 2026-07-04 funnel audit showed
+ * why the own-PnL gate starved the probe structurally: every scored multi-hit sniper had
+ * drop3 ≤ 0.05 (e.g. the 6/6-precision top sniper sat at −5.4 own-PnL). The thesis is an
+ * ENTRY-timing signal and the probe exits on its own TP100/SL30, so the lead's own realized
+ * PnL (which includes THEIR exits) was testing a different hypothesis. The FIFO scorer still
+ * runs on promoted candidates for reporting; it just no longer gates the probe.
+ */
+export function getWinnerSniperSignalWallets(db: Database.Database, nowSec?: number): string[] {
+  const now = nowSec ?? Math.floor(Date.now() / 1000);
+  try {
+    return (db.prepare(`
+      SELECT address FROM winner_sniper_tally
+      WHERE winner_hits >= @minHits
+        AND winner_hits * 1.0 / MAX(1, appearances) >= @minPrec
+        AND score * POWER(2, -MAX(0, @now - last_update) / 3600.0 / @hl) >= @minScore
+      ORDER BY score * POWER(2, -MAX(0, @now - last_update) / 3600.0 / @hl) DESC
+      LIMIT @cap
+    `).all({
+      now, hl: WINNER_SNIPER_CFG.halfLifeHours,
+      minHits: WINNER_SNIPER_CFG.minHits, minPrec: WINNER_SNIPER_CFG.minPrecision,
+      minScore: WINNER_SNIPER_CFG.minScore, cap: WINNER_SNIPER_CFG.watchCap,
+    }) as Array<{ address: string }>).map((r) => r.address);
+  } catch {
+    return []; // tally table absent until the harvester first runs
+  }
 }
 
 interface ObsRow {
@@ -485,8 +519,10 @@ export function getWinnerSniperSummary(db: Database.Database): unknown {
         'Credit EVERY buyer across the full window (0-30s competition_signals UNION sampled pool-vault swap signers), rank by winner-hit precision with a ' +
         `${WINNER_SNIPER_CFG.halfLifeHours}h half-life. Promotion bar: hits>=${WINNER_SNIPER_CFG.minHits}, ` +
         `precision>=${WINNER_SNIPER_CFG.minPrecision}, decayed score>=${WINNER_SNIPER_CFG.minScore}. ` +
+        'The SIGNAL SET (bar-clearing wallets, capped) IS the probe universe since 2026-07-04 — own-PnL no longer gates it. ' +
         'Probe P&L + verdict live in discovery_scorecard (source=winner_sniper).',
       config: WINNER_SNIPER_CFG,
+      signal_set_size: getWinnerSniperSignalWallets(db, now).length,
       observing_now: obs.n,
       observing_avg_checks: +obs.avg_checks.toFixed(1),
       graduations_labeled: labels.n,

@@ -3,6 +3,7 @@ import { Connection, PublicKey, ParsedTransactionWithMeta } from '@solana/web3.j
 import WebSocket from 'ws';
 import { getFollowListAddresses, getSmartSetAddresses, insertProbeEvent, updateProbeEventLag } from './queries';
 import { getCopyNetSelectedAddresses } from './leaderboard-v2';
+import { refreshSourceSets } from './discovery-sources';
 import { parseSwapForOwner, wsNotificationToTx } from './parse-swap';
 import type { CopyTrader } from './copy-trader';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
@@ -39,8 +40,12 @@ export class CopyFollowerProbe {
   private readonly getConnection: () => Connection | null;
   private ws: WebSocket | null = null;
   private stopped = false;
-  private watchlist: string[] = [];       // union: smart set ∪ follow_list
+  private watchlist: string[] = [];       // union: follow_list ∪ smart set ∪ copy-net ∪ discovery-source sets
   private promotableSet = new Set<string>(); // strict follow_list subset (for tier tagging)
+  // Discovery-source-ONLY wallets (in a source set, not in the OG universe), tagged
+  // `src_<sourceId>` — the tier keeps their probe events out of the consensus/crowd
+  // counts so newly-watched source wallets can't perturb existing strategies' series.
+  private sourceTier = new Map<string, string>();
   private subRequestId = 1;
   private subId: number | null = null;
   private reconnectDelay = 1000;
@@ -91,23 +96,37 @@ export class CopyFollowerProbe {
   }
 
   private refreshWatchlist(connectIfChanged: boolean): void {
-    // Watch the follow_list (promotable), the broader money-edge smart set (V1), AND
-    // the copy-net selection set (V2). The union is the subscription; tier is tagged
-    // per event. V2 is added so leads the copy-net method selects (but own-P&L doesn't)
-    // still generate lead events for the copy-select-v2 A/B strategy — otherwise the V2
-    // arm could never enter a V2-only lead.
+    // Watch the follow_list (promotable), the broader money-edge smart set (V1), the
+    // copy-net selection set (V2), AND the discovery-source smart sets. The union is the
+    // subscription; tier is tagged per event. V2 is added so leads the copy-net method
+    // selects (but own-P&L doesn't) still generate lead events for the copy-select-v2 A/B
+    // strategy — otherwise the V2 arm could never enter a V2-only lead. The source sets
+    // are added (2026-07-04) because the relaxed source gate admits wallets the global
+    // smart set doesn't — without subscribing them the copy-src-* probes could never see
+    // a lead event and sat at n=0 by construction.
     let promotable: string[] = [];
     let smart: string[] = [];
     let copyNet: string[] = [];
+    let sourceSets = new Map<string, Set<string>>();
     try { promotable = getFollowListAddresses(this.db); } catch { /* may be empty */ }
     try { smart = getSmartSetAddresses(this.db); } catch { /* may be empty */ }
     try { copyNet = getCopyNetSelectedAddresses(this.db); } catch { /* may be empty */ }
+    try { sourceSets = refreshSourceSets(this.db); } catch { /* may be empty */ }
     this.promotableSet = new Set(promotable);
-    const wl = [...new Set([...promotable, ...smart, ...copyNet])].sort();
+    const ogUnion = new Set([...promotable, ...smart, ...copyNet]);
+    this.sourceTier = new Map();
+    for (const [srcId, set] of sourceSets) {
+      for (const a of set) {
+        if (ogUnion.has(a) || this.sourceTier.has(a)) continue;
+        this.sourceTier.set(a, `src_${srcId}`);
+      }
+    }
+    const wl = [...new Set([...ogUnion, ...this.sourceTier.keys()])].sort();
     const changed = wl.length !== this.watchlist.length || wl.some((a, i) => a !== this.watchlist[i]);
     if (!changed) return;
     this.watchlist = wl;
-    logger.info('Watchlist updated: %d wallets (%d promotable, %d smart-set, %d copy-net)', wl.length, promotable.length, smart.length, copyNet.length);
+    logger.info('Watchlist updated: %d wallets (%d promotable, %d smart-set, %d copy-net, %d discovery-source)',
+      wl.length, promotable.length, smart.length, copyNet.length, this.sourceTier.size);
     this.writeStatus();
     if (connectIfChanged) {
       // Reconnect to re-subscribe with the new accountInclude set.
@@ -286,7 +305,12 @@ export class CopyFollowerProbe {
 
     for (const wallet of involved) {
       const swap = parseSwapForOwner(tx, wallet);
-      const tier = this.promotableSet.has(wallet) ? 'promotable' : 'smart';
+      // Source-only wallets carry their `src_<id>` tier: routing in copy-trader is
+      // independent (sourceSets membership), but the tier keeps their events OUT of
+      // the consensus/crowd counts (countRecentSmartBuyers/Sellers filter on it).
+      const tier = this.promotableSet.has(wallet)
+        ? 'promotable'
+        : this.sourceTier.get(wallet) ?? 'smart';
       insertProbeEvent(this.db, {
         wallet_address: wallet,
         signature,
@@ -352,6 +376,7 @@ export class CopyFollowerProbe {
         connected: this.connected,
         sub_id: this.subId,
         watchlist_size: this.watchlist.length,
+        watchlist_source_wallets: this.sourceTier.size, // discovery-source-only subscriptions
         total_notifications: this.totalNotifications,
         total_events: this.totalEvents,
         last_event_at: this.lastEventAt,

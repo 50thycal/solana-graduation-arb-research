@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { upsertCandidate, countCandidates } from './queries';
+import { WINNER_SNIPER_CFG } from './winner-sniper';
 import { makeLogger } from '../utils/logger';
 
 const logger = makeLogger('copytrade-discovery');
@@ -153,13 +154,17 @@ export function recomputeCandidatePriorities(db: Database.Database): number {
   // graduations that WIN at T+30m, precision + fast-decay screened by the harvester
   // (winner-sniper.ts). Strongest copyability prior of any source (entry edge with
   // runway) and the list decays in ~2 days — score ahead of live-tape, weighted by
-  // decayed sniper score so the hottest wallets jump first.
+  // decayed sniper score so the hottest wallets jump first. Boost by TALLY membership,
+  // not wc.source (2026-07-04): most multi-hit snipers were already candidates under
+  // competition_signal (the OG seed reads the same 0-30s pool), so a source-tag boost
+  // missed exactly the wallets the signal is about.
   try {
     const wsRows = db.prepare(`
       SELECT wc.address AS w, COALESCE(t.score, 0) AS s
       FROM wallet_candidates wc
       LEFT JOIN winner_sniper_tally t ON t.address = wc.address
       WHERE wc.source = 'winner_sniper'
+         OR COALESCE(t.winner_hits, 0) >= ${WINNER_SNIPER_CFG.minHits}
     `).all() as Array<{ w: string; s: number }>;
     for (const r of wsRows) addPts(r.w, 1200 + Math.min(300, Math.round(r.s * 100)));
   } catch { /* tables absent until the harvester first runs */ }
