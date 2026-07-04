@@ -11,7 +11,7 @@ import { CopyLiveExecutor } from './copy-live-executor';
 import { MICRO_TRADE_SIZE_SOL } from '../trading/config';
 import { getOgSmartSetAddresses, getCotradeSmartSetAddresses, getSmartSetAddresses } from './queries';
 import { getCopyNetSelectedAddresses, getCopyNetExcludedAddresses } from './leaderboard-v2';
-import { DISCOVERY_SOURCES, sourceProbeId, refreshSourceSets, computeDiscoveryScorecard } from './discovery-sources';
+import { DISCOVERY_SOURCES, probeIdOf, refreshSourceSets, computeDiscoveryScorecard } from './discovery-sources';
 import { getWinnerSniperSummary } from './winner-sniper';
 import { getCotradeDiscovery } from './cotrade-discovery';
 import { computeLiveTape } from './live-tape-harvester';
@@ -565,10 +565,12 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   ...makeSourceProbes(),
 ];
 
-/** One standardized realistic probe per registered discovery source (see cohort U above). */
+/** One standardized realistic probe per registered discovery source (see cohort U above).
+ *  id = probeIdOf(src) (honors a probeId override so a source can start a fresh P&L series);
+ *  leadSource stays src.id so quarantine routing is unaffected by an id bump. */
 function makeSourceProbes(): CopyStrategy[] {
   return DISCOVERY_SOURCES.map((src) => ({
-    id: sourceProbeId(src.id),
+    id: probeIdOf(src),
     tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, leadSource: src.id,
   }));

@@ -10,6 +10,80 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-04 (later) — Winner-sniper rebuilt as the operator's 3-stage funnel: profit-credit → forward pre-filter → scorer
+
+Operator direction (same session as the audit below): the sniper pipeline should (1) only credit
+window buyers who were **profitable on that token**, (2) hold them in a **pre-filter** — watched,
+not traded, not yet scored — measuring whether they keep profiting on OTHER tokens across ALL of
+PumpSwap, and (3) only pass-bar wallets reach the scorer, which decides tradability. Stated goal:
+"I can't listen to every single swap" — each cheap stage buys admission to the next, expensive one.
+
+**This supersedes the morning's tally-bar signalSet shortcut** (which would have let wallets with
+one lucky profitable window straight into the probe). Shipped on the same branch/PR:
+
+- **Stage 1 — profit-credit** (`winner-sniper.ts`): buyer capture upgraded from a name-set to
+  per-wallet window FLOWS (0-30s `competition_signals` sizes with entry ≈ open, ∪ sampled
+  pool-vault swaps now parsed properly via `parseSwapForOwner` — buys AND sells, SOL + token legs,
+  this mint only). A `winner_hit` requires MTM profit at the final observed path price
+  (> `WINNER_PROFIT_EPS_SOL`, default 0.01 SOL). Appearances still count every sampled buyer, so
+  precision = profitable hits / appearances. Old un-profit-checked hits decay off in ~2 days
+  (36h half-life) — no migration.
+- **Stage 2 — forward pre-filter** (NEW `winner-prefilter.ts`): tally-bar wallets enroll into
+  `winner_prefilter` (hard cap `PREFILTER_MAX_WALLETS`=200). A dedicated `transactionSubscribe`
+  (accountInclude = watching set, zero RPC, billed WS msgs bounded by the cap; usage source
+  `discovery_prefilter_ws`) tallies their per-mint flows on venue=`pumpswap` swaps only. PASS =
+  ≥2 profitable CLOSED positions (tok_out ≥ 0.9×tok_in) on non-trigger mints AND closed net ≥
+  +0.25 SOL within 120h; early-fail at −1.0 SOL; fails free their slots (14d retention). Flows
+  only accumulate after enrollment → the test is out-of-sample by construction. Conservative
+  accounting: open bags neither pass nor fail (no unrealized marks, no price RPC).
+- **Stage 3 — scoring decides** : pre-filter PASS → `wallet_candidates(source='winner_sniper')`
+  at top scoring priority (boost now keys on pre-filter passage, not the source tag — collision-
+  proof) → FIFO scorer → tradable set = passed ∩ relaxed scored gate (drop3>0 + copyable-relaxed),
+  capped, OG-universe-subtracted (`getPrefilterGatedWallets` in discovery-sources.ts). The morning's
+  watchlist fix already subscribes whatever this set produces.
+
+**Clean-start reset (operator 2026-07-04) — corrected after a live-dashboard check:** operator
+flagged that stale collection shouldn't dilute the new measurement. My first read (from the
+session-start `copy-trades.json`, 01:28 UTC) said the probe was n=0 — WRONG: by 13:51 UTC the live
+dashboard showed **`copy-src-winner-sniper` at n=109, net −1.81, drop3 −3.49**. Cause: the morning
+watchlist fix (commit 1) had already deployed, and its interim tally-bar `signalSet` exposed the
+top-25 tally wallets (bought-a-winner, no profit check — the own-PnL-negative ones the audit
+flagged), which then copied at a loss. So there IS stale probe data, from the wallet-selection the
+3-stage funnel replaces, and it would dilute the funnel's series. Two-part clean start:
+- **Probe id bumped** (`discovery-sources.ts` `probeId` override → `copy-src-winner-sniper-v2`).
+  The old id leaves the roster; its 109 closed rows fall into `retired_summary`; the funnel reports
+  fresh from n=0. The override changes ONLY the P&L series name — source tag (`winner_sniper`),
+  quarantine routing (`leadSource`), and funnel counts are untouched. `live_tape`/`external` probe
+  ids unchanged.
+- **Tally reset** (`winner-sniper.ts`, one-time, version-guarded
+  `winner_sniper_data_version = profit-credit-2026-07-04`): clears `winner_sniper_tally` once so
+  pre-filter enrollment is driven purely by new profit-verified hits; keeps `winner_labels` (paths,
+  for bar recalibration); lets in-flight `winner_obs` finalize under the new logic; never re-clears
+  on redeploys.
+
+(The stale `wallet_candidates(source='winner_sniper')` rows are left — the tradable gate requires a
+pre-filter PASS, so they can't reach the probe; inert scoring-priority residual, not dilution. The
+old id's few open shadow positions wind down via the poll loop's `strategy_removed` branch — shadow
+closes, no real money.)
+
+**Verification:** build green + two in-memory SQLite smoke tests — (1) the full chain (enroll state
+machine incl. cap, closed-position accounting excl. trigger mints, pass → gated set, OG-quarantine
+subtraction when a graduate also clears the global bar); (2) the reset is idempotent (clears stale
+tally + sets the version on first start; a fresh row survives a second start, no re-clear; labels
+preserved).
+
+**Expected timeline:** `copy-src-winner-sniper-v2` sits at n=0 (NO_WALLETS) for a few days by
+design — a wallet now needs a profitable winner-window, then 2+ profitable closed trades under
+forward watch, then a score. `copy-trades.json → winner_sniper.prefilter` shows the new funnel live
+(watching / passed / failed_ttl / failed_loss + per-wallet progress). If `watching` stays ~0 for
+>48h, stage 1 is over-tight (raise `WINNER_SNIPER_MIN_HITS`→1 or lower `WINNER_PROFIT_EPS_SOL`); if
+wallets watch but never pass, loosen `PREFILTER_MIN_OTHER_WINS`/`PREFILTER_MIN_NET_SOL` before
+concluding the thesis fails. The retired `copy-src-winner-sniper` (n=109, −1.81) is the honest
+record of the interim tally-bar selection — evidence that bought-a-winner ≠ profitable-to-copy,
+which is exactly what the profit-credit + pre-filter funnel fixes.
+
+---
+
 ## 2026-07-04 — Discovery-probe funnel audit: why every `copy-src-*` sat at n=0 (watchlist gap + off-thesis gate); fixes shipped
 
 Operator asked why the discovery probes aren't collecting (`copy-src-live-tape`/`-external`

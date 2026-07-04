@@ -2,7 +2,6 @@ import Database from 'better-sqlite3';
 import { COPYABILITY } from './ranker';
 import { getFollowListAddresses, getSmartSetAddresses } from './queries';
 import { getCopyNetSelectedAddresses } from './leaderboard-v2';
-import { getWinnerSniperSignalWallets } from './winner-sniper';
 
 function numEnv(name: string, fallback: number): number {
   const v = parseFloat(process.env[name] || '');
@@ -44,15 +43,20 @@ export interface DiscoverySource {
   hypothesis: string;
   added: string; // YYYY-MM-DD, for age/maturity context in the scorecard
   /**
+   * OPTIONAL probe-id override — the copy strategy id whose P&L is this source's measurement.
+   * Default = sourceProbeId(id). Bump it to start the series FRESH (old id retires into
+   * retired_summary) without disturbing the source tag / routing / funnel. See probeIdOf.
+   */
+  probeId?: string;
+  /**
    * OPTIONAL signal-set override (2026-07-04): when set, the source's smart set is DEFINED
-   * BY THE HARVESTER'S OWN SIGNAL BAR instead of the own-PnL FIFO gate below. For an
-   * ENTRY-timing thesis (winner_sniper) the own-PnL gate tested the wrong hypothesis — the
-   * probe exits on its own TP100/SL30, so the lead's realized PnL (their exits included) is
-   * off-thesis, and the audit showed it kept the funnel structurally empty (every scored
-   * multi-hit sniper was own-PnL-negative). Signal-set wallets are NOT provenance-quarantined
-   * by wallet_candidates.source, so refreshSourceSets subtracts the OG universe
-   * (follow_list ∪ global smart set ∪ copy-net) and earlier sources' sets — a signal set can
-   * never steal a wallet another book is already trading.
+   * BY THE SOURCE'S OWN FUNNEL instead of the plain source-tag SQL below. First user:
+   * winner_sniper, whose funnel is profit-credited tally → forward PRE-FILTER
+   * (winner-prefilter.ts) → FIFO scorer + the relaxed gate (getPrefilterGatedWallets).
+   * Signal-set wallets are NOT provenance-quarantined by wallet_candidates.source, so
+   * refreshSourceSets subtracts the OG universe (follow_list ∪ global smart set ∪ copy-net)
+   * and earlier sources' sets — a signal set can never steal a wallet another book is
+   * already trading.
    */
   signalSet?: (db: Database.Database) => string[];
 }
@@ -75,9 +79,14 @@ export const DISCOVERY_SOURCES: DiscoverySource[] = [
     label: 'Winner-sniper precision (operator thesis, S2+S3)',
     hypothesis: 'Wallets that repeatedly early-buy (0-30s) the graduations that go on to win at T+30m — ranked by winner-hit precision with a 36h-half-life decay — copy better than OG. Entry edge with runway should survive the 5s lag.',
     added: '2026-07-02',
-    // Entry-timing thesis → the probe universe is the sniper bar itself, not own-PnL
-    // (2026-07-04; see getWinnerSniperSignalWallets for the audit rationale).
-    signalSet: (db) => getWinnerSniperSignalWallets(db),
+    // Fresh measurement series (operator 2026-07-04): the old copy-src-winner-sniper id carried
+    // 109 trades (net −1.8) from the superseded tally-bar selection — retire it, measure the
+    // 3-stage funnel clean under a new id. Old rows roll into retired_summary.
+    probeId: 'copy-src-winner-sniper-v2',
+    // 3-stage funnel (operator 2026-07-04): profit-credited tally → forward pre-filter
+    // (winner-prefilter.ts) → FIFO scorer. Tradable = pre-filter PASSED ∩ the relaxed
+    // scored gate — "the scoring decides if it is ready to be tradable".
+    signalSet: (db) => getPrefilterGatedWallets(db),
   },
   // ── To test a new discovery thesis ──
   // 1. Write the harvester: INSERT INTO wallet_candidates (address, source, …) VALUES (?, '<id>', …)
@@ -113,6 +122,28 @@ const SOURCE_COPYABLE_SQL = `
       / NULLIF((SELECT SUM(value) FROM json_each(ws.venues_json)), 0) >= ${COPYABILITY.minPumpswapShare}`;
 
 /**
+ * winner_sniper tradable set — the end of its 3-stage funnel: wallets that PASSED the
+ * forward pre-filter (proved profit on OTHER PumpSwap tokens after triggering) AND clear
+ * the same relaxed scored gate as every other source. Scoring stays the final arbiter of
+ * tradability; the pre-filter is what earns a wallet the (expensive) score in the first
+ * place. Table absent → empty (no wallet has cleared stage 1 yet).
+ */
+function getPrefilterGatedWallets(db: Database.Database): string[] {
+  try {
+    return (db.prepare(`
+      SELECT ws.address FROM wallet_scores ws
+      JOIN winner_prefilter pf ON pf.address = ws.address AND pf.status = 'passed'
+      WHERE ${SOURCE_GATE}
+        AND ${SOURCE_COPYABLE_SQL}
+      ORDER BY ws.total_realized_sol_drop_top3 DESC NULLS LAST
+      LIMIT ${SOURCE_WATCH_CAP}
+    `).all() as Array<{ address: string }>).map((r) => r.address);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Generic quarantined smart set for one discovery source: PROFITABLE + copyable wallets whose
  * candidate row carries this source tag (relaxed gate above). Replaces the per-source getters.
  * Sources with a `signalSet` override (entry-timing theses) use their own bar instead.
@@ -139,6 +170,19 @@ export function getSourceSmartSetAddresses(db: Database.Database, sourceId: stri
 /** Probe strategy id for a source (underscores → hyphens to match roster naming). */
 export function sourceProbeId(sourceId: string): string {
   return `copy-src-${sourceId.replace(/_/g, '-')}`;
+}
+
+/**
+ * The probe STRATEGY id for a source — `probeId` override if set, else the derived
+ * `sourceProbeId`. The override exists to start a source's copy-P&L SERIES FRESH without
+ * touching its `wallet_candidates.source` tag / routing / funnel counts: bumping it retires the
+ * old strategy id (its closed rows fall into retired_summary) and mints a clean series under the
+ * new id. Used 2026-07-04 for winner_sniper — its old series carried 109 trades (net −1.8) from
+ * the superseded tally-bar wallet selection, which would otherwise dilute the 3-stage funnel's
+ * measurement.
+ */
+export function probeIdOf(src: DiscoverySource): string {
+  return src.probeId ?? sourceProbeId(src.id);
 }
 
 /** The shared OG control: identical ruleset on OG-discovered wallets. */
@@ -243,7 +287,7 @@ export function computeDiscoveryScorecard(db: Database.Database): unknown {
   // smart_copyable is exactly "wallets whose lead-buys can reach this probe".
   const sourceSets = refreshSourceSets(db);
   const rows = DISCOVERY_SOURCES.map((src) => {
-    const probe = probeStats(db, sourceProbeId(src.id));
+    const probe = probeStats(db, probeIdOf(src));
     const smart = sourceSets.get(src.id)?.size ?? 0;
     let verdict = 'COLLECTING';
     let verdict_detail = `n=${probe.n}/${SOURCE_PROBE_MIN_N}`;
@@ -261,7 +305,7 @@ export function computeDiscoveryScorecard(db: Database.Database): unknown {
       label: src.label,
       hypothesis: src.hypothesis,
       added: src.added,
-      probe_strategy: sourceProbeId(src.id),
+      probe_strategy: probeIdOf(src),
       funnel: { ...funnel(src.id), smart_copyable: smart },
       probe,
       verdict,

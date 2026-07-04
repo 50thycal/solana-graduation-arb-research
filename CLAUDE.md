@@ -123,6 +123,11 @@ bugs exist until `diagnose.json` says healthy.
   we find wallets" idea = one registry row + a harvester tagging `wallet_candidates.source`; the
   probe strategy, quarantine routing, and `discovery_scorecard` panel all derive from the
   registry. **Read `docs/discovery-playbook.md` before hand-wiring any new discovery pipeline.**
+- **`winner-sniper.ts` / `winner-prefilter.ts`** — the winner-sniper 3-stage discovery funnel
+  (operator thesis): label each graduation WIN/LOSS from its ~20-min price path, credit window
+  buyers only when they took PROFIT on that token, forward-watch bar-clearing wallets across all
+  of PumpSwap (own WS, hard-capped pre-filter), and promote only wallets that keep profiting on
+  OTHER tokens to the scorer — scoring then decides tradability.
 
 The shared low-level execution core stays in `src/trading/` (`executor`, `wallet`, `jito`,
 `pumpswap-swap`, `safety`, `buy-retry`, `sell-retry`, `config`, `pool-resolver`, `token-2022`).

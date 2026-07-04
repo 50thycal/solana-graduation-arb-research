@@ -1,6 +1,8 @@
 import Database from 'better-sqlite3';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { fetchVaultPrice } from '../trading/executor';
+import { parseSwapForOwner, swapTradersOf } from './parse-swap';
+import { enrollPrefilterWallet, getWinnerPrefilterSummary } from './winner-prefilter';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
 import { makeLogger } from '../utils/logger';
 
@@ -13,13 +15,24 @@ const logger = makeLogger('winner-sniper');
  * then hands them to the existing FIFO scorer.
  *
  * THE THESIS: "top tokens first": watch each graduation's price for its first ~20 minutes,
- * label it WIN/LOSS from the OBSERVED PATH (not a single endpoint), credit EVERY wallet that
+ * label it WIN/LOSS from the OBSERVED PATH (not a single endpoint), and credit the wallets that
  * bought it ANYWHERE in that window (operator 2026-07-03 — not just the 0-30s snipers: a wallet
- * that dips in at minute 9 of a winner is exactly as interesting), and rank wallets by winner-hit
- * PRECISION with a fast time decay. Buyers = the free 0-30s competition_signals UNION a capped
- * sample of pool-vault swap signers across the whole window. Profit itself is NOT judged here —
- * the FIFO scorer verifies real PnL on the shortlist; this source just POINTS scoring at wallets
- * that keep showing up on winners.
+ * that dips in at minute 9 of a winner is exactly as interesting). Buyers = the free 0-30s
+ * competition_signals UNION a capped sample of pool-vault swap signers across the whole window.
+ *
+ * PROFIT-CREDIT (operator 2026-07-04): a winner-hit is only credited when the wallet was
+ * PROFITABLE ON THAT TOKEN — mark-to-market from its observed window flows at the final observed
+ * path price (sells + remaining tokens × final − buys > profitEpsSol). Merely buying a token
+ * that won (and bag-holding the top) no longer counts. Appearances still count every buyer, so
+ * precision = profitable-winner-hits / appearances.
+ *
+ * THE FUNNEL (operator pipeline 2026-07-04 — "I can't listen to every swap"):
+ *   stage 1 (here): profitable-hit tally; clearing the bar (hits/precision/decayed score) does
+ *     NOT make a wallet tradable or scored — it earns a PRE-FILTER slot.
+ *   stage 2 (winner-prefilter.ts): the wallet is watched forward across ALL PumpSwap tokens;
+ *     only sustained profit on OTHER mints passes.
+ *   stage 3: pass → wallet_candidates(source='winner_sniper') → FIFO scorer → the relaxed
+ *     source gate decides tradability (discovery-sources.ts signalSet → copy-src-winner-sniper).
  *
  * OBSERVATION (operator-specified): one price check per minute for OBS_CHECKS minutes
  * (default 20 checks over T+1m..T+20m). A single T+30m snapshot misses the shape — a token
@@ -77,12 +90,12 @@ export const WINNER_SNIPER_CFG = {
   windowSigMaxPages: numEnv('WINNER_WINDOW_SIG_PAGES', 3),
   /** Decay half-life for the sniper score, hours. */
   halfLifeHours: numEnv('WINNER_SNIPER_HALFLIFE_H', 36),
-  /** Promotion bar: >= minHits winner-hits AND precision >= minPrecision AND decayed score >= minScore. */
+  /** Pre-filter entry bar: >= minHits PROFITABLE winner-hits AND precision >= minPrecision AND decayed score >= minScore. */
   minHits: numEnv('WINNER_SNIPER_MIN_HITS', 2),
   minPrecision: numEnv('WINNER_SNIPER_MIN_PRECISION', 0.25),
   minScore: numEnv('WINNER_SNIPER_MIN_SCORE', 0.5),
-  /** Max wallets in the SIGNAL SET (probe universe + follower watchlist) — bounds WS spend. */
-  watchCap: numEnv('WINNER_SNIPER_WATCH_CAP', 25),
+  /** A hit requires window MTM profit on the token above this (SOL) — filters dust/estimate noise. */
+  profitEpsSol: numEnv('WINNER_PROFIT_EPS_SOL', 0.01),
   /** Tick must match the check cadence (one observation pass per interval). */
   tickMs: numEnv('WINNER_SNIPER_TICK_MS', 60 * 1000),
 };
@@ -98,38 +111,6 @@ function decayed(score: number, lastUpdate: number, now: number): number {
   return score * Math.pow(2, -dtH / WINNER_SNIPER_CFG.halfLifeHours);
 }
 
-/**
- * The SIGNAL SET: wallets currently clearing the sniper bar (hits ≥ minHits, precision ≥
- * minPrecision, decayed score ≥ minScore), ranked by decayed score, capped at watchCap.
- *
- * This — not own-PnL FIFO profit — defines the winner_sniper probe universe (see the
- * `signalSet` registry override in discovery-sources.ts). The 2026-07-04 funnel audit showed
- * why the own-PnL gate starved the probe structurally: every scored multi-hit sniper had
- * drop3 ≤ 0.05 (e.g. the 6/6-precision top sniper sat at −5.4 own-PnL). The thesis is an
- * ENTRY-timing signal and the probe exits on its own TP100/SL30, so the lead's own realized
- * PnL (which includes THEIR exits) was testing a different hypothesis. The FIFO scorer still
- * runs on promoted candidates for reporting; it just no longer gates the probe.
- */
-export function getWinnerSniperSignalWallets(db: Database.Database, nowSec?: number): string[] {
-  const now = nowSec ?? Math.floor(Date.now() / 1000);
-  try {
-    return (db.prepare(`
-      SELECT address FROM winner_sniper_tally
-      WHERE winner_hits >= @minHits
-        AND winner_hits * 1.0 / MAX(1, appearances) >= @minPrec
-        AND score * POWER(2, -MAX(0, @now - last_update) / 3600.0 / @hl) >= @minScore
-      ORDER BY score * POWER(2, -MAX(0, @now - last_update) / 3600.0 / @hl) DESC
-      LIMIT @cap
-    `).all({
-      now, hl: WINNER_SNIPER_CFG.halfLifeHours,
-      minHits: WINNER_SNIPER_CFG.minHits, minPrec: WINNER_SNIPER_CFG.minPrecision,
-      minScore: WINNER_SNIPER_CFG.minScore, cap: WINNER_SNIPER_CFG.watchCap,
-    }) as Array<{ address: string }>).map((r) => r.address);
-  } catch {
-    return []; // tally table absent until the harvester first runs
-  }
-}
-
 interface ObsRow {
   graduation_id: number;
   mint: string;
@@ -139,6 +120,15 @@ interface ObsRow {
   grad_ts: number;
   n_checks: number;
   path_json: string;
+}
+
+/** One buyer's sampled window flows on the observed token (uiAmount token units). */
+interface BuyerFlow {
+  solIn: number;
+  solOut: number;
+  tokIn: number;
+  tokOut: number;
+  sawBuy: boolean;
 }
 
 export class WinnerSniperHarvester {
@@ -157,15 +147,44 @@ export class WinnerSniperHarvester {
       return;
     }
     this.ensureTables();
+    this.resetStaleTallyForProfitCredit();
     this.timer = setInterval(() => {
       this.tick().catch((err) => logger.warn('tick failed: %s', err instanceof Error ? err.message : String(err)));
     }, WINNER_SNIPER_CFG.tickMs);
     logger.info(
-      'WinnerSniperHarvester started: %d checks @ %ds from T+%ds, WIN = peak>=+%d%% & >=%d checks above, half-life %dh, promote at hits>=%d & precision>=%s',
+      'WinnerSniperHarvester started: %d checks @ %ds from T+%ds, WIN = peak>=+%d%% & >=%d checks above, half-life %dh, pre-filter at hits>=%d & precision>=%s',
       WINNER_SNIPER_CFG.obsChecks, WINNER_SNIPER_CFG.obsIntervalSec, WINNER_SNIPER_CFG.obsStartSec,
       WINNER_SNIPER_CFG.minRetPct, WINNER_SNIPER_CFG.minSustainChecks,
       WINNER_SNIPER_CFG.halfLifeHours, WINNER_SNIPER_CFG.minHits, WINNER_SNIPER_CFG.minPrecision,
     );
+  }
+
+  /**
+   * One-time tally reset (operator 2026-07-04). The pre-2026-07-04 tally credited a winner_hit
+   * for merely BUYING a winner (no profit check), so its counts/scores predate the profit-credit
+   * logic and would let a stale wallet enter the pre-filter on its next hit — diluting the fresh
+   * measurement. Clear the TALLY once (version-guarded so it runs exactly once, never on normal
+   * redeploys) so enrollment is driven purely by new profit-verified hits. Token labels + price
+   * paths (winner_labels) are KEPT for bar recalibration; in-flight winner_obs finalize cleanly
+   * under the new logic. Bounded, idempotent, best-effort.
+   */
+  private resetStaleTallyForProfitCredit(): void {
+    const VERSION = 'profit-credit-2026-07-04';
+    try {
+      const row = this.db.prepare(
+        `SELECT value FROM bot_settings WHERE key = 'winner_sniper_data_version'`,
+      ).get() as { value: string } | undefined;
+      if (row?.value === VERSION) return;
+      const n = (this.db.prepare(`SELECT COUNT(*) AS c FROM winner_sniper_tally`).get() as { c: number }).c;
+      this.db.exec(`DELETE FROM winner_sniper_tally`);
+      this.db.prepare(`
+        INSERT INTO bot_settings (key, value, updated_at) VALUES ('winner_sniper_data_version', ?, unixepoch())
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(VERSION);
+      if (n > 0) logger.info('reset %d stale tally rows for profit-credit logic (v%s) — fresh measurement start', n, VERSION);
+    } catch (err) {
+      logger.warn('tally reset failed (non-fatal): %s', err instanceof Error ? err.message : String(err));
+    }
   }
 
   stop(): void {
@@ -215,7 +234,6 @@ export class WinnerSniperHarvester {
     await this.enroll(now);
     await this.observe(now);
     await this.finalizeAndCredit(now);
-    this.promote(now);
     this.evict(now);
   }
 
@@ -296,11 +314,19 @@ export class WinnerSniperHarvester {
 
   /**
    * Fold completed observations into winner_labels and credit their buyers. For each finalizing
-   * graduation we gather the buyer set from the FULL observation window (operator 2026-07-03 —
+   * graduation we gather per-buyer FLOWS from the FULL observation window (operator 2026-07-03 —
    * ANY wallet that bought during the ~20min, not just the 0-30s snipers): the free 0-30s
    * competition_signals rows UNION a capped, strided sample of the pool-vault swap signatures
    * across the whole window. Both WINNERS and LOSERS credit their buyers (losers only bump the
-   * appearances denominator — that's what makes precision = winner_hits/appearances meaningful).
+   * appearances denominator — that's what makes precision meaningful).
+   *
+   * PROFIT-CREDIT (operator 2026-07-04): a winner_hit now requires the wallet to have been
+   * PROFITABLE ON THE TOKEN, marked-to-market at the final observed path price:
+   *   mtm = solOut + max(0, tokIn − tokOut) × finalPrice − solIn > profitEpsSol.
+   * Flows are sampled (fetch caps below), so a missed sell leaves tokens marked at the final
+   * price — an honest, unit-consistent screen (uiAmount tokens × SOL-per-uiToken), not an
+   * exact ledger. Wallets whose hit pushes them over the tally bar are enrolled into the
+   * stage-2 PRE-FILTER (winner-prefilter.ts) — NOT directly into the scorer.
    * The RPC (signature + parsed-tx reads) happens OUTSIDE the DB transaction; the write is one
    * sync tx. async because of the buyer capture.
    */
@@ -315,9 +341,11 @@ export class WinnerSniperHarvester {
     } catch { return; }
     if (!rows.length) return;
 
-    // Phase 1 (async, no DB tx held): compute each label + gather its full-window buyer set.
+    // Phase 1 (async, no DB tx held): compute each label + gather per-buyer window flows,
+    // then decide each buyer's hit from their MTM profit at the final observed price.
     const prepared: Array<{
-      row: ObsRow; peak: number; ttp: number; sustained: number; final: number; win: number; buyers: string[];
+      row: ObsRow; peak: number; ttp: number; sustained: number; final: number; win: number;
+      credited: Array<{ a: string; hit: number }>;
     }> = [];
     for (const r of rows) {
       let path: Array<{ s: number; r: number }> = [];
@@ -329,8 +357,16 @@ export class WinnerSniperHarvester {
       const sustained = path.filter((p) => p.r >= WINNER_SNIPER_CFG.minRetPct).length;
       const final = path.length ? path[path.length - 1].r : 0;
       const win = peak >= WINNER_SNIPER_CFG.minRetPct && sustained >= WINNER_SNIPER_CFG.minSustainChecks ? 1 : 0;
-      const buyers = await this.gatherWindowBuyers(r, now);
-      prepared.push({ row: r, peak, ttp, sustained, final, win, buyers });
+      const flows = await this.gatherWindowBuyerFlows(r, now);
+      const finalPrice = r.open_price_sol * (1 + final / 100);
+      const credited: Array<{ a: string; hit: number }> = [];
+      for (const [addr, f] of flows) {
+        if (!f.sawBuy) continue; // sell-only wallets aren't "buyers" — no appearance
+        const mtm = f.solOut + Math.max(0, f.tokIn - f.tokOut) * finalPrice - f.solIn;
+        const hit = win === 1 && mtm > WINNER_SNIPER_CFG.profitEpsSol ? 1 : 0;
+        credited.push({ a: addr, hit });
+      }
+      prepared.push({ row: r, peak, ttp, sustained, final, win, credited });
     }
 
     // Phase 2 (sync tx): write labels, credit distinct buyers, drop the obs rows.
@@ -360,8 +396,8 @@ export class WinnerSniperHarvester {
           checks: (() => { try { return JSON.parse(p.row.path_json).length; } catch { return 0; } })(),
           path: p.row.path_json, win: p.win,
         });
-        for (const w of p.buyers) {
-          upsert.run({ a: w, hit: p.win, now, hl: WINNER_SNIPER_CFG.halfLifeHours });
+        for (const c of p.credited) {
+          upsert.run({ a: c.a, hit: c.hit, now, hl: WINNER_SNIPER_CFG.halfLifeHours });
         }
         del.run(p.row.graduation_id);
         labeled += 1; winners += p.win;
@@ -372,26 +408,76 @@ export class WinnerSniperHarvester {
       return;
     }
     if (labeled) logger.info('labeled %d graduations (%d winners) from observed paths', labeled, winners);
+
+    // Stage-2 hand-off: wallets whose PROFITABLE hit puts them over the tally bar earn a
+    // pre-filter slot (winner-prefilter.ts watches them forward; it — not this module —
+    // promotes to the scorer). Read-after-commit so the bar sees the fresh tally.
+    const tallyGet = this.db.prepare(
+      `SELECT appearances, winner_hits, score, last_update FROM winner_sniper_tally WHERE address = ?`,
+    );
+    let enrolled = 0;
+    for (const p of prepared) {
+      for (const c of p.credited) {
+        if (!c.hit) continue;
+        const t = tallyGet.get(c.a) as { appearances: number; winner_hits: number; score: number; last_update: number } | undefined;
+        if (!t) continue;
+        if (t.winner_hits < WINNER_SNIPER_CFG.minHits) continue;
+        if (t.winner_hits / Math.max(1, t.appearances) < WINNER_SNIPER_CFG.minPrecision) continue;
+        if (decayed(t.score, t.last_update, now) < WINNER_SNIPER_CFG.minScore) continue;
+        try {
+          const res = enrollPrefilterWallet(this.db, c.a, p.row.mint, now);
+          if (res === 'enrolled') enrolled += 1;
+        } catch (err) {
+          logger.warn('prefilter enroll failed for %s: %s', c.a.slice(0, 8), err instanceof Error ? err.message : String(err));
+        }
+      }
+    }
+    if (enrolled) logger.info('enrolled %d wallets into the stage-2 pre-filter', enrolled);
   }
 
   /**
-   * Distinct buyers of a graduation across its FULL observation window: the free 0-30s
-   * competition_signals rows UNION a capped, strided sample of pool-vault swap signers. Capped
-   * at creditCap distinct wallets and windowFetchCap parsed-tx reads (droppable tier).
+   * Per-buyer window FLOWS for a graduation across its FULL observation window:
+   *   - the free 0-30s competition_signals buys (entry tokens ESTIMATED at the open price —
+   *     first-30s fills are ≈ the open; their later sells are picked up by the vault sample);
+   *   - a capped, strided sample of pool-vault swaps parsed properly (parseSwapForOwner:
+   *     buys AND sells, SOL + token legs, this mint only).
+   * Capped at creditCap distinct wallets and windowFetchCap parsed-tx reads (droppable tier).
+   * Sampling means flows are a partial view — the MTM credit in finalizeAndCredit treats them
+   * as a screen, not a ledger.
    */
-  private async gatherWindowBuyers(r: ObsRow, now: number): Promise<string[]> {
-    const buyers = new Set<string>();
-    // Free: the 0-30s early buyers already captured at detection (non-bot).
+  private async gatherWindowBuyerFlows(r: ObsRow, now: number): Promise<Map<string, BuyerFlow>> {
+    const flows = new Map<string, BuyerFlow>();
+    const flowOf = (w: string): BuyerFlow | null => {
+      let f = flows.get(w);
+      if (!f) {
+        if (flows.size >= WINNER_SNIPER_CFG.creditCap) return null; // cap distinct wallets
+        f = { solIn: 0, solOut: 0, tokIn: 0, tokOut: 0, sawBuy: false };
+        flows.set(w, f);
+      }
+      return f;
+    };
+
+    // Free: the 0-30s early buyers already captured at detection (non-bot), with SOL sizes.
     try {
       const early = this.db.prepare(`
-        SELECT DISTINCT wallet_address AS w FROM competition_signals
+        SELECT wallet_address AS w, SUM(COALESCE(amount_sol, 0)) AS sol
+        FROM competition_signals
         WHERE graduation_id = ? AND action = 'buy' AND wallet_address IS NOT NULL
           AND COALESCE(is_likely_bot, 0) = 0
-      `).all(r.graduation_id) as Array<{ w: string }>;
-      for (const e of early) buyers.add(e.w);
+        GROUP BY wallet_address
+      `).all(r.graduation_id) as Array<{ w: string; sol: number }>;
+      for (const e of early) {
+        const f = flowOf(e.w);
+        if (!f) break;
+        f.sawBuy = true;
+        if (e.sol > 0 && r.open_price_sol > 0) {
+          f.solIn += e.sol;
+          f.tokIn += e.sol / r.open_price_sol; // entry ≈ open in the first 30s
+        }
+      }
     } catch { /* competition_signals may be empty */ }
 
-    // Paid: sample swap signers across the full window off the base-vault signatures.
+    // Paid: sample swaps across the full window off the base-vault signatures.
     const conn = this.getConnection();
     if (conn) {
       const windowEnd = r.grad_ts + obsWindowEndSec();
@@ -416,7 +502,7 @@ export class WinnerSniperHarvester {
       if (inWindow.length) {
         const stride = Math.max(1, Math.floor(inWindow.length / WINNER_SNIPER_CFG.windowFetchCap));
         let fetched = 0;
-        for (let i = 0; i < inWindow.length && fetched < WINNER_SNIPER_CFG.windowFetchCap && buyers.size < WINNER_SNIPER_CFG.creditCap; i += stride) {
+        for (let i = 0; i < inWindow.length && fetched < WINNER_SNIPER_CFG.windowFetchCap; i += stride) {
           if (!(await globalRpcLimiter.throttleOrDrop(8, 'winner_buyers'))) break;
           fetched += 1;
           try {
@@ -424,45 +510,26 @@ export class WinnerSniperHarvester {
               commitment: 'confirmed', maxSupportedTransactionVersion: 0,
             });
             if (!tx || !tx.meta || tx.meta.err) continue;
-            const keys = tx.transaction.message.accountKeys;
-            const signer = typeof keys[0] === 'string' ? keys[0] : (keys[0] as { pubkey: PublicKey }).pubkey.toBase58();
-            const solChange = (tx.meta.postBalances[0] - tx.meta.preBalances[0]) / 1_000_000_000;
-            if (solChange < -0.01) buyers.add(signer); // net SOL out = a buy
+            for (const owner of swapTradersOf(tx)) {
+              const swap = parseSwapForOwner(tx, owner);
+              if (!swap || swap.mint !== r.mint) continue; // this graduation's token only
+              const f = flowOf(owner);
+              if (!f) continue; // at wallet cap — existing wallets still accumulate
+              if (swap.action === 'buy') {
+                f.sawBuy = true;
+                f.solIn += Math.abs(swap.solDelta);
+                f.tokIn += Math.abs(swap.tokenDelta);
+              } else {
+                f.solOut += Math.abs(swap.solDelta);
+                f.tokOut += Math.abs(swap.tokenDelta);
+              }
+            }
           } catch { /* skip unparseable tx */ }
         }
       }
     }
 
-    // Cap distinct buyers written per graduation.
-    return [...buyers].slice(0, WINNER_SNIPER_CFG.creditCap);
-  }
-
-  /** Promote wallets clearing the precision + decayed-score bar into the scorer's queue. */
-  private promote(now: number): void {
-    try {
-      const rows = this.db.prepare(`
-        SELECT t.address, t.appearances, t.winner_hits, t.score, t.last_update
-        FROM winner_sniper_tally t
-        LEFT JOIN wallet_candidates wc ON wc.address = t.address
-        WHERE wc.address IS NULL AND t.winner_hits >= @minHits
-      `).all({ minHits: WINNER_SNIPER_CFG.minHits }) as Array<{
-        address: string; appearances: number; winner_hits: number; score: number; last_update: number;
-      }>;
-      const insert = this.db.prepare(
-        `INSERT OR IGNORE INTO wallet_candidates (address, first_seen, source) VALUES (?, ?, 'winner_sniper')`,
-      );
-      let promoted = 0;
-      for (const r of rows) {
-        const precision = r.winner_hits / Math.max(1, r.appearances);
-        if (precision < WINNER_SNIPER_CFG.minPrecision) continue;
-        if (decayed(r.score, r.last_update, now) < WINNER_SNIPER_CFG.minScore) continue;
-        insert.run(r.address, now);
-        promoted += 1;
-      }
-      if (promoted) logger.info('promoted %d winner-sniper wallets to the scorer', promoted);
-    } catch (err) {
-      logger.warn('promote failed: %s', err instanceof Error ? err.message : String(err));
-    }
+    return flows;
   }
 
   /** Bound the tally: drop wallets whose decayed score is dust and last hit is old. */
@@ -513,16 +580,17 @@ export function getWinnerSniperSummary(db: Database.Database): unknown {
       }));
     return {
       note:
-        'Winner-sniper discovery (operator thesis 2026-07-02, path observation 2026-07-03): watch each ' +
+        'Winner-sniper discovery (operator thesis 2026-07-02; 3-stage funnel 2026-07-04): watch each ' +
         `graduation ${WINNER_SNIPER_CFG.obsChecks}x @ ${WINNER_SNIPER_CFG.obsIntervalSec}s from T+${WINNER_SNIPER_CFG.obsStartSec}s; ` +
         `WIN = peak >= +${WINNER_SNIPER_CFG.minRetPct}% AND >= ${WINNER_SNIPER_CFG.minSustainChecks} checks above the bar. ` +
-        'Credit EVERY buyer across the full window (0-30s competition_signals UNION sampled pool-vault swap signers), rank by winner-hit precision with a ' +
-        `${WINNER_SNIPER_CFG.halfLifeHours}h half-life. Promotion bar: hits>=${WINNER_SNIPER_CFG.minHits}, ` +
-        `precision>=${WINNER_SNIPER_CFG.minPrecision}, decayed score>=${WINNER_SNIPER_CFG.minScore}. ` +
-        'The SIGNAL SET (bar-clearing wallets, capped) IS the probe universe since 2026-07-04 — own-PnL no longer gates it. ' +
+        'A winner_hit is credited ONLY when the buyer was MTM-PROFITABLE on the token at the final observed price ' +
+        `(> ${WINNER_SNIPER_CFG.profitEpsSol} SOL); appearances count every sampled buyer, so precision = profitable hits / appearances, ` +
+        `decayed with a ${WINNER_SNIPER_CFG.halfLifeHours}h half-life. Tally bar (hits>=${WINNER_SNIPER_CFG.minHits}, ` +
+        `precision>=${WINNER_SNIPER_CFG.minPrecision}, decayed score>=${WINNER_SNIPER_CFG.minScore}) earns a stage-2 PRE-FILTER slot ` +
+        '(see prefilter below) — passing THAT promotes to the FIFO scorer, and the relaxed source gate decides tradability. ' +
         'Probe P&L + verdict live in discovery_scorecard (source=winner_sniper).',
       config: WINNER_SNIPER_CFG,
-      signal_set_size: getWinnerSniperSignalWallets(db, now).length,
+      prefilter: getWinnerPrefilterSummary(db),
       observing_now: obs.n,
       observing_avg_checks: +obs.avg_checks.toFixed(1),
       graduations_labeled: labels.n,
