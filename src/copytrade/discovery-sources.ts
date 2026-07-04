@@ -76,8 +76,8 @@ export const DISCOVERY_SOURCES: DiscoverySource[] = [
   },
   {
     id: 'winner_sniper',
-    label: 'Winner-sniper precision (operator thesis, S2+S3)',
-    hypothesis: 'Wallets that repeatedly early-buy (0-30s) the graduations that go on to win at T+30m — ranked by winner-hit precision with a 36h-half-life decay — copy better than OG. Entry edge with runway should survive the 5s lag.',
+    label: 'Winner-sniper precision (operator thesis, 3-stage funnel)',
+    hypothesis: '3-stage funnel to find repeatedly-profitable early buyers: (1) credit a wallet only if it took PROFIT buying a graduation that went on to win its ~20-min price path; (2) forward-watch bar-clearers across ALL PumpSwap and keep only those that stay profitable on OTHER tokens; (3) score the survivors — scoring decides tradability. Copies these vs OG.',
     added: '2026-07-02',
     // Fresh measurement series (operator 2026-07-04): the old copy-src-winner-sniper id carried
     // 109 trades (net −1.8) from the superseded tally-bar selection — retire it, measure the
