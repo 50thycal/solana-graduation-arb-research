@@ -1,13 +1,64 @@
 # ops request: type='db'
-# WITH t AS ( SELECT ct.net_sol, ct.entry_ts, ct.exit_reason, ct.lead_wallet, ct.hold_sec, CASE WHEN ct.entry_price_sol>0 AND ct.high_price_sol IS NOT NULL THEN 100.0*(ct.high_price_sol/ct.entry_price_sol-1.0) END mfe FROM copy_trades ct JOIN graduations g ON g.id = (SELECT MAX(g2.id) FROM graduations g2 WHERE g2.mint = ct.mint) WHERE ct.status='closed' AND ct.net_sol IS NOT NULL AND ct.strategy_id='copy-hotlead-strict' AND ct.entry_drift_pct <= 0 AND ct.entry_ts - COALESCE(g.migration_timestamp, g.timestamp) < 900 ), b AS (SELECT (MIN(entry_ts)+MAX(entry_ts))/2 mid FROM t), f AS (SELECT t.*, CASE WHEN entry_ts < (SELECT mid FROM b) THEN 1 ELSE 2 END half FROM t) SELECT 'exit_'||exit_reason k, half, COUNT(*) n, ROUND(SUM(net_sol),2) net, ROUND(AVG(net_sol),4) avg_net, ROUND(AVG(mfe),1) avg_mfe, SUM(mfe>=50) mfe50, SUM(mfe>=100) mfe100, ROUND(AVG(hold_sec),0) avg_hold FROM f GROUP BY exit_reason, half UNION ALL SELECT 'leads', half, COUNT(DISTINCT lead_wallet), NULL, NULL, NULL, NULL, NULL, NULL FROM f GROUP BY half ORDER BY k, half
-  k                 | half | n  | net    | avg_net | avg_mfe | mfe50 | mfe100 | avg_hold
-  ------------------+------+----+--------+---------+---------+-------+--------+---------
-  exit_max_hold_cap | 1    | 4  | -0.2   | -0.0503 | 10.3    | 0     | 0      | 58012   
-  exit_max_hold_cap | 2    | 2  | -0.16  | -0.0776 | 33.3    | 1     | 0      | 28815   
-  exit_stop_loss    | 1    | 41 | -9.94  | -0.2424 | 30.1    | 11    | 0      | 4099    
-  exit_stop_loss    | 2    | 48 | -12.98 | -0.2703 | 21.5    | 8     | 0      | 749     
-  exit_take_profit  | 1    | 36 | 23.85  | 0.6625  | 135.5   | 36    | 36     | 823     
-  exit_take_profit  | 2    | 30 | 18.39  | 0.6131  | 125.6   | 30    | 30     | 2918    
-  leads             | 1    | 25 |        |         |         |       |        |         
-  leads             | 2    | 29 |        |         |         |       |        |         
-  [8 rows]
+# SELECT 'funnel' AS panel, wc.source AS a, COUNT(*) AS b, SUM(CASE WHEN ws.address IS NOT NULL THEN 1 ELSE 0 END) AS c, SUM(CASE WHEN wc.last_refreshed IS NULL THEN 1 ELSE 0 END) AS d, SUM(CASE WHEN wc.priority IS NOT NULL THEN 1 ELSE 0 END) AS e, NULL AS f, NULL AS g FROM wallet_candidates wc LEFT JOIN wallet_scores ws ON ws.address = wc.address GROUP BY wc.source UNION ALL SELECT 'srcsmart', wc.source, ws.address, ROUND(ws.total_realized_sol_drop_top3,2), ROUND(COALESCE(ws.monthly_run_rate_sol,0),2), ROUND(COALESCE(ws.avg_hold_sec,0)), ROUND((strftime('%s','now') - COALESCE(ws.last_active, 0))/86400.0, 1), ws.n_round_trips FROM wallet_scores ws JOIN wallet_candidates wc ON wc.address = ws.address WHERE wc.source IN ('live_tape','external','winner_sniper') AND ws.total_realized_sol_drop_top3 > 0 AND COALESCE(ws.avg_hold_sec,0) >= 30 AND COALESCE(ws.win_rate,1) <= 0.95 AND COALESCE(json_extract(ws.venues_json,'$.pumpswap'),0)*1.0/NULLIF((SELECT SUM(value) FROM json_each(ws.venues_json)),0) >= 0.5 UNION ALL SELECT 'sniper21', t.address, t.appearances, t.winner_hits, COALESCE(wc.source,'NONE'), CASE WHEN ws.address IS NOT NULL THEN 1 ELSE 0 END, ROUND(COALESCE(ws.total_realized_sol_drop_top3,-999),2), ROUND(t.score,2) FROM winner_sniper_tally t LEFT JOIN wallet_candidates wc ON wc.address = t.address LEFT JOIN wallet_scores ws ON ws.address = t.address WHERE t.winner_hits >= 2 UNION ALL SELECT 'wsc', wc.address, wc.priority, wc.first_seen, COALESCE(wc.last_refreshed,0), COALESCE(ws.n_round_trips,-1), ROUND(COALESCE(ws.total_realized_sol,-999),2), ROUND(COALESCE(ws.total_realized_sol_drop_top3,-999),2) FROM wallet_candidates wc LEFT JOIN wallet_scores ws ON ws.address = wc.address WHERE wc.source = 'winner_sniper' ORDER BY panel, a
+  panel    | a                                            | b                                            | c          | d                  | e      | f      | g    
+  ---------+----------------------------------------------+----------------------------------------------+------------+--------------------+--------+--------+------
+  funnel   | competition_signal                           | 59252                                        | 4927       | 54325              | 59252  |        |      
+  funnel   | creator_wallet                               | 11094                                        | 0          | 11094              | 63     |        |      
+  funnel   | dev_wallet                                   | 9889                                         | 2          | 9887               | 103    |        |      
+  funnel   | external                                     | 172                                          | 172        | 0                  | 172    |        |      
+  funnel   | live_tape                                    | 1518                                         | 409        | 1109               | 1518   |        |      
+  funnel   | winner_sniper                                | 7                                            | 1          | 6                  | 1      |        |      
+  sniper21 | 3ArHvdGs1v9gdwNEMRJihHfRUnwfFkYjtzcdSBD3cDdJ | 2                                            | 2          | winner_sniper      | 0      | -999   | 1.9  
+  sniper21 | 3MFpkd7S9MCRWTgK81mLsJm2poswYUaq8wEXgtjxm76b | 2                                            | 2          | winner_sniper      | 0      | -999   | 1.97 
+  sniper21 | 4jkL4dNkY2UbpYrTgLA3u5FqKwKs1LM46RcE6FQU3qXi | 4                                            | 2          | competition_signal | 1      | 0.05   | 1.83 
+  sniper21 | 5RME5T4HbAY46vHycfqP6Xg38YbDLKfyLzGufrPFLaME | 2                                            | 2          | competition_signal | 0      | -999   | 1.96 
+  sniper21 | 5dK2RTePJn8Qvw8WQ5VVS34pxvaKuYZqdKRvrSxF67mf | 3                                            | 2          | competition_signal | 1      | -0.24  | 1.88 
+  sniper21 | 78RbMEKg7GL3PVXScz8TV6WdyHmrxovEmNUc97iGPPAm | 2                                            | 2          | competition_signal | 0      | -999   | 1.91 
+  sniper21 | 7j2ASgXPpEs4jgW4i8gHAqtb2yUHvAFa1P9DjVCZQKSn | 3                                            | 3          | competition_signal | 1      | 0      | 2.82 
+  sniper21 | 7rbxsXchaL1Jz46BXbF88k1hBYoWHLaKo8YbofMndW46 | 4                                            | 3          | competition_signal | 1      | -0.48  | 2.87 
+  sniper21 | 95TWoKkvv2z85EXBzd2z6NwbxH2f54AvwuCA9x3NoKep | 2                                            | 2          | winner_sniper      | 0      | -999   | 2    
+  sniper21 | 9PepJaHtErQZZvsswhUorkMxa9YH7xUv1p4h4HobdaB9 | 2                                            | 2          | competition_signal | 1      | -0.71  | 1.9  
+  sniper21 | ATRUvvLniY27bLzZCxxY5gLejuHht4WvcmS5b3TzyjFg | 2                                            | 2          | winner_sniper      | 0      | -999   | 1.83 
+  sniper21 | AnXYkS8hERgxtNMGjujvsYa5CiPcjNQu12n1r3RdThA5 | 3                                            | 2          | competition_signal | 0      | -999   | 1.92 
+  sniper21 | B4YtxPcdpKeaMxPkTKsWWrvvvsYq4z7Paf5PKhYVLt4n | 2                                            | 2          | competition_signal | 0      | -999   | 1.98 
+  sniper21 | C4eNLxxC7XLUivghMi35YUeSfvACgnvKB18115uPUqjg | 6                                            | 3          | competition_signal | 1      | -13.88 | 2.79 
+  sniper21 | CLc4oLuR5TYFEpuJRXCc8PpWdj7FLVwExffqEFA3MYT8 | 2                                            | 2          | winner_sniper      | 0      | -999   | 1.98 
+  sniper21 | CmtfUw2kuNWER9dT2or2CbEbEXC9bV6oq3m6cEqfspGW | 2                                            | 2          | winner_sniper      | 0      | -999   | 1.87 
+  sniper21 | CtZgfp8otoYwcEJXkwoMBBrVfsBKvEo4dR4ShXECRN3g | 2                                            | 2          | competition_signal | 0      | -999   | 1.99 
+  sniper21 | DzHkpjvbdWtYKeYnfUmVfcn6C9QBrFMr5RB9njb7TM65 | 2                                            | 2          | winner_sniper      | 1      | -1.01  | 1.9  
+  sniper21 | HGX7UUFYW5y2tqp4b8sXTYw21hkNKVwaQokTNYZdJTjL | 2                                            | 2          | competition_signal | 0      | -999   | 1.95 
+  sniper21 | NULLioEUhd89Jo5Acm9sX88bwjNjrsAVy6KWkXD7qZh  | 6                                            | 6          | competition_signal | 1      | -5.42  | 5.62 
+  sniper21 | kEFiAX3jo5NmemysQov342TZ9mGh6yp92GDRjhA8XDf  | 3                                            | 2          | competition_signal | 1      | -4.9   | 1.72 
+  srcsmart | external                                     | CUfPM7nEPGtisfn42xvVJGbMajhpmxX6oKuQrSLZ7b1i | 21.52      | 0                  | 1599   | 2.4    | 111  
+  srcsmart | external                                     | 3cJ3hZcKFoFRHarqHJqDoPbF7kusMtcwbTtfMGB4GURd | 4691.69    | 0                  | 9004   | 2.4    | 676  
+  srcsmart | external                                     | 2o6RjC2uhNxfGNauJsYvXbnE1mtxbQdM6r58btYtjaq7 | 0.11       | 0.87               | 6731   | 4.3    | 17   
+  srcsmart | external                                     | 79oTovwUKwx4Ht9QDXotMRkXF1MKz8ET9QoSpR3sTp4h | 3.33       | 0                  | 587    | 2.1    | 127  
+  srcsmart | external                                     | 53mXoBuWXv9NahogwpK3psArrPRPRkgiciYMjGRfgSfX | 24.75      | 0                  | 3996   | 2.8    | 136  
+  srcsmart | external                                     | 6ZFxtZE36qG1QvXFw7uVtioesFdEeuBBEbXmUCLkesLE | 1.27       | 0                  | 11808  | 2.5    | 19   
+  srcsmart | external                                     | HuprK8bQotzXGu5WBuvygNSg17DSwPm3Kpjmfd3quBfA | 66.86      | 0                  | 19172  | 3.4    | 103  
+  srcsmart | external                                     | J9xeWCcXADj7JUsxXcfUd5A8fvnxewRFkbRg2UbUJLdQ | 2.3        | 9.42               | 100195 | 0.8    | 59   
+  srcsmart | external                                     | 8RK9AoNBghySH1QqUaGuxrmoj4u1Xgxqzpc4NbuGFQna | 36.74      | 0                  | 19063  | 3.4    | 102  
+  srcsmart | external                                     | 7euBNQgMhTx9KVnrhPaH3T9Xd6XPtYz7xMbxiNHQA9ZZ | 150.2      | 0                  | 522    | 24.6   | 1353 
+  srcsmart | external                                     | 6C24hcFFLTSf1f6h6j5mVJBFXMWwPVNxYo7CSbPGyhL9 | 131.98     | 0                  | 762    | 1.1    | 105  
+  srcsmart | external                                     | Bwrf3wRWibpNcoV9aFTQVrC85WZWVBqW9mRwB7w6JHgF | 43.83      | 0                  | 406    | 1.1    | 117  
+  srcsmart | live_tape                                    | 9fcMp3GNGnd3qTn4krE399UYEsUNfkVsXQvo8np47NGW | 0.01       | 0                  | 3987   | 4.3    | 35   
+  srcsmart | live_tape                                    | 2qaDT1Cpsss3GHVTGxmgUzFuBuW4y962x2oGZx8nPoTN | 0.02       | 0                  | 680    | 4.3    | 72   
+  srcsmart | live_tape                                    | 7X1mDvidq88Gy98foSnFQagDuskd9RgHsSAwPgP8b4MY | 0.46       | 0                  | 6931   | 4.3    | 22   
+  srcsmart | live_tape                                    | dmuXAmcXJcdNuK264vsJQNBpVBPAx4JLujBzBMahJ6C  | 1.26       | 0                  | 3862   | 4.3    | 28   
+  srcsmart | live_tape                                    | 3q1815j6UC4NXzPqPr9ZACYtFehsePd2t83pxRsna41X | 0.01       | 0                  | 3483   | 4.3    | 25   
+  srcsmart | live_tape                                    | AgTM7bcPQo2kkru8o2igeiwbAjJY2bubEHHZUQPRhyqG | 1.38       | 0                  | 2453   | 4      | 19   
+  srcsmart | live_tape                                    | EGaQ32XG2tysbaW3URoxT3ggSRtT6dh183UerJPnY69n | 0.09       | 0                  | 2552   | 4      | 28   
+  srcsmart | live_tape                                    | CuTgJYbTjfYiMBM6y3zKXoiwWDHUn1PSyaP855W2v4Ky | 0.14       | 0                  | 866    | 4      | 15   
+  srcsmart | live_tape                                    | 8fCBbZrTXSb1kRAUECkFAFKesj9BQ7ShVGnpPVVACLHr | 0.12       | 0                  | 324    | 3.1    | 102  
+  srcsmart | live_tape                                    | BzgAZaQrCCDFwSAenKtonaKrXguKzdetspqpMyHjRcnV | 1.52       | 0                  | 145    | 0.1    | 261  
+  srcsmart | live_tape                                    | EhgejSnHLzbur5ELSBenJvGemQyXmrqYnBXnnMTT2sxj | 22.08      | 0                  | 213    | 0.1    | 247  
+  srcsmart | live_tape                                    | 76G1FjAj1rjov7H4oZvNgXTxouXtYdkBPFTvusE6dR63 | 3.71       | 0                  | 69     | 0.1    | 268  
+  srcsmart | live_tape                                    | CkcMJ9iK1ceNSGAbkVtrcRK83ijbY2ke7uVRZh6yf7af | 5.84       | 0                  | 39     | 0.1    | 233  
+  wsc      | 3ArHvdGs1v9gdwNEMRJihHfRUnwfFkYjtzcdSBD3cDdJ |                                              | 1783121773 | 0                  | -1     | -999   | -999 
+  wsc      | 3MFpkd7S9MCRWTgK81mLsJm2poswYUaq8wEXgtjxm76b |                                              | 1783128254 | 0                  | -1     | -999   | -999 
+  wsc      | 95TWoKkvv2z85EXBzd2z6NwbxH2f54AvwuCA9x3NoKep |                                              | 1783122493 | 0                  | -1     | -999   | -999 
+  wsc      | ATRUvvLniY27bLzZCxxY5gLejuHht4WvcmS5b3TzyjFg |                                              | 1783126394 | 0                  | -1     | -999   | -999 
+  wsc      | CLc4oLuR5TYFEpuJRXCc8PpWdj7FLVwExffqEFA3MYT8 |                                              | 1783126394 | 0                  | -1     | -999   | -999 
+  wsc      | CmtfUw2kuNWER9dT2or2CbEbEXC9bV6oq3m6cEqfspGW |                                              | 1783125734 | 0                  | -1     | -999   | -999 
+  wsc      | DzHkpjvbdWtYKeYnfUmVfcn6C9QBrFMr5RB9njb7TM65 | 1390                                         | 1783107263 | 1783111818         | 119    | -0.72  | -1.01
+  [59 rows]
