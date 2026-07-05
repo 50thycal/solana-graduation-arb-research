@@ -11,6 +11,76 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-07-05 — Daily review: overnight operator-approved roster prune (hold30m + xbad retired, live_tape dropped, winner-sniper reset to v2) coincides with the sharpest regime drop in weeks (7→3) and a confirmed hard down-day, as copy-hotlead-strict's cushion erodes for the first time since 07-03's recovery began
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-07-05",
+  "overall": {"n": 6043, "net": -28.9131, "drop3": -43.0593, "stress": -90.5784, "open": 19},
+  "retired_summary": {"n": 24790, "net": -206.6032},
+  "regime_score": 3, "regime_24h": 5, "macro_score": 6, "btc_7d_pct": 6.03,
+  "book_daily_today": -4.13,
+  "leads": {"n_leads": 169, "hot": 53, "cold": 79},
+  "n_promotable_realistic": 1,
+  "strategies": [
+    {"id": "copy-hotlead-strict",         "realistic": true,  "n": 706,  "net": 10.764, "drop3":  4.181, "stress":  3.276, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict-hi",      "realistic": true,  "n":  56,  "net":  3.068, "drop3":  0.989, "stress":  2.430, "promo_score":  78.6,"verdict": "WATCH"},
+    {"id": "copy-src-external",           "realistic": true,  "n":   2,  "net":  0.561, "drop3":  0,     "stress":  0.529, "promo_score":  40.7,"verdict": "WATCH"},
+    {"id": "copy-tp100-sl30-lag",         "realistic": true,  "n": 717,  "net":-21.648, "drop3":-26.496, "stress":-28.600, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-fable-freshdip",         "realistic": true,  "n":  10,  "net": -1.223, "drop3": -1.380, "stress": -1.301, "promo_score":  22,  "verdict": "WATCH"},
+    {"id": "copy-src-winner-sniper-v2",   "realistic": true,  "n":   0,  "net":  0,     "drop3":  0,     "stress":  0,     "promo_score":  20,  "verdict": "WATCH"},
+    {"id": "copy-conviction-consensus2",  "realistic": false, "n":1378,  "net": 11.503, "drop3": -1.283, "stress": -2.921, "promo_score":  35,  "verdict": "KEEP"},
+    {"id": "copy-tp100-sl30",            "realistic": false, "n":3174,  "net":-31.937, "drop3":-38.494, "stress":-63.991, "promo_score":  20,  "verdict": "KEEP"}
+  ]
+}
+```
+
+**Headline:** Overnight the operator enacted a roster prune (`6da2ff5`: retire `copy-hotlead-hold30m` + `copy-hotlead-strict-xbad`, prune the `live_tape` discovery source; `d5e8171`: reset `copy-src-winner-sniper` to a clean-funnel `-v2`) — coinciding with the sharpest regime-score drop in weeks (7→3, "weak" band) and a confirmed hard down-day, as `copy-hotlead-strict`'s promotion cushion eroded for the first time since the 07-03 recovery began.
+
+**Day-over-day (vs 2026-07-04 SNAPSHOT):**
+- **Roster prune enacted, both pending kills plus two housekeeping drops.** `copy-hotlead-hold30m` (this journal's carried-over KILL since 07-03) is gone; so are `copy-hotlead-strict-xbad` (n=28, drop3 had just flipped negative) and `copy-src-live-tape` (n=3, discovery funnel just found wallets yesterday — pruned anyway per commit `6da2ff5`, labeled U1/U4/U6 operator-approved). `retired_summary` grew n 23430→24790 (+1360) and net −225.15→**−206.60** (+18.55), consistent with folding in `hold30m`'s large positive net. `copy-src-winner-sniper` (n=57, unfavorable early read flagged yesterday) was replaced with a fresh **`copy-src-winner-sniper-v2`** (n=0, commit `d5e8171` — "clean funnel measurement," gating on the winner-sniper discovery signal rather than its own P&L this time).
+- **`copy-hotlead-strict` cushion eroded sharply — first reversal since the 07-03 recovery began.** net 12.907→**10.764** (−2.14), drop3 6.324→**4.181** (−2.14), stress 5.583→**3.276** (−2.31) on 20 new trades. This breaks the 2-day growth streak (07-03→07-04) and is the largest single-day erosion since the historic-drawdown stretch in late June. All gates still clear comfortably (drop3, stress both solidly positive, monthly run-rate 23.06 SOL/mo) — **9th consecutive promotable day** — but this is the second erosion episode in two weeks and worth a close look tomorrow given today's regime backdrop.
+- **`copy-hotlead-strict-hi` softened in step.** n 48→56 (+8), net 3.414→3.068 (−0.35), drop3 1.335→0.989 (−0.35), stress 2.851→2.430 (−0.42). Promo score fell 81.3→78.6 (−2.7) — the surge flagged yesterday paused; still under n=100.
+- **`copy-tp100-sl30-lag` KILL proposal reconfirmed, still unenacted, deteriorating for well over a week straight.** net −19.317→**−21.648** (−2.33), drop3 −24.164→**−26.496** (−2.33), stress −25.522→**−28.600** (−3.08) on 77 new trades. Every metric worse again today. Its `paired_vs_baseline` delta is a small positive (+1.09 SOL / +0.004 per event over 263 shared events with the idealized baseline) — the 5s-lag mechanism itself isn't the main driver of the loss, the underlying tp100/sl30 exit shape is.
+- **`copy-fable-freshdip` — first real negative signal.** n 4→10 (+6), net −0.100→**−1.223** (−1.12), drop3 −0.243→**−1.380** (−1.14), stress −0.140→**−1.301** (−1.16). Still far too small (n=10) for a verdict, but every metric moved the wrong way on its first real batch of trades.
+- **`copy-conviction-consensus2` (idealized reference) — drop3 flipped negative for the first time in weeks.** net 13.888→11.503 (−2.39), **drop3 1.102→−1.283** (−2.39, sign flip), stress −0.316→−2.921 (−2.61). Promo score fell 48.8→**35** (−13.8, a >10pt mover). Not a live candidate regardless, but the idealized book-wide ceiling weakening in step with `copy-hotlead-strict` points to a shared regime effect rather than something strategy-specific.
+- **Regime score dropped sharply: 7→3** ("weak" band, the lowest reading since the late-June drawdown), while `score_24h` actually improved 2→5 — an inverse divergence from the last two entries (intraday tape now the worse signal, 24h outlook the better one). Macro held flat at 6 (tailwind); BTC 7d% kept improving (4.09%→6.03%).
+- **Book P&L confirms yesterday's reversal was real, not partial-day noise — and worse than first read.** `regime.swing.daily` shows 07-04 closed at **−21.53 SOL** (nearly double the −11.32 partial-day estimate reported in yesterday's entry) and today's partial reading (through the sync cutoff) is −4.13. The 4-day recovery streak (07-01 through 07-03) is now confirmed broken by a real down-day, not noise.
+- **Lead pool grew slightly:** 162→169 leads (+7), hot 51→53 (+2), cold 78→79 (+1).
+
+**Week-over-week (Jun 29 → Jul 05, 7 entries):**
+- **`copy-hotlead-strict` remains the only strategy that has never had a negative drop3 day**, now 9+ consecutive promotable days. But today's erosion is the second cushion-shrinking episode in two weeks (the first ran 07-01→07-02, driven by the late-June drawdown working through the trailing window) — worth confirming tomorrow whether this is a one-day blip tied to today's weak regime reading, or the start of a new multi-day erosion streak like the last one.
+- **The operator continues to iterate faster than this skill's daily cadence**, and the lag between a KILL call landing here and the code edit is shrinking: `hold30m` went proposal (07-03) → enacted (07-05), a 2-day lag, down from the ~1-2 day average noted last week but still not same-day. Three roster changes landed outside this skill's proposal cycle in the last 3 days (`copy-hotlead` kill, unprompted `winner-sniper`/`freshdip` additions, and now this prune + v2 reset).
+- **Regime/book pattern: the 4-day recovery (06-30→07-03) has now fully reversed** — two down-days in a row (07-04 confirmed −21.53, 07-05 partial −4.13) and today's regime score (3, "weak") is the lowest since the drawdown itself. Macro/BTC keeps strengthening in the background regardless (tailwind band held all week, BTC 7d% positive and rising every reading) — the disconnect between an improving macro backdrop and a weakening copy-book tape is now a full week old and worth flagging as a durable pattern, not a one-off.
+- **Lead pool** has grown modestly from the 49-51 hot plateau of the last two weeks to 53 hot today — the first real growth in the lead pool since the 06-30 recovery, though still gradual.
+- **`copy-tp100-sl30-lag`** has now deteriorated on every single metric for 8+ consecutive daily reads — the longest unbroken decay streak of any strategy in the journal's history. The KILL case here is now as strong as any carried-over recommendation has ever been.
+
+**Verdicts (proposals — roster changes require operator approval + code edit to `COPY_STRATEGIES`):**
+
+- **PROMOTE (1, unchanged):**
+  - `copy-hotlead-strict`: n=706, net=+10.76, drop3=+4.18, stress=+3.28, monthly=23.06 SOL/mo. Score 100, all gates clear, 9th consecutive promotable day. Cushion eroded sharply today (−2.14 SOL on net/drop3) — still the only strategy in the roster with zero negative-drop3 days ever, and still no live capital deployed anywhere, but recommend one more day of confirmation before treating today's erosion as pure regime noise.
+
+- **KILL (1 carried over, 3 enacted since yesterday):**
+  - `copy-tp100-sl30-lag` (carried over): n=717, net=−21.65, drop3=−26.50, stress=−28.60. 8+ consecutive days of deterioration on every metric — the longest unbroken decay streak in the journal. Its lag mechanism isn't the culprit (paired-vs-baseline delta is slightly positive); the tp100/sl30 exit shape itself is the problem.
+  - `copy-hotlead-hold30m`, `copy-hotlead-strict-xbad`, `copy-src-live-tape` (all **enacted** — retired/pruned overnight per commit `6da2ff5`, operator-approved). No further action needed.
+
+- **WATCH:**
+  - `copy-hotlead-strict-hi`: n=56 (up from 48), promo score 78.6 (down from 81.3) — the surge flagged yesterday paused; still the closest strategy behind `copy-hotlead-strict` for a second promotion case once it clears n=100.
+  - `copy-fable-freshdip`: n=10, first real negative batch (drop3 −0.24→−1.38). Still far too small for a verdict, but the reversal tempers earlier optimism about this thesis.
+  - `copy-src-winner-sniper-v2`: n=0, brand-new reset of the winner-sniper thesis to isolate the discovery-signal-only gate (commit `d5e8171`). Watch its first batch of trades before drawing any conclusion — the prior version's unfavorable early read (worse net/trade and drop3/trade than its own control) is exactly what this reset is meant to fix or confirm.
+  - `copy-src-external`: n=2. Still far too small.
+
+- **Idealized references (not live candidates):**
+  - `copy-conviction-consensus2`: n=1378, net=+11.50. Drop3 flipped negative for the first time in weeks (+1.10→−1.28), stress fell further negative — the idealized ceiling weakened in step with the live book, consistent with a shared regime effect rather than a strategy-specific problem.
+  - `copy-tp100-sl30`: n=3174, net=−31.94. Negative baseline reference, roughly flat day-over-day.
+
+**New strategies to try:** None this cycle. The roster already has a fresh, unresolved experiment (`copy-src-winner-sniper-v2`) from last night's reset, and today's story is a book-wide regime dip rather than a strategy-specific gap — the redundancy guardrail plus the "don't act on one bad day" rule both point to watching what's already cooking rather than adding more.
+
+**Operator next step:** Two actions, in order of leverage: (1) fund a live-micro test on `copy-hotlead-strict` — 9 consecutive promotable days now, still zero live capital deployed anywhere, though worth watching one more day to confirm today's cushion erosion is regime noise and not a new decay trend; (2) enact the long-standing `copy-tp100-sl30-lag` KILL — thanks for clearing the other three overnight (`hold30m`, `xbad`, `live_tape`). Also worth a look: the copy book has now had 2 down-days in a row against a strengthening macro/BTC backdrop — if that gap keeps widening it may be worth a regime-gate tightening pass, but one more day of data would help before proposing that concretely.
+
+---
+
 ## 2026-07-04 — Daily review: copy-hotlead's carried-over KILL finally enacted; copy-hotlead-strict hits an 8th consecutive promotable day as copy-hotlead-strict-hi surges toward it, even as today's partial book day snaps the 4-day recovery streak
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
