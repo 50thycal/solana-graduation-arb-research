@@ -1,11 +1,11 @@
 ---
-description: Phase-3 copy-trading monitor loop — one iteration of the recurring 2h advisory check. Reports all active strategies + data-collection/execution health, tracks a carried-forward Updates & Ideas ledger, and separates each loop with a large banner. READ-ONLY (proposes, never acts). Times in CDT.
+description: Phase-3 copy-trading monitor loop — one iteration of the recurring 3h advisory check. Reports all active strategies + data-collection/execution health, tracks a carried-forward Updates & Ideas ledger, and separates each loop with a large banner. READ-ONLY (proposes, never acts). Times in CDT.
 ---
 
 # /solana_loop_checker_phase3 — copy-strategy monitor loop (Phase 3)
 
 The recurring **advisory** monitor for the copy-trading subsystem. One invocation = one loop iteration.
-Driven on a 2h cadence by a durable Routine (Claude-Code-Remote trigger, `cron 7 */2 * * *`) that fires
+Driven on a 3h cadence by a durable Routine (Claude-Code-Remote trigger, `cron 7 */3 * * *`) that fires
 into the operator's ongoing session; also runnable on demand with `/solana_loop_checker_phase3`.
 
 > **HARD GUARDRAIL — READ-ONLY.** This loop OBSERVES and PROPOSES only. Never edit code, push, open/modify
@@ -79,7 +79,7 @@ message. Each item:
 
 Add new ideas the patterns surface; retire stale ones. These are **PROPOSALS ONLY** for a later Fable 5 session —
 do not act on any of them here. Keep the whole report skimmable (tables + short bullets, not prose). End the turn
-after emitting the report; the next loop fires in ~2h.
+after emitting the report; the next loop fires in ~3h.
 
 ---
 
