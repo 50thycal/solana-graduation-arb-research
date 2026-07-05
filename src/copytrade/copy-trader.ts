@@ -305,8 +305,15 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    so applying lead selection to a 30m hold should CONCENTRATE the winners and turn
   //    the lottery into positive drop3. Same hold30m exit (SL30, no TP, 30m timeout) but
   //    only on hot leads.
-  { id: 'copy-hotlead-hold30m',   tpPct: null, slPct: 30, exitFollow: false, maxHoldSec: 1800,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0 } },
+  // ── KILLED 2026-07-04 (INVALID — lottery; operator-approved U1): copy-hotlead-hold30m. n=1139,
+  //    net +24.2 (the biggest raw net in the book) but drop3 −6.9 and WORSENING every monitor loop
+  //    across 07-03→07-04 (−1.3 → −2.3 → −3.3 → −5.0 → −5.9 → −6.2 → −6.9). Net-positive /
+  //    drop3-negative is the textbook lottery signature — its profit is a handful of moonshots
+  //    (top-3 wallets ≈ 32% of net). The I3 thesis above (that hot-lead selection would CONCENTRATE
+  //    the 30m-hold winners into positive drop3) is refuted: the recency gate did not fix the fat
+  //    tail. copy-hotlead-strict (promotable) + copy-fable-freshdip cover the hot-lead entry on the
+  //    robust TP100/SL30 chassis. Closed rows remain in the DB → retired_summary; do NOT revive this
+  //    id (it would inherit stale closed rows).
   // ── KILLED 2026-07-01 (INVALID — kill-backlog enacted; proposed daily 2026-06-30 → 07-01):
   //    the P/Q/R/S hold/exit sweep on copy-hotlead-hold30m (12 arms). Every arm reached its kill
   //    criterion — n>=100 (or catastrophic net<−3 at n>=40) AND drop3 < the parent's — and all
@@ -348,9 +355,15 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    strict's entries → shares its polls, ~zero marginal RPC. Resolve vs copy-hotlead-strict
   //    at n>=100: keep only if it beats strict on drop3 AND net/trade. Gate env-tunable
   //    (COPYXBAD_MIN_COPIES / COPYXBAD_MAX_NET, leaderboard-v2.ts).
-  { id: 'copy-hotlead-strict-xbad', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
-    excludeProvenBadLeads: true },
+  // ── KILLED 2026-07-04 (INVALID — veto refuted forward; operator-approved U4): copy-hotlead-strict-xbad.
+  //    The proven-bad exclusion (skip leads whose all-time baseline copy net is proven negative) was
+  //    the surviving half of the copy-net signal after V2 positive-selection was refuted OOS. Forward
+  //    it added NO robustness: by n=45 it was net-negative on BOTH axes — net/trade −0.025 and
+  //    drop3/trade −0.070 vs the strict base it layers on (+0.016 / +0.006) — strictly dominated, and
+  //    deteriorating every monitor loop (drop3 −1.1 → −1.4 → −2.1 → −2.4 → −3.1). Same lesson as the
+  //    killed copy-elitelead and the V2 A/B: cumulative copy-net neither selects NOR vetoes forward
+  //    copy profit; the recency hot-lead gate ({10,3,0.5}) is the only lead screen that holds. Closed
+  //    rows → retired_summary; do NOT revive this id.
   // ── FD (2026-07-03, Fable line): FRESH-DIP — hot lead × fresh graduation × dip fill.
   //    Own-thesis strategy from an offline replay of every closed copy row (ops DB backtests,
   //    2026-07-03): the incumbent's edge is NOT uniform across its entries — it concentrates

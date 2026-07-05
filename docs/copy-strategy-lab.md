@@ -10,6 +10,43 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-04 — Roster prune: 2 strategy kills + 1 discovery-source prune (operator-approved from the phase-3 monitor loop)
+
+Enacted from the `/solana_loop_checker_phase3` advisory loop's Updates & Ideas ledger; the operator
+approved U1 / U4 / U6 and directed the code edit (Opus session). All three are removals — closed rows
+stay in the DB → `retired_summary`; none of these ids may be revived (they'd inherit stale rows).
+
+**Killed (`COPY_STRATEGIES`, `copy-trader.ts`):**
+- **`copy-hotlead-hold30m`** (U1, INVALID — lottery). n=1139, net **+24.2** (the biggest raw net in the
+  book) but drop3 **−6.9** and worsening on every loop across 07-03→07-04 (−1.3 → −2.3 → −3.3 → −5.0 →
+  −5.9 → −6.2 → −6.9). Net-positive / drop3-negative = textbook lottery (top-3 wallets ≈ 32% of net).
+  The I3 thesis — that hot-lead selection would concentrate the 30m-hold winners into positive drop3 —
+  is refuted: the recency gate did not fix the fat tail. The hot-lead entry survives on the robust
+  TP100/SL30 chassis via `copy-hotlead-strict` (promotable) + `copy-fable-freshdip`.
+- **`copy-hotlead-strict-xbad`** (U4, INVALID — veto refuted forward). The proven-bad exclusion (skip
+  leads whose all-time baseline copy net is negative) was the surviving half of the copy-net signal
+  after V2 positive-selection was refuted OOS. Forward it added no robustness: by n=45, net-negative on
+  BOTH axes (net/trade −0.025, drop3/trade −0.070) vs the strict base it layers on (+0.016 / +0.006) —
+  strictly dominated, deteriorating every loop (drop3 −1.1 → −3.1). Same lesson as `copy-elitelead` and
+  the V2 A/B: cumulative copy-net neither selects nor vetoes forward copy profit. **Only the recency
+  hot-lead gate ({10,3,0.5}) holds** — this closes the copy-net lead-screen line for good.
+
+**Pruned (`DISCOVERY_SOURCES`, `discovery-sources.ts`):**
+- **`live_tape`** (U6, FAILS). Probe `copy-src-live-tape` stalled at n=24 for 4+ loops (its wallets
+  rarely trade our copyable graduation universe → can't reach n≥100) and was clearly below the OG
+  control on the trades it did make (net/trade −0.047 vs −0.028; drop3/trade −0.055 vs −0.036). Registry
+  row removed → probe + scorecard row + routing retire; harvester was already default-OFF
+  (`LIVE_TAPE_ENABLED!=='true'`), so nothing was running to stop. Recorded in the discovery-playbook
+  resolved table.
+
+**Post-prune roster:** incumbent `copy-hotlead-strict`; challengers `copy-hotlead-strict-hi` (net-floor
+1.0, leading), `copy-fable-freshdip` (fresh-dip, collecting); controls `copy-tp100-sl30(-lag)`; reference
+`copy-conviction-consensus2`; discovery probes `copy-src-winner-sniper-v2` (3-stage funnel, collecting)
++ `copy-src-external`. Challenger count now 2 (well under MAX_INFLIGHT), leaving room to spawn the
+net-floor-1.5 step **if** `strict-hi` confirms drop3 at n≥100 (ledger U3).
+
+---
+
 ## 2026-07-04 (later) — Winner-sniper rebuilt as the operator's 3-stage funnel: profit-credit → forward pre-filter → scorer
 
 Operator direction (same session as the audit below): the sniper pipeline should (1) only credit

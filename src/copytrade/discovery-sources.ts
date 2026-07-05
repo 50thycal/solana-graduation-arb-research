@@ -62,12 +62,16 @@ export interface DiscoverySource {
 }
 
 export const DISCOVERY_SOURCES: DiscoverySource[] = [
-  {
-    id: 'live_tape',
-    label: 'Live-tape harvester (Idea 1)',
-    hypothesis: 'Wallets seen trading well on the live PumpSwap tape (zero-RPC harvest) copy better than graduation-seeded (OG) wallets.',
-    added: '2026-06-30',
-  },
+  // ── PRUNED 2026-07-04 (FAILS; operator-approved U6): live_tape (Idea 1) — "wallets seen trading
+  //    well on the live PumpSwap tape copy better than OG". Its probe copy-src-live-tape stalled at
+  //    n=24 for 4+ monitor loops (its wallets rarely trade tokens in our copyable graduation universe,
+  //    so it can't reach the n≥100 verdict in any reasonable time) and, on the trades it did make, it
+  //    was clearly WORSE than the OG control (net/trade −0.047 vs −0.028; drop3/trade −0.055 vs −0.036).
+  //    Removing the registry row retires the probe + scorecard row + quarantine routing; the harvester
+  //    (live-tape-harvester.ts) is already default-OFF (LIVE_TAPE_ENABLED!=='true'), so it is not
+  //    running and no new live_tape candidates are produced. Existing source='live_tape' candidate rows
+  //    become inert (no probe to route to). Closed probe rows → retired_summary. To revive, re-add a row
+  //    here with a FRESH probeId (the old copy-src-live-tape id carries stale closed rows).
   {
     id: 'external',
     label: 'External top-trader seed (Idea 3, Solana Tracker)',
