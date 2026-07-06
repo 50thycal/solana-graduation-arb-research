@@ -90,7 +90,17 @@ export const DISCOVERY_SOURCES: DiscoverySource[] = [
     // 3-stage funnel (operator 2026-07-04): profit-credited tally → forward pre-filter
     // (winner-prefilter.ts) → FIFO scorer. Tradable = pre-filter PASSED ∩ the relaxed
     // scored gate — "the scoring decides if it is ready to be tradable".
-    signalSet: (db) => getPrefilterGatedWallets(db),
+    signalSet: (db) => getPrefilterGatedWallets(db, 'winner_sniper'),
+  },
+  {
+    id: 'gradspec',
+    label: 'Post-grad-AMM specialist reseed of the forward pre-filter (phase-1 handoff 2026-07-05)',
+    hypothesis: 'The post_grad_amm archetype (high grad_buys, low pre_pct, active <=14d — the smart-money timing panel) seeds the winner-prefilter forward gate better than the 0-30s winner-credit seed: cross-token-skill specialists in the 30s-15min window that the OG seed never reads. Pre-registered: P1 smart_copyable >=10 in 5d (shelve if <3 by d7); P2 BEATS_OG at n>=100 with drop3/trade > 0 absolute; P3 n>=100 within ~3 weeks.',
+    added: '2026-07-06',
+    // Same 3-stage funnel as winner_sniper, different STAGE-1 SEED (gradspec-harvester.ts):
+    // archetype query → pre-filter (origin='gradspec') → FIFO scorer → this gate. Origin-
+    // scoped so the two funnels' tradable sets stay disjoint (first enroller wins).
+    signalSet: (db) => getPrefilterGatedWallets(db, 'gradspec'),
   },
   // ── To test a new discovery thesis ──
   // 1. Write the harvester: INSERT INTO wallet_candidates (address, source, …) VALUES (?, '<id>', …)
@@ -126,22 +136,25 @@ const SOURCE_COPYABLE_SQL = `
       / NULLIF((SELECT SUM(value) FROM json_each(ws.venues_json)), 0) >= ${COPYABILITY.minPumpswapShare}`;
 
 /**
- * winner_sniper tradable set — the end of its 3-stage funnel: wallets that PASSED the
- * forward pre-filter (proved profit on OTHER PumpSwap tokens after triggering) AND clear
+ * Pre-filter-gated tradable set — the end of a 3-stage funnel: wallets that PASSED the
+ * forward pre-filter (proved profit on OTHER PumpSwap tokens after enrollment) AND clear
  * the same relaxed scored gate as every other source. Scoring stays the final arbiter of
  * tradability; the pre-filter is what earns a wallet the (expensive) score in the first
- * place. Table absent → empty (no wallet has cleared stage 1 yet).
+ * place. `origin` scopes the set to the discovery source that ENROLLED the wallet
+ * (winner_sniper's tally bar vs gradspec's archetype seed), so two sources sharing the
+ * pre-filter get disjoint tradable sets. Table absent → empty (no wallet enrolled yet).
  */
-function getPrefilterGatedWallets(db: Database.Database): string[] {
+function getPrefilterGatedWallets(db: Database.Database, origin: string): string[] {
   try {
     return (db.prepare(`
       SELECT ws.address FROM wallet_scores ws
       JOIN winner_prefilter pf ON pf.address = ws.address AND pf.status = 'passed'
+        AND COALESCE(pf.origin, 'winner_sniper') = @origin
       WHERE ${SOURCE_GATE}
         AND ${SOURCE_COPYABLE_SQL}
       ORDER BY ws.total_realized_sol_drop_top3 DESC NULLS LAST
       LIMIT ${SOURCE_WATCH_CAP}
-    `).all() as Array<{ address: string }>).map((r) => r.address);
+    `).all({ origin }) as Array<{ address: string }>).map((r) => r.address);
   } catch {
     return [];
   }

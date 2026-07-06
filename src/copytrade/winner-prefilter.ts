@@ -77,7 +77,8 @@ export function ensurePrefilterTables(db: Database.Database): void {
       trigger_mints TEXT NOT NULL DEFAULT '[]',  -- graduation mints that earned entry (excluded from "other tokens")
       status TEXT NOT NULL DEFAULT 'watching',   -- watching | passed | failed
       resolved_at INTEGER,
-      fail_reason TEXT
+      fail_reason TEXT,
+      origin TEXT NOT NULL DEFAULT 'winner_sniper'  -- which discovery source enrolled the wallet (gradspec 2026-07-06)
     );
     CREATE INDEX IF NOT EXISTS idx_winner_prefilter_status ON winner_prefilter(status);
     CREATE TABLE IF NOT EXISTS winner_prefilter_flows (
@@ -94,27 +95,38 @@ export function ensurePrefilterTables(db: Database.Database): void {
       PRIMARY KEY (address, mint)
     );
   `);
+  // Migration for DBs created before the origin column (2026-07-06, gradspec source).
+  // Existing rows were all winner-sniper enrollments, so the default backfills correctly.
+  try { db.exec(`ALTER TABLE winner_prefilter ADD COLUMN origin TEXT NOT NULL DEFAULT 'winner_sniper'`); }
+  catch { /* column already exists */ }
 }
 
 /**
  * Enroll a wallet into the pre-filter (called by winner-sniper's finalize when a
- * wallet clears the profitable-hit tally bar). Pure SQL — safe to call even if the
- * watcher isn't running (the wallet just waits, and TTL-fails if never watched).
+ * wallet clears the profitable-hit tally bar, and by the gradspec harvester when a
+ * wallet clears the archetype bar). Pure SQL — safe to call even if the watcher isn't
+ * running (the wallet just waits, and TTL-fails if never watched).
  * Existing watching rows accumulate additional trigger mints; passed/failed rows are
  * left alone (failed rows free up for re-enrollment after failRetentionDays cleanup).
+ * `origin` records WHICH discovery source enrolled the wallet — it decides which
+ * source's candidate tag / signal set a passer feeds (first enroller wins on collision).
+ * `triggerMint` may be null for sources whose seed is behavioral (gradspec) rather than
+ * a specific token: with no trigger mints, EVERY forward flow counts toward the bar —
+ * still out-of-sample, since flows only accumulate after enrollment.
  */
 export function enrollPrefilterWallet(
   db: Database.Database,
   address: string,
-  triggerMint: string,
+  triggerMint: string | null,
   now: number,
+  origin: string = 'winner_sniper',
 ): 'enrolled' | 'updated' | 'exists' | 'full' {
   ensurePrefilterTables(db);
   const row = db.prepare(
     `SELECT status, trigger_mints FROM winner_prefilter WHERE address = ?`,
   ).get(address) as { status: string; trigger_mints: string } | undefined;
   if (row) {
-    if (row.status !== 'watching') return 'exists';
+    if (row.status !== 'watching' || triggerMint == null) return 'exists';
     let mints: string[] = [];
     try { mints = JSON.parse(row.trigger_mints); } catch { mints = []; }
     if (mints.includes(triggerMint)) return 'exists';
@@ -128,10 +140,21 @@ export function enrollPrefilterWallet(
   ).get() as { n: number }).n;
   if (watching >= PREFILTER_CFG.maxWallets) return 'full';
   db.prepare(`
-    INSERT INTO winner_prefilter (address, entered_at, trigger_mints, status)
-    VALUES (?, ?, ?, 'watching')
-  `).run(address, now, JSON.stringify([triggerMint]));
+    INSERT INTO winner_prefilter (address, entered_at, trigger_mints, status, origin)
+    VALUES (?, ?, ?, 'watching', ?)
+  `).run(address, now, JSON.stringify(triggerMint ? [triggerMint] : []), origin);
   return 'enrolled';
+}
+
+/** Count of currently-watched pre-filter wallets enrolled by one origin (sub-cap checks). */
+export function countPrefilterWatchingByOrigin(db: Database.Database, origin: string): number {
+  try {
+    return (db.prepare(
+      `SELECT COUNT(*) AS n FROM winner_prefilter WHERE status = 'watching' AND origin = ?`,
+    ).get(origin) as { n: number }).n;
+  } catch {
+    return 0;
+  }
 }
 
 export function getPrefilterPassedAddresses(db: Database.Database): string[] {
@@ -389,10 +412,10 @@ export class WinnerPrefilterWatcher {
   /** Pass/fail every watching wallet against the forward bar; clean up old failures. */
   private resolve(): void {
     const now = Math.floor(Date.now() / 1000);
-    let rows: Array<{ address: string; entered_at: number; trigger_mints: string }> = [];
+    let rows: Array<{ address: string; entered_at: number; trigger_mints: string; origin: string | null }> = [];
     try {
       rows = this.db.prepare(
-        `SELECT address, entered_at, trigger_mints FROM winner_prefilter WHERE status = 'watching'`,
+        `SELECT address, entered_at, trigger_mints, origin FROM winner_prefilter WHERE status = 'watching'`,
       ).all() as typeof rows;
     } catch { return; }
 
@@ -410,7 +433,7 @@ export class WinnerPrefilterWatcher {
       // Pass is checked FIRST so a wallet that clears the bar right at the TTL edge still passes.
       if (s.closedWins >= PREFILTER_CFG.minOtherWins && s.closedNetSol >= PREFILTER_CFG.minNetSol) {
         pass.run(now, r.address);
-        upsertCandidate(this.db, r.address, 'winner_sniper', now);
+        upsertCandidate(this.db, r.address, r.origin ?? 'winner_sniper', now);
         this.totalPassed++;
         logger.info('PASS %s: %d profitable closed mints, net %s SOL → promoted to scorer',
           r.address.slice(0, 8), s.closedWins, s.closedNetSol.toFixed(3));
@@ -487,6 +510,18 @@ export function getWinnerPrefilterSummary(db: Database.Database): unknown {
         SUM(CASE WHEN entered_at >= ? THEN 1 ELSE 0 END) AS entered_24h
       FROM winner_prefilter
     `).get(now - 86_400) as Record<string, number | null>;
+    // Per-origin funnel split (winner_sniper vs gradspec) — how each enrolling source's
+    // wallets are faring through the shared forward gate.
+    let byOrigin: Array<Record<string, unknown>> = [];
+    try {
+      byOrigin = db.prepare(`
+        SELECT COALESCE(origin, 'winner_sniper') AS origin,
+          SUM(CASE WHEN status = 'watching' THEN 1 ELSE 0 END) AS watching,
+          SUM(CASE WHEN status = 'passed' THEN 1 ELSE 0 END) AS passed,
+          SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+        FROM winner_prefilter GROUP BY 1 ORDER BY 1
+      `).all() as Array<Record<string, unknown>>;
+    } catch { /* origin column may not exist yet */ }
     let status: Record<string, unknown> | null = null;
     try {
       const s = db.prepare(`SELECT value FROM bot_settings WHERE key = ?`).get(STATUS_KEY) as { value: string } | undefined;
@@ -529,6 +564,7 @@ export function getWinnerPrefilterSummary(db: Database.Database): unknown {
       failed_ttl: counts.failed_ttl ?? 0,
       failed_loss: counts.failed_loss ?? 0,
       entered_24h: counts.entered_24h ?? 0,
+      by_origin: byOrigin,
       watcher: status,
       watching_progress: progress,
       recent_passes: recentPasses,
