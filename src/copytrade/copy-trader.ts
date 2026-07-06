@@ -409,6 +409,28 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-hotlead-early', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
     maxConsensusRecent: 2 },
+  // ── SO (2026-07-06, lab hill-climb): SCALE-OUT — the incumbent's exact entry, ONE new exit
+  //    lever. copy-hotlead-strict is fully promotable (n=735, drop3 +8.81, monthly 32.98) but its
+  //    by_strategy exit breakdown shows the gap this targets: 432/735 (58.8%) exits are stop_loss,
+  //    and of those, 17.4% (75 trades) had already run to >=+50% MFE before reversing all the way to
+  //    the -30% SL — full round-trip losses on positions that were briefly solid winners. The 104
+  //    max_hold_cap exits show the same shape (28.8% hit >=+50% MFE, timed out anyway). Banking half
+  //    the size at +50% converts a slice of those round-trips into partial wins/smaller losses
+  //    without touching lead selection or entry timing (the two dimensions the graveyard says don't
+  //    have more to give — see "Durable signal findings" below). The other 50% still rides the
+  //    unchanged tp100/sl30 exit, so moonshot upside on true runners is only halved, not capped.
+  //    Zero new entry gate → same fire rate as the incumbent itself (~37/day observed), so this is
+  //    the fastest-maturing challenger in the roster (n=100 in ~3-4 days), not a subset like
+  //    strict-hi/early/freshdip.
+  //    Pre-registered (2026-07-06, before any data; baselines from today's scoreboard, strict n=735):
+  //      P1 KILL if drop3/trade does not exceed the incumbent's 0.01199 at n>=100 — the whole point
+  //         is to thicken the cushion, not merely match it.
+  //      P2 arena discipline: PRUNE if beaten on BOTH net/trade (> 0.02094) AND drop3/trade at n>=100.
+  //      P3 reachability is not expected to be the risk here (same entries as the incumbent); if it
+  //         somehow underperforms this badly, treat it as the entry/exit spending the SAME edge twice.
+  { id: 'copy-hotlead-strict-scaleout', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
+    scaleOut: { atPct: 50, fraction: 0.5 } },
   // ── KILLED 2026-06-27 (INVALID; RPC cleanup): copy-hotlead-deep (lastN20 / >=5 trades — longer,
   //    "more stable" lookback). n=550 net +5.2 but drop3 -1.37: the deeper lookback's net is
   //    tail-driven. copy-hotlead (lastN10/>=3) and copy-hotlead-strict (net floor 0.5) are the
@@ -2269,6 +2291,7 @@ const STRATEGY_THESIS: Record<string, string> = {
   'copy-hotlead-strict-xbad': 'Incumbent gate PLUS a veto: skip leads whose all-time copy net is proven negative (downside-persistence exclusion).',
   'copy-fable-freshdip': 'Incumbent gate + only DIP fills (price at/below the detection snapshot) on tokens graduated < 15 min ago — fresh-token dip entries.',
   'copy-hotlead-early': 'Incumbent gate + EARLINESS cap: enter only when the lead is among the first ≤2 smart buyers on the mint — buy early, not into the 3rd+ smart buyer\'s exit liquidity (outcome_lift crowding cliff).',
+  'copy-hotlead-strict-scaleout': 'Incumbent entry, unchanged — bank 50% of size at +50%, let the rest ride the same tp100/sl30 exit. Targets the 17% of stop_loss exits that had already run to +50%+ MFE before reversing.',
   'copy-conviction-consensus2': 'Buy when ≥ 2 smart wallets bought the SAME token (token-level consensus). Idealized ~1.1s fill — upper-bound reference, never live.',
   'copy-tp100-sl30': 'Copy EVERY watched lead, +100% TP / −30% SL, idealized ~1.1s fill. The load-bearing baseline with no lead selection.',
   'copy-tp100-sl30-lag': 'Same TP100/SL30 at a realistic 5s-delay fill — the OG control every discovery source is measured against.',

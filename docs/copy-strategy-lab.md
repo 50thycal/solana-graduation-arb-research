@@ -10,6 +10,74 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-06 (lab run) — Incumbent unchanged and fully mature; spawned SCALE-OUT (exit-mechanic challenger), MAX_INFLIGHT now at cap (4/4)
+
+**Incumbent (unchanged):** `copy-hotlead-strict` — n=735 (up from 706 two days ago), promo score
+**100**, all four gates clear: drop3 +8.81, stress +7.51, monthly 32.98 SOL/mo, 10+ consecutive
+promotable days per the daily journal. Score has been pinned at 100 for weeks (it's the ceiling,
+not a plateau) — the real trend to watch is drop3, which fully reversed a one-day erosion
+(07-05: +4.18 → 07-06: +8.81, its best-ever reading) confirming the earlier dip was regime noise,
+not decay. **No incumbent handoff** — nothing else is mature.
+
+**Resolutions this cycle:** none. No in-flight experiment has reached n≥100 (closest is
+`copy-hotlead-strict-hi` at n=81, up from 56 two days ago) and nothing is catastrophic
+(net < −3 at n≥40). All three pre-existing challengers stay in-flight, collecting:
+- `copy-hotlead-strict-hi` (n=81, promo 96.2) — one to two days from its own n≥100 promotion case;
+  its drop3/trade (0.058) and net/trade (0.084) are already both running ahead of the incumbent's
+  (0.012 / 0.021), the strongest signal yet that the net-floor lever (0.5→1.0) has room to push
+  further. **Do not spawn the queued net-floor-1.5 step yet** — still gated on this one crossing
+  n≥100 per the 2026-07-04 entry.
+- `copy-fable-freshdip` (n=16, drop3 still negative at −1.36) — too small to read, holds the
+  HOTLEAD-FRESH queue slot per the 2026-07-06 (earlier) entry below.
+- `copy-hotlead-early` (n=7) — brand new (spawned 07-06 via the phase-1 handoff, not this skill),
+  far too small.
+- Discovery probes `copy-src-gradspec` (n=0, day 1) and `copy-src-winner-sniper-v2` (n=0, 2nd
+  straight day) sit outside the MAX_INFLIGHT cap; both watched per their own pre-registered
+  checkpoints, no action this cycle.
+
+**Convergence verdict: converging, and unusually cleanly.** The incumbent is not just mature but
+has now posted 10 consecutive promotable days with its best-ever cushion reading, and the nearest
+challenger (`strict-hi`) is tracking *better* than the incumbent on a per-trade basis while still
+sharing its exact lead signal — the lineage is narrowing toward "the net-floor lever, pushed
+further" rather than sprawling into new dimensions. The live-micro case for `copy-hotlead-strict`
+is the strongest it has been at any point in this ledger.
+
+**Spawned (1 experiment, redundancy-checked — no existing or killed strategy tests a non-100 tpPct
+or a scaleOut/breakeven mechanic on the hotlead-strict chassis; the only prior exit-mechanic sweep,
+`copy-c2rr-*`, ran on the now-abandoned consensus2-lag chassis and never merged past its dev
+branch):**
+
+**`copy-hotlead-strict-scaleout`** — the incumbent's *exact* entry (same hotLeadGate, lag5,
+drift10), ONE new exit lever: `scaleOut: { atPct: 50, fraction: 0.5 }` (bank half the position size
+at +50%, let the rest ride the unchanged tp100/sl30 exit). This is the "smaller TP / scale-out"
+lever this cycle's instructions called out, chosen over a flat `tpPct` cut because the incumbent's
+own `by_strategy` exit breakdown pinpoints the target precisely: of 735 closed trades, 432 (58.8%)
+exit via stop_loss, and of those, **17.4% (75 trades) had already run to ≥+50% MFE before reversing
+all the way to the −30% SL** — full round-trip losses on positions that were briefly solid winners.
+The 104 max_hold_cap timeouts show the same shape (28.8% hit ≥+50% MFE). Banking half the size at
++50% converts a slice of those round-trips into partial wins or smaller losses, without touching
+lead selection or entry timing (both graveyard-closed dimensions per "Durable signal findings"
+below) — a genuinely different dimension (exit shape) from the three in-flight entry-side
+challengers, so it does not compete with them for the same signal. Because it adds no entry gate,
+it shares the incumbent's exact fire rate (~37/day observed) rather than a filtered subset, so it
+is expected to reach n≥100 in ~3-4 days — the fastest-maturing challenger in the roster.
+
+Pre-registered (2026-07-06, before any data; baselines from today's scoreboard, `copy-hotlead-strict`
+n=735, net/trade 0.02094, drop3/trade 0.01199):
+- **P1** KILL if drop3/trade does not exceed the incumbent's 0.01199 at n≥100 — the whole point is
+  to thicken the cushion, not merely match it.
+- **P2** arena discipline: PRUNE if beaten on BOTH net/trade (>0.02094) AND drop3/trade at n≥100.
+- **P3** reachability is not the expected risk here (identical entry to the incumbent); if fire
+  rate somehow lags, treat it as evidence the exit and entry are drawing on the same edge twice.
+
+In-flight after this spawn (**4/4, at MAX_INFLIGHT — hold further spawns until one resolves**):
+`copy-hotlead-strict-hi`, `copy-fable-freshdip`, `copy-hotlead-early`, `copy-hotlead-strict-scaleout`.
+Discovery probes (`copy-src-gradspec`, `copy-src-winner-sniper-v2`, `copy-src-external`) sit outside
+this cap. Committed to dev branch `claude/sleepy-wright-p6i1z0` (not yet merged/deployed — operator
+gate).
+
+---
+
 ## 2026-07-06 — Spawned from the 2026-07-05 phase-1 idea-model handoff: GRADSPEC (discovery source) + HOTLEAD-EARLY (challenger); HOTLEAD-FRESH stays queued
 
 Implements the two "spawn now" ideas from the pre-registered phase-1 handoff (grounded in the
