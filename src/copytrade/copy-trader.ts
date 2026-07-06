@@ -384,6 +384,31 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-fable-freshdip', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 0, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
     maxTokenAgeSec: 900 },
+  // ── HE (2026-07-06, phase-1 handoff 2026-07-05): HOTLEAD-EARLY — earliness gate on the
+  //    promotable chassis. Copy the incumbent's hot leads ONLY when they're among the first ≤2
+  //    smart buyers on the mint (maxConsensusRecent: 2 — the triggering lead is already logged
+  //    before onLeadBuy, so 2 = lead + at most one prior smart buyer). Buy EARLY, not into the
+  //    3rd+ smart buyer's exit liquidity. Measured driver: smart-money → outcome_lift avg return
+  //    by prior smart-buyer count — 1 buyer +4.6%, 2 buyers +6.02% (peak), 3+ buyers +0.97% (the
+  //    crowding cliff). Different return family (first-mover) from the incumbent's lead-recency;
+  //    zero RPC (cached count). NOT already answered by the graveyard: copy-hotlead-consensus
+  //    tested a consensus FLOOR (require MORE buyers — the opposite) and hold30m-early bolted
+  //    earliness onto the killed 30m-hold lottery; neither tested a maximum-consensus gate on
+  //    the robust TP100/SL30 hot-lead chassis.
+  //    Pre-registered (2026-07-05, before any data; judged on this row — entryDelaySec: 5 makes
+  //    it its own -lag twin):
+  //      P1 anti-lottery: KILL if drop3/trade <= 0 at n>=100.
+  //      P2 beats pure recency: KILL if at n>=100 it does NOT beat copy-hotlead-strict on BOTH
+  //         net/trade (> +0.01525) AND drop3/trade (> +0.00592) — baselines from the 2026-07-05
+  //         scoreboard (strict n=706).
+  //      P3 reachability: needs ~5 fires/day and n>=100 within ~3 weeks, else the ≤2 cap
+  //         over-filters on top of the already-selective hot-lead gate → shelve, or relax to
+  //         maxConsensusRecent: 3 (the pre-declared fallback).
+  //    Promote to a gated lab strategy only if P1+P2+P3 all hold. Resolve vs the incumbent on
+  //    experiment_arena (challenger discipline).
+  { id: 'copy-hotlead-early', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
+    maxConsensusRecent: 2 },
   // ── KILLED 2026-06-27 (INVALID; RPC cleanup): copy-hotlead-deep (lastN20 / >=5 trades — longer,
   //    "more stable" lookback). n=550 net +5.2 but drop3 -1.37: the deeper lookback's net is
   //    tail-driven. copy-hotlead (lastN10/>=3) and copy-hotlead-strict (net floor 0.5) are the
@@ -2243,6 +2268,7 @@ const STRATEGY_THESIS: Record<string, string> = {
   'copy-hotlead-hold30m': 'Hot-lead entry, but hold up to 30 min (SL −30%, no take-profit) — let winners run past +100% instead of capping.',
   'copy-hotlead-strict-xbad': 'Incumbent gate PLUS a veto: skip leads whose all-time copy net is proven negative (downside-persistence exclusion).',
   'copy-fable-freshdip': 'Incumbent gate + only DIP fills (price at/below the detection snapshot) on tokens graduated < 15 min ago — fresh-token dip entries.',
+  'copy-hotlead-early': 'Incumbent gate + EARLINESS cap: enter only when the lead is among the first ≤2 smart buyers on the mint — buy early, not into the 3rd+ smart buyer\'s exit liquidity (outcome_lift crowding cliff).',
   'copy-conviction-consensus2': 'Buy when ≥ 2 smart wallets bought the SAME token (token-level consensus). Idealized ~1.1s fill — upper-bound reference, never live.',
   'copy-tp100-sl30': 'Copy EVERY watched lead, +100% TP / −30% SL, idealized ~1.1s fill. The load-bearing baseline with no lead selection.',
   'copy-tp100-sl30-lag': 'Same TP100/SL30 at a realistic 5s-delay fill — the OG control every discovery source is measured against.',

@@ -10,6 +10,53 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-06 — Spawned from the 2026-07-05 phase-1 idea-model handoff: GRADSPEC (discovery source) + HOTLEAD-EARLY (challenger); HOTLEAD-FRESH stays queued
+
+Implements the two "spawn now" ideas from the pre-registered phase-1 handoff (grounded in the
+07-05 scoreboard: incumbent `copy-hotlead-strict` n=706, net/trade +0.01525, drop3/trade +0.00592;
+OG control `copy-tp100-sl30-lag` n=709, −0.0299 / −0.0368). All predictions were pre-registered
+on 2026-07-05, BEFORE any data — they are restated verbatim in the code comments so the test
+can't be re-scoped.
+
+**GRADSPEC — new discovery source (`copy-src-gradspec`), lever 1 (wallet source).** Reseed the
+winner-sniper forward pre-filter from the *post-grad-AMM specialist* archetype: wallets with high
+`grad_buys`, low `pre_pct` (≤0.10), active ≤14d (the `smart-money → timing` panel isolates them —
+grad_buys 674–784, pre_pct 0.01–0.04, absent from the OG 0-30s seed). This is the principled fix
+to the winner-sniper `NO_WALLETS` starve: its 0-30s winner-credit seed reaches ~3 wallets; the
+archetype seeds *for* wallets that trade the fast copyable window. Only the seeding heuristic is
+new code (`gradspec-harvester.ts`, pure SQL on the worker tick, zero RPC); everything downstream
+is reused — `winner_prefilter` forward gate (new `origin` column attributes enrollments;
+`GRADSPEC_MAX_WATCHING`=75 sub-cap of the shared 200 slots) → FIFO scorer → origin-scoped relaxed
+gate → the auto-emitted standardized probe vs the OG control. Cross-token-skill driver, LOW
+correlation to the hot-lead book.
+Pre-registered: **P1** smart_copyable ≥ 10 within 5 days (FAIL/SHELVE if < 3 by day 7 — the
+reachability wall is structural); **P2** at n≥100 beats OG on BOTH net/trade AND drop3/trade with
+drop3/trade > 0 absolute → `BEATS_OG`, else KILL to the source graveyard; **P3** n≥100 within
+~3 weeks, else shelve (the `live_tape`/`external` failure mode). Promote to a hot-lead-gated
+variant only if P2 holds.
+
+**HOTLEAD-EARLY — `copy-hotlead-early`, lever 2 (entry gating).** The incumbent chassis + ONE
+lever: `maxConsensusRecent: 2` — copy a hot lead only when it's among the first ≤2 smart buyers
+on the mint. Measured driver (`smart-money → outcome_lift`): avg return by prior smart-buyer
+count 1 → +4.6%, 2 → +6.02% (peak), 3+ → +0.97% (the crowding cliff). First-mover is a different
+return family from lead-recency; zero marginal RPC (cached count, shares the incumbent's polls).
+Not answered by the graveyard: `copy-hotlead-consensus` tested a consensus *floor* (the opposite)
+and `hold30m-early` bolted earliness onto the killed 30m-hold lottery — neither tested a
+*maximum*-consensus gate on the robust TP100/SL30 hot-lead chassis.
+Pre-registered: **P1** KILL if drop3/trade ≤ 0 at n≥100; **P2** KILL if it doesn't beat the
+incumbent on BOTH net/trade (> +0.01525) AND drop3/trade (> +0.00592) at n≥100; **P3** needs
+~5 fires/day and n≥100 in ~3 weeks, else shelve or relax to `maxConsensusRecent: 3` (the
+pre-declared fallback — P3 is the main risk on an already-selective gate).
+
+**QUEUED, not spawned: HOTLEAD-FRESH** (`copy-hotlead-strict` + `maxTokenAgeSec: 900`, NO dip
+gate — isolates freshness from `copy-fable-freshdip`'s dip confound). Hold trigger: spawn the
+moment `copy-fable-freshdip` resolves (n≥100 or killed). Held to respect MAX_INFLIGHT=4 and
+"converge, don't sprawl": challengers in flight after this entry = `copy-hotlead-strict-hi`,
+`copy-fable-freshdip`, `copy-hotlead-early` (+ the gradspec probe on the discovery track),
+leaving the queued net-floor-1.5 step room if `strict-hi` confirms.
+
+---
+
 ## 2026-07-04 — Roster prune: 2 strategy kills + 1 discovery-source prune (operator-approved from the phase-3 monitor loop)
 
 Enacted from the `/solana_loop_checker_phase3` advisory loop's Updates & Ideas ledger; the operator
