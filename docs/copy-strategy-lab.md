@@ -10,6 +10,26 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-08 — U5 fix: watchlist-cap regression zeroed every discovery-source probe; U7: bounded-dip challenger spawned
+
+Directed from the `/solana_loop_checker_phase3` monitor loop's ledger (operator: "look into U5 and U7... resolve on Opus"). Both are code fixes/spawns, not proposals — enacted directly.
+
+**U5 — `copy-src-winner-sniper-v2` / `copy-src-gradspec` stuck at n=0 despite 18 / 4 tradable wallets (BUG, FIXED):**
+Root-caused via live-data diagnosis (an independent parallel investigation corroborated the same finding, including a direct log citation): `follower-probe.ts`'s watchlist builder unions four tiers by priority (follow_list → smart set → copy-net → discovery-source) and truncates the LOW-priority tail to fit `COPY_WATCHLIST_MAX` (140). `follow_list` alone has grown to **150 addresses — already over the cap on its own** — so `ordered.slice(0, 140)` kept only follow_list, dropping smart-set, copy-net, and **100% of every discovery-source wallet**, confirmed live: `logs.json` → `"Watchlist updated: 140 wallets (150 promotable, 178 smart-set, 10 copy-net, **0 discovery-source**; 165 dropped)"`. Since unsubscribed wallets fire zero lead events, `onLeadBuy` was never invoked for them — not even a `status='skipped'` row, matching the observed "n=0, no attempts at all."
+
+**This is a same-day regression from 2026-07-04**: commit `2c43bf4` fixed an identical n=0 incident by subscribing discovery-source wallets (documented in `docs/discovery-playbook.md`); hours later `bec9b79` added `WATCHLIST_MAX=140` with discovery-source as the lowest-priority tier to cap Helius WS billing — reasonable when the higher tiers totaled ~150, but follow_list/smart-set have since organically grown to 150/178, so the "trim the tail" logic now trims the *entire* tail every time, not just the excess.
+
+**Fix** (`follower-probe.ts`): new `WATCHLIST_SOURCE_RESERVE` (env `COPY_WATCHLIST_SOURCE_RESERVE`, default 40) reserves a slice of the SAME `WATCHLIST_MAX` budget for the discovery-source tier — not a size increase, a re-allocation within the existing WS-billing envelope, bounded in practice by `SOURCE_WATCH_CAP × |DISCOVERY_SOURCES|` (currently ≤75). Verified offline against the compiled dist: with the fix, 10 synthetic source-only wallets survive the cap alongside 150 synthetic follow_list rows; setting the reserve to 0 exactly reproduces the live bug (source tier → 0), proving the reserve is what matters. Noted but not chased: a possible secondary factor (`resolvePool` only resolves mints in the local `graduations` table, vs Stage-2's broader `venue==='pumpswap'` acceptance) — low-confidence, flagged as a post-fix watch item if `n` stays anomalously low once the cap fix lands.
+
+**U7 — `copy-fable-freshdip`'s live n=35 read came in negative; bounded-dip challenger spawned:**
+freshdip's own closed rows (n=35, 2026-07-08) bucketed by `entry_drift_pct` (ops DB) show the "just take any dip" design (drift ≤ 0, unbounded on the downside) is too permissive: **drift < −20% (n=5) had a 0% win rate and average MFE of only 2.8%** — these positions never even bounced before stopping out, a falling-knife signature — while every shallower band (−20%..0%, n=30) summed **net +0.68 SOL**. Excluding just the deep tail flips freshdip's own aggregate from net −0.41 to net +0.68 on the same underlying trades.
+
+New `minEntryDriftPct` config (paired with the existing `maxEntryDriftPct` ceiling) and a sibling strategy **`copy-fable-freshdip-bounded`** (`minEntryDriftPct: -20`, otherwise identical to freshdip). freshdip itself keeps running unchanged (n<100, not yet resolved) — this is a sibling, not a replacement. Roster now 3 challengers (`copy-hotlead-early`, `copy-fable-freshdip`, `copy-fable-freshdip-bounded`), under MAX_INFLIGHT=4. Caveat: n=35 is small and the exact −20% boundary sits at the sharpest break in a thin sample — revisit once this challenger matures. Resolve vs `copy-hotlead-strict` at n≥100 (arena rules); secondary read against plain freshdip once both have comparable n.
+
+**Verified:** build green; two offline harnesses against the compiled dist + a real schema DB (19 checks for the bounded-dip gate/strategy/config-publication; 6 checks for the watchlist-reserve fix including a before/after bug-reproduction test).
+
+---
+
 ## 2026-07-06 — Spawned from the 2026-07-05 phase-1 idea-model handoff: GRADSPEC (discovery source) + HOTLEAD-EARLY (challenger); HOTLEAD-FRESH stays queued
 
 Implements the two "spawn now" ideas from the pre-registered phase-1 handoff (grounded in the
