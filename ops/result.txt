@@ -1,11 +1,6 @@
 # ops request: type='db'
-# WITH t AS ( SELECT net_sol, entry_drift_pct d, exit_reason, hold_sec, CASE WHEN entry_price_sol>0 AND high_price_sol IS NOT NULL THEN 100.0*(high_price_sol/entry_price_sol-1.0) END mfe FROM copy_trades WHERE strategy_id='copy-fable-freshdip' AND status='closed' AND net_sol IS NOT NULL ) SELECT CASE WHEN d < -20 THEN 'a_lt-20' WHEN d < -10 THEN 'b_-20..-10' WHEN d < -5 THEN 'c_-10..-5' WHEN d < -3 THEN 'd_-5..-3' WHEN d < -1 THEN 'e_-3..-1' ELSE 'f_-1..0' END bkt, COUNT(*) n, ROUND(SUM(net_sol),3) net, ROUND(AVG(net_sol),4) avg_net, ROUND(AVG(CASE WHEN net_sol>0 THEN 1.0 ELSE 0.0 END),3) wr, ROUND(AVG(mfe),1) avg_mfe, ROUND(MIN(d),2) min_d, ROUND(MAX(d),2) max_d FROM t GROUP BY bkt ORDER BY bkt
-  bkt        | n | net    | avg_net | wr    | avg_mfe | min_d  | max_d 
-  -----------+---+--------+---------+-------+---------+--------+-------
-  a_lt-20    | 5 | -1.092 | -0.2185 | 0     | 2.8     | -92.23 | -20.93
-  b_-20..-10 | 5 | 0.383  | 0.0767  | 0.4   | 78.5    | -19.28 | -10.87
-  c_-10..-5  | 7 | 0.161  | 0.023   | 0.286 | 39.7    | -8.96  | -5.41 
-  d_-5..-3   | 2 | -0.676 | -0.3381 | 0     | 38.9    | -3.91  | -3.34 
-  e_-3..-1   | 8 | 1.402  | 0.1753  | 0.5   | 80      | -2.93  | -1.13 
-  f_-1..0    | 8 | -0.593 | -0.0741 | 0.25  | 40.6    | -0.95  | 0     
-  [6 rows]
+# WITH t AS ( SELECT net_sol, entry_drift_pct d, exit_reason FROM copy_trades WHERE strategy_id='copy-fable-freshdip' AND status='closed' AND net_sol IS NOT NULL AND entry_drift_pct < -20 ) SELECT exit_reason, COUNT(*) n, ROUND(SUM(net_sol),3) net, ROUND(AVG(d),2) avg_drift FROM t GROUP BY exit_reason
+  exit_reason | n | net    | avg_drift
+  ------------+---+--------+----------
+  stop_loss   | 5 | -1.092 | -45.74   
+  [1 rows]
