@@ -44,6 +44,20 @@ const WATCHLIST_MAX = (() => {
   const v = parseInt(process.env.COPY_WATCHLIST_MAX || '140', 10);
   return Number.isFinite(v) && v >= 0 ? v : 140;
 })();
+// BUG FOUND 2026-07-08 (U5, live-data diagnosis): pure priority-order truncation means if the
+// HIGHEST tier alone (follow_list) ever grows past WATCHLIST_MAX, every lower tier — including
+// 100% of every discovery-source wallet — gets silently dropped to zero, no matter how many
+// clear their funnel. Confirmed live: follow_list = 150 addresses (already > the 140 cap) while
+// copy-src-winner-sniper-v2 sat at n=0 for days despite 18 smart_copyable wallets and 114
+// pre-filter passes — none were ever actually subscribed. Reserve a small slice of the SAME
+// budget (not a size increase — same total WS spend) so discovery-source wallets always get a
+// chance, at the cost of a few of the lowest-ranked follow_list/smart-set wallets. Bounded by
+// SOURCE_WATCH_CAP × |DISCOVERY_SOURCES| in practice (currently ≤75), so the reserve rarely binds
+// against actual OG-tier demand. 0 = no reservation (pre-fix behaviour).
+const WATCHLIST_SOURCE_RESERVE = (() => {
+  const v = parseInt(process.env.COPY_WATCHLIST_SOURCE_RESERVE || '40', 10);
+  return Number.isFinite(v) && v >= 0 ? v : 40;
+})();
 // scheduleLagFill fires a getBlockTime RPC purely for the detection-lag TELEMETRY (post-dispatch,
 // zero trading impact). At full rate it was ~8.8% of the entire Helius bill. Sample 1-in-N eligible
 // events — a few thousand samples/day still yields valid lag percentiles. 0 disables it entirely.
@@ -142,14 +156,25 @@ export class CopyFollowerProbe {
     // Tier-priority union (highest edge first): follow_list → smart set → copy-net →
     // discovery-source. WATCHLIST_MAX bounds Helius WS spend by truncating the LOW-priority
     // tail — the discovery-source (quarantined) wallets drop before any wallet we copy.
+    // The discovery-source tier gets a RESERVED slice of that same budget (WATCHLIST_SOURCE_RESERVE)
+    // so it can never be truncated to zero by organic growth of the tiers above it — see the bug
+    // note on WATCHLIST_SOURCE_RESERVE above.
     const ordered: string[] = [];
     const pushUnique = (addrs: Iterable<string>) => { for (const a of addrs) if (!ordered.includes(a)) ordered.push(a); };
     pushUnique(promotable);
     pushUnique(smart);
     pushUnique(copyNet);
-    pushUnique(this.sourceTier.keys());
-    const capped = WATCHLIST_MAX > 0 ? ordered.slice(0, WATCHLIST_MAX) : ordered;
-    const dropped = ordered.length - capped.length;
+    const sourceOrdered = [...this.sourceTier.keys()];
+    let capped: string[];
+    if (WATCHLIST_MAX <= 0) {
+      capped = [...ordered, ...sourceOrdered];
+    } else {
+      const sourceReserve = Math.min(sourceOrdered.length, WATCHLIST_SOURCE_RESERVE, WATCHLIST_MAX);
+      const ogBudget = WATCHLIST_MAX - sourceReserve;
+      capped = [...ordered.slice(0, ogBudget), ...sourceOrdered.slice(0, sourceReserve)];
+    }
+    const totalOrdered = ordered.length + sourceOrdered.length;
+    const dropped = totalOrdered - capped.length;
     // Keep the sourceTier tags consistent with what we actually subscribe to.
     if (dropped > 0) {
       const kept = new Set(capped);

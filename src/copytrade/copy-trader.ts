@@ -116,6 +116,14 @@ export interface CopyStrategy {
   maxEntryDriftPct?: number;   // drift gate (needs entryDelaySec): at delayed-entry time, skip the copy if the
                                // price ran more than this % ABOVE the detection snapshot (don't chase). Skips
                                // are recorded as status='skipped' rows with the measured drift.
+  minEntryDriftPct?: number;   // BOUNDED-DIP lower bound (2026-07-08, data-backed): skip if the price fell more
+                               // than this % BELOW the detection snapshot (a floor under maxEntryDriftPct's
+                               // ceiling). Motivation: copy-fable-freshdip's own recorded trades bucketed by
+                               // entry_drift_pct show the deepest dips are NOT the best entries — drift < -20%
+                               // (n=5) had a 0% win rate and average MFE of only 2.8% (the position never even
+                               // bounced before stopping out — a falling knife, not a bargain), while every
+                               // shallower band (-20%..0%, n=30) was net positive (+0.68 SOL combined). Same
+                               // status='skipped' recording path as maxEntryDriftPct (entry_drift_pct stored).
   minLeadBuySol?: number;      // conviction gate: only copy when the lead's own buy was >= this many SOL
                                // (parsed from their tx). Small buys are spam/probing; size = conviction.
   hotLeadGate?: { lastN: number; minTrades: number; minNetSol: number };
@@ -384,6 +392,27 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-fable-freshdip', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 0, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
     maxTokenAgeSec: 900 },
+  // ── FD2 (2026-07-08, Fable line): BOUNDED-DIP — freshdip's own recorded trades (n=35, live
+  //    read from the 2026-07-08 monitor loop) came in net-negative (net −0.41, drop3 −2.32),
+  //    contrary to the backtest that spawned it. Root-caused via a drift-bucket breakdown of its
+  //    own closed rows (ops DB, 2026-07-08) — the earlier "just take any dip" hypothesis (drift<=0,
+  //    unbounded on the downside) was too permissive:
+  //      drift < -20%  (n=5):  0% win rate, avg net −0.22, avg MFE only 2.8% — never even bounced
+  //                            before stopping out. A falling knife, not a bargain.
+  //      drift -20%..0% (n=30): net +0.68 combined (mixed but net positive in 4 of 5 sub-bands),
+  //                            avg MFE 38-80% — these dips DO get a real shot at the moonshot.
+  //    Excluding just the < -20% tail flips freshdip's own aggregate from net −0.41 to net +0.68
+  //    on the SAME underlying trades. New minEntryDriftPct floor (paired with the existing
+  //    maxEntryDriftPct:0 ceiling) tests that directly, holding every other lever (hot lead,
+  //    fresh<15m, TP100/SL30) identical to freshdip so this isolates the ONE new lever. n=35 is
+  //    small — this bound (-20%) sits at the sharpest break in a thin sample and should be
+  //    revisited once this challenger matures. Freshdip itself keeps running unchanged (its own
+  //    n<100, not yet resolved per arena rules) — this is a sibling, not a replacement.
+  //    Resolve vs copy-hotlead-strict at n>=100 (arena rules): PRUNE if beaten on net/trade AND
+  //    drop3/trade. Secondary read: does it beat plain freshdip on both, confirming the floor helps.
+  { id: 'copy-fable-freshdip-bounded', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 0, minEntryDriftPct: -20,
+    hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 }, maxTokenAgeSec: 900 },
   // ── HE (2026-07-06, phase-1 handoff 2026-07-05): HOTLEAD-EARLY — earliness gate on the
   //    promotable chassis. Copy the incumbent's hot leads ONLY when they're among the first ≤2
   //    smart buyers on the mint (maxConsensusRecent: 2 — the triggering lead is already logged
@@ -1440,14 +1469,18 @@ export class CopyTrader {
     const driftPct = +((price.priceSol / detectPrice - 1) * 100).toFixed(3);
     const nowSec = Math.floor(Date.now() / 1000);
 
-    // Drift gate — the price already ran past what we'd chase. Record the skip.
-    if (s.maxEntryDriftPct != null && driftPct > s.maxEntryDriftPct) {
+    // Drift gate — the price already ran past what we'd chase (ceiling), or fell further than
+    // the bounded-dip floor allows (a falling knife, not a bargain — see minEntryDriftPct). Record the skip.
+    const driftTooHigh = s.maxEntryDriftPct != null && driftPct > s.maxEntryDriftPct;
+    const driftTooLow = s.minEntryDriftPct != null && driftPct < s.minEntryDriftPct;
+    if (driftTooHigh || driftTooLow) {
       this.insertSkip({
         strategyId: s.id, mint, pool: pv.pool, leadWallet, leadTier, entryTs: nowSec,
         observedPrice: price.priceSol, detectPrice, entryDelaySec: s.entryDelaySec ?? 0,
         entryDriftPct: driftPct, detectionLagSec,
       });
-      logger.info('Copy drift-skip %s %s drift=%s%% (gate %s%%)', s.id, mint.slice(0, 6), driftPct, s.maxEntryDriftPct);
+      logger.info('Copy drift-skip %s %s drift=%s%% (gate %s%%..%s%%)', s.id, mint.slice(0, 6), driftPct,
+        s.minEntryDriftPct ?? '-inf', s.maxEntryDriftPct ?? '+inf');
       return;
     }
 
@@ -2748,6 +2781,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
         entry_penalty_pct: s.entryPenaltyPct ?? null, exit_penalty_pct: s.exitPenaltyPct ?? null,
         entry_delay_sec: s.entryDelaySec ?? null, follow_sell_delay_sec: s.followSellDelaySec ?? null,
         max_entry_drift_pct: s.maxEntryDriftPct ?? null,
+        min_entry_drift_pct: s.minEntryDriftPct ?? null,
         min_lead_buy_sol: s.minLeadBuySol ?? null, hot_lead_gate: s.hotLeadGate ?? null,
         elite_lead_gate: s.eliteLeadGate ?? null,
         regime_gate_min_score: s.regimeGateMinScore ?? null,
