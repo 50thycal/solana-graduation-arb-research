@@ -169,7 +169,7 @@ export function computeUsageBreakdown(rpcStats: RpcStats): unknown {
     warmup_note: uptime < SCORING_CYCLE_SEC
       ? `process up ${Math.round(uptime / 3600 * 10) / 10}h — under one ${SCORING_CYCLE_SEC / 3600}h scoring cycle, so wallet_pnl (scoring) is UNDER-counted until the first scoring pass completes.`
       : 'past one scoring cycle — daily estimate is representative.',
-    reference_cycle_from_console: { laserstream_ws_pct: 78, rpc_pct: 21, das_pct: 1, note: 'operator CSV 2026-07-03 — historical; WS was the firehose before the migrations-only narrowing. Calibrate weights to match the console daily total.' },
+    reference_cycle_from_console: { laserstream_ws_pct: 67.1, rpc_pct: 31.8, das_pct: 1.1, note: 'operator CSV 2026-07-09 (cycle-to-date 10.45M credits ≈ 1.26M/day, matching this estimate at weights 1/1). TARGET: <=100k credits/day — the 2026-07-09 retune turned the winner pre-filter WS firehose + winner-sniper OFF by default, slashed wallet_pnl scoring, cut the follower watchlist 140->40, and slowed the copy poll 25s->240s (hot-poll off). Calibrate weights to match the console daily total.' },
     est_credits_per_day: totalCredits,
     est_credits_per_30d: totalCredits * 30,
     by_transport: {

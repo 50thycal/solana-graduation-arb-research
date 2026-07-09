@@ -40,9 +40,14 @@ const SEEN_MAX = 4096;
 // bound the subscription. Tier priority when trimming: follow_list > smart set > copy-net >
 // discovery-source (quarantined) — we keep the wallets we actually copy and drop the tail.
 // 0 = uncapped (pre-2026-07-04 behaviour). Env-tunable so it can be dialed back after Jul 22.
+// 2026-07-09: 140 → 40 under the ≤100k-credit/day retune. copy_follower_ws is a
+// per-message WS bill that scales ~linearly with watchlist size (~81k credits/day at
+// 140). 40 keeps the highest-priority tier — the follow_list ∪ smart-set wallets the
+// live/candidate strategies actually copy — and drops the discovery-source tail (which
+// is paused anyway; the winner pre-filter is default-off). Net ≈ 23k credits/day.
 const WATCHLIST_MAX = (() => {
-  const v = parseInt(process.env.COPY_WATCHLIST_MAX || '140', 10);
-  return Number.isFinite(v) && v >= 0 ? v : 140;
+  const v = parseInt(process.env.COPY_WATCHLIST_MAX || '40', 10);
+  return Number.isFinite(v) && v >= 0 ? v : 40;
 })();
 // BUG FOUND 2026-07-08 (U5, live-data diagnosis): pure priority-order truncation means if the
 // HIGHEST tier alone (follow_list) ever grows past WATCHLIST_MAX, every lower tier — including
@@ -54,16 +59,23 @@ const WATCHLIST_MAX = (() => {
 // chance, at the cost of a few of the lowest-ranked follow_list/smart-set wallets. Bounded by
 // SOURCE_WATCH_CAP × |DISCOVERY_SOURCES| in practice (currently ≤75), so the reserve rarely binds
 // against actual OG-tier demand. 0 = no reservation (pre-fix behaviour).
+// 2026-07-09: 40 → 5 alongside the WATCHLIST_MAX cut. With discovery paused (winner
+// pre-filter default-off) there is little source-wallet inflow to reserve for, and the
+// 40-slot watchlist is small enough that a large reserve would crowd out the proven
+// copyable OG tier. A thin reserve still guarantees any live source wallet a probe slot.
 const WATCHLIST_SOURCE_RESERVE = (() => {
-  const v = parseInt(process.env.COPY_WATCHLIST_SOURCE_RESERVE || '40', 10);
-  return Number.isFinite(v) && v >= 0 ? v : 40;
+  const v = parseInt(process.env.COPY_WATCHLIST_SOURCE_RESERVE || '5', 10);
+  return Number.isFinite(v) && v >= 0 ? v : 5;
 })();
 // scheduleLagFill fires a getBlockTime RPC purely for the detection-lag TELEMETRY (post-dispatch,
 // zero trading impact). At full rate it was ~8.8% of the entire Helius bill. Sample 1-in-N eligible
 // events — a few thousand samples/day still yields valid lag percentiles. 0 disables it entirely.
 const LAGFILL_SAMPLE = (() => {
-  const v = parseInt(process.env.COPY_LAGFILL_SAMPLE || '20', 10);
-  return Number.isFinite(v) && v >= 0 ? v : 20;
+  // 2026-07-09: DEFAULT OFF (20 → 0) under the ≤100k-credit/day retune. This getBlockTime
+  // RPC is pure detection-lag telemetry (zero trading impact); we drop it entirely to
+  // reclaim its ~1k credits/day. Set COPY_LAGFILL_SAMPLE=20 to restore sampled lag stats.
+  const v = parseInt(process.env.COPY_LAGFILL_SAMPLE || '0', 10);
+  return Number.isFinite(v) && v >= 0 ? v : 0;
 })();
 
 export class CopyFollowerProbe {
