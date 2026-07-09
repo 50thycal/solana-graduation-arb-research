@@ -50,8 +50,19 @@ Use `curl -sL` (NOT WebFetch — it summarizes) and parse with `python3`. From t
 ## STEP 2 — Run the checks
 
 **A) ALL ACTIVE STRATEGIES** — compact table from `promotion.rows` + `experiment_arena.rows`:
-id · role · n · net · drop3 · stress · monthly · promo_score · net/trade · drop3/trade · arena verdict.
+id · role · n · net · drop3 · stress · monthly · promo_score · net/trade · drop3/trade · **trend** · arena verdict.
 Always include `copy-fable-freshdip`. Note day-over-day deltas vs the previous loop where visible.
+
+**A2) DEGRADATION / STRENGTH-OVER-TIME CHECK** (advisory, added 2026-07-09) — the promotion bar is a
+*cumulative* snapshot and is blind to decay, so a strategy can still clear every gate while its recent edge is
+dying (the front-loaded-edge trap). Read `promotion.degrading` (list) + `promotion.n_promotable_stable`, and per
+row `trend` / `recent_net_per_trade` / `prior_net_per_trade` / `degrading` / `promotable_stable` (underlying
+windows in `by_strategy.<id>.recency`). **Call out any PROMOTABLE strategy whose `trend` is `degrading`** — that
+is a promotable-but-decaying strategy that should NOT be funded live until the trend stabilizes. The genuinely
+fund-able set is `promotable_stable` (clears the bar AND not decaying). `trend: insufficient` just means n is
+too small to judge yet. Note: per-trade mean is fat-tail-noisy (one moonshot swings it) — the check corroborates
+a net/trade drop with a win-rate drop before flagging, so a `stable` verdict on a lower recent mean usually just
+means "no moonshot landed recently," not decay.
 
 **B) DATA-COLLECTION ISSUES** — one line each, then a verdict:
 - `diagnose.verdict == HEALTHY`, `ws_connected`, `last_graduation_sec_ago` (<300 good), `last_candidate_sec_ago` (<300 good)

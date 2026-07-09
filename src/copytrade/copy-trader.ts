@@ -2261,19 +2261,34 @@ function computeCopyPromotion(summaries: Record<string, any>): unknown {
       (stress > 0 ? Math.min(1, stress / 2) * 20 : 0) +
       Math.max(0, Math.min(1, monthly / COPY_MONTHLY_BAR)) * 15
     ).toFixed(1);
+    // Degradation / trend signal (advisory — does NOT gate `promotable`). A strategy that clears
+    // every cumulative gate but whose RECENT window is decaying is the trap to avoid funding live;
+    // `degrading` flags exactly that, and `promotable_stable` = clears the bar AND isn't decaying
+    // (the genuinely fund-able set). See recencyProfile / the TREND_* block.
+    const rec = s.recency ?? null;
+    const trend: string = rec?.trend ?? 'insufficient';
+    const degrading = promotable && trend === 'degrading';
     return { id, n, age_days: s.age_days ?? null, first_entry_ts: s.first_entry_ts ?? null,
       active_days: activeDays,
       net_sol: +net.toFixed(3), drop_top3: +drop3.toFixed(3),
       exit_stress: +stress.toFixed(3), monthly_run_rate_sol: monthly,
       max_win_streak: s.max_win_streak ?? 0, max_loss_streak: s.max_loss_streak ?? 0,
       max_drawdown_sol: s.max_drawdown_sol ?? 0,
-      realistic_execution: realisticExecution, gates, promotable, score };
+      realistic_execution: realisticExecution, gates, promotable, score,
+      trend,
+      recent_net_per_trade: rec?.recent?.net_per_trade ?? null,
+      prior_net_per_trade: rec?.prior?.net_per_trade ?? null,
+      recent_win_rate: rec?.recent?.win_rate ?? null,
+      degrading,
+      promotable_stable: promotable && trend !== 'degrading' };
   });
   rows.sort((a, b) => b.score - a.score);
   return {
     monthly_bar_sol: COPY_MONTHLY_BAR,
     n_promotable: rows.filter((r) => r.promotable).length,
-    note: 'PROMOTABLE requires realistic execution (entryDelaySec set) — idealized 1:1 mirrors fill at the optimistic ~1.1s snapshot and are an upper bound only, never a live candidate.',
+    n_promotable_stable: rows.filter((r) => r.promotable_stable).length,
+    degrading: rows.filter((r) => r.degrading).map((r) => r.id),
+    note: 'PROMOTABLE requires realistic execution (entryDelaySec set) — idealized 1:1 mirrors fill at the optimistic ~1.1s snapshot and are an upper bound only, never a live candidate. TREND is an ADVISORY recency check (recent window vs prior per-trade net + win-rate), NOT a gate: `degrading` = promotable but the recent edge is decaying (the front-loaded-edge trap — do not fund live); `promotable_stable` = promotable AND not decaying (the genuinely fund-able set). See by_strategy.<id>.recency for the underlying windows.',
     rows,
   };
 }
@@ -2379,6 +2394,24 @@ function computeExperimentArena(byStrategy: Record<string, any>, db: Database.Da
  *  by `penPct`%. Scale-out partials are kept as recorded (their exit prices aren't
  *  stored), so scale-out strategies are slightly under-stressed — noted in the JSON. */
 const EXIT_STRESS_PCT = 2;
+
+// ── DEGRADATION / TREND CHECK (2026-07-09, operator-directed) ─────────────────────────────
+// The promotion bar is a CUMULATIVE snapshot (n, drop3, stress, monthly over all-time). It is
+// blind to decay: a strategy whose early trades were great and recent trades are dying still
+// looks promotable because the lifetime average is dragged up by the old winners. This is the
+// front-loaded-edge failure mode the docs already flag ("the hotlead edge is front-loaded and
+// regime-sensitive"). recencyProfile splits each strategy's closed trades into a RECENT window
+// vs the PRIOR trades and reports the per-trade economics of each, so a "promotable but
+// decaying" strategy is visible before it's funded live. Advisory only — it does NOT change the
+// `promotable` gate (that bar is operator-defined); it adds a `trend` signal + a `degrading`
+// flag alongside it. Per-trade mean is fat-tail-noisy (one moonshot swings it), so the verdict
+// corroborates a net/trade drop with a win-rate drop (or the recent window going non-positive)
+// before calling DEGRADING — win-rate is the stable co-signal. All thresholds env-tunable.
+const TREND_MIN_WINDOW = parseInt(process.env.COPY_TREND_MIN_WINDOW || '30', 10);   // min trades per side to judge
+const TREND_MAX_RECENT = parseInt(process.env.COPY_TREND_MAX_RECENT || '150', 10);  // cap the recent window so a big strategy's recent decay isn't diluted by its whole history
+const TREND_ABS_MARGIN = parseFloat(process.env.COPY_TREND_ABS_MARGIN || '0.008');  // SOL/trade: min net/trade drop to matter
+const TREND_REL_MARGIN = parseFloat(process.env.COPY_TREND_REL_MARGIN || '0.35');   // …or this fraction of the prior net/trade, whichever is larger
+const TREND_WR_MARGIN = parseFloat(process.env.COPY_TREND_WR_MARGIN || '0.05');     // win-rate drop that corroborates a net/trade drop
 function stressedNet(r: Record<string, unknown>, s: CopyStrategy | undefined, penPct: number): number | null {
   const entry = r.entry_price_sol as number;
   const exit = r.exit_price_sol as number;
@@ -2538,6 +2571,57 @@ export function computeCopyTrades(db: Database.Database): unknown {
       if (cum - peak < maxDD) maxDD = cum - peak; // most-negative trough below the running peak
     }
     return { max_win_streak: maxWin, max_loss_streak: maxLoss, max_drawdown_sol: +maxDD.toFixed(3) };
+  };
+
+  // Recency / degradation profile: is the strategy's edge holding up, or decaying? Split the
+  // time-ordered closed trades into a RECENT window (last `recentN`) vs the PRIOR trades and
+  // compare per-trade net + win-rate. See the TREND_* block for the design rationale. Returns
+  // trend='insufficient' until each side has >= TREND_MIN_WINDOW trades.
+  const recencyProfile = (rows: Array<Record<string, unknown>>) => {
+    const seq = rows
+      .filter((r) => typeof r.net_sol === 'number' && typeof r.exit_ts === 'number')
+      .sort((a, b) => (a.exit_ts as number) - (b.exit_ts as number))
+      .map((r) => r.net_sol as number);
+    const n = seq.length;
+    const insufficient = {
+      window_n: null as number | null,
+      recent: null as unknown, prior: null as unknown,
+      delta_net_per_trade: null as number | null, delta_win_rate: null as number | null,
+      trend: 'insufficient' as 'insufficient' | 'degrading' | 'stable' | 'improving',
+    };
+    if (n < 2 * TREND_MIN_WINDOW) return insufficient;
+    // recent window = ~a third of history, floored at MIN_WINDOW, capped at MAX_RECENT so a
+    // large strategy's recent decay isn't diluted by its whole (old, front-loaded) history.
+    const recentN = Math.min(TREND_MAX_RECENT, Math.max(TREND_MIN_WINDOW, Math.floor(n / 3)));
+    const priorSeq = seq.slice(0, n - recentN);
+    const recentSeq = seq.slice(n - recentN);
+    if (priorSeq.length < TREND_MIN_WINDOW || recentSeq.length < TREND_MIN_WINDOW) return insufficient;
+    const stats = (arr: number[]) => {
+      const sum = arr.reduce((a, b) => a + b, 0);
+      const npt = sum / arr.length;
+      const wr = arr.filter((v) => v > 0).length / arr.length;
+      // net/trade after removing the single best trade in the window — catches "recent profit
+      // is one lucky moonshot" (in-window robustness, the fat-tail guard).
+      const best = arr.length ? Math.max(...arr) : 0;
+      const nptDrop1 = arr.length > 1 ? (sum - best) / (arr.length - 1) : npt;
+      return { n: arr.length, net_per_trade: +npt.toFixed(5), win_rate: +wr.toFixed(3), net_per_trade_drop1: +nptDrop1.toFixed(5) };
+    };
+    const recent = stats(recentSeq);
+    const prior = stats(priorSeq);
+    const deltaNpt = +(recent.net_per_trade - prior.net_per_trade).toFixed(5);
+    const deltaWr = +(recent.win_rate - prior.win_rate).toFixed(3);
+    const margin = Math.max(TREND_ABS_MARGIN, TREND_REL_MARGIN * Math.abs(prior.net_per_trade));
+    const nptDown = deltaNpt < -margin;
+    const nptUp = deltaNpt > margin;
+    const wrDown = deltaWr < -TREND_WR_MARGIN;
+    // DEGRADING = the recent per-trade edge dropped materially AND that drop is corroborated
+    // (win-rate also fell, or the recent window has gone net-non-positive) — so a mean pulled
+    // down purely by the absence of a moonshot (win-rate steady) reads STABLE, not DEGRADING.
+    let trend: 'degrading' | 'stable' | 'improving';
+    if (nptDown && (wrDown || recent.net_per_trade <= 0)) trend = 'degrading';
+    else if (nptUp && deltaWr >= 0) trend = 'improving';
+    else trend = 'stable';
+    return { window_n: recentN, recent, prior, delta_net_per_trade: deltaNpt, delta_win_rate: deltaWr, trend };
   };
 
   const summarize = (rows: Array<Record<string, unknown>>) => {
@@ -2799,6 +2883,8 @@ export function computeCopyTrades(db: Database.Database): unknown {
       total_incl_open_sol: +(closedSummary.total_net_sol + openSummary.open_unrealized_sol).toFixed(4),
       ...closedSummary,
       ...streakProfile(rows),
+      // recent-window vs prior per-trade economics — is the edge holding or decaying?
+      recency: recencyProfile(rows),
       first_entry_ts: firstEntryTs,
       age_days: ageDays,
       drift_skips: skipsForStrat.length,

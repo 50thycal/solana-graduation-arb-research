@@ -10,6 +10,48 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-09 — Degradation / strength-over-time check (operator-directed)
+
+Operator observation: the promotable strategies have been declining loop-over-loop — still clearing
+the bar, but if the edge can't hold, they'll fail. The promotion bar is a **cumulative snapshot**
+(n / drop3 / stress / monthly over all-time) and is structurally blind to decay: a strategy whose
+early trades were great and recent trades are dying still reads promotable because the lifetime
+average is propped up by the old winners. This is the front-loaded-edge failure mode the audit and
+this ledger already flag ("the hotlead edge is front-loaded and regime-sensitive").
+
+**Added an advisory recency/trend check** (`recencyProfile` in `copy-trader.ts`, published on every
+`by_strategy.<id>.recency` + surfaced on `promotion.rows`): split each strategy's time-ordered closed
+trades into a RECENT window (last ~⅓ of history, floored at 30, capped at 150 so a big strategy's
+recent decay isn't diluted by its whole front-loaded history) vs the PRIOR trades, and compare
+per-trade net + win-rate. `trend` ∈ {degrading, stable, improving, insufficient}. Because per-trade
+mean is fat-tail-noisy (one moonshot swings it), DEGRADING requires a net/trade drop **corroborated**
+by a win-rate drop OR the recent window going net-non-positive — so a lower recent mean from "no
+moonshot lately" (win-rate steady) reads STABLE, not DEGRADING. New promotion fields: per-row `trend`
+/ `recent_net_per_trade` / `degrading`, and top-level `degrading` (list) + `n_promotable_stable`
+(clears the bar AND not decaying = the genuinely fund-able set).
+
+**Advisory, NOT a gate** — `promotable` and `score` are unchanged (that bar is operator-defined; a
+unilateral demotion would redefine what the arena calls a LIVE_CANDIDATE). This gives the check
+visibility everywhere without changing the semantics. **If you want it to have teeth** (flip
+`degrading` → hard demotion, or make `promotable_stable` the arena's live-micro candidate), that's a
+one-line follow-up — say the word. Env-tunable: `COPY_TREND_MIN_WINDOW` (30), `COPY_TREND_MAX_RECENT`
+(150), `COPY_TREND_ABS_MARGIN` (0.008), `COPY_TREND_REL_MARGIN` (0.35), `COPY_TREND_WR_MARGIN` (0.05).
+
+**Live validation (ops DB, 2026-07-09) — the check fires on exactly what prompted it:**
+| strategy | prior net/trade (n) | recent net/trade (n) | prior WR → recent WR | trend |
+|---|---|---|---|---|
+| `copy-hotlead-strict` | +0.0187 (655) | **−0.0015 (150)** | 0.313 → 0.307 | **degrading** (recent went net-≤0; edge vanished) |
+| `copy-hotlead-strict-hi` | +0.0833 (84) | **−0.0569 (42)** | 0.405 → 0.238 | **degrading** (both signals; severe) |
+| `copy-fable-freshdip` | −0.10 (8) | −0.01 (30) | — | insufficient (prior < 30) |
+| `copy-hotlead-early` | +0.22 (5) | −0.05 (30) | — | insufficient (prior < 30) |
+
+Both promotable incumbents are decaying → `n_promotable_stable` = **0** right now. That is the exact
+"do not fund the live-micro test yet" signal the cumulative bar was hiding. Verified: build green;
+17-check offline harness against the compiled dist (degrading / stable / improving / insufficient
+cases, gate left unchanged, top-level aggregates) + this live ops-DB cross-check.
+
+---
+
 ## 2026-07-08 — U5 fix: watchlist-cap regression zeroed every discovery-source probe; U7: bounded-dip challenger spawned
 
 Directed from the `/solana_loop_checker_phase3` monitor loop's ledger (operator: "look into U5 and U7... resolve on Opus"). Both are code fixes/spawns, not proposals — enacted directly.
