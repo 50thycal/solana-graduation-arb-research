@@ -1,8 +1,13 @@
 # ops request: type='db'
-# WITH fl AS (SELECT address FROM follow_list), sm AS ( SELECT ws.address FROM wallet_scores ws WHERE ws.total_realized_sol_drop_top3 > 0 AND ws.monthly_run_rate_sol >= 3.75 AND ws.total_realized_sol >= 0.5 AND COALESCE(ws.avg_hold_sec,0) >= 300 AND COALESCE(ws.win_rate,1) <= 0.95 AND COALESCE(json_extract(ws.venues_json,'$.pumpswap'),0)*1.0 / NULLIF((SELECT SUM(value) FROM json_each(ws.venues_json)),0) >= 0.5 ), u AS (SELECT address FROM fl UNION SELECT address FROM sm) SELECT 'follow_list' t, COUNT(*) n FROM fl UNION ALL SELECT 'smart_set', COUNT(*) FROM sm UNION ALL SELECT 'union_fl_smart', COUNT(*) FROM u
-  t              | n  
-  ---------------+----
-  follow_list    | 150
-  smart_set      | 178
-  union_fl_smart | 265
-  [3 rows]
+# WITH t AS ( SELECT strategy_id s, net_sol, ROW_NUMBER() OVER (PARTITION BY strategy_id ORDER BY exit_ts DESC) rnd, COUNT(*) OVER (PARTITION BY strategy_id) n FROM copy_trades WHERE status='closed' AND net_sol IS NOT NULL AND exit_ts IS NOT NULL AND strategy_id IN ('copy-hotlead-strict','copy-hotlead-strict-hi','copy-fable-freshdip','copy-hotlead-early') ), w AS (SELECT *, MIN(150, MAX(30, n/3)) recentN FROM t) SELECT s, CASE WHEN rnd <= recentN THEN 'recent' ELSE 'prior' END seg, COUNT(*) cnt, ROUND(AVG(net_sol),5) npt, ROUND(AVG(CASE WHEN net_sol>0 THEN 1.0 ELSE 0.0 END),3) wr, ROUND(SUM(net_sol),3) net FROM w GROUP BY s, seg ORDER BY s, seg
+  s                      | seg    | cnt | npt      | wr    | net   
+  -----------------------+--------+-----+----------+-------+-------
+  copy-fable-freshdip    | prior  | 8   | -0.10296 | 0.125 | -0.824
+  copy-fable-freshdip    | recent | 30  | -0.01416 | 0.3   | -0.425
+  copy-hotlead-early     | prior  | 5   | 0.21611  | 0.6   | 1.081 
+  copy-hotlead-early     | recent | 30  | -0.05358 | 0.233 | -1.607
+  copy-hotlead-strict    | prior  | 655 | 0.0187   | 0.313 | 12.249
+  copy-hotlead-strict    | recent | 150 | -0.00153 | 0.307 | -0.23 
+  copy-hotlead-strict-hi | prior  | 84  | 0.08329  | 0.405 | 6.997 
+  copy-hotlead-strict-hi | recent | 42  | -0.05687 | 0.238 | -2.388
+  [8 rows]
