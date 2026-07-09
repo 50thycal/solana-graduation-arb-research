@@ -142,8 +142,12 @@ export class WinnerSniperHarvester {
   }
 
   start(): void {
-    if (process.env.WINNER_SNIPER_DISABLED === 'true') {
-      logger.warn('WinnerSniperHarvester disabled via WINNER_SNIPER_DISABLED');
+    // DEFAULT-OFF since 2026-07-09 (≤100k-credit/day retune). Stage-1 of the winner
+    // funnel whose only consumer — the stage-2 pre-filter WS watch — is now default-off,
+    // so its ~21k credits/day of label/buyer RPC would be wasted. Set
+    // WINNER_SNIPER_DISABLED=false to re-enable (do so together with PREFILTER_DISABLED=false).
+    if (process.env.WINNER_SNIPER_DISABLED !== 'false') {
+      logger.warn('WinnerSniperHarvester OFF by default (set WINNER_SNIPER_DISABLED=false to enable; pairs with the stage-2 pre-filter)');
       return;
     }
     this.ensureTables();

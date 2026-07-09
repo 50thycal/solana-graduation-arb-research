@@ -51,8 +51,12 @@ function numEnv(name: string, fallback: number): number {
 }
 
 export const PREFILTER_CFG = {
-  /** Hard cap on concurrently-watched wallets (bounds the WS subscription + spend). */
-  maxWallets: numEnv('PREFILTER_MAX_WALLETS', 200),
+  /** Hard cap on concurrently-watched wallets (bounds the WS subscription + spend).
+   *  2026-07-09: 200 → 60 as part of the ≤100k-credit/day retune. This watch is a
+   *  transactionSubscribe firehose (per-message WS billing) and was the single biggest
+   *  Helius line (~51% of the bill), so it is now DEFAULT-OFF (see start()); the lower
+   *  cap only binds if it is re-enabled via PREFILTER_DISABLED=false. */
+  maxWallets: numEnv('PREFILTER_MAX_WALLETS', 60),
   /** A wallet must pass within this window of being enrolled, else it fails out. */
   ttlHours: numEnv('PREFILTER_TTL_HOURS', 120),
   /** PASS bar: profitable CLOSED positions on this many DISTINCT non-trigger mints... */
@@ -221,8 +225,13 @@ export class WinnerPrefilterWatcher {
   }
 
   start(): void {
-    if (process.env.PREFILTER_DISABLED === 'true') {
-      logger.warn('WinnerPrefilterWatcher disabled via PREFILTER_DISABLED (enrolled wallets will TTL-fail unwatched)');
+    // DEFAULT-OFF since 2026-07-09 (≤100k-credit/day retune). This stage-2 watch is a
+    // transactionSubscribe firehose billed per delivered message and was ~51% of the
+    // entire Helius bill (~650k credits/day). It is pure discovery research (feeds the
+    // FIFO scorer), so it yields the budget first. Set PREFILTER_DISABLED=false to
+    // re-enable. While off, enrolled wallets simply TTL-fail unwatched (harmless).
+    if (process.env.PREFILTER_DISABLED !== 'false') {
+      logger.warn('WinnerPrefilterWatcher OFF by default (set PREFILTER_DISABLED=false to enable); enrolled wallets TTL-fail unwatched');
       return;
     }
     if (!process.env.HELIUS_WS_URL) {

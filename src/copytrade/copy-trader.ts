@@ -684,7 +684,12 @@ const LIVE_SELL_RETRY_DELAY_MS = parseInt(process.env.LIVE_SELL_RETRY_DELAY_MS |
 // (the rps CAP is a ceiling, not the driver). Cost: TP/SL exit detection is up to
 // 25s coarser — acceptable for shadow research. Lower COPY_POLL_MS if the budget
 // has room; raise toward 30s if Helius runs hot.
-const POLL_INTERVAL_MS = parseInt(process.env.COPY_POLL_MS || '25000', 10);
+// 2026-07-09: 25s → 240s under the ≤100k-credit/day retune. The batched vault poll
+// (copy_poll + the exec vault reads) was ~305k credits/day combined — the largest RPC
+// consumer. 240s cuts it ~10x. COST: TP/SL exit detection is up to 240s coarser, which
+// degrades shadow-exit fidelity; acceptable because this is shadow research and the
+// promotion bar judges on the -lag twin anyway. Lower COPY_POLL_MS if the budget has room.
+const POLL_INTERVAL_MS = parseInt(process.env.COPY_POLL_MS || '240000', 10);
 // Global hard ceiling on how long ANY copy position is tracked before it's
 // force-closed at the last known price — regardless of the strategy's own
 // maxHoldSec (which is often null = hold indefinitely). Matches the live-trading
@@ -719,7 +724,12 @@ const CONSENSUS_WINDOW_MS = 10 * 60 * 1000;
 // shadow twin (live + shadow on the same mint share a vault → one fetch serves
 // both, keeping the live-vs-shadow comparison apples-to-apples). Calibrated
 // 2026-06-20 from copy-hotlead-deep exit-velocity distributions; all env-tunable.
-const HOT_POLL_MS = parseInt(process.env.COPY_HOT_POLL_MS || '2000', 10);
+// 2026-07-09: DEFAULT OFF (2000 → 0) under the ≤100k-credit/day retune. The 2s hot-poll
+// exists to sharpen live_micro exit timing, but live execution is off (COPY_LIVE_ENABLED
+// unset) so its only effect now is 2s vault-read bursts on shadow twins — pure cost with
+// no live benefit. The timer is gated on HOT_POLL_MS > 0 (see start()), so 0 disables it.
+// Set COPY_HOT_POLL_MS=2000 to restore it when live trading is re-enabled.
+const HOT_POLL_MS = parseInt(process.env.COPY_HOT_POLL_MS || '0', 10);
 // Fast-poll when the last-known price is within this % of the TP or effective stop
 // (≈ one 25s-poll of a p90 mover, so the position is already armed before the cross).
 const HOT_POLL_BAND_PCT = parseFloat(process.env.COPY_HOT_POLL_BAND_PCT || '30');
@@ -925,9 +935,13 @@ export class CopyTrader {
     // Fast exit-detection timer for the scoped strategies' near-trigger, fast-moving
     // positions (see HOT_POLL_* constants). Cheap when nothing qualifies — the gate
     // short-circuits before any RPC.
-    this.hotPollTimer = setInterval(() => {
-      this.hotPoll().catch((err) => logger.warn('hot-poll error: %s', err instanceof Error ? err.message : String(err)));
-    }, HOT_POLL_MS);
+    // Gated on HOT_POLL_MS > 0 so COPY_HOT_POLL_MS=0 (the 2026-07-09 default) disables the
+    // fast exit-detection burst entirely — no timer, no vault reads.
+    if (HOT_POLL_MS > 0) {
+      this.hotPollTimer = setInterval(() => {
+        this.hotPoll().catch((err) => logger.warn('hot-poll error: %s', err instanceof Error ? err.message : String(err)));
+      }, HOT_POLL_MS);
+    }
     // Proactive wallet reconciliation (see RECONCILE_* constants). Periodic +
     // an initial sweep ~30s after start so a phantom 'open' whose tokens left
     // before this process booted (e.g. resumed from a prior run) clears promptly

@@ -54,20 +54,26 @@ const DEFAULTS = {
   // is research, not live-critical, so it yields the budget first. ~75 wallets × ~300 parsed txs ×
   // 6 ticks/day ≈ up to ~135k req/day (self-limits — most wallets have far fewer txs). Scoring is
   // droppable-tier so copy polls still preempt. Tune via COPYTRADE_* envs (raise after Jul 22).
-  intervalMs: 4 * 60 * 60 * 1000, // 4h between scoring passes
+  // 2026-07-09: SLASHED under the ≤100k-credit/day retune. wallet_pnl was ~14% of the
+  // Helius bill (~174k credits/day) and is research-tier (backlog discovery is not
+  // live-critical), so it yields the budget hard: interval 4h → 24h (6x fewer passes),
+  // backlog batch 75 → 20, deep rescans off. The follow_list/smart-set refresh (used
+  // wallets we actually copy) is kept — it is INCREMENTAL/cheap — just trimmed to 15.
+  // Net wallet_pnl ≈ 15k credits/day. Raise the COPYTRADE_* envs to spend more.
+  intervalMs: 24 * 60 * 60 * 1000, // 24h between scoring passes
   firstRunDelayMs: 90 * 1000,     // let boot/first-sync settle before RPC work
-  scoreBatchLimit: 75,            // backlog FIRST-scans per tick (reverted 2026-07-04 for the 15M cap)
+  scoreBatchLimit: 20,            // backlog FIRST-scans per tick (slashed 2026-07-09 for the 100k/day cap)
   maxSignaturesPerWallet: 300,    // shallow first-scan / triage depth
   maxSignaturesDeep: 1500,        // DEEP-rescan depth for promising-but-n-capped wallets
   cacheMaxSwaps: 1500,            // incremental-cache cap = deepest history we score on
-  deepBatchLimit: 3,             // deep rescans per tick (reverted 2026-07-04 with the batch revert)
+  deepBatchLimit: 0,             // deep rescans OFF (2026-07-09 for the 100k/day cap; 1500-sig scans are the most expensive)
   restaleSeconds: 24 * 3600,      // re-score a BACKLOG wallet at most once / 24h
   // Priority-refresh: keep the wallets we actually copy (follow_list ∪ smart set)
   // fresh on a TIGHT cadence. Refreshes are now INCREMENTAL (fetch only sigs newer
   // than the cache → ~10x cheaper than a full re-scan), so this is decoupled from
   // scoreBatchLimit and the batch is bumped up — the backlog keeps its full budget.
   refreshSeconds: 6 * 3600,       // re-score a USED wallet at most once / 6h
-  refreshBatchLimit: 30,          // used-wallets refreshed per tick (incremental, cheap)
+  refreshBatchLimit: 15,          // used-wallets refreshed per tick (incremental, cheap; trimmed 2026-07-09)
 };
 
 function intEnv(name: string, fallback: number): number {
