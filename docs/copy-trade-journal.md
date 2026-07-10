@@ -11,6 +11,86 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-07-10 — Daily review: both PROMOTE strategies now flash a new `degrading` trend flag with negative recent-per-trade net for the first time, while the 07-09 book day finalizes to −19.6 SOL (from a −3.05 partial read) — the second severe partial-to-final reversal in 5 days — and copy-src-winner-sniper-v2 quietly disappears from the roster after a dead week at n=0
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-07-10",
+  "overall": {"n": 7121, "net": -47.6409, "drop3": -61.7871, "stress": -120.0349, "open": 0},
+  "retired_summary": {"n": 24967, "net": -215.7926},
+  "regime_score": 5, "regime_24h": 4, "macro_score": 6, "btc_7d_pct": 2.8,
+  "book_daily_today": -0.12,
+  "leads": {"n_leads": 173, "hot": 52, "cold": 81},
+  "n_promotable_realistic": 2,
+  "strategies": [
+    {"id": "copy-hotlead-strict",         "realistic": true,  "n": 815, "net": 11.4209, "drop3":  4.8385, "stress":  2.7979, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict-hi",      "realistic": true,  "n": 134, "net":  4.6743, "drop3":  2.5032, "stress":  3.2007, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-src-gradspec",           "realistic": true,  "n":   4, "net":  1.0094, "drop3": -0.1665, "stress":  0.9480, "promo_score":  45.3,"verdict": "WATCH"},
+    {"id": "copy-hotlead-early",          "realistic": true,  "n":  42, "net": -2.0243, "drop3": -3.7751, "stress": -2.4164, "promo_score":  28.4,"verdict": "WATCH"},
+    {"id": "copy-fable-freshdip",         "realistic": true,  "n":  41, "net": -1.7068, "drop3": -3.6081, "stress": -2.0950, "promo_score":  28.2,"verdict": "WATCH"},
+    {"id": "copy-src-external",           "realistic": true,  "n":  13, "net": -0.1600, "drop3": -0.8508, "stress": -0.2903, "promo_score":  22.6,"verdict": "WATCH"},
+    {"id": "copy-fable-freshdip-bounded", "realistic": true,  "n":   2, "net": -1.0070, "drop3":  0,      "stress": -1.0070, "promo_score":  20.4,"verdict": "WATCH"},
+    {"id": "copy-fable-dip",              "realistic": true,  "n":   0, "net":  0,      "drop3":  0,      "stress":  0,      "promo_score":  20,  "verdict": "WATCH"},
+    {"id": "copy-fable-leadpullback",     "realistic": true,  "n":   0, "net":  0,      "drop3":  0,      "stress":  0,      "promo_score":  20,  "verdict": "WATCH"},
+    {"id": "copy-fable-deep",             "realistic": true,  "n":   0, "net":  0,      "drop3":  0,      "stress":  0,      "promo_score":  20,  "verdict": "WATCH"},
+    {"id": "copy-tp100-sl30-lag",         "realistic": true,  "n":1016, "net":-33.6990, "drop3":-38.5470, "stress":-43.4900, "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-conviction-consensus2",  "realistic": false, "n":1530, "net": 12.1049, "drop3": -0.6813, "stress": -3.8964, "promo_score":  35,  "verdict": "KEEP"},
+    {"id": "copy-tp100-sl30",            "realistic": false, "n":3524, "net":-38.2541, "drop3":-44.8107, "stress":-73.7867, "promo_score":  20,  "verdict": "KEEP"}
+  ]
+}
+```
+
+**Headline:** Both realistic-execution PROMOTE cases — `copy-hotlead-strict` and `copy-hotlead-strict-hi` — still clear every promotion gate (score 100 each), but `copy-trades.json` now surfaces a new `trend`/`recent_net_per_trade` field for the first time, and both are flagged **`degrading`**: `copy-hotlead-strict` is net **−0.00945 SOL/trade** on its recent window (vs +0.01931 prior), and `copy-hotlead-strict-hi` is worse at **−0.05711 SOL/trade** recent (vs +0.07986 prior). This is the first time the roster's two live candidates have shown a quantified recent-trade reversal simultaneously with their gates still green — `promotable_stable` reads `false` for both. Separately, the `regime.swing.daily` book series shows 07-09 finalizing at **−19.6 SOL**, far worse than the −3.05 partial reported yesterday — a ~16.6 SOL swing, the second severe partial-to-final reversal inside 5 days (after 07-06's +14.28→−13.12). And `copy-src-winner-sniper-v2` — flagged in this journal for a full week as stalled at n=0 — has disappeared from both `by_strategy` and `discovery_scorecard` entirely, apparently pruned overnight.
+
+**Day-over-day (vs 2026-07-09 SNAPSHOT):**
+- **`copy-hotlead-strict` — third erosion episode, and the first with a quantified negative recent-trade trend.** n 803→**815** (+12), net 12.7185→11.4209 (−1.30), drop3 6.1361→4.8385 (−1.30), stress 4.1931→2.7979 (−1.40). Score still 100, all gates still clear (monthly run-rate 24.47 SOL/mo), and it still has never posted a negative cumulative drop3 day. But the new `trend: "degrading"` field puts a number on what the last two entries described qualitatively: `recent_net_per_trade` is now **−0.00945** vs `prior_net_per_trade` +0.01931 — the strategy is currently losing money per trade on its most recent batch, masked so far by its large cumulative cushion. Worth watching closely: this is the mechanism by which a promotable strategy would eventually fail a gate.
+- **`copy-hotlead-strict-hi` — sharpest recent-trade reversal in the roster.** n 125→**134** (+9), net 4.8106→4.6743 (−0.14), drop3 2.6395→2.5032 (−0.14), stress 3.4269→3.2007 (−0.23). Cumulative metrics barely moved, but `recent_net_per_trade` is **−0.05711** against `prior_net_per_trade` +0.07986 — a much larger swing than its older sibling, on a strategy that only crossed n=100 yesterday. Its smaller cumulative cushion (drop3 2.50 vs strict's 4.84) means it has far less room to absorb a sustained bad stretch before failing a gate.
+- **`copy-hotlead-early` — deepened further, still WATCH.** n 35→42 (+7), net −0.5268→**−2.0243** (−1.50), drop3 −2.2776→**−3.7751** (−1.50), stress −0.8768→**−2.4164** (−1.54). Promo score 27→28.4. Still n<50 per the small-n rule, but every metric has now worsened for two straight reads since its first-batch positive print on 07-06.
+- **`copy-fable-freshdip` — drop3 negative for a 4th consecutive read, deepening.** n 36→41 (+5), net −0.5494→**−1.7068** (−1.16), drop3 −2.4507→**−3.6081** (−1.16), stress −0.9092→**−2.095** (−1.19). Promo score 27.2→28.2. Still too small for a verdict, but this is now four straight reads with a negative, worsening drop3 — the weakest sustained signal of any WATCH strategy.
+- **`copy-src-external` — flipped negative, biggest promo-score mover of the day.** n 5→13 (+8, faster growth than its prior ~1-trade/3-days pace), net 0.3589→**−0.16** (flipped negative), drop3 −0.2208→**−0.8508** (worse), stress 0.3003→**−0.29** (flipped negative). Promo score **34.8→22.6 (−12.2, >10pt mover)**. First negative read since entering the journal.
+- **`copy-src-gradspec` — first trades landed, biggest positive mover.** n 0→**4** (first entries since 07-06), net 0→1.0094, drop3 0→−0.1665 (mildly negative, net/stress positive), stress 0→0.948. Promo score **20→45.3 (+25.3)** on its first real batch. Per `discovery_scorecard`, `smart_copyable` is still stuck at **4** (unchanged from yesterday) against its pre-registered P1 bar of **≥10 by day 5** — day 5 is **tomorrow (07-11)**. At the current stall rate it looks likely to miss P1; worth an operator look at whether to extend or shelve per the day-7 fallback.
+- **`copy-src-winner-sniper-v2` — gone from the roster.** No longer present in `by_strategy`, `promotion.rows`, or `discovery_scorecard` — after a full week at n=0 (flagged as a WATCH concern in the last three journal entries), it appears to have been pruned overnight. This resolves last cycle's open question rather than raising a new one.
+- **Four new `copy-fable-*` shadow probes appeared overnight, systematically decomposing the freshdip thesis:** `copy-fable-dip` (n=0, drift bounded −20%..0%, no token-age gate — isolates drift depth from freshness), `copy-fable-leadpullback` (n=0, drift ≤10%, new `lead_pullback_gate` {lastM:3, minLosses:2} — a new dimension, gating on the lead's own recent losing streak instead of price action), `copy-fable-deep` (n=0, drift ≤10%, `min_pool_sol:30` — isolates liquidity depth), `copy-fable-freshdip-bounded` (n=2, identical to `copy-fable-freshdip` but adds a −20% floor on drift — isolates whether unbounded crash-dips were dragging the original thesis down). All day-0/day-1, far too early to read. Checked against the redundancy guardrail: each isolates a distinct gate/param (drift floor, lead-pullback, pool depth) not present anywhere else in the roster — no duplicates.
+- **Regime score held at 5** ("neutral"), but `score_24h` fell **7→4** — the 24h outlook is souring even though the current-window score didn't move. Macro flat at 6 (tailwind), BTC 7d% ticked up slightly (2.48%→2.8%).
+- **Book P&L: 07-09 finalized far worse than reported, a second severe partial-to-final reversal.** `regime.swing.daily` now reads 07-07 −10.17, 07-08 −7.60 (both unchanged from prior finalized reads), 07-09 **−19.6** (finalized from the −3.05 partial in yesterday's entry — a ~16.6 SOL negative swing), 07-10 partial **−0.12** (20 trades so far, essentially flat). `daily_mean_sol` over this window is **−9.37**, `daily_std_sol` 8.04. This is the second time in 5 days a partial-day read has swung by double digits at finalization (the other: 07-06 +14.28→−13.12), reinforcing that partial-day book numbers in this system skew optimistic and should not be trusted until finalized.
+- **Lead pool essentially flat:** 173→173 leads, hot 51→52 (+1), cold flat at 81.
+- **Bot health:** `diagnose.json` verdict is HEALTHY, all levels passing, WS connected, last graduation 624s ago.
+
+**Week-over-week (last available entries: 07-04 through 07-06, 07-09, plus today):**
+- **`copy-hotlead-strict` has now had three erosion episodes (07-05, the 07-07/08/09 stretch, and today)** without ever failing a gate or posting a negative cumulative drop3 day — but the pattern is shifting from "dips then fully recovers" (as seen 07-05→07-06) toward a more persistent grind, and today is the first time that grind shows up as a quantified negative per-trade trend rather than just a shrinking cushion.
+- **`copy-hotlead-strict-hi` crossed n=100 only yesterday and is already showing the sharpest recent-trade decline in the roster** — a reminder that "promotable" (cumulative gates clear) and "promotable_stable" (trend not degrading) are different claims, and the newer, smaller-cushion strategy is the one to watch most closely if the current regime stretch continues.
+- **The book is now on its 4th-and-5th consecutive negative-or-flat day (07-06 through 07-10)**, and the two worst partial reads in that stretch (07-06, 07-09) both finalized to sharply worse numbers than first reported — a now-repeated pattern worth treating as a standing caveat on any "partial day" number in this journal, not a one-off.
+- **`copy-tp100-sl30-lag` has failed every gate on every read since entering the journal (11+ consecutive reads)** and deepened again today (−2.07 SOL on all three metrics). The KILL case remains unenacted and as strong as it has ever been.
+- **Lead pool has been flat at the 51-53 hot plateau for over a week** — no growth, no decay, a stable but unexpanding pool.
+- **Roster housekeeping resolved one open question (`winner-sniper-v2` removed) and opened four new ones (the fable-family decomposition)** — consistent with the operator/other sessions iterating faster than this daily cadence, as noted in prior entries.
+
+**Verdicts (proposals — roster changes require operator approval + code edit to `COPY_STRATEGIES`):**
+
+- **PROMOTE (2, unchanged, but flag the new degrading-trend signal):**
+  - `copy-hotlead-strict`: n=815, net=+11.42, drop3=+4.84, stress=+2.80, monthly=24.47 SOL/mo. Score 100, all gates clear. New this cycle: `trend: degrading`, recent-window net/trade is negative (−0.00945) for the first time on record. Still the strongest, longest-tested case in the roster — recommend funding a live-micro test, but flag the degrading trend as something to monitor post-funding, not a reason to hold.
+  - `copy-hotlead-strict-hi`: n=134, net=+4.67, drop3=+2.50, stress=+3.20, monthly=15.58 SOL/mo. Score 100, all gates clear, but the sharpest recent-trade decline in the roster (−0.057 SOL/trade recent vs +0.080 prior) on a strategy only 2 days past its n=100 crossing. Recommend a live-micro test, but with closer monitoring than `-strict` given the smaller cushion and steeper recent decline.
+
+- **KILL (1 carried over, now 11+ consecutive failing reads):**
+  - `copy-tp100-sl30-lag`: n=1016, net=−33.70, drop3=−38.55, stress=−43.49. Failed every gate on every read since entering the journal; deepened again this cycle. `paired_vs_baseline` still shows the lag mechanism itself is fine (+3.92 SOL / +0.0074 per event over 529 shared events) — the tp100/sl30 exit shape is the culprit.
+
+- **WATCH:**
+  - `copy-src-gradspec`: n=4 (first trades), promo score 45.3 (biggest positive mover). `smart_copyable` stuck at 4/10 with its P1 checkpoint due **tomorrow (07-11)** — flag for an operator look at extend-vs-shelve.
+  - `copy-hotlead-early`: n=42, deepened for a 2nd straight read (drop3 −3.78, worse again). Still <50, but the trend since its first positive batch has been uniformly negative.
+  - `copy-fable-freshdip`: n=41, drop3 negative for a 4th consecutive read and deepening — the weakest sustained WATCH signal in the roster.
+  - `copy-src-external`: n=13, flipped negative this cycle after growing faster than its historical pace. Still far too small.
+  - `copy-fable-freshdip-bounded`, `copy-fable-dip`, `copy-fable-leadpullback`, `copy-fable-deep`: all n≤2, day 0/1 of a systematic freshdip-thesis decomposition. Too early to read any of them.
+
+- **Idealized references (not live candidates):**
+  - `copy-conviction-consensus2`: n=1530, net=+12.10. Drop3/stress both stayed negative but ticked up slightly (−0.90→−0.68, −3.97→−3.90) — a mild recovery in step with the book, still degrading trend per the promotion card.
+  - `copy-tp100-sl30`: n=3524, net=−38.25. Unchanged verdict, still the deepest negative reference.
+
+**New strategies to try:** None proposed this cycle — four fable-family variants already landed overnight covering the natural next hypotheses (drift-floor, lead-pullback, pool-depth), and `copy-src-gradspec`'s P1 checkpoint lands tomorrow. Per the redundancy guardrail, the right move is watching what's already cooking.
+
+**Operator next step:** The two PROMOTE cases (`copy-hotlead-strict`, `copy-hotlead-strict-hi`) still clear every gate and the live-micro recommendation stands — but both now carry a **new, quantified degrading-trend flag** (negative recent-window net/trade) that wasn't visible in prior reads; worth a quick look at whether this is regime noise (consistent with the book's ongoing rough stretch) or an early warning before committing live capital, especially for `-hi` given its thinner cushion. Secondary and unchanged: enact the long-standing `copy-tp100-sl30-lag` KILL (11+ consecutive failing reads). Also worth noting: `copy-src-gradspec`'s pre-registered P1 checkpoint (smart_copyable≥10) lands tomorrow (07-11) and it's currently tracking at 4/10.
+
+---
+
 ## 2026-07-09 — Daily review: copy-hotlead-strict-hi crosses n=100 and posts a second PROMOTABLE case (score 100) alongside copy-hotlead-strict, even as the book endures a 4-day negative stretch (regime 9→5) and the 07-06 partial +14.28 SOL book read finalizes to −13.12 SOL — the largest partial-to-final reversal recorded; no /copy-daily-report entries ran on 07-07/07-08, so today's deltas span 3 days
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
