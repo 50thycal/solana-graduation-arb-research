@@ -1,3 +1,3 @@
 # ops request: type='db'
-# SELECT ts, name, msg FROM bot_errors ORDER BY ts DESC LIMIT 12
-  ERROR: prepare failed: no such column: msg
+# SELECT ts, level, name, message FROM bot_errors ORDER BY ts DESC LIMIT 12
+  (0 rows)
