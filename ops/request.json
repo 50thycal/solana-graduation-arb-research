@@ -1,1 +1,1 @@
-{"type": "logs", "limit": 200, "filter": "sync", "deployment_id": ""}
+{"type": "db", "sql": "SELECT ts, name, msg FROM bot_errors ORDER BY ts DESC LIMIT 12", "max_rows": 12}
