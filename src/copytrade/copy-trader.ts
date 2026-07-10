@@ -116,6 +116,15 @@ export interface CopyStrategy {
   maxEntryDriftPct?: number;   // drift gate (needs entryDelaySec): at delayed-entry time, skip the copy if the
                                // price ran more than this % ABOVE the detection snapshot (don't chase). Skips
                                // are recorded as status='skipped' rows with the measured drift.
+  minPoolSol?: number;         // POOL-DEPTH gate (2026-07-10, data-collection-first): at the delayed fill, skip
+                               // if the pool's SOL reserves are below this. The quote-vault balance comes back on
+                               // the SAME fetchVaultPrice read that prices the entry (solReserves) — zero extra
+                               // RPC. Hypothesis (NOT yet backtestable: pool depth was never recorded per-trade —
+                               // pumpswap_initial_lp_sol is null on 97% of rows): shallow pools = drained/rugging
+                               // tokens where realistic fills and exits are worst. Every entry now RECORDS
+                               // pool_quote_sol on its row regardless of this gate, so the threshold becomes
+                               // calibratable from data within days (that recording is the real payoff even if
+                               // the gate itself fails). PumpSwap pools open with ~85 SOL from migration.
   minEntryDriftPct?: number;   // BOUNDED-DIP lower bound (2026-07-08, data-backed): skip if the price fell more
                                // than this % BELOW the detection snapshot (a floor under maxEntryDriftPct's
                                // ceiling). Motivation: copy-fable-freshdip's own recorded trades bucketed by
@@ -130,6 +139,16 @@ export interface CopyStrategy {
                                // lead-momentum gate: look at OUR last `lastN` closed baseline copies of this
                                // lead; require >= minTrades of history and sum(net_sol) > minNetSol. Benches
                                // leads who are currently losing us money; new leads with no history are skipped.
+  leadPullbackGate?: { lastM: number; minLosses: number };
+                               // LEAD-PULLBACK gate (2026-07-10, data-backed — pair with hotLeadGate): additionally
+                               // require >= minLosses of the lead's last `lastM` closed baseline copies to be
+                               // LOSSES — i.e. buy a hot lead's drawdown, not its winning streak. Backtest on
+                               // copy-hotlead-strict's own 814 closed rows: hot leads coming off >=2 losses in the
+                               // last 3 earned +0.034/trade (n=423, wr 0.33) while hot leads on a clean recent run
+                               // LOST −0.007/trade (n=391, wr 0.29). NOTE this REFUTED the opposite hypothesis (a
+                               // cold-streak veto): within already-hot leads, recent losses mean-REVERT — the
+                               // wallet-level analog of the dip entry (buy quality on pullback). Requires >= lastM
+                               // history (thin history = skipped). Zero RPC (baseline-series SQL, cached).
   eliteLeadGate?: { minTrades: number; minNetSol: number };
                                // CUMULATIVE lead-quality gate: lead's all-time baseline copy net must exceed
                                // minNetSol over >= minTrades total copies. Unlike hotLeadGate (noisy last-10
@@ -413,6 +432,43 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-fable-freshdip-bounded', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 0, minEntryDriftPct: -20,
     hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 }, maxTokenAgeSec: 900 },
+  // ── FD3-cohort (2026-07-10, Fable line; operator-directed 3-strategy batch — treat as ONE
+  //    experiment for MAX_INFLIGHT accounting, like the c2rr cohort). Design session: acted on the
+  //    phase-3 monitor ledger + two fresh ops backtests over strict's 814 closed rows.
+  //
+  // FD3a: BOUNDED DIP, NO AGE GATE — decomposes freshdip. The 2026-07-03 OOS backtest's STRONGEST
+  //    cut was dip-fills alone (drift<=0 on strict: h1 +17.4/xt3 +10.8, h2 +6.5/xt3 +3.4, n=336) —
+  //    never deployed; we shipped dip+age (freshdip, struggling at n=41) instead. This isolates the
+  //    dip lever on the full-fire-rate incumbent entry, with the −20% falling-knife floor learned
+  //    from freshdip's live rows. Completes the matrix: strict (no dip) / THIS (band) /
+  //    freshdip (dip+age) / freshdip-bounded (band+age) → clean attribution of which lever carries.
+  //    Resolve vs copy-hotlead-strict at n>=100 (arena rules); expect ~40% of strict's fire rate.
+  { id: 'copy-fable-dip', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 0, minEntryDriftPct: -20,
+    hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
+  // FD3b: LEAD PULLBACK — buy the hot lead's drawdown. Ops backtest 2026-07-10 on strict's own
+  //    rows: hot leads with >=2 LOSSES in their last 3 baseline copies earned +0.034/trade
+  //    (n=423, wr .33) while hot leads on a clean recent run LOST −0.007/trade (n=391, wr .29).
+  //    IMPORTANT: this REFUTED the pre-registered opposite (a cold-streak veto — skip leads mid
+  //    losing streak); within already-hot leads, recent losses mean-REVERT. Mechanistically the
+  //    wallet-level analog of the dip fill: buy quality on pullback, never on a visible win-run
+  //    (which attracts crowding/tops). One new lever on the incumbent chassis; zero RPC.
+  //    Resolve vs copy-hotlead-strict at n>=100; kill if beaten on net/trade AND drop3/trade.
+  { id: 'copy-fable-leadpullback', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
+    leadPullbackGate: { lastM: 3, minLosses: 2 } },
+  // FD3c: POOL DEPTH — data-collection-first. Hypothesis: shallow pools (drained/rugging tokens)
+  //    are where realistic fills+exits die; PumpSwap pools open ~85 SOL from migration, so a pool
+  //    at <30 SOL has bled >60% of its depth. NOT backtestable yet (pool depth was never recorded
+  //    per-trade; pumpswap_initial_lp_sol is null on ~97% of copy rows) — so every entry now
+  //    RECORDS pool_quote_sol from the same vault read that prices the fill (zero RPC), and this
+  //    strategy trades the gate live while the data accrues. The recording is the real payoff:
+  //    within days the threshold is calibratable offline for all strategies. Threshold 30 SOL is
+  //    a posted prior, not a fit. Resolve vs copy-hotlead-strict at n>=100; recalibrate or kill
+  //    from the recorded pool_quote_sol distribution once mature.
+  { id: 'copy-fable-deep', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
+    minPoolSol: 30 },
   // ── HE (2026-07-06, phase-1 handoff 2026-07-05): HOTLEAD-EARLY — earliness gate on the
   //    promotable chassis. Copy the incumbent's hot leads ONLY when they're among the first ≤2
   //    smart buyers on the mint (maxConsensusRecent: 2 — the triggering lead is already logged
@@ -1196,6 +1252,31 @@ export class CopyTrader {
     return res;
   }
 
+  /** Last-M outcome mix for a lead on the shared baseline series — feeds leadPullbackGate
+   *  ("buy the hot lead's drawdown"). Same source/caching pattern as leadRecentStats. */
+  private pullbackCache = new Map<string, { ts: number; n: number; losses: number }>();
+  private leadPullbackStats(leadWallet: string, lastM: number): { n: number; losses: number } {
+    const now = Date.now();
+    const hit = this.pullbackCache.get(leadWallet);
+    if (hit && now - hit.ts < 60_000) return hit;
+    let res = { n: 0, losses: 0 };
+    try {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) AS n, COALESCE(SUM(net_sol <= 0), 0) AS losses FROM (
+          SELECT net_sol FROM copy_trades
+          WHERE status = 'closed' AND strategy_id = ? AND lead_wallet = ? AND net_sol IS NOT NULL
+          ORDER BY exit_ts DESC LIMIT ?
+        )
+      `).get(COPY_REGIME_BASELINE, leadWallet, lastM) as { n: number; losses: number };
+      res = { n: row.n, losses: row.losses };
+    } catch { /* table may be empty */ }
+    this.pullbackCache.set(leadWallet, { ts: now, ...res });
+    if (this.pullbackCache.size > 2000) {
+      for (const [k, v] of this.pullbackCache) if (now - v.ts > 600_000) this.pullbackCache.delete(k);
+    }
+    return res;
+  }
+
   /** Cumulative (all-time) baseline copy stats for a lead — the eliteLeadGate's
    *  signal. Cached 5min per wallet (lifetime stats move slowly). */
   private eliteLeadCache = new Map<string, { ts: number; n: number; net: number }>();
@@ -1418,6 +1499,14 @@ export class CopyTrader {
         const st = this.leadRecentStats(leadWallet, s.hotLeadGate.lastN);
         if (st.n < s.hotLeadGate.minTrades || st.net <= s.hotLeadGate.minNetSol) { this.recordSkip(s.id, 'hotlead'); continue; }
       }
+      // lead-pullback gate: only enter a hot lead's DRAWDOWN (>= minLosses of its last M
+      // baseline copies were losses) — hot leads on a clean recent run mean-revert negative.
+      if (s.leadPullbackGate) {
+        const pb = this.leadPullbackStats(leadWallet, s.leadPullbackGate.lastM);
+        if (pb.n < s.leadPullbackGate.lastM || pb.losses < s.leadPullbackGate.minLosses) {
+          this.recordSkip(s.id, 'no_pullback'); continue;
+        }
+      }
       if (s.eliteLeadGate) {
         const st = this.leadLifetimeStats(leadWallet);
         if (st.n < s.eliteLeadGate.minTrades || st.net <= s.eliteLeadGate.minNetSol) { this.recordSkip(s.id, 'elitelead'); continue; }
@@ -1448,7 +1537,7 @@ export class CopyTrader {
         leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: size,
         tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
         detectPrice: price.priceSol, entryDelaySec: null, entryDriftPct: null, leadBuySol,
-        copyEventId,
+        copyEventId, poolQuoteSol: price.solReserves,
       });
       if (id == null) continue;
       this.positions.set(id, {
@@ -1498,6 +1587,13 @@ export class CopyTrader {
       return;
     }
 
+    // Pool-depth gate — the same vault read that priced the entry carries the pool's SOL
+    // reserves; skip shallow (drained/rugging) pools. Zero extra RPC. See minPoolSol.
+    if (s.minPoolSol != null && price.solReserves < s.minPoolSol) {
+      this.recordSkip(s.id, 'shallow_pool');
+      return;
+    }
+
     // Re-check capacity/dedupe — the roster may have changed during the wait.
     const open = [...this.positions.values()].filter((p) => p.strategyId === s.id);
     if (open.some((p) => p.mint === mint) || open.length >= MAX_CONCURRENT_PER_STRATEGY) { this.recordSkip(s.id, 'raced'); return; }
@@ -1518,7 +1614,7 @@ export class CopyTrader {
       leadWallet, leadTier, entryTs: nowSec, entryPrice: entryP, sizeSol: size,
       tpPrice, slPrice, exitFollow: s.exitFollow, maxHoldSec: s.maxHoldSec, detectionLagSec,
       detectPrice, entryDelaySec: s.entryDelaySec ?? 0, entryDriftPct: driftPct, leadBuySol,
-      copyEventId,
+      copyEventId, poolQuoteSol: price.solReserves,
     });
     if (id == null) return;
     const pos: OpenPos = {
@@ -2122,18 +2218,21 @@ export class CopyTrader {
     detectPrice: number | null; entryDelaySec: number | null; entryDriftPct: number | null;
     leadBuySol?: number | null; executionMode?: 'shadow' | 'live_micro';
     copyEventId?: string | null;
+    poolQuoteSol?: number | null; // pool SOL reserves at the entry read (free, see minPoolSol)
   }): number | null {
     const res = this.db.prepare(`
       INSERT OR IGNORE INTO copy_trades
         (strategy_id, mint, pool_address, base_vault, quote_vault, lead_wallet, lead_tier,
          entry_ts, entry_price_sol, size_sol, tp_price_sol, sl_price_sol, exit_follow,
          max_hold_sec, detection_lag_sec, high_price_sol, scaled_out, realized_partial_sol, status,
-         detect_price_sol, entry_delay_sec, entry_drift_pct, lead_buy_sol, execution_mode, copy_event_id)
+         detect_price_sol, entry_delay_sec, entry_drift_pct, lead_buy_sol, execution_mode, copy_event_id,
+         pool_quote_sol)
       VALUES
         (@strategy_id, @mint, @pool, @base_vault, @quote_vault, @lead_wallet, @lead_tier,
          @entry_ts, @entry_price, @size, @tp, @sl, @exit_follow,
          @max_hold, @lag, @entry_price, 0, 0, 'open',
-         @detect_price, @entry_delay, @entry_drift, @lead_buy, @exec_mode, @copy_event_id)
+         @detect_price, @entry_delay, @entry_drift, @lead_buy, @exec_mode, @copy_event_id,
+         @pool_quote)
     `).run({
       strategy_id: d.strategyId, mint: d.mint, pool: d.pool, base_vault: d.baseVault, quote_vault: d.quoteVault,
       lead_wallet: d.leadWallet, lead_tier: d.leadTier, entry_ts: d.entryTs, entry_price: d.entryPrice,
@@ -2142,6 +2241,7 @@ export class CopyTrader {
       detect_price: d.detectPrice, entry_delay: d.entryDelaySec, entry_drift: d.entryDriftPct,
       lead_buy: d.leadBuySol ?? null, exec_mode: d.executionMode ?? 'shadow',
       copy_event_id: d.copyEventId ?? null,
+      pool_quote: d.poolQuoteSol ?? null,
     });
     return res.changes > 0 ? (res.lastInsertRowid as number) : null;
   }
@@ -2330,6 +2430,10 @@ const STRATEGY_THESIS: Record<string, string> = {
   'copy-hotlead-hold30m': 'Hot-lead entry, but hold up to 30 min (SL −30%, no take-profit) — let winners run past +100% instead of capping.',
   'copy-hotlead-strict-xbad': 'Incumbent gate PLUS a veto: skip leads whose all-time copy net is proven negative (downside-persistence exclusion).',
   'copy-fable-freshdip': 'Incumbent gate + only DIP fills (price at/below the detection snapshot) on tokens graduated < 15 min ago — fresh-token dip entries.',
+  'copy-fable-freshdip-bounded': 'freshdip + a −20% floor on the dip: take the pullback, skip the falling knife (drift < −20% had 0% win rate on freshdip\'s own rows).',
+  'copy-fable-dip': 'Incumbent gate + bounded dip fills ONLY (0 ≥ drift ≥ −20%), no freshness gate — isolates the dip lever at full fire rate (the strongest never-deployed backtest cut).',
+  'copy-fable-leadpullback': 'Incumbent gate + enter only when ≥2 of the lead\'s last 3 copies LOST — buy the hot lead\'s drawdown, never its visible win-run (pullback cohort +0.034/t vs win-run −0.007/t).',
+  'copy-fable-deep': 'Incumbent gate + pool must hold ≥30 SOL at the fill — skip drained/rugging pools. Data-collection-first: every entry now records pool depth (pool_quote_sol) to calibrate this.',
   'copy-hotlead-early': 'Incumbent gate + EARLINESS cap: enter only when the lead is among the first ≤2 smart buyers on the mint — buy early, not into the 3rd+ smart buyer\'s exit liquidity (outcome_lift crowding cliff).',
   'copy-conviction-consensus2': 'Buy when ≥ 2 smart wallets bought the SAME token (token-level consensus). Idealized ~1.1s fill — upper-bound reference, never live.',
   'copy-tp100-sl30': 'Copy EVERY watched lead, +100% TP / −30% SL, idealized ~1.1s fill. The load-bearing baseline with no lead selection.',
@@ -2880,6 +2984,8 @@ export function computeCopyTrades(db: Database.Database): unknown {
         entry_delay_sec: s.entryDelaySec ?? null, follow_sell_delay_sec: s.followSellDelaySec ?? null,
         max_entry_drift_pct: s.maxEntryDriftPct ?? null,
         min_entry_drift_pct: s.minEntryDriftPct ?? null,
+        min_pool_sol: s.minPoolSol ?? null,
+        lead_pullback_gate: s.leadPullbackGate ?? null,
         min_lead_buy_sol: s.minLeadBuySol ?? null, hot_lead_gate: s.hotLeadGate ?? null,
         elite_lead_gate: s.eliteLeadGate ?? null,
         regime_gate_min_score: s.regimeGateMinScore ?? null,

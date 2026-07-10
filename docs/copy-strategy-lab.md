@@ -10,6 +10,55 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-10 — Ledger enactment (U13 prune) + FD3 cohort: 3 new strategies from fresh backtests (operator-directed)
+
+Operator directed: act on the phase-3 monitor ledger + spawn three new strategies. Grounded in two
+new ops-DB backtests over `copy-hotlead-strict`'s 814 closed rows before writing any strategy code.
+
+**U13 ENACTED — `winner_sniper` discovery source PRUNED (FAILS at n=148).** Once the 07-08
+watchlist-reserve fix let its wallets actually subscribe, the probe `copy-src-winner-sniper-v2`
+collected fast and resolved decisively: n=148, net −7.17, **−0.048/trade vs the OG control's
+−0.032/trade** — worse than copying unselected OG wallets. Two rounds of profit-proofing (winner-
+window hit + forward pre-filter) still don't produce copyable leads — consistent with the 06-29
+audit (own-PnL ⊄ copy profit). Registry row removed; harvester + pre-filter were already
+default-OFF from the 07-09 credit retune. Both winner-sniper probeIds are burned. NOTE: `gradspec`
+shares the (default-off) pre-filter, so its funnel is FROZEN until `PREFILTER_DISABLED=false` —
+its probe (n=4, +0.25/t) trades only from already-passed wallets. U14 also resolved: the
+watchlist at 40 is the intentional 07-09 ≤100k-credit/day posture, not a failure.
+
+**Backtest 1 — cold-streak veto REFUTED, inverted (the honest negative result):** hypothesis was
+"skip hot leads mid losing-streak" (downside persistence). The data says the opposite *within
+already-hot leads*: ≥2 losses in the lead's last 3 baseline copies → **+0.034/trade (n=423, wr
+.33)**; clean recent run (0–1 losses) → **−0.007/trade (n=391, wr .29)**; 3-loss streaks were the
+best of all (+0.043/t, n=79). Recent losses on a hot lead mean-REVERT — the wallet-level analog of
+the dip fill (buy quality on pullback, never on the visible win-run that attracts crowding).
+
+**Backtest 2 — LP-depth gate not backtestable:** `pumpswap_initial_lp_sol` is NULL on 789/814
+rows (enrichment barely ran). Pivoted to data-collection-first (below).
+
+**Spawned (operator-directed 3-strategy cohort — treat as ONE experiment for MAX_INFLIGHT, like
+c2rr; challengers in flight: freshdip, freshdip-bounded, hotlead-early + these 3):**
+- **`copy-fable-dip`** — incumbent + bounded dip band (0 ≥ drift ≥ −20%), NO age gate. The
+  strongest cut of the 07-03 OOS backtest (dip-only: h1 +17.4/xt3 +10.8, h2 +6.5/+3.4, n=336) was
+  never deployed — we shipped dip+age (freshdip) instead. Completes the attribution matrix:
+  strict / dip / freshdip / freshdip-bounded.
+- **`copy-fable-leadpullback`** — incumbent + `leadPullbackGate {lastM:3, minLosses:2}` (new gate
+  + `no_pullback` skip reason): enter only a hot lead's drawdown. Backtested same-day (above).
+- **`copy-fable-deep`** — incumbent + `minPoolSol: 30` (new gate + `shallow_pool` skip reason):
+  skip pools that bled below 30 SOL (fresh PumpSwap pools open ~85). Threshold is a POSTED PRIOR,
+  not a fit — the real payoff is the new data collection: **every entry on every strategy now
+  records `pool_quote_sol`** (new column) from the same vault read that prices the fill (zero
+  RPC), making pool-depth vs outcome backtestable within days.
+
+All three: resolve vs `copy-hotlead-strict` at n≥100 per arena rules (PRUNE if beaten on net/trade
+AND drop3/trade). Fire-rate caveat: the 07-09 watchlist cut (140→40 wallets) lowers everyone's
+event volume — n≥100 timelines stretch accordingly; judge fire rates against the post-retune
+baseline, not the old one. Verified: build green; 31-check offline harness (prune, roster shapes,
+pullback SQL + gate arithmetic incl. thin-history, pool gate boundary, pool_quote_sol migration +
+insertOpen recording, config publication, arena auto-registration).
+
+---
+
 ## 2026-07-09 — Degradation / strength-over-time check (operator-directed)
 
 Operator observation: the promotable strategies have been declining loop-over-loop — still clearing

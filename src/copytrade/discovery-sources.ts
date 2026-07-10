@@ -78,20 +78,21 @@ export const DISCOVERY_SOURCES: DiscoverySource[] = [
     hypothesis: 'Public top-trader leaderboard wallets copy better than OG — honest prior: crowded/alpha-decayed.',
     added: '2026-06-30',
   },
-  {
-    id: 'winner_sniper',
-    label: 'Winner-sniper precision (operator thesis, 3-stage funnel)',
-    hypothesis: '3-stage funnel to find repeatedly-profitable early buyers: (1) credit a wallet only if it took PROFIT buying a graduation that went on to win its ~20-min price path; (2) forward-watch bar-clearers across ALL PumpSwap and keep only those that stay profitable on OTHER tokens; (3) score the survivors — scoring decides tradability. Copies these vs OG.',
-    added: '2026-07-02',
-    // Fresh measurement series (operator 2026-07-04): the old copy-src-winner-sniper id carried
-    // 109 trades (net −1.8) from the superseded tally-bar selection — retire it, measure the
-    // 3-stage funnel clean under a new id. Old rows roll into retired_summary.
-    probeId: 'copy-src-winner-sniper-v2',
-    // 3-stage funnel (operator 2026-07-04): profit-credited tally → forward pre-filter
-    // (winner-prefilter.ts) → FIFO scorer. Tradable = pre-filter PASSED ∩ the relaxed
-    // scored gate — "the scoring decides if it is ready to be tradable".
-    signalSet: (db) => getPrefilterGatedWallets(db, 'winner_sniper'),
-  },
+  // ── PRUNED 2026-07-10 (FAILS at n=148; enacted from the phase-3 monitor ledger U13): winner_sniper
+  //    (operator thesis, 3-stage funnel: profit-credited winner-window hits → forward pre-filter
+  //    across all of PumpSwap → FIFO scorer). Once the 2026-07-08 watchlist-reserve fix let its
+  //    wallets actually subscribe, the probe copy-src-winner-sniper-v2 collected fast and resolved
+  //    decisively: n=148, net −7.17, −0.048/trade vs the OG control's −0.032/trade — WORSE than
+  //    copying unselected OG wallets, on both net/trade and drop3/trade. The thesis ("wallets that
+  //    repeatedly profit on winner graduations, then keep profiting forward, copy better") is
+  //    refuted at full sample: even two rounds of profit-proofing don't produce copyable leads —
+  //    consistent with the 2026-06-29 audit (own-PnL ⊄ copy profit; we mirror entries late with our
+  //    own exits, so their edge doesn't transfer). Harvester + pre-filter were already default-OFF
+  //    (2026-07-09 credit retune); this removes the registry row → probe/scorecard/routing retire,
+  //    closed rows → retired_summary, and its slice of the (now 5-slot) source watch reserve frees
+  //    for gradspec/external. winner_prefilter rows with origin='winner_sniper' become inert; the
+  //    prefilter WATCHER stays (gradspec shares it). Do NOT revive this probeId (stale rows);
+  //    the v1 id copy-src-winner-sniper is also burned.
   {
     id: 'gradspec',
     label: 'Post-grad-AMM specialist reseed of the forward pre-filter (phase-1 handoff 2026-07-05)',

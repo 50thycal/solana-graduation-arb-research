@@ -1219,6 +1219,11 @@ function runMigrations(db: Database.Database): void {
     // (bundle timed out → slow RPC fallback). Pairs with tx_land_ms to confirm whether
     // the ~4.8s copy-live latency is Jito bundles failing to land. live_micro only.
     if (!have.has('entry_land_path')) db.exec(`ALTER TABLE copy_trades ADD COLUMN entry_land_path TEXT`);
+    // Pool SOL reserves at entry (2026-07-10) — captured from the SAME vault read that prices
+    // the fill (fetchVaultPrice.solReserves), zero extra RPC. Recorded on EVERY entry so
+    // pool-depth vs outcome is backtestable (pumpswap_initial_lp_sol was null on ~97% of
+    // copy rows — this closes that gap at the trade level). Feeds the minPoolSol gate design.
+    if (!have.has('pool_quote_sol')) db.exec(`ALTER TABLE copy_trades ADD COLUMN pool_quote_sol REAL`);
     // One-time correction (bug fixed 2026-06-18): early live_micro rows were sized at
     // COPY_SIZE_SOL (0.5) instead of MICRO_TRADE_SIZE_SOL (0.05), inflating net_sol 10x
     // and mis-feeding the daily-loss breaker. Re-derive size + net from the correct
