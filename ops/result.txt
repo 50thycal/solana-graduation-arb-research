@@ -1,20 +1,10 @@
-# latest deployment 997ad9b9-5aa8-4cb5-820f-9756c473aed5 (status=SUCCESS, created=2026-07-10T01:01:55.701Z)
-# ops request: type='logs'
-2026-07-10T01:02:57.883893223Z INFO  Status sync error
-2026-07-10T01:02:57.884673724Z INFO  Status sync scheduled
-2026-07-10T01:02:57.884681442Z INFO  Status sync active — Claude can self-serve from these URLs
-2026-07-10T01:04:59.505021453Z INFO  Status sync still degraded
-2026-07-10T01:06:54.584358119Z INFO  Status sync still degraded
-2026-07-10T01:08:59.237498314Z INFO  Status sync still degraded
-2026-07-10T01:10:50.780672448Z INFO  Status sync still degraded
-2026-07-10T01:12:58.689200736Z INFO  Status sync still degraded
-2026-07-10T01:14:52.246216613Z INFO  Status sync still degraded
-2026-07-10T01:16:52.291768816Z INFO  Status sync still degraded
-2026-07-10T01:18:52.701333718Z INFO  Status sync still degraded
-2026-07-10T01:20:52.496952946Z INFO  Status sync still degraded
-2026-07-10T01:22:53.007933861Z INFO  Status sync still degraded
-2026-07-10T01:24:52.854007094Z INFO  Status sync still degraded
-2026-07-10T01:26:52.820758275Z INFO  Status sync still degraded
-2026-07-10T01:28:52.864734392Z INFO  Status sync still degraded
-2026-07-10T01:30:52.718243880Z INFO  Status sync still degraded
-2026-07-10T01:32:50.983325823Z INFO  Status sync still degraded
+# ops request: type='db'
+# SELECT ts, level, name, message FROM bot_errors ORDER BY ts DESC LIMIT 8
+  ts            | level | name      | message                                                                                                                                                                             
+  --------------+-------+-----------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  1783647584258 | error | gist-sync | Status sync failing (1x): Blob create failed for diagnose.json: 401 {
+  "message": "Bad credentials",
+  "documentation_url": "https://docs.github.com/rest",
+  "status": "401"
+}
+  [1 rows]
