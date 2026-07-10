@@ -36,7 +36,7 @@ import { computeCopyTrades } from '../copytrade/copy-trader';
 import { computeLiveExecutionStats } from './live-execution-stats';
 import { computeLiveTrainingData } from './live-training-data';
 import { globalRpcLimiter } from '../utils/rpc-limiter';
-import { getGraduationCount, getLastBotError, getRecentBotErrors } from '../db/queries';
+import { getGraduationCount, getLastBotError, getRecentBotErrors, insertBotError } from '../db/queries';
 import { makeLogger } from '../utils/logger';
 import type { LogBuffer } from '../utils/log-buffer';
 
@@ -105,7 +105,12 @@ export class GistSync {
     await this.sync();
 
     this.timer = setInterval(() => {
-      this.sync().catch((err) => logger.error({ err }, 'Status sync failed'));
+      // Only buildPayloads() throws land here (push errors are caught inside
+      // sync()) — same platform-log constraint: keep the reason in the msg text.
+      this.sync().catch((err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        logger.error({ err }, `Status sync failed (payload build): ${message.slice(0, 400)}`);
+      });
     }, this.intervalMs);
 
     logger.info({ intervalMs: this.intervalMs, branch: BRANCH }, 'Status sync scheduled');
@@ -368,13 +373,31 @@ export class GistSync {
     } catch (err) {
       this.consecutiveFailures += 1;
       const message = err instanceof Error ? err.message : String(err);
+      // Railway's platform log surface only exposes the pino msg text — the
+      // structured { err } field is stripped — so the failure reason must be
+      // embedded in the message itself or the 2026-07-10 outage repeats as an
+      // undiagnosable "Status sync error" with no detail anywhere.
       if (this.consecutiveFailures === 1) {
-        logger.error({ err }, 'Status sync error');
+        logger.error({ err }, `Status sync error: ${message.slice(0, 400)}`);
       } else {
         logger.warn(
           { consecutiveFailures: this.consecutiveFailures, lastError: message },
-          'Status sync still degraded',
+          `Status sync still degraded (${this.consecutiveFailures}x): ${message.slice(0, 300)}`,
         );
+      }
+      // When the sync is down, bot-status (logs.json) is down with it — the
+      // ops db channel is the only readable surface left. Record the reason
+      // there on the first failure, then hourly (~30 × 2-min cycles).
+      if (this.consecutiveFailures === 1 || this.consecutiveFailures % 30 === 0) {
+        try {
+          insertBotError(this.db, {
+            ts: Date.now(),
+            level: 'error',
+            name: 'gist-sync',
+            message: `Status sync failing (${this.consecutiveFailures}x): ${message.slice(0, 500)}`,
+            stack: err instanceof Error ? err.stack?.slice(0, 2000) : undefined,
+          });
+        } catch { /* never let diagnostics take down the sync loop */ }
       }
     }
   }
