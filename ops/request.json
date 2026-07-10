@@ -1,1 +1,1 @@
-{"type": "logs", "limit": 120, "filter": "", "deployment_id": ""}
+{"type": "logs", "limit": 200, "filter": "sync", "deployment_id": ""}
