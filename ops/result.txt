@@ -1,123 +1,15 @@
 # latest deployment 997ad9b9-5aa8-4cb5-820f-9756c473aed5 (status=SUCCESS, created=2026-07-10T01:01:55.701Z)
 # ops request: type='logs'
-2026-07-10T01:04:26.114058105Z INFO  Fetched 0 swaps for CP1Eu1BM (6 sigs, 6 parsed)
-2026-07-10T01:04:26.185015380Z INFO  Fetched 0 swaps for EwKhFt4U (1 sigs, 1 parsed)
-2026-07-10T01:04:32.974996294Z INFO  Probe: 9HBjWn buy pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:04:33.882342902Z INFO  Probe: 9HBjWn sell pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:04:34.082658902Z INFO  Probe: 9HBjWn sell pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:04:34.675732350Z INFO  Probe: 9HBjWn sell pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:04:35.383294830Z INFO  Fetched 87 swaps for FK5L5MUd (95 sigs, 95 parsed)
-2026-07-10T01:04:36.792802194Z INFO  Fetched 4 swaps for GhKgnnXV (13 sigs, 13 parsed)
-2026-07-10T01:04:37.078632019Z INFO  Fetched 0 swaps for GnfC8fyX (2 sigs, 2 parsed)
-2026-07-10T01:04:37.277512861Z INFO  Fetched 0 swaps for GtjkEuSB (1 sigs, 1 parsed)
-2026-07-10T01:04:38.287749664Z INFO  Fetched 2 swaps for GvBeppc4 (9 sigs, 9 parsed)
-2026-07-10T01:04:38.387855306Z INFO  Fetched 0 swaps for Gw2RZKZJ (0 sigs, 0 parsed)
-2026-07-10T01:04:38.785167046Z INFO  Fetched 0 swaps for HZtABHHJ (3 sigs, 3 parsed)
-2026-07-10T01:04:39.780106552Z INFO  Probe: 9HBjWn buy pumpswap NZqufP lag=?s dec=0ms
+2026-07-10T01:02:57.883893223Z INFO  Status sync error
+2026-07-10T01:02:57.884673724Z INFO  Status sync scheduled
+2026-07-10T01:02:57.884681442Z INFO  Status sync active — Claude can self-serve from these URLs
 2026-07-10T01:04:59.505021453Z INFO  Status sync still degraded
-2026-07-10T01:04:59.505030704Z INFO  Fetched 148 swaps for 2fHT9wBh (150 sigs, 150 parsed)
-2026-07-10T01:04:59.505037453Z INFO  Fetched 0 swaps for 2qdLV7ye (13 sigs, 13 parsed)
-2026-07-10T01:04:59.505041530Z INFO  Fetched 0 swaps for 2rGrt1xD (5 sigs, 5 parsed)
-2026-07-10T01:04:59.505045624Z INFO  Fetched 0 swaps for 3RHohKwz (1 sigs, 1 parsed)
-2026-07-10T01:04:59.505050437Z INFO  Fetched 0 swaps for 3XEabhyk (1 sigs, 1 parsed)
-2026-07-10T01:04:59.505054259Z INFO  Fetched 0 swaps for 3eU5mkgc (3 sigs, 3 parsed)
-2026-07-10T01:04:59.505057907Z INFO  Probe: 9HBjWn buy pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:05:08.540935290Z INFO  Probe: 9HBjWn buy pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:05:09.876057119Z INFO  Probe: 9HBjWn sell pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:05:10.240313800Z INFO  Probe: 9HBjWn sell pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:05:17.028569084Z INFO  Probe: 9HBjWn buy pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:05:37.035780883Z INFO  Fetched 128 swaps for 6ccJqRkE (432 sigs, 300 parsed)
-2026-07-10T01:05:37.035785925Z INFO  Probe: 2HJMgs buy pumpswap C6kWVd lag=?s dec=0ms
-2026-07-10T01:05:38.003286219Z INFO  Probe: 9HBjWn sell pumpswap NZqufP lag=?s dec=1ms
-2026-07-10T01:05:38.147146281Z INFO  Probe: 9HBjWn sell pumpswap NZqufP lag=?s dec=1ms
-2026-07-10T01:05:58.147098766Z INFO  Probe: 9HBjWn buy pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:05:58.171351916Z INFO  Fetched 123 swaps for 6cu9o5zL (923 sigs, 300 parsed)
-2026-07-10T01:06:18.234292517Z INFO  Probe: 9HBjWn buy pumpswap NZqufP lag=?s dec=0ms
-2026-07-10T01:06:21.365394443Z INFO  Fetched 185 swaps for 6dMhEESj (231 sigs, 231 parsed)
-2026-07-10T01:06:24.586252097Z INFO  Probe: 2HJMgs buy pumpswap C6kWVd lag=?s dec=0ms
-2026-07-10T01:06:54.584233371Z INFO  Copy close copy-src-winner-sniper-v2 3gDAjy strategy_removed net=-0.13832 SOL hold=29226s
-2026-07-10T01:06:54.584245861Z INFO  Copy close copy-tp100-sl30 3KHMZh max_hold_cap net=-0.10441 SOL hold=29037s
-2026-07-10T01:06:54.584253297Z INFO  Copy close copy-tp100-sl30-lag 3KHMZh max_hold_cap net=-0.10586 SOL hold=29023s
-2026-07-10T01:06:54.584259108Z INFO  Copy close copy-hotlead-strict 3KHMZh max_hold_cap net=-0.10586 SOL hold=29023s
-2026-07-10T01:06:54.584265483Z INFO  Copy close copy-hotlead-strict-hi 3KHMZh max_hold_cap net=-0.10586 SOL hold=29023s
-2026-07-10T01:06:54.584278385Z INFO  Copy close copy-hotlead-early 3KHMZh max_hold_cap net=-0.10586 SOL hold=29023s
-2026-07-10T01:06:54.584283665Z INFO  Copy close copy-src-winner-sniper-v2 3KHMZh strategy_removed net=-0.04488 SOL hold=16212s
-2026-07-10T01:06:54.584287711Z INFO  Copy close copy-src-winner-sniper-v2 8B3UJb strategy_removed net=-0.03051 SOL hold=27732s
 2026-07-10T01:06:54.584358119Z INFO  Status sync still degraded
-2026-07-10T01:06:54.585296759Z INFO  Copy close copy-src-winner-sniper-v2 JCKwsT strategy_removed net=-0.15578 SOL hold=21474s
-2026-07-10T01:06:54.585303522Z INFO  Copy close copy-src-winner-sniper-v2 H7t7oK strategy_removed net=-0.05476 SOL hold=20746s
-2026-07-10T01:06:54.585308371Z INFO  Copy close copy-src-winner-sniper-v2 7WcX4m strategy_removed net=-0.11539 SOL hold=20298s
-2026-07-10T01:06:54.585313904Z INFO  Fetched 75 swaps for 6dUaiKT5 (1000 sigs, 300 parsed)
-2026-07-10T01:06:54.585319427Z INFO  Copy close copy-src-winner-sniper-v2 9qyTF1 strategy_removed net=0.00851 SOL hold=18943s
-2026-07-10T01:06:54.585324423Z INFO  Copy close copy-src-winner-sniper-v2 2Gt16s strategy_removed net=-0.0946 SOL hold=18890s
-2026-07-10T01:06:54.834777661Z INFO  Copy close copy-src-winner-sniper-v2 3BfXW2 strategy_removed net=0.03303 SOL hold=18403s
-2026-07-10T01:06:55.131575728Z INFO  Copy close copy-src-winner-sniper-v2 J5bTgn strategy_removed net=0.03981 SOL hold=18199s
-2026-07-10T01:06:55.430961652Z INFO  Copy close copy-src-winner-sniper-v2 CFPkPq strategy_removed net=-0.04614 SOL hold=16240s
-2026-07-10T01:06:55.740219624Z INFO  Copy close copy-src-winner-sniper-v2 2SX3pr strategy_removed net=0.08076 SOL hold=13226s
-2026-07-10T01:06:56.038494018Z INFO  Copy close copy-src-winner-sniper-v2 5TNdNu strategy_removed net=-0.07409 SOL hold=13093s
-2026-07-10T01:06:56.424976540Z INFO  Copy close copy-src-winner-sniper-v2 BUphiK strategy_removed net=-0.01854 SOL hold=12447s
-2026-07-10T01:06:56.637624673Z INFO  Copy close copy-src-winner-sniper-v2 gCETSg strategy_removed net=-0.14029 SOL hold=11315s
-2026-07-10T01:06:56.935311791Z INFO  Copy close copy-src-winner-sniper-v2 9qwxah strategy_removed net=-0.08136 SOL hold=11208s
-2026-07-10T01:06:57.544458455Z INFO  Copy close copy-src-winner-sniper-v2 D2bSDz strategy_removed net=-0.03355 SOL hold=9982s
-2026-07-10T01:06:57.832413455Z INFO  Copy close copy-src-winner-sniper-v2 9firES strategy_removed net=-0.12315 SOL hold=9910s
-2026-07-10T01:06:58.134994335Z INFO  Copy close copy-src-winner-sniper-v2 9motHb strategy_removed net=-0.03648 SOL hold=9869s
-2026-07-10T01:06:58.436324996Z INFO  Copy close copy-src-winner-sniper-v2 4ko5tS strategy_removed net=-0.07915 SOL hold=7512s
-2026-07-10T01:06:58.732420066Z INFO  Copy close copy-src-winner-sniper-v2 7k4JoP strategy_removed net=-0.01597 SOL hold=6454s
-2026-07-10T01:06:59.036173342Z INFO  Copy close copy-src-winner-sniper-v2 9aphy3 strategy_removed net=-0.04535 SOL hold=6188s
-2026-07-10T01:06:59.431043748Z INFO  Copy close copy-src-winner-sniper-v2 949aaR strategy_removed net=-0.00814 SOL hold=5447s
-2026-07-10T01:07:29.219740589Z INFO  Fetched 139 swaps for 6g6fAvwR (320 sigs, 300 parsed)
-2026-07-10T01:07:59.238813425Z INFO  Fetched 108 swaps for 6grHaBNm (1000 sigs, 300 parsed)
-2026-07-10T01:08:29.235543626Z INFO  Fetched 113 swaps for 6h7BGzwb (1000 sigs, 300 parsed)
 2026-07-10T01:08:59.237498314Z INFO  Status sync still degraded
-2026-07-10T01:08:59.536133645Z INFO  Fetched 148 swaps for 6pCo59ar (1000 sigs, 300 parsed)
-2026-07-10T01:09:04.531664550Z INFO  Fetched 20 swaps for 6q3GYRNM (49 sigs, 49 parsed)
-2026-07-10T01:09:44.527956636Z INFO  Fetched 114 swaps for 6rDhYXZP (1000 sigs, 300 parsed)
-2026-07-10T01:10:04.527066950Z INFO  Fetched 70 swaps for 6sM6UofD (216 sigs, 216 parsed)
-2026-07-10T01:10:34.531690484Z INFO  Fetched 134 swaps for 6wZQUzkG (1000 sigs, 300 parsed)
-2026-07-10T01:10:41.944301580Z INFO  Fetched 33 swaps for 6xGp7KVx (154 sigs, 154 parsed)
 2026-07-10T01:10:50.780672448Z INFO  Status sync still degraded
-2026-07-10T01:11:10.789764645Z INFO  Graduation tx timing
-2026-07-10T01:11:10.789768166Z INFO  Graduation verified and recorded
-2026-07-10T01:11:10.789771604Z INFO  Starting price observation
-2026-07-10T01:11:10.789775334Z INFO  Direct pool observation started with pre-extracted vaults
-2026-07-10T01:11:10.789778919Z INFO  True holder count + distribution from DAS getTokenAccounts
-2026-07-10T01:11:10.789782295Z INFO  Token age resolved from bonding curve history
-2026-07-10T01:11:10.790986785Z INFO  Creator wallet resolved
-2026-07-10T01:11:10.975330257Z INFO  RPC poller found new migration sigs
-2026-07-10T01:11:15.684135891Z INFO  Fetched 246 swaps for 6ypay2cV (1000 sigs, 300 parsed)
-2026-07-10T01:11:16.092387498Z INFO  Competition detection complete
-2026-07-10T01:11:25.723432876Z INFO  transactionSubscribe sent for 40 wallets
-2026-07-10T01:11:45.744395283Z INFO  Buy pressure detection complete
-2026-07-10T01:11:48.440133436Z INFO  Fetched 117 swaps for 71M8KVXU (1000 sigs, 300 parsed)
-2026-07-10T01:11:50.754291145Z INFO  Discovered withdraw_authority from migrate tx: 39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg (matches derived PDA)
-2026-07-10T01:11:50.754297277Z INFO  Graduation tx timing
-2026-07-10T01:11:50.754305098Z INFO  Graduation verified and recorded
-2026-07-10T01:11:50.754319560Z INFO  Starting price observation
-2026-07-10T01:11:50.754325764Z INFO  Direct pool observation started with pre-extracted vaults
-2026-07-10T01:11:50.936169772Z INFO  getTokenLargestAccounts failed
-2026-07-10T01:11:50.977223503Z INFO  RPC poller found new migration sigs
-2026-07-10T01:11:51.151933382Z INFO  True holder count + distribution from DAS getTokenAccounts
-2026-07-10T01:11:51.180527093Z INFO  Token age resolved from bonding curve history
-2026-07-10T01:11:51.202871349Z INFO  Creator wallet resolved
-2026-07-10T01:12:00.147214827Z INFO  Competition detection complete
-2026-07-10T01:12:20.158167182Z INFO  Fetched 148 swaps for 73jA1g72 (276 sigs, 276 parsed)
-2026-07-10T01:12:28.507190966Z INFO  Buy pressure detection complete
-2026-07-10T01:12:28.879569726Z INFO  Fetched 52 swaps for 75wV9mJG (84 sigs, 84 parsed)
 2026-07-10T01:12:58.689200736Z INFO  Status sync still degraded
-2026-07-10T01:13:00.036109821Z INFO  Fetched 161 swaps for 772d5YXS (1000 sigs, 300 parsed)
-2026-07-10T01:13:29.819754994Z INFO  Fetched 74 swaps for 77zNERBY (227 sigs, 227 parsed)
-2026-07-10T01:13:31.645131360Z INFO  Fetched 3 swaps for 77zTA2qZ (87 sigs, 87 parsed)
-2026-07-10T01:13:31.645136293Z INFO  Refreshed 15 used (incremental); scored 20 backlog; deep-rescanned 0
-2026-07-10T01:13:31.645140981Z INFO  Scoring tick complete: scored=20, promotable=20
-2026-07-10T01:13:32.403495983Z INFO  Smart-money analysis cached: smart_wallets=310, present_grads=1347, low_confidence=false
-2026-07-10T01:14:32.441364201Z INFO  RPC poller found new migration sigs
 2026-07-10T01:14:52.246216613Z INFO  Status sync still degraded
-2026-07-10T01:15:52.277426543Z INFO  Probe: 2HJMgs sell pumpswap C6kWVd lag=?s dec=0ms
 2026-07-10T01:16:52.291768816Z INFO  Status sync still degraded
 2026-07-10T01:18:52.701333718Z INFO  Status sync still degraded
-2026-07-10T01:19:22.471334390Z INFO  RPC poller found new migration sigs
-2026-07-10T01:20:52.496943130Z INFO  transactionSubscribe sent for 40 wallets
 2026-07-10T01:20:52.496952946Z INFO  Status sync still degraded
-2026-07-10T01:20:55.378670384Z INFO  Probe: 2HJMgs buy pumpfun_bc gsivUv lag=?s dec=1ms
-2026-07-10T01:20:56.040247778Z INFO  Probe: 2HJMgs sell pumpfun_bc gsivUv lag=?s dec=0ms
-2026-07-10T01:21:02.427619509Z INFO  Probe: 2HJMgs sell pumpfun_bc gsivUv lag=?s dec=0ms
+2026-07-10T01:22:53.007933861Z INFO  Status sync still degraded
