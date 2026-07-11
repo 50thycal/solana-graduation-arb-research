@@ -11,6 +11,90 @@ never live candidates. Roster changes are code edits to `COPY_STRATEGIES` (opera
 
 ---
 
+## 2026-07-11 — Daily review: copy-src-gradspec's pre-registered P1 checkpoint (smart_copyable≥10 by day 5) lands and is MISSED at 4/10 with zero new trades since yesterday, both PROMOTE strategies stay `degrading` for a 2nd straight day (though the recent-trade net loss shrank for both), the 07-10 book day finalizes to +8.87 SOL (from a −0.12 partial — the third large partial-to-final swing in 8 days, this one favorable) — and live-training.json surfaces real live capital still actively trading (and losing) on `copy-hotlead-hold30m`, a strategy this journal reported KILLED and removed from the roster on 07-05
+
+<!-- SNAPSHOT (machine-readable; do not hand-edit) -->
+```json
+{
+  "date": "2026-07-11",
+  "overall": {"n": 7171, "net": -41.8789, "drop3": -56.0251, "stress": -114.9032, "open": 2},
+  "retired_summary": {"n": 24967, "net": -215.7926},
+  "regime_score": 6, "regime_24h": 7, "macro_score": 6, "btc_7d_pct": 1.35,
+  "book_daily_today": -3.22,
+  "leads": {"n_leads": 173, "hot": 52, "cold": 81},
+  "n_promotable_realistic": 2,
+  "strategies": [
+    {"id": "copy-hotlead-strict",         "realistic": true,  "n": 820, "net": 11.7968, "drop3":  5.2144, "stress":  3.1147, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-hotlead-strict-hi",      "realistic": true,  "n": 139, "net":  5.0501, "drop3":  2.8540, "stress":  3.5175, "promo_score": 100,  "verdict": "PROMOTE"},
+    {"id": "copy-fable-dip",              "realistic": true,  "n":   2, "net":  1.318,  "drop3":  0,      "stress":  1.271,  "promo_score":  48.1,"verdict": "WATCH"},
+    {"id": "copy-src-gradspec",           "realistic": true,  "n":   4, "net":  1.009,  "drop3": -0.167,  "stress":  0.948,  "promo_score":  45.3,"verdict": "WATCH"},
+    {"id": "copy-fable-leadpullback",     "realistic": true,  "n":   1, "net":  0.637,  "drop3":  0,      "stress":  0.614,  "promo_score":  41.3,"verdict": "WATCH"},
+    {"id": "copy-fable-deep",             "realistic": true,  "n":   5, "net":  0.376,  "drop3": -0.728,  "stress":  0.317,  "promo_score":  39.2,"verdict": "WATCH"},
+    {"id": "copy-hotlead-early",          "realistic": true,  "n":  46, "net": -2.33,   "drop3": -4.157,  "stress": -2.757,  "promo_score":  29.2,"verdict": "WATCH"},
+    {"id": "copy-fable-freshdip",         "realistic": true,  "n":  42, "net": -1.07,   "drop3": -3.024,  "stress": -1.481,  "promo_score":  28.4,"verdict": "WATCH"},
+    {"id": "copy-src-external",           "realistic": true,  "n":  13, "net": -0.16,   "drop3": -0.851,  "stress": -0.29,   "promo_score":  22.6,"verdict": "WATCH"},
+    {"id": "copy-fable-freshdip-bounded", "realistic": true,  "n":   3, "net": -0.37,   "drop3":  0,      "stress": -0.394,  "promo_score":  20.6,"verdict": "WATCH"},
+    {"id": "copy-tp100-sl30-lag",         "realistic": true,  "n":1025, "net":-33.842,  "drop3":-38.69,   "stress":-43.723,  "promo_score":  40,  "verdict": "KILL"},
+    {"id": "copy-conviction-consensus2",  "realistic": false, "n":1536, "net": 12.973,  "drop3":  0.187,  "stress": -3.107,  "promo_score":  37.3,"verdict": "KEEP"},
+    {"id": "copy-tp100-sl30",            "realistic": false, "n":3535, "net":-37.267,  "drop3":-43.824,  "stress":-72.933,  "promo_score":  20,  "verdict": "KEEP"}
+  ]
+}
+```
+
+**Headline:** Two threads dominate today. First, the routine one: `copy-src-gradspec`'s pre-registered P1 checkpoint (`smart_copyable≥10` in 5 days, due today per yesterday's flag) is **missed** — `discovery_scorecard` shows `smart_copyable` still stuck at **4/10** with **zero new candidates or trades** since yesterday (funnel `candidates: 0, scored: 0`), and both `copy-hotlead-strict` / `copy-hotlead-strict-hi` remain flagged **`degrading`** for a second consecutive day, though the magnitude eased for both (recent-net-per-trade improved from −0.00945→**−0.00423** and −0.05711→**−0.04509** respectively — still negative, still `promotable_stable: false`, but the bleed is slowing rather than accelerating). Second, and more consequential: while pulling `live-training.json` for execution-health context, I found **real live capital is still actively trading** `copy-hotlead-hold30m` — `copy-hotlead-hold30m-live-micro` shows `active: true`, **324 live trades, net −0.7453 SOL**, run-rate **−1.26 SOL/mo** at live size — even though **this journal reported `copy-hotlead-hold30m` KILLED and removed from the shadow roster on 2026-07-05** (commit `6da2ff5`). The live-micro instance is paired against a separate shadow twin (`copy-hotlead-hold30m-pair-shadow`, not in `by_strategy`) so it never surfaced in this report's usual data pull — but it directly contradicts this journal's repeated claim on 07-06 and 07-09 that there was **"no live capital deployed anywhere."** That claim was only ever true of the current promotion-book candidates, not the system as a whole.
+
+**Day-over-day (vs 2026-07-10 SNAPSHOT):**
+- **`copy-src-gradspec` — P1 checkpoint due today, missed.** n **flat at 4** (zero new trades), net/drop3/stress essentially unchanged (1.0094→1.009, −0.1665→−0.167, 0.948→0.948). Promo score flat 45.3. Per `discovery_scorecard`, `smart_copyable` is still **4** against the pre-registered bar of **≥10 by day 5** (today) — the checkpoint's own fallback language ("shelve if <3 by day 7") gives it 2 more days before the explicit shelve trigger, but the P1 bar itself has now been missed on schedule.
+- **`copy-hotlead-strict` — degrading trend for a 2nd day, but easing.** n 815→**820** (+5), net 11.4209→11.7968 (+0.376), drop3 4.8385→5.2144 (+0.376), stress 2.7979→3.1147 (+0.317). Score still 100, all gates clear (monthly run-rate 25.28 SOL/mo). `recent_net_per_trade` improved from −0.00945 to **−0.00423** — still net-negative on its recent window, but less than half as negative as yesterday. Too early to call this a recovery, but it's the first easing since the trend flag first appeared.
+- **`copy-hotlead-strict-hi` — same pattern, sharper cushion but still the more exposed of the two.** n 134→**139** (+5), net 4.6743→5.0501 (+0.376), drop3 2.5032→2.854 (+0.351), stress 3.2007→3.5175 (+0.317). `recent_net_per_trade` −0.05711→**−0.04509** — improved but still the most negative recent-trade read in the roster, on the strategy with the thinner cushion (drop3 2.85 vs strict's 5.21).
+- **`copy-fable-dip`, `copy-fable-leadpullback`, `copy-fable-deep` — all landed first trades overnight.** `copy-fable-dip` n 0→2 (net +1.318, promo 20→**48.1**, biggest mover of the day but on n=2 — noise), `copy-fable-leadpullback` n 0→1 (net +0.637, promo 20→41.3), `copy-fable-deep` n 0→5 (net +0.376, but **drop3 −0.728** already negative on its very first batch, promo 20→39.2). All still far too small (n≤5) for any real read; per the redundancy guardrail these are the 07-10 fable-family decomposition already in progress, not new proposals.
+- **`copy-fable-freshdip` — first improvement after 4 straight worsening reads.** n 41→**42** (+1), net −1.7068→−1.07 (+0.637), drop3 −3.6081→−3.024 (+0.584), stress −2.095→−1.481 (+0.614). Promo score 28.2→28.4. Still net-negative and drop3-negative, but the deepening trend broke for the first time since it entered the journal.
+- **`copy-hotlead-early` — 3rd straight worsening read.** n 42→**46** (+4), net −2.0243→−2.33 (−0.31), drop3 −3.7751→−4.157 (−0.38), stress −2.4164→−2.757 (−0.34). Promo score 28.4→29.2 (small uptick from the score formula, but the underlying SOL metrics kept deepening). Still <50, but every read since its first positive batch has gone the wrong way.
+- **`copy-src-external` — flat, zero new trades.** n stayed at 13, net/drop3/stress unchanged. Funnel shows `source_cohort` skip count still climbing (4671→ see below), the probe itself barely fires.
+- **`copy-tp100-sl30-lag` — KILL case reconfirmed, still deepening.** n 1016→**1025** (+9), net −33.699→−33.842 (−0.14), drop3 −38.547→−38.69 (−0.14), stress −43.49→−43.723 (−0.23). Failing every gate on every read since it entered the journal (now 13+ consecutive). `paired_vs_baseline` still positive on the lag mechanism itself (+3.95 SOL / +0.0074 per event over 536 shared events) — the tp100/sl30 exit shape remains the sole cause.
+- **`copy-conviction-consensus2` (idealized) — drop3 flipped positive.** n 1530→1536 (+6), net 12.1049→12.973 (+0.87), **drop3 −0.6813→+0.187** (sign flip), stress −3.8964→−3.107 (+0.79). Promo score 35→37.3. Not a live candidate regardless, but moving in step with the book's better day.
+- **Regime score rose 5→6** ("neutral"→"favorable"), `score_24h` rose 4→7 — both legs of the regime read improved together for the first time in several entries. Macro flat at 6 (tailwind), BTC 7d% cooled again (2.8%→1.35%).
+- **Book P&L: 07-10 finalized far better than reported — the third large partial-to-final swing in 8 days, and the first favorable one.** `regime.swing.daily` now reads 07-08 +4.19, 07-09 −19.6 (unchanged, already finalized), 07-10 **+8.87** (finalized from the −0.12 partial in yesterday's entry — a ~+9.0 SOL swing), 07-11 partial **−3.22** (13 trades so far). `daily_mean_sol` over this window is −2.44, `daily_std_sol` 12.48. Unlike the two prior reversals this month (07-06, 07-09 — both partial reads that understated losses), this one understated a gain — a reminder that the partial-day skew isn't one-directional, just high-variance.
+- **Lead pool completely flat:** 173→173 leads, hot 52→52, cold 81→81 — no movement at all, a first after weeks of small but steady growth.
+- **Bot health:** `diagnose.json` verdict is HEALTHY, all levels passing, WS connected, last graduation 2391s ago. One `gist-sync` error logged yesterday (`Ref update failed: 500`) — transient, not a trading-path issue.
+- **Off-template finding (live-training.json, not part of this skill's standard pull):** `copy-hotlead-hold30m-live-micro` is `active: true` with **324 live trades, net −0.7453 SOL**, win rate 27.5%, execution success 100%. Its `run_rate` comparison shows the live instance tracking **−1.26 SOL/mo** at live size, while its retired shadow parent (`copy-hotlead-hold30m`, killed 07-05) was tracking **+2.78 SOL/mo** at the same size — the live version is losing money on a strategy whose shadow twin was net-positive when it was pulled. Two other historical live-micro instances (`copy-hotlead-deep-live-micro`, 146 trades, −0.4252 SOL; `copy-consensus2-lag-drift5-live-micro`, 172 trades, −0.2011 SOL, only 5.8% win rate with 134 `live_buy_failed` exits) are marked `active: false` — dormant, not currently burning capital. Aggregate live-vs-shadow comparison across all matched live trades: 557 matched, live net −1.43 SOL vs shadow +0.06 SOL (delta −1.50 SOL), live avg return −5.16% vs shadow +0.22% — live execution is structurally underperforming its shadow twin, consistent with the slippage/cost gap already tracked in `live-training.json`'s `comparison` block.
+
+**Week-over-week (last available entries: 07-06, 07-09, 07-10, plus today; no 07-07/07-08 reads):**
+- **Both PROMOTE strategies have now been `degrading` for 2 consecutive daily reads**, but today is the first time the recent-trade net loss shrank rather than grew for both — too early to call a bottom, but worth watching whether tomorrow confirms a genuine recovery or this is just noise inside a still-negative trend.
+- **`copy-tp100-sl30-lag` has now failed every gate on every read since entering the journal (13+ consecutive reads)** and deepened again today. The unenacted KILL case is as strong as it has ever been.
+- **`copy-src-gradspec` has now missed its own pre-registered P1 checkpoint** (smart_copyable≥10 by day 5, today) at 4/10 with zero trade or candidate growth since yesterday — the fallback shelve trigger (<3 by day 7) is 2 days out, but the primary bar has already failed.
+- **Partial-to-final book reversals are now a 3-for-3 pattern in the last 8 days** (07-06: +14.28→−13.12, 07-09: −3.05→−19.6, 07-10: −0.12→+8.87) — today's is the first one that resolved favorably, confirming the skew is about variance in the partial read, not a one-directional pessimism bias.
+- **Lead pool growth, steady for weeks, stalled completely today** (173/52/81, unchanged) — one day is not a trend, but worth checking tomorrow whether this is a plateau or a one-day pause.
+- **New this cycle: a live-capital discrepancy spanning at least 3 prior entries.** This journal stated "no live capital deployed anywhere" on both 07-06 and 07-09 while `copy-hotlead-hold30m-live-micro` was already live and trading throughout that window (its shadow-pair comparison run-rate is computed over 42.8 days) — those claims were accurate only for the current promotion-book candidates, not the system as a whole. Recommend this skill's future runs also check `live-training.json`'s `strategies[].active` list as a standing cross-check, not just `by_strategy`.
+
+**Verdicts (proposals — roster changes require operator approval + code edit to `COPY_STRATEGIES`):**
+
+- **PROMOTE (2, unchanged, degrading trend easing but not resolved):**
+  - `copy-hotlead-strict`: n=820, net=+11.80, drop3=+5.21, stress=+3.11, monthly=25.28 SOL/mo. Score 100, all gates clear. `recent_net_per_trade` improved to −0.00423 (from −0.00945) — still negative, still `promotable_stable: false`, but the decline decelerated. Recommend a live-micro test still stands, with the trend flag monitored, not treated as disqualifying.
+  - `copy-hotlead-strict-hi`: n=139, net=+5.05, drop3=+2.85, stress=+3.52, monthly=15.15 SOL/mo. Score 100, all gates clear. `recent_net_per_trade` improved to −0.04509 (from −0.05711) but remains the roster's most negative recent-window read, on the thinner-cushion sibling. Recommend a live-micro test with closer monitoring than `-strict`.
+
+- **KILL (1 carried over, now 13+ consecutive failing reads):**
+  - `copy-tp100-sl30-lag`: n=1025, net=−33.84, drop3=−38.69, stress=−43.72. Failed every gate on every read since entering the journal; deepened again this cycle.
+
+- **WATCH:**
+  - `copy-src-gradspec`: n=4 (unchanged), P1 checkpoint (smart_copyable≥10 by day 5) missed today at 4/10 with zero growth. Fallback shelve trigger (<3 by day 7) is 2 days out — flag for an operator look now rather than waiting for day 7, since the funnel shows no sign of movement (0 candidates, 0 scored this cycle).
+  - `copy-hotlead-early`: n=46, 3rd straight worsening read (drop3 −4.157). Still <50 per the small-n rule, but the trend since its first batch has been uniformly negative.
+  - `copy-fable-freshdip`: n=42, first improving read after 4 straight worsening ones — still net/drop3 negative, too early to call a turn.
+  - `copy-src-external`: n=13 (unchanged), zero new trades this cycle.
+  - `copy-fable-dip`, `copy-fable-leadpullback`, `copy-fable-deep`, `copy-fable-freshdip-bounded`: all n≤5, first or second batch of trades. Too early to read any of them; part of the ongoing fable-family decomposition, not new proposals.
+
+- **Idealized references (not live candidates):**
+  - `copy-conviction-consensus2`: n=1536, net=+12.97. Drop3 flipped positive (+0.187) in step with the book's better day.
+  - `copy-tp100-sl30`: n=3535, net=−37.27. Unchanged verdict, still the deepest negative reference.
+
+- **Operational flag (not a roster verdict):** `copy-hotlead-hold30m-live-micro` — real live capital, `active: true`, 324 trades, net −0.7453 SOL, tracking −1.26 SOL/mo at live size against a killed shadow parent that was tracking +2.78 SOL/mo. Recommend an operator decision: either disable this live-micro instance (its shadow parent was killed for cause on 07-05 and the live version is now losing money independently) or explicitly document why it's being kept live as a standalone execution-cost study.
+
+**New strategies to try:** None proposed this cycle. Three fable-family variants already landed their first trades overnight (still being read), `copy-src-gradspec` needs an operator decision on its missed P1 checkpoint before spawning anything in that lane, and both PROMOTE candidates are mid-trend-reversal — per the redundancy guardrail, the right move is watching what's already in flight.
+
+**Operator next step:** Two things need a look. (1) **`copy-hotlead-hold30m-live-micro` is real money, currently losing (−0.75 SOL over 324 trades), running on a strategy this journal already reported killed** — decide whether to shut it down or document it as an intentional standing execution study; either way it shouldn't keep running silently uncounted against the "zero live capital" framing used in past entries. (2) `copy-src-gradspec`'s pre-registered P1 checkpoint (smart_copyable≥10 by day 5) is missed at 4/10 with zero funnel movement this cycle — worth an early look rather than waiting for the day-7 fallback trigger. Secondary and unchanged: enact the long-standing `copy-tp100-sl30-lag` KILL (13+ consecutive failing reads).
+
+---
+
 ## 2026-07-10 — Daily review: both PROMOTE strategies now flash a new `degrading` trend flag with negative recent-per-trade net for the first time, while the 07-09 book day finalizes to −19.6 SOL (from a −3.05 partial read) — the second severe partial-to-final reversal in 5 days — and copy-src-winner-sniper-v2 quietly disappears from the roster after a dead week at n=0
 
 <!-- SNAPSHOT (machine-readable; do not hand-edit) -->
