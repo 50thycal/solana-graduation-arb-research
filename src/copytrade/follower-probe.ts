@@ -41,13 +41,19 @@ const SEEN_MAX = 4096;
 // discovery-source (quarantined) — we keep the wallets we actually copy and drop the tail.
 // 0 = uncapped (pre-2026-07-04 behaviour). Env-tunable so it can be dialed back after Jul 22.
 // 2026-07-09: 140 → 40 under the ≤100k-credit/day retune. copy_follower_ws is a
-// per-message WS bill that scales ~linearly with watchlist size (~81k credits/day at
-// 140). 40 keeps the highest-priority tier — the follow_list ∪ smart-set wallets the
-// live/candidate strategies actually copy — and drops the discovery-source tail (which
-// is paused anyway; the winner pre-filter is default-off). Net ≈ 23k credits/day.
+// per-message WS bill that scales ~linearly with watchlist size.
+// 2026-07-11 (U21, live-data): the 40-cap starved the whole copy book — incumbent
+// entry rate decayed to ~0/loop and every challenger froze well short of n≥100, so no
+// strategy could accumulate a promotable sample. Crucially, the `rpc_usage` panel
+// (usage-tracker, calibrated 1/1 against the Helius console) measures copy_follower_ws
+// at only ~2.4k credits/day @ 40 wallets — ~60 credits/wallet/day, NOT the ~23k the old
+// a-priori note guessed. Detection (graduation onLogs, ~34k/day) dominates the ~43k/day
+// total; the watchlist is the CHEAP lever. So 40 → 80 roughly doubles copy lead-event
+// supply for only ~+2.4k credits/day (total ≈ 46k, ~46% of the 100k cap). Env-tunable;
+// dial toward 100 if the settled panel confirms headroom, or back to 40 if it spikes.
 const WATCHLIST_MAX = (() => {
-  const v = parseInt(process.env.COPY_WATCHLIST_MAX || '40', 10);
-  return Number.isFinite(v) && v >= 0 ? v : 40;
+  const v = parseInt(process.env.COPY_WATCHLIST_MAX || '80', 10);
+  return Number.isFinite(v) && v >= 0 ? v : 80;
 })();
 // BUG FOUND 2026-07-08 (U5, live-data diagnosis): pure priority-order truncation means if the
 // HIGHEST tier alone (follow_list) ever grows past WATCHLIST_MAX, every lower tier — including
@@ -63,9 +69,13 @@ const WATCHLIST_MAX = (() => {
 // pre-filter default-off) there is little source-wallet inflow to reserve for, and the
 // 40-slot watchlist is small enough that a large reserve would crowd out the proven
 // copyable OG tier. A thin reserve still guarantees any live source wallet a probe slot.
+// 2026-07-11 (U21): 5 → 10 tracking the WATCHLIST_MAX 40 → 80 bump — same 12.5% source
+// share, so the OG tier still gets the bulk of the new budget (70 of 80) while the
+// external/gradspec probes get proportionally more room. Reserve only binds up to the
+// number of live source wallets; unused source slots fall back to the OG tier.
 const WATCHLIST_SOURCE_RESERVE = (() => {
-  const v = parseInt(process.env.COPY_WATCHLIST_SOURCE_RESERVE || '5', 10);
-  return Number.isFinite(v) && v >= 0 ? v : 5;
+  const v = parseInt(process.env.COPY_WATCHLIST_SOURCE_RESERVE || '10', 10);
+  return Number.isFinite(v) && v >= 0 ? v : 10;
 })();
 // scheduleLagFill fires a getBlockTime RPC purely for the detection-lag TELEMETRY (post-dispatch,
 // zero trading impact). At full rate it was ~8.8% of the entire Helius bill. Sample 1-in-N eligible
