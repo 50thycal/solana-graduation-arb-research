@@ -85,7 +85,32 @@ operator-approved code edit. Phrase every recommendation in proposal voice ("rec
 
 ## THE ITERATION LOOP
 
-Two routine skills drive the loop; both are self-serve and write to `docs/`:
+### The three-phase strategy pipeline (idea → build → monitor)
+
+The research loop runs as three chained phases, each a skill in `.claude/skills/` (Phases 1–2) or
+`.claude/commands/` (Phase 3). Phase 3 surfaces *when* a new idea is needed; Phase 1 generates and
+screens candidates; Phase 2 validates a survivor end-to-end. They cross-reference each other and
+share the same promotion bar, incumbent baseline, and −935 SOL graveyard.
+
+- **`/solana-idea-model-phase-1`** (diverge → screen) — the front-end idea engine. Grounds in the
+  incumbent + lab ledger + graveyard, generates an anti-anchored slate across the four levers ×
+  edge-sources × point-in-time signals, screens it on the six-axis rubric (correlation, edge
+  plausibility, survivorship, execution/cost, capacity, infra reuse), and promotes 1–3 survivors as
+  **pre-registered falsifiable theses + a probe plan**. Runs in chat; stops at the probe spec (no
+  live money, no code edit). Hands the artifact to Phase 2.
+- **`/solana-strategy-phase-2`** (build → validate) — the convergent build/validate workflow. Takes
+  a thesis and drives it through the arena's gates: thesis → point-in-time data → code-defined
+  `COPY_STRATEGIES` entry **+ its `-lag` twin** → offline replay → shadow toward n≥100 → promote →
+  small `live_micro`. One incumbent, one-lever perturbation, `MAX_INFLIGHT = 4`, judged on the
+  `-lag` twin with drop3 > 0. Records lineage in `docs/copy-strategy-lab.md`.
+- **`/solana_loop_checker_phase3`** (monitor, 8h) — the read-only advisory loop that watches all
+  active strategies + data/execution health and carries an Updates & Ideas ledger. It surfaces the
+  triggers (a lever capped, a discovery source `FAILS`, an open `MAX_INFLIGHT` slot, the incumbent
+  dethroned) that feed the next Phase-1 pass. Proposes, never acts.
+
+### Routine review skills
+
+Two routine skills drive the day-to-day cadence; both are self-serve and write to `docs/`:
 
 - **`/copy-daily-report`** (daily) — reads `copy-trades.json`, compares to yesterday, decides
   keep/kill/promote/add per strategy against the bar, records day-over-day + week-over-week trends,
