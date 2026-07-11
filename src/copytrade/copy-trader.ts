@@ -186,6 +186,16 @@ export interface CopyStrategy {
                                // (-5.8 SOL / 146 trades). cap=2 keeps the lead's double-down, drops the chase tail —
                                // and cuts the extra position-poll RPC. (already_open already blocks concurrent
                                // re-entry; this caps SEQUENTIAL re-entries after prior ones close.)
+  maxLeadCopiesPerWindow?: { maxCopies: number; windowSec: number };
+                               // PER-LEAD BREADTH cap (2026-07-11, phase-1 handoff C5): skip a copy once this
+                               // strategy already holds/opened >= maxCopies entries of THIS LEAD within windowSec —
+                               // forcing the book's exposure across more DISTINCT leads. Generalizes the proven
+                               // maxEntriesPerMint (repeat tail bleeds) from the mint level to the lead level: the
+                               // incumbent's leads are a tight co-buy cluster (top pairs co-occur 25-31x), so profit
+                               // concentrates in few underlying bets and drop3 is fragile by construction. Spreading
+                               // the same n across more leads mechanically lifts drop3/trade. Counts open+closed own
+                               // entries (leadCopyCountRecent) — knowable at entry, zero RPC (own-series SQL, cached).
+                               // Distinct from maxEntriesPerMint (same LEAD across DIFFERENT mints, not same mint).
   crowdSellExit?: { minSellers: number; windowSec: number };
                                // CROWD-SELL EXIT (2026-06-28): close the position when >= minSellers DISTINCT smart
                                // wallets have sold this mint within windowSec — independent of the entry lead.
@@ -193,6 +203,18 @@ export interface CopyStrategy {
                                // crowd from copy_probe_events (action='sell'), so it bails when smart money turns
                                // en masse — targeting the SL-driver tail. Event-driven off onLeadSell (zero RPC for
                                // the signal; one vault re-fetch only when an exit actually fires).
+  smartFlowVeto?: { windowSec: number };
+                               // SMART-DISTRIBUTION VETO (2026-07-11, phase-1 handoff C4): at the copy moment, skip
+                               // the entry if the watched smart crowd is net-SELLING this mint — i.e. distinct smart
+                               // SELLERS > distinct smart BUYERS over windowSec (both from copy_probe_events, tier IN
+                               // (promotable,smart), the same source consensus uses). Even a hot lead's buy is a trap
+                               // if the rest of the smart money is simultaneously distributing (we'd be their exit
+                               // liquidity) — this is the SL-tail signature. The novel information is the SELL leg:
+                               // crowdSellExit uses it only to EXIT; nothing prices "is the crowd dumping as I buy?"
+                               // into the ENTRY today. The triggering lead's buy is already logged before onLeadBuy,
+                               // so buyers >= 1 always → the veto only overrides a fresh lead-buy on genuine net
+                               // distribution (conservative). Distinct from minConsensusRecent (a buy-side count floor
+                               // that failed drop3): this keys on the buy/sell IMBALANCE. Zero RPC (cached counts).
   regimeGateMinScore?: number; // regime gate: only enter when the current 1-10 window score (computed from
                                // the roster-stable baseline; 10 best, 1 worst, 5 neutral) is >= this. Tests
                                // "skip the bad windows" — the copy book swings hard (-31/+44/-35 SOL days)
@@ -494,6 +516,55 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   { id: 'copy-hotlead-early', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
     maxConsensusRecent: 2 },
+  // ── C4 (2026-07-11, phase-1 handoff docs/phase1-handoff-2026-07-11.md): SMART-DISTRIBUTION VETO.
+  //    Incumbent chassis + ONE new gate (smartFlowVeto): at the copy moment, skip the entry if the
+  //    watched smart crowd is net-SELLING this mint — distinct smart sellers > distinct smart buyers
+  //    over a 90s window (copy_probe_events, tier IN (promotable,smart)). Even a hot lead's buy is a
+  //    trap if the rest of the smart money is simultaneously distributing (we'd be their exit
+  //    liquidity) — the SL-tail signature. The novel information is the SELL leg: crowdSellExit uses
+  //    it only to EXIT; nothing prices "is the crowd dumping as I buy?" into the ENTRY. Distinct from
+  //    minConsensusRecent (a buy-side count floor that FAILED drop3) — this keys on the buy/sell
+  //    IMBALANCE. Robustness overlay on the sole surviving edge, targeting the loss tail → drop3.
+  //    Zero RPC (cached counts). Operator override of MAX_INFLIGHT (precedent: 2026-06-19 c2rr cohort).
+  //    Pre-registered (2026-07-11, before any data; entryDelaySec: 5 makes it its own -lag twin;
+  //    incumbent baselines net/trade +0.01439, drop3/trade +0.00636 from the 2026-07-11 scoreboard):
+  //      P1 anti-lottery/drop3: PASS if net/trade > 0 AND drop3/trade > 0 at n>=100; KILL if
+  //         drop3/trade <= 0 at n>=100.
+  //      P2 beats the incumbent on robustness: PASS if at n>=100 it beats copy-hotlead-strict on
+  //         drop3/trade (> +0.00636) with net/trade >= -10% of the incumbent's (>= +0.01295); KILL if
+  //         drop3/trade <= the incumbent's at n>=100 (the veto bought no robustness).
+  //      P3 reachability: needs >= 3 fires/day by day 5; if it can't reach n>=100 in ~4 weeks the
+  //         veto over-filters or the signal is too rare at the 40-wallet watchlist → shelve.
+  //    Promote to a live-micro-candidate review only if P1 AND P2 hold; if P1 holds but P2 fails,
+  //    keep as a WATCH robustness reference. Resolve vs the incumbent on experiment_arena.
+  { id: 'copy-hotlead-nodump', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
+    smartFlowVeto: { windowSec: 90 } },
+  // ── C5 (2026-07-11, phase-1 handoff docs/phase1-handoff-2026-07-11.md): PER-LEAD BREADTH cap.
+  //    Incumbent chassis + ONE new gate (maxLeadCopiesPerWindow {2, 3600}): cap how many times the
+  //    book copies the SAME lead within an hour, forcing exposure across more DISTINCT leads. The
+  //    incumbent's leads are a tight co-buy cluster (smart-money → consensus top pairs co-occur
+  //    25-31x), so profit concentrates in few underlying bets → drop3 is fragile by construction;
+  //    spreading the same n across more leads mechanically lifts drop3/trade. Generalizes the PROVEN
+  //    maxEntriesPerMint (1st/2nd entries profit, 3rd+ bleed) from the mint level to the lead level;
+  //    leadExclusionGate only prunes LOSER leads, so nothing today broadens the WINNER distribution.
+  //    Zero RPC (own-series SQL). Operator override of MAX_INFLIGHT (precedent: 2026-06-19 c2rr).
+  //    Pre-registered (2026-07-11, before any data; entryDelaySec: 5 makes it its own -lag twin):
+  //      P0 moonshot risk (declared, not scoped away): the 2026-07-03 backtest found "drop1-per-lead
+  //         hurts −4.2; moonshot leads ARE the edge" — a lead cap risks cutting the concentrated
+  //         winners. The cap targets the marginal Nth repeat (like the proven mint cap), NOT each
+  //         lead's best trade — but if it removes net, P2 kills it.
+  //      P1 drop3 improves: PASS if at n>=100 drop3/trade > +0.00636 (beats incumbent) AND
+  //         net/trade >= 0; KILL if drop3/trade <= the incumbent's at n>=100.
+  //      P2 net not gutted: KILL if net/trade falls below +0.010 (a >30% give-up vs the incumbent's
+  //         +0.01439) WITHOUT drop3/trade clearing +0.010 — traded the moonshots for no robustness.
+  //      P3 reachability: >= 3 fires/day by day 5; shelve if it can't reach n>=100 in ~4 weeks (the
+  //         cap plus the 40-wallet watchlist may starve it).
+  //    Promote to review only if P1 holds AND P2 does not trigger. Resolve vs the incumbent on
+  //    experiment_arena. Lower-conviction than C4 (the P0 risk) — the structural drop3 complement.
+  { id: 'copy-hotlead-breadth', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
+    maxLeadCopiesPerWindow: { maxCopies: 2, windowSec: 3600 } },
   // ── KILLED 2026-06-27 (INVALID; RPC cleanup): copy-hotlead-deep (lastN20 / >=5 trades — longer,
   //    "more stable" lookback). n=550 net +5.2 but drop3 -1.37: the deeper lookback's net is
   //    tail-driven. copy-hotlead (lastN10/>=3) and copy-hotlead-strict (net floor 0.5) are the
@@ -1337,6 +1408,21 @@ export class CopyTrader {
     } catch { return 0; }
   }
 
+  /** Count of THIS strategy's own entries (open + closed) on a LEAD within windowSec — the
+   *  maxLeadCopiesPerWindow signal. Counts active + realized exposure (not just closed) so a
+   *  burst of same-lead copies is capped while positions are still open. entry_ts is seconds.
+   *  Opt-in (queried only for capped strategies), zero RPC (own-series SQL). */
+  private leadCopyCountRecent(strategyId: string, leadWallet: string, windowSec: number): number {
+    try {
+      const sinceTs = Math.floor(Date.now() / 1000) - windowSec;
+      const row = this.db.prepare(`
+        SELECT COUNT(*) AS n FROM copy_trades
+        WHERE strategy_id = ? AND lead_wallet = ? AND status IN ('open', 'closed') AND entry_ts >= ?
+      `).get(strategyId, leadWallet, sinceTs) as { n: number };
+      return row.n;
+    } catch { return 0; }
+  }
+
   /** A mint's graduation OPEN price (SOL/token) — the maxExtensionPct reference. Immutable,
    *  so cached per-mint forever (null = uncaptured → gate won't block). */
   private openPriceCache = new Map<string, number | null>();
@@ -1443,6 +1529,12 @@ export class CopyTrader {
       if (s.maxEntriesPerMint != null && this.mintEntryCount(s.id, mint) >= s.maxEntriesPerMint) {
         this.recordSkip(s.id, 'mint_entry_cap'); continue;
       }
+      // per-lead breadth cap: force book exposure across DISTINCT leads (drop3) — skip once this
+      // strategy already holds/opened maxCopies of THIS lead within the window. See maxLeadCopiesPerWindow.
+      if (s.maxLeadCopiesPerWindow != null &&
+          this.leadCopyCountRecent(s.id, leadWallet, s.maxLeadCopiesPerWindow.windowSec) >= s.maxLeadCopiesPerWindow.maxCopies) {
+        this.recordSkip(s.id, 'lead_copy_cap'); continue;
+      }
       // daily-loss circuit breaker: halt new entries once today's realized net <= -cap (reset at 00:00 UTC)
       if (s.dailyLossCapSol != null && this.strategyDailyRealizedNet(s.id) <= -s.dailyLossCapSol) {
         this.recordSkip(s.id, 'daily_loss_cap'); continue;
@@ -1477,6 +1569,15 @@ export class CopyTrader {
       if (s.maxConsensusRecent != null) {
         if (consensusRecent == null) consensusRecent = this.countRecentSmartBuyers(mint);
         if (consensusRecent > s.maxConsensusRecent) { this.recordSkip(s.id, 'too_late'); continue; }
+      }
+      // smart-distribution veto: skip if the smart crowd is net-SELLING this mint at the copy moment
+      // (distinct sellers > distinct buyers over the window) — don't buy into distribution. See smartFlowVeto.
+      // Windowed buyers != the fixed-window consensusRecent above, so it uses its own local count.
+      if (s.smartFlowVeto != null) {
+        const w = s.smartFlowVeto.windowSec;
+        const sellers = this.countRecentSmartSellers(mint, w);
+        const buyers = this.countRecentSmartBuyers(mint, w);
+        if (sellers > buyers) { this.recordSkip(s.id, 'smart_distribution'); continue; }
       }
       // price-extension gate: skip if the token already ran > maxExtensionPct% above its graduation
       // open at the detection snapshot (don't chase). Null open price => not blocked.
@@ -1934,9 +2035,9 @@ export class CopyTrader {
     })().catch((err) => logger.warn('delayed follow-sell error: %s', err instanceof Error ? err.message : String(err)));
   }
 
-  private countRecentSmartBuyers(mint: string): number {
+  private countRecentSmartBuyers(mint: string, windowSec?: number): number {
     try {
-      const since = Date.now() - CONSENSUS_WINDOW_MS;
+      const since = Date.now() - (windowSec != null ? windowSec * 1000 : CONSENSUS_WINDOW_MS);
       // tier filter: discovery-source-only wallets (tier 'src_*', watched since 2026-07-04)
       // are quarantined out of the consensus signal so widening the watchlist can't perturb
       // the consensus-gated strategies' existing series.
@@ -2435,6 +2536,8 @@ const STRATEGY_THESIS: Record<string, string> = {
   'copy-fable-leadpullback': 'Incumbent gate + enter only when ≥2 of the lead\'s last 3 copies LOST — buy the hot lead\'s drawdown, never its visible win-run (pullback cohort +0.034/t vs win-run −0.007/t).',
   'copy-fable-deep': 'Incumbent gate + pool must hold ≥30 SOL at the fill — skip drained/rugging pools. Data-collection-first: every entry now records pool depth (pool_quote_sol) to calibrate this.',
   'copy-hotlead-early': 'Incumbent gate + EARLINESS cap: enter only when the lead is among the first ≤2 smart buyers on the mint — buy early, not into the 3rd+ smart buyer\'s exit liquidity (outcome_lift crowding cliff).',
+  'copy-hotlead-nodump': 'Incumbent gate + SMART-DISTRIBUTION veto: skip the entry if the smart crowd is net-SELLING this mint (sellers > buyers, 90s window) — don\'t buy a hot lead into the crowd\'s exit. Targets the SL tail → drop3.',
+  'copy-hotlead-breadth': 'Incumbent gate + PER-LEAD breadth cap: at most 2 copies of the same lead per hour, forcing exposure across more distinct leads to broaden the drop3 base (lead-level generalization of the proven mint cap).',
   'copy-conviction-consensus2': 'Buy when ≥ 2 smart wallets bought the SAME token (token-level consensus). Idealized ~1.1s fill — upper-bound reference, never live.',
   'copy-tp100-sl30': 'Copy EVERY watched lead, +100% TP / −30% SL, idealized ~1.1s fill. The load-bearing baseline with no lead selection.',
   'copy-tp100-sl30-lag': 'Same TP100/SL30 at a realistic 5s-delay fill — the OG control every discovery source is measured against.',
@@ -2986,6 +3089,8 @@ export function computeCopyTrades(db: Database.Database): unknown {
         min_entry_drift_pct: s.minEntryDriftPct ?? null,
         min_pool_sol: s.minPoolSol ?? null,
         lead_pullback_gate: s.leadPullbackGate ?? null,
+        smart_flow_veto: s.smartFlowVeto ?? null,
+        max_lead_copies_per_window: s.maxLeadCopiesPerWindow ?? null,
         min_lead_buy_sol: s.minLeadBuySol ?? null, hot_lead_gate: s.hotLeadGate ?? null,
         elite_lead_gate: s.eliteLeadGate ?? null,
         regime_gate_min_score: s.regimeGateMinScore ?? null,
