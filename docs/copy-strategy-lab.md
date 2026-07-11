@@ -10,6 +10,65 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-11 — Spawned from the 2026-07-11 phase-1 idea-model handoff: NODUMP (C4) + BREADTH (C5), two drop3-robustness overlays (operator-directed; MAX_INFLIGHT override)
+
+Implements both promoted theses from the phase-1 handoff (`docs/phase1-handoff-2026-07-11.md`). The
+handoff's framing: the board was at the `MAX_INFLIGHT=4` cap and both promotables
+(`copy-hotlead-strict`/`-hi`) are `degrading` with `n_promotable_stable=0`, so **drop3-robustness,
+not net, is the binding gate**; and the wallet-source frontier is an empirical graveyard
+(cotrade/live_tape/winner_sniper all pruned — own-skill ≠ copyable, r≈0). With the uncorrelated
+frontier dead, both promotes are **robustness overlays on the sole surviving edge** (the incumbent
+hot-lead entry), each attacking drop3 via new at-entry information. **Operator explicitly overrode
+MAX_INFLIGHT** to spawn both now rather than wait for a slot to free (precedent: the 2026-06-19 c2rr
+exit-sweep cohort ran 10-at-once as an operator-directed exception). All predictions were
+pre-registered on 2026-07-11 BEFORE any data and are restated verbatim in the `COPY_STRATEGIES` code
+comments so the test can't be re-scoped. Incumbent baselines (2026-07-11 scoreboard): strict n=820,
+net/trade **+0.01439**, drop3/trade **+0.00636**.
+
+**C4 — `copy-hotlead-nodump`, lever 2 (entry gating): SMART-DISTRIBUTION VETO.** Incumbent chassis +
+ONE new gate `smartFlowVeto {windowSec: 90}` — at the copy moment, skip the entry if the watched
+smart crowd is net-SELLING this mint (distinct smart sellers > distinct smart buyers over 90s, from
+`copy_probe_events`, tier ∈ {promotable,smart}). Even a hot lead's buy is a trap if the rest of the
+smart money is simultaneously distributing (we'd be their exit liquidity) — the SL-tail signature.
+The novel information is the SELL leg: `crowdSellExit` uses it only to EXIT; nothing prices "is the
+crowd dumping as I buy?" into the ENTRY today. Distinct from `minConsensusRecent` (a buy-side count
+floor that FAILED drop3) — this keys on the buy/sell IMBALANCE. Zero RPC (cached counts). The higher-
+conviction of the two. Pre-registered: **P1** KILL if drop3/trade ≤ 0 at n≥100; **P2** beats the
+incumbent on drop3/trade (> +0.00636) with net/trade ≥ −10% of incumbent (≥ +0.01295), else KILL;
+**P3** ≥3 fires/day by day 5, shelve if it can't reach n≥100 in ~4 weeks. Promote only if P1 ∧ P2.
+
+**C5 — `copy-hotlead-breadth`, lever 2 (entry gating / portfolio breadth): PER-LEAD COPY CAP.**
+Incumbent chassis + ONE new gate `maxLeadCopiesPerWindow {maxCopies: 2, windowSec: 3600}` — cap how
+many times the book copies the SAME lead within an hour, forcing exposure across more DISTINCT leads.
+The incumbent's leads are a tight co-buy cluster (`smart-money → consensus` top pairs co-occur
+25-31×), so profit concentrates in few underlying bets → drop3 is fragile by construction; spreading
+the same n across more leads mechanically lifts drop3/trade. Generalizes the PROVEN
+`maxEntriesPerMint` (1st/2nd entries profit, 3rd+ bleed) from the mint level to the lead level;
+`leadExclusionGate` only prunes LOSER leads, so nothing today broadens the WINNER distribution. Zero
+RPC (own-series SQL). Lower-conviction: the 2026-07-03 backtest found "drop1-per-lead hurts −4.2;
+moonshot leads ARE the edge," so a lead cap risks cutting the concentrated winners — declared as
+**P0** (the cap targets the marginal Nth repeat, not each lead's best trade). Pre-registered: **P1**
+drop3/trade > +0.00636 AND net/trade ≥ 0 at n≥100, else KILL; **P2** KILL if net/trade < +0.010
+without drop3/trade clearing +0.010 (traded moonshots for no robustness); **P3** ≥3 fires/day by day
+5. Promote only if P1 holds AND P2 does not trigger.
+
+Both are realistic at `entryDelaySec: 5` → each IS its own `-lag` twin (no separate twin row, as with
+`hotlead-early`/`freshdip`). Fresh ids (never reused). Resolve vs `copy-hotlead-strict` at n≥100 per
+arena rules (PRUNE if beaten on net/trade AND drop3/trade). Roster note: this pushes the in-flight
+challenger count above the cap by operator direction; converge back under MAX_INFLIGHT as
+`hotlead-early` (n=46, drop3 −4.16, worsening) and `freshdip` (n=42, drop3 −3.02) resolve.
+
+**Verified:** code type-checks clean (the only `npm run build` error is a pre-existing tsconfig
+`ignoreDeprecations` deprecation on `main`, unrelated to this change — `dist` emits both strategies +
+both gates + the helper). Offline harness against the compiled dist + verbatim SQL: 12/12 on the new
+signal semantics — `smartFlowVeto` distinct buyer/seller dedup, `src_*`-tier quarantine, the 90s
+window boundary, the strict `sellers > buyers` imbalance (tie is NOT a veto), and
+`leadCopyCountRecent` open+closed counting with old/skipped/other-strategy exclusion + the 3600s
+boundary — plus a brace-matched dist scan confirming each strategy object carries exactly its one new
+lever on the incumbent chassis.
+
+---
+
 ## 2026-07-10 — Ledger enactment (U13 prune) + FD3 cohort: 3 new strategies from fresh backtests (operator-directed)
 
 Operator directed: act on the phase-3 monitor ledger + spawn three new strategies. Grounded in two
