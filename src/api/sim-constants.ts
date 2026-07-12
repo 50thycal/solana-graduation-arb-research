@@ -11,6 +11,17 @@
  *   2026-04-21: Added TP/SL grid constants so aggregates.ts can run the same
  *               12×10 optimizer that Panel 4 / Panel 6 use, instead of a
  *               fixed 10%SL/50%TP single point.
+ *   2026-07-12: SIM_DEFAULT_COST_PCT 3.0 -> 6.0 (D3 live-cost-recon,
+ *               docs/live-cost-recon-2026-07-12.md). The clean 324-pair hold30m
+ *               live-vs-shadow join measured ~3.1pp of ENTRY slippage alone beyond
+ *               the modeled entry — i.e. the old 3% round-trip assumption under-priced
+ *               entry by itself. Real round trip ~= entry (~3.1pp measured) + exit
+ *               (~3pp estimated for a TP100/SL30 limit-ish fill) ~= 6%. This makes the
+ *               shadow scoreboard + wallet scoring honest about LIVE viability, which is
+ *               the whole gate for going live (operator: no live-micro until a shadow
+ *               looks promising, so the shadow must price execution realistically).
+ *               Sample is June-era + stale; recalibrate from a modern live burst if one
+ *               ever runs (the number could move up or down).
  */
 
 /** Adverse price-ratio gap applied when an exit triggers at an SL / stop level. */
@@ -19,8 +30,15 @@ export const SIM_SL_GAP_PENALTY = 0.30;
 /** Adverse price-ratio gap applied when an exit triggers at a TP / take-profit level. */
 export const SIM_TP_GAP_PENALTY = 0.10;
 
-/** Conservative per-trade round-trip cost when `round_trip_slippage_pct` is null on the row. */
-export const SIM_DEFAULT_COST_PCT = 3.0;
+/**
+ * Per-trade round-trip cost when `round_trip_slippage_pct` is null on the row.
+ * 6.0 as of 2026-07-12 (D3 live-cost-recon) — was 3.0; live fills measured ~3.1pp entry
+ * slippage alone, so 3% under-priced the round trip by ~half. Shared by the copy shadow
+ * sim (copy-trader.ts) AND wallet scoring (wallet-pnl.ts): raising it drops every shadow
+ * strategy's future net + tightens the wallet gate, so the scoreboard reflects what we'd
+ * actually net LIVE. See the recalibration note in the file header.
+ */
+export const SIM_DEFAULT_COST_PCT = 6.0;
 
 // ──────────────────────────────────────────────────────────────
 // TP/SL grid — shared with Panel 4 (filter-v2-data.ts) and

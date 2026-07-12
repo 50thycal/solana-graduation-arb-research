@@ -53,7 +53,15 @@ export const LIVE_SHADOW_MAP: Record<string, string> = {
   // (the active gate below keys off membership in this map).
   // KILLED 2026-06-23: copy-hotlead-deep-live-micro — was wired to the ORIGINAL research
   // strategy (copy-hotlead-deep), not a dedicated twin; removed → retired/off.
-  'copy-hotlead-hold30m-live-micro': 'copy-hotlead-hold30m-pair-shadow',
+  // KILLED 2026-07-12: copy-hotlead-hold30m-live-micro — removed → retired/off. Its base
+  // (copy-hotlead-hold30m, KILLED 2026-07-05) and pair-shadow (copy-hotlead-hold30m-pair-
+  // shadow, KILLED 2026-07-03) were both retired and live trading was paused 2026-06-29
+  // (last live fill 2026-06-29, net −0.745 SOL — a finished June total, NOT an ongoing
+  // bleed). Those kills were never propagated here, so the active-gate below kept reading
+  // it `active: true` on trade history alone and the daily journal miscounted it as live
+  // capital at risk (see docs/live-cost-recon-2026-07-12.md). Historical rows stay in the
+  // DB and still render behind the retired/off dropdown. NB: killing a copy live strategy
+  // MUST remove it from this map (+ LIVE_ORIGINAL_MAP) — that is the only active-gate.
 };
 
 // Trend benchmark only: the ORIGINAL research strategy each live strategy is derived
@@ -61,7 +69,8 @@ export const LIVE_SHADOW_MAP: Record<string, string> = {
 // pair shadow track the same TREND as the proven original, never for gating or 1:1
 // matching. live → original-strategy-id.
 export const LIVE_ORIGINAL_MAP: Record<string, string> = {
-  'copy-hotlead-hold30m-live-micro': 'copy-hotlead-hold30m',
+  // (empty — copy-hotlead-hold30m-live-micro retired 2026-07-12; no copy live-micro
+  // strategy is currently running. Add a live→original mapping when one is spawned.)
 };
 
 // ── Slippage-cap counterfactual overlay (Tier 1: measurement only, ZERO behavior change) ──

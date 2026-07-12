@@ -55,6 +55,31 @@ are untouched; D1 accelerates all of their clocks. Decision notes carried for th
 day-7 (07-13) → shelve-as-untestable (frozen pre-filter, not a refutation); `hotlead-early` (n=46,
 drop3/t −0.090) is the nearest natural KILL.
 
+**Addendum (same day, operator-directed) — enacted two D3 recommendations:**
+
+1. **Cleared the stale `copy-hotlead-hold30m-live-micro` "active" flag** (`live-training-data.ts`):
+   removed it from `LIVE_SHADOW_MAP` + `LIVE_ORIGINAL_MAP` → drops to retired/off (matching the
+   06-23 `deep-live-micro` precedent). Its base + pair-shadow were killed 07-05/07-03 and live
+   trading paused 06-29, but the kill was never propagated to that file, so its active-gate kept
+   reading `active: true` on trade history alone. **Operator confirms zero copy live-micro strategies
+   are running** — the correct active set is empty. Convention hardened in the code comment: killing
+   a copy live strategy MUST remove it from those maps (the only active-gate).
+
+2. **Re-costed `SIM_DEFAULT_COST_PCT` 3.0 → 6.0** (`sim-constants.ts`) from the D3 measurement (~3.1pp
+   entry slip alone → 3% under-priced the round trip by ~half; ~6% = entry + estimated exit). Operator
+   rationale: going live is gated entirely on shadow performance, so the shadow must price execution
+   honestly or a "promising" shadow could be a live loser. **Blast radius (flag for the next daily/lab
+   read so the drop isn't misread as edge decay):** the constant feeds BOTH the copy shadow sim
+   (`copy-trader.ts`) and wallet scoring (`wallet-pnl.ts`). Wallet scoring **reprices immediately**
+   (recomputed each cycle → the `wallet_discovery.promotable` count, now 10, likely drops; the gate
+   tightens). The copy strategy scoreboard transitions **gradually** — `net_sol` is stored per-row at
+   close, so existing rows keep their 3%-era net and only new closes use 6%; cumulative net/drop3 drift
+   down over each strategy's trade-turnover window while `recent_net_per_trade` reflects 6% fast. Under
+   this cost, per D3's re-costing, `copy-hotlead-strict` likely slips below the drop3/monthly bar while
+   `copy-hotlead-strict-hi` holds — expect the promotion picture to tighten over the next 1–2 weeks.
+   Stale June sample; recalibrate from a modern burst if one ever runs. Both changes: build green
+   (only the pre-existing tsconfig deprecation).
+
 ---
 
 ## 2026-07-11 — Spawned from the 2026-07-11 phase-1 idea-model handoff: NODUMP (C4) + BREADTH (C5), two drop3-robustness overlays (operator-directed; MAX_INFLIGHT override)
