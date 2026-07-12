@@ -1,10 +1,8 @@
 # ops request: type='db'
-# SELECT ts, level, name, message FROM bot_errors ORDER BY ts DESC LIMIT 8
-  ts            | level | name      | message                                                                                                                                                                             
-  --------------+-------+-----------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  1783647584258 | error | gist-sync | Status sync failing (1x): Blob create failed for diagnose.json: 401 {
-  "message": "Bad credentials",
-  "documentation_url": "https://docs.github.com/rest",
-  "status": "401"
-}
-  [1 rows]
+# SELECT strategy_id, COUNT(*) AS n, SUM(CASE WHEN status='closed' THEN 1 ELSE 0 END) AS closed, SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) AS failed, SUM(CASE WHEN live_error IS NOT NULL THEN 1 ELSE 0 END) AS errs, SUM(CASE WHEN copy_event_id IS NOT NULL THEN 1 ELSE 0 END) AS has_evid, date(MIN(entry_ts),'unixepoch') AS first_day, date(MAX(entry_ts),'unixepoch') AS last_day, ROUND(SUM(COALESCE(net_sol,0)),4) AS net_sol, ROUND(SUM(COALESCE(jito_tip_sol,0)),5) AS jito, ROUND(SUM(COALESCE(ata_rent_sol,0)),5) AS rent, ROUND(AVG(CASE WHEN status='closed' THEN tx_land_ms END),0) AS land_ms FROM copy_trades WHERE execution_mode='live_micro' GROUP BY strategy_id ORDER BY n DESC
+  strategy_id                           | n   | closed | failed | errs | has_evid | first_day  | last_day   | net_sol | jito   | rent    | land_ms
+  --------------------------------------+-----+--------+--------+------+----------+------------+------------+---------+--------+---------+--------
+  copy-hotlead-hold30m-live-micro       | 324 | 324    | 0      | 6    | 324      | 2026-06-23 | 2026-06-29 | -0.7453 | 0.2655 | 0.46903 | 1915   
+  copy-consensus2-lag-drift5-live-micro | 172 | 172    | 0      | 136  | 0        | 2026-06-18 | 2026-06-19 | -0.2011 | 0.037  | 0.03875 |        
+  copy-hotlead-deep-live-micro          | 146 | 146    | 0      | 1    | 2        | 2026-06-20 | 2026-06-23 | -0.4252 | 0.1875 | 0.20597 |        
+  [3 rows]
