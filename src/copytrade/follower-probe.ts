@@ -51,9 +51,22 @@ const SEEN_MAX = 4096;
 // total; the watchlist is the CHEAP lever. So 40 → 80 roughly doubles copy lead-event
 // supply for only ~+2.4k credits/day (total ≈ 46k, ~46% of the 100k cap). Env-tunable;
 // dial toward 100 if the settled panel confirms headroom, or back to 40 if it spikes.
+// 2026-07-12 (D1 `copy-watchlist-unlock`, phase-1 handoff 2026-07-12): 80 → 150. At cap
+// 80 (70 OG slots after the 10-slot source reserve) only ~47% of the ~150-wallet
+// follow_list is subscribed and the entire ~178-wallet smart set is dropped — the
+// tier-priority truncation silently starves the sole proven edge (same "unsubscribed
+// wallets fire zero lead events" mechanism as the U5 bug). The settled panel now measures
+// copy_follower_ws at ~4.2k credits/day @ 80 (~53 credits/wallet/day) against a ~47k/day
+// total and the ≤100k/day cap, so 80 → 150 completes follow_list coverage for only
+// ~+3.7k credits/day (total ≈ 51k, ~51% of the cap). Pre-registered observables (7d):
+// leads 173 → ≥200, hot ≥65, incumbent fires ≥7/day, incumbent net/trade stays > 0;
+// REVERT (env, instant) if attributable spend pushes the console toward >85k/day. Note:
+// this is a code DEFAULT — if COPY_WATCHLIST_MAX is set as a Railway env var it overrides
+// this; unset it or set it to 150 to pick up the unlock. Next step (smart-set tier, →~330)
+// is deliberately NOT taken here — judge it on this change's data.
 const WATCHLIST_MAX = (() => {
-  const v = parseInt(process.env.COPY_WATCHLIST_MAX || '80', 10);
-  return Number.isFinite(v) && v >= 0 ? v : 80;
+  const v = parseInt(process.env.COPY_WATCHLIST_MAX || '150', 10);
+  return Number.isFinite(v) && v >= 0 ? v : 150;
 })();
 // BUG FOUND 2026-07-08 (U5, live-data diagnosis): pure priority-order truncation means if the
 // HIGHEST tier alone (follow_list) ever grows past WATCHLIST_MAX, every lower tier — including
