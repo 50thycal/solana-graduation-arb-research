@@ -381,8 +381,12 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   // I4 hotlead parameter sweep — copy-hotlead works at {last10, >=3, net>0}; bracket
   //    the calibration. -strict raises the net floor (lead must be clearly profitable
   //    recently, not marginally positive); -deep uses a longer, more stable lookback.
-  { id: 'copy-hotlead-strict', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 } },
+  // ── KILLED 2026-07-12 (roster prune — DOMINATED, operator-approved): copy-hotlead-strict. n=835,
+  //    exit_stress collapsed +4.84 → −10.14 (fails the stress gate) and arena verdict flipped to
+  //    PRUNE — matured (n>=100) and beaten by copy-hotlead-strict-hi on BOTH net/trade (0.013 vs
+  //    0.029) AND drop3/trade (0.005 vs 0.014). Same hot-lead signal, stricter net floor
+  //    (strict-hi, minNetSol 1.0 vs 0.5) wins outright. Closed rows remain in the DB →
+  //    retired_summary; do NOT revive this id.
   // ── T (2026-07-01): net-floor hill-climb on the incumbent. copy-hotlead-strict is the ONLY
   //    promotable strategy (n≈596, drop3 +5.05, ~25 SOL/mo) and its defining lever vs plain
   //    copy-hotlead is the lead net floor (0 → 0.5). This challenger pushes that ONE lever
