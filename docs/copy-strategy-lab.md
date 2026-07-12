@@ -10,6 +10,53 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-12 — Enacted the 2026-07-12 phase-1 handoff: D1 `copy-watchlist-unlock` (config) + D3 `live-cost-recon` (ops-DB study, funding BLOCKED)
+
+Operator directed "move on these two" from the 07-12 phase-1 handoff
+(`docs/phase1-handoff-2026-07-12.md`). Neither is a new trading signal — the overlay lane is nine
+challengers deep (C4/C5 from 07-11 included), the wallet-source frontier is a graveyard, so the two
+promotes attack the program's actual binding constraints: **event supply** (D1) and **scoreboard
+truth** (D3).
+
+**D1 — `copy-watchlist-unlock` (lever 1, subscription layer): `COPY_WATCHLIST_MAX` 80 → 150.**
+One-line default change in `follower-probe.ts`. At cap 80 (70 OG slots after the 10-slot source
+reserve) only ~47% of the ~150-wallet follow_list is subscribed and the entire ~178-wallet smart set
+is dropped by the tier-priority truncation — the sole proven edge is starved at the subscription
+layer (same "unsubscribed wallets fire zero events" mechanism as the U5 bug). The settled `rpc_usage`
+panel measures `copy_follower_ws` at ~4.2k credits/day @ 80 (~53/wallet/day) vs a ~47k/day total and
+the ≤100k cap, so 80→150 completes follow_list coverage for ~+3.7k credits/day (≈51k total, ~51% of
+cap). Source reserve unchanged (10). Pre-registered 7-day observables (verbatim in the code comment
+so the test can't be re-scoped): leads 173→**≥200**, hot **≥65**, incumbent fires **≥7/day**,
+incumbent net/trade stays **>0**; REVERT (env, instant) if console spend → >85k/day. **P2's failure
+mode also refutes D2 (trial-rotation) by proxy** — if leads stay ≤185, subscription was not the
+binding constraint. NOTE: code default — a Railway `COPY_WATCHLIST_MAX` env override would mask it.
+Build green (only the pre-existing tsconfig deprecation); PR #556.
+
+**D3 — `live-cost-recon` (execution/measurement integrity): live-micro funding BLOCKED.** Read-only
+ops-DB study (`docs/live-cost-recon-2026-07-12.md`), zero RPC, no slot. Findings: (1) **no
+modern-era live sample** — every live copy trade is June 18–29, executor paused since (the
+`hold30m-live-micro` "active:true" is a stale flag, its −0.75 SOL is a June total, not an ongoing
+bleed — corrects the 07-11 journal alarm); (2) `consensus2-live-micro` is 79% `live_error`
+(rent-bug era, excluded); (3) the clean 324-pair `hold30m` join shows **~3.1pp entry slippage**, so
+the flat 3% round-trip assumption is ~half the real cost. **Pre-registered verdicts: P1 FAIL** (3.1pp
+> 2pp bar → funding killed pending fix/recalibration); **P2 split — `copy-hotlead-strict` FAILS
+re-costing (drop3 → −5.9, monthly → ~1.3), `copy-hotlead-strict-hi` SURVIVES (drop3 → +2.3), which
+INVERTS the daily journal's ranking** (the thin-per-trade strict is the fragile one under real cost;
+the higher-conviction strict-hi is the robust one); **P3 NO** (zero current-era pairs). Recommendation:
+do not fund on this stale evidence; if live is wanted, a bounded calibration burst (≤0.3 SOL behind
+the breaker) on the current executor first; prefer strict-hi over strict; formally clear the stale
+`hold30m-live-micro` flag; consider re-calibrating `SIM_DEFAULT_COST_PCT` 3.0 → ~6 from a modern
+burst (separate reviewed follow-up, not changed here). Also corrects the handoff's ~4.4s land-time
+figure (that was the retired v25 `trades_v2` executor; the copy executor landed ~1.9s in June).
+
+**Roster unchanged by this cycle** — D1 is a supply config, D3 is advisory (enacts no code). The
+nine in-flight challengers, the two live probes (external/gradspec), and the queued `hotlead-fresh`
+are untouched; D1 accelerates all of their clocks. Decision notes carried for the operator: gradspec
+day-7 (07-13) → shelve-as-untestable (frozen pre-filter, not a refutation); `hotlead-early` (n=46,
+drop3/t −0.090) is the nearest natural KILL.
+
+---
+
 ## 2026-07-11 — Spawned from the 2026-07-11 phase-1 idea-model handoff: NODUMP (C4) + BREADTH (C5), two drop3-robustness overlays (operator-directed; MAX_INFLIGHT override)
 
 Implements both promoted theses from the phase-1 handoff (`docs/phase1-handoff-2026-07-11.md`). The
