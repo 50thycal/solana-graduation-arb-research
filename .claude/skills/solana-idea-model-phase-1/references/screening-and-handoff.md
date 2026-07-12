@@ -13,7 +13,7 @@ Does the candidate share a **return driver** with a live strategy — the *same 
 - Another hot-lead net-floor step → same leads, same recency signal → **correlated with the incumbent** (and it's the incumbent's own hill-climb, not a new idea).
 - A freshness or consensus gate layered on the *same* leads still shares the recency driver — but a restriction can carry independent robustness; judge the marginal driver.
 - A **new wallet source** or a **different edge-source** (earliness, cross-token skill, consensus on different leads) has a genuinely different driver → uncorrelated.
-**Scoring:** shared driver with a live strategy → heavy penalty *even if the edge is real* (adds variance, not diversification). Zero correlation → bonus (uncorrelated ballast is worth more than its raw edge toward the SOL-accumulation goal). This axis can veto an otherwise-good idea.
+**Scoring:** shared driver with a live strategy → heavy penalty *even if the edge is real* (adds variance, not diversification). Zero correlation → bonus (uncorrelated ballast is worth more than its raw edge toward the SOL-accumulation goal). This axis can veto an otherwise-good idea. **Screen against the waiting queue, not only the live book:** the board is chronically at `MAX_INFLIGHT`, so a survivor that shares a driver with a challenger already queued for the next slot — and isn't clearly better — is a HOLD, not a promote. Promote budget = slots actually open; **zero is a valid promote count.** (Uncorrelated-but-*dead* is not ballast: a new wallet source scores "uncorrelated" here but is a known graveyard on axis 2 — don't let this axis's bonus rescue it.)
 
 ### 2. Edge plausibility given the graveyard — *the prior*
 Which family does it fall in?
@@ -33,8 +33,8 @@ Estimate the edge on the **`-lag` twin** (5s entry delay + round-trip cost `SIM_
 - **Live-only costs** for a live-bound idea: Jito tip, ATA rent, priority fees, land rate (the rent-failure lesson: `InsufficientFundsForRent` is a *funding* symptom, not a retry bug).
 An edge that only survives at 1.1s, or only on raw net, is dead.
 
-### 5. Capacity / n≥100 reachability — from the Phase 1 survey
-Can it reach **n ≥ 100** on the copyable (post-graduation PumpFun) universe, with drop3 holding, in a readable window? The `live_tape` source was pruned precisely because its wallets rarely traded the copyable universe — stuck at **n=24 for 4+ loops**, never reaching n≥100 (a funnel/reachability problem, not a P&L problem). A gate so strict it fires a few times a day, or a source whose wallets don't touch fresh graduations, can't build a track record. Estimate the fire-rate and the days-to-n≥100. A great edge that fires 10 times is a hobby, not 3.75 SOL/mo.
+### 5. Capacity / n≥100 reachability — *should already be a Phase-2 PRE-gate; this is the second check*
+Can it reach **n ≥ 100** on the copyable (post-graduation PumpFun) universe, with drop3 holding, in a readable window? The `live_tape` source was pruned precisely because its wallets rarely traded the copyable universe — stuck at **n=24 for 4+ loops**, never reaching n≥100 (a funnel/reachability problem, not a P&L problem); gradspec froze the same way. **Reachability has killed more theses here than edge has** — it belongs *up front* in Phase 2 (estimate fire-rate before writing the candidate line), and any candidate that reached this screen without a fire-rate estimate is a process miss to fix before scoring. A gate so strict it fires a few times a day, or a source whose wallets don't touch fresh graduations, can't build a track record. A great edge that fires 10 times is a hobby, not 3.75 SOL/mo.
 
 ### 6. Infra / RPC reuse — *speed-and-cost multiplier*
 Which existing machinery does it reuse, and what does it cost to run?
@@ -43,7 +43,7 @@ Which existing machinery does it reuse, and what does it cost to run?
 High reuse + low marginal RPC → cheaper and faster to a verdict → promote sooner among near-ties.
 
 ### Output of Phase 3
-A scored table: candidate × the six axes + a **promote / hold / kill** call and a one-line reason. Be blunt. Killing an idea here, before a probe, is the cheapest win available. Typically 1–3 promote.
+A scored table: candidate × the six axes + a **promote / hold / kill** call and a one-line reason. Be blunt. Killing an idea here, before a probe, is the cheapest win available. Typically 0–3 promote (0 is legitimate — see Part C).
 
 ---
 
@@ -123,3 +123,48 @@ This thesis is the bridge into the validation machinery:
 
 The idea model's job ends here: a pre-registered, falsifiable, cost-aware, survivorship-safe, testable
 copy-thesis, ranked by its expected contribution to accumulating SOL. Validation takes it from there.
+
+---
+
+## Part C — Binding-constraint handoff (Phase 4, when no signal clears)
+
+When the screen promotes **zero** signal theses, do NOT manufacture a weak one to fill a slot. The
+North-Star deliverable is the highest-EV change toward SOL accumulation, and that is often a
+non-signal change (capacity / execution-cost / measurement) or the honest conclusion that no edge on
+the current data clears the realistic-cost bar. Write it with the *same* pre-registration rigor as a
+thesis — this is a success state, not an empty cycle. The 2026-07-12 D1/D3 handoff is the worked example.
+
+```markdown
+# <NAME> — <binding-constraint / non-signal change, one line>
+
+*Diagnosis written <date>; the observable + revert criterion below are pre-registered.
+Category: <capacity | execution-cost | measurement | no-edge-at-realistic-cost>. Voice: proposal.*
+
+## Verdict
+<"No positive-EV signal this cycle; the binding constraint is <X>." OR "No edge on the current data
+clears the realistic-cost bar; the goal now needs <lower execution cost | a genuinely new data
+input>, not another gate.">
+
+## Evidence
+<The Phase-0.5 calibration table + the Phase-3 screen results that rule the signal lane out, and the
+live-board / cost / measurement data that points at the real constraint.>
+
+## Recommended change
+<The exact non-signal change: a config default (capacity), an ops-DB read-only study (cost/
+measurement), a harvester/flag fix (integrity) — or, for no-edge, the specific data input or
+cost-reduction the goal would require. One lever, like a signal thesis.>
+
+## Pre-registered observable + revert/kill criterion
+- **P1 — <the metric that confirms it worked>.** PASS if <threshold in a stated window>; REVERT/FAIL
+  if <threshold> (instant revert for a config; shelve-with-reason for a study).
+- <further Ps as needed — same discipline as a signal thesis: no post-hoc re-scoping.>
+
+## Why this beats a signal thesis this cycle
+<Expected SOL contribution vs the best available signal candidate — why fixing the constraint, or
+declaring no-edge, is higher-EV than spending a slot on a marginal/correlated overlay.>
+```
+
+A category-2/3/4 change usually ships as an operator-approved config/code edit or a read-only
+`ops`-branch DB study (no shadow slot consumed); a "no-edge-at-realistic-cost" verdict ships as a
+recommendation (change the inputs) rather than a probe. Either way it lands in `docs/copy-strategy-lab.md`
+and, next cycle, into the Phase-0.5 calibration table.
