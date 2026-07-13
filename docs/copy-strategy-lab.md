@@ -10,6 +10,61 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-13 — A1/B1 offline study RESOLVED (phase-1 handoff 2026-07-13): copy-count decay CONFIRMED, calendar-tenure decay INVERTED, book-regime gate REFUTED
+
+Executed the combined A1 (`lead-alpha-lifecycle`) + B1 (`book-edge-regime-gate`) ops-DB study
+pre-registered same-day in `docs/phase1-handoff-2026-07-13.md` (operator-directed "proceed with
+that test"). Data: all closed rows of `copy-hotlead-strict` (836, retired) + `copy-hotlead-strict-hi`
+(155) + the `copy-tp100-sl30` baseline series (3,591) via the read-only `ops` channel; hot-tenure and
+Nth-copy reconstructed at each entry from **prior baseline closes only** (the same construction as
+the 07-10 leadpullback backtest); tercile bounds and K ∈ {20,30,50} fixed in the pre-registration.
+Only 3/991 entries (0.3%) failed hot-at-entry reconstruction.
+
+**A1 — PARTIAL CONFIRM, with a sign flip on the mechanism.** The lifecycle decay is real but it is
+keyed on **how many times we've copied the lead**, not on calendar time hot:
+
+- **P1 (tenure dimension): FAIL — INVERTED.** Young-tenure (≤20.3h hot) leads are the WORST cohort
+  in both halves (h1 −0.0028/t, h2 −0.0154/t) while old-tenure leads are positive (h2 +0.0397/t,
+  drop3/t +0.0276). Time-since-hot does not decay the edge — if anything, freshly-hot leads are
+  noise that hasn't proven out.
+- **P1 (Nth-copy dimension): PASS both halves.** Low-N copies (≤5th copy of a lead) beat high-N
+  (>12th) by **+0.0219/t (h1) and +0.0577/t (h2)**, with the low-N cohort's drop3/t positive in both
+  halves (+0.0238 / +0.0221). The >12th-copy tail in h2 is the bleed: −0.0204/t, drop3/t −0.0345.
+- **P2: PASS on both strategies.** The recorded degrading windows skew hard to high-N: strict's
+  recent-window median is its **17th** copy of a lead vs 8th prior (×2.12); strict-hi 8th vs 4th
+  (×2.00). The book's observed decay is substantially "re-copying the same leads deeper and deeper."
+- **P3: PASS at the ≤12 cutoff (retains 67%), FAIL at ≤5 (37%, bar 40%).** At ≤12 the h2 read is
+  +0.0178/t / drop3 +0.0091 vs always-on +0.0024/−0.0038 (h1 ≈ flat vs always-on — the whole
+  improvement comes from dropping the recent-era high-N bleed). Per-strategy: strict kept 64%
+  (+0.0225/+0.0105) vs dropped (−0.0035/−0.0159); strict-hi kept 85% (+0.0275/+0.0109) vs dropped
+  23 trades carrying drop3/t −0.0584.
+- **Decision rule fires (P1 ∧ P3):** RECOMMEND spawning ONE challenger — incumbent chassis + a new
+  lifetime per-lead copy cap **`maxCopiesPerLead: 12`** (per-strategy, all-time; distinct from C5's
+  2-per-hour RATE cap, whose in-flight test is unaffected). Per the pre-registration it files
+  behind the queued `hotlead-fresh` unless the operator re-prioritizes. The ≤5 form is
+  higher-edge but pre-registered as over-filtering; do not fit intermediate cutoffs post-hoc.
+- Fairness note: the h2-concentration of the effect is NOT a 6%-recost artifact — kept-vs-dropped
+  within h2 share the same cost-era mix.
+
+**B1 — REFUTED on all three predictions; the honest negative.** No K ∈ {20,30,50} beats always-on
+on both axes in both halves for either strategy (P1 FAIL). The gated-OUT cohorts are frequently
+**positive** — on strict h2 the gate would have stood down INTO +0.0177/t trades while keeping
+−0.0230/t ones (P2 FAIL: the rule skips recoveries, not losses). Edge-state persistence does not
+exist: P(next-10 net ≤0 | trailing-K ≤0) − unconditional ranges **−20pp to +5pp**, never ≥+10pp
+(P3 FAIL). Own-PnL trend-following on this book is noise-chasing, exactly the pre-registered null —
+same family verdict as every killed timing gate. **Do not promote `recencyProfile` to a hard gate;
+do not relitigate without a genuinely different regime signal.** Joint read with A1: coherent —
+there is no exploitable time-domain regime (B1, tenure inversion), while the count-domain decay
+(A1) is real; the edge doesn't fade with the clock, it fades with our repeated exploitation of the
+same lead.
+
+**Roster unchanged by this entry** (study only — the `maxCopiesPerLead` challenger is a proposal
+awaiting operator approval + code edit). Phase-0.5 bookkeeping: A1 and B1 pre-registrations are
+both CLOSED (no dangling debt); the C1/D2 trigger (D1 day-7, ~07-19) and the M1 arena-truth fix
+remain open from the 07-13 handoff.
+
+---
+
 ## 2026-07-12 — Enacted the 2026-07-12 phase-1 handoff: D1 `copy-watchlist-unlock` (config) + D3 `live-cost-recon` (ops-DB study, funding BLOCKED)
 
 Operator directed "move on these two" from the 07-12 phase-1 handoff
