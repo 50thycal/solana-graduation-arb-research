@@ -1,996 +1,1805 @@
 # ops request: type='db'
-# SELECT strategy_id, substr(lead_wallet,1,12) AS lead_wallet, entry_ts, exit_ts, ROUND(net_sol,4) AS net_sol FROM copy_trades WHERE status='closed' AND net_sol IS NOT NULL AND strategy_id IN ('copy-hotlead-strict','copy-hotlead-strict-hi') ORDER BY exit_ts ASC
-  strategy_id            | lead_wallet  | entry_ts   | exit_ts    | net_sol
-  -----------------------+--------------+------------+------------+--------
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781617439 | 1781620414 | 0.5174 
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781628352 | 1781628437 | -0.1768
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781629998 | 1781630368 | -0.2277
-  copy-hotlead-strict    | B6yHBbrfZVxw | 1781647643 | 1781647685 | -0.2561
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1781664132 | 1781664772 | -0.1651
-  copy-hotlead-strict    | 5dU3trzb5uvZ | 1781665287 | 1781665439 | -0.1764
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1781671897 | 1781671953 | -0.1922
-  copy-hotlead-strict    | 5dU3trzb5uvZ | 1781671970 | 1781672874 | 0.513  
-  copy-hotlead-strict    | HntvSoXq7CxH | 1781674388 | 1781675060 | -0.4418
-  copy-hotlead-strict    | HntvSoXq7CxH | 1781675979 | 1781676848 | 3.6458 
-  copy-hotlead-strict    | 5dU3trzb5uvZ | 1781675018 | 1781677131 | -0.5014
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1781678831 | 1781679762 | -0.4808
-  copy-hotlead-strict    | 5dU3trzb5uvZ | 1781683435 | 1781683708 | 0.4972 
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1781683757 | 1781684609 | -0.1899
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1781687619 | 1781688220 | 0.4875 
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1781691558 | 1781692494 | 0.5214 
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781707567 | 1781708693 | -0.1833
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781720832 | 1781721752 | -0.263 
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781725182 | 1781726638 | 0.4923 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1781731708 | 1781735648 | 0.4873 
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1781752328 | 1781752468 | 0.4964 
-  copy-hotlead-strict    | 5pJ2icRDUhmN | 1781752639 | 1781752953 | -0.2292
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1781716190 | 1781752994 | -0.5094
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1781753009 | 1781753353 | 0.4856 
-  copy-hotlead-strict    | 5dU3trzb5uvZ | 1781753389 | 1781753433 | -0.1756
-  copy-hotlead-strict    | 5pJ2icRDUhmN | 1781753797 | 1781754245 | -0.381 
-  copy-hotlead-strict    | HntvSoXq7CxH | 1781754268 | 1781754291 | -0.245 
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1781771483 | 1781771681 | -0.167 
-  copy-hotlead-strict    | B6yHBbrfZVxw | 1781743950 | 1781773556 | 0.5033 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1781777196 | 1781777462 | 0.4958 
-  copy-hotlead-strict    | HntvSoXq7CxH | 1781777711 | 1781778755 | 0.4992 
-  copy-hotlead-strict    | 572gijC9dnNi | 1781783543 | 1781783564 | -0.1713
-  copy-hotlead-strict    | DVhwSE98dHBt | 1781785010 | 1781785238 | 0.5636 
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1781758240 | 1781785869 | 0.4859 
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781792715 | 1781792973 | -0.1781
-  copy-hotlead-strict    | DVhwSE98dHBt | 1781793797 | 1781794007 | 0.8696 
-  copy-hotlead-strict    | DVhwSE98dHBt | 1781794134 | 1781794200 | -0.2478
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1781794403 | 1781794914 | 0.5174 
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1781798474 | 1781799428 | -0.4164
-  copy-hotlead-strict    | AE7neeVw9NFw | 1781799942 | 1781799988 | -0.2449
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1781802892 | 1781802911 | 0.5099 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1781803067 | 1781803135 | 0.6031 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1781803209 | 1781803341 | 0.6221 
-  copy-hotlead-strict    | 5dU3trzb5uvZ | 1781803622 | 1781803698 | -0.1686
-  copy-hotlead-strict    | AE7neeVw9NFw | 1781803791 | 1781804310 | -0.1789
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1781804271 | 1781805046 | -0.1701
-  copy-hotlead-strict    | AE7neeVw9NFw | 1781804735 | 1781805834 | 0.5598 
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1781805253 | 1781805993 | -0.1714
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1781807241 | 1781809281 | -0.2153
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1781809407 | 1781810827 | 0.489  
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781810994 | 1781812326 | 0.4896 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1781812421 | 1781812901 | -0.1813
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1781813002 | 1781814887 | -0.1853
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1781817510 | 1781818983 | 0.5003 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1781819073 | 1781821683 | -0.1793
-  copy-hotlead-strict    | B6yHBbrfZVxw | 1781830332 | 1781830538 | -0.1687
-  copy-hotlead-strict    | DVhwSE98dHBt | 1781831665 | 1781831894 | 0.4966 
-  copy-hotlead-strict    | DVhwSE98dHBt | 1781832509 | 1781832543 | -0.2041
-  copy-hotlead-strict    | DVhwSE98dHBt | 1781834703 | 1781835056 | -0.2139
-  copy-hotlead-strict    | DVhwSE98dHBt | 1781835791 | 1781836174 | 0.4998 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1781836441 | 1781837196 | -0.3326
-  copy-hotlead-strict    | 572gijC9dnNi | 1781836926 | 1781837353 | -0.1794
-  copy-hotlead-strict    | DVhwSE98dHBt | 1781839330 | 1781839810 | -0.218 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1781838346 | 1781839965 | -0.177 
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1781840353 | 1781840864 | -0.3965
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1781841363 | 1781841592 | -0.1689
-  copy-hotlead-strict    | 5dU3trzb5uvZ | 1781842185 | 1781842591 | -0.2044
-  copy-hotlead-strict    | HntvSoXq7CxH | 1781843154 | 1781844554 | -0.4036
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1781661536 | 1781866025 | -0.4799
-  copy-hotlead-strict    | 5dU3trzb5uvZ | 1781867113 | 1781868231 | 0.9711 
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1781868245 | 1781868545 | 0.504  
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1781866284 | 1781869106 | 0.4861 
-  copy-hotlead-strict    | HntvSoXq7CxH | 1781743606 | 1781870949 | -0.4554
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1781875256 | 1781875455 | -0.1778
-  copy-hotlead-strict    | HM5iEcL9h13E | 1781870819 | 1781876698 | -0.5109
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1781872576 | 1781880168 | -0.2338
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781882601 | 1781896430 | -0.4974
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1781925845 | 1781925963 | 1.1514 
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1781925766 | 1781926565 | -0.1756
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1781926321 | 1781927738 | 0.5842 
-  copy-hotlead-strict    | AE7neeVw9NFw | 1781671565 | 1781957600 | 0.2478 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1781798336 | 1781957606 | -0.1104
-  copy-hotlead-strict    | AE7neeVw9NFw | 1781809317 | 1781957607 | -0.0091
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1781812021 | 1781957607 | -0.1185
-  copy-hotlead-strict    | 8QwYYkzuDwh3 | 1781858482 | 1781957611 | -0.0164
-  copy-hotlead-strict    | AE7neeVw9NFw | 1781920584 | 1781957611 | 0.2377 
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1781964808 | 1781965491 | 0.5006 
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1781966128 | 1781966294 | -0.1763
-  copy-hotlead-strict    | DcQKToPywy64 | 1781958150 | 1781968550 | -0.1694
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1781969896 | 1781970618 | -0.2032
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1781970985 | 1781971144 | -0.2557
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1781968481 | 1781972395 | -0.1956
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1781973551 | 1781975063 | 0.554  
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1781975190 | 1781975870 | 0.5057 
-  copy-hotlead-strict    | BZoJp596zygH | 1781980125 | 1781981755 | 0.5068 
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1781983765 | 1781984257 | -0.167 
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1781985050 | 1781985102 | -0.2084
-  copy-hotlead-strict    | DcQKToPywy64 | 1781986423 | 1781986789 | -0.1769
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1781986322 | 1781986985 | 0.4899 
-  copy-hotlead-strict    | DcQKToPywy64 | 1781958391 | 1781987206 | -0.0345
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1781987141 | 1781990835 | -0.2411
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1781991776 | 1781991863 | 0.5172 
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1781981493 | 1781991961 | -0.166 
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1781987586 | 1781993313 | -0.1671
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1781993692 | 1781995580 | 0.5303 
-  copy-hotlead-strict    | BZoJp596zygH | 1781994350 | 1781996078 | -0.177 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1781995809 | 1781996900 | 0.5749 
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1781987584 | 1781998237 | 0.4891 
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1781994262 | 1782004547 | -0.1782
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782004804 | 1782005076 | -0.1835
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1781977526 | 1782006349 | -0.0885
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1782007146 | 1782007879 | -0.1776
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782009031 | 1782009083 | -0.2684
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782009094 | 1782009233 | 0.5458 
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782009285 | 1782009357 | -0.1766
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782009714 | 1782010829 | 0.5021 
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782011214 | 1782012230 | 0.5633 
-  copy-hotlead-strict    | AE7neeVw9NFw | 1782012239 | 1782016838 | -0.1889
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782011756 | 1782018015 | -0.1685
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782031632 | 1782032453 | -0.1853
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782013225 | 1782042030 | 0.0173 
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782041865 | 1782047375 | -0.1673
-  copy-hotlead-strict    | B6yHBbrfZVxw | 1782051367 | 1782051552 | -0.1919
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782051711 | 1782051978 | -0.1691
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1782056119 | 1782056358 | 0.6573 
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782057417 | 1782057909 | 0.5104 
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1782056441 | 1782058083 | -0.198 
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782060152 | 1782060460 | -0.2352
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782064358 | 1782064536 | -0.1774
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782065651 | 1782066963 | -0.1933
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1782069551 | 1782069842 | -0.216 
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782070874 | 1782071299 | 0.5724 
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782063477 | 1782075076 | -0.1653
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782069235 | 1782079054 | -0.1707
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782094996 | 1782095387 | 0.5438 
-  copy-hotlead-strict    | HM5iEcL9h13E | 1782096398 | 1782097541 | -0.5033
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782091988 | 1782098787 | -0.1653
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782080826 | 1782100510 | 0.5077 
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1782101133 | 1782101169 | -0.4974
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1782103646 | 1782103678 | -0.495 
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782105612 | 1782109852 | 0.4931 
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1782111244 | 1782112030 | 1.553  
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782105945 | 1782113405 | 0.5228 
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782112211 | 1782113532 | 0.5023 
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782116295 | 1782116661 | -0.1718
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782114192 | 1782117635 | 0.5504 
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1782118865 | 1782119834 | -0.1892
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782116732 | 1782120365 | -0.1659
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782109662 | 1782120609 | -0.1671
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782121467 | 1782122656 | 0.5685 
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1782119045 | 1782122688 | -0.1738
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1782124074 | 1782124287 | -0.1771
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1782124497 | 1782124913 | -0.175 
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782122844 | 1782125298 | -0.1653
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782120159 | 1782127495 | -0.1662
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782117706 | 1782128442 | -0.1691
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782125184 | 1782129361 | -0.1723
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782115484 | 1782129614 | -0.1689
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782129965 | 1782131789 | 0.486  
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782120945 | 1782132262 | -0.1769
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782131356 | 1782132275 | -0.1925
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782109841 | 1782133421 | -0.1982
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782105048 | 1782133869 | -0.1218
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782105462 | 1782134296 | 0.0978 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782111219 | 1782134654 | -0.1961
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782115422 | 1782134804 | -0.1892
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782113981 | 1782135128 | -0.167 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782106784 | 1782135602 | 0.2804 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782118781 | 1782135756 | -0.1652
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782136021 | 1782136146 | -0.195 
-  copy-hotlead-strict    | 6utMS2SBujdv | 1782136193 | 1782136271 | -0.1668
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782107561 | 1782136379 | -0.0076
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782137088 | 1782137570 | -0.2097
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782138383 | 1782138510 | -0.1737
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782110640 | 1782139458 | -0.0923
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782138661 | 1782139675 | 0.4936 
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782132356 | 1782139822 | -0.1653
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782112602 | 1782141410 | 0.125  
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782139344 | 1782141504 | 0.5107 
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1782141084 | 1782141875 | -0.1717
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782141809 | 1782141959 | -0.3011
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782113143 | 1782141961 | -0.0232
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782142003 | 1782142326 | -0.2466
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782140089 | 1782143327 | 0.5237 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782116743 | 1782144040 | -0.1824
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782143903 | 1782144361 | 1.3837 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782115844 | 1782144665 | 0.0653 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782116442 | 1782145266 | -0.0955
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782116984 | 1782145813 | 0.0199 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782119744 | 1782146865 | -0.1667
-  copy-hotlead-strict    | DVhwSE98dHBt | 1782146475 | 1782147261 | -0.1979
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782145873 | 1782147487 | -0.3736
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782148587 | 1782148689 | -0.2449
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782148349 | 1782148910 | -0.1673
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782149000 | 1782149085 | 0.5047 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782149162 | 1782149460 | -0.195 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782149466 | 1782149489 | -0.2263
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782120946 | 1782149771 | -0.0897
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782149740 | 1782151414 | 0.5028 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782151688 | 1782152163 | 0.5327 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782124303 | 1782152225 | -0.1746
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782123761 | 1782152583 | -0.0686
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782150610 | 1782154231 | -0.1797
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782125743 | 1782154585 | -0.0593
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782152267 | 1782155826 | -0.2151
-  copy-hotlead-strict    | B6yHBbrfZVxw | 1782156428 | 1782156457 | -0.2823
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782159389 | 1782159681 | -0.1981
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782159701 | 1782159730 | -0.1767
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782160533 | 1782160630 | -0.4969
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782160381 | 1782161032 | -0.172 
-  copy-hotlead-strict    | CXVJewdc79TY | 1782135235 | 1782164045 | -0.0542
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782165682 | 1782166183 | -0.1701
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782167561 | 1782168874 | 1.0764 
-  copy-hotlead-strict    | B6yHBbrfZVxw | 1782167446 | 1782169538 | -0.199 
-  copy-hotlead-strict    | CTuMDfnkJ9jY | 1782167025 | 1782172378 | -0.1848
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1782146400 | 1782175201 | -0.0789
-  copy-hotlead-strict    | B6yHBbrfZVxw | 1782179461 | 1782179809 | -0.1832
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782177649 | 1782180630 | -0.4943
-  copy-hotlead-strict    | 5KcqJ7NFA9Ro | 1782180552 | 1782181733 | -0.1703
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782182396 | 1782182881 | -0.5073
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782180585 | 1782183402 | -0.1991
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782185291 | 1782188032 | -0.1745
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782187589 | 1782188112 | 0.5065 
-  copy-hotlead-strict    | 5dU3trzb5uvZ | 1782184778 | 1782188306 | -0.4843
-  copy-hotlead-strict    | HM5iEcL9h13E | 1782188579 | 1782188637 | -0.1825
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782189678 | 1782189869 | -0.4682
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782161570 | 1782190392 | 0.0511 
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782161864 | 1782190668 | 0.0473 
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782191526 | 1782191667 | -0.4709
-  copy-hotlead-strict    | CvTPH1CxTU2A | 1782178091 | 1782195378 | 0.4919 
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782196528 | 1782197449 | -0.1697
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782197505 | 1782198926 | -0.1828
-  copy-hotlead-strict    | CvTPH1CxTU2A | 1782199776 | 1782200819 | -0.1653
-  copy-hotlead-strict    | CTuMDfnkJ9jY | 1782173089 | 1782201899 | -0.0793
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782199028 | 1782204152 | -0.1872
-  copy-hotlead-strict    | CvTPH1CxTU2A | 1782204722 | 1782204859 | 0.5169 
-  copy-hotlead-strict    | CvTPH1CxTU2A | 1782205400 | 1782205550 | -0.1651
-  copy-hotlead-strict    | 5KcqJ7NFA9Ro | 1782188056 | 1782209142 | -0.1704
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782180352 | 1782209182 | 0.3308 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782180952 | 1782209849 | -0.038 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782207002 | 1782211906 | -0.1897
-  copy-hotlead-strict    | CTuMDfnkJ9jY | 1782206194 | 1782213146 | -0.1671
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782197283 | 1782213583 | -0.1875
-  copy-hotlead-strict    | DcQKToPywy64 | 1782211312 | 1782213945 | -0.2107
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1782224206 | 1782225837 | 0.4925 
-  copy-hotlead-strict    | DcQKToPywy64 | 1782214576 | 1782229033 | -0.172 
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1782227593 | 1782229692 | 0.4878 
-  copy-hotlead-strict    | CvTPH1CxTU2A | 1782204149 | 1782232958 | 0.2003 
-  copy-hotlead-strict    | DcQKToPywy64 | 1782204718 | 1782233058 | -0.1734
-  copy-hotlead-strict    | 2f4e7c2f6hXy | 1782209886 | 1782238693 | -0.0428
-  copy-hotlead-strict    | AE7neeVw9NFw | 1782238327 | 1782238910 | 0.4925 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782239515 | 1782239656 | -0.1738
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782242439 | 1782242552 | -0.1905
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782239718 | 1782248007 | -0.1955
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782250935 | 1782251468 | 0.5884 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782253204 | 1782254046 | -0.2114
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782227689 | 1782256510 | -0.0881
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782255118 | 1782257167 | 0.5488 
-  copy-hotlead-strict    | 5KcqJ7NFA9Ro | 1782258125 | 1782259119 | 0.4917 
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782255217 | 1782263370 | -0.173 
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782262777 | 1782263777 | -0.1687
-  copy-hotlead-strict    | B6yHBbrfZVxw | 1782263745 | 1782263778 | 1.2413 
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782264012 | 1782264574 | 0.6132 
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782264681 | 1782265300 | -0.22  
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782263231 | 1782265773 | -0.1887
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782272203 | 1782272577 | -0.1719
-  copy-hotlead-strict    | 5KcqJ7NFA9Ro | 1782244674 | 1782273493 | 0.1513 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782271130 | 1782273652 | -0.1668
-  copy-hotlead-strict    | 3ricXXziD22s | 1782275082 | 1782275379 | -0.1736
-  copy-hotlead-strict    | CvTPH1CxTU2A | 1782275251 | 1782275558 | -0.1656
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782275573 | 1782275705 | -0.2971
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782275744 | 1782275805 | -0.2972
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782271903 | 1782277352 | 0.5097 
-  copy-hotlead-strict    | CvTPH1CxTU2A | 1782268441 | 1782277602 | -0.503 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782268009 | 1782277949 | -0.1669
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1782276682 | 1782278256 | -0.4842
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782279563 | 1782280113 | -0.3002
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782280121 | 1782280144 | 0.8151 
-  copy-hotlead-strict    | AE7neeVw9NFw | 1782280272 | 1782280411 | 0.5376 
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782274653 | 1782281381 | -0.4876
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1782280439 | 1782281385 | 0.5362 
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1782281415 | 1782282036 | -0.2134
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782272361 | 1782282859 | -0.1768
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782282667 | 1782283566 | -0.1658
-  copy-hotlead-strict    | HM5iEcL9h13E | 1782283602 | 1782283640 | -0.2168
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782283684 | 1782283715 | -0.2446
-  copy-hotlead-strict    | HM5iEcL9h13E | 1782283730 | 1782283817 | -0.2501
-  copy-hotlead-strict    | 2f4e7c2f6hXy | 1782283936 | 1782283967 | -0.2616
-  copy-hotlead-strict    | 2f4e7c2f6hXy | 1782284012 | 1782284068 | -0.2002
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782279708 | 1782285174 | -0.1883
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782284745 | 1782287196 | -0.1712
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782281209 | 1782287242 | -0.1662
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782267463 | 1782289390 | -0.1661
-  copy-hotlead-strict    | CXVJewdc79TY | 1782263038 | 1782291839 | -0.0739
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782291703 | 1782292350 | -0.495 
-  copy-hotlead-strict    | 2f4e7c2f6hXy | 1782287471 | 1782293824 | 0.5756 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782265782 | 1782294591 | -0.1191
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782278086 | 1782296022 | 0.4993 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782277905 | 1782296121 | 0.5898 
-  copy-hotlead-strict    | B6yHBbrfZVxw | 1782268407 | 1782297219 | 0.0075 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782270528 | 1782299346 | -0.027 
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782282575 | 1782299781 | 0.4884 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782271483 | 1782300297 | 0.1418 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782273040 | 1782301851 | 0.0909 
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782301756 | 1782305685 | -0.1823
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782277636 | 1782306052 | -0.1732
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782303750 | 1782306939 | 0.511  
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782278443 | 1782307255 | -0.0965
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782279590 | 1782308407 | 0.079  
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782279705 | 1782308507 | -0.1058
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782301124 | 1782309314 | -0.1746
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782307824 | 1782310067 | -0.2657
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782281322 | 1782310135 | 0.1341 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782281502 | 1782310310 | -0.1149
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782282161 | 1782310961 | -0.0066
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782312706 | 1782312851 | -0.2854
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782312858 | 1782312872 | -0.2082
-  copy-hotlead-strict    | 4sRjm252FQfr | 1782284085 | 1782312888 | -0.0227
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782315916 | 1782316982 | -0.1747
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1782318617 | 1782320142 | 0.5713 
-  copy-hotlead-strict    | CTuMDfnkJ9jY | 1782322020 | 1782322719 | -0.1822
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782302865 | 1782323190 | -0.1832
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782321676 | 1782323369 | -0.1731
-  copy-hotlead-strict    | CTuMDfnkJ9jY | 1782323427 | 1782323569 | -0.2042
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782323895 | 1782324201 | 0.5336 
-  copy-hotlead-strict    | SMACxb87aVzX | 1782323796 | 1782324748 | -0.2122
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782327839 | 1782327882 | -0.1675
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782328011 | 1782328165 | 0.5249 
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782314621 | 1782328827 | -0.1683
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782328460 | 1782329011 | 0.5726 
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782329065 | 1782329159 | -0.193 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782324172 | 1782330254 | -0.1688
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782329337 | 1782330305 | -0.196 
-  copy-hotlead-strict    | SMACxb87aVzX | 1782330565 | 1782330961 | -0.1841
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782330618 | 1782331869 | -0.2534
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782332194 | 1782332270 | 1.0871 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1782320080 | 1782334607 | -0.497 
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782336346 | 1782336716 | -0.1708
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782314955 | 1782343776 | -0.0386
-  copy-hotlead-strict    | 5KcqJ7NFA9Ro | 1782349983 | 1782350003 | -0.1842
-  copy-hotlead-strict    | 5q8osC4CZRMf | 1782350792 | 1782350951 | -0.1744
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782324828 | 1782353641 | 0.0138 
-  copy-hotlead-strict    | 57YFGs6GXT3X | 1782325503 | 1782354316 | 0.098  
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782353164 | 1782355220 | 0.5468 
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782352864 | 1782356147 | 0.4939 
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782342154 | 1782358282 | 0.6362 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782333513 | 1782362333 | -0.0307
-  copy-hotlead-strict    | 3ricXXziD22s | 1782334030 | 1782362833 | -0.0123
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782342395 | 1782371215 | 0.0442 
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782377871 | 1782377930 | -0.2308
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782378014 | 1782378081 | -0.4886
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782377060 | 1782378735 | -0.5061
-  copy-hotlead-strict    | HDeRTCPU5Fr2 | 1782378142 | 1782382560 | -0.1864
-  copy-hotlead-strict    | 5pJ2icRDUhmN | 1782356737 | 1782385554 | -0.0707
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782386519 | 1782386888 | 0.5096 
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1782387062 | 1782387706 | -0.3796
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1782389436 | 1782389538 | -0.3332
-  copy-hotlead-strict    | 3iZG5TLva2N8 | 1782391247 | 1782391486 | -0.4345
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782392090 | 1782393562 | -0.1712
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1782396076 | 1782396964 | 0.4998 
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782397140 | 1782397315 | -0.1677
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782398367 | 1782398966 | 0.5316 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782399739 | 1782399846 | 0.7285 
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1782400827 | 1782400995 | -0.1691
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782402194 | 1782402462 | -0.4716
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782399839 | 1782402734 | 0.5194 
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1782406532 | 1782406609 | -0.2052
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782378090 | 1782406897 | -0.0335
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1782400641 | 1782409955 | 0.5231 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782411458 | 1782412407 | 0.4922 
-  copy-hotlead-strict    | 6FYgn2apNXSq | 1782410563 | 1782413406 | -0.165 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782401101 | 1782414911 | -0.1794
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782416242 | 1782416311 | 0.5991 
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782416217 | 1782416510 | -0.1694
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782423457 | 1782423581 | -0.1724
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782401894 | 1782424356 | -0.5066
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782428404 | 1782430103 | 0.6252 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782432073 | 1782432157 | -0.1963
-  copy-hotlead-strict    | DSKEyfEeTymH | 1782434592 | 1782434936 | 0.5922 
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782432814 | 1782435518 | 0.4903 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782433289 | 1782437154 | 0.5037 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782408945 | 1782437746 | -0.1501
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782410487 | 1782439297 | 0.4414 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782439411 | 1782439504 | -0.2859
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1782439515 | 1782439578 | 0.8062 
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782437857 | 1782445103 | -0.1657
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782416330 | 1782445150 | -0.1511
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782432817 | 1782449355 | -0.2094
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782436025 | 1782464825 | -0.0297
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782436087 | 1782464900 | -0.0146
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782467513 | 1782469752 | -0.5083
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782471321 | 1782473428 | -0.5071
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1782474591 | 1782474779 | 0.5703 
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1782479258 | 1782479388 | -0.1895
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782477156 | 1782480363 | 0.5337 
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782481234 | 1782481341 | 0.5458 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782481656 | 1782481771 | -0.1922
-  copy-hotlead-strict    | 5pJ2icRDUhmN | 1782481851 | 1782482163 | -0.4304
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782482673 | 1782483042 | -0.2216
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782476189 | 1782484118 | 0.4858 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782487043 | 1782487798 | 0.5314 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782487901 | 1782488099 | -0.1975
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782488431 | 1782489350 | 0.4908 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782489572 | 1782490101 | -0.1828
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782491597 | 1782492403 | -0.2059
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782493924 | 1782494316 | 0.5032 
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782494304 | 1782494365 | -0.3765
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782494436 | 1782494786 | 0.5513 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782494893 | 1782495412 | 0.6029 
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782495761 | 1782495794 | -0.1669
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782495820 | 1782495864 | -0.2064
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782495992 | 1782496140 | -0.2088
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782495192 | 1782496489 | -0.1991
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782496273 | 1782497316 | 0.5246 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782496441 | 1782497467 | -0.1652
-  copy-hotlead-strict    | 5hYsHp8HWFgy | 1782495797 | 1782499017 | -0.2291
-  copy-hotlead-strict    | 3Fh8BhzPXvaN | 1782476405 | 1782499670 | -0.1943
-  copy-hotlead-strict    | DSKEyfEeTymH | 1782471044 | 1782499845 | -0.1146
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782475862 | 1782504674 | -0.1481
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782507929 | 1782508003 | -0.2828
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782509157 | 1782509657 | -0.1779
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782509138 | 1782510255 | -0.2225
-  copy-hotlead-strict    | 3ricXXziD22s | 1782504961 | 1782510704 | 0.5599 
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782512898 | 1782514307 | -0.1905
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782508579 | 1782524315 | 0.5139 
-  copy-hotlead-strict    | CXVJewdc79TY | 1782499131 | 1782527955 | -0.1148
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782525281 | 1782530695 | 0.4937 
-  copy-hotlead-strict    | ByHUUDmUiAkk | 1782531425 | 1782532374 | -0.1684
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782515136 | 1782532698 | 0.4868 
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1782533867 | 1782534500 | -0.1833
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782533752 | 1782535175 | 0.5061 
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782508713 | 1782537525 | 0.1009 
-  copy-hotlead-strict    | ByHUUDmUiAkk | 1782531708 | 1782560521 | -0.0351
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782557371 | 1782570920 | -0.1971
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782573420 | 1782573451 | -0.1703
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782573460 | 1782573481 | -0.2766
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782573814 | 1782574027 | 0.573  
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782573926 | 1782574327 | -0.2397
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1782571720 | 1782575502 | -0.5047
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782579098 | 1782579406 | -0.1855
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782579394 | 1782579408 | 0.6896 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782579416 | 1782579882 | 0.6523 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782580403 | 1782580884 | -0.1821
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782580902 | 1782581257 | -0.1666
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782580861 | 1782582432 | -0.1722
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782561663 | 1782582757 | 0.5907 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782561021 | 1782589836 | -0.0547
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782595290 | 1782595323 | -0.1949
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782597115 | 1782597476 | -0.1877
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782593536 | 1782599605 | -0.2276
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782599638 | 1782599684 | -0.2022
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782591249 | 1782600031 | -0.1779
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782603719 | 1782604254 | -0.4963
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1782614024 | 1782615578 | -0.1759
-  copy-hotlead-strict    | GqEVzdHH4RGq | 1782618309 | 1782618378 | 0.5038 
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782611787 | 1782618503 | -0.1674
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782590526 | 1782619348 | 0.0139 
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782618472 | 1782620353 | 0.4963 
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782603081 | 1782621099 | 0.6363 
-  copy-hotlead-strict    | 7EdtVGg547L4 | 1782620495 | 1782621252 | -0.2183
-  copy-hotlead-strict    | 7EdtVGg547L4 | 1782622511 | 1782622627 | -0.258 
-  copy-hotlead-strict    | 7EdtVGg547L4 | 1782622880 | 1782624328 | -0.2794
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782624631 | 1782624782 | 0.5569 
-  copy-hotlead-strict    | DNio5ketGczp | 1782624785 | 1782624828 | -0.1842
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1782624866 | 1782625480 | -0.3847
-  copy-hotlead-strict    | DNio5ketGczp | 1782627759 | 1782627779 | -0.3143
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782628433 | 1782628482 | -0.2299
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782629817 | 1782630807 | 0.5907 
-  copy-hotlead-strict    | 572gijC9dnNi | 1782631363 | 1782631460 | -0.2521
-  copy-hotlead-strict    | 3ricXXziD22s | 1782629159 | 1782633681 | -0.1678
-  copy-hotlead-strict    | EYDjJhT8tEQ2 | 1782634411 | 1782634605 | 0.9336 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782633539 | 1782635954 | -0.5091
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782635002 | 1782636105 | -0.1854
-  copy-hotlead-strict    | DSKEyfEeTymH | 1782637316 | 1782637578 | -0.1992
-  copy-hotlead-strict    | DSKEyfEeTymH | 1782637620 | 1782638478 | -0.2366
-  copy-hotlead-strict    | FVbbUKqsWXKD | 1782639574 | 1782641253 | 0.5131 
-  copy-hotlead-strict    | DNio5ketGczp | 1782641390 | 1782641603 | 0.5576 
-  copy-hotlead-strict    | AE7neeVw9NFw | 1782644241 | 1782644281 | 0.5318 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1782644288 | 1782644334 | -0.1859
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1782644505 | 1782644552 | -0.1771
-  copy-hotlead-strict    | AE7neeVw9NFw | 1782644560 | 1782644682 | -0.1835
-  copy-hotlead-strict    | DNio5ketGczp | 1782644594 | 1782644730 | 0.546  
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782644688 | 1782644929 | 0.5419 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1782645214 | 1782645380 | -0.2393
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782643275 | 1782645605 | -0.1953
-  copy-hotlead-strict    | 572gijC9dnNi | 1782644359 | 1782645904 | 0.5745 
-  copy-hotlead-strict    | FVbbUKqsWXKD | 1782644068 | 1782646228 | -0.1688
-  copy-hotlead-strict    | FVbbUKqsWXKD | 1782646193 | 1782646305 | -0.4769
-  copy-hotlead-strict    | DNio5ketGczp | 1782639838 | 1782647528 | 0.5389 
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1782621356 | 1782650159 | 0.16   
-  copy-hotlead-strict    | GqEVzdHH4RGq | 1782649806 | 1782653187 | 0.5221 
-  copy-hotlead-strict    | FVbbUKqsWXKD | 1782655428 | 1782655567 | -0.1865
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1782655205 | 1782657107 | -0.5049
-  copy-hotlead-strict    | FVbbUKqsWXKD | 1782658295 | 1782658378 | -0.2019
-  copy-hotlead-strict    | FVbbUKqsWXKD | 1782659139 | 1782659202 | -0.4954
-  copy-hotlead-strict    | GqEVzdHH4RGq | 1782660606 | 1782668738 | 0.4999 
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782667891 | 1782669698 | -0.1858
-  copy-hotlead-strict    | DNio5ketGczp | 1782649870 | 1782678693 | -0.0986
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782652282 | 1782681093 | -0.0297
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782682183 | 1782682549 | -0.1889
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782683388 | 1782684201 | -0.2462
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782688662 | 1782688674 | -0.1826
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1782683336 | 1782689999 | 0.4853 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782692831 | 1782692975 | -0.1707
-  copy-hotlead-strict    | EYDjJhT8tEQ2 | 1782693132 | 1782693176 | -0.4502
-  copy-hotlead-strict    | EYDjJhT8tEQ2 | 1782694813 | 1782695150 | 0.6147 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782695258 | 1782695301 | 1.3064 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782695266 | 1782695401 | -0.172 
-  copy-hotlead-strict    | 8QwYYkzuDwh3 | 1782676386 | 1782705196 | 0.1582 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782710281 | 1782710479 | -0.2226
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782710484 | 1782713351 | -0.2037
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782686351 | 1782715171 | 0.0417 
-  copy-hotlead-strict    | EYDjJhT8tEQ2 | 1782690364 | 1782719171 | -0.0614
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782722109 | 1782722175 | 0.5698 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782722643 | 1782723600 | -0.1776
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1782723631 | 1782724126 | -0.183 
-  copy-hotlead-strict    | 6bGiX9mX1szF | 1782724179 | 1782724379 | -0.4927
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1782718508 | 1782730000 | 0.4919 
-  copy-hotlead-strict    | BdQjY2iBXu14 | 1782739633 | 1782740051 | -0.2505
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782745257 | 1782745301 | -0.2226
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782745341 | 1782746251 | -0.1882
-  copy-hotlead-strict    | EYDjJhT8tEQ2 | 1782738817 | 1782748326 | -0.1716
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782746455 | 1782749330 | 0.4904 
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782749161 | 1782749952 | -0.1881
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782753540 | 1782755484 | -0.2563
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782755893 | 1782755984 | -0.1867
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782753013 | 1782757106 | -0.1687
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1782728904 | 1782757714 | -0.1203
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782759211 | 1782759469 | -0.1718
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1782756023 | 1782759593 | 0.7781 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782768432 | 1782768843 | 0.503  
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782769827 | 1782769846 | -0.219 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782770360 | 1782770444 | -0.2763
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782770737 | 1782771520 | -0.1693
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1782772316 | 1782772346 | -0.2548
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782745417 | 1782774218 | -0.1161
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782774351 | 1782774395 | -0.1663
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1782779229 | 1782779673 | 0.607  
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782779762 | 1782779899 | -0.2044
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1782780255 | 1782780523 | -0.282 
-  copy-hotlead-strict    | DSKEyfEeTymH | 1782780664 | 1782780699 | -0.1903
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1782780541 | 1782782520 | -0.1653
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782770921 | 1782783740 | 0.4952 
-  copy-hotlead-strict    | DNio5ketGczp | 1782790278 | 1782790296 | -0.2242
-  copy-hotlead-strict    | BtHnhjh8Ta2v | 1782792732 | 1782795146 | -0.171 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782798163 | 1782798301 | -0.1692
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782798682 | 1782798755 | -0.1722
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782799330 | 1782799500 | -0.37  
-  copy-hotlead-strict    | DNio5ketGczp | 1782800991 | 1782801076 | 0.8826 
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782801320 | 1782801500 | -0.1654
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782801654 | 1782801677 | 0.8225 
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782801805 | 1782801902 | -0.2247
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782802360 | 1782802430 | -0.2794
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782802703 | 1782802903 | 0.5112 
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782803957 | 1782804003 | -0.4853
-  copy-hotlead-strict    | 9pDr8if5s4JQ | 1782796380 | 1782804101 | -0.2088
-  copy-hotlead-strict    | 7bTsRggGmDjD | 1782777291 | 1782806097 | -0.1356
-  copy-hotlead-strict    | DNio5ketGczp | 1782807314 | 1782807627 | 0.7151 
-  copy-hotlead-strict    | 572gijC9dnNi | 1782807649 | 1782807927 | 0.5083 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782780017 | 1782808822 | -0.138 
-  copy-hotlead-strict    | DNio5ketGczp | 1782804891 | 1782809351 | -0.1665
-  copy-hotlead-strict    | DSKEyfEeTymH | 1782809911 | 1782810301 | 0.5454 
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782791457 | 1782820263 | -0.1057
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782823760 | 1782823845 | -0.1668
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782826879 | 1782827145 | -0.5119
-  copy-hotlead-strict    | 572gijC9dnNi | 1782829799 | 1782830123 | -0.1784
-  copy-hotlead-strict    | 572gijC9dnNi | 1782834337 | 1782834422 | -0.1956
-  copy-hotlead-strict    | DSKEyfEeTymH | 1782834585 | 1782834676 | 0.7761 
-  copy-hotlead-strict    | DSKEyfEeTymH | 1782834790 | 1782834804 | 0.5067 
-  copy-hotlead-strict    | BtHnhjh8Ta2v | 1782811119 | 1782839922 | -0.0563
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782839834 | 1782841626 | -0.4994
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782842878 | 1782843927 | -0.2897
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782843996 | 1782844501 | -0.189 
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782848599 | 1782848777 | -0.1993
-  copy-hotlead-strict    | 7gdo83WqcXvo | 1782842339 | 1782849230 | -0.1782
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782851113 | 1782851308 | -0.1667
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782853743 | 1782853755 | -0.5023
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782855048 | 1782855878 | 0.559  
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782856582 | 1782857429 | 0.4872 
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782859646 | 1782859680 | -0.213 
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782860207 | 1782861379 | -0.3047
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1782840088 | 1782868889 | -0.0064
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782873990 | 1782874030 | -0.2148
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782875162 | 1782875255 | -0.3136
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782876712 | 1782876732 | 0.8685 
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782873873 | 1782878330 | -0.1668
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1782888446 | 1782889731 | 0.485  
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782861688 | 1782890502 | -0.1256
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782862258 | 1782891077 | -0.1033
-  copy-hotlead-strict    | 5H5upChfAGSW | 1782903191 | 1782906376 | -0.1762
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782908375 | 1782912179 | -0.4896
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782913050 | 1782913255 | -0.2359
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782916929 | 1782918208 | -0.1825
-  copy-hotlead-strict    | BZoJp596zygH | 1782923242 | 1782926304 | -0.2973
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782935548 | 1782935657 | -0.2141
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1782936580 | 1782936608 | -0.2689
-  copy-hotlead-strict    | 572gijC9dnNi | 1782913097 | 1782941903 | -0.0975
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1782941669 | 1782942283 | -0.1701
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1782944203 | 1782944335 | -0.3759
-  copy-hotlead-strict    | E8B7Edi7khro | 1782945804 | 1782945838 | -0.3857
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1782947517 | 1782947835 | 0.5723 
-  copy-hotlead-strict    | FjWuMBSirxhc | 1782950391 | 1782950557 | 0.4932 
-  copy-hotlead-strict-hi | FjWuMBSirxhc | 1782951488 | 1782953013 | 0.5018 
-  copy-hotlead-strict    | FjWuMBSirxhc | 1782951488 | 1782953013 | 0.5018 
-  copy-hotlead-strict    | 6eqES3ebBsku | 1782949509 | 1782953261 | 0.4928 
-  copy-hotlead-strict    | BtHnhjh8Ta2v | 1782953284 | 1782953812 | -0.2456
-  copy-hotlead-strict-hi | FjWuMBSirxhc | 1782953937 | 1782957233 | -0.172 
-  copy-hotlead-strict    | FjWuMBSirxhc | 1782953937 | 1782957233 | -0.172 
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782931231 | 1782960052 | -0.009 
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1782961559 | 1782961834 | -0.4848
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782934249 | 1782963053 | -0.1231
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1782937518 | 1782966328 | -0.0851
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1782966513 | 1782967984 | -0.1823
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1782966513 | 1782967984 | -0.1823
-  copy-hotlead-strict    | DNio5ketGczp | 1782939465 | 1782968278 | -0.0539
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1782946982 | 1782975803 | 0.0592 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1782986512 | 1782986856 | -0.1948
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1782986512 | 1782986856 | -0.1948
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1782994071 | 1782998701 | 0.5124 
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1782994071 | 1782998701 | 0.5124 
-  copy-hotlead-strict-hi | 5aXbFCpg5f14 | 1782972931 | 1783001749 | -0.0072
-  copy-hotlead-strict    | 5aXbFCpg5f14 | 1782972932 | 1783001749 | -0.0072
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1783005683 | 1783005755 | -0.1826
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1783006614 | 1783006629 | -0.1788
-  copy-hotlead-strict    | FakckxEr9U29 | 1783008421 | 1783010655 | -0.1718
-  copy-hotlead-strict    | FakckxEr9U29 | 1783011673 | 1783013906 | 0.491  
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1782992093 | 1783016003 | -0.1651
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1782992093 | 1783016003 | -0.1651
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1782991526 | 1783020333 | 0.0314 
-  copy-hotlead-strict    | HntvSoXq7CxH | 1782991526 | 1783020333 | 0.0314 
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783018498 | 1783022688 | 0.4888 
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783018498 | 1783022688 | 0.4888 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783023121 | 1783024614 | -0.5001
-  copy-hotlead-strict    | 2mRn8wtkcxZc | 1783025869 | 1783025889 | -0.2659
-  copy-hotlead-strict-hi | 2mRn8wtkcxZc | 1783025869 | 1783025889 | -0.2659
-  copy-hotlead-strict    | FakckxEr9U29 | 1783012684 | 1783028934 | 0.4855 
-  copy-hotlead-strict    | 6eqES3ebBsku | 1783029956 | 1783030089 | -0.2041
-  copy-hotlead-strict-hi | 6eqES3ebBsku | 1783029956 | 1783030089 | -0.2041
-  copy-hotlead-strict    | 6eqES3ebBsku | 1783030095 | 1783030415 | 0.4851 
-  copy-hotlead-strict-hi | 6eqES3ebBsku | 1783030095 | 1783030415 | 0.4851 
-  copy-hotlead-strict    | 3ricXXziD22s | 1783030678 | 1783031664 | -0.1794
-  copy-hotlead-strict    | 2mRn8wtkcxZc | 1783032843 | 1783032939 | -0.2381
-  copy-hotlead-strict-hi | 2mRn8wtkcxZc | 1783032843 | 1783032939 | -0.2381
-  copy-hotlead-strict    | 2mRn8wtkcxZc | 1783033828 | 1783034189 | -0.1981
-  copy-hotlead-strict-hi | DNio5ketGczp | 1783035413 | 1783035940 | -0.2064
-  copy-hotlead-strict    | BtHnhjh8Ta2v | 1783035413 | 1783035940 | -0.2064
-  copy-hotlead-strict    | 2mRn8wtkcxZc | 1783036679 | 1783036902 | -0.2559
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783037591 | 1783037727 | -0.168 
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783037640 | 1783038002 | 0.6052 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783009440 | 1783038243 | -0.0802
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783009440 | 1783038243 | -0.0802
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1783010009 | 1783038818 | -0.1433
-  copy-hotlead-strict    | 3ricXXziD22s | 1783027365 | 1783039647 | -0.1723
-  copy-hotlead-strict    | Ex3BcKVGbNVQ | 1783010946 | 1783039768 | -0.1008
-  copy-hotlead-strict-hi | Ex3BcKVGbNVQ | 1783010946 | 1783039768 | -0.1008
-  copy-hotlead-strict    | 2mRn8wtkcxZc | 1783041148 | 1783041772 | -0.2171
-  copy-hotlead-strict    | FakckxEr9U29 | 1783033561 | 1783049994 | -0.1728
-  copy-hotlead-strict    | 3ricXXziD22s | 1783056593 | 1783056847 | 0.72   
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1783057796 | 1783059322 | 0.5281 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783032422 | 1783061243 | 0.023  
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783032422 | 1783061243 | 0.023  
-  copy-hotlead-strict    | 5wTqTAZSGWu9 | 1783059698 | 1783061621 | -0.2215
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783063164 | 1783063246 | 0.7021 
-  copy-hotlead-strict-hi | DNio5ketGczp | 1783063203 | 1783063321 | 0.6566 
-  copy-hotlead-strict    | HntvSoXq7CxH | 1783063320 | 1783063871 | -0.1667
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783063388 | 1783063946 | -0.2003
-  copy-hotlead-strict    | DNio5ketGczp | 1783053536 | 1783070769 | 0.6192 
-  copy-hotlead-strict-hi | DNio5ketGczp | 1783053536 | 1783070769 | 0.6192 
-  copy-hotlead-strict    | BtHnhjh8Ta2v | 1783050374 | 1783074676 | -0.1679
-  copy-hotlead-strict-hi | DNio5ketGczp | 1783050374 | 1783074676 | -0.1679
-  copy-hotlead-strict    | BtHnhjh8Ta2v | 1783050562 | 1783079363 | -0.1424
-  copy-hotlead-strict-hi | DNio5ketGczp | 1783050562 | 1783079363 | -0.1424
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783057650 | 1783086462 | -0.0537
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783090018 | 1783090040 | 0.5423 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783090019 | 1783090040 | 0.5423 
-  copy-hotlead-strict    | 6eqES3ebBsku | 1783091351 | 1783093265 | 0.497  
-  copy-hotlead-strict-hi | 6eqES3ebBsku | 1783091351 | 1783093265 | 0.497  
-  copy-hotlead-strict    | 7gdo83WqcXvo | 1783091990 | 1783093615 | -0.2119
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783065317 | 1783094139 | -0.0884
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783065317 | 1783094139 | -0.0884
-  copy-hotlead-strict-hi | AE7neeVw9NFw | 1783099175 | 1783100474 | -0.1884
-  copy-hotlead-strict    | AE7neeVw9NFw | 1783099175 | 1783100474 | -0.1884
-  copy-hotlead-strict-hi | 6svp2aaiJ7Dm | 1783099230 | 1783101999 | 0.4966 
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1783099230 | 1783101999 | 0.4966 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783101566 | 1783102227 | -0.2057
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783101566 | 1783102227 | -0.2057
-  copy-hotlead-strict    | FakckxEr9U29 | 1783103462 | 1783104175 | -0.4928
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783104215 | 1783104278 | 0.8035 
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783104215 | 1783104278 | 0.8035 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1783102611 | 1783104600 | 0.4887 
-  copy-hotlead-strict-hi | 7TiAUgZdLMN4 | 1783102611 | 1783104600 | 0.4887 
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1783104782 | 1783105152 | -0.1757
-  copy-hotlead-strict    | FakckxEr9U29 | 1783105332 | 1783105454 | -0.4819
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1783105292 | 1783105653 | -0.1968
-  copy-hotlead-strict    | DNio5ketGczp | 1783081117 | 1783109922 | -0.1405
-  copy-hotlead-strict-hi | DNio5ketGczp | 1783081117 | 1783109922 | -0.1405
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783107893 | 1783110903 | 0.4937 
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783107893 | 1783110903 | 0.4937 
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783114249 | 1783114266 | -0.3382
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783114249 | 1783114266 | -0.3382
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783105858 | 1783117155 | -0.1746
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783105858 | 1783117155 | -0.1746
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783114320 | 1783117957 | -0.1733
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783114320 | 1783117957 | -0.1733
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1783093556 | 1783122377 | 0.4465 
-  copy-hotlead-strict-hi | 7TiAUgZdLMN4 | 1783093556 | 1783122377 | 0.4465 
-  copy-hotlead-strict    | BtHnhjh8Ta2v | 1783124013 | 1783124182 | -0.1668
-  copy-hotlead-strict-hi | 6eqES3ebBsku | 1783121059 | 1783124229 | -0.1702
-  copy-hotlead-strict    | 6eqES3ebBsku | 1783121059 | 1783124229 | -0.1702
-  copy-hotlead-strict-hi | 6svp2aaiJ7Dm | 1783096967 | 1783124852 | 0.4919 
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1783096967 | 1783124852 | 0.4919 
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783123311 | 1783125003 | -0.1704
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783123311 | 1783125003 | -0.1704
-  copy-hotlead-strict    | 6eqES3ebBsku | 1783124549 | 1783125279 | -0.2427
-  copy-hotlead-strict-hi | 6eqES3ebBsku | 1783124549 | 1783125279 | -0.2427
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783120286 | 1783125980 | -0.1696
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783120286 | 1783125980 | -0.1696
-  copy-hotlead-strict-hi | 3ricXXziD22s | 1783127032 | 1783127556 | -0.181 
-  copy-hotlead-strict    | 3ricXXziD22s | 1783127032 | 1783127556 | -0.181 
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1783127343 | 1783127681 | -0.1767
-  copy-hotlead-strict-hi | 6svp2aaiJ7Dm | 1783127343 | 1783127681 | -0.1767
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1783124887 | 1783128381 | -0.1664
-  copy-hotlead-strict-hi | 6svp2aaiJ7Dm | 1783124887 | 1783128381 | -0.1664
-  copy-hotlead-strict    | 6svp2aaiJ7Dm | 1783131296 | 1783133282 | 0.4897 
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783137464 | 1783139020 | 0.4944 
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783137465 | 1783139020 | 0.4944 
-  copy-hotlead-strict    | 3ricXXziD22s | 1783139333 | 1783139378 | 0.4906 
-  copy-hotlead-strict    | BtHnhjh8Ta2v | 1783140709 | 1783140879 | -0.1984
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783143266 | 1783144627 | -0.173 
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783143266 | 1783144627 | -0.173 
-  copy-hotlead-strict-hi | 2HJMgsEqKrcR | 1783144421 | 1783150914 | -0.1774
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783144421 | 1783150914 | -0.1774
-  copy-hotlead-strict    | CXATA5Zx2hB3 | 1783152150 | 1783152540 | 0.5032 
-  copy-hotlead-strict    | 2HJMgsEqKrcR | 1783154813 | 1783154847 | -0.1691
-  copy-hotlead-strict    | CXATA5Zx2hB3 | 1783145818 | 1783174633 | 0.2896 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1783175857 | 1783176372 | -0.1762
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783176328 | 1783176572 | -0.1905
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783176328 | 1783176572 | -0.1905
-  copy-hotlead-strict    | DNio5ketGczp | 1783182456 | 1783182668 | -0.1666
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783169184 | 1783183989 | 0.4881 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783169184 | 1783183989 | 0.4881 
-  copy-hotlead-strict    | 7gdo83WqcXvo | 1783185051 | 1783185058 | -0.1864
-  copy-hotlead-strict    | 7gdo83WqcXvo | 1783185067 | 1783185183 | -0.1718
-  copy-hotlead-strict    | 7gdo83WqcXvo | 1783185207 | 1783185708 | -0.2337
-  copy-hotlead-strict-hi | 2f4e7c2f6hXy | 1783159129 | 1783187932 | 0.3482 
-  copy-hotlead-strict    | 2f4e7c2f6hXy | 1783159129 | 1783187932 | 0.3482 
-  copy-hotlead-strict    | Ay1pyfhZX7SV | 1783190918 | 1783191085 | -0.2475
-  copy-hotlead-strict-hi | 9LxMdvs1m8QR | 1783191961 | 1783192084 | -0.1717
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1783191961 | 1783192084 | -0.1717
-  copy-hotlead-strict    | DNio5ketGczp | 1783191985 | 1783192357 | -0.1677
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1783195511 | 1783195579 | -0.299 
-  copy-hotlead-strict-hi | 9LxMdvs1m8QR | 1783195511 | 1783195579 | -0.299 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783195626 | 1783195729 | -0.2115
-  copy-hotlead-strict    | DNio5ketGczp | 1783186147 | 1783201302 | -0.1704
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1783199325 | 1783206356 | -0.2298
-  copy-hotlead-strict-hi | 9LxMdvs1m8QR | 1783199325 | 1783206356 | -0.2298
-  copy-hotlead-strict-hi | 9LxMdvs1m8QR | 1783208231 | 1783208280 | -0.1878
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1783208231 | 1783208280 | -0.1878
-  copy-hotlead-strict    | 4RDNo5BBAjQh | 1783210763 | 1783212979 | -0.1697
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783184252 | 1783213052 | -0.1035
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783184252 | 1783213052 | -0.1035
-  copy-hotlead-strict    | 3ricXXziD22s | 1783220396 | 1783221155 | -0.1852
-  copy-hotlead-strict-hi | 911pQNYGvQ6t | 1783221058 | 1783249882 | 0.0192 
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1783221058 | 1783249882 | 0.0192 
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1783223813 | 1783252633 | -0.1074
-  copy-hotlead-strict-hi | 911pQNYGvQ6t | 1783223813 | 1783252633 | -0.1074
-  copy-hotlead-strict    | DSKEyfEeTymH | 1783254970 | 1783255634 | 0.5045 
-  copy-hotlead-strict-hi | DSKEyfEeTymH | 1783254970 | 1783255634 | 0.5045 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783256637 | 1783256935 | 0.7111 
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783256637 | 1783256935 | 0.7111 
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1783272875 | 1783273335 | 0.5911 
-  copy-hotlead-strict-hi | 911pQNYGvQ6t | 1783272875 | 1783273335 | 0.5911 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1783273692 | 1783274598 | -0.1807
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1783274845 | 1783277252 | 0.5456 
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1783277363 | 1783278827 | 0.6568 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783279274 | 1783279602 | -0.4753
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783279274 | 1783279602 | -0.4753
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783280127 | 1783280652 | 0.6156 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783280127 | 1783280652 | 0.6156 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783280725 | 1783280977 | -0.173 
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783280725 | 1783280977 | -0.173 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783282666 | 1783282702 | -0.1676
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783282666 | 1783282702 | -0.1676
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1783285916 | 1783292754 | 0.4994 
-  copy-hotlead-strict-hi | CHvWpTWTZXUM | 1783285916 | 1783292754 | 0.4994 
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1783297616 | 1783304081 | -0.1679
-  copy-hotlead-strict-hi | 911pQNYGvQ6t | 1783297616 | 1783304081 | -0.1679
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783308794 | 1783309295 | 0.5502 
-  copy-hotlead-strict    | CXVJewdc79TY | 1783308794 | 1783309295 | 0.5502 
-  copy-hotlead-strict-hi | 7TiAUgZdLMN4 | 1783310040 | 1783310994 | 0.4927 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1783310040 | 1783310994 | 0.4927 
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783309449 | 1783312894 | -0.3075
-  copy-hotlead-strict    | CXVJewdc79TY | 1783309449 | 1783312894 | -0.3075
-  copy-hotlead-strict    | AE7neeVw9NFw | 1783312923 | 1783313475 | 0.5783 
-  copy-hotlead-strict-hi | AE7neeVw9NFw | 1783312923 | 1783313475 | 0.5783 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783313624 | 1783313676 | -0.3038
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783313624 | 1783313676 | -0.3038
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783311976 | 1783315925 | -0.1711
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783311976 | 1783315925 | -0.1711
-  copy-hotlead-strict    | DNio5ketGczp | 1783296051 | 1783316974 | -0.1662
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783320174 | 1783320551 | 0.5067 
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783320174 | 1783320551 | 0.5067 
-  copy-hotlead-strict    | AE7neeVw9NFw | 1783322073 | 1783322126 | -0.2089
-  copy-hotlead-strict-hi | AE7neeVw9NFw | 1783322073 | 1783322126 | -0.2089
-  copy-hotlead-strict-hi | 7TiAUgZdLMN4 | 1783310663 | 1783323279 | 0.5    
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1783310663 | 1783323279 | 0.5    
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783320848 | 1783323530 | 0.5508 
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783320848 | 1783323530 | 0.5508 
-  copy-hotlead-strict-hi | 911pQNYGvQ6t | 1783304339 | 1783333163 | -0.1043
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1783304339 | 1783333163 | -0.1043
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783329761 | 1783333340 | 0.4981 
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783329761 | 1783333340 | 0.4981 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1783332270 | 1783333543 | -0.472 
-  copy-hotlead-strict-hi | 7TiAUgZdLMN4 | 1783332270 | 1783333543 | -0.472 
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783316385 | 1783335341 | -0.1859
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783316385 | 1783335341 | -0.1859
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783309094 | 1783337915 | -0.0854
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783309094 | 1783337915 | -0.0854
-  copy-hotlead-strict    | DNio5ketGczp | 1783323766 | 1783342539 | -0.1655
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783333459 | 1783344088 | 0.581  
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783333459 | 1783344088 | 0.581  
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1783351153 | 1783351167 | -0.34  
-  copy-hotlead-strict-hi | 911pQNYGvQ6t | 1783351153 | 1783351167 | -0.34  
-  copy-hotlead-strict    | 911pQNYGvQ6t | 1783351176 | 1783351192 | -0.3444
-  copy-hotlead-strict-hi | 911pQNYGvQ6t | 1783351176 | 1783351192 | -0.3444
-  copy-hotlead-strict    | 6eqES3ebBsku | 1783350789 | 1783352867 | -0.1796
-  copy-hotlead-strict-hi | 6eqES3ebBsku | 1783350789 | 1783352867 | -0.1796
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783357506 | 1783357676 | 0.5845 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783357506 | 1783357676 | 0.5845 
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783357104 | 1783358250 | -0.1654
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783357104 | 1783358250 | -0.1654
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1783361355 | 1783361376 | 0.5456 
-  copy-hotlead-strict-hi | 9LxMdvs1m8QR | 1783361355 | 1783361376 | 0.5456 
-  copy-hotlead-strict    | CXVJewdc79TY | 1783374747 | 1783375925 | -0.2502
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783374747 | 1783375925 | -0.2502
-  copy-hotlead-strict    | 9LxMdvs1m8QR | 1783379007 | 1783379155 | -0.2464
-  copy-hotlead-strict-hi | 9LxMdvs1m8QR | 1783379007 | 1783379155 | -0.2464
-  copy-hotlead-strict-hi | 6eqES3ebBsku | 1783358741 | 1783387556 | 0.355  
-  copy-hotlead-strict    | 6eqES3ebBsku | 1783358741 | 1783387556 | 0.355  
-  copy-hotlead-strict    | CXATA5Zx2hB3 | 1783359914 | 1783388731 | 0.0028 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1783397473 | 1783397707 | -0.1713
-  copy-hotlead-strict-hi | 7TiAUgZdLMN4 | 1783397473 | 1783397707 | -0.1713
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1783397733 | 1783397882 | -0.4792
-  copy-hotlead-strict-hi | 7TiAUgZdLMN4 | 1783397733 | 1783397882 | -0.4792
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783400364 | 1783401299 | -0.1862
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783400364 | 1783401299 | -0.1862
-  copy-hotlead-strict    | BtHnhjh8Ta2v | 1783407361 | 1783407722 | -0.2015
-  copy-hotlead-strict    | DNio5ketGczp | 1783379722 | 1783408546 | -0.0881
-  copy-hotlead-strict    | 572gijC9dnNi | 1783407988 | 1783408597 | -0.2392
-  copy-hotlead-strict-hi | 572gijC9dnNi | 1783407988 | 1783408597 | -0.2392
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783410990 | 1783412298 | 0.4855 
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783410990 | 1783412298 | 0.4855 
-  copy-hotlead-strict    | DNio5ketGczp | 1783414054 | 1783414499 | -0.1688
-  copy-hotlead-strict    | CXVJewdc79TY | 1783416429 | 1783416873 | 0.5301 
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783416429 | 1783416873 | 0.5301 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783425325 | 1783426248 | 0.5458 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783426841 | 1783428299 | -0.4978
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783437062 | 1783437203 | -0.2319
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783437062 | 1783437203 | -0.2319
-  copy-hotlead-strict    | FakckxEr9U29 | 1783432753 | 1783437352 | 0.5929 
-  copy-hotlead-strict    | CXVJewdc79TY | 1783440375 | 1783440652 | -0.2587
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783440375 | 1783440652 | -0.2587
-  copy-hotlead-strict-hi | AE7neeVw9NFw | 1783442009 | 1783442632 | -0.3696
-  copy-hotlead-strict    | AE7neeVw9NFw | 1783442009 | 1783442632 | -0.3696
-  copy-hotlead-strict    | FakckxEr9U29 | 1783445775 | 1783446458 | -0.2622
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783442426 | 1783460225 | -0.1741
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783442426 | 1783460225 | -0.1741
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1783460917 | 1783461601 | -0.1831
-  copy-hotlead-strict-hi | CHvWpTWTZXUM | 1783460917 | 1783461601 | -0.1831
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1783463485 | 1783464830 | -0.2453
-  copy-hotlead-strict-hi | CHvWpTWTZXUM | 1783463485 | 1783464830 | -0.2453
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1783464854 | 1783465755 | -0.174 
-  copy-hotlead-strict-hi | CHvWpTWTZXUM | 1783464854 | 1783465755 | -0.174 
-  copy-hotlead-strict    | 7gdo83WqcXvo | 1783478144 | 1783478551 | -0.2888
-  copy-hotlead-strict    | 7gdo83WqcXvo | 1783479604 | 1783480527 | -0.1904
-  copy-hotlead-strict    | AE7neeVw9NFw | 1783481328 | 1783482381 | 0.5017 
-  copy-hotlead-strict-hi | AE7neeVw9NFw | 1783481328 | 1783482381 | 0.5017 
-  copy-hotlead-strict    | 6eqES3ebBsku | 1783483561 | 1783483582 | -0.2329
-  copy-hotlead-strict-hi | 6eqES3ebBsku | 1783483561 | 1783483582 | -0.2329
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783490868 | 1783491232 | -0.4968
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783490868 | 1783491232 | -0.4968
-  copy-hotlead-strict    | CHvWpTWTZXUM | 1783463372 | 1783492182 | -0.0805
-  copy-hotlead-strict-hi | CHvWpTWTZXUM | 1783463372 | 1783492182 | -0.0805
-  copy-hotlead-strict    | FakckxEr9U29 | 1783496490 | 1783496532 | -0.1807
-  copy-hotlead-strict    | FakckxEr9U29 | 1783496625 | 1783496982 | -0.4136
-  copy-hotlead-strict    | FakckxEr9U29 | 1783498107 | 1783500959 | 0.5605 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783514397 | 1783514810 | -0.1665
-  copy-hotlead-strict    | FakckxEr9U29 | 1783514397 | 1783514810 | -0.1665
-  copy-hotlead-strict-hi | 7TiAUgZdLMN4 | 1783516443 | 1783520135 | 0.5653 
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1783516443 | 1783520135 | 0.5653 
-  copy-hotlead-strict    | CXVJewdc79TY | 1783520192 | 1783520285 | -0.2167
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783520192 | 1783520285 | -0.2167
-  copy-hotlead-strict    | FakckxEr9U29 | 1783522390 | 1783522612 | -0.2039
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783522390 | 1783522612 | -0.2039
-  copy-hotlead-strict    | FakckxEr9U29 | 1783522493 | 1783522762 | -0.1773
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783522493 | 1783522762 | -0.1773
-  copy-hotlead-strict    | 7gdo83WqcXvo | 1783519104 | 1783523910 | 0.6057 
-  copy-hotlead-strict    | 9sWV3hbngUA8 | 1783512290 | 1783523936 | -0.1774
-  copy-hotlead-strict-hi | 9sWV3hbngUA8 | 1783512290 | 1783523936 | -0.1774
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1783524084 | 1783524410 | -0.1758
-  copy-hotlead-strict    | 7TiAUgZdLMN4 | 1783524421 | 1783524910 | -0.1846
-  copy-hotlead-strict-hi | 7TiAUgZdLMN4 | 1783524421 | 1783524910 | -0.1846
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783529537 | 1783529724 | -0.1784
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783529537 | 1783529724 | -0.1784
-  copy-hotlead-strict    | 42YtP9yQveq3 | 1783527157 | 1783529875 | -0.1678
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1783533394 | 1783533549 | 0.5606 
-  copy-hotlead-strict    | 7gdo83WqcXvo | 1783534827 | 1783535599 | -0.1716
-  copy-hotlead-strict-hi | 7gdo83WqcXvo | 1783534827 | 1783535599 | -0.1716
-  copy-hotlead-strict    | FakckxEr9U29 | 1783537413 | 1783537475 | 0.5298 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783537413 | 1783537475 | 0.5298 
-  copy-hotlead-strict    | EYDjJhT8tEQ2 | 1783537883 | 1783537925 | -0.2081
-  copy-hotlead-strict-hi | EYDjJhT8tEQ2 | 1783537883 | 1783537925 | -0.2081
-  copy-hotlead-strict    | EYDjJhT8tEQ2 | 1783537986 | 1783538625 | -0.1789
-  copy-hotlead-strict-hi | EYDjJhT8tEQ2 | 1783537986 | 1783538625 | -0.1789
-  copy-hotlead-strict    | FakckxEr9U29 | 1783538785 | 1783538825 | 0.5059 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783538785 | 1783538825 | 0.5059 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783539153 | 1783539225 | -0.2512
-  copy-hotlead-strict    | FakckxEr9U29 | 1783546946 | 1783547479 | -0.4822
-  copy-hotlead-strict    | 42YtP9yQveq3 | 1783547509 | 1783547605 | -0.2193
-  copy-hotlead-strict    | FakckxEr9U29 | 1783551466 | 1783552781 | -0.1842
-  copy-hotlead-strict    | FakckxEr9U29 | 1783546890 | 1783553030 | 0.4886 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783529776 | 1783558581 | 0.1219 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783529776 | 1783558581 | 0.1219 
-  copy-hotlead-strict    | CXVJewdc79TY | 1783540966 | 1783569787 | -0.1343
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783540966 | 1783569787 | -0.1343
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783574235 | 1783574338 | -0.2047
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783574235 | 1783574338 | -0.2047
-  copy-hotlead-strict    | FakckxEr9U29 | 1783546763 | 1783575587 | -0.0621
-  copy-hotlead-strict    | FakckxEr9U29 | 1783596963 | 1783597336 | -0.4966
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783599297 | 1783599611 | -0.2024
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783599297 | 1783599611 | -0.2024
-  copy-hotlead-strict-hi | C4eNLxxC7XLU | 1783603086 | 1783604114 | -0.1797
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1783603086 | 1783604114 | -0.1797
-  copy-hotlead-strict-hi | 572gijC9dnNi | 1783606488 | 1783606643 | 0.5461 
-  copy-hotlead-strict    | 572gijC9dnNi | 1783606488 | 1783606643 | 0.5461 
-  copy-hotlead-strict-hi | DSKEyfEeTymH | 1783608436 | 1783609831 | 0.523  
-  copy-hotlead-strict    | DSKEyfEeTymH | 1783608436 | 1783609831 | 0.523  
-  copy-hotlead-strict    | 2bVqHKY1EDgc | 1783585503 | 1783614320 | -0.0164
-  copy-hotlead-strict-hi | 2bVqHKY1EDgc | 1783585503 | 1783614320 | -0.0164
-  copy-hotlead-strict-hi | C4eNLxxC7XLU | 1783620675 | 1783620713 | -0.51  
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1783620675 | 1783620713 | -0.51  
-  copy-hotlead-strict    | FakckxEr9U29 | 1783623572 | 1783623666 | -0.1701
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1783617858 | 1783624385 | -0.1783
-  copy-hotlead-strict-hi | C4eNLxxC7XLU | 1783617858 | 1783624385 | -0.1783
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1783627675 | 1783627708 | -0.4946
-  copy-hotlead-strict-hi | C4eNLxxC7XLU | 1783610606 | 1783639422 | -0.0126
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1783610606 | 1783639422 | -0.0126
-  copy-hotlead-strict    | C4eNLxxC7XLU | 1783616589 | 1783645612 | -0.1059
-  copy-hotlead-strict-hi | C4eNLxxC7XLU | 1783616589 | 1783645612 | -0.1059
-  copy-hotlead-strict    | FakckxEr9U29 | 1783688055 | 1783688342 | -0.23  
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783688055 | 1783688342 | -0.23  
-  copy-hotlead-strict    | FakckxEr9U29 | 1783688789 | 1783689782 | 0.6815 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783688789 | 1783689782 | 0.6815 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783698818 | 1783699622 | -0.214 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783698818 | 1783699622 | -0.214 
-  copy-hotlead-strict    | CXVJewdc79TY | 1783700498 | 1783701542 | 0.6366 
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783700498 | 1783701542 | 0.6366 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783757860 | 1783758422 | -0.4983
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783757860 | 1783758422 | -0.4983
-  copy-hotlead-strict    | FakckxEr9U29 | 1783787078 | 1783792920 | 0.6161 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783787078 | 1783792920 | 0.6161 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783789093 | 1783792920 | 0.5306 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783789093 | 1783792920 | 0.5306 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783793439 | 1783796312 | 0.6488 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783793439 | 1783796312 | 0.6488 
-  copy-hotlead-strict    | CQTc3FxSukLQ | 1783798746 | 1783805432 | -0.2089
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783798750 | 1783805432 | -0.2203
-  copy-hotlead-strict    | CQTc3FxSukLQ | 1783805547 | 1783834505 | 0.0694 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783805549 | 1783834505 | 0.0694 
-  copy-hotlead-strict    | 9SHHN4YyEW6E | 1783834681 | 1783835945 | 0.6846 
-  copy-hotlead-strict-hi | 9SHHN4YyEW6E | 1783834681 | 1783835945 | 0.6846 
-  copy-hotlead-strict    | 572gijC9dnNi | 1783849058 | 1783849145 | -0.4907
-  copy-hotlead-strict-hi | 572gijC9dnNi | 1783849058 | 1783849145 | -0.4907
-  copy-hotlead-strict    | CQTc3FxSukLQ | 1783849228 | 1783849865 | -0.497 
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783849229 | 1783849865 | -0.497 
-  copy-hotlead-strict    | FakckxEr9U29 | 1783853176 | 1783853791 | -0.4952
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783853176 | 1783853791 | -0.4952
-  copy-hotlead-strict    | 6eqES3ebBsku | 1783825090 | 1783854031 | -0.0697
-  copy-hotlead-strict-hi | 6eqES3ebBsku | 1783825090 | 1783854031 | -0.0697
-  copy-hotlead-strict    | FakckxEr9U29 | 1783857528 | 1783859071 | -0.4882
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783857528 | 1783859071 | -0.4882
-  copy-hotlead-strict-hi | DSKEyfEeTymH | 1783830325 | 1783859311 | -0.0607
-  copy-hotlead-strict    | DSKEyfEeTymH | 1783830325 | 1783859311 | -0.0607
-  copy-hotlead-strict    | FakckxEr9U29 | 1783859693 | 1783860394 | -0.4769
-  copy-hotlead-strict-hi | FakckxEr9U29 | 1783859693 | 1783860394 | -0.4769
-  copy-hotlead-strict    | CXVJewdc79TY | 1783860189 | 1783864267 | -0.1968
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783860189 | 1783864267 | -0.1968
-  copy-hotlead-strict    | CXVJewdc79TY | 1783864355 | 1783874347 | -0.2031
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783864355 | 1783874347 | -0.2031
-  copy-hotlead-strict    | CXVJewdc79TY | 1783874820 | 1783878427 | -0.1952
-  copy-hotlead-strict-hi | CXVJewdc79TY | 1783874820 | 1783878427 | -0.1952
-  [991 rows]
+# SELECT substr(lead_wallet,1,12) AS lead_wallet, entry_ts, exit_ts, ROUND(net_sol,4) AS net_sol FROM copy_trades WHERE status='closed' AND net_sol IS NOT NULL AND strategy_id='copy-tp100-sl30' ORDER BY exit_ts ASC, id ASC LIMIT 1800 OFFSET 0
+  lead_wallet  | entry_ts   | exit_ts    | net_sol
+  -------------+------------+------------+--------
+  5NtbUJgmvXib | 1780841562 | 1780841706 | -0.1714
+  DVhwSE98dHBt | 1780842402 | 1780842610 | 0.5612 
+  DVhwSE98dHBt | 1780845739 | 1780846180 | 0.5249 
+  5NtbUJgmvXib | 1780842100 | 1780847082 | -0.1671
+  DVhwSE98dHBt | 1780846850 | 1780847186 | -0.2135
+  FZTxaVyYKutV | 1780846212 | 1780850743 | 0.509  
+  D1ec7DTwvH1Y | 1780851365 | 1780852023 | 0.5071 
+  5q8osC4CZRMf | 1780854631 | 1780854651 | -0.1872
+  6svp2aaiJ7Dm | 1780857214 | 1780857488 | -0.1825
+  D1ec7DTwvH1Y | 1780857675 | 1780858284 | 0.4921 
+  2fHT9wBhywYo | 1780853184 | 1780858763 | -0.1661
+  HV4cjkteGZ5g | 1780857454 | 1780859245 | -0.1763
+  DVhwSE98dHBt | 1780860253 | 1780860730 | 0.547  
+  GYAVBLqXF35F | 1780848009 | 1780862697 | -0.1675
+  5q8osC4CZRMf | 1780860472 | 1780863492 | 0.4887 
+  DVhwSE98dHBt | 1780864006 | 1780864048 | -0.1816
+  DVhwSE98dHBt | 1780864108 | 1780864258 | -0.1956
+  FakckxEr9U29 | 1780867219 | 1780867259 | -0.1669
+  DVhwSE98dHBt | 1780868559 | 1780868700 | -0.1841
+  5q8osC4CZRMf | 1780873106 | 1780873209 | 0.5354 
+  HV4cjkteGZ5g | 1780873429 | 1780873900 | -0.4949
+  BMm9JjdsudgV | 1780874718 | 1780874777 | -0.5027
+  7EdtVGg547L4 | 1780862974 | 1780877268 | -0.1906
+  DVhwSE98dHBt | 1780878045 | 1780878108 | -0.1677
+  DVhwSE98dHBt | 1780878121 | 1780878243 | 0.5841 
+  7EdtVGg547L4 | 1780877300 | 1780881365 | 0.4864 
+  CQTc3FxSukLQ | 1780870482 | 1780881455 | -0.1904
+  5dU3trzb5uvZ | 1780886130 | 1780886349 | 1.3803 
+  DVhwSE98dHBt | 1780886397 | 1780886964 | -0.2661
+  E8B7Edi7khro | 1780884666 | 1780886995 | -0.1704
+  7EdtVGg547L4 | 1780886143 | 1780887459 | -0.1767
+  7EdtVGg547L4 | 1780887501 | 1780888900 | -0.1955
+  BMm9JjdsudgV | 1780875171 | 1780889425 | -0.509 
+  E8B7Edi7khro | 1780891269 | 1780891751 | -0.1665
+  CXATA5Zx2hB3 | 1780891872 | 1780891946 | -0.1864
+  BtHnhjh8Ta2v | 1780892167 | 1780892276 | 0.6511 
+  CXATA5Zx2hB3 | 1780893052 | 1780893313 | -0.1729
+  BtHnhjh8Ta2v | 1780894466 | 1780895129 | -0.1868
+  3eSWPw7xqEYH | 1780889434 | 1780897099 | -0.1828
+  Bdbq3LHqh7xH | 1780898059 | 1780904066 | -0.2389
+  5NtbUJgmvXib | 1780904117 | 1780904276 | -0.2083
+  56pUeKtrTxyf | 1780904712 | 1780905056 | -0.1724
+  CfwUZQzUAn8S | 1780902544 | 1780905101 | -0.173 
+  Bdbq3LHqh7xH | 1780905540 | 1780905641 | -0.1771
+  3iZG5TLva2N8 | 1780907748 | 1780908058 | -0.2217
+  2bVqHKY1EDgc | 1780908126 | 1780908163 | -0.1853
+  CXATA5Zx2hB3 | 1780895638 | 1780909138 | 0.6118 
+  5q8osC4CZRMf | 1780908611 | 1780909378 | -0.3661
+  BtHnhjh8Ta2v | 1780877138 | 1780911314 | -0.1741
+  6svp2aaiJ7Dm | 1780913738 | 1780914739 | 0.583  
+  AaZgZEmaUUnw | 1780915286 | 1780915370 | -0.4912
+  D1ec7DTwvH1Y | 1780915307 | 1780917460 | 0.7694 
+  CfwUZQzUAn8S | 1780923399 | 1780923568 | -0.1659
+  6svp2aaiJ7Dm | 1780923615 | 1780923914 | -0.1783
+  56pUeKtrTxyf | 1780923610 | 1780924289 | -0.4967
+  6svp2aaiJ7Dm | 1780925016 | 1780925354 | 0.7452 
+  5q8osC4CZRMf | 1780925265 | 1780925414 | 0.8542 
+  5q8osC4CZRMf | 1780925267 | 1780926284 | -0.1826
+  9pDr8if5s4JQ | 1780926030 | 1780926660 | 0.5374 
+  6svp2aaiJ7Dm | 1780925753 | 1780927260 | -0.1935
+  6svp2aaiJ7Dm | 1780925655 | 1780928627 | -0.5067
+  CXATA5Zx2hB3 | 1780928614 | 1780928901 | -0.2198
+  2fHT9wBhywYo | 1780903469 | 1780929858 | -0.165 
+  CfwUZQzUAn8S | 1780929053 | 1780930188 | -0.2159
+  Ex3BcKVGbNVQ | 1780928848 | 1780930578 | 0.4859 
+  6svp2aaiJ7Dm | 1780930264 | 1780933669 | -0.5042
+  CXATA5Zx2hB3 | 1780932960 | 1780933850 | -0.1758
+  6bGiX9mX1szF | 1780934948 | 1780935035 | -0.2412
+  D1ec7DTwvH1Y | 1780935046 | 1780935080 | 0.9865 
+  2bVqHKY1EDgc | 1780935110 | 1780935275 | -0.1662
+  8QwYYkzuDwh3 | 1780928504 | 1780935380 | -0.1656
+  AE7neeVw9NFw | 1780935280 | 1780936692 | 0.6157 
+  CXVJewdc79TY | 1780937765 | 1780937849 | -0.198 
+  HntvSoXq7CxH | 1780923533 | 1780938560 | 0.5464 
+  9pDr8if5s4JQ | 1780937373 | 1780939489 | 0.5186 
+  2tJg6hV95yss | 1780938929 | 1780939609 | -0.1751
+  CfwUZQzUAn8S | 1780938037 | 1780940870 | -0.1812
+  D1ec7DTwvH1Y | 1780843631 | 1780941651 | 0.5158 
+  DVhwSE98dHBt | 1780942471 | 1780942509 | -0.2915
+  6svp2aaiJ7Dm | 1780947103 | 1780947932 | 0.5238 
+  5q8osC4CZRMf | 1780947965 | 1780948157 | -0.2133
+  2HJMgsEqKrcR | 1780950584 | 1780950859 | -0.2054
+  CXVJewdc79TY | 1780950919 | 1780950949 | -0.2146
+  CXVJewdc79TY | 1780950950 | 1780951189 | -0.2019
+  FakckxEr9U29 | 1780951007 | 1780951715 | -0.3933
+  5q8osC4CZRMf | 1780951634 | 1780951835 | -0.1671
+  9bDapeftyEuA | 1780944907 | 1780952974 | -0.1977
+  9bDapeftyEuA | 1780953348 | 1780953365 | -0.1857
+  E8B7Edi7khro | 1780953453 | 1780953545 | -0.2156
+  9bDapeftyEuA | 1780954822 | 1780954836 | -0.2135
+  CXATA5Zx2hB3 | 1780954962 | 1780955016 | -0.2095
+  D1ec7DTwvH1Y | 1780955511 | 1780955992 | -0.5008
+  6svp2aaiJ7Dm | 1780937884 | 1780957118 | -0.1787
+  2HJMgsEqKrcR | 1780957080 | 1780958139 | -0.1726
+  5q8osC4CZRMf | 1780946881 | 1780961262 | -0.1676
+  2HJMgsEqKrcR | 1780959444 | 1780964197 | -0.1816
+  8QwYYkzuDwh3 | 1780940477 | 1780966157 | -0.208 
+  2fHT9wBhywYo | 1780915069 | 1780966563 | -0.166 
+  CXVJewdc79TY | 1780950589 | 1780967561 | -0.168 
+  CXATA5Zx2hB3 | 1780967127 | 1780969517 | -0.221 
+  5q8osC4CZRMf | 1780969441 | 1780970127 | -0.4915
+  5dU3trzb5uvZ | 1780971896 | 1780972158 | -0.1791
+  2bVqHKY1EDgc | 1780972795 | 1780972924 | -0.1681
+  HntvSoXq7CxH | 1780972928 | 1780973149 | 0.4961 
+  6svp2aaiJ7Dm | 1780973612 | 1780973644 | -0.4992
+  6svp2aaiJ7Dm | 1780974886 | 1780974935 | -0.4937
+  3iZG5TLva2N8 | 1780980340 | 1780982130 | 0.5489 
+  HntvSoXq7CxH | 1780982222 | 1780982595 | 0.5131 
+  56pUeKtrTxyf | 1780982877 | 1780983301 | -0.1772
+  3iZG5TLva2N8 | 1780981626 | 1780983720 | 0.4931 
+  HntvSoXq7CxH | 1780983475 | 1780984396 | 0.504  
+  3iZG5TLva2N8 | 1780980376 | 1780984816 | -0.5054
+  D1ec7DTwvH1Y | 1780987057 | 1780987487 | -0.1691
+  56pUeKtrTxyf | 1780985255 | 1780988207 | -0.1687
+  5dU3trzb5uvZ | 1780988212 | 1780988912 | -0.1712
+  AaZgZEmaUUnw | 1780989424 | 1780989887 | -0.1782
+  AE7neeVw9NFw | 1780989883 | 1780990532 | 1.0089 
+  56pUeKtrTxyf | 1780990591 | 1780990682 | -0.2065
+  D1ec7DTwvH1Y | 1780987515 | 1780990802 | 0.5123 
+  56pUeKtrTxyf | 1780990800 | 1780990862 | -0.2241
+  56pUeKtrTxyf | 1780991259 | 1780991522 | -0.4925
+  2HJMgsEqKrcR | 1780979988 | 1781005181 | 0.5573 
+  6svp2aaiJ7Dm | 1781007046 | 1781008052 | 0.5772 
+  BMm9JjdsudgV | 1781008574 | 1781008774 | -0.1712
+  BMm9JjdsudgV | 1781010760 | 1781010923 | -0.1741
+  6svp2aaiJ7Dm | 1781008400 | 1781010998 | -0.4914
+  6svp2aaiJ7Dm | 1781008185 | 1781011359 | 0.4892 
+  5q8osC4CZRMf | 1781012249 | 1781012293 | -0.1746
+  HntvSoXq7CxH | 1781013279 | 1781013644 | -0.1962
+  D1ec7DTwvH1Y | 1781013979 | 1781014155 | -0.2491
+  AE7neeVw9NFw | 1781014214 | 1781014396 | 0.534  
+  9pDr8if5s4JQ | 1781014442 | 1781014787 | -0.2061
+  6QvGE3rHDmXk | 1781013757 | 1781015012 | -0.2199
+  6bGiX9mX1szF | 1781015032 | 1781016303 | 0.5487 
+  3eSWPw7xqEYH | 1781016438 | 1781017611 | 0.487  
+  8QwYYkzuDwh3 | 1781011528 | 1781018091 | -0.1683
+  8QwYYkzuDwh3 | 1781007157 | 1781018647 | 0.5866 
+  6svp2aaiJ7Dm | 1781015227 | 1781019352 | 0.4897 
+  2tJg6hV95yss | 1781019330 | 1781020013 | -0.165 
+  6svp2aaiJ7Dm | 1781016297 | 1781020643 | -0.1652
+  2bVqHKY1EDgc | 1781020807 | 1781020869 | 0.4928 
+  HntvSoXq7CxH | 1781021668 | 1781022114 | -0.1898
+  HM5iEcL9h13E | 1781020869 | 1781022715 | 0.4986 
+  5q8osC4CZRMf | 1781023143 | 1781023240 | 0.738  
+  5q8osC4CZRMf | 1781023609 | 1781025117 | -0.2327
+  Ex3BcKVGbNVQ | 1781025066 | 1781025657 | -0.2039
+  2tJg6hV95yss | 1781025611 | 1781026648 | -0.1824
+  HsJQ1n5o6fEj | 1781026156 | 1781027070 | 0.5139 
+  CXATA5Zx2hB3 | 1781027108 | 1781027370 | -0.1761
+  AE7neeVw9NFw | 1781028015 | 1781028496 | -0.1826
+  HsJQ1n5o6fEj | 1781027078 | 1781029036 | 0.4986 
+  5q8osC4CZRMf | 1781028746 | 1781029486 | -0.2309
+  5q8osC4CZRMf | 1781031460 | 1781031481 | -0.2419
+  HsJQ1n5o6fEj | 1781029170 | 1781032066 | 0.5169 
+  5q8osC4CZRMf | 1781032749 | 1781032787 | 0.6382 
+  BMm9JjdsudgV | 1781032795 | 1781034112 | -0.2039
+  dwYR8L7YE43U | 1781034112 | 1781034140 | 0.5202 
+  D1ec7DTwvH1Y | 1780945379 | 1781034409 | -0.5026
+  HsJQ1n5o6fEj | 1781033388 | 1781034499 | -0.1975
+  BZoJp596zygH | 1781034154 | 1781035552 | 0.5221 
+  5q8osC4CZRMf | 1780860471 | 1781037578 | 0.4934 
+  vdhMgmXUC2aP | 1781035553 | 1781038060 | -0.2001
+  BMm9JjdsudgV | 1781038079 | 1781038346 | 0.4986 
+  BZoJp596zygH | 1781038469 | 1781038977 | -0.1822
+  vdhMgmXUC2aP | 1781039135 | 1781039773 | -0.209 
+  vdhMgmXUC2aP | 1781039811 | 1781040073 | -0.1788
+  2fHT9wBhywYo | 1780864889 | 1781040597 | -0.166 
+  5q8osC4CZRMf | 1781040685 | 1781040779 | -0.4712
+  BZoJp596zygH | 1781040082 | 1781040793 | -0.1784
+  5H5upChfAGSW | 1781040811 | 1781040929 | 0.6668 
+  vdhMgmXUC2aP | 1781040930 | 1781040974 | -0.1655
+  vdhMgmXUC2aP | 1781041031 | 1781041891 | 0.5267 
+  5q8osC4CZRMf | 1781042287 | 1781042386 | 0.513  
+  BMm9JjdsudgV | 1781042504 | 1781043378 | 0.5201 
+  CVLyQA7BxhBa | 1781043107 | 1781044098 | -0.1802
+  CVLyQA7BxhBa | 1781043634 | 1781045464 | 0.4978 
+  5q8osC4CZRMf | 1781046865 | 1781046966 | 0.5879 
+  BMm9JjdsudgV | 1781047043 | 1781047117 | -0.4908
+  5q8osC4CZRMf | 1781049577 | 1781049596 | 2.1989 
+  E8B7Edi7khro | 1781049281 | 1781049612 | -0.2042
+  BMm9JjdsudgV | 1781047383 | 1781052839 | 0.4886 
+  6svp2aaiJ7Dm | 1781050374 | 1781054357 | 0.5117 
+  9bDapeftyEuA | 1781050448 | 1781054717 | -0.1681
+  6svp2aaiJ7Dm | 1781053847 | 1781054822 | -0.1716
+  BtHnhjh8Ta2v | 1781056433 | 1781056547 | -0.1765
+  5q8osC4CZRMf | 1781061049 | 1781061567 | 0.4943 
+  5pJ2icRDUhmN | 1781061846 | 1781063969 | 0.5142 
+  2HJMgsEqKrcR | 1781063529 | 1781064317 | 0.499  
+  BMm9JjdsudgV | 1781055959 | 1781064691 | 0.488  
+  6svp2aaiJ7Dm | 1781064179 | 1781064736 | -0.1772
+  DNio5ketGczp | 1781065326 | 1781065338 | -0.5014
+  CXATA5Zx2hB3 | 1781065393 | 1781066629 | -0.1674
+  5q8osC4CZRMf | 1781066547 | 1781066959 | 0.5827 
+  2tJg6hV95yss | 1781064986 | 1781067229 | -0.1687
+  Ay1pyfhZX7SV | 1781067052 | 1781067334 | -0.2137
+  BMm9JjdsudgV | 1781067807 | 1781069286 | 0.4938 
+  DNio5ketGczp | 1781050990 | 1781069797 | 0.5543 
+  5dU3trzb5uvZ | 1781067378 | 1781069858 | -0.4788
+  3iZG5TLva2N8 | 1781071928 | 1781072488 | -0.2004
+  BMm9JjdsudgV | 1781073200 | 1781073209 | -0.2874
+  6bGiX9mX1szF | 1781064026 | 1781074607 | 0.504  
+  5dU3trzb5uvZ | 1781074668 | 1781075796 | -0.1855
+  7GdUX7Q82J4b | 1781076140 | 1781078483 | -0.2265
+  HntvSoXq7CxH | 1781078294 | 1781078649 | 0.5227 
+  BMm9JjdsudgV | 1781067260 | 1781080556 | -0.2044
+  5pJ2icRDUhmN | 1781078733 | 1781080991 | 0.5166 
+  5aXbFCpg5f14 | 1781080000 | 1781083348 | 0.545  
+  BuWG6b9AeK1K | 1781079615 | 1781084610 | -0.3638
+  5NtbUJgmvXib | 1781084617 | 1781084640 | -0.3529
+  E8B7Edi7khro | 1781061662 | 1781088243 | -0.1694
+  6svp2aaiJ7Dm | 1781084676 | 1781088408 | -0.2217
+  CXVJewdc79TY | 1781092678 | 1781094101 | -0.1654
+  Ay1pyfhZX7SV | 1781094568 | 1781094629 | -0.289 
+  Ay1pyfhZX7SV | 1781094640 | 1781095358 | -0.2051
+  2fHT9wBhywYo | 1781095665 | 1781095721 | -0.1903
+  BMm9JjdsudgV | 1781096209 | 1781096501 | -0.508 
+  CXVJewdc79TY | 1781097312 | 1781097429 | -0.1662
+  BMm9JjdsudgV | 1781097464 | 1781098224 | -0.1674
+  6svp2aaiJ7Dm | 1781097966 | 1781098703 | -0.18  
+  Ex3BcKVGbNVQ | 1781098983 | 1781099289 | -0.168 
+  BMm9JjdsudgV | 1781097423 | 1781099440 | 0.5007 
+  HsJQ1n5o6fEj | 1781099411 | 1781099694 | 0.5258 
+  HsJQ1n5o6fEj | 1781099733 | 1781099965 | -0.1847
+  2fHT9wBhywYo | 1781099799 | 1781100235 | -0.1699
+  HsJQ1n5o6fEj | 1781100246 | 1781100325 | -0.2099
+  HsJQ1n5o6fEj | 1781100560 | 1781100595 | -0.3142
+  HsJQ1n5o6fEj | 1781100600 | 1781100701 | -0.2963
+  CVLyQA7BxhBa | 1781091150 | 1781100715 | -0.1779
+  HsJQ1n5o6fEj | 1781100711 | 1781100776 | -0.2556
+  BMm9JjdsudgV | 1781100266 | 1781100791 | -0.1893
+  2fHT9wBhywYo | 1781095892 | 1781100955 | 0.4993 
+  4sRjm252FQfr | 1781100901 | 1781101061 | -0.1766
+  BMm9JjdsudgV | 1781101262 | 1781101602 | -0.1806
+  BMm9JjdsudgV | 1781101609 | 1781101721 | -0.1703
+  BMm9JjdsudgV | 1781101741 | 1781101766 | -0.2002
+  BMm9JjdsudgV | 1781102236 | 1781102277 | -0.2718
+  6svp2aaiJ7Dm | 1781100703 | 1781102562 | -0.192 
+  BMm9JjdsudgV | 1781102497 | 1781103479 | -0.1838
+  BMm9JjdsudgV | 1781103555 | 1781103738 | 0.5174 
+  BMm9JjdsudgV | 1781104107 | 1781104351 | -0.2004
+  6svp2aaiJ7Dm | 1781098814 | 1781104441 | -0.5051
+  6svp2aaiJ7Dm | 1781102789 | 1781104726 | -0.1972
+  HsJQ1n5o6fEj | 1781104731 | 1781105807 | -0.1997
+  6svp2aaiJ7Dm | 1781105820 | 1781106063 | -0.2833
+  HsJQ1n5o6fEj | 1781105893 | 1781106122 | 0.5075 
+  HsJQ1n5o6fEj | 1781106149 | 1781106257 | -0.2082
+  2fHT9wBhywYo | 1781106931 | 1781107068 | -0.2078
+  HsJQ1n5o6fEj | 1781106279 | 1781107234 | -0.1722
+  6svp2aaiJ7Dm | 1781107038 | 1781108525 | -0.1709
+  8QwYYkzuDwh3 | 1781101053 | 1781109441 | 0.5067 
+  6svp2aaiJ7Dm | 1781109276 | 1781109771 | -0.1766
+  9pDr8if5s4JQ | 1781095975 | 1781110010 | -0.167 
+  6svp2aaiJ7Dm | 1781082965 | 1781110806 | 0.6723 
+  5q8osC4CZRMf | 1781111095 | 1781111646 | -0.1732
+  2zBWFYhhi28v | 1781111833 | 1781111841 | -0.1714
+  HsJQ1n5o6fEj | 1781112062 | 1781112612 | -0.2119
+  HsJQ1n5o6fEj | 1781112615 | 1781112696 | 1.1652 
+  CVLyQA7BxhBa | 1781112702 | 1781113987 | -0.1828
+  HsJQ1n5o6fEj | 1781114004 | 1781114437 | 0.4901 
+  2zBWFYhhi28v | 1781115211 | 1781115219 | -0.3348
+  6svp2aaiJ7Dm | 1781115745 | 1781116256 | -0.1782
+  HsJQ1n5o6fEj | 1781114660 | 1781117112 | -0.2594
+  HsJQ1n5o6fEj | 1781117554 | 1781117669 | -0.2204
+  GemryuWS7qwe | 1781111707 | 1781118089 | -0.1717
+  2HJMgsEqKrcR | 1781117637 | 1781120287 | -0.258 
+  2fHT9wBhywYo | 1781120354 | 1781120493 | 0.5474 
+  CQTc3FxSukLQ | 1781120525 | 1781121214 | -0.1786
+  E8B7Edi7khro | 1781123865 | 1781123902 | 0.9591 
+  5q8osC4CZRMf | 1781123546 | 1781123932 | 0.4941 
+  2fHT9wBhywYo | 1781100547 | 1781125898 | -0.1655
+  6svp2aaiJ7Dm | 1781122274 | 1781126548 | 0.5076 
+  5q8osC4CZRMf | 1781126653 | 1781126679 | -0.2605
+  2HJMgsEqKrcR | 1781126680 | 1781126694 | -0.2018
+  CXATA5Zx2hB3 | 1781124090 | 1781127819 | -0.2009
+  6svp2aaiJ7Dm | 1781127806 | 1781128134 | -0.1767
+  E8B7Edi7khro | 1781128164 | 1781128224 | 0.5418 
+  AYXW3wur6D9q | 1781095024 | 1781130449 | -0.1662
+  2bVqHKY1EDgc | 1780883977 | 1781132370 | 0.5285 
+  GemryuWS7qwe | 1781113678 | 1781132643 | -0.1675
+  HV4cjkteGZ5g | 1781133802 | 1781134070 | -0.3336
+  5H5upChfAGSW | 1781134076 | 1781134145 | -0.1926
+  CVLyQA7BxhBa | 1781134272 | 1781134403 | -0.1916
+  HntvSoXq7CxH | 1781060531 | 1781134549 | 0.5059 
+  2HJMgsEqKrcR | 1781135258 | 1781135783 | 0.5361 
+  2HJMgsEqKrcR | 1781132020 | 1781135933 | -0.2351
+  FakckxEr9U29 | 1781134964 | 1781136173 | 0.5296 
+  9bDapeftyEuA | 1781131001 | 1781136879 | -0.1934
+  2HJMgsEqKrcR | 1781136383 | 1781137105 | -0.1669
+  CXATA5Zx2hB3 | 1781137681 | 1781137720 | -0.2879
+  5q8osC4CZRMf | 1781139812 | 1781140608 | -0.1857
+  CvTPH1CxTU2A | 1781137981 | 1781140863 | 0.5228 
+  GemryuWS7qwe | 1781141483 | 1781143010 | -0.166 
+  2HJMgsEqKrcR | 1781138787 | 1781143265 | -0.1853
+  BtHnhjh8Ta2v | 1781144338 | 1781144601 | -0.2091
+  CXVJewdc79TY | 1781144504 | 1781145591 | -0.1696
+  BMm9JjdsudgV | 1781141636 | 1781146551 | -0.2245
+  BMm9JjdsudgV | 1781146093 | 1781147136 | 0.4911 
+  2fHT9wBhywYo | 1781147228 | 1781147692 | 0.4859 
+  BMm9JjdsudgV | 1781147246 | 1781148216 | -0.1767
+  CXATA5Zx2hB3 | 1781146321 | 1781148486 | -0.2121
+  BMm9JjdsudgV | 1781148721 | 1781148726 | -0.5094
+  7TiAUgZdLMN4 | 1781149171 | 1781149237 | -0.1795
+  6svp2aaiJ7Dm | 1781149414 | 1781149657 | -0.1652
+  E8B7Edi7khro | 1781149806 | 1781149882 | -0.1717
+  CXATA5Zx2hB3 | 1781149195 | 1781150302 | -0.1805
+  CXATA5Zx2hB3 | 1781150218 | 1781150602 | -0.1978
+  CXATA5Zx2hB3 | 1781151093 | 1781151578 | -0.1696
+  GemryuWS7qwe | 1781152641 | 1781153348 | 0.4952 
+  CXVJewdc79TY | 1781145733 | 1781153497 | -0.1757
+  CXATA5Zx2hB3 | 1781154393 | 1781154909 | -0.1932
+  E8B7Edi7khro | 1781155660 | 1781155974 | -0.1778
+  2mRn8wtkcxZc | 1781154917 | 1781156396 | -0.1996
+  2mRn8wtkcxZc | 1781156399 | 1781156439 | -0.1819
+  CvTPH1CxTU2A | 1781150671 | 1781157282 | -0.1691
+  572gijC9dnNi | 1781157228 | 1781157282 | -0.2109
+  GemryuWS7qwe | 1781143965 | 1781157642 | 0.5046 
+  3eSWPw7xqEYH | 1781160467 | 1781161967 | 0.5073 
+  DNio5ketGczp | 1781166266 | 1781166279 | -0.2982
+  2HJMgsEqKrcR | 1781132660 | 1781166623 | -0.1735
+  7TiAUgZdLMN4 | 1781165887 | 1781167493 | 0.492  
+  GemryuWS7qwe | 1781168228 | 1781168604 | -0.1793
+  2fHT9wBhywYo | 1781170600 | 1781170615 | 1.3473 
+  CvTPH1CxTU2A | 1781171391 | 1781171935 | -0.1815
+  CXVJewdc79TY | 1781176575 | 1781177241 | -0.1716
+  5dU3trzb5uvZ | 1781176580 | 1781183086 | 0.4916 
+  5q8osC4CZRMf | 1781184123 | 1781184304 | -0.3063
+  Ay1pyfhZX7SV | 1781185788 | 1781186033 | -0.2054
+  5q8osC4CZRMf | 1781183930 | 1781186273 | 0.5053 
+  44kdzNHg3XTF | 1781187287 | 1781187368 | -0.4279
+  CvTPH1CxTU2A | 1781185897 | 1781187520 | 0.4957 
+  6svp2aaiJ7Dm | 1781188224 | 1781188660 | -0.2397
+  5q8osC4CZRMf | 1781188689 | 1781188960 | -0.1686
+  6svp2aaiJ7Dm | 1781189012 | 1781189125 | -0.1721
+  8QwYYkzuDwh3 | 1781159481 | 1781189169 | -0.1806
+  2fHT9wBhywYo | 1781184156 | 1781189365 | -0.2033
+  5H5upChfAGSW | 1781189307 | 1781189620 | -0.2535
+  3iZG5TLva2N8 | 1781189041 | 1781189770 | 0.5007 
+  CvTPH1CxTU2A | 1781189754 | 1781189785 | -0.2282
+  5H5upChfAGSW | 1781189786 | 1781190086 | -0.18  
+  5H5upChfAGSW | 1781190187 | 1781190267 | 0.6429 
+  CVLyQA7BxhBa | 1781190733 | 1781190943 | -0.3056
+  CVLyQA7BxhBa | 1781190953 | 1781191078 | -0.3095
+  6svp2aaiJ7Dm | 1781114916 | 1781193795 | -0.2034
+  2mRn8wtkcxZc | 1781193494 | 1781193976 | -0.2049
+  44kdzNHg3XTF | 1781194019 | 1781194201 | 0.6474 
+  2mRn8wtkcxZc | 1781194185 | 1781194231 | -0.3636
+  Ay1pyfhZX7SV | 1781194599 | 1781195117 | -0.1979
+  5q8osC4CZRMf | 1781194151 | 1781195162 | -0.1881
+  3eSWPw7xqEYH | 1781189764 | 1781195672 | -0.4856
+  AaZgZEmaUUnw | 1781183286 | 1781196256 | -0.2485
+  2zBWFYhhi28v | 1781197198 | 1781197234 | -0.1775
+  2zBWFYhhi28v | 1781197272 | 1781198089 | -0.1693
+  6svp2aaiJ7Dm | 1781198126 | 1781198540 | -0.1695
+  5q8osC4CZRMf | 1781198451 | 1781198855 | 0.5445 
+  3wrx9AZjygVg | 1781199052 | 1781199456 | -0.1731
+  HsJQ1n5o6fEj | 1781200320 | 1781200347 | -0.1687
+  vdhMgmXUC2aP | 1781199300 | 1781200362 | 0.551  
+  HsJQ1n5o6fEj | 1781200394 | 1781200512 | 0.5048 
+  HsJQ1n5o6fEj | 1781200532 | 1781200842 | 0.4864 
+  5H5upChfAGSW | 1781200608 | 1781200856 | -0.1702
+  CVLyQA7BxhBa | 1781200901 | 1781200946 | 0.7912 
+  2fHT9wBhywYo | 1781200786 | 1781201097 | -0.2098
+  CXATA5Zx2hB3 | 1781201102 | 1781201232 | -0.2225
+  HsJQ1n5o6fEj | 1781200860 | 1781201922 | -0.2577
+  CXATA5Zx2hB3 | 1781200197 | 1781202852 | 0.5938 
+  CVLyQA7BxhBa | 1781200957 | 1781203212 | -0.1828
+  3wrx9AZjygVg | 1781199605 | 1781203317 | -0.1974
+  FakckxEr9U29 | 1781203237 | 1781203437 | -0.1752
+  CQTc3FxSukLQ | 1781203445 | 1781203467 | -0.457 
+  5q8osC4CZRMf | 1781203893 | 1781203903 | -0.173 
+  6svp2aaiJ7Dm | 1781093463 | 1781205161 | -0.1716
+  9SHHN4YyEW6E | 1781202577 | 1781205582 | -0.1841
+  Ex3BcKVGbNVQ | 1781205792 | 1781206289 | -0.2118
+  5H5upChfAGSW | 1781206953 | 1781206965 | -0.3116
+  5H5upChfAGSW | 1781206987 | 1781206996 | -0.195 
+  6svp2aaiJ7Dm | 1781208100 | 1781208424 | 0.4978 
+  2fHT9wBhywYo | 1781081875 | 1781209187 | -0.1651
+  5q8osC4CZRMf | 1781208733 | 1781209848 | 0.5021 
+  AE7neeVw9NFw | 1781199845 | 1781210058 | 0.5081 
+  9bDapeftyEuA | 1781194126 | 1781210117 | 0.4926 
+  2HJMgsEqKrcR | 1781210560 | 1781211034 | -0.192 
+  2HJMgsEqKrcR | 1781211042 | 1781211125 | -0.4747
+  2HJMgsEqKrcR | 1781211328 | 1781211439 | -0.2054
+  2HJMgsEqKrcR | 1781211567 | 1781211694 | -0.2027
+  6svp2aaiJ7Dm | 1781212053 | 1781212864 | -0.1784
+  6svp2aaiJ7Dm | 1781202392 | 1781213449 | 0.4851 
+  6svp2aaiJ7Dm | 1781213217 | 1781213899 | -0.1777
+  2HJMgsEqKrcR | 1781214270 | 1781214379 | 0.733  
+  HntvSoXq7CxH | 1780972578 | 1781214843 | -0.2065
+  5q8osC4CZRMf | 1781214533 | 1781214860 | -0.2856
+  G4L7QX3xjUwj | 1781214861 | 1781214935 | -0.4829
+  6svp2aaiJ7Dm | 1781213217 | 1781216016 | 0.4998 
+  9SHHN4YyEW6E | 1781213246 | 1781216947 | -0.1916
+  6svp2aaiJ7Dm | 1781214706 | 1781217128 | 0.5084 
+  9bDapeftyEuA | 1781217057 | 1781217128 | -0.1893
+  CHvWpTWTZXUM | 1781213915 | 1781218990 | -0.1766
+  4RDNo5BBAjQh | 1781219318 | 1781219352 | 0.4964 
+  5KcqJ7NFA9Ro | 1781219354 | 1781219547 | -0.191 
+  6svp2aaiJ7Dm | 1781219450 | 1781219967 | 0.6012 
+  DNio5ketGczp | 1781220102 | 1781220117 | -0.3052
+  2HJMgsEqKrcR | 1781219747 | 1781220342 | -0.1878
+  G4L7QX3xjUwj | 1781217006 | 1781221272 | -0.1655
+  E8B7Edi7khro | 1781147216 | 1781221466 | -0.1658
+  CXVJewdc79TY | 1781220673 | 1781221738 | -0.1885
+  8QwYYkzuDwh3 | 1781163720 | 1781227457 | -0.2183
+  9bDapeftyEuA | 1781221894 | 1781228284 | -0.1858
+  BN1btauEcxvZ | 1781212170 | 1781229498 | 0.4919 
+  5q8osC4CZRMf | 1781229252 | 1781229664 | -0.1654
+  B6yHBbrfZVxw | 1781214511 | 1781231071 | -0.1786
+  5wTqTAZSGWu9 | 1781225410 | 1781231826 | 0.4913 
+  6svp2aaiJ7Dm | 1781228557 | 1781232549 | 0.5213 
+  CXVJewdc79TY | 1781233858 | 1781234312 | 0.6262 
+  6svp2aaiJ7Dm | 1781236856 | 1781237781 | -0.1714
+  CXATA5Zx2hB3 | 1781240705 | 1781240943 | -0.1804
+  2HJMgsEqKrcR | 1781216971 | 1781243178 | -0.1712
+  CXATA5Zx2hB3 | 1781243382 | 1781243514 | -0.2821
+  Ay1pyfhZX7SV | 1781243532 | 1781243661 | 0.6301 
+  9pDr8if5s4JQ | 1781245565 | 1781245990 | -0.1721
+  2HJMgsEqKrcR | 1781246121 | 1781246739 | -0.2559
+  AaZgZEmaUUnw | 1781232572 | 1781247208 | 0.4949 
+  CvTPH1CxTU2A | 1781238599 | 1781247326 | 0.5073 
+  BtHnhjh8Ta2v | 1781246394 | 1781247503 | 0.8814 
+  E8B7Edi7khro | 1781248243 | 1781249129 | 0.5069 
+  2fHT9wBhywYo | 1781249023 | 1781250657 | -0.1777
+  H8cbcJgrMRGU | 1781180142 | 1781252181 | -0.166 
+  6svp2aaiJ7Dm | 1781200028 | 1781252514 | -0.1658
+  2fHT9wBhywYo | 1781251676 | 1781257130 | -0.1721
+  2f4e7c2f6hXy | 1781257262 | 1781258118 | -0.1713
+  BtHnhjh8Ta2v | 1781221877 | 1781261934 | -0.1813
+  5q8osC4CZRMf | 1781266267 | 1781266302 | -0.2074
+  5aXbFCpg5f14 | 1781266329 | 1781267527 | -0.1807
+  5q8osC4CZRMf | 1781270531 | 1781271328 | -0.2151
+  2fHT9wBhywYo | 1781269535 | 1781271452 | 0.5041 
+  AaZgZEmaUUnw | 1781258585 | 1781272336 | -0.1689
+  2f4e7c2f6hXy | 1781258694 | 1781272394 | -0.4487
+  2HJMgsEqKrcR | 1781208590 | 1781272572 | -0.1771
+  AaZgZEmaUUnw | 1781273699 | 1781273806 | -0.1789
+  2fHT9wBhywYo | 1780852085 | 1781274020 | -0.1965
+  2fHT9wBhywYo | 1781274036 | 1781274094 | -0.3049
+  2fHT9wBhywYo | 1781274099 | 1781274673 | 0.5131 
+  2HJMgsEqKrcR | 1781246854 | 1781275289 | -0.1663
+  B6yHBbrfZVxw | 1781273589 | 1781275847 | -0.1847
+  Ex3BcKVGbNVQ | 1781277688 | 1781278684 | 0.5088 
+  Ay1pyfhZX7SV | 1781278712 | 1781278806 | -0.1949
+  CvTPH1CxTU2A | 1781274677 | 1781279119 | -0.5009
+  CvTPH1CxTU2A | 1781279531 | 1781280161 | -0.195 
+  CvTPH1CxTU2A | 1781280151 | 1781281115 | -0.2203
+  CvTPH1CxTU2A | 1781281131 | 1781281565 | -0.2493
+  CvTPH1CxTU2A | 1781280195 | 1781281666 | 0.5097 
+  CvTPH1CxTU2A | 1781277091 | 1781281704 | -0.5006
+  2fHT9wBhywYo | 1781276733 | 1781282510 | -0.1903
+  6svp2aaiJ7Dm | 1781282928 | 1781283459 | -0.1775
+  2fHT9wBhywYo | 1781235843 | 1781283724 | -0.1692
+  G4L7QX3xjUwj | 1781284608 | 1781284665 | -0.3643
+  2fHT9wBhywYo | 1781282513 | 1781285797 | -0.1666
+  DNio5ketGczp | 1781251792 | 1781286320 | -0.1779
+  5q8osC4CZRMf | 1781286134 | 1781286810 | -0.1799
+  CvTPH1CxTU2A | 1781283631 | 1781287086 | -0.1995
+  D1ec7DTwvH1Y | 1781287950 | 1781288240 | 1.3014 
+  2fHT9wBhywYo | 1781136634 | 1781288495 | -0.1664
+  6svp2aaiJ7Dm | 1781290458 | 1781290747 | -0.5047
+  DVhwSE98dHBt | 1781292562 | 1781292935 | -0.1879
+  8QwYYkzuDwh3 | 1781025855 | 1781293248 | -0.1653
+  6svp2aaiJ7Dm | 1781288590 | 1781293706 | -0.5059
+  2mRn8wtkcxZc | 1781293029 | 1781293805 | 0.5889 
+  3wrx9AZjygVg | 1781228948 | 1781294277 | 0.4855 
+  5q8osC4CZRMf | 1781293642 | 1781294313 | 0.5874 
+  G4L7QX3xjUwj | 1781217197 | 1781294400 | -0.1679
+  D1ec7DTwvH1Y | 1781017060 | 1781294415 | -0.2005
+  2fHT9wBhywYo | 1781150473 | 1781294542 | -0.1656
+  5q8osC4CZRMf | 1781293646 | 1781294613 | 0.4879 
+  5hYsHp8HWFgy | 1781294355 | 1781294706 | -0.1669
+  6svp2aaiJ7Dm | 1781288378 | 1781294792 | -0.5082
+  Ex3BcKVGbNVQ | 1781294892 | 1781295669 | 0.5181 
+  6svp2aaiJ7Dm | 1781299455 | 1781299722 | -0.1694
+  CHvWpTWTZXUM | 1781122415 | 1781299861 | -0.2892
+  5aXbFCpg5f14 | 1781297548 | 1781301644 | -0.5018
+  2fHT9wBhywYo | 1781285836 | 1781303059 | -0.1698
+  CXATA5Zx2hB3 | 1781312267 | 1781312512 | -0.2094
+  6svp2aaiJ7Dm | 1781176909 | 1781313994 | -0.1668
+  2HJMgsEqKrcR | 1781314730 | 1781315074 | -0.1741
+  6svp2aaiJ7Dm | 1781315866 | 1781316187 | -0.167 
+  8QwYYkzuDwh3 | 1781197028 | 1781318440 | -0.1677
+  5q8osC4CZRMf | 1781318545 | 1781318770 | 0.5265 
+  6svp2aaiJ7Dm | 1781317327 | 1781319895 | -0.504 
+  DSKEyfEeTymH | 1781319101 | 1781320150 | 0.5018 
+  6svp2aaiJ7Dm | 1781317022 | 1781320335 | -0.1772
+  6svp2aaiJ7Dm | 1781321682 | 1781321774 | -0.1965
+  2fHT9wBhywYo | 1781199546 | 1781321887 | -0.168 
+  572gijC9dnNi | 1781327479 | 1781327538 | -0.1858
+  CvTPH1CxTU2A | 1781323468 | 1781330842 | -0.4988
+  5aXbFCpg5f14 | 1781327797 | 1781332734 | -0.5036
+  2HJMgsEqKrcR | 1781315176 | 1781333079 | -0.1711
+  2HJMgsEqKrcR | 1781336271 | 1781336545 | -0.1723
+  Ay1pyfhZX7SV | 1781340801 | 1781340912 | -0.2604
+  GqEVzdHH4RGq | 1781343329 | 1781343761 | -0.1679
+  8YQBRbQUtVRg | 1781341044 | 1781343971 | -0.1729
+  2fHT9wBhywYo | 1781327018 | 1781346318 | -0.1659
+  2fHT9wBhywYo | 1781170685 | 1781348415 | 0.4873 
+  2f4e7c2f6hXy | 1781351053 | 1781352749 | -0.1704
+  8YQBRbQUtVRg | 1781355232 | 1781355285 | -0.1757
+  4RDNo5BBAjQh | 1781199903 | 1781356452 | -0.1729
+  5q8osC4CZRMf | 1781356548 | 1781356612 | -0.4742
+  5H5upChfAGSW | 1781357818 | 1781358582 | -0.1947
+  CVLyQA7BxhBa | 1781360835 | 1781361074 | -0.4873
+  2zBWFYhhi28v | 1781328360 | 1781361581 | -0.1655
+  2fHT9wBhywYo | 1781356594 | 1781362037 | -0.2367
+  CvTPH1CxTU2A | 1781356373 | 1781362337 | -0.1794
+  6svp2aaiJ7Dm | 1781359429 | 1781364857 | -0.1925
+  5q8osC4CZRMf | 1781364899 | 1781365133 | -0.2163
+  CVLyQA7BxhBa | 1781365195 | 1781365309 | -0.3108
+  5q8osC4CZRMf | 1781367946 | 1781368780 | -0.1774
+  Ex3BcKVGbNVQ | 1781369004 | 1781369741 | 0.623  
+  2fHT9wBhywYo | 1781369536 | 1781370193 | -0.2013
+  CQTc3FxSukLQ | 1781372312 | 1781372432 | -0.2031
+  Ay1pyfhZX7SV | 1781372342 | 1781372432 | -0.1765
+  GqEVzdHH4RGq | 1781365510 | 1781373177 | 0.4888 
+  CXATA5Zx2hB3 | 1781374099 | 1781374425 | -0.2056
+  8QwYYkzuDwh3 | 1781274549 | 1781376706 | 0.5455 
+  Ay1pyfhZX7SV | 1781376230 | 1781377124 | -0.2325
+  2fHT9wBhywYo | 1781025777 | 1781377906 | -0.1653
+  Ay1pyfhZX7SV | 1781373906 | 1781378007 | -0.1858
+  Ay1pyfhZX7SV | 1781378099 | 1781378488 | -0.2385
+  5q8osC4CZRMf | 1781379185 | 1781379213 | -0.1778
+  5q8osC4CZRMf | 1781379850 | 1781380303 | -0.2595
+  5q8osC4CZRMf | 1781380905 | 1781381207 | 0.5264 
+  2HJMgsEqKrcR | 1781383150 | 1781383385 | -0.1704
+  5H5upChfAGSW | 1781383385 | 1781384327 | 0.5545 
+  2fHT9wBhywYo | 1781387806 | 1781387991 | 0.5432 
+  5aXbFCpg5f14 | 1781396076 | 1781396633 | -0.1681
+  2fHT9wBhywYo | 1781195996 | 1781397507 | -0.1665
+  8eEnpRvWM1Vv | 1781396783 | 1781397577 | 0.6609 
+  Ay1pyfhZX7SV | 1781397788 | 1781397847 | -0.2352
+  6VJtUNc2uYwx | 1781396856 | 1781402170 | 0.4907 
+  2fHT9wBhywYo | 1781403185 | 1781403940 | -0.1653
+  DVhwSE98dHBt | 1781405881 | 1781406295 | -0.1765
+  GqEVzdHH4RGq | 1781407651 | 1781407726 | -0.4938
+  GqEVzdHH4RGq | 1781404297 | 1781408326 | -0.1701
+  6svp2aaiJ7Dm | 1781406752 | 1781409573 | -0.1695
+  618gbvXjdQKh | 1781410080 | 1781410162 | -0.4885
+  6svp2aaiJ7Dm | 1781410586 | 1781410778 | -0.1711
+  CXVJewdc79TY | 1781415752 | 1781416356 | -0.1881
+  DVhwSE98dHBt | 1781416647 | 1781416745 | -0.1681
+  GqEVzdHH4RGq | 1781415922 | 1781418697 | -0.5012
+  2fHT9wBhywYo | 1781397596 | 1781421589 | -0.1976
+  5q8osC4CZRMf | 1781422261 | 1781422359 | -0.2441
+  GqEVzdHH4RGq | 1781419099 | 1781426003 | 0.5084 
+  2fHT9wBhywYo | 1781288289 | 1781432086 | -0.1817
+  6svp2aaiJ7Dm | 1781413164 | 1781434526 | 0.4913 
+  2f4e7c2f6hXy | 1781401961 | 1781434677 | -0.1671
+  5aXbFCpg5f14 | 1781436378 | 1781437238 | -0.496 
+  D1ec7DTwvH1Y | 1781435753 | 1781437552 | -0.476 
+  5q8osC4CZRMf | 1781441254 | 1781441286 | -0.2664
+  Ay1pyfhZX7SV | 1781441287 | 1781441323 | -0.3585
+  5q8osC4CZRMf | 1781443256 | 1781444042 | -0.4934
+  D1ec7DTwvH1Y | 1781446499 | 1781446557 | -0.4964
+  Ay1pyfhZX7SV | 1781444801 | 1781446916 | -0.2561
+  2fHT9wBhywYo | 1781421590 | 1781447426 | 0.5656 
+  5q8osC4CZRMf | 1780946887 | 1781448308 | -0.1655
+  2fHT9wBhywYo | 1781303129 | 1781449493 | -0.18  
+  Ay1pyfhZX7SV | 1781453851 | 1781453908 | -0.2486
+  D1ec7DTwvH1Y | 1781458706 | 1781459670 | 0.4985 
+  CHvWpTWTZXUM | 1781459689 | 1781460390 | -0.1663
+  B6yHBbrfZVxw | 1781460987 | 1781461227 | 0.588  
+  2fHT9wBhywYo | 1781038310 | 1781461872 | 0.528  
+  8YQBRbQUtVRg | 1781402760 | 1781463925 | 0.5078 
+  2fHT9wBhywYo | 1781354946 | 1781464131 | -0.1668
+  2fHT9wBhywYo | 1781311927 | 1781466707 | 0.4906 
+  BN1btauEcxvZ | 1781439443 | 1781467711 | -0.5003
+  2HJMgsEqKrcR | 1781468604 | 1781468735 | -0.2013
+  2HJMgsEqKrcR | 1781468862 | 1781468945 | -0.2411
+  2HJMgsEqKrcR | 1781122686 | 1781469723 | 0.5189 
+  2HJMgsEqKrcR | 1781469791 | 1781469920 | -0.171 
+  E8B7Edi7khro | 1781473220 | 1781473271 | -0.2868
+  CHvWpTWTZXUM | 1781473604 | 1781474326 | -0.1679
+  CXVJewdc79TY | 1781467008 | 1781475817 | -0.1858
+  SMACxb87aVzX | 1781474356 | 1781478762 | 0.5062 
+  AjZjP7QNiLzM | 1781478286 | 1781479779 | -0.2325
+  2zBWFYhhi28v | 1781482687 | 1781482759 | 0.5837 
+  8eEnpRvWM1Vv | 1781430430 | 1781482794 | -0.169 
+  AjZjP7QNiLzM | 1781483422 | 1781483516 | -0.4792
+  4RDNo5BBAjQh | 1781483309 | 1781483669 | -0.1749
+  Ay1pyfhZX7SV | 1781483732 | 1781485142 | -0.1679
+  7KjC6pHMA3wj | 1781485134 | 1781485945 | -0.4967
+  5KcqJ7NFA9Ro | 1781485445 | 1781486245 | -0.1909
+  9SHHN4YyEW6E | 1781298724 | 1781488781 | -0.213 
+  6svp2aaiJ7Dm | 1781488215 | 1781489490 | -0.1693
+  6svp2aaiJ7Dm | 1781484054 | 1781489823 | 0.4859 
+  6svp2aaiJ7Dm | 1781490815 | 1781491112 | -0.1946
+  CvTPH1CxTU2A | 1781491721 | 1781491802 | -0.212 
+  785cAWNP2Y4B | 1781491364 | 1781491956 | -0.1881
+  8eEnpRvWM1Vv | 1781477095 | 1781492846 | -0.2007
+  2fHT9wBhywYo | 1781483232 | 1781494038 | -0.1671
+  3wrx9AZjygVg | 1781494747 | 1781495353 | -0.227 
+  CvTPH1CxTU2A | 1781491806 | 1781495465 | 0.5453 
+  SMACxb87aVzX | 1781497558 | 1781497764 | -0.2577
+  572gijC9dnNi | 1781493843 | 1781498722 | 0.5169 
+  2fHT9wBhywYo | 1781296701 | 1781499571 | -0.1669
+  6svp2aaiJ7Dm | 1781498872 | 1781501925 | 0.5209 
+  DSKEyfEeTymH | 1781502332 | 1781502405 | -0.1837
+  6svp2aaiJ7Dm | 1781497170 | 1781503708 | 0.5494 
+  5hYsHp8HWFgy | 1781505699 | 1781505787 | 0.6943 
+  H8cbcJgrMRGU | 1781505807 | 1781506490 | 0.5216 
+  9SHHN4YyEW6E | 1781506853 | 1781507178 | -0.2362
+  DVhwSE98dHBt | 1781507251 | 1781507854 | -0.1762
+  AE7neeVw9NFw | 1781503739 | 1781508708 | -0.2044
+  DVhwSE98dHBt | 1781507960 | 1781511352 | -0.193 
+  785cAWNP2Y4B | 1781511230 | 1781515225 | -0.5055
+  6svp2aaiJ7Dm | 1780997949 | 1781515745 | -0.1657
+  Ay1pyfhZX7SV | 1781521431 | 1781524196 | 0.4914 
+  5q8osC4CZRMf | 1781525662 | 1781525774 | -0.3408
+  DNio5ketGczp | 1781526332 | 1781526628 | -0.2124
+  5q8osC4CZRMf | 1781528124 | 1781528344 | -0.1652
+  2fHT9wBhywYo | 1781528693 | 1781528891 | -0.176 
+  57YFGs6GXT3X | 1781529968 | 1781530168 | -0.2528
+  Ay1pyfhZX7SV | 1781530171 | 1781530696 | 0.5707 
+  Ex3BcKVGbNVQ | 1781530596 | 1781530697 | -0.1789
+  Ex3BcKVGbNVQ | 1781530866 | 1781531093 | -0.5023
+  6svp2aaiJ7Dm | 1781531567 | 1781531942 | -0.1767
+  2fHT9wBhywYo | 1781531922 | 1781532095 | -0.3625
+  5q8osC4CZRMf | 1781531401 | 1781532668 | 0.535  
+  2fHT9wBhywYo | 1781529714 | 1781532923 | 0.542  
+  5q8osC4CZRMf | 1781531901 | 1781534014 | 0.5257 
+  Ex3BcKVGbNVQ | 1781533019 | 1781534136 | 0.4913 
+  6svp2aaiJ7Dm | 1781533400 | 1781534196 | -0.1661
+  CvTPH1CxTU2A | 1781534542 | 1781535294 | -0.178 
+  E8B7Edi7khro | 1781531628 | 1781536243 | -0.1761
+  7TiAUgZdLMN4 | 1781531965 | 1781536631 | 0.4862 
+  2fHT9wBhywYo | 1781489006 | 1781537042 | -0.1668
+  9SHHN4YyEW6E | 1781535893 | 1781537818 | 0.5285 
+  57YFGs6GXT3X | 1781535039 | 1781538897 | -0.1665
+  9SHHN4YyEW6E | 1781541039 | 1781541230 | -0.1899
+  CvTPH1CxTU2A | 1781535422 | 1781542580 | -0.1736
+  2fHT9wBhywYo | 1781467240 | 1781543110 | 0.4981 
+  Ex3BcKVGbNVQ | 1781541840 | 1781544100 | 0.5204 
+  2fHT9wBhywYo | 1781543650 | 1781544219 | -0.168 
+  2fHT9wBhywYo | 1781544618 | 1781544821 | -0.1976
+  BtHnhjh8Ta2v | 1781537669 | 1781545405 | -0.1706
+  6svp2aaiJ7Dm | 1781540233 | 1781550452 | -0.3149
+  5q8osC4CZRMf | 1781550138 | 1781550509 | -0.2011
+  57YFGs6GXT3X | 1781550618 | 1781550659 | -0.4984
+  2fHT9wBhywYo | 1781551183 | 1781551934 | 0.6181 
+  5q8osC4CZRMf | 1781552817 | 1781553559 | -0.2036
+  2fHT9wBhywYo | 1781269060 | 1781554271 | -0.1705
+  Dxd7vVTi7L5a | 1781554244 | 1781554807 | -0.5068
+  5q8osC4CZRMf | 1781553855 | 1781554917 | -0.257 
+  Dxd7vVTi7L5a | 1781553666 | 1781554955 | -0.1652
+  5q8osC4CZRMf | 1781557036 | 1781557448 | -0.1999
+  57YFGs6GXT3X | 1781557764 | 1781557807 | -0.231 
+  57YFGs6GXT3X | 1781557930 | 1781558045 | -0.2238
+  57YFGs6GXT3X | 1781559176 | 1781559376 | -0.5046
+  B6yHBbrfZVxw | 1781559285 | 1781559404 | -0.181 
+  DcQKToPywy64 | 1781557159 | 1781560392 | 0.5039 
+  2fHT9wBhywYo | 1781564837 | 1781565232 | 0.5395 
+  6svp2aaiJ7Dm | 1781565984 | 1781567063 | -0.1686
+  2fHT9wBhywYo | 1781428738 | 1781567927 | -0.1655
+  6svp2aaiJ7Dm | 1781567898 | 1781568192 | -0.1691
+  2fHT9wBhywYo | 1781568911 | 1781569078 | -0.2271
+  5aXbFCpg5f14 | 1781568860 | 1781570788 | 0.5027 
+  3iZG5TLva2N8 | 1781570534 | 1781570881 | 0.4976 
+  2fHT9wBhywYo | 1781569521 | 1781572215 | -0.5082
+  DNio5ketGczp | 1781575964 | 1781576126 | -0.1712
+  CvTPH1CxTU2A | 1781572561 | 1781576260 | 0.4998 
+  DVhwSE98dHBt | 1781576307 | 1781576776 | 0.7725 
+  6svp2aaiJ7Dm | 1781576502 | 1781577148 | -0.1809
+  2fHT9wBhywYo | 1781575370 | 1781577619 | -0.1918
+  572gijC9dnNi | 1781577774 | 1781577858 | 2.2858 
+  SMACxb87aVzX | 1781577414 | 1781577995 | -0.2054
+  6QvGE3rHDmXk | 1781577869 | 1781578036 | 0.6421 
+  2bVqHKY1EDgc | 1781576318 | 1781578150 | -0.1766
+  E8B7Edi7khro | 1781577394 | 1781578269 | -0.2041
+  E8B7Edi7khro | 1781578405 | 1781578481 | -0.1865
+  6VJtUNc2uYwx | 1781578981 | 1781579444 | -0.1878
+  SMACxb87aVzX | 1781578004 | 1781579860 | -0.2269
+  5q8osC4CZRMf | 1781580803 | 1781580872 | -0.3106
+  785cAWNP2Y4B | 1781580873 | 1781580918 | -0.4662
+  CvTPH1CxTU2A | 1781577303 | 1781583315 | 0.5145 
+  AE7neeVw9NFw | 1781577509 | 1781583435 | 0.4883 
+  E8B7Edi7khro | 1781579427 | 1781583815 | -0.202 
+  6svp2aaiJ7Dm | 1781585471 | 1781586508 | -0.1808
+  2fHT9wBhywYo | 1781585505 | 1781586865 | -0.2434
+  785cAWNP2Y4B | 1781586516 | 1781589177 | 0.5087 
+  DNio5ketGczp | 1781589737 | 1781589811 | -0.2436
+  2fHT9wBhywYo | 1781500056 | 1781589845 | -0.1657
+  9pDr8if5s4JQ | 1781579611 | 1781590766 | -0.1734
+  6bGiX9mX1szF | 1781597390 | 1781597792 | -0.1767
+  5pJ2icRDUhmN | 1781598508 | 1781599942 | -0.2062
+  2fHT9wBhywYo | 1781601429 | 1781601776 | -0.2885
+  DNio5ketGczp | 1781602204 | 1781602946 | -0.1818
+  6svp2aaiJ7Dm | 1781602334 | 1781603026 | -0.1733
+  3iZG5TLva2N8 | 1781603195 | 1781604572 | -0.1662
+  5q8osC4CZRMf | 1781605935 | 1781606005 | -0.1794
+  9pDr8if5s4JQ | 1781606041 | 1781606672 | 0.6922 
+  8YQBRbQUtVRg | 1781606366 | 1781606702 | -0.1656
+  DVhwSE98dHBt | 1781607674 | 1781608840 | -0.1773
+  BtHnhjh8Ta2v | 1781597624 | 1781609147 | -0.1753
+  2fHT9wBhywYo | 1781607388 | 1781610611 | -0.2381
+  6svp2aaiJ7Dm | 1781609217 | 1781610672 | -0.1706
+  B6yHBbrfZVxw | 1781574942 | 1781612378 | 0.657  
+  5hYsHp8HWFgy | 1781614543 | 1781615540 | 0.8581 
+  2mRn8wtkcxZc | 1781616320 | 1781618139 | -0.1885
+  5q8osC4CZRMf | 1781618464 | 1781618684 | 0.5123 
+  2fHT9wBhywYo | 1781525639 | 1781619994 | -0.1657
+  GqEVzdHH4RGq | 1781616501 | 1781620093 | -0.1803
+  8QwYYkzuDwh3 | 1781602581 | 1781621351 | -0.188 
+  829uKc52EfcH | 1781619109 | 1781622762 | -0.1659
+  2fHT9wBhywYo | 1781621357 | 1781623835 | 0.599  
+  GqEVzdHH4RGq | 1781620944 | 1781624014 | 0.5118 
+  2mRn8wtkcxZc | 1781624213 | 1781624283 | -0.1718
+  5hYsHp8HWFgy | 1781620915 | 1781624416 | -0.1668
+  2fHT9wBhywYo | 1781549890 | 1781625047 | -0.1857
+  5q8osC4CZRMf | 1781628100 | 1781629267 | 0.5891 
+  CVLyQA7BxhBa | 1781629453 | 1781629642 | -0.2069
+  CVLyQA7BxhBa | 1781629972 | 1781630318 | -0.1663
+  Ex3BcKVGbNVQ | 1781630583 | 1781630817 | 0.5133 
+  Dxd7vVTi7L5a | 1781559883 | 1781631230 | -0.4959
+  Ex3BcKVGbNVQ | 1781631308 | 1781631600 | -0.2244
+  2fHT9wBhywYo | 1781626231 | 1781631782 | -0.1709
+  57YFGs6GXT3X | 1781631640 | 1781632710 | 0.4896 
+  Ay1pyfhZX7SV | 1781631821 | 1781632898 | -0.1776
+  Ex3BcKVGbNVQ | 1781633428 | 1781634160 | -0.1735
+  829uKc52EfcH | 1781634289 | 1781634692 | -0.2075
+  SMACxb87aVzX | 1781636112 | 1781636182 | -0.1716
+  SMACxb87aVzX | 1781636199 | 1781637261 | 0.5814 
+  2fHT9wBhywYo | 1781123128 | 1781638491 | -0.1926
+  GqEVzdHH4RGq | 1781630341 | 1781639494 | -0.1751
+  829uKc52EfcH | 1781640554 | 1781641058 | -0.1772
+  SMACxb87aVzX | 1781640334 | 1781641570 | -0.1787
+  2HJMgsEqKrcR | 1781642522 | 1781642678 | -0.3029
+  5q8osC4CZRMf | 1781642790 | 1781642912 | -0.2278
+  DVhwSE98dHBt | 1781643312 | 1781643352 | -0.1923
+  5q8osC4CZRMf | 1780946886 | 1781643552 | -0.246 
+  829uKc52EfcH | 1781643535 | 1781643650 | -0.185 
+  2fHT9wBhywYo | 1781513425 | 1781644812 | -0.1656
+  2fHT9wBhywYo | 1781594426 | 1781644819 | -0.165 
+  829uKc52EfcH | 1781643673 | 1781644828 | -0.2291
+  DVhwSE98dHBt | 1781644371 | 1781645310 | 0.5744 
+  6svp2aaiJ7Dm | 1781645467 | 1781645832 | -0.1943
+  2fHT9wBhywYo | 1781545108 | 1781646229 | -0.1752
+  5q8osC4CZRMf | 1781646559 | 1781646601 | -0.2198
+  57YFGs6GXT3X | 1781645497 | 1781647098 | 0.5736 
+  2fHT9wBhywYo | 1781646819 | 1781647464 | -0.4829
+  B6yHBbrfZVxw | 1781647638 | 1781647685 | -0.2701
+  2HJMgsEqKrcR | 1781645364 | 1781649041 | 0.5811 
+  HV4cjkteGZ5g | 1781648845 | 1781650216 | -0.1737
+  8vThqJYZ4KdB | 1781650612 | 1781650869 | -0.1799
+  BtHnhjh8Ta2v | 1781595377 | 1781651178 | -0.1658
+  72Sz3SxcHyTt | 1781652229 | 1781652536 | -0.2414
+  2fHT9wBhywYo | 1781654303 | 1781654524 | -0.23  
+  5aXbFCpg5f14 | 1781650931 | 1781655808 | 0.5114 
+  6svp2aaiJ7Dm | 1781651997 | 1781655809 | -0.1685
+  FakckxEr9U29 | 1781653055 | 1781655809 | 0.4943 
+  7KjC6pHMA3wj | 1781655893 | 1781656014 | -0.2145
+  44kdzNHg3XTF | 1781656041 | 1781656161 | -0.4596
+  2HJMgsEqKrcR | 1781582808 | 1781656328 | -0.1772
+  dwYR8L7YE43U | 1781655948 | 1781656641 | -0.5002
+  CHvWpTWTZXUM | 1781648974 | 1781659802 | 0.5462 
+  6svp2aaiJ7Dm | 1781660190 | 1781660321 | -0.1684
+  2fHT9wBhywYo | 1781609294 | 1781662172 | -0.1711
+  DNio5ketGczp | 1781662839 | 1781663877 | 0.8984 
+  785cAWNP2Y4B | 1781663965 | 1781664676 | -0.1738
+  5dU3trzb5uvZ | 1781663888 | 1781664772 | -0.1688
+  6svp2aaiJ7Dm | 1781665304 | 1781666003 | -0.1656
+  6VJtUNc2uYwx | 1781664993 | 1781666305 | -0.1676
+  2fHT9wBhywYo | 1781666454 | 1781666824 | -0.1807
+  2bVqHKY1EDgc | 1781671892 | 1781671953 | -0.1896
+  785cAWNP2Y4B | 1781671961 | 1781672874 | 0.5269 
+  E8B7Edi7khro | 1781661610 | 1781673250 | -0.1707
+  2HJMgsEqKrcR | 1781491441 | 1781677368 | -0.2029
+  6QvGE3rHDmXk | 1781578139 | 1781678255 | -0.1728
+  5q8osC4CZRMf | 1781678769 | 1781679762 | -0.4745
+  785cAWNP2Y4B | 1781680093 | 1781682183 | -0.4946
+  CvTPH1CxTU2A | 1781682185 | 1781682207 | -0.2607
+  AaZgZEmaUUnw | 1781679527 | 1781683157 | -0.2015
+  5q8osC4CZRMf | 1781683380 | 1781683449 | 0.4881 
+  SMACxb87aVzX | 1781682365 | 1781683494 | -0.1825
+  7TiAUgZdLMN4 | 1781683502 | 1781684630 | -0.1759
+  2fHT9wBhywYo | 1780949673 | 1781694917 | -0.1768
+  2f4e7c2f6hXy | 1781507314 | 1781706972 | 0.4922 
+  6svp2aaiJ7Dm | 1781707080 | 1781711684 | -0.1686
+  5KcqJ7NFA9Ro | 1781571894 | 1781716657 | -0.1859
+  2fHT9wBhywYo | 1780936734 | 1781719486 | -0.165 
+  6svp2aaiJ7Dm | 1781712221 | 1781719805 | 0.4937 
+  4RDNo5BBAjQh | 1781720388 | 1781720520 | -0.1655
+  5q8osC4CZRMf | 1781720818 | 1781721742 | -0.1731
+  D5aVEvANr2uj | 1781721944 | 1781722103 | -0.188 
+  6svp2aaiJ7Dm | 1781717249 | 1781722356 | 0.4897 
+  D5aVEvANr2uj | 1781722112 | 1781722389 | -0.1756
+  57YFGs6GXT3X | 1781722744 | 1781723294 | 0.5229 
+  7KjC6pHMA3wj | 1781723297 | 1781723831 | -0.194 
+  huaVzptvupcf | 1781723838 | 1781724458 | 0.5498 
+  GXDZ1GDLsb9X | 1781724218 | 1781724833 | -0.2606
+  5q8osC4CZRMf | 1781725166 | 1781726603 | 0.5036 
+  57YFGs6GXT3X | 1781726624 | 1781727112 | -0.212 
+  2mRn8wtkcxZc | 1781728016 | 1781728228 | -0.2191
+  BdQjY2iBXu14 | 1781728336 | 1781729113 | -0.1706
+  6kB7jtaZjPM2 | 1781729341 | 1781729423 | 0.7134 
+  D5aVEvANr2uj | 1781724515 | 1781729771 | -0.4882
+  2fHT9wBhywYo | 1781612462 | 1781729789 | -0.1662
+  829uKc52EfcH | 1781729576 | 1781729946 | 0.546  
+  BdQjY2iBXu14 | 1781729952 | 1781730072 | -0.1729
+  B6yHBbrfZVxw | 1781729951 | 1781730297 | 0.5374 
+  57YFGs6GXT3X | 1781730568 | 1781730739 | -0.2295
+  BdQjY2iBXu14 | 1781730833 | 1781731022 | 0.5143 
+  6svp2aaiJ7Dm | 1781730780 | 1781731094 | -0.1653
+  BdQjY2iBXu14 | 1781731027 | 1781731401 | -0.1683
+  BdQjY2iBXu14 | 1781731454 | 1781731647 | 0.5664 
+  BdQjY2iBXu14 | 1781731653 | 1781733872 | 0.5209 
+  7bTsRggGmDjD | 1781734287 | 1781735843 | -0.1741
+  2fHT9wBhywYo | 1781731934 | 1781736708 | -0.2061
+  5q8osC4CZRMf | 1781736797 | 1781736889 | -0.4981
+  7bTsRggGmDjD | 1781736221 | 1781736986 | -0.183 
+  2mRn8wtkcxZc | 1781738648 | 1781738727 | -0.2125
+  2mRn8wtkcxZc | 1781738733 | 1781738841 | -0.1701
+  2HJMgsEqKrcR | 1781740264 | 1781740483 | -0.1715
+  2HJMgsEqKrcR | 1781740144 | 1781740564 | -0.2265
+  B6yHBbrfZVxw | 1781740586 | 1781740689 | -0.2184
+  6svp2aaiJ7Dm | 1781741229 | 1781744006 | -0.1703
+  44kdzNHg3XTF | 1781744707 | 1781745940 | 0.494  
+  2fHT9wBhywYo | 1781740492 | 1781746730 | -0.1794
+  2fHT9wBhywYo | 1781632834 | 1781748075 | -0.2011
+  HntvSoXq7CxH | 1781522791 | 1781749197 | -0.2268
+  CXVJewdc79TY | 1781685393 | 1781749874 | -0.1652
+  DVhwSE98dHBt | 1781751596 | 1781751684 | 0.4872 
+  5q8osC4CZRMf | 1781752321 | 1781752468 | 0.54   
+  D75Mdf6bAmNq | 1781752469 | 1781752744 | -0.1963
+  5wTqTAZSGWu9 | 1781752772 | 1781752953 | -0.1876
+  D5aVEvANr2uj | 1781722978 | 1781752994 | -0.5094
+  5wTqTAZSGWu9 | 1781752997 | 1781753262 | 0.5429 
+  6QvGE3rHDmXk | 1781753383 | 1781753433 | -0.1698
+  785cAWNP2Y4B | 1781753468 | 1781753638 | -0.1848
+  2mRn8wtkcxZc | 1781752210 | 1781753797 | -0.2246
+  5pJ2icRDUhmN | 1781753675 | 1781754245 | -0.3798
+  CvTPH1CxTU2A | 1781754252 | 1781754291 | -0.2409
+  ByHUUDmUiAkk | 1781754308 | 1781754432 | -0.1862
+  9pDr8if5s4JQ | 1781754485 | 1781754581 | 0.5997 
+  3ricXXziD22s | 1781757735 | 1781758770 | -0.2452
+  2bVqHKY1EDgc | 1781747642 | 1781766116 | 0.488  
+  8QwYYkzuDwh3 | 1781766225 | 1781766446 | -0.175 
+  DNio5ketGczp | 1781771475 | 1781771681 | -0.1681
+  2HJMgsEqKrcR | 1781641636 | 1781779807 | -0.1726
+  3ricXXziD22s | 1781768978 | 1781781325 | -0.1728
+  57YFGs6GXT3X | 1781780476 | 1781782535 | -0.484 
+  57YFGs6GXT3X | 1781781681 | 1781782693 | -0.1802
+  9SHHN4YyEW6E | 1781783060 | 1781784654 | 0.5143 
+  57YFGs6GXT3X | 1781784919 | 1781785037 | -0.1756
+  DVhwSE98dHBt | 1781785078 | 1781785758 | -0.1913
+  57YFGs6GXT3X | 1781785860 | 1781786503 | 0.5075 
+  DNio5ketGczp | 1781772518 | 1781786664 | -0.1892
+  57YFGs6GXT3X | 1781786798 | 1781788656 | -0.1939
+  HiXshSa6CfML | 1781789036 | 1781789140 | -0.4979
+  DSKEyfEeTymH | 1781783537 | 1781791495 | -0.1672
+  785cAWNP2Y4B | 1781786834 | 1781792911 | -0.4676
+  5q8osC4CZRMf | 1781792708 | 1781792957 | -0.1664
+  GemryuWS7qwe | 1781792978 | 1781793927 | -0.2036
+  DVhwSE98dHBt | 1781793753 | 1781794007 | 0.8227 
+  2mRn8wtkcxZc | 1781794025 | 1781794188 | -0.1729
+  B6yHBbrfZVxw | 1781794199 | 1781794267 | 0.4908 
+  D5aVEvANr2uj | 1781793984 | 1781794914 | 0.7903 
+  GemryuWS7qwe | 1781794986 | 1781795499 | -0.1941
+  5H5upChfAGSW | 1781795518 | 1781795576 | -0.2073
+  8QwYYkzuDwh3 | 1781673210 | 1781795663 | -0.17  
+  5H5upChfAGSW | 1781795699 | 1781795736 | -0.227 
+  5H5upChfAGSW | 1781795736 | 1781795920 | -0.2217
+  6svp2aaiJ7Dm | 1781797656 | 1781797826 | -0.1834
+  8QwYYkzuDwh3 | 1781766537 | 1781797954 | 0.5477 
+  5q8osC4CZRMf | 1781798463 | 1781799428 | -0.4099
+  6svp2aaiJ7Dm | 1781797606 | 1781799741 | -0.1736
+  6VJtUNc2uYwx | 1781799896 | 1781800163 | -0.497 
+  EYDjJhT8tEQ2 | 1781799686 | 1781804298 | 0.5149 
+  GemryuWS7qwe | 1781804307 | 1781805046 | -0.2059
+  3ricXXziD22s | 1781801623 | 1781805102 | -0.1777
+  GemryuWS7qwe | 1781805236 | 1781805993 | -0.1743
+  GemryuWS7qwe | 1781806005 | 1781806027 | -0.1883
+  GemryuWS7qwe | 1781806225 | 1781806319 | -0.1876
+  GemryuWS7qwe | 1781806319 | 1781806407 | -0.2046
+  9SHHN4YyEW6E | 1781806177 | 1781807308 | -0.212 
+  7TiAUgZdLMN4 | 1781807749 | 1781809144 | -0.178 
+  DNio5ketGczp | 1781587041 | 1781813839 | -0.2069
+  BdQjY2iBXu14 | 1781813899 | 1781814759 | -0.184 
+  57YFGs6GXT3X | 1781814944 | 1781814968 | -0.2573
+  6kB7jtaZjPM2 | 1781814983 | 1781815018 | -0.4931
+  6kB7jtaZjPM2 | 1781815885 | 1781815940 | -0.1805
+  6kB7jtaZjPM2 | 1781815990 | 1781816018 | -0.4692
+  2HJMgsEqKrcR | 1781816893 | 1781817272 | -0.4978
+  5q8osC4CZRMf | 1781817420 | 1781818468 | 0.495  
+  57YFGs6GXT3X | 1781818621 | 1781819305 | 0.4978 
+  6svp2aaiJ7Dm | 1781565751 | 1781819705 | -0.1695
+  8nqtxpFpuXwf | 1781819780 | 1781820875 | -0.1729
+  2fHT9wBhywYo | 1781656917 | 1781821347 | 0.5098 
+  BdQjY2iBXu14 | 1781819387 | 1781821664 | -0.1874
+  EykXzf1WsFD4 | 1781822013 | 1781823248 | -0.1964
+  2HJMgsEqKrcR | 1781823250 | 1781830514 | -0.197 
+  DVhwSE98dHBt | 1781831659 | 1781831881 | 0.5114 
+  2mRn8wtkcxZc | 1781832256 | 1781832930 | -0.2839
+  8nqtxpFpuXwf | 1781832931 | 1781832959 | -0.1657
+  2mRn8wtkcxZc | 1781832968 | 1781832986 | -0.2831
+  8QwYYkzuDwh3 | 1781794359 | 1781833159 | 0.8132 
+  7gdo83WqcXvo | 1781832996 | 1781835223 | -0.2007
+  8nqtxpFpuXwf | 1781820923 | 1781839064 | -0.1696
+  DcQKToPywy64 | 1781835608 | 1781841440 | -0.1673
+  9pDr8if5s4JQ | 1781841444 | 1781842170 | 0.5316 
+  3wrx9AZjygVg | 1781842179 | 1781842591 | -0.201 
+  GYAVBLqXF35F | 1781842759 | 1781844554 | -0.3867
+  ByHUUDmUiAkk | 1781844569 | 1781844598 | -0.4674
+  2f4e7c2f6hXy | 1781844602 | 1781844721 | -0.1761
+  2f4e7c2f6hXy | 1781844723 | 1781844953 | 0.4894 
+  2fHT9wBhywYo | 1781806533 | 1781849342 | -0.17  
+  8eEnpRvWM1Vv | 1781839119 | 1781852911 | -0.1736
+  HM5iEcL9h13E | 1781661530 | 1781866025 | -0.4794
+  DcQKToPywy64 | 1781844963 | 1781867378 | -0.1697
+  5aXbFCpg5f14 | 1781867473 | 1781868231 | 0.8907 
+  HM5iEcL9h13E | 1781868239 | 1781868545 | 0.504  
+  3wrx9AZjygVg | 1781866278 | 1781869106 | 0.5422 
+  E8B7Edi7khro | 1781858306 | 1781871539 | 0.5835 
+  57YFGs6GXT3X | 1781871747 | 1781871931 | -0.2899
+  HdEdRF4kucfv | 1781871933 | 1781872066 | -0.227 
+  Ay1pyfhZX7SV | 1781872066 | 1781872392 | -0.1882
+  DcQKToPywy64 | 1781834029 | 1781873245 | 0.5243 
+  2fHT9wBhywYo | 1781638820 | 1781873965 | -0.1671
+  2fHT9wBhywYo | 1781874210 | 1781874234 | -0.3704
+  HV4cjkteGZ5g | 1781874581 | 1781874828 | -0.499 
+  5hYsHp8HWFgy | 1781874849 | 1781875474 | -0.1858
+  CXVJewdc79TY | 1781875492 | 1781875702 | -0.2048
+  7TiAUgZdLMN4 | 1781869137 | 1781876641 | 0.6151 
+  C4eNLxxC7XLU | 1781877826 | 1781877856 | -0.1962
+  CHvWpTWTZXUM | 1781878139 | 1781878304 | -0.1809
+  9pDr8if5s4JQ | 1781872422 | 1781880168 | -0.2603
+  GqEVzdHH4RGq | 1781880976 | 1781881008 | -0.172 
+  7bTsRggGmDjD | 1781878641 | 1781881892 | 0.5296 
+  C4eNLxxC7XLU | 1781881814 | 1781883238 | -0.18  
+  GqEVzdHH4RGq | 1781883373 | 1781883413 | 0.5299 
+  B6yHBbrfZVxw | 1781876812 | 1781896419 | 1.2098 
+  Ex3BcKVGbNVQ | 1781882595 | 1781896430 | -0.4974
+  2mRn8wtkcxZc | 1781897379 | 1781898163 | -0.2129
+  AE7neeVw9NFw | 1781671473 | 1781903108 | 0.4917 
+  2fHT9wBhywYo | 1781634034 | 1781903238 | -0.1662
+  7bTsRggGmDjD | 1781901168 | 1781903910 | 0.5317 
+  2fHT9wBhywYo | 1781874779 | 1781905285 | -0.1729
+  B6yHBbrfZVxw | 1781906398 | 1781906426 | 0.7093 
+  2fHT9wBhywYo | 1781695660 | 1781906539 | -0.1688
+  6svp2aaiJ7Dm | 1781907936 | 1781908314 | -0.17  
+  D5aVEvANr2uj | 1781910221 | 1781910348 | -0.1963
+  GqEVzdHH4RGq | 1781910896 | 1781910956 | -0.4321
+  4WJqRgkVdpM4 | 1781910693 | 1781911796 | 0.5757 
+  44kdzNHg3XTF | 1781912047 | 1781914164 | -0.1925
+  CQTc3FxSukLQ | 1781914185 | 1781914705 | -0.1658
+  5aXbFCpg5f14 | 1781908412 | 1781914814 | 0.4947 
+  3ricXXziD22s | 1781915324 | 1781915533 | -0.1766
+  3ricXXziD22s | 1781915534 | 1781915586 | -0.2805
+  3ricXXziD22s | 1781915586 | 1781915783 | -0.2181
+  DNio5ketGczp | 1781915015 | 1781916057 | -0.2111
+  B6yHBbrfZVxw | 1781824968 | 1781918440 | 0.5243 
+  E8B7Edi7khro | 1781918026 | 1781918742 | -0.1661
+  HdEdRF4kucfv | 1781900151 | 1781947961 | -0.1982
+  4RDNo5BBAjQh | 1781913769 | 1781949552 | 0.535  
+  2fHT9wBhywYo | 1780859578 | 1781957574 | 0.076  
+  5q8osC4CZRMf | 1780882072 | 1781957574 | -0.0677
+  5q8osC4CZRMf | 1780882073 | 1781957575 | -0.0395
+  2HJMgsEqKrcR | 1781062879 | 1781957579 | -0.0521
+  8QwYYkzuDwh3 | 1781162869 | 1781957582 | -0.1323
+  6svp2aaiJ7Dm | 1781203929 | 1781957584 | -0.0381
+  8QwYYkzuDwh3 | 1781272435 | 1781957585 | -0.0922
+  8QwYYkzuDwh3 | 1781284369 | 1781957586 | -0.069 
+  Ex3BcKVGbNVQ | 1781291876 | 1781957587 | -0.0119
+  572gijC9dnNi | 1781343232 | 1781957591 | -0.0802
+  2f4e7c2f6hXy | 1781355654 | 1781957591 | -0.0079
+  BtHnhjh8Ta2v | 1781480645 | 1781957593 | -0.1196
+  8QwYYkzuDwh3 | 1781548798 | 1781957594 | -0.0853
+  2zBWFYhhi28v | 1781554173 | 1781957595 | -0.0094
+  6svp2aaiJ7Dm | 1781564158 | 1781957596 | 0.125  
+  2fHT9wBhywYo | 1781577622 | 1781957597 | -0.0205
+  4JCSAmBTeWnE | 1781623307 | 1781957597 | 0.0105 
+  2fHT9wBhywYo | 1781638528 | 1781957598 | 0.1039 
+  9SHHN4YyEW6E | 1781674282 | 1781957598 | 0.2571 
+  CHvWpTWTZXUM | 1781656552 | 1781957599 | 0.1587 
+  2HJMgsEqKrcR | 1781667578 | 1781957600 | -0.1143
+  8QwYYkzuDwh3 | 1781670143 | 1781957600 | -0.1402
+  2HJMgsEqKrcR | 1781685835 | 1781957601 | -0.0696
+  67s27NTHJpT9 | 1781729784 | 1781957603 | -0.1378
+  67s27NTHJpT9 | 1781753014 | 1781957604 | -0.1419
+  2HJMgsEqKrcR | 1781762101 | 1781957604 | -0.1067
+  9SHHN4YyEW6E | 1781767790 | 1781957605 | -0.016 
+  HiXshSa6CfML | 1781789146 | 1781957606 | -0.0944
+  2tJg6hV95yss | 1781798328 | 1781957606 | -0.1097
+  5H5upChfAGSW | 1781809280 | 1781957607 | -0.0209
+  DNio5ketGczp | 1781850971 | 1781957610 | -0.1539
+  618gbvXjdQKh | 1781868576 | 1781957611 | 0.2599 
+  2fHT9wBhywYo | 1781908762 | 1781957614 | -0.0002
+  7bTsRggGmDjD | 1781911558 | 1781957614 | -0.0388
+  2HJMgsEqKrcR | 1781919367 | 1781957615 | -0.1196
+  2fHT9wBhywYo | 1781919836 | 1781957615 | -0.0586
+  2HJMgsEqKrcR | 1781920056 | 1781957616 | -0.1199
+  2HJMgsEqKrcR | 1781922058 | 1781957616 | 0.1521 
+  HdEdRF4kucfv | 1781957677 | 1781957703 | -0.1898
+  BZoJp596zygH | 1781957577 | 1781958006 | 0.6428 
+  HdEdRF4kucfv | 1781958015 | 1781958384 | -0.209 
+  785cAWNP2Y4B | 1781958499 | 1781958660 | -0.4089
+  HdEdRF4kucfv | 1781958019 | 1781958736 | -0.1784
+  B6yHBbrfZVxw | 1781960296 | 1781960388 | -0.1799
+  HdEdRF4kucfv | 1781958467 | 1781961214 | -0.2063
+  CXVJewdc79TY | 1781961481 | 1781963715 | -0.167 
+  5q8osC4CZRMf | 1781964803 | 1781965546 | 0.5432 
+  CXVJewdc79TY | 1781958284 | 1781966146 | 0.5229 
+  2fHT9wBhywYo | 1781963387 | 1781966867 | -0.1683
+  2fHT9wBhywYo | 1781966584 | 1781967124 | -0.173 
+  BB31SXh9AhDe | 1781966900 | 1781967197 | -0.2004
+  7bTsRggGmDjD | 1781966122 | 1781967300 | 0.5723 
+  HdEdRF4kucfv | 1781967135 | 1781967996 | -0.1889
+  GemryuWS7qwe | 1781965610 | 1781968518 | -0.2819
+  DcQKToPywy64 | 1781958144 | 1781968550 | -0.1748
+  HV4cjkteGZ5g | 1781968575 | 1781968998 | -0.1845
+  CQTc3FxSukLQ | 1781968497 | 1781969000 | -0.1694
+  42YtP9yQveq3 | 1781970048 | 1781970272 | -0.4963
+  CvhUR9GTbMFK | 1781967889 | 1781970397 | -0.1876
+  5q8osC4CZRMf | 1781970968 | 1781971144 | -0.261 
+  7bTsRggGmDjD | 1781968475 | 1781972395 | -0.1956
+  HdEdRF4kucfv | 1781968674 | 1781972494 | -0.1714
+  3ricXXziD22s | 1781971171 | 1781974069 | 0.5795 
+  2fHT9wBhywYo | 1781972984 | 1781974269 | -0.194 
+  5q8osC4CZRMf | 1781973546 | 1781975063 | 0.554  
+  CTuMDfnkJ9jY | 1781975216 | 1781975723 | 0.5986 
+  4RDNo5BBAjQh | 1781975185 | 1781975870 | 0.5236 
+  7bTsRggGmDjD | 1781969495 | 1781976019 | -0.2156
+  SMACxb87aVzX | 1781960751 | 1781977420 | -0.1716
+  CTuMDfnkJ9jY | 1781977454 | 1781977785 | -0.2331
+  CTuMDfnkJ9jY | 1781977842 | 1781978247 | -0.1772
+  6utMS2SBujdv | 1781950157 | 1781978969 | -0.0505
+  GemryuWS7qwe | 1781975116 | 1781978971 | -0.2327
+  57YFGs6GXT3X | 1781951623 | 1781980446 | -0.0317
+  BZoJp596zygH | 1781980120 | 1781981755 | 0.5068 
+  Dxd7vVTi7L5a | 1781981450 | 1781981905 | -0.1758
+  5q8osC4CZRMf | 1781983760 | 1781984257 | -0.1737
+  CTuMDfnkJ9jY | 1781982134 | 1781984577 | -0.3113
+  GemryuWS7qwe | 1781984305 | 1781985204 | -0.3191
+  5H5upChfAGSW | 1781985468 | 1781985514 | -0.3859
+  2fHT9wBhywYo | 1781985500 | 1781985561 | -0.1855
+  2o9UsXTRWZTf | 1781985678 | 1781985837 | -0.1827
+  2o9UsXTRWZTf | 1781985882 | 1781986162 | -0.2044
+  CXVJewdc79TY | 1781977911 | 1781986311 | 0.5158 
+  DcQKToPywy64 | 1781986417 | 1781986789 | -0.1768
+  5q8osC4CZRMf | 1781986315 | 1781987038 | 0.5611 
+  DcQKToPywy64 | 1781958385 | 1781987206 | -0.0345
+  2fHT9wBhywYo | 1781987352 | 1781987634 | -0.1749
+  Dxd7vVTi7L5a | 1781983397 | 1781988383 | 0.4855 
+  829uKc52EfcH | 1781987066 | 1781990835 | -0.2258
+  4RDNo5BBAjQh | 1781987580 | 1781991513 | -0.1784
+  5q8osC4CZRMf | 1781991770 | 1781991788 | -0.1711
+  7bTsRggGmDjD | 1781981486 | 1781992011 | -0.1772
+  8QwYYkzuDwh3 | 1781964343 | 1781993162 | -0.1117
+  6T7ucfgJ7f5L | 1781992176 | 1781993189 | -0.1784
+  2HJMgsEqKrcR | 1781992303 | 1781994067 | -0.2024
+  6utMS2SBujdv | 1781994217 | 1781994397 | -0.1709
+  Ay1pyfhZX7SV | 1781994755 | 1781994777 | -0.2013
+  Ay1pyfhZX7SV | 1781994780 | 1781994801 | -0.3724
+  7bTsRggGmDjD | 1781994173 | 1781995128 | -0.1716
+  6T7ucfgJ7f5L | 1781993365 | 1781995395 | 0.5023 
+  5q8osC4CZRMf | 1781993686 | 1781995549 | 0.533  
+  6utMS2SBujdv | 1781994508 | 1781996028 | 0.5084 
+  5jrZWWRHydQs | 1781994136 | 1781996078 | -0.1658
+  CVLyQA7BxhBa | 1781996078 | 1781996747 | 0.5788 
+  BdQjY2iBXu14 | 1781995802 | 1781996828 | 0.4852 
+  8eEnpRvWM1Vv | 1781996929 | 1781997605 | -0.1822
+  6T7ucfgJ7f5L | 1781997537 | 1781997858 | -0.1884
+  D5aVEvANr2uj | 1781996756 | 1781998008 | -0.1708
+  CHvWpTWTZXUM | 1781994238 | 1781998084 | 0.5177 
+  5aXbFCpg5f14 | 1781987578 | 1781998237 | 0.4891 
+  HdEdRF4kucfv | 1781975531 | 1781998703 | -0.1808
+  GvbttFjLD6yp | 1781998740 | 1781999072 | -0.1968
+  5KcqJ7NFA9Ro | 1782000325 | 1782000501 | 0.5572 
+  HV4cjkteGZ5g | 1781999105 | 1782000648 | -0.1938
+  SMACxb87aVzX | 1781999970 | 1782001574 | -0.1791
+  D5aVEvANr2uj | 1782001242 | 1782001848 | 0.507  
+  3ricXXziD22s | 1782001886 | 1782002524 | -0.1685
+  5H5upChfAGSW | 1782001897 | 1782003023 | -0.1659
+  7qFB5H9LSrVq | 1781994797 | 1782004973 | 0.5404 
+  5aXbFCpg5f14 | 1782004799 | 1782005076 | -0.1974
+  3ricXXziD22s | 1782002839 | 1782006126 | -0.2175
+  5jrZWWRHydQs | 1782003203 | 1782006251 | -0.1714
+  7bTsRggGmDjD | 1781977521 | 1782006324 | -0.0864
+  Ex3BcKVGbNVQ | 1782007140 | 1782007879 | -0.1783
+  44kdzNHg3XTF | 1782006610 | 1782007930 | -0.1677
+  HdEdRF4kucfv | 1782007833 | 1782008180 | -0.1898
+  Ay1pyfhZX7SV | 1782007957 | 1782008382 | -0.1652
+  2fHT9wBhywYo | 1782002961 | 1782008453 | 0.5605 
+  6svp2aaiJ7Dm | 1782007863 | 1782008580 | -0.1815
+  BtHnhjh8Ta2v | 1782006590 | 1782009179 | -0.1704
+  3iZG5TLva2N8 | 1782008965 | 1782009256 | 0.5318 
+  5wTqTAZSGWu9 | 1782009279 | 1782009382 | -0.2055
+  4sRjm252FQfr | 1782009397 | 1782009432 | 0.813  
+  7EdtVGg547L4 | 1782009513 | 1782009903 | 0.5167 
+  4sRjm252FQfr | 1782010184 | 1782011079 | 0.5735 
+  6svp2aaiJ7Dm | 1782009681 | 1782011881 | -0.5081
+  2fHT9wBhywYo | 1782009163 | 1782012907 | -0.1678
+  Dxd7vVTi7L5a | 1781984377 | 1782013178 | -0.0519
+  AiXHpHjKyCfA | 1782011111 | 1782013739 | 0.4909 
+  DSKEyfEeTymH | 1782014165 | 1782014197 | 0.8062 
+  3wrx9AZjygVg | 1782013866 | 1782014264 | -0.1868
+  3ricXXziD22s | 1782014202 | 1782014519 | -0.1733
+  785cAWNP2Y4B | 1782009597 | 1782016564 | -0.1669
+  2rGrt1xDYwWy | 1782014310 | 1782016838 | -0.2057
+  4RDNo5BBAjQh | 1782011749 | 1782017190 | -0.1735
+  DcQKToPywy64 | 1781990287 | 1782019111 | 0.0616 
+  2HJMgsEqKrcR | 1781990539 | 1782019361 | -0.0234
+  GYAVBLqXF35F | 1782017862 | 1782019763 | -0.1729
+  6eqES3ebBsku | 1781992099 | 1782020912 | -0.1081
+  BuWG6b9AeK1K | 1782020481 | 1782021214 | -0.1873
+  DcQKToPywy64 | 1782009990 | 1782021439 | -0.1926
+  GPLaq69B6RiU | 1781993039 | 1782021863 | -0.019 
+  D75Mdf6bAmNq | 1782021232 | 1782022589 | -0.1866
+  3ricXXziD22s | 1782023720 | 1782024143 | 0.4905 
+  5KcqJ7NFA9Ro | 1781996677 | 1782025491 | -0.0643
+  5NtbUJgmvXib | 1782022623 | 1782026094 | 0.5589 
+  AiXHpHjKyCfA | 1782026226 | 1782026247 | 0.7238 
+  Bdbq3LHqh7xH | 1782026255 | 1782026273 | -0.3936
+  BuWG6b9AeK1K | 1782026360 | 1782026370 | -0.2816
+  2HJMgsEqKrcR | 1782031831 | 1782032050 | -0.1782
+  DVhwSE98dHBt | 1782031626 | 1782032225 | -0.1686
+  2fHT9wBhywYo | 1782005917 | 1782034722 | 0.0241 
+  HdEdRF4kucfv | 1782008459 | 1782037275 | 0.008  
+  5KcqJ7NFA9Ro | 1782008619 | 1782037425 | -0.085 
+  BtHnhjh8Ta2v | 1782011609 | 1782040429 | -0.1646
+  E8B7Edi7khro | 1782031269 | 1782040780 | -0.187 
+  4RDNo5BBAjQh | 1782013219 | 1782042030 | 0.0173 
+  785cAWNP2Y4B | 1782042247 | 1782042765 | -0.5084
+  DVhwSE98dHBt | 1782041860 | 1782047101 | -0.203 
+  HdEdRF4kucfv | 1782046572 | 1782047301 | 0.5347 
+  2fHT9wBhywYo | 1782019031 | 1782047845 | 0.1209 
+  DcQKToPywy64 | 1782038866 | 1782049123 | -0.1814
+  Ev7kp4NfhVjv | 1782046402 | 1782049124 | -0.1823
+  2fHT9wBhywYo | 1782021945 | 1782050747 | -0.0925
+  B6yHBbrfZVxw | 1782051362 | 1782051552 | -0.1731
+  HdEdRF4kucfv | 1782051739 | 1782051829 | -0.2257
+  DVhwSE98dHBt | 1782051705 | 1782051978 | -0.1808
+  DVhwSE98dHBt | 1782052810 | 1782052905 | 0.6156 
+  Ay1pyfhZX7SV | 1782053024 | 1782053581 | -0.297 
+  HdEdRF4kucfv | 1782054105 | 1782054580 | -0.2292
+  2f4e7c2f6hXy | 1782026470 | 1782055278 | 0.2464 
+  5hYsHp8HWFgy | 1782056114 | 1782056358 | 0.6763 
+  5H5upChfAGSW | 1782057410 | 1782057909 | 0.5052 
+  8eEnpRvWM1Vv | 1782053986 | 1782058033 | -0.2113
+  5hYsHp8HWFgy | 1782056436 | 1782058083 | -0.1863
+  AYXW3wur6D9q | 1782033037 | 1782058423 | -0.1793
+  Gx6ASCBmUg5i | 1782056100 | 1782058426 | -0.1672
+  SMACxb87aVzX | 1782059093 | 1782059367 | -0.1757
+  SMACxb87aVzX | 1782059382 | 1782059994 | -0.2378
+  CTuMDfnkJ9jY | 1782060100 | 1782060460 | -0.2233
+  SMACxb87aVzX | 1782060248 | 1782060914 | 0.5738 
+  HdEdRF4kucfv | 1782058064 | 1782061187 | -0.1848
+  DNio5ketGczp | 1782033014 | 1782061832 | -0.0838
+  CTuMDfnkJ9jY | 1782060960 | 1782062186 | -0.1826
+  AYXW3wur6D9q | 1782036646 | 1782062985 | -0.1703
+  HDeRTCPU5Fr2 | 1782056824 | 1782063710 | 0.4934 
+  2fHT9wBhywYo | 1782035044 | 1782063858 | -0.0246
+  5q8osC4CZRMf | 1782064352 | 1782064366 | -0.311 
+  CTuMDfnkJ9jY | 1782035576 | 1782064383 | -0.1062
+  Ay1pyfhZX7SV | 1782064396 | 1782065336 | 0.5246 
+  E8B7Edi7khro | 1782066145 | 1782066564 | -0.3411
+  HDeRTCPU5Fr2 | 1782061477 | 1782066637 | 0.5123 
+  7bTsRggGmDjD | 1782065646 | 1782066963 | -0.1854
+  HDeRTCPU5Fr2 | 1782061926 | 1782067464 | -0.4754
+  Gx6ASCBmUg5i | 1782060109 | 1782067888 | -0.1691
+  Gx6ASCBmUg5i | 1782067899 | 1782068488 | -0.1674
+  BtHnhjh8Ta2v | 1782068748 | 1782069266 | 0.6137 
+  7gdo83WqcXvo | 1782069202 | 1782069469 | -0.1721
+  8eEnpRvWM1Vv | 1782040824 | 1782069637 | -0.0508
+  CvhUR9GTbMFK | 1782069507 | 1782069816 | -0.1926
+  CvhUR9GTbMFK | 1782069858 | 1782069966 | -0.1824
+  Ev7kp4NfhVjv | 1782041735 | 1782070538 | -0.0297
+  9sWV3hbngUA8 | 1782070642 | 1782070671 | -0.2271
+  BtHnhjh8Ta2v | 1782070269 | 1782070992 | -0.1716
+  2HJMgsEqKrcR | 1782070849 | 1782071093 | 0.512  
+  57YFGs6GXT3X | 1782071241 | 1782071423 | 0.5725 
+  2HJMgsEqKrcR | 1782071503 | 1782071999 | -0.1671
+  8QwYYkzuDwh3 | 1782071727 | 1782072851 | -0.1717
+  BtHnhjh8Ta2v | 1782073078 | 1782073326 | -0.1738
+  9sWV3hbngUA8 | 1782070775 | 1782074627 | -0.1656
+  7bTsRggGmDjD | 1782063467 | 1782075076 | -0.1653
+  CTuMDfnkJ9jY | 1782047109 | 1782075924 | -0.0032
+  2fHT9wBhywYo | 1782074554 | 1782075982 | -0.1855
+  7qFB5H9LSrVq | 1782074917 | 1782076529 | -0.1819
+  2fHT9wBhywYo | 1782048915 | 1782077726 | 0.0921 
+  HdEdRF4kucfv | 1782056067 | 1782077876 | -0.1655
+  7bTsRggGmDjD | 1782069230 | 1782079054 | -0.1707
+  2o9UsXTRWZTf | 1782079858 | 1782079881 | -0.1814
+  DNio5ketGczp | 1782067576 | 1782081153 | -0.1878
+  DVhwSE98dHBt | 1782080483 | 1782081385 | -0.2053
+  9LxMdvs1m8QR | 1782081935 | 1782082710 | -0.1727
+  6utMS2SBujdv | 1782081760 | 1782082960 | 0.568  
+  DNio5ketGczp | 1782084214 | 1782084239 | -0.1872
+  Ev7kp4NfhVjv | 1782084264 | 1782084311 | -0.1948
+  2zBWFYhhi28v | 1782071577 | 1782086056 | -0.1663
+  Ev7kp4NfhVjv | 1782086465 | 1782089284 | -0.2403
+  Duff5DrPX734 | 1782089859 | 1782090433 | -0.1766
+  Ev7kp4NfhVjv | 1782090436 | 1782091507 | -0.1872
+  CTuMDfnkJ9jY | 1782076470 | 1782093328 | 0.5288 
+  6FYgn2apNXSq | 1782090636 | 1782095385 | -0.1825
+  5q8osC4CZRMf | 1782094991 | 1782095639 | -0.2296
+  HdEdRF4kucfv | 1782095693 | 1782095841 | -0.2242
+  9LxMdvs1m8QR | 1782067057 | 1782095879 | 0.2331 
+  Gx6ASCBmUg5i | 1782084406 | 1782096435 | -0.185 
+  6FYgn2apNXSq | 1782094663 | 1782096466 | 0.4902 
+  2fHT9wBhywYo | 1782068257 | 1782097080 | -0.1574
+  3eSWPw7xqEYH | 1782096392 | 1782097541 | -0.5034
+  2fHT9wBhywYo | 1782068745 | 1782097555 | -0.0367
+  HdEdRF4kucfv | 1782097458 | 1782097913 | -0.2079
+  6FYgn2apNXSq | 1782094540 | 1782098142 | -0.1845
+  7bTsRggGmDjD | 1782087415 | 1782098864 | -0.2426
+  DNio5ketGczp | 1782071521 | 1782100332 | 0.1977 
+  5aXbFCpg5f14 | 1782080820 | 1782100510 | 0.5155 
+  HDeRTCPU5Fr2 | 1782101112 | 1782101169 | -0.4925
+  8eEnpRvWM1Vv | 1782095439 | 1782101565 | 0.4935 
+  6svp2aaiJ7Dm | 1782102348 | 1782102895 | -0.1685
+  CvTPH1CxTU2A | 1782103635 | 1782103678 | -0.4946
+  6svp2aaiJ7Dm | 1782097922 | 1782104269 | 0.5035 
+  6FYgn2apNXSq | 1782102821 | 1782104797 | 0.5031 
+  4RDNo5BBAjQh | 1782091983 | 1782104820 | -0.1796
+  2fHT9wBhywYo | 1782076310 | 1782105112 | -0.0624
+  2o9UsXTRWZTf | 1782078857 | 1782107666 | -0.0557
+  2o9UsXTRWZTf | 1782079812 | 1782108617 | -0.1368
+  2o9UsXTRWZTf | 1782079832 | 1782108642 | -0.1069
+  2o9UsXTRWZTf | 1782079921 | 1782108742 | -0.1531
+  2o9UsXTRWZTf | 1782079958 | 1782108767 | -0.015 
+  2o9UsXTRWZTf | 1782079964 | 1782108767 | -0.0327
+  2o9UsXTRWZTf | 1782079976 | 1782108792 | -0.1077
+  2o9UsXTRWZTf | 1782080067 | 1782108892 | -0.0906
+  7bTsRggGmDjD | 1782080432 | 1782109242 | -0.007 
+  7bTsRggGmDjD | 1782080456 | 1782109267 | -0.0501
+  GqEVzdHH4RGq | 1782104303 | 1782110251 | 0.5292 
+  785cAWNP2Y4B | 1782106474 | 1782110803 | -0.5021
+  HDeRTCPU5Fr2 | 1782111228 | 1782111584 | 0.4936 
+  5KcqJ7NFA9Ro | 1782102542 | 1782112327 | 0.5522 
+  785cAWNP2Y4B | 1782103825 | 1782113352 | 0.5171 
+  6FYgn2apNXSq | 1782105938 | 1782113405 | 0.5228 
+  5wTqTAZSGWu9 | 1782112206 | 1782113532 | 0.5023 
+  ByHUUDmUiAkk | 1782110616 | 1782115954 | 0.5745 
+  6svp2aaiJ7Dm | 1782115289 | 1782116309 | -0.1679
+  5q8osC4CZRMf | 1782114187 | 1782117635 | 0.5029 
+  3iZG5TLva2N8 | 1782118858 | 1782119834 | -0.1818
+  6thKzh1NhiPM | 1782091107 | 1782119926 | -0.1171
+  5tFU5AW3qb3f | 1782116632 | 1782120365 | -0.1738
+  6FYgn2apNXSq | 1782109657 | 1782120934 | -0.1832
+  6FYgn2apNXSq | 1782100597 | 1782121483 | -0.1669
+  6FYgn2apNXSq | 1782093638 | 1782122480 | 0.2842 
+  5aXbFCpg5f14 | 1782121460 | 1782122656 | 0.5685 
+  6FYgn2apNXSq | 1782094236 | 1782123081 | -0.1307
+  D5aVEvANr2uj | 1782117120 | 1782123659 | 0.4926 
+  3iZG5TLva2N8 | 1782124069 | 1782124092 | -0.1674
+  6FYgn2apNXSq | 1782095445 | 1782124256 | 0.0579 
+  3iZG5TLva2N8 | 1782124490 | 1782124913 | -0.1892
+  5wTqTAZSGWu9 | 1782122837 | 1782125298 | -0.1653
+  E8B7Edi7khro | 1782125756 | 1782125776 | -0.2081
+  6FYgn2apNXSq | 1782097116 | 1782125932 | 0.0443 
+  6FYgn2apNXSq | 1782097246 | 1782126057 | -0.0258
+  6FYgn2apNXSq | 1782097300 | 1782126107 | -0.0026
+  E8B7Edi7khro | 1782126008 | 1782126527 | 0.5617 
+  6FYgn2apNXSq | 1782097839 | 1782126657 | -0.0688
+  6FYgn2apNXSq | 1782120153 | 1782127495 | -0.1662
+  6FYgn2apNXSq | 1782098915 | 1782127733 | 0.0391 
+  6FYgn2apNXSq | 1782098977 | 1782127783 | -0.075 
+  6FYgn2apNXSq | 1782099040 | 1782127858 | 0.0015 
+  6FYgn2apNXSq | 1782099404 | 1782128208 | -0.0211
+  6FYgn2apNXSq | 1782117695 | 1782128442 | -0.1691
+  6thKzh1NhiPM | 1782100078 | 1782128884 | 0.0992 
+  4sRjm252FQfr | 1782125178 | 1782129361 | -0.1713
+  6FYgn2apNXSq | 1782115477 | 1782129614 | -0.1678
+  6FYgn2apNXSq | 1782100838 | 1782129659 | 0.0261 
+  GPLaq69B6RiU | 1782118805 | 1782130068 | -0.175 
+  6svp2aaiJ7Dm | 1782129556 | 1782130172 | -0.1662
+  2f4e7c2f6hXy | 1782128782 | 1782131549 | 0.4873 
+  4sRjm252FQfr | 1782129959 | 1782131789 | 0.4901 
+  6FYgn2apNXSq | 1782120938 | 1782132262 | -0.1769
+  BdQjY2iBXu14 | 1782131350 | 1782132275 | -0.1925
+  6FYgn2apNXSq | 1782109836 | 1782133421 | -0.1957
+  6FYgn2apNXSq | 1782105042 | 1782133844 | -0.1129
+  3wrx9AZjygVg | 1782134088 | 1782134168 | -0.166 
+  6FYgn2apNXSq | 1782105457 | 1782134296 | 0.1207 
+  6FYgn2apNXSq | 1782115417 | 1782134804 | -0.1864
+  CXVJewdc79TY | 1782106024 | 1782134826 | -0.0593
+  6FYgn2apNXSq | 1782113975 | 1782135128 | -0.167 
+  6FYgn2apNXSq | 1782106778 | 1782135602 | 0.2804 
+  6FYgn2apNXSq | 1782118774 | 1782135756 | -0.1652
+  8QwYYkzuDwh3 | 1782135945 | 1782135970 | -0.1702
+  DVhwSE98dHBt | 1782136014 | 1782136146 | -0.2174
+  6FYgn2apNXSq | 1782107555 | 1782136379 | -0.0076
+  6utMS2SBujdv | 1782136148 | 1782136471 | -0.2407
+  6FYgn2apNXSq | 1782129939 | 1782137263 | -0.2758
+  6utMS2SBujdv | 1782136488 | 1782137520 | -0.1976
+  5q8osC4CZRMf | 1782137082 | 1782137570 | -0.1925
+  GemryuWS7qwe | 1782137594 | 1782137719 | -0.1882
+  5q8osC4CZRMf | 1782138375 | 1782138510 | -0.1662
+  72Sz3SxcHyTt | 1782138531 | 1782138574 | -0.2237
+  46ojZjmvYCzg | 1782138581 | 1782138750 | -0.2426
+  GemryuWS7qwe | 1782137766 | 1782138879 | 0.6052 
+  HntvSoXq7CxH | 1782110630 | 1782139433 | -0.0923
+  4sRjm252FQfr | 1782132350 | 1782139822 | -0.1653
+  6FYgn2apNXSq | 1782134798 | 1782139823 | -0.1778
+  Gx6ASCBmUg5i | 1782137321 | 1782140023 | -0.1653
+  CTuMDfnkJ9jY | 1782139905 | 1782140324 | -0.1658
+  6svp2aaiJ7Dm | 1782139201 | 1782140554 | 0.5067 
+  6thKzh1NhiPM | 1782112344 | 1782141160 | -0.0587
+  6FYgn2apNXSq | 1782112596 | 1782141410 | 0.125  
+  6thKzh1NhiPM | 1782141445 | 1782141702 | -0.2347
+  DVhwSE98dHBt | 1782141804 | 1782141833 | -0.1726
+  6thKzh1NhiPM | 1782141712 | 1782141901 | -0.1685
+  Gx6ASCBmUg5i | 1782140334 | 1782141925 | 0.5048 
+  6thKzh1NhiPM | 1782141902 | 1782141959 | -0.1671
+  6FYgn2apNXSq | 1782113137 | 1782141961 | -0.0097
+  GemryuWS7qwe | 1782138939 | 1782141982 | 0.5295 
+  Ay1pyfhZX7SV | 1782141945 | 1782141988 | -0.2651
+  8nqtxpFpuXwf | 1782140663 | 1782142126 | -0.2045
+  5q8osC4CZRMf | 1782141939 | 1782142326 | -0.2217
+  6thKzh1NhiPM | 1782142166 | 1782142429 | -0.2092
+  Ay1pyfhZX7SV | 1782142477 | 1782142562 | -0.1998
+  7bTsRggGmDjD | 1782131204 | 1782143596 | -0.1704
+  57YFGs6GXT3X | 1782143870 | 1782143917 | -0.3656
+  6FYgn2apNXSq | 1782135040 | 1782144023 | -0.1868
+  6FYgn2apNXSq | 1782116736 | 1782144040 | -0.1824
+  DVhwSE98dHBt | 1782143897 | 1782144361 | 1.2479 
+  ExQ2NU9Fj3Fc | 1782143921 | 1782144362 | 0.8619 
+  6FYgn2apNXSq | 1782115839 | 1782144640 | 0.0695 
+  6FYgn2apNXSq | 1782116436 | 1782145241 | -0.1028
+  6FYgn2apNXSq | 1782116979 | 1782145813 | 0.0259 
+  Ex3BcKVGbNVQ | 1782141365 | 1782145823 | 0.8775 
+  DcQKToPywy64 | 1782121590 | 1782146095 | 0.5209 
+  DVhwSE98dHBt | 1782146190 | 1782146267 | -0.2192
+  6FYgn2apNXSq | 1782117696 | 1782146539 | 0.1169 
+  8nqtxpFpuXwf | 1782144361 | 1782146559 | -0.1776
+  5q8osC4CZRMf | 1782145916 | 1782146660 | 0.4865 
+  3ricXXziD22s | 1782146009 | 1782146687 | -0.1685
+  9LxMdvs1m8QR | 1782146939 | 1782147216 | 0.5229 
+  DVhwSE98dHBt | 1782146457 | 1782147261 | -0.1893
+  4sRjm252FQfr | 1782145866 | 1782147487 | -0.3731
+  57YFGs6GXT3X | 1782147346 | 1782147541 | 0.547  
+  Ay1pyfhZX7SV | 1782147285 | 1782147645 | -0.1833
+  CTuMDfnkJ9jY | 1782140347 | 1782147733 | -0.1835
+  6svp2aaiJ7Dm | 1782147780 | 1782148134 | -0.5067
+  42YtP9yQveq3 | 1782147752 | 1782148643 | -0.1723
+  9LxMdvs1m8QR | 1782148554 | 1782148689 | -0.2037
+  SMACxb87aVzX | 1782147715 | 1782148735 | -0.1768
+  5q8osC4CZRMf | 1782148342 | 1782148936 | -0.1668
+  6svp2aaiJ7Dm | 1782142902 | 1782149104 | -0.4759
+  BdQjY2iBXu14 | 1782148993 | 1782149489 | -0.2482
+  Gx6ASCBmUg5i | 1782140274 | 1782149677 | -0.1784
+  6FYgn2apNXSq | 1782120939 | 1782149743 | -0.0897
+  2fHT9wBhywYo | 1782145898 | 1782150632 | -0.1756
+  6FYgn2apNXSq | 1782138937 | 1782151104 | -0.1745
+  BdQjY2iBXu14 | 1782149735 | 1782151340 | 0.5021 
+  BdQjY2iBXu14 | 1782151360 | 1782151666 | -0.1694
+  BdQjY2iBXu14 | 1782151679 | 1782152163 | 0.4945 
+  2zBWFYhhi28v | 1782151503 | 1782152190 | -0.2054
+  6FYgn2apNXSq | 1782124298 | 1782152225 | -0.1746
+  6FYgn2apNXSq | 1782123755 | 1782152558 | -0.0686
+  6thKzh1NhiPM | 1782125118 | 1782152684 | -0.171 
+  6FYgn2apNXSq | 1782131258 | 1782152964 | -0.1834
+  6FYgn2apNXSq | 1782143917 | 1782153647 | -0.1784
+  57YFGs6GXT3X | 1782150603 | 1782154257 | -0.165 
+  6FYgn2apNXSq | 1782137557 | 1782154299 | -0.184 
+  6thKzh1NhiPM | 1782126056 | 1782154862 | 0.0659 
+  6svp2aaiJ7Dm | 1782148625 | 1782155275 | -0.4233
+  6FYgn2apNXSq | 1782126937 | 1782155740 | -0.0202
+  BdQjY2iBXu14 | 1782152260 | 1782155826 | -0.2122
+  6FYgn2apNXSq | 1782155802 | 1782155929 | 0.5438 
+  B6yHBbrfZVxw | 1782156419 | 1782156457 | -0.4646
+  SMACxb87aVzX | 1782154471 | 1782156578 | -0.1922
+  73K3hQdUpBFK | 1782153814 | 1782156776 | 0.4873 
+  8NVkytV1CtoN | 1782156844 | 1782157155 | -0.1852
+  8NVkytV1CtoN | 1782157167 | 1782157279 | -0.2004
+  Gx6ASCBmUg5i | 1782149853 | 1782157369 | -0.1743
+  6utMS2SBujdv | 1782157319 | 1782157554 | -0.2069
+  2fHT9wBhywYo | 1782147386 | 1782157974 | -0.1653
+  6svp2aaiJ7Dm | 1782157478 | 1782158005 | -0.1662
+  BB31SXh9AhDe | 1782159255 | 1782159429 | -0.2692
+  44kdzNHg3XTF | 1782130722 | 1782159541 | -0.0823
+  5q8osC4CZRMf | 1782159375 | 1782159681 | -0.1879
+  BdQjY2iBXu14 | 1782159691 | 1782159939 | -0.3105
+  Gx6ASCBmUg5i | 1782131203 | 1782160016 | -0.099 
+  9LxMdvs1m8QR | 1782160128 | 1782160329 | 0.7751 
+  Ay1pyfhZX7SV | 1782160424 | 1782160579 | -0.183 
+  5q8osC4CZRMf | 1782160502 | 1782160630 | -0.4907
+  57YFGs6GXT3X | 1782160374 | 1782161032 | -0.1705
+  CTuMDfnkJ9jY | 1782160245 | 1782161382 | -0.2821
+  6FYgn2apNXSq | 1782145062 | 1782161448 | -0.238 
+  6FYgn2apNXSq | 1782155800 | 1782161754 | -0.1792
+  CTuMDfnkJ9jY | 1782161391 | 1782161873 | 0.6256 
+  5KcqJ7NFA9Ro | 1782154284 | 1782161932 | -0.2108
+  Ev7kp4NfhVjv | 1782152684 | 1782162454 | -0.1796
+  6thKzh1NhiPM | 1782134050 | 1782162869 | -0.0616
+  6FYgn2apNXSq | 1782134321 | 1782163144 | -0.0624
+  8QwYYkzuDwh3 | 1782135187 | 1782163996 | 0.0443 
+  CXVJewdc79TY | 1782135228 | 1782164045 | -0.1095
+  6svp2aaiJ7Dm | 1782135314 | 1782164120 | 0.0345 
+  6FYgn2apNXSq | 1782135460 | 1782164270 | 0.0544 
+  42YtP9yQveq3 | 1782135795 | 1782164595 | -0.0328
+  3eSWPw7xqEYH | 1782135902 | 1782164722 | 0.0055 
+  8QwYYkzuDwh3 | 1782135978 | 1782164796 | -0.0583
+  6FYgn2apNXSq | 1782136478 | 1782165296 | -0.1491
+  7bTsRggGmDjD | 1782149887 | 1782165351 | 0.5125 
+  6FYgn2apNXSq | 1782146801 | 1782165775 | -0.1665
+  6svp2aaiJ7Dm | 1782163356 | 1782165785 | -0.1657
+  6FYgn2apNXSq | 1782162640 | 1782165911 | 0.4998 
+  CTuMDfnkJ9jY | 1782165674 | 1782166287 | 0.5015 
+  5KcqJ7NFA9Ro | 1782163906 | 1782167293 | 0.5016 
+  7bTsRggGmDjD | 1782165473 | 1782168145 | -0.1825
+  4RDNo5BBAjQh | 1782167554 | 1782168874 | 0.9381 
+  DcQKToPywy64 | 1782163641 | 1782168943 | 0.4967 
+  4RDNo5BBAjQh | 1782168946 | 1782169068 | -0.1704
+  B6yHBbrfZVxw | 1782167439 | 1782169538 | -0.1852
+  Gx6ASCBmUg5i | 1782162913 | 1782169559 | -0.166 
+  8QwYYkzuDwh3 | 1782142540 | 1782171356 | 0.0751 
+  Gx6ASCBmUg5i | 1782142623 | 1782171432 | -0.124 
+  42YtP9yQveq3 | 1782168746 | 1782171529 | -0.2214
+  6FYgn2apNXSq | 1782158438 | 1782172167 | -0.1698
+  EYDjJhT8tEQ2 | 1782170437 | 1782172279 | -0.1659
+  Ev7kp4NfhVjv | 1782170915 | 1782172355 | -0.1958
+  CTuMDfnkJ9jY | 1782167018 | 1782172378 | -0.1825
+  GPLaq69B6RiU | 1782171982 | 1782172455 | -0.1717
+  HdEdRF4kucfv | 1782169272 | 1782172653 | -0.1807
+  6thKzh1NhiPM | 1782144339 | 1782173158 | -0.0704
+  6T7ucfgJ7f5L | 1782155666 | 1782174239 | 0.4942 
+  Gx6ASCBmUg5i | 1782162786 | 1782174392 | 0.5036 
+  42YtP9yQveq3 | 1782172229 | 1782174471 | -0.1687
+  6FYgn2apNXSq | 1782163778 | 1782175160 | -0.1661
+  CvhUR9GTbMFK | 1782146390 | 1782175201 | -0.0789
+  2fHT9wBhywYo | 1782146419 | 1782175227 | -0.0886
+  6thKzh1NhiPM | 1782147069 | 1782175876 | 0.0121 
+  6FYgn2apNXSq | 1782147640 | 1782176452 | 0.0108 
+  CvTPH1CxTU2A | 1782164116 | 1782176640 | 0.5047 
+  785cAWNP2Y4B | 1782176563 | 1782178093 | -0.1855
+  6FYgn2apNXSq | 1782174402 | 1782179455 | 0.6405 
+  B6yHBbrfZVxw | 1782179454 | 1782179785 | -0.1742
+  6FYgn2apNXSq | 1782151178 | 1782179985 | -0.0461
+  6FYgn2apNXSq | 1782151420 | 1782180235 | 0.0794 
+  6svp2aaiJ7Dm | 1782179772 | 1782180481 | -0.1676
+  5q8osC4CZRMf | 1782177609 | 1782180630 | -0.4951
+  57YFGs6GXT3X | 1782180069 | 1782180832 | -0.2329
+  2fHT9wBhywYo | 1782152825 | 1782181636 | -0.1358
+  5KcqJ7NFA9Ro | 1782180545 | 1782181733 | -0.1693
+  57YFGs6GXT3X | 1782182045 | 1782182500 | -0.1655
+  6FYgn2apNXSq | 1782177338 | 1782183298 | -0.1679
+  6FYgn2apNXSq | 1782180578 | 1782183402 | -0.1963
+  6svp2aaiJ7Dm | 1782183212 | 1782183732 | -0.508 
+  6thKzh1NhiPM | 1782155035 | 1782183841 | 0.1225 
+  6svp2aaiJ7Dm | 1782183533 | 1782184154 | -0.17  
+  57YFGs6GXT3X | 1782183385 | 1782184505 | -0.1758
+  6FYgn2apNXSq | 1782156641 | 1782185465 | -0.1424
+  6FYgn2apNXSq | 1782171939 | 1782186246 | -0.196 
+  Gx6ASCBmUg5i | 1782163032 | 1782186268 | -0.1701
+  6FYgn2apNXSq | 1782162754 | 1782186367 | -0.1716
+  9LxMdvs1m8QR | 1782185468 | 1782188032 | -0.178 
+  EmMBPbJNeEeD | 1782186678 | 1782188260 | -0.1832
+  5dU3trzb5uvZ | 1782184769 | 1782188306 | -0.4825
+  5dU3trzb5uvZ | 1782188542 | 1782188610 | -0.4799
+  EmMBPbJNeEeD | 1782188379 | 1782188785 | -0.2076
+  8QwYYkzuDwh3 | 1782160856 | 1782189691 | -0.0187
+  3iZG5TLva2N8 | 1782189651 | 1782189712 | -0.2237
+  3wrx9AZjygVg | 1782189712 | 1782189787 | -0.172 
+  ByHUUDmUiAkk | 1782189790 | 1782189869 | -0.4563
+  6thKzh1NhiPM | 1782161447 | 1782190267 | 0.0116 
+  9LxMdvs1m8QR | 1782161562 | 1782190367 | 0.0644 
+  9LxMdvs1m8QR | 1782161856 | 1782190668 | 0.0473 
+  6FYgn2apNXSq | 1782162099 | 1782190918 | 0.1247 
+  6FYgn2apNXSq | 1782183638 | 1782191059 | -0.1684
+  6svp2aaiJ7Dm | 1782190490 | 1782191064 | -0.1655
+  EmMBPbJNeEeD | 1782190450 | 1782191133 | -0.1719
+  5H5upChfAGSW | 1782191495 | 1782191667 | -0.4821
+  6FYgn2apNXSq | 1782175900 | 1782191730 | 0.5518 
+  EmMBPbJNeEeD | 1782191344 | 1782192022 | -0.214 
+  6FYgn2apNXSq | 1782163237 | 1782192043 | -0.0159
+  BnYk6Dph4CXM | 1782163625 | 1782192444 | -0.1389
+  6thKzh1NhiPM | 1782164181 | 1782192994 | -0.0742
+  Gx6ASCBmUg5i | 1782184864 | 1782193907 | -0.1717
+  2o9UsXTRWZTf | 1782167710 | 1782196520 | -0.0638
+  2o9UsXTRWZTf | 1782167814 | 1782196620 | -0.1246
+  2o9UsXTRWZTf | 1782167872 | 1782196695 | -0.1302
+  Gx6ASCBmUg5i | 1782169826 | 1782198647 | 0.2187 
+  EmMBPbJNeEeD | 1782196509 | 1782198683 | 0.5146 
+  6FYgn2apNXSq | 1782169895 | 1782198697 | 0.1587 
+  Gx6ASCBmUg5i | 1782181560 | 1782199405 | -0.1732
+  BtHnhjh8Ta2v | 1782171797 | 1782200599 | 0.0429 
+  CvTPH1CxTU2A | 1782199769 | 1782200947 | -0.1789
+  6FYgn2apNXSq | 1782172356 | 1782201174 | -0.045 
+  6FYgn2apNXSq | 1782172898 | 1782201699 | 0.0305 
+  6thKzh1NhiPM | 1782173543 | 1782202349 | -0.0484
+  6FYgn2apNXSq | 1782173856 | 1782202675 | 0.0416 
+  5dU3trzb5uvZ | 1782202586 | 1782202798 | -0.477 
+  BB31SXh9AhDe | 1782202714 | 1782202971 | -0.1725
+  6FYgn2apNXSq | 1782183459 | 1782203980 | -0.1745
+  6FYgn2apNXSq | 1782175237 | 1782204051 | -0.0507
+  785cAWNP2Y4B | 1782178986 | 1782204152 | -0.1811
+  CvTPH1CxTU2A | 1782204715 | 1782204859 | 0.5171 
+  2fHT9wBhywYo | 1782204978 | 1782205327 | -0.193 
+  CvTPH1CxTU2A | 1782205392 | 1782205550 | -0.1736
+  6FYgn2apNXSq | 1782177461 | 1782206280 | -0.0437
+  6FYgn2apNXSq | 1782184477 | 1782206811 | -0.1781
+  6FYgn2apNXSq | 1782178235 | 1782207056 | 0.1848 
+  6FYgn2apNXSq | 1782203264 | 1782209061 | -0.1805
+  5KcqJ7NFA9Ro | 1782188050 | 1782209142 | -0.1665
+  6FYgn2apNXSq | 1782180345 | 1782209182 | 0.2941 
+  44kdzNHg3XTF | 1782208096 | 1782209260 | 0.5208 
+  6FYgn2apNXSq | 1782184178 | 1782209287 | -0.171 
+  6FYgn2apNXSq | 1782180942 | 1782209849 | -0.038 
+  42YtP9yQveq3 | 1782181260 | 1782210100 | -0.0708
+  HdEdRF4kucfv | 1782186654 | 1782210885 | 0.525  
+  2bVqHKY1EDgc | 1782206993 | 1782211906 | -0.1906
+  2fHT9wBhywYo | 1782183603 | 1782212432 | 0.1269 
+  6FYgn2apNXSq | 1782183640 | 1782212458 | 0.0466 
+  6FYgn2apNXSq | 1782183939 | 1782212758 | 0.1038 
+  6FYgn2apNXSq | 1782208239 | 1782212796 | -0.1696
+  CTuMDfnkJ9jY | 1782206187 | 1782213146 | -0.1669
+  6FYgn2apNXSq | 1782195400 | 1782213375 | -0.1654
+  5dU3trzb5uvZ | 1782197231 | 1782213583 | -0.1979
+  DcQKToPywy64 | 1782211305 | 1782213945 | -0.2107
+  6VJtUNc2uYwx | 1782212442 | 1782214541 | 0.5001 
+  6FYgn2apNXSq | 1782204576 | 1782214895 | -0.2003
+  6thKzh1NhiPM | 1782186402 | 1782215222 | -0.0743
+  6FYgn2apNXSq | 1782199537 | 1782215363 | -0.1693
+  6svp2aaiJ7Dm | 1782211767 | 1782215811 | -0.1672
+  6FYgn2apNXSq | 1782209675 | 1782216033 | -0.1743
+  3wrx9AZjygVg | 1782213379 | 1782216941 | -0.5014
+  6FYgn2apNXSq | 1782188679 | 1782217690 | -0.0471
+  6FYgn2apNXSq | 1782194441 | 1782217692 | -0.1653
+  6FYgn2apNXSq | 1782189696 | 1782218517 | 0.0106 
+  6FYgn2apNXSq | 1782200979 | 1782218577 | -0.1876
+  57YFGs6GXT3X | 1782215812 | 1782218715 | 0.4989 
+  6FYgn2apNXSq | 1782190837 | 1782219689 | 0.0307 
+  6FYgn2apNXSq | 1782191677 | 1782220477 | -0.0029
+  6FYgn2apNXSq | 1782211778 | 1782220496 | -0.1784
+  BtHnhjh8Ta2v | 1782218660 | 1782220614 | -0.2121
+  57YFGs6GXT3X | 1782221455 | 1782221852 | -0.1928
+  6FYgn2apNXSq | 1782193120 | 1782221928 | 0.0313 
+  42YtP9yQveq3 | 1782193169 | 1782221978 | 0.076  
+  57YFGs6GXT3X | 1782220911 | 1782222349 | 0.495  
+  BtHnhjh8Ta2v | 1782222089 | 1782222836 | -0.1741
+  Ay1pyfhZX7SV | 1782222567 | 1782222836 | -0.2251
+  6FYgn2apNXSq | 1782194437 | 1782223245 | -0.0196
+  5q8osC4CZRMf | 1782223683 | 1782223743 | -0.166 
+  ByHUUDmUiAkk | 1782223758 | 1782224291 | -0.2631
+  8QwYYkzuDwh3 | 1782195691 | 1782224496 | -0.1589
+  6eqES3ebBsku | 1782224629 | 1782224745 | 2.072  
+  6thKzh1NhiPM | 1782195939 | 1782224748 | 0.0772 
+  8QwYYkzuDwh3 | 1782223676 | 1782224997 | -0.1671
+  6FYgn2apNXSq | 1782196298 | 1782225124 | -0.1609
+  6FYgn2apNXSq | 1782196538 | 1782225348 | -0.1128
+  Fyp4UhDcqWoP | 1782222988 | 1782225811 | 0.6419 
+  5q8osC4CZRMf | 1782224191 | 1782225837 | 0.497  
+  Fyp4UhDcqWoP | 1782225706 | 1782225871 | 0.6592 
+  SMACxb87aVzX | 1782225872 | 1782226117 | -0.2508
+  CHvWpTWTZXUM | 1782226034 | 1782226239 | 0.5567 
+  6thKzh1NhiPM | 1782197503 | 1782226329 | 0.0219 
+  CHvWpTWTZXUM | 1782226272 | 1782226414 | 0.5607 
+  BdQjY2iBXu14 | 1782225845 | 1782226820 | -0.1864
+  5H5upChfAGSW | 1782225278 | 1782226944 | -0.2236
+  6FYgn2apNXSq | 1782199118 | 1782227930 | -0.0887
+  BdQjY2iBXu14 | 1782226854 | 1782227991 | 0.4914 
+  6FYgn2apNXSq | 1782199835 | 1782228658 | -0.0826
+  Gx6ASCBmUg5i | 1782213186 | 1782229033 | -0.166 
+  DcQKToPywy64 | 1782214567 | 1782229033 | -0.172 
+  5q8osC4CZRMf | 1782229286 | 1782229375 | 0.5889 
+  6FYgn2apNXSq | 1782201036 | 1782229853 | 0.217  
+  5q8osC4CZRMf | 1782230000 | 1782230198 | -0.4938
+  D5aVEvANr2uj | 1782219378 | 1782231041 | -0.1766
+  6svp2aaiJ7Dm | 1782231985 | 1782232293 | -0.1715
+  6thKzh1NhiPM | 1782203934 | 1782232757 | -0.0287
+  CvTPH1CxTU2A | 1782204142 | 1782232958 | 0.1993 
+  DcQKToPywy64 | 1782204711 | 1782233058 | -0.1734
+  6FYgn2apNXSq | 1782225578 | 1782233340 | -0.1818
+  DVhwSE98dHBt | 1782233639 | 1782233968 | -0.1811
+  3ricXXziD22s | 1782232819 | 1782234794 | 0.4864 
+  5pJ2icRDUhmN | 1782215359 | 1782235011 | -0.1814
+  6svp2aaiJ7Dm | 1782230265 | 1782235042 | 0.5303 
+  HDeRTCPU5Fr2 | 1782230149 | 1782235546 | 0.5029 
+  6FYgn2apNXSq | 1782207397 | 1782236220 | -0.1203
+  6FYgn2apNXSq | 1782231643 | 1782236734 | -0.177 
+  2fHT9wBhywYo | 1782231501 | 1782237272 | -0.1677
+  7bTsRggGmDjD | 1782237196 | 1782238133 | -0.1706
+  6FYgn2apNXSq | 1782209436 | 1782238241 | 0.0093 
+  2f4e7c2f6hXy | 1782209877 | 1782238693 | -0.1217
+  B6yHBbrfZVxw | 1782234836 | 1782238853 | 0.4869 
+  ByHUUDmUiAkk | 1782238268 | 1782238910 | 0.5245 
+  7bTsRggGmDjD | 1782239236 | 1782239481 | -0.1669
+  5q8osC4CZRMf | 1782238898 | 1782239775 | -0.1829
+  6FYgn2apNXSq | 1782211242 | 1782240043 | -0.0095
+  6FYgn2apNXSq | 1782211483 | 1782240293 | 0.0335 
+  44kdzNHg3XTF | 1782211983 | 1782240793 | -0.0764
+  6thKzh1NhiPM | 1782212662 | 1782241469 | -0.0068
+  5q8osC4CZRMf | 1782242412 | 1782242702 | -0.1853
+  7HMPfLq8SeY5 | 1782239279 | 1782243376 | 0.4889 
+  BLbgdniaf7LV | 1782243782 | 1782243853 | 0.4966 
+  6thKzh1NhiPM | 1782215588 | 1782244396 | 0.069  
+  6svp2aaiJ7Dm | 1782233789 | 1782245302 | 0.5202 
+  5q8osC4CZRMf | 1782245086 | 1782245453 | -0.1996
+  6utMS2SBujdv | 1782245472 | 1782245529 | -0.3335
+  2o9UsXTRWZTf | 1782245681 | 1782245705 | 0.6345 
+  5q8osC4CZRMf | 1782245832 | 1782245881 | -0.2334
+  Gx6ASCBmUg5i | 1782245766 | 1782246307 | -0.1659
+  57YFGs6GXT3X | 1782246589 | 1782246688 | -0.323 
+  57YFGs6GXT3X | 1782246692 | 1782246732 | -0.2237
+  2fHT9wBhywYo | 1782218016 | 1782246824 | 0.0663 
+  6FYgn2apNXSq | 1782218617 | 1782247425 | -0.1162
+  57YFGs6GXT3X | 1782245724 | 1782249362 | 0.6705 
+  5q8osC4CZRMf | 1782250544 | 1782251216 | 0.5115 
+  ByHUUDmUiAkk | 1782223584 | 1782252407 | -0.0734
+  ByHUUDmUiAkk | 1782223631 | 1782252432 | 0.0336 
+  BdQjY2iBXu14 | 1782253195 | 1782254046 | -0.2069
+  8eEnpRvWM1Vv | 1782227582 | 1782254159 | -0.1785
+  6FYgn2apNXSq | 1782225641 | 1782254458 | 0.1672 
+  6FYgn2apNXSq | 1782226298 | 1782255108 | -0.0301
+  8QwYYkzuDwh3 | 1782226480 | 1782255283 | 0.006  
+  CHvWpTWTZXUM | 1782227681 | 1782256485 | -0.0913
+  6FYgn2apNXSq | 1782231400 | 1782256486 | -0.1683
+  57YFGs6GXT3X | 1782253156 | 1782256918 | 0.4968 
+  6thKzh1NhiPM | 1782228425 | 1782257236 | -0.1286
+  6FYgn2apNXSq | 1782228698 | 1782257511 | 0.1062 
+  BdQjY2iBXu14 | 1782254150 | 1782257696 | -0.301 
+  2fHT9wBhywYo | 1782257960 | 1782258494 | 0.59   
+  Gx6ASCBmUg5i | 1782245163 | 1782259065 | -0.1659
+  42YtP9yQveq3 | 1782250613 | 1782259541 | -0.1651
+  6FYgn2apNXSq | 1782231399 | 1782260213 | -0.0868
+  6utMS2SBujdv | 1782260059 | 1782260219 | -0.191 
+  6FYgn2apNXSq | 1782252519 | 1782262273 | 0.517  
+  5aXbFCpg5f14 | 1782255209 | 1782262494 | -0.1743
+  6FYgn2apNXSq | 1782256237 | 1782263520 | -0.1767
+  6utMS2SBujdv | 1782263497 | 1782263549 | -0.4001
+  B6yHBbrfZVxw | 1782263561 | 1782263724 | -0.1667
+  3ricXXziD22s | 1782262749 | 1782263750 | -0.2141
+  5q8osC4CZRMf | 1782262760 | 1782263777 | -0.1827
+  B6yHBbrfZVxw | 1782263737 | 1782263778 | 0.7035 
+  7qFB5H9LSrVq | 1782263936 | 1782264029 | -0.1971
+  6FYgn2apNXSq | 1782258334 | 1782264246 | -0.1658
+  7qFB5H9LSrVq | 1782264035 | 1782264374 | -0.1702
+  5q8osC4CZRMf | 1782263983 | 1782264574 | 0.5083 
+  57YFGs6GXT3X | 1782264676 | 1782265199 | -0.1704
+  6thKzh1NhiPM | 1782236509 | 1782265316 | -0.0535
+  6FYgn2apNXSq | 1782259358 | 1782265422 | 0.6425 
+  5wTqTAZSGWu9 | 1782263224 | 1782265773 | -0.1933
+  3ricXXziD22s | 1782237788 | 1782266592 | -0.0168
+  3ricXXziD22s | 1782265425 | 1782267305 | 0.4853 
+  6svp2aaiJ7Dm | 1782265886 | 1782268425 | -0.1665
+  44kdzNHg3XTF | 1782240302 | 1782269120 | -0.0861
+  6svp2aaiJ7Dm | 1782271995 | 1782272479 | -0.1673
+  6FYgn2apNXSq | 1782272196 | 1782272577 | -0.1719
+  5KcqJ7NFA9Ro | 1782244666 | 1782273468 | 0.1513 
+  6FYgn2apNXSq | 1782271119 | 1782273652 | -0.1666
+  6thKzh1NhiPM | 1782245091 | 1782273893 | 0.0126 
+  42YtP9yQveq3 | 1782245198 | 1782274018 | -0.0281
+  2fHT9wBhywYo | 1782246423 | 1782275244 | -0.0407
+  3ricXXziD22s | 1782275076 | 1782275379 | -0.1723
+  CvTPH1CxTU2A | 1782275241 | 1782275608 | -0.1825
+  2bVqHKY1EDgc | 1782275629 | 1782275705 | -0.2766
+  5dU3trzb5uvZ | 1782275718 | 1782275805 | -0.3183
+  6FYgn2apNXSq | 1782247537 | 1782276345 | -0.0051
+  2fHT9wBhywYo | 1782251967 | 1782276746 | -0.1677
+  6FYgn2apNXSq | 1782271896 | 1782277352 | 0.5097 
+  SMACxb87aVzX | 1782271431 | 1782277506 | 0.5388 
+  CvTPH1CxTU2A | 1782268436 | 1782277602 | -0.5029
+  57YFGs6GXT3X | 1782249376 | 1782278196 | 0.1297 
+  6FYgn2apNXSq | 1782259235 | 1782278198 | -0.1684
+  HDeRTCPU5Fr2 | 1782276619 | 1782278256 | -0.4864
+  SMACxb87aVzX | 1782278420 | 1782278433 | -0.3541
+  SMACxb87aVzX | 1782278444 | 1782278483 | 0.5585 
+  2fHT9wBhywYo | 1782274159 | 1782279054 | -0.1724
+  5q8osC4CZRMf | 1782279488 | 1782279834 | 0.5424 
+  5H5upChfAGSW | 1782279851 | 1782280012 | -0.1824
+  5KcqJ7NFA9Ro | 1782280011 | 1782280037 | -0.1778
+  AE7neeVw9NFw | 1782280043 | 1782280084 | -0.1909
+  ByHUUDmUiAkk | 1782280088 | 1782280113 | -0.1659
+  4sRjm252FQfr | 1782280116 | 1782280160 | 0.996  
+  4sRjm252FQfr | 1782280196 | 1782280489 | 0.5271 
+  3Fh8BhzPXvaN | 1782251788 | 1782280599 | 0.1852 
+  44kdzNHg3XTF | 1782252135 | 1782280950 | -0.1275
+  5pJ2icRDUhmN | 1782280496 | 1782281435 | 0.5074 
+  5H5upChfAGSW | 1782281484 | 1782281987 | -0.1828
+  7bTsRggGmDjD | 1782254396 | 1782283204 | -0.0707
+  3eSWPw7xqEYH | 1782282059 | 1782283614 | -0.2702
+  HDeRTCPU5Fr2 | 1782283675 | 1782283693 | -0.1851
+  618gbvXjdQKh | 1782283724 | 1782283817 | -0.2496
+  D75Mdf6bAmNq | 1782283867 | 1782283889 | -0.3131
+  5NtbUJgmvXib | 1782283919 | 1782283967 | -0.1839
+  2rGrt1xDYwWy | 1782283972 | 1782283997 | -0.226 
+  2f4e7c2f6hXy | 1782284002 | 1782284068 | -0.201 
+  3eSWPw7xqEYH | 1782282591 | 1782284392 | -0.1694
+  2fHT9wBhywYo | 1782279049 | 1782284439 | -0.1678
+  6FYgn2apNXSq | 1782255758 | 1782284581 | -0.0695
+  SMACxb87aVzX | 1782284326 | 1782285051 | 0.508  
+  6FYgn2apNXSq | 1782279700 | 1782285174 | -0.1883
+  DNhTNcqteVwi | 1782284643 | 1782285725 | -0.2224
+  BtHnhjh8Ta2v | 1782285403 | 1782285880 | -0.1753
+  2HJMgsEqKrcR | 1782282842 | 1782286123 | -0.1673
+  6FYgn2apNXSq | 1782257317 | 1782286133 | -0.136 
+  6thKzh1NhiPM | 1782257644 | 1782286458 | -0.0392
+  6FYgn2apNXSq | 1782284737 | 1782287196 | -0.1712
+  6FYgn2apNXSq | 1782258395 | 1782287210 | 0.0386 
+  6FYgn2apNXSq | 1782281202 | 1782287443 | -0.1754
+  7qFB5H9LSrVq | 1782285055 | 1782288094 | -0.1885
+  2fHT9wBhywYo | 1782283318 | 1782291677 | -0.1695
+  DcQKToPywy64 | 1782262996 | 1782291814 | -0.026 
+  CXVJewdc79TY | 1782263032 | 1782291839 | -0.1231
+  HntvSoXq7CxH | 1782291698 | 1782292350 | -0.495 
+  2f4e7c2f6hXy | 1782287459 | 1782293724 | 0.5443 
+  3Fh8BhzPXvaN | 1782294065 | 1782294085 | -0.4775
+  6FYgn2apNXSq | 1782265297 | 1782294116 | -0.045 
+  6thKzh1NhiPM | 1782265438 | 1782294241 | -0.0641
+  DcQKToPywy64 | 1782265712 | 1782294516 | -0.0882
+  ExQ2NU9Fj3Fc | 1782292234 | 1782294575 | 0.5213 
+  6FYgn2apNXSq | 1782265776 | 1782294591 | -0.1188
+  6thKzh1NhiPM | 1782266247 | 1782295066 | -0.0373
+  6FYgn2apNXSq | 1782278078 | 1782296022 | 0.4993 
+  6FYgn2apNXSq | 1782277898 | 1782296121 | 0.5898 
+  B6yHBbrfZVxw | 1782268401 | 1782297219 | -0.0202
+  HDeRTCPU5Fr2 | 1782282570 | 1782297799 | 0.4857 
+  6FYgn2apNXSq | 1782289539 | 1782298178 | -0.2257
+  6FYgn2apNXSq | 1782270521 | 1782299346 | -0.0269
+  6FYgn2apNXSq | 1782271476 | 1782300297 | 0.1419 
+  7bTsRggGmDjD | 1782292803 | 1782301162 | 0.5811 
+  ECUvTEQ9L5uT | 1782299939 | 1782301768 | -0.1726
+  6FYgn2apNXSq | 1782273035 | 1782301851 | 0.0909 
+  3Fh8BhzPXvaN | 1782302302 | 1782302391 | -0.2241
+  6FYgn2apNXSq | 1782274057 | 1782302876 | 0.0065 
+  6FYgn2apNXSq | 1782274780 | 1782303603 | -0.0166
+  6FYgn2apNXSq | 1782275441 | 1782304252 | -0.0549
+  3ricXXziD22s | 1782275548 | 1782304352 | 0.0452 
+  6FYgn2apNXSq | 1782275917 | 1782304727 | -0.1101
+  6svp2aaiJ7Dm | 1782304244 | 1782305786 | -0.1672
+  6FYgn2apNXSq | 1782277631 | 1782306052 | -0.1732
+  Hmk17QCteeVn | 1782301898 | 1782306389 | -0.1839
+  DVhwSE98dHBt | 1782305787 | 1782306391 | -0.2519
+  6FYgn2apNXSq | 1782288873 | 1782306759 | -0.1729
+  6svp2aaiJ7Dm | 1782303724 | 1782306787 | 0.4928 
+  4WJqRgkVdpM4 | 1782306815 | 1782306989 | -0.1694
+  6FYgn2apNXSq | 1782278438 | 1782307255 | -0.0885
+  4WJqRgkVdpM4 | 1782307107 | 1782307940 | -0.1878
+  6FYgn2apNXSq | 1782279698 | 1782308507 | -0.1058
+  4WJqRgkVdpM4 | 1782308477 | 1782308691 | -0.2012
+  DcQKToPywy64 | 1782297230 | 1782308811 | -0.1677
+  4WJqRgkVdpM4 | 1782308872 | 1782309017 | -0.2122
+  6FYgn2apNXSq | 1782301117 | 1782309314 | -0.172 
+  5q8osC4CZRMf | 1782307817 | 1782309566 | 0.4948 
+  6FYgn2apNXSq | 1782299918 | 1782309840 | -0.1666
+  CvTPH1CxTU2A | 1782309897 | 1782310067 | -0.2075
+  6FYgn2apNXSq | 1782281495 | 1782310310 | -0.1119
+  CvTPH1CxTU2A | 1782310288 | 1782310744 | -0.3451
+  6FYgn2apNXSq | 1782282154 | 1782310961 | -0.0066
+  6svp2aaiJ7Dm | 1782307913 | 1782311192 | -0.1724
+  Ditqrk2Zmr1Y | 1782309262 | 1782311593 | 0.4932 
+  6svp2aaiJ7Dm | 1782304682 | 1782312167 | 0.5068 
+  2mRn8wtkcxZc | 1782309485 | 1782312747 | 0.5529 
+  5q8osC4CZRMf | 1782312700 | 1782312851 | -0.2782
+  57YFGs6GXT3X | 1782312852 | 1782312872 | -0.2079
+  5H5upChfAGSW | 1782284079 | 1782312888 | 0.0152 
+  BdQjY2iBXu14 | 1782312879 | 1782312897 | -0.1723
+  D5aVEvANr2uj | 1782313368 | 1782313421 | -0.3565
+  6FYgn2apNXSq | 1782288097 | 1782315190 | 0.4881 
+  G4L7QX3xjUwj | 1782311750 | 1782315196 | -0.1733
+  6FYgn2apNXSq | 1782286897 | 1782315716 | -0.0086
+  6FYgn2apNXSq | 1782298721 | 1782315871 | -0.1698
+  6FYgn2apNXSq | 1782288576 | 1782316268 | -0.1658
+  6FYgn2apNXSq | 1782287739 | 1782316542 | 0.0322 
+  6FYgn2apNXSq | 1782288336 | 1782317144 | 0.0443 
+  6utMS2SBujdv | 1782312794 | 1782317753 | -0.1674
+  6FYgn2apNXSq | 1782289416 | 1782318218 | -0.0037
+  CHvWpTWTZXUM | 1782315908 | 1782318749 | -0.2147
+  57YFGs6GXT3X | 1782318055 | 1782318915 | 0.656  
+  2mRn8wtkcxZc | 1782319125 | 1782319770 | -0.1833
+  2mRn8wtkcxZc | 1782319884 | 1782320122 | -0.1741
+  7TiAUgZdLMN4 | 1782318610 | 1782320142 | 0.571  
+  2mRn8wtkcxZc | 1782320182 | 1782320422 | 0.5353 
+  44kdzNHg3XTF | 1782293524 | 1782322333 | -0.0877
+  2fHT9wBhywYo | 1782293892 | 1782322709 | 0.0679 
+  2mRn8wtkcxZc | 1782321982 | 1782322719 | -0.2016
+  2mRn8wtkcxZc | 1782317775 | 1782323040 | 0.502  
+  6FYgn2apNXSq | 1782302858 | 1782323190 | -0.1796
+  5q8osC4CZRMf | 1782321671 | 1782323344 | -0.1722
+  CTuMDfnkJ9jY | 1782323419 | 1782323569 | -0.1921
+  2bVqHKY1EDgc | 1782322177 | 1782323695 | 0.4885 
+  BtDaZUqHr2mK | 1782309368 | 1782324196 | -0.227 
+  9LxMdvs1m8QR | 1782323885 | 1782324248 | 0.5735 
+  SMACxb87aVzX | 1782323727 | 1782324748 | -0.253 
+  8QwYYkzuDwh3 | 1782319883 | 1782325106 | -0.1769
+  6FYgn2apNXSq | 1782296554 | 1782325368 | -0.0646
+  6FYgn2apNXSq | 1782298778 | 1782327447 | -0.1842
+  57YFGs6GXT3X | 1782327834 | 1782327907 | -0.4193
+  6thKzh1NhiPM | 1782299278 | 1782328100 | 0.0017 
+  2mRn8wtkcxZc | 1782327668 | 1782328163 | -0.1888
+  CHvWpTWTZXUM | 1782328006 | 1782328165 | 0.5226 
+  6svp2aaiJ7Dm | 1782314613 | 1782328777 | -0.167 
+  CHvWpTWTZXUM | 1782328453 | 1782329158 | 0.5119 
+  57YFGs6GXT3X | 1782329058 | 1782329159 | -0.1963
+  CHvWpTWTZXUM | 1782324163 | 1782329931 | -0.1683
+  CHvWpTWTZXUM | 1782329332 | 1782330305 | -0.1976
+  SMACxb87aVzX | 1782330357 | 1782330536 | -0.2567
+  SMACxb87aVzX | 1782330557 | 1782330933 | -0.175 
+  6thKzh1NhiPM | 1782302645 | 1782331448 | 0.013  
+  5q8osC4CZRMf | 1782330609 | 1782331869 | -0.2474
+  5q8osC4CZRMf | 1782332185 | 1782332270 | 0.9007 
+  BdQjY2iBXu14 | 1782331931 | 1782332434 | 0.4952 
+  7gdo83WqcXvo | 1782332314 | 1782332434 | -0.1805
+  Ay1pyfhZX7SV | 1782332372 | 1782332510 | 0.592  
+  2mRn8wtkcxZc | 1782332477 | 1782332688 | -0.2627
+  BdQjY2iBXu14 | 1782332628 | 1782332711 | -0.177 
+  [1800 rows]
