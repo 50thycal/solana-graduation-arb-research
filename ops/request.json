@@ -1,5 +1,5 @@
 {
   "type": "db",
-  "sql": "SELECT substr(lead_wallet,1,12) AS lead_wallet, entry_ts, exit_ts, ROUND(net_sol,4) AS net_sol FROM copy_trades WHERE status='closed' AND net_sol IS NOT NULL AND strategy_id='copy-tp100-sl30' ORDER BY exit_ts ASC, id ASC LIMIT 1800 OFFSET 0",
-  "max_rows": 1800
+  "sql": "SELECT substr(lead_wallet,1,12) AS lead_wallet, entry_ts, exit_ts, ROUND(net_sol,4) AS net_sol FROM copy_trades WHERE status='closed' AND net_sol IS NOT NULL AND strategy_id='copy-tp100-sl30' ORDER BY exit_ts ASC, id ASC LIMIT 2200 OFFSET 1800",
+  "max_rows": 2200
 }
