@@ -58,10 +58,28 @@ there is no exploitable time-domain regime (B1, tenure inversion), while the cou
 (A1) is real; the edge doesn't fade with the clock, it fades with our repeated exploitation of the
 same lead.
 
-**Roster unchanged by this entry** (study only — the `maxCopiesPerLead` challenger is a proposal
-awaiting operator approval + code edit). Phase-0.5 bookkeeping: A1 and B1 pre-registrations are
-both CLOSED (no dangling debt); the C1/D2 trigger (D1 day-7, ~07-19) and the M1 arena-truth fix
-remain open from the 07-13 handoff.
+**Addendum (same day, operator-directed — "spin up that new one as recommended"): spawned
+`copy-fable-leadcap`** — incumbent chassis (strict-hi, {10,3,1.0}, TP100/SL30, lag5+drift10) + ONE
+new gate `maxLeadCopiesLifetime {maxCopies: 12, counter: copy-hotlead-strict-hi}` (new config +
+`lead_exhausted` skip reason + `leadCopyCountLifetime` counter, closed-rows-only). Design decision
+validated with one extra offline check before implementing: a baseline-series count construction
+**failed split-half** (h1 sign-flipped; corr(own-N, baseline-N) = 0.39), so the deployed cap counts
+on the **incumbent's per-strategy series** — the exact construction and rows the study validated —
+rather than its own fresh series (which would start every lead at N=0 and never bind) or the
+baseline. Pre-registered P1/P2/P3 restated verbatim in the code comment (P2 baselines: strict-hi
+n=155, net/t +0.02714, drop3/t +0.01295; P3 expects ~85% of incumbent fire rate and requires the
+lever-fire count reported at n≥100 — the C4 test-power lesson). Spawned over MAX_INFLIGHT by
+operator direction (C4/C5 precedent); queued `hotlead-fresh` keeps its claim on the next natural
+slot. **Also enacted M1's first half: `ARENA_BENCHMARK` repointed `copy-hotlead-strict` (pruned
+ghost) → `copy-hotlead-strict-hi`** — required for this and every challenger's arena verdict to
+resolve at all (bench lookup returned undefined since the 07-12 prune). M1's second half
+(post-recost per-trade fields) remains open. Verified: build green (pre-existing tsconfig
+deprecation only); 14-check harness against the compiled dist (roster shape carries exactly the
+one new lever on the incumbent chassis; counter SQL boundary/exclusion/all-time semantics; gate
+wiring + skip reason + config publication + benchmark repoint).
+
+Phase-0.5 bookkeeping: A1 and B1 pre-registrations are both CLOSED (no dangling debt); the C1/D2
+trigger (D1 day-7, ~07-19) and M1's post-recost fields remain open from the 07-13 handoff.
 
 ---
 
