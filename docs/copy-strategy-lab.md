@@ -66,6 +66,151 @@ will surface via `retired_summary` (same mechanism verified for the `copy-hotlea
 
 ---
 
+## 2026-07-13 — A1/B1 offline study RESOLVED (phase-1 handoff 2026-07-13): copy-count decay CONFIRMED, calendar-tenure decay INVERTED, book-regime gate REFUTED
+
+Executed the combined A1 (`lead-alpha-lifecycle`) + B1 (`book-edge-regime-gate`) ops-DB study
+pre-registered same-day in `docs/phase1-handoff-2026-07-13.md` (operator-directed "proceed with
+that test"). Data: all closed rows of `copy-hotlead-strict` (836, retired) + `copy-hotlead-strict-hi`
+(155) + the `copy-tp100-sl30` baseline series (3,591) via the read-only `ops` channel; hot-tenure and
+Nth-copy reconstructed at each entry from **prior baseline closes only** (the same construction as
+the 07-10 leadpullback backtest); tercile bounds and K ∈ {20,30,50} fixed in the pre-registration.
+Only 3/991 entries (0.3%) failed hot-at-entry reconstruction.
+
+**A1 — PARTIAL CONFIRM, with a sign flip on the mechanism.** The lifecycle decay is real but it is
+keyed on **how many times we've copied the lead**, not on calendar time hot:
+
+- **P1 (tenure dimension): FAIL — INVERTED.** Young-tenure (≤20.3h hot) leads are the WORST cohort
+  in both halves (h1 −0.0028/t, h2 −0.0154/t) while old-tenure leads are positive (h2 +0.0397/t,
+  drop3/t +0.0276). Time-since-hot does not decay the edge — if anything, freshly-hot leads are
+  noise that hasn't proven out.
+- **P1 (Nth-copy dimension): PASS both halves.** Low-N copies (≤5th copy of a lead) beat high-N
+  (>12th) by **+0.0219/t (h1) and +0.0577/t (h2)**, with the low-N cohort's drop3/t positive in both
+  halves (+0.0238 / +0.0221). The >12th-copy tail in h2 is the bleed: −0.0204/t, drop3/t −0.0345.
+- **P2: PASS on both strategies.** The recorded degrading windows skew hard to high-N: strict's
+  recent-window median is its **17th** copy of a lead vs 8th prior (×2.12); strict-hi 8th vs 4th
+  (×2.00). The book's observed decay is substantially "re-copying the same leads deeper and deeper."
+- **P3: PASS at the ≤12 cutoff (retains 67%), FAIL at ≤5 (37%, bar 40%).** At ≤12 the h2 read is
+  +0.0178/t / drop3 +0.0091 vs always-on +0.0024/−0.0038 (h1 ≈ flat vs always-on — the whole
+  improvement comes from dropping the recent-era high-N bleed). Per-strategy: strict kept 64%
+  (+0.0225/+0.0105) vs dropped (−0.0035/−0.0159); strict-hi kept 85% (+0.0275/+0.0109) vs dropped
+  23 trades carrying drop3/t −0.0584.
+- **Decision rule fires (P1 ∧ P3):** RECOMMEND spawning ONE challenger — incumbent chassis + a new
+  lifetime per-lead copy cap **`maxCopiesPerLead: 12`** (per-strategy, all-time; distinct from C5's
+  2-per-hour RATE cap, whose in-flight test is unaffected). Per the pre-registration it files
+  behind the queued `hotlead-fresh` unless the operator re-prioritizes. The ≤5 form is
+  higher-edge but pre-registered as over-filtering; do not fit intermediate cutoffs post-hoc.
+- Fairness note: the h2-concentration of the effect is NOT a 6%-recost artifact — kept-vs-dropped
+  within h2 share the same cost-era mix.
+
+**B1 — REFUTED on all three predictions; the honest negative.** No K ∈ {20,30,50} beats always-on
+on both axes in both halves for either strategy (P1 FAIL). The gated-OUT cohorts are frequently
+**positive** — on strict h2 the gate would have stood down INTO +0.0177/t trades while keeping
+−0.0230/t ones (P2 FAIL: the rule skips recoveries, not losses). Edge-state persistence does not
+exist: P(next-10 net ≤0 | trailing-K ≤0) − unconditional ranges **−20pp to +5pp**, never ≥+10pp
+(P3 FAIL). Own-PnL trend-following on this book is noise-chasing, exactly the pre-registered null —
+same family verdict as every killed timing gate. **Do not promote `recencyProfile` to a hard gate;
+do not relitigate without a genuinely different regime signal.** Joint read with A1: coherent —
+there is no exploitable time-domain regime (B1, tenure inversion), while the count-domain decay
+(A1) is real; the edge doesn't fade with the clock, it fades with our repeated exploitation of the
+same lead.
+
+**Addendum (same day, operator-directed — "spin up that new one as recommended"): spawned
+`copy-fable-leadcap`** — incumbent chassis (strict-hi, {10,3,1.0}, TP100/SL30, lag5+drift10) + ONE
+new gate `maxLeadCopiesLifetime {maxCopies: 12, counter: copy-hotlead-strict-hi}` (new config +
+`lead_exhausted` skip reason + `leadCopyCountLifetime` counter, closed-rows-only). Design decision
+validated with one extra offline check before implementing: a baseline-series count construction
+**failed split-half** (h1 sign-flipped; corr(own-N, baseline-N) = 0.39), so the deployed cap counts
+on the **incumbent's per-strategy series** — the exact construction and rows the study validated —
+rather than its own fresh series (which would start every lead at N=0 and never bind) or the
+baseline. Pre-registered P1/P2/P3 restated verbatim in the code comment (P2 baselines: strict-hi
+n=155, net/t +0.02714, drop3/t +0.01295; P3 expects ~85% of incumbent fire rate and requires the
+lever-fire count reported at n≥100 — the C4 test-power lesson). Spawned over MAX_INFLIGHT by
+operator direction (C4/C5 precedent); queued `hotlead-fresh` keeps its claim on the next natural
+slot. **Also enacted M1's first half: `ARENA_BENCHMARK` repointed `copy-hotlead-strict` (pruned
+ghost) → `copy-hotlead-strict-hi`** — required for this and every challenger's arena verdict to
+resolve at all (bench lookup returned undefined since the 07-12 prune). M1's second half
+(post-recost per-trade fields) remains open. Verified: build green (pre-existing tsconfig
+deprecation only); 14-check harness against the compiled dist (roster shape carries exactly the
+one new lever on the incumbent chassis; counter SQL boundary/exclusion/all-time semantics; gate
+wiring + skip reason + config publication + benchmark repoint).
+
+Phase-0.5 bookkeeping: A1 and B1 pre-registrations are both CLOSED (no dangling debt); the C1/D2
+trigger (D1 day-7, ~07-19) and M1's post-recost fields remain open from the 07-13 handoff.
+
+---
+
+## 2026-07-12 — Enacted the 2026-07-12 phase-1 handoff: D1 `copy-watchlist-unlock` (config) + D3 `live-cost-recon` (ops-DB study, funding BLOCKED)
+
+Operator directed "move on these two" from the 07-12 phase-1 handoff
+(`docs/phase1-handoff-2026-07-12.md`). Neither is a new trading signal — the overlay lane is nine
+challengers deep (C4/C5 from 07-11 included), the wallet-source frontier is a graveyard, so the two
+promotes attack the program's actual binding constraints: **event supply** (D1) and **scoreboard
+truth** (D3).
+
+**D1 — `copy-watchlist-unlock` (lever 1, subscription layer): `COPY_WATCHLIST_MAX` 80 → 150.**
+One-line default change in `follower-probe.ts`. At cap 80 (70 OG slots after the 10-slot source
+reserve) only ~47% of the ~150-wallet follow_list is subscribed and the entire ~178-wallet smart set
+is dropped by the tier-priority truncation — the sole proven edge is starved at the subscription
+layer (same "unsubscribed wallets fire zero events" mechanism as the U5 bug). The settled `rpc_usage`
+panel measures `copy_follower_ws` at ~4.2k credits/day @ 80 (~53/wallet/day) vs a ~47k/day total and
+the ≤100k cap, so 80→150 completes follow_list coverage for ~+3.7k credits/day (≈51k total, ~51% of
+cap). Source reserve unchanged (10). Pre-registered 7-day observables (verbatim in the code comment
+so the test can't be re-scoped): leads 173→**≥200**, hot **≥65**, incumbent fires **≥7/day**,
+incumbent net/trade stays **>0**; REVERT (env, instant) if console spend → >85k/day. **P2's failure
+mode also refutes D2 (trial-rotation) by proxy** — if leads stay ≤185, subscription was not the
+binding constraint. NOTE: code default — a Railway `COPY_WATCHLIST_MAX` env override would mask it.
+Build green (only the pre-existing tsconfig deprecation); PR #556.
+
+**D3 — `live-cost-recon` (execution/measurement integrity): live-micro funding BLOCKED.** Read-only
+ops-DB study (`docs/live-cost-recon-2026-07-12.md`), zero RPC, no slot. Findings: (1) **no
+modern-era live sample** — every live copy trade is June 18–29, executor paused since (the
+`hold30m-live-micro` "active:true" is a stale flag, its −0.75 SOL is a June total, not an ongoing
+bleed — corrects the 07-11 journal alarm); (2) `consensus2-live-micro` is 79% `live_error`
+(rent-bug era, excluded); (3) the clean 324-pair `hold30m` join shows **~3.1pp entry slippage**, so
+the flat 3% round-trip assumption is ~half the real cost. **Pre-registered verdicts: P1 FAIL** (3.1pp
+> 2pp bar → funding killed pending fix/recalibration); **P2 split — `copy-hotlead-strict` FAILS
+re-costing (drop3 → −5.9, monthly → ~1.3), `copy-hotlead-strict-hi` SURVIVES (drop3 → +2.3), which
+INVERTS the daily journal's ranking** (the thin-per-trade strict is the fragile one under real cost;
+the higher-conviction strict-hi is the robust one); **P3 NO** (zero current-era pairs). Recommendation:
+do not fund on this stale evidence; if live is wanted, a bounded calibration burst (≤0.3 SOL behind
+the breaker) on the current executor first; prefer strict-hi over strict; formally clear the stale
+`hold30m-live-micro` flag; consider re-calibrating `SIM_DEFAULT_COST_PCT` 3.0 → ~6 from a modern
+burst (separate reviewed follow-up, not changed here). Also corrects the handoff's ~4.4s land-time
+figure (that was the retired v25 `trades_v2` executor; the copy executor landed ~1.9s in June).
+
+**Roster unchanged by this cycle** — D1 is a supply config, D3 is advisory (enacts no code). The
+nine in-flight challengers, the two live probes (external/gradspec), and the queued `hotlead-fresh`
+are untouched; D1 accelerates all of their clocks. Decision notes carried for the operator: gradspec
+day-7 (07-13) → shelve-as-untestable (frozen pre-filter, not a refutation); `hotlead-early` (n=46,
+drop3/t −0.090) is the nearest natural KILL.
+
+**Addendum (same day, operator-directed) — enacted two D3 recommendations:**
+
+1. **Cleared the stale `copy-hotlead-hold30m-live-micro` "active" flag** (`live-training-data.ts`):
+   removed it from `LIVE_SHADOW_MAP` + `LIVE_ORIGINAL_MAP` → drops to retired/off (matching the
+   06-23 `deep-live-micro` precedent). Its base + pair-shadow were killed 07-05/07-03 and live
+   trading paused 06-29, but the kill was never propagated to that file, so its active-gate kept
+   reading `active: true` on trade history alone. **Operator confirms zero copy live-micro strategies
+   are running** — the correct active set is empty. Convention hardened in the code comment: killing
+   a copy live strategy MUST remove it from those maps (the only active-gate).
+
+2. **Re-costed `SIM_DEFAULT_COST_PCT` 3.0 → 6.0** (`sim-constants.ts`) from the D3 measurement (~3.1pp
+   entry slip alone → 3% under-priced the round trip by ~half; ~6% = entry + estimated exit). Operator
+   rationale: going live is gated entirely on shadow performance, so the shadow must price execution
+   honestly or a "promising" shadow could be a live loser. **Blast radius (flag for the next daily/lab
+   read so the drop isn't misread as edge decay):** the constant feeds BOTH the copy shadow sim
+   (`copy-trader.ts`) and wallet scoring (`wallet-pnl.ts`). Wallet scoring **reprices immediately**
+   (recomputed each cycle → the `wallet_discovery.promotable` count, now 10, likely drops; the gate
+   tightens). The copy strategy scoreboard transitions **gradually** — `net_sol` is stored per-row at
+   close, so existing rows keep their 3%-era net and only new closes use 6%; cumulative net/drop3 drift
+   down over each strategy's trade-turnover window while `recent_net_per_trade` reflects 6% fast. Under
+   this cost, per D3's re-costing, `copy-hotlead-strict` likely slips below the drop3/monthly bar while
+   `copy-hotlead-strict-hi` holds — expect the promotion picture to tighten over the next 1–2 weeks.
+   Stale June sample; recalibrate from a modern burst if one ever runs. Both changes: build green
+   (only the pre-existing tsconfig deprecation).
+
+---
+
 ## 2026-07-11 — Spawned from the 2026-07-11 phase-1 idea-model handoff: NODUMP (C4) + BREADTH (C5), two drop3-robustness overlays (operator-directed; MAX_INFLIGHT override)
 
 Implements both promoted theses from the phase-1 handoff (`docs/phase1-handoff-2026-07-11.md`). The

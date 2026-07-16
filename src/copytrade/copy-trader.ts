@@ -196,6 +196,19 @@ export interface CopyStrategy {
                                // the same n across more leads mechanically lifts drop3/trade. Counts open+closed own
                                // entries (leadCopyCountRecent) — knowable at entry, zero RPC (own-series SQL, cached).
                                // Distinct from maxEntriesPerMint (same LEAD across DIFFERENT mints, not same mint).
+  maxLeadCopiesLifetime?: { maxCopies: number; counterStrategyId: string };
+                               // LIFETIME per-lead copy cap (2026-07-13, A1 lead-alpha-lifecycle study,
+                               // docs/phase1-handoff-2026-07-13.md + lab ledger): skip the entry once the COUNTER
+                               // strategy's series holds >= maxCopies CLOSED copies of THIS lead — all-time, not a
+                               // rate window (that is maxLeadCopiesPerWindow / C5, a different lever). Measured on
+                               // 991 strict+strict-hi rows with prior-closes-only reconstruction: the per-strategy
+                               // Nth-copy dimension PASSED split-half (low-N <= 5th copy beat >12th by +0.022/t (h1)
+                               // and +0.058/t (h2), drop3/t positive both halves) while calendar hot-tenure FAILED
+                               // INVERTED and baseline-count N FAILED split-half (h1 sign flip, corr(own-N,
+                               // baseline-N)=0.39) — so the cap counts on a per-strategy SERIES, and a fresh
+                               // challenger id points counterStrategyId at the INCUMBENT's series (the exact rows
+                               // the study validated; a fresh id's own count would start at 0 and never bind).
+                               // Zero RPC (own-table SQL).
   crowdSellExit?: { minSellers: number; windowSec: number };
                                // CROWD-SELL EXIT (2026-06-28): close the position when >= minSellers DISTINCT smart
                                // wallets have sold this mint within windowSec — independent of the entry lead.
@@ -396,6 +409,38 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    drop3, OR n so low it can't reach 100 in ~2 weeks (over-filtered). 2-week window.
   { id: 'copy-hotlead-strict-hi', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
     entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 1.0 } },
+  // ── LC (2026-07-13, A1 lead-alpha-lifecycle study — docs/phase1-handoff-2026-07-13.md +
+  //    same-day lab-ledger resolution; operator-directed spawn): LIFETIME PER-LEAD COPY CAP.
+  //    Incumbent chassis (strict-hi, {10,3,1.0}) + ONE new gate maxLeadCopiesLifetime
+  //    {maxCopies: 12, counter: copy-hotlead-strict-hi} — skip a hot lead once the incumbent's
+  //    series has closed >= 12 copies of it. The A1 ops-DB study (991 strict + strict-hi rows,
+  //    prior-closes-only reconstruction, split-half) found the edge concentrates in a lead's
+  //    EARLIEST copies: <=5th copy beat >12th by +0.022/t (h1) and +0.058/t (h2) with drop3/t
+  //    positive in both halves (+0.024/+0.022), while the >12th tail bled (h2 −0.020/t, drop3/t
+  //    −0.035); the recorded degrading windows skewed to deep-N (strict recent median 17th copy vs
+  //    8th prior). Calendar hot-tenure was refuted INVERTED (young-hot leads worst) and a
+  //    baseline-count construction failed split-half — the cap therefore counts on the INCUMBENT's
+  //    per-strategy series (the validated construction; this fresh id's own count would start at 0
+  //    and never bind). Cutoff 12 = the pre-registered upper tercile bound (retains 67% of fires;
+  //    the higher-edge <=5 form retains 37%, below the pre-registered 40% reachability bar — do
+  //    NOT fit intermediate cutoffs post-hoc). Distinct lever from C5/breadth (2-per-HOUR rate
+  //    cap, in-flight) and from maxEntriesPerMint (same-mint repeats). Zero marginal RPC; shares
+  //    the incumbent's polls. entryDelaySec 5 → this row IS its own -lag twin.
+  //    Pre-registered (2026-07-13, before any shadow data; restated from the handoff):
+  //      P1 anti-lottery: KILL if drop3/trade <= 0 at n>=100.
+  //      P2 beats the incumbent: KILL if at n>=100 it does NOT beat copy-hotlead-strict-hi on
+  //         BOTH net/trade (> +0.02714) AND drop3/trade (> +0.01295) — baselines from the
+  //         2026-07-13 scoreboard (strict-hi n=155).
+  //      P3 reachability: expected ~85% of the incumbent's fire rate today (cap binds on ~15% of
+  //         its recent entries, growing as leads age); shelve if n>=100 is not reachable in ~4
+  //         weeks. NOTE the lever-fire count: at n>=100 report how many entries the cap actually
+  //         skipped (lead_exhausted) — a <20-skip read has low test power (the C4 lesson).
+  //    Resolve vs copy-hotlead-strict-hi on experiment_arena (challenger discipline). Spawned by
+  //    operator direction while the board is over MAX_INFLIGHT (precedent: C4/C5 07-11 override);
+  //    the queued hotlead-fresh keeps its claim on the next naturally-freed slot.
+  { id: 'copy-fable-leadcap', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
+    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 1.0 },
+    maxLeadCopiesLifetime: { maxCopies: 12, counterStrategyId: 'copy-hotlead-strict-hi' } },
   // ── V (2026-07-02): PROVEN-BAD EXCLUSION on the incumbent — the pivot from the V2 OOS
   //    refutation. Copy-net POSITIVE selection failed out-of-sample, but the persistence
   //    asymmetry is real and one-sided: first-half LOSING leads keep losing (−17.8 SOL second
@@ -1427,6 +1472,20 @@ export class CopyTrader {
     } catch { return 0; }
   }
 
+  /** ALL-TIME closed copies of a LEAD on a counter strategy's series — the maxLeadCopiesLifetime
+   *  signal. CLOSED rows only (net_sol recorded), matching the A1 study's prior-closes-only
+   *  construction exactly. Opt-in (queried only for capped strategies), zero RPC (own-table SQL,
+   *  indexed by strategy_id). */
+  private leadCopyCountLifetime(counterStrategyId: string, leadWallet: string): number {
+    try {
+      const row = this.db.prepare(`
+        SELECT COUNT(*) AS n FROM copy_trades
+        WHERE strategy_id = ? AND lead_wallet = ? AND status = 'closed' AND net_sol IS NOT NULL
+      `).get(counterStrategyId, leadWallet) as { n: number };
+      return row.n;
+    } catch { return 0; }
+  }
+
   /** A mint's graduation OPEN price (SOL/token) — the maxExtensionPct reference. Immutable,
    *  so cached per-mint forever (null = uncaptured → gate won't block). */
   private openPriceCache = new Map<string, number | null>();
@@ -1538,6 +1597,13 @@ export class CopyTrader {
       if (s.maxLeadCopiesPerWindow != null &&
           this.leadCopyCountRecent(s.id, leadWallet, s.maxLeadCopiesPerWindow.windowSec) >= s.maxLeadCopiesPerWindow.maxCopies) {
         this.recordSkip(s.id, 'lead_copy_cap'); continue;
+      }
+      // lifetime per-lead exhaustion cap (A1 lead-alpha-lifecycle): skip once the counter series
+      // has already closed maxCopies copies of THIS lead — the edge concentrates in a lead's
+      // earliest copies and the deep-N tail bleeds. See maxLeadCopiesLifetime.
+      if (s.maxLeadCopiesLifetime != null &&
+          this.leadCopyCountLifetime(s.maxLeadCopiesLifetime.counterStrategyId, leadWallet) >= s.maxLeadCopiesLifetime.maxCopies) {
+        this.recordSkip(s.id, 'lead_exhausted'); continue;
       }
       // daily-loss circuit breaker: halt new entries once today's realized net <= -cap (reset at 00:00 UTC)
       if (s.dailyLossCapSol != null && this.strategyDailyRealizedNet(s.id) <= -s.dailyLossCapSol) {
@@ -2522,7 +2588,10 @@ function computeCopyPromotion(summaries: Record<string, any>): unknown {
 //   • reference      → idealized (no lag) upper-bounds; never live, never pruned
 // PRUNE fires only for a MATURED challenger (n>=ARENA_MATURE_N) beaten on net/trade AND drop3/trade.
 const ARENA_CONTROLS = new Set(['copy-tp100-sl30', 'copy-tp100-sl30-lag']);
-const ARENA_BENCHMARK = 'copy-hotlead-strict';
+// Repointed 2026-07-13 (M1 arena-truth fix, phase-1 handoff): copy-hotlead-strict was pruned
+// 2026-07-12, leaving challenger verdicts comparing against a ghost (bench lookup = undefined →
+// verdicts stuck at COLLECTING past n>=100). The benchmark is the CURRENT incumbent.
+const ARENA_BENCHMARK = 'copy-hotlead-strict-hi';
 const ARENA_MATURE_N = 100;
 
 // Plain-language thesis per strategy — "what is this one actually doing?" — surfaced under each
@@ -2532,6 +2601,7 @@ const ARENA_MATURE_N = 100;
 const STRATEGY_THESIS: Record<string, string> = {
   'copy-hotlead-strict': 'Copy a lead only while it is HOT — its last ~10 copies netted us ≥ +0.5 SOL. Recency-gated lead quality; the incumbent everything is measured against.',
   'copy-hotlead-strict-hi': 'Same hot-lead gate, HIGHER recent-net floor — does a stricter lead-quality bar select better leads than the incumbent?',
+  'copy-fable-leadcap': 'Incumbent gate + LIFETIME per-lead cap: skip a hot lead once the incumbent has closed ≥12 copies of it — the A1 study found the edge lives in a lead\'s earliest copies and the deep-N tail bleeds (copy-count alpha decay).',
   'copy-hotlead-hold30m': 'Hot-lead entry, but hold up to 30 min (SL −30%, no take-profit) — let winners run past +100% instead of capping.',
   'copy-hotlead-strict-xbad': 'Incumbent gate PLUS a veto: skip leads whose all-time copy net is proven negative (downside-persistence exclusion).',
   'copy-fable-freshdip': 'Incumbent gate + only DIP fills (price at/below the detection snapshot) on tokens graduated < 15 min ago — fresh-token dip entries.',
@@ -3095,6 +3165,7 @@ export function computeCopyTrades(db: Database.Database): unknown {
         lead_pullback_gate: s.leadPullbackGate ?? null,
         smart_flow_veto: s.smartFlowVeto ?? null,
         max_lead_copies_per_window: s.maxLeadCopiesPerWindow ?? null,
+        max_lead_copies_lifetime: s.maxLeadCopiesLifetime ?? null,
         min_lead_buy_sol: s.minLeadBuySol ?? null, hot_lead_gate: s.hotLeadGate ?? null,
         elite_lead_gate: s.eliteLeadGate ?? null,
         regime_gate_min_score: s.regimeGateMinScore ?? null,
