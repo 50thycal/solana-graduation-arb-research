@@ -479,9 +479,9 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    expected (161 subset trades / 17.1d) → n=100 in ~10-11 days.
   //    Resolve vs copy-hotlead-strict at n>=100 (arena rules): PRUNE if beaten on net/trade
   //    AND drop3/trade; kill early if it can't reach n=100 in ~2.5 weeks (over-filtered).
-  { id: 'copy-fable-freshdip', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 0, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
-    maxTokenAgeSec: 900 },
+  // ── KILLED 2026-07-16 (age/PnL prune, operator-directed): copy-fable-freshdip. age=12.5d,
+  //    n=65, net −3.88, drop3/trade −0.10 — never reached n=100, still net-negative after clearing
+  //    the 1-week bar. Closed rows remain in the DB → retired_summary; do NOT revive this id.
   // ── FD2 (2026-07-08, Fable line): BOUNDED-DIP — freshdip's own recorded trades (n=35, live
   //    read from the 2026-07-08 monitor loop) came in net-negative (net −0.41, drop3 −2.32),
   //    contrary to the backtest that spawned it. Root-caused via a drift-bucket breakdown of its
@@ -500,9 +500,9 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //    n<100, not yet resolved per arena rules) — this is a sibling, not a replacement.
   //    Resolve vs copy-hotlead-strict at n>=100 (arena rules): PRUNE if beaten on net/trade AND
   //    drop3/trade. Secondary read: does it beat plain freshdip on both, confirming the floor helps.
-  { id: 'copy-fable-freshdip-bounded', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 0, minEntryDriftPct: -20,
-    hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 }, maxTokenAgeSec: 900 },
+  // ── KILLED 2026-07-16 (age/PnL prune, operator-directed): copy-fable-freshdip-bounded. age=7.0d,
+  //    n=23, net −2.18, drop3/trade −0.21 — the worst drop3/trade in the roster, never separated
+  //    from lottery-shaped. Closed rows remain in the DB → retired_summary; do NOT revive this id.
   // ── FD3-cohort (2026-07-10, Fable line; operator-directed 3-strategy batch — treat as ONE
   //    experiment for MAX_INFLIGHT accounting, like the c2rr cohort). Design session: acted on the
   //    phase-3 monitor ledger + two fresh ops backtests over strict's 814 closed rows.
@@ -562,9 +562,9 @@ export const COPY_STRATEGIES: CopyStrategy[] = [
   //         maxConsensusRecent: 3 (the pre-declared fallback).
   //    Promote to a gated lab strategy only if P1+P2+P3 all hold. Resolve vs the incumbent on
   //    experiment_arena (challenger discipline).
-  { id: 'copy-hotlead-early', tpPct: 100, slPct: 30, exitFollow: false, maxHoldSec: null,
-    entryDelaySec: 5, maxEntryDriftPct: 10, hotLeadGate: { lastN: 10, minTrades: 3, minNetSol: 0.5 },
-    maxConsensusRecent: 2 },
+  // ── KILLED 2026-07-16 (age/PnL prune, operator-directed): copy-hotlead-early. age=10.4d, n=94,
+  //    net −3.73, drop3/trade −0.06 — P1/P2 both failed forward (drop3/trade never cleared 0, let
+  //    alone beat the incumbent). Closed rows remain in the DB → retired_summary; do NOT revive.
   // ── C4 (2026-07-11, phase-1 handoff docs/phase1-handoff-2026-07-11.md): SMART-DISTRIBUTION VETO.
   //    Incumbent chassis + ONE new gate (smartFlowVeto): at the copy moment, skip the entry if the
   //    watched smart crowd is net-SELLING this mint — distinct smart sellers > distinct smart buyers
