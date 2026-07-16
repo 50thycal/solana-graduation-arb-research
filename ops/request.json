@@ -1,5 +1,5 @@
 {
   "type": "db",
-  "sql": "SELECT strategy_id AS s, exit_ts AS t, entry_delay_sec AS lag, ROUND(gross_pct,3) AS g, size_sol AS sz, ROUND(net_sol,5) AS net, scaled_out AS sc, substr(mint,1,10) AS mint, substr(lead_wallet,1,10) AS lead FROM copy_trades WHERE status='closed' AND net_sol IS NOT NULL AND strategy_id IN ('copy-hotlead-strict','copy-hotlead-strict-hi','copy-fable-leadcap') ORDER BY exit_ts ASC, id ASC",
-  "max_rows": 1400
+  "sql": "SELECT strategy_id AS s, COALESCE(execution_mode,'shadow') AS mode, COUNT(*) AS n, ROUND(AVG(entry_drift_pct),3) AS avg_drift, ROUND(AVG(ABS(entry_drift_pct)),3) AS avg_absdrift, ROUND(AVG(gross_pct),3) AS avg_gross, ROUND(AVG(size_sol),4) AS avg_sz, ROUND(AVG(jito_tip_sol),6) AS avg_tip, ROUND(AVG(ata_rent_sol),6) AS avg_rent, ROUND(AVG(detection_lag_sec),2) AS avg_detlag FROM copy_trades WHERE status='closed' AND net_sol IS NOT NULL GROUP BY strategy_id, execution_mode ORDER BY n DESC",
+  "max_rows": 80
 }
