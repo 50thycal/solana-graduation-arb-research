@@ -4,6 +4,12 @@
 shadow slot, no code change, no live money). Follows N1 (`docs/n1-edge-death-2026-07-16.md`) and D3
 (`docs/live-cost-recon-2026-07-12.md`). Voice: proposal.*
 
+> **RESOLVED same day, superseding the burst recommendation below:** the operator's own live-trading
+> experience puts real round-trip cost at **6–10%**, sometimes worse than the modeled 6%. This
+> answers the burst's question directly (well above the ~4.4% target) — the cost lever is **closed,
+> FAIL**. See `docs/copy-strategy-lab.md` (2026-07-16, "X1 RESOLVED by operator-observed live cost")
+> for the full resolution. Do not run the burst below; the question it targeted is already answered.
+
 ## Why this study
 
 N1 established the hot-lead edge is dead at the 6% realistic cost, and that the cause is **cost**
