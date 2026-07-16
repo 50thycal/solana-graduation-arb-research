@@ -10,6 +10,45 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-16 — X1 RESOLVED by operator-observed live cost: cost-reduction branch CLOSED, FAIL — the hot-lead entry cannot be rescued by execution improvements
+
+**Supersedes the live-calibration-burst recommendation in the same-day X1 study
+(`docs/x1-execution-cost-2026-07-16.md`).** X1 left one question open: is the modeled 6% round-trip
+cost an overstated artifact of stale (paused-since-06-29) execution data, in which case a measured
+real cost below the ~4.4% drop3-breakeven target would revive the hot-lead entry? X1 proposed a
+bounded live burst (≤0.3 SOL) to find out.
+
+**The operator has direct trading experience that answers this without a burst:** live round-trip
+cost vs shadow modeling ran **6–10%**, sometimes worse than the current 6% SIM assumption, not
+better. This is stronger evidence than any burst could produce (real capital, multiple trades, not a
+6-trade calibration sample) and it resolves X1's pre-registered decision rule decisively on the FAIL
+branch: measured round-trip (6–10%) is well above the ~4.4% target needed to clear drop3.
+
+**Conclusions:**
+1. **The live-calibration burst is no longer needed or recommended** — the answer it was designed to
+   produce is already in hand, and it came in worse than the estimate being tested, not better.
+2. **X1's "reducibility is plausible" verdict is closed out negative.** Cost is not an inflated
+   artifact of stale June data; if anything the modeled 6% may be a *floor*, not a realistic average,
+   on bad days.
+3. **N1's verdict is now confirmed by live operator experience, not just an offline replay** — no
+   version of the hot-lead entry (any gate, any exit, any sizing) can be rescued by execution
+   improvements. This is the strongest form of evidence available for that conclusion.
+4. **`SIM_DEFAULT_COST_PCT` (currently 6.0, set by the 2026-07-12 D3 study) may still be
+   under-pricing bad-day cost** given the observed 6–10% range — worth a future recalibration pass if
+   a way to pin a representative number from the operator's own trading history exists, separate from
+   this resolution.
+5. **The ONLY remaining path to a promotable strategy is a genuinely new data input** — something the
+   bot does not currently read at all. Re-selecting wallets from the same on-chain PumpFun activity
+   (cotrade, live_tape, winner_sniper, external, gradspec — all previously FAILED/PRUNED) is a closed
+   lane; gating/sizing/exit engineering on the existing signal is a closed lane (graveyard, reconfirmed
+   by N1); cost reduction is now a closed lane (this entry). Next Phase-1 cycle should steer generation
+   explicitly toward *what new data could be fed in*, not another variant of any lever already tried.
+
+**Verified:** journal update only; no code/strategy change. Resolution is operator-testimony-based,
+not a query-able measurement — recorded as such, distinct from the query-backed N1/X1 studies.
+
+---
+
 ## 2026-07-16 — X1: execution-cost lever scoped — reducibility is PLAUSIBLE but needs a bounded live burst to confirm (follows N1)
 
 Executed **X1** (`execution-cost lever`) via `/solana-strategy-phase-2` — a read-only ops-DB scoping
