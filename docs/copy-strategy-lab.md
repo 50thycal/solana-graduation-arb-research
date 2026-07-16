@@ -10,6 +10,43 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-16 — X1: execution-cost lever scoped — reducibility is PLAUSIBLE but needs a bounded live burst to confirm (follows N1)
+
+Executed **X1** (`execution-cost lever`) via `/solana-strategy-phase-2` — a read-only ops-DB scoping
+study of N1's surviving "lower execution cost" lever. Full writeup: `docs/x1-execution-cost-2026-07-16.md`.
+No shadow slot, no code change, no live money.
+
+**Target (from the N1 rows):** to clear drop3>0 the hot-lead entry needs round-trip cost ≤ **~4.4%
+pooled** (~2.9% for strict-hi alone) — a ~1.6pp (to ~3.1pp) cut from the current 6%.
+
+**Decomposition of the 6%:**
+- **Entry-latency drift is NOT a mean cost — it's slightly favorable** (`entry_drift_pct` mean −3.1%
+  strict-hi / −2.2% strict / −1.3% tp100-lag; the 5s wait catches a dip). "Execute faster" cuts
+  variance, not mean cost — latency is not the lever.
+- **Fixed mechanical (tip + ATA rent) is controllable but modest headroom at 0.05 SOL:** live-micro
+  tip+rent ran 0.86% (`consensus2-live`) vs 4.55% (`hold30m-live`) — a 5× spread driven by tip
+  aggressiveness. ATA rent recovery is **already implemented** (executor appends `CloseAccount` on
+  sell; stored `ata_rent_sol` is the permanent residual only) → small remaining headroom.
+- **Size amortizes fixed costs** (SIM cost is flat-% but real fixed cost is per-trade-SOL; 0.5 SOL ≈
+  10× dilution) — a genuine lever, but trades against slippage + 10× per-trade risk.
+- **The binding term — real entry/exit SLIPPAGE on the CURRENT executor — is stale (June, executor
+  paused since 06-29) and unmeasurable offline.** D3's ~3.1pp entry slip is the bulk of the 6%.
+
+**Verdict:** the arithmetic isn't hopeless (mechanical component plausibly ~1–2%; drift neutral-to-
+favorable) — IF current slippage is ~2–3%, total round-trip could land near/below 4.4% and the edge
+revives. But that slippage number can only be pinned by a **bounded live calibration burst** (D3's
+deferred recommendation, now decision-critical): `copy-hotlead-strict-hi` only, 0.05 SOL, ≤0.3 SOL
+total behind the breaker. **Pre-registered:** measured round-trip **< 4.4%** → re-cost the SIM to the
+measured value, edge back above bar, resume signal work; **≥ 4.4%** → cost is structural, N1's "need a
+new data input" verdict stands. **Needs operator funding sign-off** (nothing here enables live).
+Do NOT re-cost `SIM_DEFAULT_COST_PCT` downward on offline evidence (D3 moved it up on a measurement;
+moving it back must also be a measurement).
+
+**Verified:** read-only study, no build/deploy. Target computed before the decomposition; burst P1/P2
+thresholds fixed before any live data.
+
+---
+
 ## 2026-07-16 — N1 RESOLVED (phase-2 execution of the 2026-07-16 phase-1 handoff): the hot-lead edge is dead at realistic 6% cost — primarily a COST effect, not a transition artifact
 
 Executed **N1** (`incumbent-edge-death-vs-cost-transition`) from `docs/phase1-handoff-2026-07-16.md`
