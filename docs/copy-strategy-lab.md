@@ -10,6 +10,63 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-16 — N1 RESOLVED (phase-2 execution of the 2026-07-16 phase-1 handoff): the hot-lead edge is dead at realistic 6% cost — primarily a COST effect, not a transition artifact
+
+Executed **N1** (`incumbent-edge-death-vs-cost-transition`) from `docs/phase1-handoff-2026-07-16.md`
+via `/solana-strategy-phase-2` path (c) — one read-only `ops`-DB pull, no shadow slot, no code
+change. Full writeup: `docs/n1-edge-death-2026-07-16.md`. D3 lineage.
+
+**Question:** is `copy-hotlead-strict-hi`'s fall below the bar (n=198, drop3 −0.78, stress −2.44,
+degrading) a REAL edge death at 6% cost, or a residual of the 3%→6% mixed-cost-era transition?
+
+**Method:** pulled all 1,061 closed `-lag` rows of the pure hot-lead cohort (`copy-hotlead-strict`
+836 + `-strict-hi` 198 + `-leadcap` 27). Stored net embeds the cost live at close
+(`net = size×(gross−costPct)/100`), verified per-row (early ≈3%, recent ≈6%). Two constructions:
+(1) **re-net the full history at a consistent 6%** (the D3 re-costing; cost-consistent, n≥100);
+(2) the pre-registered **close-era partition** (6%-era vs 3%-era stored net) as the forward cross-check.
+
+**P1 — FAIL (edge does not clear the realistic-cost bar).** At 6% the hot-lead entry is
+drop3-negative at n≥100 by every construction:
+
+| construction | n | net/t @6% | **drop3/t @6%** |
+|---|---|---|---|
+| re-net full pooled strict+strict-hi | 1034 | −0.0018 | **−0.0081** |
+| re-net strict-hi alone (incumbent) | 198 | −0.0018 | **−0.0152** |
+| forward 6%-era partition (underpowered) | 51 | −0.0869 | **−0.1359** |
+| — 3%-era partition (the contrast) | 983 | +0.0176 | +0.0109 |
+
+**The cause is COST, not a transition artifact.** The *same* 1,034 trades net **+17.31 SOL at 3%**
+(drop3/t +0.011) but **−1.86 SOL at 6%** (drop3/t −0.008). ~All of the apparent edge was under-priced
+execution — the D3 3→6% re-cost (measured ~3.1pp entry slippage) erases it. Re-costing the whole
+history *consistently* at 6% still fails drop3, so this is **not** a mixed-era blend that will wash
+out. A secondary genuine recent decay sits on top (fresh 6%-era rows −0.087/t vs the −0.0018/t
+full-6% mean; recent exit-order chunks negative even at consistent cost; leadcap all-6% −0.106/t).
+
+**P2 — the recent bleed is BROAD, not a cluster** (does not temper P1). strict-hi's recent 66-trade
+window (net6/t −0.048, WR 0.29): 52 distinct mints (73% net-negative), worst mint only 5% of the
+loss; 16 leads (75% negative). Systemic decay, not a few unlucky tokens.
+
+**Verdict → North-Star:** *no edge on the current data clears the realistic-cost bar; the goal now
+needs a genuinely new DATA input OR lower execution cost, not another entry gate.* The hot-lead edge
+only ever read promotable because the shadow under-priced execution at 3%.
+
+**Proposals (no code changed here):**
+- **R1 (relative-impact replay, ~07-24) becomes a low-prior AUTOPSY, not a rescue** — the aggregate
+  entry is dead at 6% and drop3 negative, so a subset selector must capture nearly all the thin
+  positive mass. Still worth the cheap offline check as the specific "does ANY subset survive 6%?"
+  question; a fail confirms this verdict, a pass would be a genuine surprise.
+- **Execution cost is now a first-class lever** — the edge lives/dies on the cost assumption, so
+  lowering round-trip cost/slippage (routing, adaptive tips, fill timing) is worth as much as any
+  signal and is the clearest mechanism to move the entry back above the bar.
+- **Stop spawning entry-gate overlays on the below-bar base** absent a genuinely new data input.
+- **Do not fund live-micro** (unchanged from D3 — the shadow itself is now sub-bar at honest cost).
+
+**Verified:** read-only study, no build/deploy. Pre-registrations fixed before the query ran; the
+forward partition came in under n=100 (n=51, reported as underpowered) and the verdict rests on the
+pre-registered n≥100 cost-consistent re-net. No post-hoc re-scoping.
+
+---
+
 ## 2026-07-16 — Age/PnL batch prune (operator-directed): clear the stale-negative backlog, reset for new experiments
 
 After 13 consecutive Phase-3 monitor loops (2026-07-11 → 2026-07-16) showing `n_promotable_stable = 0`
