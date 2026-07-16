@@ -10,6 +10,62 @@ prune matured failures; cap in-flight experiments (MAX_INFLIGHT = 4); converge, 
 
 ---
 
+## 2026-07-16 — Age/PnL batch prune (operator-directed): clear the stale-negative backlog, reset for new experiments
+
+After 13 consecutive Phase-3 monitor loops (2026-07-11 → 2026-07-16) showing `n_promotable_stable = 0`
+throughout, with the roster deteriorating into a broad monoculture of hot-lead-recency variants (see
+`docs/copy-trade-journal.md` and the loop history), the operator directed a blanket cleanup rule:
+**prune any challenger running ≥1 week that is still net-negative**, journal the results, and move on
+to fresh ideas rather than keep nursing a crowded, mostly-red board.
+
+**Rule applied:** `role == 'challenger'` (excludes `control`/`reference`/`discovery_probe` — those
+follow separate never-prune / pre-registered-P1-P2-P3 governance) AND `age_days >= 7` AND
+`net_sol < 0`, evaluated against the 2026-07-16 07:36 AM CDT snapshot of `copy-trades.json`.
+
+**KILLED (3):**
+- **`copy-hotlead-early`** — age 10.4d, n=94, net −3.73, drop3/trade −0.06. Its own pre-registered P1
+  (drop3/trade > 0) and P2 (beat the incumbent on both axes) never passed forward — the earliness-cap
+  lever (`maxConsensusRecent: 2`) did not produce a robust edge.
+- **`copy-fable-freshdip`** — age 12.5d, n=65 (never reached the n=100 resolution bar), net −3.88,
+  drop3/trade −0.10. The dip+fresh-token lever that looked strong in its originating backtest never
+  translated to live edge; stalled at n=65 for its last 2 monitor loops before this prune.
+- **`copy-fable-freshdip-bounded`** — age 7.0d (right at the boundary), n=23, net −2.18, drop3/trade
+  −0.21, the worst drop3/trade of the active roster. The −20% falling-knife floor added on top of
+  freshdip did not rescue it.
+
+**Explicitly NOT pruned under this rule (documented so the exclusion is traceable):**
+- `copy-fable-dip`, `copy-fable-deep`, `copy-hotlead-nodump`, `copy-hotlead-breadth`,
+  `copy-fable-leadpullback` — all net-negative except dip, but all under 7 days old (4.7–6.0d) at
+  evaluation time.
+- `copy-fable-leadcap` — 3.0d old, net-negative but the newest challenger (spawned from the
+  2026-07-14 Phase-1 pass), far under the age bar.
+- `copy-src-gradspec`, `copy-src-external` — `discovery_probe` role, governed by their own
+  pre-registered P1/P2/P3 discovery-source criteria (see `discovery_scorecard`), not the challenger
+  arena rule. `external` (age 12.2d, net −0.16) would have technically matched a naive age+PnL filter
+  but was excluded as out of scope for this cleanup.
+- `copy-hotlead-strict-hi` — the current (non-stable) incumbent; net-positive at evaluation time and
+  excluded as `role: incumbent`/benchmark regardless.
+- `copy-conviction-consensus2`, `copy-tp100-sl30`, `copy-tp100-sl30-lag` — `reference`/`control` roles,
+  never pruned per arena rules (load-bearing baselines / idealized upper bound).
+
+**Context this prune sits in:** `copy-hotlead-strict` was pruned 2026-07-12 (stress gate collapse,
+beaten by `-hi` on both robustness axes — see the loop #2/#3 monitor history). Its successor
+`copy-hotlead-strict-hi` has spent every subsequent loop unpromotable, oscillating in the 52–56 score
+band with `trend: degrading`. Across the same window the realistic roster grew increasingly correlated
+(9 of ~13 active challengers were hot-lead-recency perturbations) with no challenger showing durable
+separation from the pack. This prune clears the stale-negative half of that backlog; the remaining
+red-but-young challengers (dip/deep/nodump/breadth/leadpullback/leadcap) keep running and will resolve
+on their own timelines. Per the operator's direction, the intent is to follow this cleanup with fresh
+Phase-1 ideation across a different edge-source rather than spawning another hot-lead variant into the
+freed slots.
+
+**Verified:** `npm run build` — only the pre-existing tsconfig `moduleResolution=node10` deprecation
+warning (confirmed present on the clean branch before this change), no new compile errors. All three
+strategy definitions removed from `COPY_STRATEGIES`; closed rows for all three remain in the DB and
+will surface via `retired_summary` (same mechanism verified for the `copy-hotlead-strict` prune).
+
+---
+
 ## 2026-07-11 — Spawned from the 2026-07-11 phase-1 idea-model handoff: NODUMP (C4) + BREADTH (C5), two drop3-robustness overlays (operator-directed; MAX_INFLIGHT override)
 
 Implements both promoted theses from the phase-1 handoff (`docs/phase1-handoff-2026-07-11.md`). The
