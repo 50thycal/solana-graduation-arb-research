@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-07-17T19:29:06.474Z",
+  "last_error": {
+    "id": 4,
+    "ts": 1784131697234,
+    "level": "error",
+    "name": "gist-sync",
+    "message": "Status sync failing (1x): Tree create failed: 422 {\"message\":\"tree.sha 7c4f75d6030fcf3bdd0aa93d74d9bb831dca4db8 is not a valid blob\",\"documentation_url\":\"https://docs.github.com/rest/git/trees#create-a-tree\",\"status\":\"422\"}",
+    "stack": "Error: Tree create failed: 422 {\"message\":\"tree.sha 7c4f75d6030fcf3bdd0aa93d74d9bb831dca4db8 is not a valid blob\",\"documentation_url\":\"https://docs.github.com/rest/git/trees#create-a-tree\",\"status\":\"422\"}\n    at GistSync.sync (/app/dist/api/gist-sync.js:245:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+    "git_sha": null
+  },
+  "recent": [
+    {
+      "id": 4,
+      "ts": 1784131697234,
+      "level": "error",
+      "name": "gist-sync",
+      "message": "Status sync failing (1x): Tree create failed: 422 {\"message\":\"tree.sha 7c4f75d6030fcf3bdd0aa93d74d9bb831dca4db8 is not a valid blob\",\"documentation_url\":\"https://docs.github.com/rest/git/trees#create-a-tree\",\"status\":\"422\"}",
+      "stack": "Error: Tree create failed: 422 {\"message\":\"tree.sha 7c4f75d6030fcf3bdd0aa93d74d9bb831dca4db8 is not a valid blob\",\"documentation_url\":\"https://docs.github.com/rest/git/trees#create-a-tree\",\"status\":\"422\"}\n    at GistSync.sync (/app/dist/api/gist-sync.js:245:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+      "git_sha": null
+    },
+    {
+      "id": 3,
+      "ts": 1783839318725,
+      "level": "error",
+      "name": "gist-sync",
+      "message": "Status sync failing (1x): Ref update failed: 500 ",
+      "stack": "Error: Ref update failed: 500 \n    at GistSync.sync (/app/dist/api/gist-sync.js:282:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+      "git_sha": null
+    },
+    {
+      "id": 2,
+      "ts": 1783691599769,
+      "level": "error",
+      "name": "gist-sync",
+      "message": "Status sync failing (1x): Ref update failed: 500 ",
+      "stack": "Error: Ref update failed: 500 \n    at GistSync.sync (/app/dist/api/gist-sync.js:282:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+      "git_sha": null
+    },
+    {
+      "id": 1,
+      "ts": 1783647584258,
+      "level": "error",
+      "name": "gist-sync",
+      "message": "Status sync failing (1x): Blob create failed for diagnose.json: 401 {\r\n  \"message\": \"Bad credentials\",\r\n  \"documentation_url\": \"https://docs.github.com/rest\",\r\n  \"status\": \"401\"\r\n}",
+      "stack": "Error: Blob create failed for diagnose.json: 401 {\r\n  \"message\": \"Bad credentials\",\r\n  \"documentation_url\": \"https://docs.github.com/rest\",\r\n  \"status\": \"401\"\r\n}\n    at GistSync.sync (/app/dist/api/gist-sync.js:233:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at async GistSync.start (/app/dist/api/gist-sync.js:70:9)",
+      "git_sha": null
+    }
+  ]
+}

@@ -1,0 +1,1355 @@
+{
+  "generated_at": "2026-07-17T19:29:06.790Z",
+  "phase": "phase2-copy-net-ranking",
+  "method": "v2-copy-net",
+  "note": "V2 ranks/gates leads by REALIZED COPY NET (copy_trades on the copy-tp100-sl30 baseline), not by the wallet's own on-chain P&L (that is V1 / wallet-leaderboard.json). READ-ONLY comparison page — V1 is still the live selector; repointing live selection onto copy-net is Option B (not done here). copy_net is at the recorded shadow size (size_sol on the baseline) and is already net of the SIM round-trip cost.",
+  "caveats": [
+    "method_comparison.in_sample scores each lead on the SAME trades used to select it — it is circular and structurally flatters V2. Use method_comparison.walk_forward (out-of-sample) and the live ab_live instead.",
+    "selection is measured on copy-tp100-sl30 (~1.1s fills) but executed at 5s+drift10; see measurement.lag_vs_fast for whether lead edge survives the real latency.",
+    "ab_live launched 2026-07-01 into the June 29–30 record drawdown — do not read early P&L; wait for n>=target_n and the exclusive-lead split."
+  ],
+  "measurement": {
+    "measure_strategy_fast": "copy-tp100-sl30",
+    "measure_strategy_lag": "copy-tp100-sl30-lag",
+    "execution_latency_sec": 5,
+    "live_source": "copy-tp100-sl30",
+    "lag_measurable_leads": 39,
+    "lag_measure_min_leads": 8,
+    "recency_gate_enabled": false,
+    "note": "live_source is what live V2 selection currently reads. It stays on the fast baseline until the lag baseline has >= lag_measure_min_leads leads AND COPYV2_USE_LAG_MEASURE is set, so the running A/B is not disturbed.",
+    "lag_vs_fast": {
+      "shared_leads": 107,
+      "fast_net_sol": -24.7487,
+      "lag_net_sol": -49.4446,
+      "sign_flips": 31,
+      "note": "Per-lead copy net at ~1.1s (fast) vs 5s+drift10 (lag) over leads both baselines have copied. sign_flips = leads that flip profitable⇄unprofitable once the 5s latency is paid."
+    }
+  },
+  "measure_strategy": "copy-tp100-sl30",
+  "gate": {
+    "minCopies": 10,
+    "minNetSol": 0,
+    "minNetDropTop3Sol": 0,
+    "maxDaysSinceActive": 14,
+    "recencyDays": 7,
+    "minNetRecentSol": null
+  },
+  "summary": {
+    "measurable_leads": 85,
+    "v2_selected": 9,
+    "v1_selected_measurable": 18
+  },
+  "method_comparison": {
+    "in_sample": {
+      "note": "CIRCULAR — scores leads on the same trades used to select them. Retained for continuity; do not cite as evidence. copy_net_sol per cell = sum of realized copy net for the leads in it.",
+      "v2_selected_total_copy_net_sol": 30.5136,
+      "v1_selected_total_copy_net_sol": 10.3886,
+      "agreement": {
+        "both": {
+          "n_leads": 5,
+          "copy_net_sol": 16.7109
+        },
+        "v1_only": {
+          "n_leads": 13,
+          "copy_net_sol": -6.3223
+        },
+        "v2_only": {
+          "n_leads": 4,
+          "copy_net_sol": 13.8027
+        },
+        "neither": {
+          "n_leads": 63,
+          "copy_net_sol": -58.1772
+        }
+      }
+    },
+    "walk_forward": {
+      "note": "OUT-OF-SAMPLE — V2 selection is gated on copies BEFORE T-7d, scored on copies AFTER. V1 uses its CURRENT set scored OOS (its historical set is not reconstructable), which mildly flatters V1 — so v2_only beating v1_only here is a conservative read of V2 edge. Positive v2_only + negative v1_only = copy-net finds forward edge own-P&L misses.",
+      "window_days": 7,
+      "both": {
+        "n_leads": 5,
+        "post_cut_copy_net_sol": 1.8989
+      },
+      "v1_only": {
+        "n_leads": 35,
+        "post_cut_copy_net_sol": 2.7427
+      },
+      "v2_only": {
+        "n_leads": 6,
+        "post_cut_copy_net_sol": -3.3008
+      }
+    }
+  },
+  "gate_grid": {
+    "note": "Each config's V2 selection gated as-of T-7d, scored on the 7d since. Higher post_cut_net_per_lead = a better-calibrated gate. 'current' is the live setting.",
+    "rows": [
+      {
+        "config": "minCopies=5",
+        "n_selected": 13,
+        "post_cut_copy_net_sol": 0.4854,
+        "post_cut_net_per_lead": 0.037
+      },
+      {
+        "config": "minCopies=10 (current)",
+        "n_selected": 11,
+        "post_cut_copy_net_sol": -1.4019,
+        "post_cut_net_per_lead": -0.127
+      },
+      {
+        "config": "minCopies=15",
+        "n_selected": 9,
+        "post_cut_copy_net_sol": -0.9598,
+        "post_cut_net_per_lead": -0.107
+      },
+      {
+        "config": "minCopies=10 + recent7d>0",
+        "n_selected": 7,
+        "post_cut_copy_net_sol": 0.1766,
+        "post_cut_net_per_lead": 0.025
+      },
+      {
+        "config": "minCopies=5 + recent7d>0",
+        "n_selected": 7,
+        "post_cut_copy_net_sol": 0.1766,
+        "post_cut_net_per_lead": 0.025
+      }
+    ]
+  },
+  "ab_live": {
+    "note": "copy-select-v1 (own-P&L) vs copy-select-v2 (copy-net): identical realistic strategies differing ONLY in lead selection. Judge on shared vs exclusive: the exclusive-lead split is what actually distinguishes the methods (shared leads land in both arms). Resolve per ab_verdict, not raw net.",
+    "target_n": 100,
+    "v1": {
+      "strategy": "copy-select-v1",
+      "open": 0,
+      "n": 40,
+      "net_sol": -1.2208,
+      "net_drop_top3_sol": -2.9006,
+      "win_rate": 0.325,
+      "net_7d_sol": 0,
+      "progress_pct": 40,
+      "shared": {
+        "n": 0,
+        "net_sol": 0,
+        "net_drop_top3_sol": 0,
+        "win_rate": null
+      },
+      "exclusive": {
+        "n": 40,
+        "net_sol": -1.2208,
+        "net_drop_top3_sol": -2.9006,
+        "win_rate": 0.325
+      }
+    },
+    "v2": {
+      "strategy": "copy-select-v2",
+      "open": 0,
+      "n": 27,
+      "net_sol": -4.5025,
+      "net_drop_top3_sol": -5.0494,
+      "win_rate": 0.074,
+      "net_7d_sol": 0,
+      "progress_pct": 27,
+      "shared": {
+        "n": 0,
+        "net_sol": 0,
+        "net_drop_top3_sol": 0,
+        "win_rate": null
+      },
+      "exclusive": {
+        "n": 27,
+        "net_sol": -4.5025,
+        "net_drop_top3_sol": -5.0494,
+        "win_rate": 0.074
+      }
+    },
+    "verdict": {
+      "status": "resolved_refuted",
+      "decision": "keep V1 live selection; V2 positive selection killed 2026-07-02",
+      "detail": "Refuted by walk-forward (OOS) evidence rather than arm-n: v2-only leads −2.43 SOL post-cutoff vs v1-only +1.60; all gate_grid configs OOS-negative; exclusive splits concurred (v2 −3.55 vs v1 −1.10). Surviving signal = downside persistence → proven-bad EXCLUSION (see exclusion block / copy-hotlead-strict-xbad).",
+      "resolved_at": "2026-07-02",
+      "superseded_by": {
+        "status": "collecting",
+        "detail": "need n>=100 per arm (v1=40, v2=27); do not read early P&L — the A/B launched into the June 29–30 record drawdown."
+      }
+    },
+    "on_incumbent": {
+      "note": "RESOLVED 2026-07-02 (killed with the A/B — positive selection refuted OOS before this twin accumulated n). Successor experiment: copy-hotlead-strict-xbad (proven-bad EXCLUSION on the same incumbent, see exclusion block).",
+      "v2": {
+        "strategy": "copy-hotlead-strict-v2",
+        "open": 0,
+        "n": 6,
+        "net_sol": -0.2971,
+        "net_drop_top3_sol": -0.298,
+        "win_rate": 0.167,
+        "net_7d_sol": 0,
+        "progress_pct": 6,
+        "shared": {
+          "n": 0,
+          "net_sol": 0,
+          "net_drop_top3_sol": 0,
+          "win_rate": null
+        },
+        "exclusive": {
+          "n": 6,
+          "net_sol": -0.2971,
+          "net_drop_top3_sol": -0.298,
+          "win_rate": 0.167
+        }
+      },
+      "control": {
+        "strategy": "copy-hotlead-strict",
+        "open": 0,
+        "n": 836,
+        "net_sol": 10.964,
+        "net_drop_top3_sol": 4.3816,
+        "win_rate": 0.311,
+        "net_7d_sol": -1.331,
+        "progress_pct": 100,
+        "shared": {
+          "n": 109,
+          "net_sol": 1.8794,
+          "net_drop_top3_sol": -0.4972,
+          "win_rate": 0.321
+        },
+        "exclusive": {
+          "n": 727,
+          "net_sol": 9.0846,
+          "net_drop_top3_sol": 2.5022,
+          "win_rate": 0.309
+        }
+      }
+    }
+  },
+  "exclusion": {
+    "note": "Proven-bad veto set (copy-net as EXCLUSION, not selection): >= 10 baseline copies with all-time net <= 0 SOL. Motivation: downside persistence is the one OOS-robust copy-net signal (losers → −17.8 second-half vs winners +2.5). Live consumer: copy-hotlead-strict-xbad (resolve vs copy-hotlead-strict at n>=100 on drop3 AND net/trade). Tune via COPYXBAD_MIN_COPIES / COPYXBAD_MAX_NET.",
+    "gate": {
+      "minCopies": 10,
+      "maxNetSol": 0
+    },
+    "n_excluded": 43,
+    "excluded_total_copy_net_sol": -109.1186
+  },
+  "persistence": {
+    "note": "Split-half (leads with >=12 copies): does first-half copy profit predict second-half?",
+    "n_leads": 79,
+    "first_half_winners_second_half_net_sol": 2.8643,
+    "first_half_losers_second_half_net_sol": -19.7154
+  },
+  "rows": [
+    {
+      "address": "6eqES3ebBskuB4veYbh6LQ2epS78Pv2cyKqZK4axiZfK",
+      "tier": "promotable",
+      "n_copies": 13,
+      "win_rate": 0.769,
+      "copy_net_sol": 5.7267,
+      "copy_net_drop_top3_sol": 2.3991,
+      "copy_net_7d_sol": 2.1833,
+      "copy_monthly_run_rate_sol": 7.254,
+      "avg_detection_lag_sec": 0.93,
+      "last_copy_days_ago": 3.2,
+      "first_half_net_sol": 4.0365,
+      "second_half_net_sol": 1.6902,
+      "selected_v2": true,
+      "failed_gates": [],
+      "v1_monthly_run_rate_sol": 14.840484674429735,
+      "v1_win_rate": 0.2819047619047619,
+      "v1_drop_top3_sol": -4.517,
+      "selected_v1": false
+    },
+    {
+      "address": "9LxMdvs1m8QRFvFuhvzzMXykAkpaHTJhktULdpBztUMm",
+      "tier": "promotable",
+      "n_copies": 110,
+      "win_rate": 0.355,
+      "copy_net_sol": 5.5816,
+      "copy_net_drop_top3_sol": 1.8538,
+      "copy_net_7d_sol": 0.7231,
+      "copy_monthly_run_rate_sol": 6.706,
+      "avg_detection_lag_sec": 1.18,
+      "last_copy_days_ago": 1.1,
+      "first_half_net_sol": 0.2078,
+      "second_half_net_sol": 5.3738,
+      "selected_v2": true,
+      "failed_gates": [],
+      "v1_monthly_run_rate_sol": 292.5563683525869,
+      "v1_win_rate": 0.3056569343065693,
+      "v1_drop_top3_sol": 81.0052,
+      "selected_v1": true
+    },
+    {
+      "address": "5q8osC4CZRMfVG9j6A7LrpkF1cGdEu4GjyeyC1gJCELs",
+      "tier": "promotable",
+      "n_copies": 115,
+      "win_rate": 0.348,
+      "copy_net_sol": 5.3658,
+      "copy_net_drop_top3_sol": 1.4119,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 9.296,
+      "avg_detection_lag_sec": 1.23,
+      "last_copy_days_ago": 22.8,
+      "first_half_net_sol": 3.3296,
+      "second_half_net_sol": 2.0362,
+      "selected_v2": false,
+      "failed_gates": [
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 3.6570882215973377,
+      "v1_win_rate": 0.4398496240601504,
+      "v1_drop_top3_sol": 1.9043,
+      "selected_v1": false
+    },
+    {
+      "address": "2zBWFYhhi28vSbhPpSjJpQYaceTKxiCL2j6zLq8ockTn",
+      "tier": "promotable",
+      "n_copies": 22,
+      "win_rate": 0.182,
+      "copy_net_sol": 4.7156,
+      "copy_net_drop_top3_sol": -2.5109,
+      "copy_net_7d_sol": 5.8158,
+      "copy_monthly_run_rate_sol": 3.926,
+      "avg_detection_lag_sec": 1.04,
+      "last_copy_days_ago": 1.1,
+      "first_half_net_sol": -1.0154,
+      "second_half_net_sol": 5.731,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 187.65887680686376,
+      "v1_win_rate": 0.4964221824686941,
+      "v1_drop_top3_sol": 170.1047,
+      "selected_v1": false
+    },
+    {
+      "address": "7TiAUgZdLMN4f6z4NbRvQLZvqht9j8RHtxHKP4QnCP55",
+      "tier": "promotable",
+      "n_copies": 19,
+      "win_rate": 0.579,
+      "copy_net_sol": 3.7954,
+      "copy_net_drop_top3_sol": 1.8883,
+      "copy_net_7d_sol": 0.8393,
+      "copy_monthly_run_rate_sol": 3.326,
+      "avg_detection_lag_sec": 1.01,
+      "last_copy_days_ago": 2.4,
+      "first_half_net_sol": 1.0707,
+      "second_half_net_sol": 2.7246,
+      "selected_v2": true,
+      "failed_gates": [],
+      "v1_monthly_run_rate_sol": 9.108687750563696,
+      "v1_win_rate": 0.4368932038834951,
+      "v1_drop_top3_sol": 7.0618,
+      "selected_v1": true
+    },
+    {
+      "address": "CHvWpTWTZXUMvWfX7jmy8vhHbAqn6YvLc8wBxXYi4KiW",
+      "tier": "promotable",
+      "n_copies": 68,
+      "win_rate": 0.368,
+      "copy_net_sol": 3.757,
+      "copy_net_drop_top3_sol": 1.4324,
+      "copy_net_7d_sol": -0.9176,
+      "copy_monthly_run_rate_sol": 3.139,
+      "avg_detection_lag_sec": 1.16,
+      "last_copy_days_ago": 1.1,
+      "first_half_net_sol": 3.6481,
+      "second_half_net_sol": 0.109,
+      "selected_v2": true,
+      "failed_gates": [],
+      "v1_monthly_run_rate_sol": 89.30565015508044,
+      "v1_win_rate": 0.41964285714285715,
+      "v1_drop_top3_sol": 14.9612,
+      "selected_v1": false
+    },
+    {
+      "address": "2bVqHKY1EDgcvxx92ukK4n92G1zj7MEFbhHvFqDmR44D",
+      "tier": "promotable",
+      "n_copies": 18,
+      "win_rate": 0.5,
+      "copy_net_sol": 3.2738,
+      "copy_net_drop_top3_sol": 1.4902,
+      "copy_net_7d_sol": 0.5789,
+      "copy_monthly_run_rate_sol": 2.635,
+      "avg_detection_lag_sec": 1.08,
+      "last_copy_days_ago": 2.4,
+      "first_half_net_sol": 0.4327,
+      "second_half_net_sol": 2.8411,
+      "selected_v2": true,
+      "failed_gates": [],
+      "v1_monthly_run_rate_sol": 7.059076887089937,
+      "v1_win_rate": 0.40756302521008403,
+      "v1_drop_top3_sol": 2.2241,
+      "selected_v1": true
+    },
+    {
+      "address": "D1ec7DTwvH1YPmSE5CB3S8DRNPjc6e3f18dNoYZiRCZs",
+      "tier": "smart",
+      "n_copies": 15,
+      "win_rate": 0.533,
+      "copy_net_sol": 2.9884,
+      "copy_net_drop_top3_sol": -0.0688,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 12.593,
+      "avg_detection_lag_sec": 1.22,
+      "last_copy_days_ago": 33.1,
+      "first_half_net_sol": 2.2673,
+      "second_half_net_sol": 0.7211,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 3.797780024436027,
+      "v1_win_rate": 0.5813953488372093,
+      "v1_drop_top3_sol": 0.1283,
+      "selected_v1": false
+    },
+    {
+      "address": "B6yHBbrfZVxwxCPzArPAMHD5c9KvJfYateuMEqYsMorZ",
+      "tier": "smart",
+      "n_copies": 24,
+      "win_rate": 0.375,
+      "copy_net_sol": 2.941,
+      "copy_net_drop_top3_sol": 0.3185,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 4.081,
+      "avg_detection_lag_sec": 1.13,
+      "last_copy_days_ago": 14.3,
+      "first_half_net_sol": 3.6838,
+      "second_half_net_sol": -0.7428,
+      "selected_v2": false,
+      "failed_gates": [
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": -519.2882663985157,
+      "v1_win_rate": 0.3492063492063492,
+      "v1_drop_top3_sol": -13.7439,
+      "selected_v1": false
+    },
+    {
+      "address": "4sRjm252FQfrnfwZkzVc3JFn8PtLH6dNWxngKWnCyQHZ",
+      "tier": "smart",
+      "n_copies": 9,
+      "win_rate": 0.556,
+      "copy_net_sol": 2.5134,
+      "copy_net_drop_top3_sol": 0.1309,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 5.524,
+      "avg_detection_lag_sec": 1.08,
+      "last_copy_days_ago": 23.6,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": -57.62447474384818,
+      "v1_win_rate": 0.41237113402061853,
+      "v1_drop_top3_sol": -4.6428,
+      "selected_v1": false
+    },
+    {
+      "address": "BLbgdniaf7LVV6oLjFtgMQ95NeSHiEHka3hrm6WZ637Z",
+      "tier": "promotable",
+      "n_copies": 18,
+      "win_rate": 0.5,
+      "copy_net_sol": 2.3637,
+      "copy_net_drop_top3_sol": -0.5675,
+      "copy_net_7d_sol": 2.6108,
+      "copy_monthly_run_rate_sol": 3.134,
+      "avg_detection_lag_sec": 0.74,
+      "last_copy_days_ago": 1.4,
+      "first_half_net_sol": -0.2239,
+      "second_half_net_sol": 2.5876,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 11.34192701148115,
+      "v1_win_rate": 0.44893617021276594,
+      "v1_drop_top3_sol": 9.249,
+      "selected_v1": false
+    },
+    {
+      "address": "AE7neeVw9NFwKUbPCZwJiZ4FRkgJPj8cTC34PamxgYKk",
+      "tier": "promotable",
+      "n_copies": 12,
+      "win_rate": 0.5,
+      "copy_net_sol": 2.2875,
+      "copy_net_drop_top3_sol": 0.1289,
+      "copy_net_7d_sol": -0.2424,
+      "copy_monthly_run_rate_sol": 1.99,
+      "avg_detection_lag_sec": 1.1,
+      "last_copy_days_ago": 4.6,
+      "first_half_net_sol": 2.2796,
+      "second_half_net_sol": 0.0079,
+      "selected_v2": true,
+      "failed_gates": [],
+      "v1_monthly_run_rate_sol": 4.641631867175522,
+      "v1_win_rate": 0.3932432432432432,
+      "v1_drop_top3_sol": 4.3197,
+      "selected_v1": true
+    },
+    {
+      "address": "Ex3BcKVGbNVQjCqFySCXsfyj22oi2yL2qjEdrFeAsh45",
+      "tier": "promotable",
+      "n_copies": 21,
+      "win_rate": 0.429,
+      "copy_net_sol": 2.1704,
+      "copy_net_drop_top3_sol": 0.1266,
+      "copy_net_7d_sol": -0.3923,
+      "copy_monthly_run_rate_sol": 1.713,
+      "avg_detection_lag_sec": 1.14,
+      "last_copy_days_ago": 1.2,
+      "first_half_net_sol": 0.8589,
+      "second_half_net_sol": 1.3115,
+      "selected_v2": true,
+      "failed_gates": [],
+      "v1_monthly_run_rate_sol": 0.7264936120783134,
+      "v1_win_rate": 0.5171102661596958,
+      "v1_drop_top3_sol": 0.4588,
+      "selected_v1": false
+    },
+    {
+      "address": "9SHHN4YyEW6EJVmqt26FAdWFpMQnaoTXuo95L9QA3f6C",
+      "tier": "promotable",
+      "n_copies": 41,
+      "win_rate": 0.341,
+      "copy_net_sol": 2.1641,
+      "copy_net_drop_top3_sol": -0.2255,
+      "copy_net_7d_sol": -0.8475,
+      "copy_monthly_run_rate_sol": 1.875,
+      "avg_detection_lag_sec": 1.32,
+      "last_copy_days_ago": 1.4,
+      "first_half_net_sol": 1.7947,
+      "second_half_net_sol": 0.3694,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": -95.28362036940776,
+      "v1_win_rate": 0.3819444444444444,
+      "v1_drop_top3_sol": -37.553,
+      "selected_v1": false
+    },
+    {
+      "address": "DSKEyfEeTymHBErcktvyS1ZgHGs1svgA2MJvLA7oEp1G",
+      "tier": "promotable",
+      "n_copies": 13,
+      "win_rate": 0.462,
+      "copy_net_sol": 2.1486,
+      "copy_net_drop_top3_sol": 0.0783,
+      "copy_net_7d_sol": -0.1997,
+      "copy_monthly_run_rate_sol": 2.008,
+      "avg_detection_lag_sec": 1.13,
+      "last_copy_days_ago": 2.6,
+      "first_half_net_sol": 1.5211,
+      "second_half_net_sol": 0.6274,
+      "selected_v2": true,
+      "failed_gates": [],
+      "v1_monthly_run_rate_sol": -98.68515320034224,
+      "v1_win_rate": 0.42334322453016815,
+      "v1_drop_top3_sol": -38.4328,
+      "selected_v1": false
+    },
+    {
+      "address": "911pQNYGvQ6tN6C5Kovsj5P1mbtVFQU9RKpWtTzND3Vc",
+      "tier": "promotable",
+      "n_copies": 50,
+      "win_rate": 0.38,
+      "copy_net_sol": 2.1425,
+      "copy_net_drop_top3_sol": -0.1825,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 6.669,
+      "avg_detection_lag_sec": null,
+      "last_copy_days_ago": 11.1,
+      "first_half_net_sol": 1.6366,
+      "second_half_net_sol": 0.5059,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": null,
+      "v1_win_rate": 0.40852575488454707,
+      "v1_drop_top3_sol": -88.863,
+      "selected_v1": false
+    },
+    {
+      "address": "HsJQ1n5o6fEjzzU59j8zt6Uk6uRHQzNrLNmWiZreMSyV",
+      "tier": "smart",
+      "n_copies": 23,
+      "win_rate": 0.391,
+      "copy_net_sol": 2.0527,
+      "copy_net_drop_top3_sol": -0.1552,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 30.454,
+      "avg_detection_lag_sec": 1.17,
+      "last_copy_days_ago": 36.1,
+      "first_half_net_sol": 0.3972,
+      "second_half_net_sol": 1.6554,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 21.19900122029097,
+      "v1_win_rate": 0.5147058823529411,
+      "v1_drop_top3_sol": -0.047,
+      "selected_v1": false
+    },
+    {
+      "address": "2f4e7c2f6hXyYw69pTiKKRBwdoeNkJjsxKSixnpkpLFD",
+      "tier": "promotable",
+      "n_copies": 15,
+      "win_rate": 0.467,
+      "copy_net_sol": 1.7726,
+      "copy_net_drop_top3_sol": 0.244,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 2.416,
+      "avg_detection_lag_sec": 1.12,
+      "last_copy_days_ago": 13.4,
+      "first_half_net_sol": -0.6493,
+      "second_half_net_sol": 2.4219,
+      "selected_v2": true,
+      "failed_gates": [],
+      "v1_monthly_run_rate_sol": 16.75211695866712,
+      "v1_win_rate": 0.5830508474576271,
+      "v1_drop_top3_sol": 18.9324,
+      "selected_v1": true
+    },
+    {
+      "address": "EYDjJhT8tEQ2cgzNsLRp37EuMbr3iN9GUVn7475ZbCvw",
+      "tier": "promotable",
+      "n_copies": 64,
+      "win_rate": 0.313,
+      "copy_net_sol": 1.7311,
+      "copy_net_drop_top3_sol": -0.6616,
+      "copy_net_7d_sol": 0.5259,
+      "copy_monthly_run_rate_sol": 1.835,
+      "avg_detection_lag_sec": 0.81,
+      "last_copy_days_ago": 0.8,
+      "first_half_net_sol": 1.3255,
+      "second_half_net_sol": 0.4056,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": -70.62568262506328,
+      "v1_win_rate": 0.3862144420131291,
+      "v1_drop_top3_sol": -24.902,
+      "selected_v1": false
+    },
+    {
+      "address": "5aXbFCpg5f142baZfGgkRs7s75h7yuSrq4Mw4NtD8c91",
+      "tier": "smart",
+      "n_copies": 26,
+      "win_rate": 0.423,
+      "copy_net_sol": 1.7061,
+      "copy_net_drop_top3_sol": -0.3468,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 2.144,
+      "avg_detection_lag_sec": 1.23,
+      "last_copy_days_ago": 13.6,
+      "first_half_net_sol": 1.9014,
+      "second_half_net_sol": -0.1953,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 10.27689757575118,
+      "v1_win_rate": 0.4440677966101695,
+      "v1_drop_top3_sol": 16.9936,
+      "selected_v1": true
+    },
+    {
+      "address": "BdQjY2iBXu14eYUwieTWWzCA5n57SeUNiu8atKP7LK7J",
+      "tier": "promotable",
+      "n_copies": 48,
+      "win_rate": 0.333,
+      "copy_net_sol": 1.4756,
+      "copy_net_drop_top3_sol": -0.1838,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 3.78,
+      "avg_detection_lag_sec": 1.13,
+      "last_copy_days_ago": 18.2,
+      "first_half_net_sol": 0.7695,
+      "second_half_net_sol": 0.7061,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": -0.9602418677619529,
+      "v1_win_rate": 0.4812286689419795,
+      "v1_drop_top3_sol": -2.3416,
+      "selected_v1": false
+    },
+    {
+      "address": "FjWuMBSirxhcYm5rZJ6nNpaFWEX82kacnesWd3RwDL7D",
+      "tier": "promotable",
+      "n_copies": 7,
+      "win_rate": 0.571,
+      "copy_net_sol": 1.3888,
+      "copy_net_drop_top3_sol": -0.2359,
+      "copy_net_7d_sol": -0.296,
+      "copy_monthly_run_rate_sol": 3.208,
+      "avg_detection_lag_sec": null,
+      "last_copy_days_ago": 3.8,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 17.80724775255778,
+      "v1_win_rate": 0.4634146341463415,
+      "v1_drop_top3_sol": 12.9668,
+      "selected_v1": true
+    },
+    {
+      "address": "GqEVzdHH4RGq1EMbBCYDU23ABukgzkmYYjhTfZ6r8U1p",
+      "tier": "promotable",
+      "n_copies": 18,
+      "win_rate": 0.444,
+      "copy_net_sol": 1.3857,
+      "copy_net_drop_top3_sol": -0.1852,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 2.727,
+      "avg_detection_lag_sec": 1.16,
+      "last_copy_days_ago": 19.2,
+      "first_half_net_sol": -0.1795,
+      "second_half_net_sol": 1.5651,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 4.619082138989126,
+      "v1_win_rate": 0.4659949622166247,
+      "v1_drop_top3_sol": 2.6726,
+      "selected_v1": true
+    },
+    {
+      "address": "ExQ2NU9Fj3FcGzd5hPWP7LTe5QxnrwvBhkfVByhwhWw3",
+      "tier": "smart",
+      "n_copies": 2,
+      "win_rate": 1,
+      "copy_net_sol": 1.3831,
+      "copy_net_drop_top3_sol": 0,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 24.173,
+      "avg_detection_lag_sec": 0.91,
+      "last_copy_days_ago": 23.4,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": -18.022924441213323,
+      "v1_win_rate": 0.35106382978723405,
+      "v1_drop_top3_sol": -1.8814,
+      "selected_v1": false
+    },
+    {
+      "address": "44kdzNHg3XTFz4syy5SDVmu4Gy2DDaXZErqqNieMbBFH",
+      "tier": "promotable",
+      "n_copies": 20,
+      "win_rate": 0.35,
+      "copy_net_sol": 1.3345,
+      "copy_net_drop_top3_sol": -0.6203,
+      "copy_net_7d_sol": 1.2558,
+      "copy_monthly_run_rate_sol": 1.131,
+      "avg_detection_lag_sec": 1.18,
+      "last_copy_days_ago": 0.8,
+      "first_half_net_sol": 0.1698,
+      "second_half_net_sol": 1.1647,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 4.768081412552007,
+      "v1_win_rate": 0.6100558659217877,
+      "v1_drop_top3_sol": 4.146,
+      "selected_v1": true
+    },
+    {
+      "address": "Fyp4UhDcqWoP9VyqUHdKZbeok53qJ7f7zLrtCR9MDKbr",
+      "tier": "smart",
+      "n_copies": 2,
+      "win_rate": 1,
+      "copy_net_sol": 1.3011,
+      "copy_net_drop_top3_sol": 0,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 39.032,
+      "avg_detection_lag_sec": 1.36,
+      "last_copy_days_ago": 24.2,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 0.63588977651566,
+      "v1_win_rate": 0.5263157894736842,
+      "v1_drop_top3_sol": 0.0476,
+      "selected_v1": false
+    },
+    {
+      "address": "HntvSoXq7CxH928Gszf9FENY6BbmLLnr7VDERWvtpYa1",
+      "tier": "promotable",
+      "n_copies": 28,
+      "win_rate": 0.393,
+      "copy_net_sol": 1.2919,
+      "copy_net_drop_top3_sol": -0.6666,
+      "copy_net_7d_sol": -0.9438,
+      "copy_monthly_run_rate_sol": 1.058,
+      "avg_detection_lag_sec": 1.07,
+      "last_copy_days_ago": 2.6,
+      "first_half_net_sol": 2.4148,
+      "second_half_net_sol": -1.1229,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 2.5041246947353075,
+      "v1_win_rate": 0.3695652173913043,
+      "v1_drop_top3_sol": -0.5773,
+      "selected_v1": false
+    },
+    {
+      "address": "AiXHpHjKyCfAhcLx7mYGrRGvXRzR6R2AvetSMKeBTMQb",
+      "tier": "smart",
+      "n_copies": 2,
+      "win_rate": 1,
+      "copy_net_sol": 1.2147,
+      "copy_net_drop_top3_sol": 0,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 36.44,
+      "avg_detection_lag_sec": 0.78,
+      "last_copy_days_ago": 26.5,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": -122.61167793691573,
+      "v1_win_rate": 0.1559633027522936,
+      "v1_drop_top3_sol": -32.6384,
+      "selected_v1": false
+    },
+    {
+      "address": "572gijC9dnNiSFgeSDaLMEmPzyZH9MqT7SCVMwKkeTqF",
+      "tier": "promotable",
+      "n_copies": 15,
+      "win_rate": 0.267,
+      "copy_net_sol": 1.2077,
+      "copy_net_drop_top3_sol": -2.2193,
+      "copy_net_7d_sol": -0.7452,
+      "copy_monthly_run_rate_sol": 1.088,
+      "avg_detection_lag_sec": 1.24,
+      "last_copy_days_ago": 3.3,
+      "first_half_net_sol": 1.834,
+      "second_half_net_sol": -0.6263,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": -141.43072770803988,
+      "v1_win_rate": 0.3893280632411067,
+      "v1_drop_top3_sol": -50.1448,
+      "selected_v1": false
+    },
+    {
+      "address": "HDeRTCPU5Fr2NgCrsQNEJtcZgAVhZXXcRhX1UvJ62T2Y",
+      "tier": "smart",
+      "n_copies": 16,
+      "win_rate": 0.438,
+      "copy_net_sol": 1.1195,
+      "copy_net_drop_top3_sol": -1.0191,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 6.128,
+      "avg_detection_lag_sec": 1.15,
+      "last_copy_days_ago": 20.7,
+      "first_half_net_sol": 1.0338,
+      "second_half_net_sol": 0.0857,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 36.91462202869208,
+      "v1_win_rate": 0.5714285714285714,
+      "v1_drop_top3_sol": -0.1388,
+      "selected_v1": false
+    },
+    {
+      "address": "9sWV3hbngUA8LZ5zJjFcAKSYmYyMSdJT925RuCckrzKT",
+      "tier": "promotable",
+      "n_copies": 9,
+      "win_rate": 0.556,
+      "copy_net_sol": 1.1013,
+      "copy_net_drop_top3_sol": -0.567,
+      "copy_net_7d_sol": 0.0722,
+      "copy_monthly_run_rate_sol": 1.393,
+      "avg_detection_lag_sec": 1.23,
+      "last_copy_days_ago": 2.3,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 67.64285928209027,
+      "v1_win_rate": 0.6779661016949152,
+      "v1_drop_top3_sol": 90.3666,
+      "selected_v1": true
+    },
+    {
+      "address": "BnYk6Dph4CXM5FDhskAqbcGurq4QYQx2fQwLxPzPYKT6",
+      "tier": "promotable",
+      "n_copies": 7,
+      "win_rate": 0.429,
+      "copy_net_sol": 1.08,
+      "copy_net_drop_top3_sol": -0.4847,
+      "copy_net_7d_sol": -0.094,
+      "copy_monthly_run_rate_sol": 1.393,
+      "avg_detection_lag_sec": 1.23,
+      "last_copy_days_ago": 1.7,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": -39.53352464524213,
+      "v1_win_rate": 0.32727272727272727,
+      "v1_drop_top3_sol": -44.1596,
+      "selected_v1": false
+    },
+    {
+      "address": "BZoJp596zygHhZ1Hi1hiKGmFxB1KaHn8Yy39fmDAoBCL",
+      "tier": "promotable",
+      "n_copies": 6,
+      "win_rate": 0.5,
+      "copy_net_sol": 0.9949,
+      "copy_net_drop_top3_sol": -0.6769,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 1.365,
+      "avg_detection_lag_sec": 1,
+      "last_copy_days_ago": 16.1,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": -0.9326052156101838,
+      "v1_win_rate": 0.4736196319018405,
+      "v1_drop_top3_sol": -3.9529,
+      "selected_v1": false
+    },
+    {
+      "address": "4RDNo5BBAjQhmd1FcSPnzuA6UtUM4PLWuhirRczhLJCa",
+      "tier": "promotable",
+      "n_copies": 30,
+      "win_rate": 0.3,
+      "copy_net_sol": 0.9889,
+      "copy_net_drop_top3_sol": -1.2662,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 1.13,
+      "avg_detection_lag_sec": 1.08,
+      "last_copy_days_ago": 9.8,
+      "first_half_net_sol": 1.4602,
+      "second_half_net_sol": -0.4713,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": -53.01261044479402,
+      "v1_win_rate": 0.49430523917995445,
+      "v1_drop_top3_sol": -23.1645,
+      "selected_v1": false
+    },
+    {
+      "address": "H8cbcJgrMRGU6jujEfDcprDxtReunzpXfnKbhdbFZ3HU",
+      "tier": "promotable",
+      "n_copies": 17,
+      "win_rate": 0.353,
+      "copy_net_sol": 0.8971,
+      "copy_net_drop_top3_sol": -1.0307,
+      "copy_net_7d_sol": 0.6048,
+      "copy_monthly_run_rate_sol": 0.768,
+      "avg_detection_lag_sec": 1.56,
+      "last_copy_days_ago": 1.3,
+      "first_half_net_sol": -0.3383,
+      "second_half_net_sol": 1.2354,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": -167.4131961456757,
+      "v1_win_rate": 0.38735177865612647,
+      "v1_drop_top3_sol": -60.7898,
+      "selected_v1": false
+    },
+    {
+      "address": "BtHnhjh8Ta2vGZkrL76AmXMur1ADo3tpRo2kQMe2BCSU",
+      "tier": "promotable",
+      "n_copies": 39,
+      "win_rate": 0.231,
+      "copy_net_sol": 0.8843,
+      "copy_net_drop_top3_sol": -2.0783,
+      "copy_net_7d_sol": 0.7678,
+      "copy_monthly_run_rate_sol": 0.7,
+      "avg_detection_lag_sec": 1.09,
+      "last_copy_days_ago": 1.9,
+      "first_half_net_sol": -0.4366,
+      "second_half_net_sol": 1.3209,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": null,
+      "v1_win_rate": 0.32441471571906355,
+      "v1_drop_top3_sol": -25.9237,
+      "selected_v1": false
+    },
+    {
+      "address": "42YtP9yQveq3NJcLzhQjzSB4pWnS3cbJvyo1EmGtgF9d",
+      "tier": "promotable",
+      "n_copies": 23,
+      "win_rate": 0.348,
+      "copy_net_sol": 0.8702,
+      "copy_net_drop_top3_sol": -1.0313,
+      "copy_net_7d_sol": 1.2992,
+      "copy_monthly_run_rate_sol": 1.048,
+      "avg_detection_lag_sec": 1.11,
+      "last_copy_days_ago": 2.2,
+      "first_half_net_sol": -0.8943,
+      "second_half_net_sol": 1.7645,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 133.7448162857787,
+      "v1_win_rate": 0.4888521882741536,
+      "v1_drop_top3_sol": 71.8654,
+      "selected_v1": true
+    },
+    {
+      "address": "7EdtVGg547L4GSqvuTTbjahYkfP6NmTa5nB2q5HjqLnR",
+      "tier": "promotable",
+      "n_copies": 7,
+      "win_rate": 0.429,
+      "copy_net_sol": 0.8469,
+      "copy_net_drop_top3_sol": -0.7528,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 1.25,
+      "avg_detection_lag_sec": 1.14,
+      "last_copy_days_ago": 19.7,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 145.9259060941337,
+      "v1_win_rate": 0.25313807531380755,
+      "v1_drop_top3_sol": -33.1071,
+      "selected_v1": false
+    },
+    {
+      "address": "DZbgq3yE3r41EFszV3XastvyS8j8QnmNT37nsq7sxR66",
+      "tier": "src_winner_sniper",
+      "n_copies": 3,
+      "win_rate": 0.667,
+      "copy_net_sol": 0.8335,
+      "copy_net_drop_top3_sol": 0,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 25.005,
+      "avg_detection_lag_sec": null,
+      "last_copy_days_ago": 13.3,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": null,
+      "v1_win_rate": 0.43820224719101125,
+      "v1_drop_top3_sol": -1.3748,
+      "selected_v1": false
+    },
+    {
+      "address": "9pDr8if5s4JQw4Pi92GtCE7cXP7WwFc6JK3upX4vy1bc",
+      "tier": "promotable",
+      "n_copies": 15,
+      "win_rate": 0.333,
+      "copy_net_sol": 0.8153,
+      "copy_net_drop_top3_sol": -1.0139,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 0.84,
+      "avg_detection_lag_sec": 1.32,
+      "last_copy_days_ago": 10.1,
+      "first_half_net_sol": 1.0295,
+      "second_half_net_sol": -0.2142,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 2.748487075161724,
+      "v1_win_rate": 0.400359066427289,
+      "v1_drop_top3_sol": 2.0524,
+      "selected_v1": false
+    },
+    {
+      "address": "5wTqTAZSGWu9ra1a2kDUXfozUw4RHDsrQyTPquqwErkZ",
+      "tier": "smart",
+      "n_copies": 8,
+      "win_rate": 0.375,
+      "copy_net_sol": 0.7528,
+      "copy_net_drop_top3_sol": -0.7838,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 1.693,
+      "avg_detection_lag_sec": 1.17,
+      "last_copy_days_ago": 22.4,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 28.962301284713767,
+      "v1_win_rate": 0.3953488372093023,
+      "v1_drop_top3_sol": 60.0893,
+      "selected_v1": true
+    },
+    {
+      "address": "5hYsHp8HWFgySy1ZCn7rThQiZ1Cy5qd6mArW3inmMAfG",
+      "tier": "promotable",
+      "n_copies": 14,
+      "win_rate": 0.286,
+      "copy_net_sol": 0.7005,
+      "copy_net_drop_top3_sol": -1.5282,
+      "copy_net_7d_sol": -0.1664,
+      "copy_monthly_run_rate_sol": 0.739,
+      "avg_detection_lag_sec": 1.01,
+      "last_copy_days_ago": 6.6,
+      "first_half_net_sol": 1.5229,
+      "second_half_net_sol": -0.8225,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": -217.13862170738665,
+      "v1_win_rate": 0.3932384341637011,
+      "v1_drop_top3_sol": -122.9888,
+      "selected_v1": false
+    },
+    {
+      "address": "7HMPfLq8SeY5og1pZTdBYGqyc6HuHFdoVPBdFsqDtDrd",
+      "tier": "promotable",
+      "n_copies": 10,
+      "win_rate": 0.4,
+      "copy_net_sol": 0.6856,
+      "copy_net_drop_top3_sol": -1.144,
+      "copy_net_7d_sol": 0.565,
+      "copy_monthly_run_rate_sol": 0.884,
+      "avg_detection_lag_sec": 1.25,
+      "last_copy_days_ago": 0.8,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 3.5202205637079564,
+      "v1_win_rate": 0.45652173913043476,
+      "v1_drop_top3_sol": 6.3745,
+      "selected_v1": false
+    },
+    {
+      "address": "6T7ucfgJ7f5LX3zpH187D1tbKrxujDvj87MxymLsZy9C",
+      "tier": "smart",
+      "n_copies": 4,
+      "win_rate": 0.5,
+      "copy_net_sol": 0.6297,
+      "copy_net_drop_top3_sol": -0.1884,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 9.983,
+      "avg_detection_lag_sec": 0.89,
+      "last_copy_days_ago": 25,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 3.446147882116179,
+      "v1_win_rate": 0.36796536796536794,
+      "v1_drop_top3_sol": 5.799,
+      "selected_v1": false
+    },
+    {
+      "address": "3TLBgZdEpgmquGBhqSbzjHcqgpqdTaWcXTVAPDJzQTwk",
+      "tier": "smart",
+      "n_copies": 1,
+      "win_rate": 1,
+      "copy_net_sol": 0.6194,
+      "copy_net_drop_top3_sol": 0,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 18.581,
+      "avg_detection_lag_sec": null,
+      "last_copy_days_ago": 21.7,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 17.806877029754755,
+      "v1_win_rate": 0.5247933884297521,
+      "v1_drop_top3_sol": 6.2565,
+      "selected_v1": true
+    },
+    {
+      "address": "FVbbUKqsWXKD8DdAKD6oMAop4sunN63DgzgCTJUGyu6C",
+      "tier": "smart",
+      "n_copies": 24,
+      "win_rate": 0.375,
+      "copy_net_sol": 0.5885,
+      "copy_net_drop_top3_sol": -1.4182,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 17.656,
+      "avg_detection_lag_sec": null,
+      "last_copy_days_ago": 18.8,
+      "first_half_net_sol": 0.4777,
+      "second_half_net_sol": 0.1108,
+      "selected_v2": false,
+      "failed_gates": [
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": null,
+      "v1_win_rate": 0.35772357723577236,
+      "v1_drop_top3_sol": 1.065,
+      "selected_v1": false
+    },
+    {
+      "address": "CAATgaQoywsYcm5Z2bkCPJ4R9jHgNWPw7TyuZHttyMCR",
+      "tier": "src_winner_sniper",
+      "n_copies": 1,
+      "win_rate": 1,
+      "copy_net_sol": 0.5793,
+      "copy_net_drop_top3_sol": 0,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 17.379,
+      "avg_detection_lag_sec": null,
+      "last_copy_days_ago": 13.3,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": null,
+      "v1_win_rate": 0.5708154506437768,
+      "v1_drop_top3_sol": -0.9218,
+      "selected_v1": false
+    },
+    {
+      "address": "huaVzptvupcfTJV6s45Wf5HMrVVRY6iMHojHJjQYU67",
+      "tier": "smart",
+      "n_copies": 1,
+      "win_rate": 1,
+      "copy_net_sol": 0.5498,
+      "copy_net_drop_top3_sol": 0,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 16.496,
+      "avg_detection_lag_sec": 1.44,
+      "last_copy_days_ago": 30,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 0.7248150765661674,
+      "v1_win_rate": 0.34782608695652173,
+      "v1_drop_top3_sol": -1.1662,
+      "selected_v1": false
+    },
+    {
+      "address": "HM5iEcL9h13EgM3NvhADdEMhkoPbMYGNfx8zTstBVASS",
+      "tier": "smart",
+      "n_copies": 3,
+      "win_rate": 0.667,
+      "copy_net_sol": 0.5232,
+      "copy_net_drop_top3_sol": 0,
+      "copy_net_7d_sol": 0,
+      "copy_monthly_run_rate_sol": 1.6,
+      "avg_detection_lag_sec": 1.14,
+      "last_copy_days_ago": 28.3,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3",
+        "last_active"
+      ],
+      "v1_monthly_run_rate_sol": 4.038583528629429,
+      "v1_win_rate": 0.4583333333333333,
+      "v1_drop_top3_sol": -0.1047,
+      "selected_v1": false
+    },
+    {
+      "address": "8mHra9RFdcTU4foPL9sEb71Uq5s8SfZ9QwJz7qbDAYrP",
+      "tier": "promotable",
+      "n_copies": 1,
+      "win_rate": 1,
+      "copy_net_sol": 0.5202,
+      "copy_net_drop_top3_sol": 0,
+      "copy_net_7d_sol": 0.5202,
+      "copy_monthly_run_rate_sol": 15.606,
+      "avg_detection_lag_sec": null,
+      "last_copy_days_ago": 2.2,
+      "first_half_net_sol": null,
+      "second_half_net_sol": null,
+      "selected_v2": false,
+      "failed_gates": [
+        "n_copies",
+        "copy_drop_top3"
+      ],
+      "v1_monthly_run_rate_sol": 53.73494838512625,
+      "v1_win_rate": 0.7295081967213115,
+      "v1_drop_top3_sol": 49.7756,
+      "selected_v1": true
+    }
+  ]
+}

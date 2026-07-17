@@ -1,0 +1,5663 @@
+{
+  "generated_at": "2026-07-17T19:29:06.474Z",
+  "buffer_size": 503,
+  "tail_limit": 1500,
+  "entries": [
+    {
+      "ts": 1784249066414,
+      "level": "info",
+      "name": "rpc-limiter",
+      "msg": "RPC limiter initialized",
+      "bindings": {
+        "requestsPerSecond": 10
+      }
+    },
+    {
+      "ts": 1784249066417,
+      "level": "warn",
+      "name": "price-collector",
+      "msg": "Enrichment-only mode (default): wallet-discovery enrichment ON, price-path snapshots + research collection OFF. Set GRADUATION_PRICE_PATH_ENABLED=true to revive full collection."
+    },
+    {
+      "ts": 1784249066420,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "pump.fun WS in migrations-only mode (mentions:[withdraw_authority]) — ~99.99%% less WS data vs the full program firehose. Set PUMPFUN_WS_FULL_FIREHOSE=true to restore the firehose + launch counting."
+    },
+    {
+      "ts": 1784249066665,
+      "level": "info",
+      "name": "main",
+      "msg": "Starting solana-graduation-arb-research (copy-trading build)"
+    },
+    {
+      "ts": 1784249066665,
+      "level": "info",
+      "name": "main",
+      "msg": "Environment check",
+      "bindings": {
+        "hasHeliusRpc": true,
+        "hasHeliusWs": true,
+        "dataDir": "/app/data",
+        "healthPort": "8080"
+      }
+    },
+    {
+      "ts": 1784249076512,
+      "level": "info",
+      "name": "db-schema",
+      "msg": "Database migrations complete"
+    },
+    {
+      "ts": 1784249076512,
+      "level": "info",
+      "name": "db-schema",
+      "msg": "Database initialized",
+      "bindings": {
+        "dbPath": "/app/data/graduation-arb.db"
+      }
+    },
+    {
+      "ts": 1784249098944,
+      "level": "info",
+      "name": "market-data-fetcher",
+      "msg": "Market data already backfilled",
+      "bindings": {
+        "existing": 126
+      }
+    },
+    {
+      "ts": 1784249098996,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Starting graduation listener",
+      "bindings": {
+        "programId": "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P"
+      }
+    },
+    {
+      "ts": 1784249099000,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784249099001,
+      "level": "info",
+      "name": "main",
+      "msg": "Health server listening",
+      "bindings": {
+        "port": 8080
+      }
+    },
+    {
+      "ts": 1784249099005,
+      "level": "info",
+      "name": "pool-tracker",
+      "msg": "Pool tracker started — PumpSwap WS subscription DISABLED (set POOL_TRACKER_PUMPSWAP_WS=1 to re-enable). Graduation detection unaffected: directPriceCollector extracts pool + vaults from the pump.fun migrate tx."
+    },
+    {
+      "ts": 1784249099006,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Velocity recovery: will run after each labeled graduation and once at startup"
+    },
+    {
+      "ts": 1784249099006,
+      "level": "info",
+      "name": "launch-counter",
+      "msg": "Launch counter started (flush every 60s)"
+    },
+    {
+      "ts": 1784249099083,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Migration RPC poller started — endpoint=helius (default) target=39azUYFWPz3VHgKCf3VChUwbpURdCHRxjWVowf5jUJjg intervalMs=10000 bootstrapSigs=1 lastSig=5x28Fiio"
+    },
+    {
+      "ts": 1784249099083,
+      "level": "info",
+      "name": "main",
+      "msg": "Graduation listener started successfully"
+    },
+    {
+      "ts": 1784249100808,
+      "level": "info",
+      "name": "copytrade-discovery",
+      "msg": "Discovery seed complete: +67 new candidates (88524 total)"
+    },
+    {
+      "ts": 1784249100808,
+      "level": "info",
+      "name": "copytrade-worker",
+      "msg": "Initial candidate seed: +67 new"
+    },
+    {
+      "ts": 1784249101625,
+      "level": "info",
+      "name": "smart-money",
+      "msg": "Smart-money analysis cached: smart_wallets=300, present_grads=1287, low_confidence=false"
+    },
+    {
+      "ts": 1784249102530,
+      "level": "info",
+      "name": "cotrade-discovery",
+      "msg": "Co-trade discovery: 4000 found (0 cotrade-exclusive, 4000 OG-overlap)"
+    },
+    {
+      "ts": 1784249102530,
+      "level": "info",
+      "name": "copytrade-worker",
+      "msg": "CopytradeWorker started (intervalMs=86400000, batch=20, maxSigs=300)"
+    },
+    {
+      "ts": 1784249102531,
+      "level": "info",
+      "name": "metadata-fetcher",
+      "msg": "TokenMetadataFetcher started (intervalMs=600000, batch=60)"
+    },
+    {
+      "ts": 1784249102616,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "CopyTrader started (shadow): 12 strategies, size=0.5 SOL, resumed 19 open positions"
+    },
+    {
+      "ts": 1784249102643,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Watchlist updated: 150 wallets (155 promotable, 182 smart-set, 10 copy-net, 10 discovery-source; 152 dropped by cap=150)"
+    },
+    {
+      "ts": 1784249102645,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "CopyFollowerProbe started"
+    },
+    {
+      "ts": 1784249102645,
+      "level": "info",
+      "name": "live-tape-harvester",
+      "msg": "LiveTapeHarvester off (set LIVE_TAPE_ENABLED=true to opt in; LIVE_TAPE_DISABLED overrides)"
+    },
+    {
+      "ts": 1784249102645,
+      "level": "warn",
+      "name": "winner-sniper",
+      "msg": "WinnerSniperHarvester OFF by default (set WINNER_SNIPER_DISABLED=false to enable; pairs with the stage-2 pre-filter)"
+    },
+    {
+      "ts": 1784249102645,
+      "level": "warn",
+      "name": "winner-prefilter",
+      "msg": "WinnerPrefilterWatcher OFF by default (set PREFILTER_DISABLED=false to enable); enrolled wallets TTL-fail unwatched"
+    },
+    {
+      "ts": 1784249102725,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "transactionSubscribe sent for 150 wallets"
+    },
+    {
+      "ts": 1784249106187,
+      "level": "info",
+      "name": "gist-sync",
+      "msg": "Status sync scheduled",
+      "bindings": {
+        "intervalMs": 120000,
+        "branch": "bot-status"
+      }
+    },
+    {
+      "ts": 1784249106188,
+      "level": "info",
+      "name": "main",
+      "msg": "Status sync active — Claude can self-serve from these URLs",
+      "bindings": {
+        "urls": {
+          "diagnose": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/diagnose.json",
+          "snapshot": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/snapshot.json",
+          "copy_trades": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/copy-trades.json",
+          "wallet_leaderboard": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/wallet-leaderboard.json",
+          "smart_money": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/smart-money.json",
+          "copy_v2": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/copy-v2.json",
+          "copy_probe": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/copy-probe.json",
+          "live_training": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/live-training.json",
+          "live_execution": "https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/live-execution.json",
+          "branch_html": "https://github.com/50thycal/solana-graduation-arb-research/tree/bot-status"
+        }
+      }
+    },
+    {
+      "ts": 1784249106188,
+      "level": "info",
+      "name": "main",
+      "msg": "GIST_DIAGNOSE_URL=https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/diagnose.json"
+    },
+    {
+      "ts": 1784249106188,
+      "level": "info",
+      "name": "main",
+      "msg": "GIST_SNAPSHOT_URL=https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/snapshot.json"
+    },
+    {
+      "ts": 1784249106188,
+      "level": "info",
+      "name": "main",
+      "msg": "GIST_COPY_TRADES_URL=https://raw.githubusercontent.com/50thycal/solana-graduation-arb-research/bot-status/copy-trades.json"
+    },
+    {
+      "ts": 1784249106188,
+      "level": "info",
+      "name": "main",
+      "msg": "GIST_HTML_URL=https://github.com/50thycal/solana-graduation-arb-research/tree/bot-status"
+    },
+    {
+      "ts": 1784249132617,
+      "level": "info",
+      "name": "copy-live-executor",
+      "msg": "Copy live execution OFF (COPY_LIVE_ENABLED!=true or no wallet) — live_micro strategies shadowed."
+    },
+    {
+      "ts": 1784249194370,
+      "level": "info",
+      "name": "copytrade-discovery",
+      "msg": "Discovery seed complete: +0 new candidates (88524 total)"
+    },
+    {
+      "ts": 1784249195278,
+      "level": "info",
+      "name": "cotrade-discovery",
+      "msg": "Co-trade discovery: 4000 found (0 cotrade-exclusive, 4000 OG-overlap)"
+    },
+    {
+      "ts": 1784249195784,
+      "level": "info",
+      "name": "external-seed",
+      "msg": "External seed: fetched 100 addresses, +0 new candidates"
+    },
+    {
+      "ts": 1784249197502,
+      "level": "info",
+      "name": "copytrade-discovery",
+      "msg": "Recomputed priority for 65168 candidates with signal"
+    },
+    {
+      "ts": 1784249197646,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for 6svp2aai (1 sigs, 1 parsed)"
+    },
+    {
+      "ts": 1784249197892,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for 6vS6wcRG (6 sigs, 6 parsed)"
+    },
+    {
+      "ts": 1784249269135,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "5ryUG466",
+        "lastSig": "5ryUG466"
+      }
+    },
+    {
+      "ts": 1784249352629,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 88 swaps for 6zy5aYNk (2000 sigs, 1500 parsed)"
+    },
+    {
+      "ts": 1784249354026,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for 7RKkEcce (13 sigs, 13 parsed)"
+    },
+    {
+      "ts": 1784249354128,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for Bz4zDut6 (0 sigs, 0 parsed)"
+    },
+    {
+      "ts": 1784249397874,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 301 swaps for CHvWpTWT (436 sigs, 436 parsed)"
+    },
+    {
+      "ts": 1784249403875,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "transactionSubscribe sent for 150 wallets"
+    },
+    {
+      "ts": 1784249449113,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "5dwc3uNu",
+        "lastSig": "5dwc3uNu"
+      }
+    },
+    {
+      "ts": 1784249451945,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation tx timing",
+      "bindings": {
+        "mint": "Hsrc16T5",
+        "signature": "47tFVtgG",
+        "source": "pump.fun-processed",
+        "wsDeliveryLatencySec": 1.7,
+        "rpcFetchMs": 1210
+      }
+    },
+    {
+      "ts": 1784249451946,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation verified and recorded",
+      "bindings": {
+        "graduationId": 35559,
+        "mint": "Hsrc16T5cFWgwH2PSEqcYACkHpLHrEHdm5Z1sU2pump",
+        "signature": "47tFVtgGv8A1M5mWmNaRPAXueysMVHcXKmHsGrqA6LxXAq8qucpPxWzh4R2RZrQ2zAiS9xpBTuR8HmnaDCf6qMbs",
+        "finalPriceSol": 2.3625155718560514e-7,
+        "finalSolReserves": 85.007303162,
+        "bondingCurve": "DvdZMyvmzNixwFF2dKB6Tctou1nxiSejS9nYqXq1gKeA",
+        "poolAddress": "NOT_FOUND"
+      }
+    },
+    {
+      "ts": 1784249451948,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Starting price observation",
+      "bindings": {
+        "graduationId": 35559,
+        "mint": "Hsrc16T5cFWgwH2PSEqcYACkHpLHrEHdm5Z1sU2pump",
+        "pool": "vaults:DwLenSLm",
+        "bondingCurvePrice": 2.3625155718560514e-7,
+        "elapsedSec": 3,
+        "snapshotsRemaining": 61
+      }
+    },
+    {
+      "ts": 1784249451949,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Direct pool observation started with pre-extracted vaults",
+      "bindings": {
+        "graduationId": 35559,
+        "mint": "Hsrc16T5cFWgwH2PSEqcYACkHpLHrEHdm5Z1sU2pump",
+        "pool": "vaults:DwLenSLm",
+        "baseVault": "DwLenSLmKVRysQD3EF3GNvhoLGbzu2RkphrhCCKpZpvM",
+        "quoteVault": "6sLw91GC3CGqpjjPnYnc7s155YqDxYWsSdbfQd38dWRt"
+      }
+    },
+    {
+      "ts": 1784249452354,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "True holder count + distribution from DAS getTokenAccounts",
+      "bindings": {
+        "mint": "Hsrc16T5",
+        "count": 328,
+        "capped": false,
+        "nakamoto": 23,
+        "whales": 11
+      }
+    },
+    {
+      "ts": 1784249452722,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Token age resolved from bonding curve history",
+      "bindings": {
+        "mint": "Hsrc16T5",
+        "tokenAgeSeconds": 3679
+      }
+    },
+    {
+      "ts": 1784249452750,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Creator wallet resolved",
+      "bindings": {
+        "mint": "Hsrc16T5",
+        "creator": "GbiPwmVz"
+      }
+    },
+    {
+      "ts": 1784249452919,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 491 swaps for CPQH8j4i (544 sigs, 544 parsed)"
+    },
+    {
+      "ts": 1784249453220,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for Ckv5QeMS (2 sigs, 2 parsed)"
+    },
+    {
+      "ts": 1784249459112,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "47tFVtgG",
+        "lastSig": "47tFVtgG"
+      }
+    },
+    {
+      "ts": 1784249470863,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh sell pumpfun_bc 61ts1J lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784249478042,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 69 swaps for EcREe7gB (230 sigs, 230 parsed)"
+    },
+    {
+      "ts": 1784249478340,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for 23HDj6nF (2 sigs, 2 parsed)"
+    },
+    {
+      "ts": 1784249478427,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh buy pumpfun_bc HMBnqg lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249478542,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for 4xromNWt (1 sigs, 1 parsed)"
+    },
+    {
+      "ts": 1784249479437,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for Cm7c6Cn3 (8 sigs, 8 parsed)"
+    },
+    {
+      "ts": 1784249479938,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for D3sRvRAR (4 sigs, 4 parsed)"
+    },
+    {
+      "ts": 1784249486139,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 24 swaps for D4RXwHze (60 sigs, 60 parsed)"
+    },
+    {
+      "ts": 1784249486538,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 0 swaps for Dqf5ZYGk (3 sigs, 3 parsed)"
+    },
+    {
+      "ts": 1784249502723,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh sell pumpfun_bc HMBnqg lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249516724,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 131 swaps for EPSZejv1 (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249522037,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh buy pumpfun_bc 6XwNrB lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249546766,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 111 swaps for FMoGCk5a (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249555624,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 buy pumpfun_bc HqnGiQ lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249576857,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 219 swaps for 3xmXwhHM (969 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249609124,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "3E32fRKb",
+        "lastSig": "3E32fRKb"
+      }
+    },
+    {
+      "ts": 1784249610850,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 78 swaps for 41s2sCXD (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249639114,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 20,
+        "newestSig": "3kbEVEpJ",
+        "lastSig": "3kbEVEpJ"
+      }
+    },
+    {
+      "ts": 1784249640953,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 227 swaps for ErYTKo3y (649 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249646783,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 buy pumpfun_bc HqnGiQ lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249649118,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 20,
+        "newestSig": "2wUAxkA8",
+        "lastSig": "2wUAxkA8"
+      }
+    },
+    {
+      "ts": 1784249660360,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation tx timing",
+      "bindings": {
+        "mint": "6bADDPLT",
+        "signature": "5G4dyFyX",
+        "source": "pump.fun-processed",
+        "wsDeliveryLatencySec": 1.1,
+        "rpcFetchMs": 305
+      }
+    },
+    {
+      "ts": 1784249660361,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation verified and recorded",
+      "bindings": {
+        "graduationId": 35560,
+        "mint": "6bADDPLToAiAGP77F9hv71smvBj2kxznwMkAxKrgpump",
+        "signature": "5G4dyFyX7v67PuFMaDK4jBi22hFUBT2kKqTGGjUcRe6Y2gcNsCTdXEoY4MEPB2vAZBbytKFTT3fbnd5BD76Zxr9c",
+        "finalPriceSol": 2.3625155613794738e-7,
+        "finalSolReserves": 85.007302652,
+        "bondingCurve": "9Dfs13FNNwbEm9aBDjSZguwZrZ98ZZDk6D3jTf7XMjAw",
+        "poolAddress": "NOT_FOUND"
+      }
+    },
+    {
+      "ts": 1784249660362,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Starting price observation",
+      "bindings": {
+        "graduationId": 35560,
+        "mint": "6bADDPLToAiAGP77F9hv71smvBj2kxznwMkAxKrgpump",
+        "pool": "vaults:HS7cm1rp",
+        "bondingCurvePrice": 2.3625155613794738e-7,
+        "elapsedSec": 1,
+        "snapshotsRemaining": 61
+      }
+    },
+    {
+      "ts": 1784249660362,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Direct pool observation started with pre-extracted vaults",
+      "bindings": {
+        "graduationId": 35560,
+        "mint": "6bADDPLToAiAGP77F9hv71smvBj2kxznwMkAxKrgpump",
+        "pool": "vaults:HS7cm1rp",
+        "baseVault": "HS7cm1rp5FKhvxGw7vTKT7oxyrLeH29JBZkDpzEvDDq6",
+        "quoteVault": "7GFUN3bWzJMKMRZ34JLsvcqdssDbXnp589SiE33KVwcC"
+      }
+    },
+    {
+      "ts": 1784249660755,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "True holder count + distribution from DAS getTokenAccounts",
+      "bindings": {
+        "mint": "6bADDPLT",
+        "count": 14,
+        "capped": false,
+        "nakamoto": 1,
+        "whales": 3
+      }
+    },
+    {
+      "ts": 1784249661052,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Token age resolved from bonding curve history",
+      "bindings": {
+        "mint": "6bADDPLT",
+        "tokenAgeSeconds": 1213329
+      }
+    },
+    {
+      "ts": 1784249661084,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Creator wallet resolved",
+      "bindings": {
+        "mint": "6bADDPLT",
+        "creator": "5XrFPhrR"
+      }
+    },
+    {
+      "ts": 1784249669119,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 5,
+        "newestSig": "56yeJyMF",
+        "lastSig": "56yeJyMF"
+      }
+    },
+    {
+      "ts": 1784249671747,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 256 swaps for Ezr4v8UG (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249678932,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7bTsRg buy pumpswap FpZj2F lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249699998,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 buy pumpfun_bc HqnGiQ lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784249704056,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 211 swaps for 3ceHDZeK (705 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249709143,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 3,
+        "newestSig": "5XsqWLEL",
+        "lastSig": "5XsqWLEL"
+      }
+    },
+    {
+      "ts": 1784249710997,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpfun_bc 75vWN4 lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249715798,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpfun_bc 75vWN4 lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249735613,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 253 swaps for gTgdTQ8y (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249748503,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 2fHT9w sell pumpswap Tqj8yF lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784249760621,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpfun_bc 75vWN4 lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784249760778,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpfun_bc 75vWN4 lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784249765715,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 269 swaps for sqMST7ix (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249773782,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 sell pumpfun_bc HqnGiQ lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249775183,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 sell pumpfun_bc 75vWN4 lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249781500,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh sell pumpfun_bc 6XwNrB lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249795809,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 207 swaps for 5jhL6BME (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249808564,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 buy pumpfun_bc HqnGiQ lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249825608,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30-lag BVcbpJ take_profit net=0.4993 SOL hold=2510s"
+    },
+    {
+      "ts": 1784249829449,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 193 swaps for 7j3P5nNP (913 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249857589,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation tx timing",
+      "bindings": {
+        "mint": "75vWN4ve",
+        "signature": "ksfinpSs",
+        "source": "pump.fun-processed",
+        "wsDeliveryLatencySec": 1.5,
+        "rpcFetchMs": 1105
+      }
+    },
+    {
+      "ts": 1784249857713,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation verified and recorded",
+      "bindings": {
+        "graduationId": 35561,
+        "mint": "75vWN4veWV9kvN5G4V8otqfUBT3MNf1bVqJrbRFMpump",
+        "signature": "ksfinpSsWpMwqsUgDmi411ZCJ2HXuF7TNgmeSjhypGgaANZAj4de8f4jMSJUp3g6UVMpMgXhAoSf2iycQsG4aiv",
+        "finalPriceSol": 2.362515536461653e-7,
+        "finalSolReserves": 85.007301439,
+        "bondingCurve": "E3sk6b5fmKzzHWDYPqA9zHjyQ9eHHgdBbDqhdVZCDUyG",
+        "poolAddress": "NOT_FOUND"
+      }
+    },
+    {
+      "ts": 1784249857717,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Starting price observation",
+      "bindings": {
+        "graduationId": 35561,
+        "mint": "75vWN4veWV9kvN5G4V8otqfUBT3MNf1bVqJrbRFMpump",
+        "pool": "vaults:CFdiyNFf",
+        "bondingCurvePrice": 2.362515536461653e-7,
+        "elapsedSec": 3,
+        "snapshotsRemaining": 61
+      }
+    },
+    {
+      "ts": 1784249857717,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Direct pool observation started with pre-extracted vaults",
+      "bindings": {
+        "graduationId": 35561,
+        "mint": "75vWN4veWV9kvN5G4V8otqfUBT3MNf1bVqJrbRFMpump",
+        "pool": "vaults:CFdiyNFf",
+        "baseVault": "CFdiyNFfAQxBSVdqzJQZWHAJt31D2UyA72ARrUtssbRX",
+        "quoteVault": "HL7CgdGn5mGwzLWAXQRW2HBNC4FnpDC69sySULTvxNK2"
+      }
+    },
+    {
+      "ts": 1784249858012,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "True holder count + distribution from DAS getTokenAccounts",
+      "bindings": {
+        "mint": "75vWN4ve",
+        "count": 183,
+        "capped": false,
+        "nakamoto": 18,
+        "whales": 22
+      }
+    },
+    {
+      "ts": 1784249858416,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Token age resolved from bonding curve history",
+      "bindings": {
+        "mint": "75vWN4ve",
+        "tokenAgeSeconds": 98
+      }
+    },
+    {
+      "ts": 1784249858455,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Creator wallet resolved",
+      "bindings": {
+        "mint": "75vWN4ve",
+        "creator": "7ovu7sqY"
+      }
+    },
+    {
+      "ts": 1784249859122,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 3,
+        "newestSig": "ksfinpSs",
+        "lastSig": "ksfinpSs"
+      }
+    },
+    {
+      "ts": 1784249859955,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 237 swaps for 7ukuRu6x (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249869128,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "3g6BbXSk",
+        "lastSig": "3g6BbXSk"
+      }
+    },
+    {
+      "ts": 1784249889125,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 3,
+        "newestSig": "3En3ocCr",
+        "lastSig": "3En3ocCr"
+      }
+    },
+    {
+      "ts": 1784249890441,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 131 swaps for 811fAKQZ (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249899120,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "3izDS5jx",
+        "lastSig": "3izDS5jx"
+      }
+    },
+    {
+      "ts": 1784249916199,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 sell pumpfun_bc HqnGiQ lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249920643,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 236 swaps for 84XAace9 (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249943852,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpfun_bc 9Ay7oY lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249944763,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 sell pumpfun_bc HqnGiQ lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249948348,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv buy pumpfun_bc HRHPW4 lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249950528,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv sell pumpfun_bc HRHPW4 lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784249951990,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 199 swaps for 8DnfeKeq (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784249961301,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv sell pumpfun_bc HRHPW4 lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249962571,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpfun_bc 9Ay7oY lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784249970238,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 sell pumpfun_bc 9Ay7oY lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784249971140,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv sell pumpfun_bc HRHPW4 lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784249979159,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 2,
+        "newestSig": "5EtyQopF",
+        "lastSig": "5EtyQopF"
+      }
+    },
+    {
+      "ts": 1784249981908,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv sell pumpfun_bc HRHPW4 lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784249982491,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 255 swaps for 8J23iqCB (505 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784250012585,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 171 swaps for 8Kj5PX4X (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784250029123,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "vYY9oQ2w",
+        "lastSig": "vYY9oQ2w"
+      }
+    },
+    {
+      "ts": 1784250042891,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 107 swaps for 8SCpCAh2 (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784250049067,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "transactionSubscribe sent for 150 wallets"
+    },
+    {
+      "ts": 1784250055079,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 23 swaps for 8SDsWRqT (121 sigs, 121 parsed)"
+    },
+    {
+      "ts": 1784250065574,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 BVcbpJ take_profit net=0.70488 SOL hold=2755s"
+    },
+    {
+      "ts": 1784250088799,
+      "level": "info",
+      "name": "wallet-pnl",
+      "msg": "Fetched 154 swaps for 8T36Vfms (1000 sigs, 300 parsed)"
+    },
+    {
+      "ts": 1784250088803,
+      "level": "info",
+      "name": "copytrade-worker",
+      "msg": "Refreshed 15 used (incremental); scored 20 backlog; deep-rescanned 0"
+    },
+    {
+      "ts": 1784250088807,
+      "level": "info",
+      "name": "copytrade-worker",
+      "msg": "Scoring tick complete: scored=20, promotable=18"
+    },
+    {
+      "ts": 1784250090112,
+      "level": "info",
+      "name": "smart-money",
+      "msg": "Smart-money analysis cached: smart_wallets=296, present_grads=1264, low_confidence=false"
+    },
+    {
+      "ts": 1784250096679,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv buy pumpfun_bc EBSqCA lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250096874,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv buy pumpfun_bc EBSqCA lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250097087,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv buy pumpfun_bc EBSqCA lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250101225,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv sell pumpfun_bc EBSqCA lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250103932,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 9LxMdv sell pumpfun_bc EBSqCA lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250109831,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh buy pumpfun_bc 6XwNrB lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250157755,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: BtHnhj buy pumpfun_bc BRFvnS lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250157756,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: E8B7Ed buy pumpfun_bc BRFvnS lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250157759,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: DNio5k buy pumpfun_bc BRFvnS lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250163324,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh buy pumpfun_bc 9Dj9Ba lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250166024,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh sell pumpfun_bc 9Dj9Ba lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250180516,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: DNio5k sell pumpfun_bc BRFvnS lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250180517,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: E8B7Ed sell pumpfun_bc BRFvnS lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250180518,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: BtHnhj sell pumpfun_bc BRFvnS lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250184670,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh sell pumpfun_bc 6XwNrB lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250188754,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh buy pumpfun_bc 6XwNrB lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250190168,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 2,
+        "newestSig": "A4v92sm9",
+        "lastSig": "A4v92sm9"
+      }
+    },
+    {
+      "ts": 1784250215431,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: EYDjJh sell pumpfun_bc 6XwNrB lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250260168,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "3dV5qGzr",
+        "lastSig": "3dV5qGzr"
+      }
+    },
+    {
+      "ts": 1784250299476,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation tx timing",
+      "bindings": {
+        "mint": "HzEfdBMf",
+        "signature": "2erBVLDH",
+        "source": "pump.fun-processed",
+        "wsDeliveryLatencySec": 1.4,
+        "rpcFetchMs": 1092
+      }
+    },
+    {
+      "ts": 1784250299478,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation verified and recorded",
+      "bindings": {
+        "graduationId": 35562,
+        "mint": "HzEfdBMfQaV74JSjoVsDEKJyQ1ALbkg2XDQwhsLMpump",
+        "signature": "2erBVLDH3NhggfVgE7LhcznkmBQL5Tv1qUfRdRmcztBNjHMSqsgdVk9jAMzEqa3DGJbhs7eXA4R8141MfScUrWGP",
+        "finalPriceSol": 2.3625155403646915e-7,
+        "finalSolReserves": 85.007301629,
+        "bondingCurve": "E4o2MNXW91eSDVFo9EzrvdmYkffTxCxme19o8bkP9y6T",
+        "poolAddress": "63f4frmAS1zbsGg2xSzYMhbo4AjLnwDNNsxn4tyUYonv"
+      }
+    },
+    {
+      "ts": 1784250299479,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Starting price observation",
+      "bindings": {
+        "graduationId": 35562,
+        "mint": "HzEfdBMfQaV74JSjoVsDEKJyQ1ALbkg2XDQwhsLMpump",
+        "pool": "63f4frmAS1zbsGg2xSzYMhbo4AjLnwDNNsxn4tyUYonv",
+        "bondingCurvePrice": 2.3625155403646915e-7,
+        "elapsedSec": 2,
+        "snapshotsRemaining": 61
+      }
+    },
+    {
+      "ts": 1784250299479,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Direct pool observation started with pre-extracted vaults",
+      "bindings": {
+        "graduationId": 35562,
+        "mint": "HzEfdBMfQaV74JSjoVsDEKJyQ1ALbkg2XDQwhsLMpump",
+        "pool": "63f4frmAS1zbsGg2xSzYMhbo4AjLnwDNNsxn4tyUYonv",
+        "baseVault": "FWsW1xNtWscwNmKv6wVsU1iTzRN6wmmk3MjxRP5tT7hz",
+        "quoteVault": "7xQYoUjUJF1Kg6WVczoTAkaNhn5syQYcbvjmFrhjWpx"
+      }
+    },
+    {
+      "ts": 1784250299608,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "True holder count + distribution from DAS getTokenAccounts",
+      "bindings": {
+        "mint": "HzEfdBMf",
+        "count": 243,
+        "capped": false,
+        "nakamoto": 26,
+        "whales": 35
+      }
+    },
+    {
+      "ts": 1784250300132,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Token age resolved from bonding curve history",
+      "bindings": {
+        "mint": "HzEfdBMf",
+        "tokenAgeSeconds": 528
+      }
+    },
+    {
+      "ts": 1784250300187,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 2,
+        "newestSig": "2erBVLDH",
+        "lastSig": "2erBVLDH"
+      }
+    },
+    {
+      "ts": 1784250300271,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Creator wallet resolved",
+      "bindings": {
+        "mint": "HzEfdBMf",
+        "creator": "4sWPwW2B"
+      }
+    },
+    {
+      "ts": 1784250308948,
+      "level": "info",
+      "name": "competition-detector",
+      "msg": "Competition detection complete",
+      "bindings": {
+        "graduationId": 35562,
+        "mint": "HzEfdBMfQaV74JSjoVsDEKJyQ1ALbkg2XDQwhsLMpump",
+        "pool": "63f4frmAS1zbsGg2xSzYMhbo4AjLnwDNNsxn4tyUYonv",
+        "txCount": 20
+      }
+    },
+    {
+      "ts": 1784250310158,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "2bVVCGHz",
+        "lastSig": "2bVVCGHz"
+      }
+    },
+    {
+      "ts": 1784250334569,
+      "level": "info",
+      "name": "competition-detector",
+      "msg": "Buy pressure detection complete",
+      "bindings": {
+        "graduationId": 35562,
+        "mint": "HzEfdBMfQaV74JSjoVsDEKJyQ1ALbkg2XDQwhsLMpump",
+        "totalSigs": 539,
+        "newParsed": 19,
+        "skippedExisting": 8,
+        "uniqueBuyers": 5,
+        "buyRatio": "1.00",
+        "whalePct": "0.30",
+        "sniperCount": 0,
+        "sniperSol": "0.00",
+        "sniperVelAvg": "N/A",
+        "flowImbalance": "1.00",
+        "priceVsVwap": "N/A",
+        "firstBuyerPriors": "N/A"
+      }
+    },
+    {
+      "ts": 1784250380169,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "3U2zkru1",
+        "lastSig": "3U2zkru1"
+      }
+    },
+    {
+      "ts": 1784250380978,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation tx timing",
+      "bindings": {
+        "mint": "DeXz3gkD",
+        "signature": "JiWH4R67",
+        "source": "pump.fun-processed",
+        "wsDeliveryLatencySec": 0.9,
+        "rpcFetchMs": 1123
+      }
+    },
+    {
+      "ts": 1784250380989,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation verified and recorded",
+      "bindings": {
+        "graduationId": 35563,
+        "mint": "DeXz3gkDnmroYjA6JeZV7Sy2o2HjVhUMFRB2pAtvpump",
+        "signature": "JiWH4R67jiZm8Kbnz72GBx29eVXEZawdVbQKx6qc8BUjFRDTuhw6SnjssB6FzBWFiBozoNPknExNjvUZMaR3o5s",
+        "finalPriceSol": 2.3625155265602597e-7,
+        "finalSolReserves": 85.007300957,
+        "bondingCurve": "MeULWcdSPqshDqv6WuFGZueQXJdYHBqBzpVHU5gCEve",
+        "poolAddress": "NOT_FOUND"
+      }
+    },
+    {
+      "ts": 1784250380991,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Starting price observation",
+      "bindings": {
+        "graduationId": 35563,
+        "mint": "DeXz3gkDnmroYjA6JeZV7Sy2o2HjVhUMFRB2pAtvpump",
+        "pool": "vaults:ALKZjBSG",
+        "bondingCurvePrice": 2.3625155265602597e-7,
+        "elapsedSec": 2,
+        "snapshotsRemaining": 61
+      }
+    },
+    {
+      "ts": 1784250380991,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Direct pool observation started with pre-extracted vaults",
+      "bindings": {
+        "graduationId": 35563,
+        "mint": "DeXz3gkDnmroYjA6JeZV7Sy2o2HjVhUMFRB2pAtvpump",
+        "pool": "vaults:ALKZjBSG",
+        "baseVault": "ALKZjBSGcjKmEvrLs3Xohc7UXD93Sz1Ub33rySvVDKxG",
+        "quoteVault": "8YwysRXN92MC4HMX7PFue5CCizQiwaqoP2j3piCfdYWc"
+      }
+    },
+    {
+      "ts": 1784250381020,
+      "level": "warn",
+      "name": "holder-enrichment",
+      "msg": "getTokenLargestAccounts failed",
+      "bindings": {
+        "mint": "DeXz3gkD",
+        "err": "failed to get token largest accounts: Invalid param: not a Token mint"
+      }
+    },
+    {
+      "ts": 1784250381080,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "True holder count + distribution from DAS getTokenAccounts",
+      "bindings": {
+        "mint": "DeXz3gkD",
+        "count": 67,
+        "capped": false,
+        "nakamoto": 8,
+        "whales": 19
+      }
+    },
+    {
+      "ts": 1784250381255,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Token age resolved from bonding curve history",
+      "bindings": {
+        "mint": "DeXz3gkD",
+        "tokenAgeSeconds": 7
+      }
+    },
+    {
+      "ts": 1784250381288,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Creator wallet resolved",
+      "bindings": {
+        "mint": "DeXz3gkD",
+        "creator": "Cbahq9UL"
+      }
+    },
+    {
+      "ts": 1784250390159,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 4,
+        "newestSig": "3djmnwST",
+        "lastSig": "3djmnwST"
+      }
+    },
+    {
+      "ts": 1784250420190,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "v8AQiBHf",
+        "lastSig": "v8AQiBHf"
+      }
+    },
+    {
+      "ts": 1784250516609,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "transactionSubscribe sent for 150 wallets"
+    },
+    {
+      "ts": 1784250540180,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 1,
+        "newestSig": "5u9sgCkh",
+        "lastSig": "5u9sgCkh"
+      }
+    },
+    {
+      "ts": 1784250579109,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: DNio5k buy pumpfun_bc BCg1rt lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250579119,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: BtHnhj buy pumpfun_bc BCg1rt lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250579122,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: E8B7Ed buy pumpfun_bc BCg1rt lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250587631,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: E8B7Ed sell pumpfun_bc BCg1rt lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250587632,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: BtHnhj sell pumpfun_bc BCg1rt lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250587633,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: DNio5k sell pumpfun_bc BCg1rt lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250613908,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7HMPfL sell pumpswap BVcbpJ lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250749949,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation tx timing",
+      "bindings": {
+        "mint": "HorsPNhT",
+        "signature": "3n9Qcx1R",
+        "source": "pump.fun-processed",
+        "wsDeliveryLatencySec": 0.8,
+        "rpcFetchMs": 1124
+      }
+    },
+    {
+      "ts": 1784250749991,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation verified and recorded",
+      "bindings": {
+        "graduationId": 35564,
+        "mint": "HorsPNhTkbyMNHnqhxVYXFuUWt3g4ygePSsUqtEbrUJi",
+        "signature": "3n9Qcx1RodHZbGfEA7unFiFtRqMy2awwuishZb971PjRUxy3VondvE9E5Dxp3pZyizhaye8FhcJnzpXeCAVUMvCC",
+        "finalPriceSol": 2.3625103783700036e-7,
+        "finalSolReserves": 85.007050343,
+        "bondingCurve": "B7cjot4ZsrcPbKWk1HRU22VsekE8DqkzKjFMdhBxXdph",
+        "poolAddress": "NOT_FOUND"
+      }
+    },
+    {
+      "ts": 1784250749997,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Starting price observation",
+      "bindings": {
+        "graduationId": 35564,
+        "mint": "HorsPNhTkbyMNHnqhxVYXFuUWt3g4ygePSsUqtEbrUJi",
+        "pool": "vaults:GEfm1Ymh",
+        "bondingCurvePrice": 2.3625103783700036e-7,
+        "elapsedSec": 2,
+        "snapshotsRemaining": 61
+      }
+    },
+    {
+      "ts": 1784250749997,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Direct pool observation started with pre-extracted vaults",
+      "bindings": {
+        "graduationId": 35564,
+        "mint": "HorsPNhTkbyMNHnqhxVYXFuUWt3g4ygePSsUqtEbrUJi",
+        "pool": "vaults:GEfm1Ymh",
+        "baseVault": "GEfm1Ymhu3GZZSEKSDboRHL6ewLqyw6NpSF6FWUA4sbF",
+        "quoteVault": "7GFUN3bWzJMKMRZ34JLsvcqdssDbXnp589SiE33KVwcC"
+      }
+    },
+    {
+      "ts": 1784250750030,
+      "level": "warn",
+      "name": "holder-enrichment",
+      "msg": "getTokenLargestAccounts failed",
+      "bindings": {
+        "mint": "HorsPNhT",
+        "err": "failed to get token largest accounts: Invalid param: not a Token mint"
+      }
+    },
+    {
+      "ts": 1784250750095,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "True holder count + distribution from DAS getTokenAccounts",
+      "bindings": {
+        "mint": "HorsPNhT",
+        "count": 13,
+        "capped": false,
+        "nakamoto": 2,
+        "whales": 3
+      }
+    },
+    {
+      "ts": 1784250750147,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Token age resolved from bonding curve history",
+      "bindings": {
+        "mint": "HorsPNhT",
+        "tokenAgeSeconds": 1
+      }
+    },
+    {
+      "ts": 1784250750187,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Creator wallet resolved",
+      "bindings": {
+        "mint": "HorsPNhT",
+        "creator": "BM7M6B7o"
+      }
+    },
+    {
+      "ts": 1784250750228,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 6,
+        "newestSig": "3Ki1Cu6y",
+        "lastSig": "3Ki1Cu6y"
+      }
+    },
+    {
+      "ts": 1784250771141,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 buy pumpfun_bc HqnGiQ lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250797092,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 2fHT9w sell pumpswap 6ehEcT lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250798583,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation tx timing",
+      "bindings": {
+        "mint": "HqnGiQaL",
+        "signature": "5BnSYpgS",
+        "source": "pump.fun-processed",
+        "wsDeliveryLatencySec": 1.5,
+        "rpcFetchMs": 1097
+      }
+    },
+    {
+      "ts": 1784250798586,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation verified and recorded",
+      "bindings": {
+        "graduationId": 35565,
+        "mint": "HqnGiQaLVHEjaT9veLbz1NJ1MHNefmvTTApJrRXepump",
+        "signature": "5BnSYpgS9oPs8EkscD4Z7BTSYvXcJF1xLZwDsU8u5aK1iWzgD6CNckSbfBwyj9ZY5QiVYTyCS2KKVCXM8d4EPC4t",
+        "finalPriceSol": 2.362515532948918e-7,
+        "finalSolReserves": 85.007301268,
+        "bondingCurve": "8AJo2QdUwhfA71MrWdN8tT2onkHQkKH2jqP4B1QF7Cij",
+        "poolAddress": "2Er6FPnFUkxSWFgwUzoaX6k2dtkpZWSP9WLDhKqwkNFS"
+      }
+    },
+    {
+      "ts": 1784250798588,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Starting price observation",
+      "bindings": {
+        "graduationId": 35565,
+        "mint": "HqnGiQaLVHEjaT9veLbz1NJ1MHNefmvTTApJrRXepump",
+        "pool": "2Er6FPnFUkxSWFgwUzoaX6k2dtkpZWSP9WLDhKqwkNFS",
+        "bondingCurvePrice": 2.362515532948918e-7,
+        "elapsedSec": 3,
+        "snapshotsRemaining": 61
+      }
+    },
+    {
+      "ts": 1784250798588,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Direct pool observation started with pre-extracted vaults",
+      "bindings": {
+        "graduationId": 35565,
+        "mint": "HqnGiQaLVHEjaT9veLbz1NJ1MHNefmvTTApJrRXepump",
+        "pool": "2Er6FPnFUkxSWFgwUzoaX6k2dtkpZWSP9WLDhKqwkNFS",
+        "baseVault": "JCRGumoE9Qi5BBgULTgdgTLjSgkCMSbF62ZZfGs84JeU",
+        "quoteVault": "DWpvfqzGWuVy9jVSKSShdM2733nrEsnnhsUStYbkj6Nn"
+      }
+    },
+    {
+      "ts": 1784250798689,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "True holder count + distribution from DAS getTokenAccounts",
+      "bindings": {
+        "mint": "HqnGiQaL",
+        "count": 144,
+        "capped": false,
+        "nakamoto": 36,
+        "whales": 13
+      }
+    },
+    {
+      "ts": 1784250798923,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Token age resolved from bonding curve history",
+      "bindings": {
+        "mint": "HqnGiQaL",
+        "tokenAgeSeconds": 2783
+      }
+    },
+    {
+      "ts": 1784250798965,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Creator wallet resolved",
+      "bindings": {
+        "mint": "HqnGiQaL",
+        "creator": "EBLANtX7"
+      }
+    },
+    {
+      "ts": 1784250799452,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7HMPfL buy pumpswap BVcbpJ lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250802607,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 9,
+        "newestSig": "2VcVueTC",
+        "lastSig": "2VcVueTC"
+      }
+    },
+    {
+      "ts": 1784250803688,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation tx timing",
+      "bindings": {
+        "mint": "6XwNrBDa",
+        "signature": "5BRvR3qt",
+        "source": "pump.fun-processed",
+        "wsDeliveryLatencySec": 1.6,
+        "rpcFetchMs": 1104
+      }
+    },
+    {
+      "ts": 1784250803691,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation verified and recorded",
+      "bindings": {
+        "graduationId": 35566,
+        "mint": "6XwNrBDaVVWHdmQUCGxeJr67rVcsqs14DJQ1zKefpump",
+        "signature": "5BRvR3qtDZqDmhuMV95B1AdvWQL7BUTow9wPoUBGtnTNmKKgCD1TfyXkL4WCemrq4SsdeiFYYGDbMYasoHG2AsKD",
+        "finalPriceSol": 2.3625155597566312e-7,
+        "finalSolReserves": 85.007302573,
+        "bondingCurve": "7r3TFZV3uPEr68k9GDMDYZ65Sydyv5h2X7w8FA1eKdyx",
+        "poolAddress": "NOT_FOUND"
+      }
+    },
+    {
+      "ts": 1784250803691,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Starting price observation",
+      "bindings": {
+        "graduationId": 35566,
+        "mint": "6XwNrBDaVVWHdmQUCGxeJr67rVcsqs14DJQ1zKefpump",
+        "pool": "vaults:4JdPNChz",
+        "bondingCurvePrice": 2.3625155597566312e-7,
+        "elapsedSec": 3,
+        "snapshotsRemaining": 61
+      }
+    },
+    {
+      "ts": 1784250803691,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Direct pool observation started with pre-extracted vaults",
+      "bindings": {
+        "graduationId": 35566,
+        "mint": "6XwNrBDaVVWHdmQUCGxeJr67rVcsqs14DJQ1zKefpump",
+        "pool": "vaults:4JdPNChz",
+        "baseVault": "4JdPNChzkUXErdLiswvoR7NTngDKbwM2MDtVZjFizZom",
+        "quoteVault": "FJ3MkKMWmTeU2uY2wG3rViyiK5VdysTkwZ8G2k79WnLf"
+      }
+    },
+    {
+      "ts": 1784250803797,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "True holder count + distribution from DAS getTokenAccounts",
+      "bindings": {
+        "mint": "6XwNrBDa",
+        "count": 189,
+        "capped": false,
+        "nakamoto": 23,
+        "whales": 29
+      }
+    },
+    {
+      "ts": 1784250804112,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Token age resolved from bonding curve history",
+      "bindings": {
+        "mint": "6XwNrBDa",
+        "tokenAgeSeconds": 6115
+      }
+    },
+    {
+      "ts": 1784250804146,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Creator wallet resolved",
+      "bindings": {
+        "mint": "6XwNrBDa",
+        "creator": "H8UKNvUe"
+      }
+    },
+    {
+      "ts": 1784250805594,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy drift-skip copy-fable-dip BVcbpJ drift=0.068% (gate -20%..0%)"
+    },
+    {
+      "ts": 1784250806374,
+      "level": "info",
+      "name": "competition-detector",
+      "msg": "Competition detection complete",
+      "bindings": {
+        "graduationId": 35565,
+        "mint": "HqnGiQaLVHEjaT9veLbz1NJ1MHNefmvTTApJrRXepump",
+        "pool": "2Er6FPnFUkxSWFgwUzoaX6k2dtkpZWSP9WLDhKqwkNFS",
+        "txCount": 20
+      }
+    },
+    {
+      "ts": 1784250812625,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 4,
+        "newestSig": "2WKRYtmx",
+        "lastSig": "2WKRYtmx"
+      }
+    },
+    {
+      "ts": 1784250831547,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 sell pumpswap HqnGiQ lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250833744,
+      "level": "info",
+      "name": "competition-detector",
+      "msg": "Buy pressure detection complete",
+      "bindings": {
+        "graduationId": 35565,
+        "mint": "HqnGiQaLVHEjaT9veLbz1NJ1MHNefmvTTApJrRXepump",
+        "totalSigs": 120,
+        "newParsed": 11,
+        "skippedExisting": 10,
+        "uniqueBuyers": 10,
+        "buyRatio": "0.63",
+        "whalePct": "0.32",
+        "sniperCount": 0,
+        "sniperSol": "0.00",
+        "sniperVelAvg": "N/A",
+        "flowImbalance": "-0.08",
+        "priceVsVwap": "N/A",
+        "firstBuyerPriors": 3
+      }
+    },
+    {
+      "ts": 1784250869508,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpfun_bc BqD36o lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250895172,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpfun_bc BqD36o lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250936359,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 3xJ8i2 sell pumpswap HqnGiQ lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250939034,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation tx timing",
+      "bindings": {
+        "mint": "BqD36oDy",
+        "signature": "2Fv2nDfz",
+        "source": "pump.fun-processed",
+        "wsDeliveryLatencySec": 0.9,
+        "rpcFetchMs": 1129
+      }
+    },
+    {
+      "ts": 1784250939038,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Graduation verified and recorded",
+      "bindings": {
+        "graduationId": 35567,
+        "mint": "BqD36oDy12LmmjyrPp2y24HEcQ5huGE8geSV2VXDpump",
+        "signature": "2Fv2nDfzZZcfgE8SaAT2r2w81KrTtwDD8dpJPunmNTcBjHVDZt5gzuizELQCWFrP8d1LMcbM7g3zS9rQxggFwK3X",
+        "finalPriceSol": 2.3625155434254953e-7,
+        "finalSolReserves": 85.007301778,
+        "bondingCurve": "GVUwoMbYu5CdyPrDThUDWorWjZTRYedfuXR6CTUohjGW",
+        "poolAddress": "NOT_FOUND"
+      }
+    },
+    {
+      "ts": 1784250939040,
+      "level": "info",
+      "name": "price-collector",
+      "msg": "Starting price observation",
+      "bindings": {
+        "graduationId": 35567,
+        "mint": "BqD36oDy12LmmjyrPp2y24HEcQ5huGE8geSV2VXDpump",
+        "pool": "vaults:9iaKrTq8",
+        "bondingCurvePrice": 2.3625155434254953e-7,
+        "elapsedSec": 2,
+        "snapshotsRemaining": 61
+      }
+    },
+    {
+      "ts": 1784250939040,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Direct pool observation started with pre-extracted vaults",
+      "bindings": {
+        "graduationId": 35567,
+        "mint": "BqD36oDy12LmmjyrPp2y24HEcQ5huGE8geSV2VXDpump",
+        "pool": "vaults:9iaKrTq8",
+        "baseVault": "9iaKrTq87agjLi8m36hSrp7FYNKBHVP68aeaCDmgxqmk",
+        "quoteVault": "J1RhcnCmpPuRtqsPG6E77f6upbtpWBrmoaWyFvAv8Km9"
+      }
+    },
+    {
+      "ts": 1784250939182,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "True holder count + distribution from DAS getTokenAccounts",
+      "bindings": {
+        "mint": "BqD36oDy",
+        "count": 237,
+        "capped": false,
+        "nakamoto": 25,
+        "whales": 30
+      }
+    },
+    {
+      "ts": 1784250939596,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Token age resolved from bonding curve history",
+      "bindings": {
+        "mint": "BqD36oDy",
+        "tokenAgeSeconds": 561
+      }
+    },
+    {
+      "ts": 1784250939760,
+      "level": "info",
+      "name": "holder-enrichment",
+      "msg": "Creator wallet resolved",
+      "bindings": {
+        "mint": "BqD36oDy",
+        "creator": "7ovu7sqY"
+      }
+    },
+    {
+      "ts": 1784250943784,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 12,
+        "newestSig": "2d437R42",
+        "lastSig": "2d437R42"
+      }
+    },
+    {
+      "ts": 1784250947739,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7KjC6p buy pumpswap HqnGiQ lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250949242,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpswap BqD36o lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784250949367,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpswap BqD36o lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250949531,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7gdo83 buy pumpswap BqD36o lag=?s dec=0ms"
+    },
+    {
+      "ts": 1784250992666,
+      "level": "info",
+      "name": "copy-follower-probe",
+      "msg": "Probe: 7KjC6p buy pumpswap HorsPN lag=?s dec=1ms"
+    },
+    {
+      "ts": 1784251011329,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (1/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251021302,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (2/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251032973,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (3/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251041322,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (4/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251051315,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (5/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251051315,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poller circuit breaker tripped after 5 consecutive failures — pausing for 60s"
+    },
+    {
+      "ts": 1784251272630,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 JCKwsT max_hold_cap net=0.25222 SOL hold=28847s"
+    },
+    {
+      "ts": 1784251272630,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30-lag JCKwsT max_hold_cap net=0.24719 SOL hold=28841s"
+    },
+    {
+      "ts": 1784251512642,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 7V6Sk6 max_hold_cap net=0.07924 SOL hold=28839s"
+    },
+    {
+      "ts": 1784251512642,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30-lag 7V6Sk6 max_hold_cap net=0.08059 SOL hold=28834s"
+    },
+    {
+      "ts": 1784251680152,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 742,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 61,
+        "totalPollFailures": 61
+      }
+    },
+    {
+      "ts": 1784252460163,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1522,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 139,
+        "totalPollFailures": 139,
+        "totalCandidateSilenceReconnects": 1
+      }
+    },
+    {
+      "ts": 1784252460164,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784252460167,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784252460167,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784253180171,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 211,
+        "totalPollFailures": 211
+      }
+    },
+    {
+      "ts": 1784253432688,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 ANLEpx max_hold_cap net=0.16221 SOL hold=29037s"
+    },
+    {
+      "ts": 1784253960183,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 289,
+        "totalPollFailures": 289,
+        "totalCandidateSilenceReconnects": 2
+      }
+    },
+    {
+      "ts": 1784253960183,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784253960187,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784253960187,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784254680190,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 361,
+        "totalPollFailures": 361
+      }
+    },
+    {
+      "ts": 1784255460194,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 439,
+        "totalPollFailures": 439,
+        "totalCandidateSilenceReconnects": 3
+      }
+    },
+    {
+      "ts": 1784255460194,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784255460197,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784255460197,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784256180197,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 511,
+        "totalPollFailures": 511
+      }
+    },
+    {
+      "ts": 1784256960211,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 589,
+        "totalPollFailures": 589,
+        "totalCandidateSilenceReconnects": 4
+      }
+    },
+    {
+      "ts": 1784256960212,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784256960214,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784256960215,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784257680219,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 661,
+        "totalPollFailures": 661
+      }
+    },
+    {
+      "ts": 1784258460227,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 739,
+        "totalPollFailures": 739,
+        "totalCandidateSilenceReconnects": 5
+      }
+    },
+    {
+      "ts": 1784258460227,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784258460229,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784258460229,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784258472363,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 3dejiW max_hold_cap net=0.13594 SOL hold=28871s"
+    },
+    {
+      "ts": 1784258472364,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30-lag 3dejiW max_hold_cap net=0.13594 SOL hold=28866s"
+    },
+    {
+      "ts": 1784259180232,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 811,
+        "totalPollFailures": 811
+      }
+    },
+    {
+      "ts": 1784259960240,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 889,
+        "totalPollFailures": 889,
+        "totalCandidateSilenceReconnects": 6
+      }
+    },
+    {
+      "ts": 1784259960241,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784259960244,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784259960244,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784260392563,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 2aQKC1 max_hold_cap net=0.03488 SOL hold=28826s"
+    },
+    {
+      "ts": 1784260392564,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30-lag 2aQKC1 max_hold_cap net=0.07803 SOL hold=28821s"
+    },
+    {
+      "ts": 1784260680245,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 961,
+        "totalPollFailures": 961
+      }
+    },
+    {
+      "ts": 1784261352378,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 4qq7Pt max_hold_cap net=0.01488 SOL hold=28839s"
+    },
+    {
+      "ts": 1784261460256,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1039,
+        "totalPollFailures": 1039,
+        "totalCandidateSilenceReconnects": 7
+      }
+    },
+    {
+      "ts": 1784261460256,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784261460259,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784261460259,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784262180262,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1111,
+        "totalPollFailures": 1111
+      }
+    },
+    {
+      "ts": 1784262960273,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1189,
+        "totalPollFailures": 1189,
+        "totalCandidateSilenceReconnects": 8
+      }
+    },
+    {
+      "ts": 1784262960274,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784262960277,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784262960277,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784263680281,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1261,
+        "totalPollFailures": 1261
+      }
+    },
+    {
+      "ts": 1784264460289,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1339,
+        "totalPollFailures": 1339,
+        "totalCandidateSilenceReconnects": 9
+      }
+    },
+    {
+      "ts": 1784264460289,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784264460292,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784264460292,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784265180295,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1411,
+        "totalPollFailures": 1411
+      }
+    },
+    {
+      "ts": 1784265960310,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1489,
+        "totalPollFailures": 1489,
+        "totalCandidateSilenceReconnects": 10
+      }
+    },
+    {
+      "ts": 1784265960310,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784265960312,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784265960312,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784266680322,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1561,
+        "totalPollFailures": 1561
+      }
+    },
+    {
+      "ts": 1784267460337,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1639,
+        "totalPollFailures": 1639,
+        "totalCandidateSilenceReconnects": 11
+      }
+    },
+    {
+      "ts": 1784267460338,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784267460340,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784267460340,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784268180352,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1711,
+        "totalPollFailures": 1711
+      }
+    },
+    {
+      "ts": 1784268960360,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1789,
+        "totalPollFailures": 1789,
+        "totalCandidateSilenceReconnects": 12
+      }
+    },
+    {
+      "ts": 1784268960360,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784268960363,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784268960363,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784269680367,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1861,
+        "totalPollFailures": 1861
+      }
+    },
+    {
+      "ts": 1784270460375,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1939,
+        "totalPollFailures": 1939,
+        "totalCandidateSilenceReconnects": 13
+      }
+    },
+    {
+      "ts": 1784270460375,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784270460378,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784270460378,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784271180382,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2011,
+        "totalPollFailures": 2011
+      }
+    },
+    {
+      "ts": 1784271432358,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 BCdwQB max_hold_cap net=0.01802 SOL hold=28881s"
+    },
+    {
+      "ts": 1784271432358,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30-lag BCdwQB max_hold_cap net=0.01803 SOL hold=28876s"
+    },
+    {
+      "ts": 1784271960389,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2089,
+        "totalPollFailures": 2089,
+        "totalCandidateSilenceReconnects": 14
+      }
+    },
+    {
+      "ts": 1784271960390,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784271960393,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784271960393,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784272392564,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 B4ptaV max_hold_cap net=0.00819 SOL hold=28903s"
+    },
+    {
+      "ts": 1784272392565,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30-lag B4ptaV max_hold_cap net=0.00562 SOL hold=28898s"
+    },
+    {
+      "ts": 1784272680397,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2161,
+        "totalPollFailures": 2161
+      }
+    },
+    {
+      "ts": 1784273460402,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2239,
+        "totalPollFailures": 2239,
+        "totalCandidateSilenceReconnects": 15
+      }
+    },
+    {
+      "ts": 1784273460402,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784273460404,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784273460404,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784274180407,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2311,
+        "totalPollFailures": 2311
+      }
+    },
+    {
+      "ts": 1784274960411,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2389,
+        "totalPollFailures": 2389,
+        "totalCandidateSilenceReconnects": 16
+      }
+    },
+    {
+      "ts": 1784274960411,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784274960413,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784274960413,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784275032737,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 HrqxVn max_hold_cap net=0.0715 SOL hold=28876s"
+    },
+    {
+      "ts": 1784275680432,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2461,
+        "totalPollFailures": 2461
+      }
+    },
+    {
+      "ts": 1784276460440,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2539,
+        "totalPollFailures": 2539,
+        "totalCandidateSilenceReconnects": 17
+      }
+    },
+    {
+      "ts": 1784276460441,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784276460444,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784276460444,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784277180448,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2611,
+        "totalPollFailures": 2611
+      }
+    },
+    {
+      "ts": 1784277672602,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 FpZj2F max_hold_cap net=-0.00535 SOL hold=28812s"
+    },
+    {
+      "ts": 1784277912650,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30-lag FpZj2F max_hold_cap net=-0.01543 SOL hold=29047s"
+    },
+    {
+      "ts": 1784277960462,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2689,
+        "totalPollFailures": 2689,
+        "totalCandidateSilenceReconnects": 18
+      }
+    },
+    {
+      "ts": 1784277960462,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784277960465,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784277960465,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784278680480,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2761,
+        "totalPollFailures": 2761
+      }
+    },
+    {
+      "ts": 1784279006339,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 20,
+        "newestSig": "2ryzcbqr",
+        "lastSig": "2ryzcbqr"
+      }
+    },
+    {
+      "ts": 1784279022349,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (1/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279032345,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (2/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279042353,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (3/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279052358,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (4/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279062357,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (5/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279062358,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poller circuit breaker tripped after 5 consecutive failures — pausing for 60s"
+    },
+    {
+      "ts": 1784279730491,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 724,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 65,
+        "totalPollFailures": 2859
+      }
+    },
+    {
+      "ts": 1784279832522,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30 BVcbpJ max_hold_cap net=-0.03 SOL hold=29033s"
+    },
+    {
+      "ts": 1784279832522,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-tp100-sl30-lag BVcbpJ max_hold_cap net=-0.03 SOL hold=29028s"
+    },
+    {
+      "ts": 1784279832522,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-fable-deep BVcbpJ max_hold_cap net=-0.03 SOL hold=29027s"
+    },
+    {
+      "ts": 1784279832522,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-hotlead-nodump BVcbpJ max_hold_cap net=-0.03 SOL hold=29025s"
+    },
+    {
+      "ts": 1784279832522,
+      "level": "info",
+      "name": "copy-trader",
+      "msg": "Copy close copy-hotlead-breadth BVcbpJ max_hold_cap net=-0.03 SOL hold=29025s"
+    },
+    {
+      "ts": 1784280510506,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1504,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 143,
+        "totalPollFailures": 2937,
+        "totalCandidateSilenceReconnects": 19
+      }
+    },
+    {
+      "ts": 1784280510506,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784280510509,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784280510509,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784281230521,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 215,
+        "totalPollFailures": 3009
+      }
+    },
+    {
+      "ts": 1784282010543,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 293,
+        "totalPollFailures": 3087,
+        "totalCandidateSilenceReconnects": 20
+      }
+    },
+    {
+      "ts": 1784282010544,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784282010546,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784282010546,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784282730558,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 365,
+        "totalPollFailures": 3159
+      }
+    },
+    {
+      "ts": 1784283510573,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 443,
+        "totalPollFailures": 3237,
+        "totalCandidateSilenceReconnects": 21
+      }
+    },
+    {
+      "ts": 1784283510574,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784283510576,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784283510576,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784284230592,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 515,
+        "totalPollFailures": 3309
+      }
+    },
+    {
+      "ts": 1784285010602,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 593,
+        "totalPollFailures": 3387,
+        "totalCandidateSilenceReconnects": 22
+      }
+    },
+    {
+      "ts": 1784285010602,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784285010605,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784285010605,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784285730613,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 665,
+        "totalPollFailures": 3459
+      }
+    },
+    {
+      "ts": 1784286510631,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 743,
+        "totalPollFailures": 3537,
+        "totalCandidateSilenceReconnects": 23
+      }
+    },
+    {
+      "ts": 1784286510632,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784286510635,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784286510635,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784287230641,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 815,
+        "totalPollFailures": 3609
+      }
+    },
+    {
+      "ts": 1784288010651,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 893,
+        "totalPollFailures": 3687,
+        "totalCandidateSilenceReconnects": 24
+      }
+    },
+    {
+      "ts": 1784288010651,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784288010654,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784288010654,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784288730662,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 965,
+        "totalPollFailures": 3759
+      }
+    },
+    {
+      "ts": 1784289510683,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1043,
+        "totalPollFailures": 3837,
+        "totalCandidateSilenceReconnects": 25
+      }
+    },
+    {
+      "ts": 1784289510683,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784289510686,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784289510686,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784290230693,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1115,
+        "totalPollFailures": 3909
+      }
+    },
+    {
+      "ts": 1784291010709,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1193,
+        "totalPollFailures": 3987,
+        "totalCandidateSilenceReconnects": 26
+      }
+    },
+    {
+      "ts": 1784291010709,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784291010712,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784291010712,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784291730721,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1265,
+        "totalPollFailures": 4059
+      }
+    },
+    {
+      "ts": 1784292510726,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1343,
+        "totalPollFailures": 4137,
+        "totalCandidateSilenceReconnects": 27
+      }
+    },
+    {
+      "ts": 1784292510726,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784292510729,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784292510729,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784293230752,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1415,
+        "totalPollFailures": 4209
+      }
+    },
+    {
+      "ts": 1784294010764,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1493,
+        "totalPollFailures": 4287,
+        "totalCandidateSilenceReconnects": 28
+      }
+    },
+    {
+      "ts": 1784294010765,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784294010767,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784294010768,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784294730776,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1565,
+        "totalPollFailures": 4359
+      }
+    },
+    {
+      "ts": 1784295510800,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1643,
+        "totalPollFailures": 4437,
+        "totalCandidateSilenceReconnects": 29
+      }
+    },
+    {
+      "ts": 1784295510800,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784295510803,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784295510803,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784296230815,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1715,
+        "totalPollFailures": 4509
+      }
+    },
+    {
+      "ts": 1784297010826,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1793,
+        "totalPollFailures": 4587,
+        "totalCandidateSilenceReconnects": 30
+      }
+    },
+    {
+      "ts": 1784297010826,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784297010829,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784297010829,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784297730836,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1865,
+        "totalPollFailures": 4659
+      }
+    },
+    {
+      "ts": 1784298510862,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1943,
+        "totalPollFailures": 4737,
+        "totalCandidateSilenceReconnects": 31
+      }
+    },
+    {
+      "ts": 1784298510862,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784298510864,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784298510864,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784299230875,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2015,
+        "totalPollFailures": 4809
+      }
+    },
+    {
+      "ts": 1784300010891,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2093,
+        "totalPollFailures": 4887,
+        "totalCandidateSilenceReconnects": 32
+      }
+    },
+    {
+      "ts": 1784300010891,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784300010893,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784300010893,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784300730895,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2165,
+        "totalPollFailures": 4959
+      }
+    },
+    {
+      "ts": 1784301510909,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2243,
+        "totalPollFailures": 5037,
+        "totalCandidateSilenceReconnects": 33
+      }
+    },
+    {
+      "ts": 1784301510910,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784301510912,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784301510912,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784302230923,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2315,
+        "totalPollFailures": 5109
+      }
+    },
+    {
+      "ts": 1784303010954,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2393,
+        "totalPollFailures": 5187,
+        "totalCandidateSilenceReconnects": 34
+      }
+    },
+    {
+      "ts": 1784303010954,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784303010956,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784303010956,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784303730983,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2465,
+        "totalPollFailures": 5259
+      }
+    },
+    {
+      "ts": 1784304511022,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2543,
+        "totalPollFailures": 5337,
+        "totalCandidateSilenceReconnects": 35
+      }
+    },
+    {
+      "ts": 1784304511022,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784304511025,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784304511025,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784305231032,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2615,
+        "totalPollFailures": 5409
+      }
+    },
+    {
+      "ts": 1784306011045,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2693,
+        "totalPollFailures": 5487,
+        "totalCandidateSilenceReconnects": 36
+      }
+    },
+    {
+      "ts": 1784306011045,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784306011048,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784306011048,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784306731074,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2765,
+        "totalPollFailures": 5559
+      }
+    },
+    {
+      "ts": 1784307511100,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2843,
+        "totalPollFailures": 5637,
+        "totalCandidateSilenceReconnects": 37
+      }
+    },
+    {
+      "ts": 1784307511101,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784307511103,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784307511103,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784308231120,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2915,
+        "totalPollFailures": 5709
+      }
+    },
+    {
+      "ts": 1784309011143,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2993,
+        "totalPollFailures": 5787,
+        "totalCandidateSilenceReconnects": 38
+      }
+    },
+    {
+      "ts": 1784309011143,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784309011145,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784309011145,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784309731145,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 3065,
+        "totalPollFailures": 5859
+      }
+    },
+    {
+      "ts": 1784310511161,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 3143,
+        "totalPollFailures": 5937,
+        "totalCandidateSilenceReconnects": 39
+      }
+    },
+    {
+      "ts": 1784310511162,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784310511164,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784310511164,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784311231167,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 3215,
+        "totalPollFailures": 6009
+      }
+    },
+    {
+      "ts": 1784311407157,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 20,
+        "newestSig": "5PyhX3Qg",
+        "lastSig": "5PyhX3Qg"
+      }
+    },
+    {
+      "ts": 1784311417140,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (1/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311427137,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (2/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311437140,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (3/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311447138,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (4/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311457138,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (5/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311457138,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poller circuit breaker tripped after 5 consecutive failures — pausing for 60s"
+    },
+    {
+      "ts": 1784311799629,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "RPC poller found new migration sigs",
+      "bindings": {
+        "sigsFound": 4,
+        "newestSig": "4h9HucKn",
+        "lastSig": "4h9HucKn"
+      }
+    },
+    {
+      "ts": 1784311817172,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (1/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311827163,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (2/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311837159,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (3/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311847158,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (4/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311857160,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (5/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311857160,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poller circuit breaker tripped after 5 consecutive failures — pausing for 60s"
+    },
+    {
+      "ts": 1784312131179,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 724,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 26,
+        "totalPollFailures": 6085
+      }
+    },
+    {
+      "ts": 1784312911208,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1504,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 104,
+        "totalPollFailures": 6163,
+        "totalCandidateSilenceReconnects": 40
+      }
+    },
+    {
+      "ts": 1784312911208,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784312911210,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784312911211,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784313631221,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 176,
+        "totalPollFailures": 6235
+      }
+    },
+    {
+      "ts": 1784314411243,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 254,
+        "totalPollFailures": 6313,
+        "totalCandidateSilenceReconnects": 41
+      }
+    },
+    {
+      "ts": 1784314411243,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784314411246,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784314411246,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    },
+    {
+      "ts": 1784315131263,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 326,
+        "totalPollFailures": 6385
+      }
+    },
+    {
+      "ts": 1784315911287,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 404,
+        "totalPollFailures": 6463,
+        "totalCandidateSilenceReconnects": 42
+      }
+    },
+    {
+      "ts": 1784315911287,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Reconnecting WebSocket..."
+    },
+    {
+      "ts": 1784315911289,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "Subscribed to pump.fun migrate txs (processed, mentions:[withdraw_authority])",
+      "bindings": {
+        "subscriptionIdProcessed": 0,
+        "migrationsOnly": true
+      }
+    },
+    {
+      "ts": 1784315911289,
+      "level": "info",
+      "name": "graduation-listener",
+      "msg": "WebSocket reconnected successfully"
+    }
+  ],
+  "warn_error_entries": [
+    {
+      "ts": 1784249066417,
+      "level": "warn",
+      "name": "price-collector",
+      "msg": "Enrichment-only mode (default): wallet-discovery enrichment ON, price-path snapshots + research collection OFF. Set GRADUATION_PRICE_PATH_ENABLED=true to revive full collection."
+    },
+    {
+      "ts": 1784249102645,
+      "level": "warn",
+      "name": "winner-sniper",
+      "msg": "WinnerSniperHarvester OFF by default (set WINNER_SNIPER_DISABLED=false to enable; pairs with the stage-2 pre-filter)"
+    },
+    {
+      "ts": 1784249102645,
+      "level": "warn",
+      "name": "winner-prefilter",
+      "msg": "WinnerPrefilterWatcher OFF by default (set PREFILTER_DISABLED=false to enable); enrolled wallets TTL-fail unwatched"
+    },
+    {
+      "ts": 1784250381020,
+      "level": "warn",
+      "name": "holder-enrichment",
+      "msg": "getTokenLargestAccounts failed",
+      "bindings": {
+        "mint": "DeXz3gkD",
+        "err": "failed to get token largest accounts: Invalid param: not a Token mint"
+      }
+    },
+    {
+      "ts": 1784250750030,
+      "level": "warn",
+      "name": "holder-enrichment",
+      "msg": "getTokenLargestAccounts failed",
+      "bindings": {
+        "mint": "HorsPNhT",
+        "err": "failed to get token largest accounts: Invalid param: not a Token mint"
+      }
+    },
+    {
+      "ts": 1784251011329,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (1/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251021302,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (2/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251032973,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (3/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251041322,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (4/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251051315,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (5/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784251051315,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poller circuit breaker tripped after 5 consecutive failures — pausing for 60s"
+    },
+    {
+      "ts": 1784251680152,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 742,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 61,
+        "totalPollFailures": 61
+      }
+    },
+    {
+      "ts": 1784252460163,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1522,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 139,
+        "totalPollFailures": 139,
+        "totalCandidateSilenceReconnects": 1
+      }
+    },
+    {
+      "ts": 1784253180171,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 211,
+        "totalPollFailures": 211
+      }
+    },
+    {
+      "ts": 1784253960183,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 289,
+        "totalPollFailures": 289,
+        "totalCandidateSilenceReconnects": 2
+      }
+    },
+    {
+      "ts": 1784254680190,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 361,
+        "totalPollFailures": 361
+      }
+    },
+    {
+      "ts": 1784255460194,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 439,
+        "totalPollFailures": 439,
+        "totalCandidateSilenceReconnects": 3
+      }
+    },
+    {
+      "ts": 1784256180197,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 511,
+        "totalPollFailures": 511
+      }
+    },
+    {
+      "ts": 1784256960211,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 589,
+        "totalPollFailures": 589,
+        "totalCandidateSilenceReconnects": 4
+      }
+    },
+    {
+      "ts": 1784257680219,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 661,
+        "totalPollFailures": 661
+      }
+    },
+    {
+      "ts": 1784258460227,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 739,
+        "totalPollFailures": 739,
+        "totalCandidateSilenceReconnects": 5
+      }
+    },
+    {
+      "ts": 1784259180232,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 811,
+        "totalPollFailures": 811
+      }
+    },
+    {
+      "ts": 1784259960240,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 889,
+        "totalPollFailures": 889,
+        "totalCandidateSilenceReconnects": 6
+      }
+    },
+    {
+      "ts": 1784260680245,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 961,
+        "totalPollFailures": 961
+      }
+    },
+    {
+      "ts": 1784261460256,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1039,
+        "totalPollFailures": 1039,
+        "totalCandidateSilenceReconnects": 7
+      }
+    },
+    {
+      "ts": 1784262180262,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1111,
+        "totalPollFailures": 1111
+      }
+    },
+    {
+      "ts": 1784262960273,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1189,
+        "totalPollFailures": 1189,
+        "totalCandidateSilenceReconnects": 8
+      }
+    },
+    {
+      "ts": 1784263680281,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1261,
+        "totalPollFailures": 1261
+      }
+    },
+    {
+      "ts": 1784264460289,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1339,
+        "totalPollFailures": 1339,
+        "totalCandidateSilenceReconnects": 9
+      }
+    },
+    {
+      "ts": 1784265180295,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1411,
+        "totalPollFailures": 1411
+      }
+    },
+    {
+      "ts": 1784265960310,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1489,
+        "totalPollFailures": 1489,
+        "totalCandidateSilenceReconnects": 10
+      }
+    },
+    {
+      "ts": 1784266680322,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1561,
+        "totalPollFailures": 1561
+      }
+    },
+    {
+      "ts": 1784267460337,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1639,
+        "totalPollFailures": 1639,
+        "totalCandidateSilenceReconnects": 11
+      }
+    },
+    {
+      "ts": 1784268180352,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1711,
+        "totalPollFailures": 1711
+      }
+    },
+    {
+      "ts": 1784268960360,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1789,
+        "totalPollFailures": 1789,
+        "totalCandidateSilenceReconnects": 12
+      }
+    },
+    {
+      "ts": 1784269680367,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1861,
+        "totalPollFailures": 1861
+      }
+    },
+    {
+      "ts": 1784270460375,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1939,
+        "totalPollFailures": 1939,
+        "totalCandidateSilenceReconnects": 13
+      }
+    },
+    {
+      "ts": 1784271180382,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2011,
+        "totalPollFailures": 2011
+      }
+    },
+    {
+      "ts": 1784271960389,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2089,
+        "totalPollFailures": 2089,
+        "totalCandidateSilenceReconnects": 14
+      }
+    },
+    {
+      "ts": 1784272680397,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2161,
+        "totalPollFailures": 2161
+      }
+    },
+    {
+      "ts": 1784273460402,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2239,
+        "totalPollFailures": 2239,
+        "totalCandidateSilenceReconnects": 15
+      }
+    },
+    {
+      "ts": 1784274180407,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2311,
+        "totalPollFailures": 2311
+      }
+    },
+    {
+      "ts": 1784274960411,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2389,
+        "totalPollFailures": 2389,
+        "totalCandidateSilenceReconnects": 16
+      }
+    },
+    {
+      "ts": 1784275680432,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2461,
+        "totalPollFailures": 2461
+      }
+    },
+    {
+      "ts": 1784276460440,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2539,
+        "totalPollFailures": 2539,
+        "totalCandidateSilenceReconnects": 17
+      }
+    },
+    {
+      "ts": 1784277180448,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2611,
+        "totalPollFailures": 2611
+      }
+    },
+    {
+      "ts": 1784277960462,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2689,
+        "totalPollFailures": 2689,
+        "totalCandidateSilenceReconnects": 18
+      }
+    },
+    {
+      "ts": 1784278680480,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2761,
+        "totalPollFailures": 2761
+      }
+    },
+    {
+      "ts": 1784279022349,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (1/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279032345,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (2/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279042353,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (3/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279052358,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (4/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279062357,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (5/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784279062358,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poller circuit breaker tripped after 5 consecutive failures — pausing for 60s"
+    },
+    {
+      "ts": 1784279730491,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 724,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 65,
+        "totalPollFailures": 2859
+      }
+    },
+    {
+      "ts": 1784280510506,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1504,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 143,
+        "totalPollFailures": 2937,
+        "totalCandidateSilenceReconnects": 19
+      }
+    },
+    {
+      "ts": 1784281230521,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 215,
+        "totalPollFailures": 3009
+      }
+    },
+    {
+      "ts": 1784282010543,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 293,
+        "totalPollFailures": 3087,
+        "totalCandidateSilenceReconnects": 20
+      }
+    },
+    {
+      "ts": 1784282730558,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 365,
+        "totalPollFailures": 3159
+      }
+    },
+    {
+      "ts": 1784283510573,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 443,
+        "totalPollFailures": 3237,
+        "totalCandidateSilenceReconnects": 21
+      }
+    },
+    {
+      "ts": 1784284230592,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 515,
+        "totalPollFailures": 3309
+      }
+    },
+    {
+      "ts": 1784285010602,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 593,
+        "totalPollFailures": 3387,
+        "totalCandidateSilenceReconnects": 22
+      }
+    },
+    {
+      "ts": 1784285730613,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 665,
+        "totalPollFailures": 3459
+      }
+    },
+    {
+      "ts": 1784286510631,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 743,
+        "totalPollFailures": 3537,
+        "totalCandidateSilenceReconnects": 23
+      }
+    },
+    {
+      "ts": 1784287230641,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 815,
+        "totalPollFailures": 3609
+      }
+    },
+    {
+      "ts": 1784288010651,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 893,
+        "totalPollFailures": 3687,
+        "totalCandidateSilenceReconnects": 24
+      }
+    },
+    {
+      "ts": 1784288730662,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 965,
+        "totalPollFailures": 3759
+      }
+    },
+    {
+      "ts": 1784289510683,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1043,
+        "totalPollFailures": 3837,
+        "totalCandidateSilenceReconnects": 25
+      }
+    },
+    {
+      "ts": 1784290230693,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1115,
+        "totalPollFailures": 3909
+      }
+    },
+    {
+      "ts": 1784291010709,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1193,
+        "totalPollFailures": 3987,
+        "totalCandidateSilenceReconnects": 26
+      }
+    },
+    {
+      "ts": 1784291730721,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1265,
+        "totalPollFailures": 4059
+      }
+    },
+    {
+      "ts": 1784292510726,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1343,
+        "totalPollFailures": 4137,
+        "totalCandidateSilenceReconnects": 27
+      }
+    },
+    {
+      "ts": 1784293230752,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1415,
+        "totalPollFailures": 4209
+      }
+    },
+    {
+      "ts": 1784294010764,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1493,
+        "totalPollFailures": 4287,
+        "totalCandidateSilenceReconnects": 28
+      }
+    },
+    {
+      "ts": 1784294730776,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1565,
+        "totalPollFailures": 4359
+      }
+    },
+    {
+      "ts": 1784295510800,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1643,
+        "totalPollFailures": 4437,
+        "totalCandidateSilenceReconnects": 29
+      }
+    },
+    {
+      "ts": 1784296230815,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1715,
+        "totalPollFailures": 4509
+      }
+    },
+    {
+      "ts": 1784297010826,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1793,
+        "totalPollFailures": 4587,
+        "totalCandidateSilenceReconnects": 30
+      }
+    },
+    {
+      "ts": 1784297730836,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1865,
+        "totalPollFailures": 4659
+      }
+    },
+    {
+      "ts": 1784298510862,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 1943,
+        "totalPollFailures": 4737,
+        "totalCandidateSilenceReconnects": 31
+      }
+    },
+    {
+      "ts": 1784299230875,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2015,
+        "totalPollFailures": 4809
+      }
+    },
+    {
+      "ts": 1784300010891,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2093,
+        "totalPollFailures": 4887,
+        "totalCandidateSilenceReconnects": 32
+      }
+    },
+    {
+      "ts": 1784300730895,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2165,
+        "totalPollFailures": 4959
+      }
+    },
+    {
+      "ts": 1784301510909,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2243,
+        "totalPollFailures": 5037,
+        "totalCandidateSilenceReconnects": 33
+      }
+    },
+    {
+      "ts": 1784302230923,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2315,
+        "totalPollFailures": 5109
+      }
+    },
+    {
+      "ts": 1784303010954,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2393,
+        "totalPollFailures": 5187,
+        "totalCandidateSilenceReconnects": 34
+      }
+    },
+    {
+      "ts": 1784303730983,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2465,
+        "totalPollFailures": 5259
+      }
+    },
+    {
+      "ts": 1784304511022,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2543,
+        "totalPollFailures": 5337,
+        "totalCandidateSilenceReconnects": 35
+      }
+    },
+    {
+      "ts": 1784305231032,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2615,
+        "totalPollFailures": 5409
+      }
+    },
+    {
+      "ts": 1784306011045,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2693,
+        "totalPollFailures": 5487,
+        "totalCandidateSilenceReconnects": 36
+      }
+    },
+    {
+      "ts": 1784306731074,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2765,
+        "totalPollFailures": 5559
+      }
+    },
+    {
+      "ts": 1784307511100,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2843,
+        "totalPollFailures": 5637,
+        "totalCandidateSilenceReconnects": 37
+      }
+    },
+    {
+      "ts": 1784308231120,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2915,
+        "totalPollFailures": 5709
+      }
+    },
+    {
+      "ts": 1784309011143,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 2993,
+        "totalPollFailures": 5787,
+        "totalCandidateSilenceReconnects": 38
+      }
+    },
+    {
+      "ts": 1784309731145,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 3065,
+        "totalPollFailures": 5859
+      }
+    },
+    {
+      "ts": 1784310511161,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 3143,
+        "totalPollFailures": 5937,
+        "totalCandidateSilenceReconnects": 39
+      }
+    },
+    {
+      "ts": 1784311231167,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 3215,
+        "totalPollFailures": 6009
+      }
+    },
+    {
+      "ts": 1784311417140,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (1/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311427137,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (2/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311437140,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (3/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311447138,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (4/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311457138,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (5/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311457138,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poller circuit breaker tripped after 5 consecutive failures — pausing for 60s"
+    },
+    {
+      "ts": 1784311817172,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (1/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311827163,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (2/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311837159,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (3/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311847158,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (4/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311857160,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poll error (5/5): 429 Too Many Requests: {\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32429,\"message\":\"max usage reached\"}}"
+    },
+    {
+      "ts": 1784311857160,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "Migration poller circuit breaker tripped after 5 consecutive failures — pausing for 60s"
+    },
+    {
+      "ts": 1784312131179,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 724,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 26,
+        "totalPollFailures": 6085
+      }
+    },
+    {
+      "ts": 1784312911208,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1504,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 104,
+        "totalPollFailures": 6163,
+        "totalCandidateSilenceReconnects": 40
+      }
+    },
+    {
+      "ts": 1784313631221,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 176,
+        "totalPollFailures": 6235
+      }
+    },
+    {
+      "ts": 1784314411243,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 254,
+        "totalPollFailures": 6313,
+        "totalCandidateSilenceReconnects": 41
+      }
+    },
+    {
+      "ts": 1784315131263,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 12 min but pump.fun logs still flowing — possible WS zombie",
+      "bindings": {
+        "candidateSilentSeconds": 720,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 326,
+        "totalPollFailures": 6385
+      }
+    },
+    {
+      "ts": 1784315911287,
+      "level": "warn",
+      "name": "graduation-listener",
+      "msg": "No graduation candidates for 25+ min but logs still flowing — forcing reconnect",
+      "bindings": {
+        "candidateSilentSeconds": 1500,
+        "recentLogs": 196,
+        "pollConsecutiveFailures": 404,
+        "totalPollFailures": 6463,
+        "totalCandidateSilenceReconnects": 42
+      }
+    }
+  ]
+}

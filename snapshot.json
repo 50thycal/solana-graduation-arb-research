@@ -1,0 +1,253 @@
+{
+  "generated_at": "2026-07-17T19:29:06.474Z",
+  "uptime_sec": 67479,
+  "counts": {
+    "graduations": 22526
+  },
+  "listener": {
+    "totalLogsReceived": 196,
+    "totalCandidatesDetected": 48,
+    "totalCandidatesFromPumpFun": 0,
+    "totalCandidatesFromPumpFunProcessed": 26,
+    "totalCandidatesFromPumpSwap": 0,
+    "totalCandidatesFromPoll": 22,
+    "channel_wins": {
+      "pump_fun_ws_confirmed": 0,
+      "pump_fun_ws_processed": 26,
+      "pumpswap_ws_confirmed": 0,
+      "rpc_poll": 22
+    },
+    "totalPollDupes": 26,
+    "totalPollSigsFound": 151,
+    "totalPollTicks": 6719,
+    "totalPollFailures": 6526,
+    "pollConsecutiveFailures": 467,
+    "lastPollFailureSecondsAgo": 8,
+    "totalCandidateSilenceReconnects": 42,
+    "totalDuplicateLogs": 26,
+    "totalVerifiedGraduations": 9,
+    "totalGraduationsRecorded": 9,
+    "totalFalsePositives": 18,
+    "totalBundlerFalsePositives": 18,
+    "totalMintExtractionFails": 0,
+    "totalStrategy3Extractions": 0,
+    "totalVaultExtractions": 9,
+    "totalVaultExtractionFails": 0,
+    "totalTxFetchFails": 21,
+    "totalTxFetchExceptions": 21,
+    "lastVaultFailReasons": [],
+    "lastMintFailReasons": [],
+    "lastEventSecondsAgo": 635,
+    "lastCandidateSecondsAgo": 635,
+    "wsConnected": true,
+    "reconnecting": false,
+    "totalReconnects": 42,
+    "deliveryLatencySec": {
+      "pumpFun": null,
+      "pumpFunProcessed": {
+        "n": 9,
+        "p50": 1.4,
+        "p95": 1.7,
+        "max": 1.7,
+        "mean": 1.3,
+        "pctOver25s": 0
+      },
+      "pumpSwap": null,
+      "rpcPoll": null
+    },
+    "rpcFetchMs": {
+      "n": 9,
+      "p50": 1105,
+      "p95": 1210,
+      "max": 1210,
+      "mean": 1032.1,
+      "pctOver25s": 100
+    },
+    "poolTracker": {
+      "pending": 0,
+      "speculative": 0,
+      "preFound": 0,
+      "totalPoolsFound": 0,
+      "totalExpired": 0,
+      "totalSkipped": 0,
+      "totalPumpSwapEvents": 0,
+      "totalPoolCreationEvents": 0,
+      "totalMigrationCandidatesFired": 0,
+      "totalMatched": 0,
+      "totalSpeculativeHits": 0,
+      "pumpSwapSubscribed": false,
+      "priceCollector": {
+        "activeObservations": 0,
+        "totalStarted": 0,
+        "totalCompleted": 0,
+        "totalSnapshots": 0,
+        "totalSnapshotFailures": 0,
+        "totalT30Timeouts": 0,
+        "t30AttemptsStarted": 0,
+        "t30CallbacksFired": 0,
+        "lastT30Timeouts": [],
+        "totalSlotsRejected": 0,
+        "totalStaleGraduations": 0,
+        "lastStaleGraduations": [],
+        "lastSnapshotFailures": []
+      }
+    },
+    "directPriceCollector": {
+      "activeObservations": 0,
+      "totalStarted": 9,
+      "totalCompleted": 0,
+      "totalSnapshots": 0,
+      "totalSnapshotFailures": 0,
+      "totalT30Timeouts": 0,
+      "t30AttemptsStarted": 0,
+      "t30CallbacksFired": 0,
+      "lastT30Timeouts": [],
+      "totalSlotsRejected": 0,
+      "totalStaleGraduations": 0,
+      "lastStaleGraduations": [],
+      "lastSnapshotFailures": []
+    },
+    "launch_debug": {
+      "uptimeSec": 67447,
+      "firehoseEventsTotal": 196,
+      "createMatches": 0,
+      "initMintTxCount": 19,
+      "counter": {
+        "totalRecorded": 0,
+        "seenSize": 0,
+        "bufferedBuckets": 0,
+        "bufferedCount": 0
+      },
+      "topInstructions": [
+        {
+          "name": "InitializeAccount3",
+          "count": 63
+        },
+        {
+          "name": "GetAccountDataSize",
+          "count": 61
+        },
+        {
+          "name": "InitializeImmutableOwner",
+          "count": 61
+        },
+        {
+          "name": "TransferChecked",
+          "count": 42
+        },
+        {
+          "name": "CloseAccount",
+          "count": 32
+        },
+        {
+          "name": "MigrateV2",
+          "count": 22
+        },
+        {
+          "name": "CreatePool",
+          "count": 19
+        },
+        {
+          "name": "InitializeMint2",
+          "count": 19
+        },
+        {
+          "name": "MintTo",
+          "count": 19
+        },
+        {
+          "name": "Burn",
+          "count": 13
+        },
+        {
+          "name": "InitBoost",
+          "count": 5
+        },
+        {
+          "name": "Migrate",
+          "count": 4
+        },
+        {
+          "name": "BuyExactQuoteIn",
+          "count": 4
+        },
+        {
+          "name": "GetFees",
+          "count": 4
+        }
+      ]
+    }
+  },
+  "listener_dedupe": {
+    "verified": 9,
+    "recorded": 9,
+    "dupe_pct": 0
+  },
+  "rpc_limiter": {
+    "tokensAvailable": 0,
+    "queued": 0,
+    "maxTokens": 10,
+    "totalThrottled": 8585,
+    "totalDropped": 0,
+    "totalServed": 10319,
+    "servedByTier": {
+      "wait": 0,
+      "priority": 115,
+      "droppable": 9478,
+      "copyHot": 726
+    },
+    "servedByLabel": {
+      "wallet_pnl": 8667,
+      "exec": 720,
+      "copy_poll": 717,
+      "grad_listener": 115,
+      "competition": 64,
+      "holder_enrich": 27,
+      "copy_trade": 9
+    },
+    "droppedByLabel": {},
+    "callsPerSec1m": 0,
+    "callsPerSec5m": 0,
+    "projCallsPerDay": 0,
+    "uptimeSec": 67480
+  },
+  "pipeline_health": {
+    "ws_connected": true,
+    "last_graduation_sec_ago": 65609,
+    "last_t30_callback_sec_ago": null,
+    "last_paper_trade_sec_ago": 3266942,
+    "last_shadow_trade_sec_ago": 2660336,
+    "last_candidate_sec_ago": 635,
+    "enabled_strategies": 0,
+    "channel_win_distribution": {
+      "pump_fun_ws_confirmed_pct": 0,
+      "pump_fun_ws_processed_pct": 54.2,
+      "pumpswap_ws_confirmed_pct": 0,
+      "rpc_poll_pct": 45.8,
+      "total_wins": 48
+    },
+    "verdict": "NO_STRATEGIES",
+    "notes": "No enabled strategies — trade pipeline intentionally idle."
+  },
+  "event_loop_lag": {
+    "n_samples": 600,
+    "window_minutes": 10,
+    "p50_ms": 0,
+    "p95_ms": 4,
+    "p99_ms": 26,
+    "max_ms_in_window": 2039,
+    "mean_ms": 17,
+    "pct_over_100ms": 0.8,
+    "pct_over_1000ms": 0.8,
+    "all_time_max_lag_ms": 31345
+  },
+  "last_error": {
+    "id": 4,
+    "ts": 1784131697234,
+    "level": "error",
+    "name": "gist-sync",
+    "message": "Status sync failing (1x): Tree create failed: 422 {\"message\":\"tree.sha 7c4f75d6030fcf3bdd0aa93d74d9bb831dca4db8 is not a valid blob\",\"documentation_url\":\"https://docs.github.com/rest/git/trees#create-a-tree\",\"status\":\"422\"}",
+    "stack": "Error: Tree create failed: 422 {\"message\":\"tree.sha 7c4f75d6030fcf3bdd0aa93d74d9bb831dca4db8 is not a valid blob\",\"documentation_url\":\"https://docs.github.com/rest/git/trees#create-a-tree\",\"status\":\"422\"}\n    at GistSync.sync (/app/dist/api/gist-sync.js:245:23)\n    at process.processTicksAndRejections (node:internal/process/task_queues:95:5)",
+    "git_sha": null
+  }
+}
